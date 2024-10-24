@@ -1,0 +1,20 @@
+{"url":"https:\/\/shopiro.ca\/api\/v1\/254641595048303\/c17926e7e517ced4210c04271d77db32\/chained","content_type":"application\/json","http_code":200,"header_size":765,"request_size":214,"filetime":-1,"ssl_verify_result":0,"redirect_count":0,"total_time":11.768879,"namelookup_time":0.00078,"connect_time":0.201775,"pretransfer_time":0.218964,"size_upload":9896,"size_download":577,"speed_download":49,"speed_upload":840,"download_content_length":-1,"upload_content_length":9896,"starttransfer_time":0.218967,"redirect_time":0,"redirect_url":"","primary_ip":"51.222.110.142","certinfo":[],"primary_port":443,"local_ip":"51.222.110.33","local_port":53774,"http_version":3,"protocol":2,"ssl_verifyresult":0,"scheme":"HTTPS","appconnect_time_us":218858,"connect_time_us":201775,"namelookup_time_us":780,"pretransfer_time_us":218964,"redirect_time_us":0,"starttransfer_time_us":218967,"total_time_us":11768879}response:{
+    "set\/edit_listing": {
+        "req_39c5b01a888b44efe70c": {
+            "success": {
+                "field_errors": {
+                    "metadata": {
+                        "minor_variations": [
+                            {
+                                "title": "The title for minor variation 0 is too short, at least 0 characters expected."
+                            }
+                        ]
+                    }
+                },
+                "slid": null
+            },
+            "chain_key": 0
+        }
+    },
+    "request_processed_in": 11423
+}

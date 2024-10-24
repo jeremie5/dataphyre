@@ -1,0 +1,13 @@
+{
+    "name": "CJ/CJ-client",
+    "description": "PHP library for interacting with CJDropshipping's Developer API.",
+    "type": "library",
+    "require": {
+        "php": ">8.0"
+    },
+    "autoload": {
+        "psr-4": {
+            CJ\\": "src/"
+        }
+    }
+}
