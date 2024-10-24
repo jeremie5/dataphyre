@@ -1,0 +1,98 @@
+<?php
+/*************************************************************************
+*  © 2022 Shopiro Ltd.
+*  All Rights Reserved.
+* 
+* NOTICE:  All information contained herein is, and remains the 
+* property of Shopiro Ltd. and its suppliers, if any. The 
+* intellectual and technical concepts contained herein are 
+* proprietary to Shopiro Ltd. and its suppliers and may be 
+* covered by Canadian and Foreign Patents, patents in process, and 
+* are protected by trade secret or copyright law. Dissemination of 
+* this information or reproduction of this material is strictly 
+* forbidden unless prior written permission is obtained from Shopiro Ltd..
+*/
+
+namespace dataphyre\fulltext_engine;
+
+class vespa {
+    
+    private static $vespa_endpoint='http://localhost:8080';
+
+    public static function find(string $application_name, array $search_data, string $primary_column_name, bool $boolean_mode, string $language, int $max_results, float $threshold) : array {
+        $yql_query=self::build_vespa_query($search_data, $boolean_mode, $language, $max_results);
+        $url=self::$vespa_endpoint.'/search/?yql='.urlencode($yql_query);
+        $ch=curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        $response=curl_exec($ch);
+        curl_close($ch);
+        if($response===false){
+            return array();
+        }
+        $response_data = json_decode($response, true);
+        return self::process_vespa_results($response_data, $primary_column_name, $threshold);
+    }
+    
+    public static function add(string $application_name, string $document_type, mixed $document_id, array $fields) : string {
+        $url=self::$vespa_endpoint.'/document/v1/'.$application_name.'/'.$document_type.'/docid/'.$document_id;
+        $json_data=json_encode(['fields'=>$fields]);
+        $ch=curl_init($url);
+        curl_setopt($ch, CURLOPT_POST, 1);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $json_data);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+        $response=curl_exec($ch);
+        curl_close($ch);
+        return $response!==false;
+    }
+    
+    public static function update(string $application_name, string $document_type, mixed $document_id, array $fields) : string {
+        $url=self::$vespa_endpoint.'/document/v1/'.$application_name.'/'.$document_type.'/docid/'.$document_id;
+        $json_data=json_encode(['fields'=>$fields]);
+        $ch=curl_init($url);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $json_data);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+        $response=curl_exec($ch);
+        curl_close($ch);
+        return $response !== false;
+    }
+    
+    public static function remove(string $application_name, string $document_type, mixed $document_id) : string {
+        $url=self::$vespa_endpoint.'/document/v1/'.$application_name.'/'.$document_type.'/docid/'.$document_id;
+        $ch=curl_init($url);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        $response=curl_exec($ch);
+        curl_close($ch);
+        return $response !== false;
+    }
+
+	private static function build_vespa_query(array $search_data, bool $boolean_mode, string $language, int $max_results) : string {
+		$yql="select * from sources * where ";
+		$conditions=[];
+		foreach($search_data as $field=>$value){
+			$value=addslashes($value);
+			$conditions[]="$field contains '".$value."'";
+		}
+		$yql.=implode($boolean_mode==='AND'?' and ':' or ', $conditions);
+		$yql.=" limit $max_results;";
+		return $yql;
+	}
+
+    private static function process_vespa_results(array $response_data, string $primary_column_name, float $threshold) : array {
+        tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+        $results=[];
+        if(isset($response_data['root']['children'])){
+            foreach($response_data['root']['children'] as $child){
+                $fields=$child['fields'];
+                $score=$child['relevance'];
+                if($score>=$threshold){
+                    $results[]=array($fields[$primary_column_name]=>$score);
+                }
+            }
+        }
+        return $results;
+    }
+}
