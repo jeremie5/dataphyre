@@ -454,12 +454,7 @@ class core {
 		global $configurations;
 		if(null!==$early_return=core::dialback("CALL_CORE_GET_PASSWORD",...func_get_args())) return $early_return;
 		$salting_data = array($configurations['dataphyre']['private_key']);
-		$shuffle1 = '';
-		if (!empty($salting_data[0])) {
-			$shuffle1 = str_replace(array(1, 'a', 4, 6, 9, 7, 5), array(5, 1, 9, 7, 6, 4, 'a'), base64_encode($salting_data[0]));
-		}
-		$shuffle2 = '';
-		$key = substr(hash('sha256', $shuffle1 . $shuffle2), 0, 16);
+		$key = substr(hash('sha256', base64_encode($salting_data[0])), 0, 16);
 		$password = openssl_encrypt($string, "AES-256-CBC", $key, 0, $key);
 		$password = str_replace('=', '', base64_encode($password));
 		return $password;
