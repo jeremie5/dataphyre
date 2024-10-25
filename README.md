@@ -7,7 +7,7 @@
 - **Infinite Scalability**: Built from the ground up to be scalable.
 - **Modular Ecosystem**: Comprehensive modules for everything from authentication to caching, full-text search, async tasks, and more.
 - **Native CDN Support**: Built-in support for a cost-efficient CDN system that scales with your application, eliminating reliance on expensive external solutions.
-- **Advanced Security**: Includes unique tools like Caspow (Cryptographic Anti-Spam Proof of Work) and Fraudar (fraud detection) to secure your platform.
+- **Advanced Security**: Includes unique tools like Caspow (Cryptographic Anti-Spam Proof of Work) to secure your platform.
 - **Asynchronous Processing**: Powerful async task handling for background jobs, scheduled tasks, and more—perfect for high-performance applications.
 - **Full-Text Search Engine**: Includes a robust native search engine, with the ability to pair with Elasticsearch or Vespa for even more advanced search capabilities.
 - **Free for Personal Use**: Dataphyre is licensed freely for personal projects. Commercial applications will require a yearly license based on revenue.
