@@ -4,7 +4,7 @@
 
 ## Key Features
 
-- **Infinite Scalability**: Built from the ground up to support automatic scaling, server provisioning, and real-time data synchronization.
+- **Infinite Scalability**: Built from the ground up to be scalable.
 - **Modular Ecosystem**: Comprehensive modules for everything from authentication to caching, full-text search, async tasks, and more.
 - **Native CDN Support**: Built-in support for a cost-efficient CDN system that scales with your application, eliminating reliance on expensive external solutions.
 - **Advanced Security**: Includes unique tools like Caspow (Cryptographic Anti-Spam Proof of Work) and Fraudar (fraud detection) to secure your platform.
