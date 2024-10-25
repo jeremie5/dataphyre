@@ -1,17 +1,18 @@
 <?php
-/*************************************************************************
-*  Shopiro Ltd.
-*  All Rights Reserved.
-* 
-* NOTICE:  All information contained herein is, and remains the 
-* property of Shopiro Ltd. and its suppliers, ifany. The 
-* intellectual and technical concepts contained herein are 
-* proprietary to Shopiro Ltd. and its suppliers and may be 
-* covered by Canadian and Foreign Patents, patents in process, and 
-* are protected by trade secret or copyright law. Dissemination of 
-* this information or reproduction of this material is strictly 
-* forbidden unless prior written permission is obtained from Shopiro Ltd.
-*/
+ /*************************************************************************
+ *  2020-2024 Shopiro Ltd.
+ *  All Rights Reserved.
+ * 
+ * NOTICE: All information contained herein is, and remains the 
+ * property of Shopiro Ltd. and is provided under a dual licensing model.
+ * 
+ * This software is available for personal use under the Free Personal Use License.
+ * For commercial applications that generate revenue, a Commercial License must be 
+ * obtained. See the LICENSE file for details.
+ *
+ * This software is provided "as is", without any warranty of any kind.
+ */
+
 
 namespace dataphyre;
 
@@ -33,7 +34,7 @@ require_once(__DIR__."/websocket.php");
 require_once(__DIR__."/event_emitter.php");
 require_once(__DIR__."/process.php");
 
-// Promise class for your reference, skeletonized to limit my message token usage
+// Promise class
 /*
 class promise {
 	private $state='pending';
@@ -58,7 +59,7 @@ class promise {
 }
 */
 
-// Coroutine class for your reference, skeletonized to limit my message token usage
+// Coroutine class
 /*
 class coroutine{
 	protected static $tasks=[];
@@ -83,7 +84,7 @@ class coroutine{
 }
 */
 
-// web_socket_server class for your reference, skeletonized to limit my message token usage
+// web_socket_server class
 /*
 class web_socket_server{
 	protected $address;
@@ -101,7 +102,7 @@ class web_socket_server{
 }
 */
 
-// event_emitter class for your reference, skeletonized to limit my message token usage
+// event_emitter class
 /*
 class event_emitter {
 	private $listeners=[];

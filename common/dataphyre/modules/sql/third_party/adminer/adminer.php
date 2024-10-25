@@ -1,12 +1,18 @@
 <?php
-/** Adminer - Compact database management
-* @link https://www.adminer.org/
-* @author Jakub Vrana, https://www.vrana.cz/
-* @copyright 2007 Jakub Vrana
-* @license https://www.apache.org/licenses/LICENSE-2.0 Apache License, Version 2.0
-* @license https://www.gnu.org/licenses/gpl-2.0.html GNU General Public License, version 2 (one or other)
-* @version 4.8.1
-*/function
+ /*************************************************************************
+ *  2020-2024 Shopiro Ltd.
+ *  All Rights Reserved.
+ * 
+ * NOTICE: All information contained herein is, and remains the 
+ * property of Shopiro Ltd. and is provided under a dual licensing model.
+ * 
+ * This software is available for personal use under the Free Personal Use License.
+ * For commercial applications that generate revenue, a Commercial License must be 
+ * obtained. See the LICENSE file for details.
+ *
+ * This software is provided "as is", without any warranty of any kind.
+ */
+function
 adminer_errors($Cc,$Ec){return!!preg_match('~^(Trying to access array offset on value of type null|Undefined array key)~',$Ec);}error_reporting(6135);set_error_handler('adminer_errors',E_WARNING);$ad=!preg_match('~^(unsafe_raw)?$~',ini_get("filter.default"));if($ad||ini_get("filter.default_flags")){foreach(array('_GET','_POST','_COOKIE','_SERVER')as$X){$Ii=filter_input_array(constant("INPUT$X"),FILTER_UNSAFE_RAW);if($Ii)$$X=$Ii;}}if(function_exists("mb_internal_encoding"))mb_internal_encoding("8bit");function
 connection(){global$g;return$g;}function
 adminer(){global$b;return$b;}function

@@ -1,17 +1,18 @@
 <?php
-/*************************************************************************
-*  2020-2022 Shopiro Ltd.
-*  All Rights Reserved.
-* 
-* NOTICE:  All information contained herein is, and remains the 
-* property of Shopiro Ltd. and its suppliers, if any. The 
-* intellectual and technical concepts contained herein are 
-* proprietary to Shopiro Ltd. and its suppliers and may be 
-* covered by Canadian and Foreign Patents, patents in process, and 
-* are protected by trade secret or copyright law. Dissemination of 
-* this information or reproduction of this material is strictly 
-* forbidden unless prior written permission is obtained from Shopiro Ltd..
-*/
+ /*************************************************************************
+ *  2020-2024 Shopiro Ltd.
+ *  All Rights Reserved.
+ * 
+ * NOTICE: All information contained herein is, and remains the 
+ * property of Shopiro Ltd. and is provided under a dual licensing model.
+ * 
+ * This software is available for personal use under the Free Personal Use License.
+ * For commercial applications that generate revenue, a Commercial License must be 
+ * obtained. See the LICENSE file for details.
+ *
+ * This software is provided "as is", without any warranty of any kind.
+ */
+
 
 namespace dataphyre\fulltext_engine;
 
