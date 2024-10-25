@@ -41,34 +41,32 @@ Make sure to verify prerequisites for each Dataphyre module you will add to your
    ```
 
 ## Modules Overview
-
-- **Access**: Manage authentication and authorization, including support for multi-factor authentication (MFA).
-- **Aceit Engine**: Advanced experimentation and A/B testing framework.
-- **Async**: Powerful background job processing and scheduling.
-- **Cache**: Distributed caching system with native integration for improved performance across modules.
-- **Cdnclient**: Content Delivery Network integration for efficient resource distribution.
-- **Cdnserver**: Content Delivery Network integration for efficient resource distribution.
-- **Caspow**: Proof-of-work automated abuse mitigation.
 - **Core**: Core functionalities and backbone of the Dataphyre framework.
-- **Currency**: Currency management and conversion utilities.
-- **Datadoc**: Code documentation engine.
+- **Access**: Manage authentication and authorization.
+- **Aceit Engine**: The Dataphyre AceIt Engine is a sophisticated A/B testing and experimentation framework for web applications. It enables developers to set up experiments with flexible parameters, dynamically assign users to groups, and track user interactions for in-depth analysis. With custom metrics and automated reporting, it supports data-driven decision-making to enhance user experience and optimize application performance. Its modular design allows seamless integration with other Dataphyre modules, making it adaptable for various experimentation needs.
+- **Async**: A robust framework for background job processing and scheduling, offering seamless integration of Promises, Coroutines, and advanced task management features for efficient asynchronous programming.
+- **Cache**: A distributed caching system seamlessly integrated with Dataphyre, designed to enhance performance by efficiently storing and retrieving key-value pairs in memory, reducing database load and accelerating dynamic web applications.
+- **Cdn client/server**: Content Delivery Network integration for efficient resource distribution.
+- **Caspow**: Proof-of-work automated abuse mitigation.
+- **Currency**: The Dataphyre Currency Module is a PHP solution for managing currency conversion and formatting in web applications. It supports multiple currencies with features like automatic exchange rate fetching, localized formatting, and customizable base/display currencies. Ideal for e-commerce and financial applications, it ensures accurate, user-friendly currency handling for a global audience.
+- **Datadoc**: The Datadoc module in Dataphyre automates the generation and management of project documentation directly from PHP source code. Utilizing advanced parsing techniques, it organizes and updates documentation to reflect changes in the codebase. Key features include automated documentation generation, code tokenization, synchronization with source code, and security controls. This module is ideal for maintaining internal documentation, generating API references, and facilitating project handovers.
 - **Datetranslation**: Data translation layers for internationalization support.
 - **Dpanel**: Dynamic panel components for enhanced user interfaces.
-- **Firewall**: Firewall services to protect and secure Dataphyre applications.
-- **Fraudar**: Native fraud detection for e-commerce and financial applications.
+- **Firewall**: The Dataphyre Firewall module is a robust security solution designed to safeguard web applications from threats like request flooding and bot traffic. Key features include dynamic request flooding prevention, rate limiting to control incoming requests, and captcha integration to distinguish legitimate users from bots. The module is highly configurable, allowing customization of settings to meet specific security needs, and it integrates seamlessly with other Dataphyre components for enhanced functionality. With diagnostic logging for monitoring and troubleshooting, the Firewall module is essential for maintaining a secure and reliable web environment.
+- **Fraudar**: The FRAUDAR (Fraud Risk Assessment Using Data Analysis and Reporting) module in Dataphyre is designed to detect and respond to fraud risks in web applications. It analyzes user behavior and traffic patterns in real-time, employing contextual awareness and advanced data analysis techniques to differentiate between legitimate users and potential fraudsters. Key features include captcha integration, user-reported incident analysis, and customizable response actions to enhance online security. FRAUDAR provides a proactive approach to fraud prevention, ensuring a safe environment for users.
 - **Fulltextengine**: Built-in full-text search engine, scalable with optional support for Elasticsearch or Vespa.
 - **Geoposition**: Accurate geolocation services with routing and location-based search support.
 - **Googleauthenticator**: Integration of Google Authenticator for two-factor authentication.
 - **Perfstats**: Performance statistics and analytics.
 - **Profanity**: Profanity filtering and content moderation.
-- **Routing**: Route management and URL mapping for web navigation.
+- **Routing**: The Dataphyre Routing Module offers a robust solution for managing application routes, allowing developers to define URL patterns linked to specific actions or files. It supports dynamic route handling, custom responses for unmatched routes, and route validation to enhance security and user experience. The module simplifies URL management, enabling SEO-friendly and user-friendly URLs, while processing parameters for flexibility. By efficiently routing requests and providing clear feedback, it ensures an organized approach to request handling in web applications.
 - **Sanitation**: Data cleansing and sanitation for secure input handling.
-- **Scheduling**: Task scheduling and cron job management.
-- **Sql**: SQL database interactions and abstractions.
+- **Scheduling**: The Dataphyre Scheduling Module automates and manages tasks within applications, ensuring reliable execution of scripts, functions, and commands based on predefined schedules and dependencies. Key functionalities include detailed task management, dependency handling, resource consideration, and execution locks to prevent conflicts. This module supports flexible task scheduling—one-time, periodic, or conditional—and integrates seamlessly with the Dataphyre ecosystem. Practical applications include automated data processing, system health checks, user communications, and background job processing. By enhancing automation and reliability, this module plays a crucial role in maintaining efficient application operations.
+- **Sql**: The SQL module in Dataphyre simplifies secure database interactions across multiple systems like MySQL and PostgreSQL. It offers dynamic query building, caching strategies, and robust error handling, enabling efficient data management with minimal complexity.
 - **Stripe**: Stripe payment gateway integration for financial transactions.
 - **Supercookie**: Enhanced cookie management for persistent state handling.
 - **Timemachine**: Historical data tracking and rollback capabilities.
-- **Tracelog**: Real-time application logging and monitoring for debugging and performance optimization.
+- **Tracelog**: The tracelog module in Dataphyre provides powerful debugging and performance monitoring capabilities. It dynamically logs system activities, errors, and performance metrics, allowing developers to track function calls, analyze execution flow, and identify bottlenecks. With configurable output options and support for visualizing execution traces, this module enhances application stability and optimizes performance.
 
 ## Contributing
 
