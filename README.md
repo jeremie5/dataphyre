@@ -2,6 +2,8 @@
 
 **Dataphyre** is a cutting-edge, highly scalable PHP framework designed to handle applications of any size, from small prototypes to world-scale platforms. Whether you're building a simple web app or an enterprise-grade distributed system, Dataphyre is engineered to grow with your needs—without requiring significant refactoring or architecture changes.
 
+**Experience the power of Dataphyre for yourself at [Shopiro](https://shopiro.ca/).** Discover how our cutting-edge framework drives a seamless and scalable marketplace, designed for efficiency and performance. Explore our features and see how Dataphyre can transform your development process today!
+
 ## Key Features
 
 - **Infinite Scalability**: Built from the ground up to be scalable.
