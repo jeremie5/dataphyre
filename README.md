@@ -31,7 +31,7 @@ Make sure to verify prerequisites for each Dataphyre module you will add to your
 1. Clone the repository to your local environment:
 
    ```bash
-   git clone https://github.com/yourusername/dataphyre.git
+   git clone https://github.com/jeremie5/dataphyre.git
    ```
 
 2. Navigate into the project directory:
