@@ -117,7 +117,7 @@ feat: add async task scheduling to Async module
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the same license as the project. For more details, refer to the [LICENSE](LICENSE) file in this repository.
+By contributing, you agree that your contributions will be licensed under the same license as the project. For more details, refer to the [LICENSE](LICENSE.md) file in this repository.
 
 ---
 
