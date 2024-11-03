@@ -14,7 +14,7 @@
  */
 
 
-require_once($rootpath['common_dataphyre']."core.php");
+require_once($rootpath['common_dataphyre']."modules/core/core.main.php");
 
 function convert_storage($size){
 	if(is_numeric($size)){

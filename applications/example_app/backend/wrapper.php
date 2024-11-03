@@ -25,7 +25,7 @@ if(isset($_GET['tracelog'])){
 }
 
 try{
-	require_once($rootpath['common_dataphyre']."core.php");
+	require_once($rootpath['common_dataphyre']."modules/core/core.main.php");
 }catch(\Throwable $exception){
 	if(function_exists("log_error")){
 		pre_init_error("Failed to initiate Dataphyre", $exception);
