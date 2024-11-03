@@ -23,7 +23,7 @@ Dataphyre was designed with a single application in mind and is provided "as is.
 
 Before you start, make sure you have the following installed:
 
-- **PHP** (>= 8.0)
+- **PHP** (>= 8.1)
 - **Composer** for dependency management
 
 Make sure to verify prerequisites for each Dataphyre module you will add to your project.
