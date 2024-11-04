@@ -1,9 +1,5 @@
 <?php
 $app="example_app";
-$current_version='0.0.0';
-$last_update_check=time();
-$update_token='';
-$update_url='https://0.0.0.0/api/version';
 $rootpath['dataphyre']=__DIR__;
 $application_bootstrap=__DIR__."/applications/".$app."/application_bootstrap.php";
 
@@ -40,20 +36,6 @@ if(!empty($_GET['app_override'])){
 	}
 }
 
-if(time()-$last_update_check>=30){
-    $response=file_get_contents($update_url.'?token='.$update_token);
-    $apiData=json_decode($response, true);
-    if(version_compare($current_version, $apiData['version'], '<')){
-        //reinstall();
-    }
-	$data=file_get_contents(__FILE__);
-	$data=explode('\n', $data);
-	$data[3]='$last_update_check='.time().';';
-	$data=implode('\n', $data);
-	file_put_contents(__FILE__, $data);
-}
-
-unset($update_token, $update_url);
 
 if(!function_exists("log_error")){
 	function minified_font(){
@@ -102,62 +84,6 @@ if(!function_exists("log_error")){
 		echo'</html>';
 		exit();
 	}
-}
-
-function rrmdir($dir){
-    if(is_dir($dir)){
-        $objects=scandir($dir);
-        foreach($objects as $object){
-            if($object!=="." && $object!==".."){
-                if(is_dir($dir."/".$object)){
-                    rrmdir($dir."/".$object);
-                }
-				else
-				{
-                    unlink($dir."/".$object);
-                }
-            }
-        }
-        rmdir($dir);
-    }
-}
-
-function reinstall(){
-	set_time_limit(0);
-	ini_set('memory_limit', '-1');
-	if(false!==$zipFile=file_get_contents($apiData['zip_url'])){
-		if(false!==file_put_contents('update.zip', $zipFile)){
-			chmod('update.zip', 0600);
-			if(sha1_file('update.zip')===$apiData['checksum']){
-				$files=glob(__DIR__.'/*');
-				foreach($files as $file){
-					//is_dir($file) ? rrmdir($file) : unlink($file);
-				}
-				$zip=new ZipArchive;
-				if($zip->open('update.zip')===true){
-					$zip->extractTo(__DIR__);
-					$zip->close();
-					chmod('bootstrap.php', 0600);
-				} 
-				else
-				{
-					pre_init_error('Updater: Failed to extract ZIP file.');
-				}
-				$data=file_get_contents(__FILE__);
-				$data=explode('\n', $data);
-				$data[1]='$app="'.$apiData['install_type'].'";';
-				$data[2]='$current_version="'.$apiData['current_version'].'";';
-				$data[3]='$last_update_check="'.time().'";';
-				$data[4]='$update_token="'.$apiData['new_token'].'";';
-				$data=implode('\n', $data);
-				file_put_contents(__FILE__, $data);
-				exit();
-			}
-			pre_init_error('Updater: Checksum verification failed.');
-		}
-		pre_init_error('Updater: Failed saving upate file');
-	}
-	pre_init_error('Updater: Failed getting upate file');
 }
 
 try{
