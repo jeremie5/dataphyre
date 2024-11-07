@@ -43,7 +43,7 @@ Make sure to verify prerequisites for each Dataphyre module you will add to your
    ```
 
 ## Modules Overview
-- **Core**: Core functionalities, language augmentations and backbone of the Dataphyre framework.
+- [**Core**](/common/dataphyre/modules/core/documentation/Dataphyre_Core.md): Core functionalities, language augmentations and backbone of the Dataphyre framework.
 - **Access**: Manage authentication and authorization.
 - **Aceit Engine**: The Dataphyre AceIt Engine is a sophisticated A/B testing and experimentation framework for web applications. It enables developers to set up experiments with flexible parameters, dynamically assign users to groups, and track user interactions for in-depth analysis. With custom metrics and automated reporting, it supports data-driven decision-making to enhance user experience and optimize application performance. Its modular design allows seamless integration with other Dataphyre modules, making it adaptable for various experimentation needs.
 - **Async**: A robust framework for background job processing and scheduling, offering seamless integration of Promises, Coroutines, and advanced task management features for efficient asynchronous programming.
