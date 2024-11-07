@@ -13,7 +13,6 @@
  * This software is provided "as is", without any warranty of any kind.
  */
 
-
 namespace dataphyre;
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Loaded");
@@ -27,9 +26,6 @@ if(file_exists($filepath=$rootpath['common_dataphyre']."config/access.php")){
 if(file_exists($filepath=$rootpath['dataphyre']."config/access.php")){
 	require_once($filepath);
 }
-if(!isset($configurations['dataphyre']['access'])){
-	//core::unavailable("ACCESS_NO_CONFIG", "safemode");
-}
 
 if(empty($configurations['dataphyre']['access']['sessions_table_name'])){
 	$configurations['dataphyre']['access']['sessions_table_name']="dataphyre.sessions";
@@ -39,7 +35,7 @@ class access{
 	
 	static $useragent_mismatch=false;
 	
-	function __construct(){
+	public  function __construct(){
 		global $configurations;
 		if(isset($_SESSION)){
 			if(isset($_SESSION['previous_useragent'])){
@@ -47,7 +43,7 @@ class access{
 					if(REQUEST_USER_AGENT!==$_SESSION['previous_useragent']){
 						self::$useragent_mismatch=true;
 						$_SESSION['minimum_security_reqs_alert']=true;
-						access::disable_session();
+						self::disable_session();
 						if(dp_module_present('firewall')===true){
 							firewall::captcha_block_user('useragent_mismatch');
 						}
@@ -56,10 +52,10 @@ class access{
 			}
 			$_SESSION['previous_useragent']=REQUEST_USER_AGENT;
 		}
-		if(access::logged_in()===true){
-			if(access::validate_session()===false){
-				if(access::recover_session()===false){
-					if(access::disable_session()===false){
+		if(self::logged_in()===true){
+			if(self::validate_session()===false){
+				if(self::recover_session()===false){
+					if(self::disable_session()===false){
 						core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreAccess: User session is invalid, unrecoverable and couldn\'t be destroyed.', 'safemode');
 						exit();
 					}
@@ -68,7 +64,7 @@ class access{
 		}
 		else
 		{
-			access::recover_session();
+			self::recover_session();
 		}
 	}
 	
@@ -87,9 +83,9 @@ class access{
 		if(null!==$early_return=core::dialback("CALL_ACCESS_CREATE_SESSION",...func_get_args())) return $early_return;
 		global $configurations;
 		if(false!==sql::db_insert(
-			$L=$configurations["dataphyre"]["access"]["sessions_table_name"], 
+			$L=$configurations["dataphyre"]["self"]["sessions_table_name"], 
 			$F=[
-				"id"=>$id=access::create_id(), 
+				"id"=>$id=self::create_id(), 
 				"userid"=>$userid,
 				"useragent"=>REQUEST_USER_AGENT,
 				"ipaddress"=>REQUEST_IP_ADDRESS, 
@@ -100,11 +96,11 @@ class access{
 			$CC=true
 		)){
 			$website_name=strtolower(parse_url($_SERVER['HTTP_HOST'], PHP_URL_HOST));
-			setcookie('__Secure-'.$configurations["dataphyre"]["access"]["sessions_cookie_name"], $id, time()+(86400*7), '/', strtolower($website_name), true, true);
+			setcookie('__Secure-'.$configurations["dataphyre"]["self"]["sessions_cookie_name"], $id, time()+(86400*7), '/', strtolower($website_name), true, true);
 			$_SESSION['userid']=$userid;
 			$_SESSION['id']=$id;
 			$_SESSION['ipaddress']=REQUEST_IP_ADDRESS;
-			unset($_SESSION['access_no_known_recoverable_session']);
+			unset($_SESSION['self_no_known_recoverable_session']);
 			return true;
 		}
 		return false;
@@ -139,7 +135,7 @@ class access{
 	public static function userid() : bool|int {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_USERID",...func_get_args())) return $early_return;
-		if(access::logged_in()===true){
+		if(self::logged_in()===true){
 			return $_SESSION['userid'];
 		}
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Failed, user not logged-in");
@@ -223,7 +219,7 @@ class access{
 			)){
 				$_SESSION=[];
 				session_destroy();
-				$_SESSION['dp']['access_cache']['no_known_recoverable_session']=true;
+				$_SESSION['dp']['self_cache']['no_known_recoverable_session']=true;
 				unset($_SESSION['last_valid_session']);
 				setcookie("__Secure-DPID", "", time()-3600, '/');
 				setcookie("__Secure-SID", "", time()-3600, '/');
@@ -250,7 +246,7 @@ class access{
 			$V=array(false, $userid), 
 			$CC=true
 		)){
-			$_SESSION['dp']['access_cache']['no_known_recoverable_session']=true;
+			$_SESSION['dp']['self_cache']['no_known_recoverable_session']=true;
 			return true;
 		}
 		return false;
@@ -281,7 +277,7 @@ class access{
 						$CC=true
 					);
 				}
-				if(false!==$row=sql::db_select(
+				if(false!==$row=sql_select(
 					$S="*", 
 					$L=$configurations['dataphyre']['access']['sessions_table_name'], 
 					$P=[
@@ -300,7 +296,7 @@ class access{
 					}
 				}
 			}
-			access::disable_session();
+			self::disable_session();
 		}
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="No session");
 		return false;
@@ -317,11 +313,11 @@ class access{
 	public static function recover_session() : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_RECOVER_SESSION",...func_get_args())) return $early_return;
-		if(!isset($_SESSION['dp']['access_cache']['no_known_recoverable_session'])){
+		if(!isset($_SESSION['dp']['self_cache']['no_known_recoverable_session'])){
 			if(isset($_COOKIE['__Secure-'.core::get_config("dataphyre/access/sessions_cookie_name")])){
 				$id=$_COOKIE['__Secure-'.core::get_config("dataphyre/access/sessions_cookie_name")];
 				if(!isset($_SESSION['id']) || !isset($_SESSION['userid'])){
-					if(false!==$row=sql::db_select(
+					if(false!==$row=sql_select(
 						$S="*", 
 						$L=core::get_config("dataphyre/access/sessions_table_name"), 
 						$P=[
@@ -342,7 +338,7 @@ class access{
 				}
 			}
 		}
-		$_SESSION['dp']['access_cache']['no_known_recoverable_session']=true;
+		$_SESSION['dp']['self_cache']['no_known_recoverable_session']=true;
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="No session to recover");
 		return false;
 	}
@@ -383,7 +379,6 @@ class access{
 	public static function access(bool $session_required=true, bool $must_no_session=false, bool $prevent_mobile=false, bool $prevent_robot=false) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_ACCESS",...func_get_args())) return $early_return;
-		/*
 		if(isset($_SERVER['HTTP_HOST']) && filter_var($_SERVER['HTTP_HOST'], FILTER_VALIDATE_IP)){
 			ob_end_clean();
 			http_response_code(403);
@@ -404,8 +399,7 @@ class access{
 			echo'<h3>This page cannot be displayed while using direct connection</h3>';
 			exit();
 		}
-		*/
-		if($prevent_robot===true && access::is_bot()===true){
+		if($prevent_robot===true && self::is_bot()===true){
 			if(!empty(core::get_config("dataphyre/access/requires_app_redirect"))){
 				header('Location: '.core::get_config("dataphyre/access/robot_redirect"));
 				exit();
@@ -426,12 +420,12 @@ class access{
 			echo'</head>';
 			echo'<body>';
 			echo'<h1 style="font-size:60px" class="phyro-bold"><i><b>DATAPHYRE</b></i></h1>';
-			echo'<h3>This page cannot be accessed by robots.</h3>';
+			echo'<h3>This page cannot be selfed by robots.</h3>';
 			exit();
 		}
 		else
 		{
-			if($prevent_mobile===true && access::is_mobile()===true){
+			if($prevent_mobile===true && self::is_mobile()===true){
 				if(!empty(core::get_config("dataphyre/access/requires_app_redirect"))){
 					header('Location: '.core::get_config("dataphyre/access/requires_app_redirect"));
 					exit();
@@ -452,13 +446,13 @@ class access{
 				echo'</head>';
 				echo'<body>';
 				echo'<h1 style="font-size:60px" class="phyro-bold"><i><b>DATAPHYRE</b></i></h1>';
-				echo'<h3>This page cannot be accessed by mobile devices without an application.</h3>';
+				echo'<h3>This page cannot be selfed by mobile devices without an application.</h3>';
 				exit();
 			}
 			else
 			{
 				if($must_no_session===true){
-					if(access::logged_in()===true){
+					if(self::logged_in()===true){
 						tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="File ".basename($_SERVER["SCRIPT_FILENAME"])." can't be loaded as user is logged in, redirecting to homepage");
 						if(!empty(core::get_config("dataphyre/access/must_no_session_redirect"))){
 							header('Location: '.core::get_config("dataphyre/access/must_no_session_redirect"));
@@ -492,7 +486,7 @@ class access{
 				else
 				{	
 					if($session_required===false){
-						if(access::logged_in()===false){
+						if(self::logged_in()===false){
 							tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="File ".basename($_SERVER["SCRIPT_FILENAME"])." can be loaded, not logged in");
 							return true;
 						}
@@ -504,7 +498,7 @@ class access{
 					}
 					else
 					{
-						if(access::logged_in()===false){
+						if(self::logged_in()===false){
 							tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="User needs to be logged in, redirecting to login page");
 							if(!empty(core::get_config("dataphyre/access/require_session_redirect"))){
 								header('Location: '.core::get_config("dataphyre/access/require_session_redirect").'?redir='.base64_encode(ltrim($_SERVER["REQUEST_URI"], "/")));
