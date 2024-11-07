@@ -821,64 +821,6 @@ class core {
 	}
 	
 	/**
-	 * Set an environment variable within the dataphyre\core class.
-	 *
-	 * This function allows you to set a value in the static $env array.
-	 * It accepts either a string as an index and a value, or an associative array to set multiple values at once.
-	 *
-	 * @author Jérémie Fréreault <jeremie@phyro.ca>
-	 * @package dataphyre\core
-	 *
-	 * @param string|array $index The key (or keys if array) in the $env array to set.
-	 * @param mixed        $value The value to set for the given $index. Ignored if $index is an array.
-	 * 
-	 * @example
-	 * // Example 1: Set a single environment variable
-	 * dataphyre\core::set_env('key', 'value');
-	 * 
-	 * // Example 2: Set multiple environment variables at once
-	 * dataphyre\core::set_env(['key1' => 'value1', 'key2' => 'value2']);
-	 *
-	 * @common_pitfalls
-	 * 1. If an array is passed as $index, the $value parameter will be ignored.
-	 * 2. Providing a non-string key when $index is a string could lead to unexpected behavior.
-	 */
-    static function set_env(string|array $index, mixed $value=null) : void {
-        self::$env[$index]=$value;
-    }
-	
-	/**
-	 * Retrieve an environment variable from the dataphyre\core class.
-	 *
-	 * This function allows you to get a value from the static $env array using the given index.
-	 * If the index does not exist in the $env array, it returns false.
-	 *
-	 * @author Jérémie Fréreault <jeremie@phyro.ca>
-	 * @package dataphyre\core
-	 *
-	 * @param mixed $index The key in the $env array to retrieve.
-	 *
-	 * @return mixed|false Returns the value if the $index exists, otherwise returns false.
-	 * 
-	 * @example
-	 * // Example 1: Retrieve a single environment variable
-	 * $value = dataphyre\core::get_env('key');
-	 * 
-	 * // Example 2: Attempt to retrieve a non-existing key
-	 * $value = dataphyre\core::get_env('non_existing_key');  // Will return false
-	 *
-	 * @common_pitfalls
-	 * 1. Querying a non-existing index will return false, which might be confusing if the actual stored value is also false.
-	 * 2. Not explicitly checking for the boolean false could lead to incorrect logic in conditionals.
-	 */
-    static function get_env(mixed $index) : mixed {
-        if(isset(self::$env[$index])){
-            return self::$env[$index];
-        }
-        return false;
-    }
-	
-	/**
 	 * Generate a random hexadecimal color code.
 	 *
 	 * This function generates a random color code based on provided or default RGB ranges.
