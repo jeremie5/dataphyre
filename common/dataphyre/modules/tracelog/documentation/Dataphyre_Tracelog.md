@@ -2,6 +2,10 @@
 
 The `Tracelog` module in Dataphyre provides robust logging and tracing capabilities, including error handling, profiling, and debugging functionalities. It captures function calls, error details, and performance metrics, which are stored in session variables or files based on configuration. This module is essential for debugging and analyzing the execution flow and performance of applications.
 
+![Dataphyre Tracelog Viewer Example](Tracelog_Viewer_Example.png "Dataphyre Tracelog Viewer Example")
+
+![Dataphyre Tracelog Plotting Example](Tracelog_Plotting_Example.png "Dataphyre Tracelog Plotting Example")
+
 ---
 
 #### Configuration and Setup
@@ -93,7 +97,3 @@ The `Tracelog` module in Dataphyre provides robust logging and tracing capabilit
   - **Fatal**: Logs critical issues in red and saves to an error file.
 
 This module is integral for debugging and performance optimization in Dataphyre applications, offering both real-time and persistent logging solutions.
-
-![Dataphyre Tracelog Viewer Example](Tracelog_Viewer_Example.png "Dataphyre Tracelog Viewer Example")
-
-![Dataphyre Tracelog Plotting Example](Tracelog_Plotting_Example.png "Dataphyre Tracelog Plotting Example")
