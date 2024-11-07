@@ -44,9 +44,9 @@ Make sure to verify prerequisites for each Dataphyre module you will add to your
 
 ## Modules Overview
 - [**Core**](/common/dataphyre/modules/core/documentation/Dataphyre_Core.md): Core functionalities, language augmentations and backbone of the Dataphyre framework.
-- **Access**: Manage authentication and authorization.
+- [**Access**](/common/dataphyre/modules/access/documentation/Dataphyre_Access.md): Manage authentication and authorization.
 - **Aceit Engine**: The Dataphyre AceIt Engine is a sophisticated A/B testing and experimentation framework for web applications. It enables developers to set up experiments with flexible parameters, dynamically assign users to groups, and track user interactions for in-depth analysis. With custom metrics and automated reporting, it supports data-driven decision-making to enhance user experience and optimize application performance. Its modular design allows seamless integration with other Dataphyre modules, making it adaptable for various experimentation needs.
-- **Async**: A robust framework for background job processing and scheduling, offering seamless integration of Promises, Coroutines, and advanced task management features for efficient asynchronous programming.
+- [**Async**](/common/dataphyre/modules/async/documentation/Dataphyre_Async.md): A robust framework for background job processing and scheduling, offering seamless integration of Promises, Coroutines, and advanced task management features for efficient asynchronous programming.
 - **Cache**: A distributed caching system seamlessly integrated with Dataphyre, designed to enhance performance by efficiently storing and retrieving key-value pairs in memory, reducing database load and accelerating dynamic web applications.
 - **Cdn client/server**: Content Delivery Network integration for efficient resource distribution.
 - **Caspow**: The Dataphyre CASPOW (Cryptographic Anti-Spam Proof Of Work) Module enhances web application security by requiring clients to complete a computational challenge, mitigating spam and DDoS attacks. It generates customizable cryptographic challenges using SHA-256, SHA-384, or SHA-512, incorporating unique salts and adjustable difficulty based on client device type. The module verifies client responses to ensure legitimacy, making it effective for preventing automated submissions and ensuring valid requests.
