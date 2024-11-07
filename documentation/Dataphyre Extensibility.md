@@ -15,35 +15,8 @@ Dataphyre’s event-driven extensibility is managed by two core functions:
 1. **`register_dialback(string $event_name, callable $dialback_function)`**:  
    This function registers a dialback (callback) function to a specific event within Dataphyre. It checks if the dialback function exists before registering it, which prevents runtime errors due to undefined functions. If a dialback function for the event does not already exist, it initializes a new array for that event, storing multiple dialbacks to be executed in sequence.
 
-   ```php
-   public static function register_dialback(string $event_name, callable $dialback_function) {
-       if (function_exists($dialback_function)) {
-           if (!isset(core::$dialbacks[$event_name])) {
-               core::$dialbacks[$event_name] = array($dialback_function);
-               return true;
-           }
-           core::$dialbacks[$event_name][] = $dialback_function;
-           return true;
-       }
-       log_error("Dialback function $dialback_function does not exist");
-       core::unavailable(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $D="Dialback function does not exist.", $T="safemode");
-   }
-   ```
-
 2. **`dialback(string $event_name, ...$data): mixed`**:  
    This function triggers all dialback functions associated with a specific event. It accepts a variable number of parameters, passing them to each registered dialback function. By iterating over each registered function for the event, `dialback` enables you to chain operations and modify data flow dynamically.
-
-   ```php
-   public static function dialback(string $event_name, ...$data): mixed {
-       $result = null;
-       if (isset(core::$dialbacks[$event_name])) {
-           foreach (core::$dialbacks[$event_name] as $function) {
-               $result = $function($data);
-           }
-       }
-       return $result;
-   }
-   ```
 
 ### Benefits of Using Dialbacks
 - **Decoupling of Code**: Dialbacks separate custom behavior from the core framework, minimizing direct dependencies and making upgrades or replacements easier.
