@@ -48,6 +48,12 @@ function dpvks(): array {
 	if(false!=$keys=file_get_contents($rootpath['dataphyre']."config/static/dpvk")){
 		return explode(",", $keys);
 	}
+	else
+	{
+		$fallback_key=bin2hex(random_bytes(32));
+		file_put_contents($rootpath['dataphyre']."config/static/dpvk", $fallback_key);
+		return [$fallback_key];
+	}
 	if(isset($configurations['dataphyre']['private_key'])){
 		return $configurations['dataphyre']['private_key'];
 	}
