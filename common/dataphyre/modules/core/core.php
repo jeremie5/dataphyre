@@ -184,7 +184,7 @@ if(version_compare(PHP_VERSION, $ver='8.1.0')<=0){
 if(RUN_MODE==='request'){
 	if($configurations['dataphyre']['force_https_for_non_headless']!==false){
 		if(!str_starts_with(dataphyre\core::url_self(), "https")){
-			//dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreCore: Non headless execution requires the use of HTTPS.', 'safemode');
+			dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreCore: Non headless execution requires the use of HTTPS.', 'safemode');
 		}
 	}
 }
@@ -192,7 +192,7 @@ if(RUN_MODE==='request'){
 if(RUN_MODE==='headless'){
 	if($configurations['dataphyre']['force_https_for_headless']!==false){
 		if(!str_starts_with(dataphyre\core::url_self(), "https")){
-			//dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreCore: Headless execution requires the use of HTTPS.', 'safemode');
+			dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreCore: Headless execution requires the use of HTTPS.', 'safemode');
 		}
 	}
 }

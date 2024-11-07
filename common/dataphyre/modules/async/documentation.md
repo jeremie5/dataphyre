@@ -1,4 +1,4 @@
-Sure! Here are some usage examples for the `async` module you provided. These examples illustrate how you can leverage the various features of the module for asynchronous operations.
+
 
 ### Example 1: Performing Asynchronous HTTP Requests
 
@@ -157,5 +157,3 @@ async::add_to_event_loop(function() {
 // Run the event loop
 async::run_event_loop();
 ```
-
-These examples demonstrate various use cases of the `async` module, showcasing how you can manage asynchronous operations effectively. Adjust the code according to your specific requirements and integrate it into your application as needed.
