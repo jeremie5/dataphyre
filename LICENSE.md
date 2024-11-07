@@ -14,10 +14,10 @@ You are granted a complimentary license to use, modify, and distribute this soft
 
 ### 2. Commercial License
 
-If your use of this software results in revenue exceeding $500 USD per year, you are required to obtain a commercial license. This license permits you to use, modify, and distribute the software in commercial applications.
+If your use of this software results in revenue exceeding $10,000 USD per year, you are required to obtain a commercial license. This license permits you to use, modify, and distribute the software in commercial applications.
 
 #### Conditions:
-- A commercial license must be procured before utilizing this software in any application that generates revenue exceeding $500 USD per year.
+- A commercial license must be procured before utilizing this software in any application that generates revenue exceeding $10,000 USD per year.
 - You must contact the author to negotiate the terms of the commercial license, including any applicable fees.
 
 ### 3. Disclaimer of Warranty
@@ -30,4 +30,4 @@ The author reserves the right to modify or update this license agreement at any 
 
 ---
 
-For inquiries or to request a commercial license, please contact Shopiro Ltd. at [dataphyre_licensing@shopiro.ca](mailto:dataphyre_licensing@shopiro.ca).
+For inquiries or to request a commercial license, please contact Shopiro Ltd. at [licensing@dataphyre.com](mailto:licensing@dataphyre.com).
