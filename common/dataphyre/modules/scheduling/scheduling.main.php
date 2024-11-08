@@ -13,7 +13,6 @@
  * This software is provided "as is", without any warranty of any kind.
  */
 
-
 namespace dataphyre;
 
 class scheduling {
