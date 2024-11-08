@@ -36,9 +36,12 @@ class tracelog {
 	static $open=false;
 	static $file=false;
 	static $profiling=false;
-
     private static $plotting=false;
     
+	public function __construct(){
+		self::set_handler();
+	}
+	
     public static function setPlotting($value){
         if(self::$plotting!==$value){
             global $rootpath;
@@ -52,13 +55,6 @@ class tracelog {
     public static function getPlotting(){
         return self::$plotting;
     }
-
-	public function __construct(){
-		if(session_status()===PHP_SESSION_NONE){
-			session_start();
-		}
-		self::set_handler();
-	}
 	
 	/**
 	  * Catch PHP errors
@@ -71,11 +67,8 @@ class tracelog {
 		$handler=function($errno, $errstr, $errfile, $errline){
 			if(null!==$early_return=core::dialback('CALL_TRACELOG_ERROR_FOUND',...func_get_args())) return $early_return;
 			if($errno===E_ERROR || $errno===E_USER_ERROR){
-				if(stristr($errstr, 'Allowed memory size')!==false){
-					core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreTracelog: Maximum script memory limit exceeded.', 'safemode');
-				}
-				core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreTracelog: Fatal error during execution.', 'safemode');
 				log_error(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreTracelog: Fatal error during execution : '.json_encode(func_get_args()));
+				core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreTracelog: Fatal error during execution.', 'safemode');
 			}
 			if(self::$enable===true){
 				$errstr=htmlspecialchars($errstr);
