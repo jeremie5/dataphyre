@@ -13,7 +13,6 @@
  * This software is provided "as is", without any warranty of any kind.
  */
 
- 
 namespace dataphyre;
 
 use simplexml;
@@ -27,9 +26,6 @@ if(file_exists($filepath=$rootpath['common_dataphyre']."config/currency.php")){
 }
 if(file_exists($filepath=$rootpath['dataphyre']."config/currency.php")){
 	require_once($filepath);
-}
-if(!isset($configurations['dataphyre']['currency'])){
-	//core::unavailable("MOD_CURRENCY_NO_CONFIG", "safemode");
 }
 
 currency::get_exchange_rates();
