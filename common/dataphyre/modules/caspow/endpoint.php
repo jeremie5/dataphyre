@@ -14,7 +14,7 @@
  */
 
 
-require_once($rootpath['common_dataphyre']."core.php");
+require_once($rootpath['common_dataphyre']."core/core.main.php");
 
 $method=$_SERVER['REQUEST_METHOD'];
 
