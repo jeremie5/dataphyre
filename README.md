@@ -5,7 +5,7 @@ Dataphyre is a cutting-edge, highly scalable PHP framework designed to handle ap
 Experience the power of Dataphyre firsthand on [Shopiro](https://shopiro.ca). Discover how our framework drives a seamless and scalable marketplace, optimized for both efficiency and performance. Explore Dataphyre's features and see how it can transform your development process!
 
 [![PHP Version](https://img.shields.io/badge/php-%5E8.1-blue)](https://php.net)
-[![License](https://img.shields.io/badge/license-dual-important)](https://github.com/jeremie5/dataphyre/blob/main/LICENSE)
+[![License](https://img.shields.io/badge/license-dual-important)](https://github.com/jeremie5/dataphyre/LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-available-brightgreen)](https://github.com/jeremie5/dataphyre/wiki)
 [![GitHub issues](https://img.shields.io/github/issues/jeremie5/dataphyre)](https://github.com/jeremie5/dataphyre/issues)
 [![Contributors](https://img.shields.io/github/contributors/jeremie5/dataphyre)](https://github.com/jeremie5/dataphyre/graphs/contributors)
