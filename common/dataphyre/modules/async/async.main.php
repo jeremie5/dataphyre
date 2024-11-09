@@ -33,7 +33,7 @@ require_once(__DIR__."/websocket.php");
 require_once(__DIR__."/event_emitter.php");
 require_once(__DIR__."/process.php");
 
-// Promise class
+use dataphyre\async\promise;
 /*
 class promise {
 	private $state='pending';
@@ -58,7 +58,7 @@ class promise {
 }
 */
 
-// Coroutine class
+use dataphyre\async\coroutine;
 /*
 class coroutine{
 	protected static $tasks=[];
@@ -101,7 +101,7 @@ class web_socket_server{
 }
 */
 
-// event_emitter class
+use dataphyre\event_emitter;
 /*
 class event_emitter {
 	private $listeners=[];
@@ -149,10 +149,6 @@ class event_emitter {
 	public function intercept_event(string $event, callable $interceptor): void {
 }
 */
-
-use dataphyre\async\promise;
-use dataphyre\async\coroutine;
-use dataphyre\event_emitter;
 
 if(dp_module_present("tracelog")){
 	async::set_logger(function($message){
