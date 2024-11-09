@@ -9,6 +9,7 @@ Experience the power of Dataphyre firsthand on [Shopiro](https://shopiro.ca). Di
 [![Documentation](https://img.shields.io/badge/docs-available-brightgreen)](https://github.com/jeremie5/dataphyre/wiki)
 [![GitHub issues](https://img.shields.io/github/issues/jeremie5/dataphyre)](https://github.com/jeremie5/dataphyre/issues)
 [![Contributors](https://img.shields.io/github/contributors/jeremie5/dataphyre)](https://github.com/jeremie5/dataphyre/graphs/contributors)
+[![Code Size](https://img.shields.io/github/languages/code-size/jeremie5/dataphyre)](https://github.com/jeremie5/dataphyre)
 [![GitHub stars](https://img.shields.io/github/stars/jeremie5/dataphyre?style=social)](https://github.com/jeremie5/dataphyre/stargazers)
 
 ### Key Features
