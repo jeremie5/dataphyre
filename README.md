@@ -1,18 +1,21 @@
 # Dataphyre - The Ultimate PHP Framework
 
-**Dataphyre** is a cutting-edge, highly scalable PHP framework designed to handle applications of any size, from small prototypes to world-scale platforms. Whether you're building a simple web app or an enterprise-grade distributed system, Dataphyre is engineered to grow with your needs—without requiring significant refactoring or architecture changes.
+Dataphyre is a cutting-edge, highly scalable PHP framework designed to handle applications of any size, from small prototypes to world-scale platforms. Whether you're building a simple web app or an enterprise-grade distributed system, Dataphyre is engineered to grow with your needs—without requiring significant refactoring or architectural changes.
 
-**Experience the power of Dataphyre for yourself at [Shopiro](https://shopiro.ca/).** Discover how our cutting-edge framework drives a seamless and scalable marketplace, designed for efficiency and performance. Explore our features and see how Dataphyre can transform your development process today!
-
-## Key Features
-
-- **Infinite Scalability**: Built from the ground up to be scalable.
-- **Modular Ecosystem**: Comprehensive modules for everything from authentication to caching, full-text search, async tasks, and more.
+Experience the power of Dataphyre firsthand on [Shopiro](https://shopiro.ca). Discover how our framework drives a seamless and scalable marketplace, optimized for both efficiency and performance. Explore Dataphyre's features and see how it can transform your development process!
+### Key Features
+- **Infinite Scalability**: Built from the ground up to handle any level of scale, no matter how complex.
+- **Modular Ecosystem**: Comprehensive modules for everything from authentication to caching, full-text search, asynchronous tasks, and now, a powerful templating system.
+- **Templating System**: Dynamic, efficient rendering with support for caching, debugging, SEO, accessibility, component management, and conditional parsing. Templating in Dataphyre enables:
+  - **Layout Inheritance**: Easily extend base layouts to maintain consistency and flexibility.
+  - **Lazy Loading and Scoped Styles**: Optimize component loading times and style management.
+  - **SEO and Accessibility**: Ensure your templates meet modern SEO and accessibility standards effortlessly.
+  - **Flexible Rendering Options**: Full, async, and fallback render modes, along with custom slots, dynamic imports, and partials for complex templates.
 - **Native CDN Support**: Built-in support for a cost-efficient CDN system that scales with your application, eliminating reliance on expensive external solutions.
-- **Advanced Security**: Includes unique tools like Caspow (Cryptographic Anti-Spam Proof of Work) to secure your platform.
-- **Asynchronous Processing**: Powerful async task handling for background jobs, scheduled tasks, and more—perfect for high-performance applications.
-- **Full-Text Search Engine**: Includes a robust native search engine, with the ability to pair with Elasticsearch or Vespa for even more advanced search capabilities.
-- **Free for Personal Use**: Dataphyre is licensed freely for personal projects. Commercial applications will require a yearly license based on revenue.
+- **Advanced Security**: Includes unique tools like **Caspow** (Cryptographic Anti-Spam Proof of Work) to secure your platform against spam and malicious bots.
+- **Asynchronous Processing**: High-performance async task handling for background jobs, scheduled tasks, and more.
+- **Full-Text Search Engine**: Robust native search engine with the flexibility to integrate with Elasticsearch or Vespa for even more advanced search capabilities.
+- **Free for Personal Use**: Dataphyre is licensed freely for personal projects, while commercial applications require a yearly license based on revenue.
 
 ## Disclaimer
 Dataphyre was designed with a single application in mind and is provided "as is." Users are free to improve the framework, provided that these improvements do not alter the established path and mindset of the framework. Please note that some parts of the framework may be poorly documented, and there may be elements that reflect bad practices. Users are encouraged to use discretion and contribute improvements where possible.
@@ -68,6 +71,7 @@ Make sure to verify prerequisites for each Dataphyre module you will add to your
 - **Supercookie**: The Supercookie Class in the Dataphyre framework manages a single cookie that can store data in JSON format. This class enhances security and data integrity by utilizing secure flags and an intuitive interface for setting, getting, and deleting values. It simplifies cookie management while optimizing browser limits, ensuring robust session and state management in web applications.
 - [**Timemachine**](/common/dataphyre/modules/timemachine/documentation/Dataphyre_Time_Machine.md): The Time Machine module in the Dataphyre framework enables robust tracking and management of user changes, allowing for easy rollback to previous data states. Key features include automatic change logging, rollback support for error correction, and a purge mechanism for managing old logs. Security measures protect sensitive information, while user control options offer flexibility in change management. This module is essential for maintaining data integrity, ensuring compliance through audit trails, and facilitating quick error recovery.
 - [**Tracelog**](/common/dataphyre/modules/tracelog/documentation/Dataphyre_Tracelog.md): The tracelog module in Dataphyre provides powerful debugging and performance monitoring capabilities. It dynamically logs system activities, errors, and performance metrics, allowing developers to track function calls, analyze execution flow, and identify bottlenecks. With configurable output options and support for visualizing execution traces, this module enhances application stability and optimizes performance.
+- [**Templating**](/common/dataphyre/modules/templating/documentation/Dataphyre_Templating.md): The templating class in Dataphyre allows rendering templates dynamically, with modular support for caching, debugging, SEO, and accessibility.
 
 ## Contributing
 
