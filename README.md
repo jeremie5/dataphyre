@@ -27,7 +27,7 @@ Experience the power of Dataphyre firsthand on [Shopiro](https://shopiro.ca). Di
 - **Free for Personal Use**: Dataphyre is licensed freely for personal projects, while commercial applications require a yearly license based on revenue.
 
 ## Disclaimer
-Dataphyre was designed with a single application in mind and is provided "as is." Users are free to improve the framework, provided that these improvements do not alter the established path and mindset of the framework. Please note that some parts of the framework may be poorly documented, and there may be elements that reflect bad practices. Users are encouraged to use discretion and contribute improvements where possible.
+Dataphyre was designed with a single application in mind and is provided "as is." Users are free to improve the framework, provided that these improvements do not alter the established path and mindset of the framework. Please note that some parts of the framework may be poorly documented, and there may be elements that reflect bad practices. Users are encouraged to use discretion and contribute improvements where possible. Feel free to reach out on Discord, create an issue or interact through Discussions.
 
 ## Getting Started
 
