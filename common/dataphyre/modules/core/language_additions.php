@@ -1,17 +1,46 @@
 <?php
-/*************************************************************************
-*  2020-2022 Shopiro Ltd.
-*  All Rights Reserved.
-* 
-* NOTICE:  All information contained herein is, and remains the
-* property of Shopiro Ltd. and its suppliers, if any. The
-* intellectual and technical concepts contained herein are
-* proprietary to Shopiro Ltd. and its suppliers and may be
-* covered by Canadian and Foreign Patents, patents in process, and
-* are protected by trade secret or copyright law. Dissemination of
-* this information or reproduction of this material is strictly
-* forbidden unless prior written permission is obtained from Shopiro Ltd.
-*/
+ /*************************************************************************
+ *  2020-2024 Shopiro Ltd.
+ *  All Rights Reserved.
+ * 
+ * NOTICE: All information contained herein is, and remains the 
+ * property of Shopiro Ltd. and is provided under a dual licensing model.
+ * 
+ * This software is available for personal use under the Free Personal Use License.
+ * For commercial applications that generate revenue, a Commercial License must be 
+ * obtained. See the LICENSE file for details.
+ *
+ * This software is provided "as is", without any warranty of any kind.
+ */
+
+if(!function_exists("validate_json")){
+	function validate_json(string $json): bool|string {
+		json_decode($json,true);
+		switch(json_last_error()){
+			case JSON_ERROR_NONE:
+				return true;
+			break;
+			case JSON_ERROR_DEPTH:
+				return 'Maximum stack depth exceeded';
+			break;
+			case JSON_ERROR_STATE_MISMATCH:
+				return 'Underflow or the modes mismatch';
+			break;
+			case JSON_ERROR_CTRL_CHAR:
+				return 'Unexpected control character found';
+			break;
+			case JSON_ERROR_SYNTAX:
+				return 'Syntax error, malformed JSON';
+			break;
+			case JSON_ERROR_UTF8:
+				return 'Malformed UTF-8 characters, possibly incorrectly encoded';
+			break;
+			default:
+				return 'Unknown error';
+			break;
+		}
+	}
+}
 
 if(!function_exists("current_datetime")){
 	function current_datetime(): string {
