@@ -1,9 +1,30 @@
 # Dpanel Module Documentation
 
 ## Overview
-The `Dpanel` module in Dataphyre is a universal, flexible diagnostic and testing toolset tailored for both the core Dataphyre framework and any applications built on it. Designed with extensibility and robustness, `Dpanel` supports unit testing, structured output validation, error tracking, and diagnostics at a module level. It operates in `RUN_MODE` set to `dpanel`, dynamically adjusting its function to offer targeted diagnostics as specified.
 
-This document provides a detailed explanation of each component, function, and diagnostic capability within the `Dpanel` module.
+The `Dpanel` module in Dataphyre is a fully-fledged diagnostic and testing environment, designed as a powerful tool for both project and framework-level analysis. Far beyond a standard unit testing tool, `Dpanel` serves as an all-encompassing diagnostic suite with both web and in the future, CLI interfaces, capable of executing tests and diagnostics across entire applications, specific modules, or individual files. It provides a meticulous and formatted view of all system diagnostics, making it a cornerstone for any development environment built with Dataphyre.
+
+With `Dpanel`, developers can:
+
+1. **Run Comprehensive Unit Tests and Diagnostics**: `Dpanel` can execute unit tests across files, individual applications or parts thereof, or the framework or parts thereof, allowing for granular or broad-based testing as needed. This flexibility ensures that both targeted and global integrity checks can be performed seamlessly.
+
+2. **Adaptive Environmental Diagnostics**: `Dpanel` includes a suite of environment diagnostic tools that inspect both the project and framework contexts. These diagnostics check system variables, configurations, dependencies, and runtime settings. When triggered, environment diagnostics automatically integrate with `Dpanel`’s unit tests, generating a complete, formatted report that highlights any environmental inconsistencies or potential issues impacting the system.
+
+3. **Dependency and Configuration Verification**: With dynamic dependency checks for classes, functions, constants, and global variables, `Dpanel` ensures that all required resources are present and configured correctly, flagging any missing dependencies with descriptive error messages. This verification is invaluable for managing dependencies across complex applications with modular structures.
+
+4. **Dynamic and Conditional File Handling**: `Dpanel` supports condition-based path resolution, enabling it to adaptively select file paths depending on environment-specific configurations. This feature allows for smooth transitions across different setups, ensuring consistent testing and diagnostics without manual intervention.
+
+5. **Advanced Assertion and Validation Capabilities**: `Dpanel` offers flexible, condition-based assertions, allowing for regex patterns, custom scripts, and even conditional logic within validation routines. This is ideal for testing structured outputs, hierarchical data, and large nested arrays, where simple assertions fall short.
+
+6. **Performance and Resource Monitoring**: With support for performance constraints (`max_millis`), `Dpanel` can track function execution times, helping identify potential bottlenecks. This ensures that any intensive operations or resource-heavy functions remain efficient and optimized.
+
+7. **Recursive, Nested, and Granular Data Validation**: `Dpanel` enables recursive validation for nested arrays and hierarchical data structures. This is essential for applications that handle layered data, reducing the risk of data structure errors and supporting in-depth validation at every level.
+
+8. **Robust Exception and Error Management**: By capturing exceptions and tracking dependency issues, `Dpanel` flags critical errors in real-time, providing detailed feedback across tests and environmental diagnostics. This saves time on debugging by catching and contextualizing unexpected errors early in the process.
+
+9. **Extensible, Modular Architecture**: Built for extensibility, `Dpanel` allows for the addition of new diagnostic and testing features without impacting existing configurations. As projects grow or evolve, `Dpanel` can adapt to changing requirements, making it a scalable solution for long-term application maintenance.
+
+Operating in `RUN_MODE` set to `dpanel`, the module dynamically adjusts its behavior based on the chosen parameters, offering precise, tailored diagnostics for each scenario. Whether used for a quick sanity check on individual modules or for a full-scale diagnostic sweep across an entire framework, `Dpanel` provides unmatched insights and control for Dataphyre-powered PHP projects, establishing it as a critical tool for ensuring project integrity and performance. 
 
 ---
 
@@ -131,36 +152,121 @@ To handle diverse validation needs, `unit_test` includes various helper function
 
 ```json
 [
-    {
-        "name": "Basic Math Test",
-        "function": "add",
-        "file": "/math/basic_operations.php",
-        "args": [5, 7],
-        "expected": 12
+  {
+    "name": "Test Array Structure and Regex",
+    "function": "myComplexFunction",
+    "args": [["hello", "world"]],
+    "expected": [
+      {
+        "0": "array",
+        "1": ["string", {"0": "regex:/[a-zA-Z]+/"}]
+      }
+    ],
+    "dependencies": {
+      "class": [
+        {"SomeRequiredClass": "Dependency on SomeRequiredClass is missing."}
+      ],
+      "function": [
+        {"helperFunction": "Function helperFunction is required but not found."}
+      ],
+      "global_variable": [
+        {"some_global_var": "Global variable some_global_var is required but not defined."}
+      ]
     },
-    {
-        "name": "Range Test",
-        "function": "calculate_discount",
-        "file": "/sales/discounts.php",
-        "args": [450, "WINTER30"],
-        "expected": { "min": 20, "max": 50 }
+    "file": "path/to/dependencies.php"
+  },
+  {
+    "name": "Performance Test with Custom Script",
+    "function": "calculateIntensiveOperation",
+    "args": [10000],
+    "expected": [
+      {
+        "min": 5000,
+        "max": 10000,
+        "custom_script": "return $result % 2 === 0;"
+      }
+    ],
+    "max_millis": 200,
+    "dependencies": {
+      "function": [
+        {"timeConsumingHelper": "Dependency on timeConsumingHelper function is missing."}
+      ],
+      "constant": [
+        {"SOME_CONSTANT": "Constant SOME_CONSTANT is required for this test."}
+      ]
     },
-    {
-        "name": "Regex Test",
-        "function": "get_formatted_date",
-        "file": "/utils/date.php",
-        "args": ["2024-12-25"],
-        "expected": "regex:^\\d{4}-\\d{2}-\\d{2}$"
+    "file": "path/to/time_dependent_file.php"
+  },
+  {
+    "name": "Exception Handling and Array Structure",
+    "function": "processData",
+    "class": "DataProcessor",
+    "args": [["data1", {"key": "value"}]],
+    "expected": [
+      ["array", {"0": "string", "1": {"0": "array", "1": ["string", "array"]}}]
+    ],
+    "dependencies": {
+      "class": [
+        {"DataValidator": "The DataValidator class is required but not found."}
+      ],
+      "function": [
+        {"prepareData": "The helper function prepareData is needed for processing."}
+      ],
+      "global_variable": [
+        {"data_cache": "Global variable data_cache must be defined."}
+      ]
     },
-    {
-        "name": "Custom Comparison Test",
-        "function": "is_valid_email",
-        "file": "/utils/validators.php",
-        "args": ["test@example.com"],
-        "expected": { 
-            "custom_script": "$result && strpos($result, '@example.com') !== false;"
-        }
+    "static_method": false,
+    "file": "path/to/processor.php"
+  },
+  {
+    "name": "Conditional Dependency with Dynamic File",
+    "function": "conditionalProcess",
+    "args": [42],
+    "expected": [
+      {
+        "custom_script": "$result > 40 && $result < 50;"
+      }
+    ],
+    "dependencies": {
+      "function": [
+        {"alternativeFunction": "alternativeFunction must be defined for fallback processing."}
+      ],
+      "constant": [
+        {"FALLBACK_MODE": "Constant FALLBACK_MODE must be set to choose the correct file."}
+      ]
+    },
+    "file_dynamic": "'path/to/' . (defined('FALLBACK_MODE') ? 'fallback.php' : 'default.php')"
+  },
+  {
+    "name": "Recursive Array Validation with Dependency Errors",
+    "function": "complexArrayProcessor",
+    "args": [[1, [2, [3, [4]]]]],
+    "expected": [
+      {
+        "0": "array",
+        "1": [
+          {
+            "0": "array",
+            "1": [
+              {
+                "0": "array",
+                "1": ["int", "array"]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "dependencies": {
+      "function": [
+        {"recursiveHelperFunction": "Function recursiveHelperFunction must be defined for recursive processing."}
+      ],
+      "constant": [
+        {"RECURSION_DEPTH": "Constant RECURSION_DEPTH is needed for setting the recursion depth."}
+      ]
     }
+  }
 ]
 ```
 
