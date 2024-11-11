@@ -35,16 +35,16 @@ The `templating` module in Dataphyre offers a flexible and powerful templating s
 
 ---
 
-### 1. Introduction
+### Introduction
 
 The `templating` class in Dataphyre allows rendering templates dynamically, with modular support for caching, debugging, SEO, and accessibility. It uses a PHP-based syntax to manage variables, conditions, and components, aiming for a streamlined integration with other Dataphyre modules.
 
-### 2. Namespace and Requirements
+### Namespace and Requirements
 
 - **Namespace**: `namespace dataphyre;`
 - **Required Modules**: `async`, `caching`, `debugging`, `seo_accessibility`, `component_management`, `conditional_parsing`, `event_system`, `form_handling`, `render_helpers`, `rendering`, `parsing`.
 
-### 3. Main Features
+### Main Features
 
 - **Caching**: Caches templates to enhance rendering speed.
 - **Debugging**: Provides utilities for profiling and debugging.
@@ -57,7 +57,7 @@ The `templating` class in Dataphyre allows rendering templates dynamically, with
 - **Rendering**: Manages full, asynchronous, and fallback rendering modes.
 - **Parsing**: Supports template inheritance, dynamic imports, scoped variables, and PHP blocks.
 
-### 4. Class Structure
+### Class Structure
 
 ```php
 class templating {
@@ -87,7 +87,7 @@ Each `use` statement includes specific functionality:
 - **rendering**: Manages template rendering.
 - **parsing**: Parses template structure, including inheritance and dynamic imports.
 
-### 5. Template Rendering Functions
+### Template Rendering Functions
 
 #### Main Render Functions
 - `render($template_file, $data=[], $theme_values=[], $slots=[])`: Renders a template with provided data, theme values, and slot content.
@@ -102,7 +102,7 @@ Each `use` statement includes specific functionality:
 - `parse_partials($template, $data)`: Includes partial templates.
 - `parse_lazy_load_components($template, $data)`: Allows lazy loading of components.
 
-### 6. Helper Functions
+### Helper Functions
 
 - `adapt($values, $spacing=false)`: Adapts values based on the user theme.
 - `apply_helpers($template)`: Applies registered helper functions.
@@ -110,7 +110,7 @@ Each `use` statement includes specific functionality:
 - `trim_whitespace($template)`: Trims whitespace around tags.
 - `replace_placeholders($template, $data)`: Replaces placeholders with data values.
   
-### 7. Hooks and Extensions
+### Hooks and Extensions
 
 #### Event System
 - `register_event_hook($event, $callback)`: Registers an event hook for `before_render`, `after_render`, or `on_error`.
@@ -131,7 +131,7 @@ The `templating` module in Dataphyre provides robust debugging capabilities to t
 - **`render_performance_metrics()`**: Logs performance metrics related to template rendering, useful for identifying slow-performing templates.
 - **`handle_undefined_variables($template, $data)`**: Replaces any undefined variable references in the template with a placeholder (`[Undefined]`), ensuring templates render without causing fatal errors.
 
-### 9. Caching System
+### Caching System
 
 The caching mechanism in Dataphyre’s templating module improves rendering efficiency by storing template fragments, conditional results, and parsed components. This feature reduces processing time for frequently used templates or sections.
 
@@ -143,7 +143,7 @@ The caching mechanism in Dataphyre’s templating module improves rendering effi
 - **`store_in_cache($cache_key, $content, $duration)`**: Stores arbitrary content in the cache with a set duration.
 - **`get_from_cache($cache_key)`**: Retrieves content from cache based on the specified cache key.
 
-### 10. Component and Partial Management
+### Component and Partial Management
 
 Component management in the templating module allows users to define reusable UI elements or fragments and include them dynamically. This feature is ideal for larger templates that require modularization for maintainability.
 
@@ -158,14 +158,14 @@ Component management in the templating module allows users to define reusable UI
 - **`parse_partials($template, $data)`**: Loads and renders partial templates as defined by `{{include 'partial.tpl'}}`.
 - **`parse_slots($template, $data, $slots=[])`**: Allows the use of slots for content injection, enhancing flexibility for nested or parent-child template structures.
 
-### 11. SEO and Accessibility
+### SEO and Accessibility
 
 The SEO and accessibility module provides tools to ensure templates comply with best practices for search engine optimization and accessibility.
 
 - **`parse_seo_tags($template, $data)`**: Inserts SEO metadata such as meta descriptions, keywords, and Open Graph tags.
 - **`apply_transformations($template, $custom_functions=[], $filters=[])`**: Applies transformations to content for accessibility adjustments, such as image alt text or ARIA roles.
 
-### 12. Template Inheritance and Layouts
+### Template Inheritance and Layouts
 
 Dataphyre’s templating system supports layout inheritance to reduce redundancy. Developers can extend base layouts by defining blocks that child templates override as needed.
 
@@ -176,7 +176,7 @@ Dataphyre’s templating system supports layout inheritance to reduce redundancy
 - **Extending a Layout**: `{{extends 'layout.tpl'}}` to extend a base layout.
 - **Defining Blocks**: `{{block 'content'}}...{{endblock}}` to define content blocks that child templates can override.
 
-### 13. Additional Helper Methods
+### Additional Helper Methods
 
 The templating module also provides utility functions for advanced template handling and content manipulation:
 
@@ -184,7 +184,7 @@ The templating module also provides utility functions for advanced template hand
 - **`with_context($data, $block)`**: Temporarily merges data into the global context within a specific block.
 - **`for_each_scoped($items, $callback)`**: Iterates over a list of items within a scoped context, making iteration variables (`index`, `first`, `last`) accessible.
 
-### 14. Example Usage
+### Example Usage
 
 Here’s an example illustrating the templating module’s capabilities:
 
@@ -206,7 +206,7 @@ In this example:
 - `load_template_file` retrieves the `homepage.tpl` template.
 - `render` then compiles the template with data, processing components, conditionals, and any defined hooks.
 
-### 15. Advanced Usage and Customization
+### Advanced Usage and Customization
 
 The `templating` module supports advanced customization through event hooks, context management, and transformation functions, enabling developers to tailor templates to specific needs.
 
@@ -248,7 +248,7 @@ Custom transformations apply to template variables to modify output values, offe
   {{ title | slugify }}
   ```
 
-### 16. Template Security and Best Practices
+### Template Security and Best Practices
 
 To ensure secure and optimized templates:
 
@@ -256,7 +256,7 @@ To ensure secure and optimized templates:
 - **Cache Carefully**: Be cautious with dynamic content in cached templates. For example, avoid caching sensitive information or content that frequently changes.
 - **Limit PHP Execution**: While `{{php}}` tags are available for inline PHP execution, limit their use to avoid complexity and potential security issues.
 
-### 17. Troubleshooting and Common Issues
+### Troubleshooting and Common Issues
 
 #### Undefined Variables
 If a variable is missing in a template, `handle_undefined_variables` replaces it with `[Undefined]`. Use debugging functions to trace issues:
@@ -275,7 +275,7 @@ If a component template file is missing, `parse_components` logs the error:
 tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, "Component not found: $component_name");
 ```
 
-### 18. Real-World Example
+### Real-World Example
 
 Below is a comprehensive example that leverages various features of the `templating` module:
 
@@ -312,11 +312,11 @@ In this example:
 2. **Event Hook**: An event hook modifies the title to uppercase before rendering.
 3. **Template Rendering**: The template file is rendered with all provided data and hook transformations.
 
-### 19. Summary
+### Summary
 
 The `templating` module in Dataphyre is designed for flexibility and performance, combining a structured, modular approach with powerful rendering, debugging, and customization features. With careful use of caching, component management, and custom hooks, developers can build secure and scalable applications efficiently.
 
-### 20. Additional Resources and Tips
+### Additional Resources and Tips
 
 To maximize the efficiency and maintainability of templates in Dataphyre, here are a few additional practices and resources:
 
@@ -344,7 +344,7 @@ templating::register_extension('truncate', function($text, $limit) {
 ```
 Use the helper in templates as `{{ description | truncate(100) }}`.
 
-### 21. Template Syntax Reference
+### Template Syntax Reference
 
 Dataphyre’s template syntax combines HTML-like elements with custom tags. Here’s a quick reference:
 
@@ -388,7 +388,7 @@ Dataphyre’s template syntax combines HTML-like elements with custom tags. Here
 {{ requireJS "scripts" }}   // Loads scripts.js
 ```
 
-### 22. Best Practices for Performance and Scalability
+### Best Practices for Performance and Scalability
 
 To ensure the Dataphyre templating module performs optimally as the project scales:
 
@@ -398,7 +398,7 @@ To ensure the Dataphyre templating module performs optimally as the project scal
 - **Use Profiling Tools**: `render_performance_metrics` can identify slow-loading templates, enabling targeted optimizations.
 - **Monitor Cache Utilization**: Excessive caching can lead to outdated content. Regularly evaluate cache settings and clear old cache files when necessary.
 
-### 23. Example Project: Building a Product Page with Dynamic Components
+### Example Project: Building a Product Page with Dynamic Components
 
 Let’s illustrate the capabilities of Dataphyre’s templating with a mockup for a product page, using components, conditional caching, and events.
 
@@ -457,7 +457,7 @@ With this setup:
 - **Conditional Logic**: Only logged-in users see the "Add to Cart" button.
 - **Partial Inclusion**: Sidebar content loads via `partials/sidebar.tpl`.
 
-### 24. Extending the Templating Module
+### Extending the Templating Module
 
 For advanced projects, Dataphyre’s templating module can be extended to meet specific application needs. Below are ways to add custom functionality, create specialized hooks, and handle unique data-processing requirements.
 
@@ -501,7 +501,7 @@ For highly dynamic templates, you can extend parsing to interpret additional tag
   ```
   - Usage in template: `{{ product.description | markdown }}` converts markdown to HTML.
 
-### 25. Development Workflow Tips
+### Development Workflow Tips
 
 Efficient development and testing workflows are critical when working with a modular templating system. Here are some recommendations:
 
@@ -514,7 +514,7 @@ Efficient development and testing workflows are critical when working with a mod
 
 - **Automate Cache Clearing in Development**: Automate the process of clearing cached templates when files change. This step ensures that new changes are reflected immediately without manually purging the cache.
 
-### 26. Performance Optimization
+### Performance Optimization
 
 As applications scale, optimizing template rendering is crucial to ensure fast load times and efficient resource use. Here are additional performance tips:
 
@@ -522,7 +522,7 @@ As applications scale, optimizing template rendering is crucial to ensure fast l
 - **Minimize Large Data Passes**: Avoid passing large data sets to templates, especially in loops. Pre-process and filter data in the controller or backend logic, then pass only necessary information to the template.
 - **Precompile Frequently Used Components**: Components that rarely change, like footers or navigation menus, can be precompiled and stored as static HTML. 
 
-### 27. Security Best Practices
+### Security Best Practices
 
 The templating module provides built-in protections, but further steps can enhance security:
 
@@ -530,7 +530,7 @@ The templating module provides built-in protections, but further steps can enhan
 - **Avoid Inline PHP Execution**: Limit use of `{{php}}` blocks. For essential PHP code, validate all inputs and avoid executing unknown data directly.
 - **Securely Handle Sensitive Information**: Avoid passing sensitive data directly to templates. If necessary, ensure they’re not cached or exposed in client-side code.
 
-### 28. Documentation and Maintenance
+### Documentation and Maintenance
 
 To maintain a clean and understandable template structure, regularly document custom filters, helpers, and component functions. A well-documented template repository allows other developers to collaborate easily, ensures the project’s scalability, and enables smoother handoffs.
 
@@ -545,7 +545,7 @@ To maintain a clean and understandable template structure, regularly document cu
 
 Regular updates to this documentation ensure consistency and aid future development or debugging processes.
 
-### 29. Summary
+### Summary
 
 Dataphyre’s templating module is a comprehensive and customizable solution for PHP-based applications. With its support for reusable components, caching, SEO, and event handling, it allows developers to build scalable, maintainable applications efficiently. 
 
