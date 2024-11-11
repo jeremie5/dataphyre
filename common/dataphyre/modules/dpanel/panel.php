@@ -16,7 +16,7 @@
 
 ini_set('display_errors', 0);
  
-require(__DIR__."/functions.php");
+require(__DIR__."/dpanel.main.php");
 
 if(isset($_POST['full_diagnosis'])){
 	$full_diagnosis_result=full_diagnosis();
@@ -32,13 +32,13 @@ else
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
-    <title>Dataphyre Diagnosis Panel</title>
+    <title>Dataphyre Dpanel</title>
   </head>
   <body>
 	<div class="container pt-5 ">
 		<div class="row justify-content-center">
 			<div class="col col-lg-10">
-				<h1 class="text-center">Dataphyre Diagnosis Panel</h1>
+				<h1 class="text-center">Dataphyre Dpanel</h1>
 				<div class="py-3">
 					<div class="card bg-dark text-white p-2" style="height:750px;overflow:auto;">
 						<div class="">

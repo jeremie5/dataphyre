@@ -1,0 +1,38 @@
+[
+    {
+        "name": "Basic Dialback Event",
+        "function": "dialback",
+        "args": ["sample_event", {"key1": "value1", "key2": 42}],
+        "expected": [
+            {
+                "custom_script": "return is_array($result) && count($result) > 0;"
+            },
+            "array"
+        ],
+       "file_dynamic": "return dp_module_present(\"core\");",
+        "max_millis": 5
+    },
+    {
+        "name": "Empty Dialback Event",
+        "function": "dialback",
+        "args": ["nonexistent_event"],
+        "expected": [
+            null
+        ],
+        "file_dynamic": "return dp_module_present(\"core\");",
+        "max_millis": 5
+    },
+    {
+        "name": "Dialback Event with Multiple Functions",
+        "function": "dialback",
+        "args": ["multi_func_event", {"data_key": "data_value"}],
+        "expected": [
+            {
+                "custom_script": "return is_array($result) && count($result) > 1;"
+            },
+            "array"
+        ],
+        "file_dynamic": "return dp_module_present(\"core\");",
+        "max_millis": 5
+    }
+]
