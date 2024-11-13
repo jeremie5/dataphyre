@@ -1,6 +1,6 @@
 [![Dataphyre Logo](logo.png)](logo.png)
 
-# Dataphyre - The Ultimate PHP Framework
+# The Ultimate PHP Framework
 
 Dataphyre is a cutting-edge, highly scalable PHP framework designed to handle applications of any size, from small prototypes to world-scale platforms. Whether you're building a simple web app or an enterprise-grade distributed system, Dataphyre is engineered to grow with your needs—without requiring significant refactoring or architectural changes.
 
