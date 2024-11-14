@@ -1,4 +1,4 @@
-[![Dataphyre Logo](logo.png)](logo.png)
+![Dataphyre Logo](logo.png)
 
 # The Ultimate PHP Framework
 
