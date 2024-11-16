@@ -532,11 +532,11 @@ class postgresql_query_builder {
 		foreach($endpoints as $endpoint){
 			try{
 				$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint, $dbms_cluster);
+				$query="DELETE FROM ".$location." ".$params;
 				// Start: Basic MySQL compatibility layer
 				$query=str_ireplace("UNIX_TIMESTAMP()","NOW()", $query);
 				$query=str_ireplace("UNIX_TIMESTAMP(","TO_TIMESTAMP(", $query);
 				// End: Basic MySQL compatibility layer
-				$query="DELETE FROM ".$location." ".$params;
 				if(!empty($vars)){
 					$query=preg_replace_callback('/\?/', function($matches){static $index=0;return'$'.(++$index);}, $query);
 					if(!$stmt=pg_prepare($conn, "", $query)){
