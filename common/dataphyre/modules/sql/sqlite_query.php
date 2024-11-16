@@ -13,7 +13,6 @@
  * This software is provided "as is", without any warranty of any kind.
  */
 
-
 namespace dataphyre;
 
 register_shutdown_function(function(){
@@ -309,24 +308,24 @@ class sqlite_query_builder {
 		if(is_array($vars)){
 			$stmt=$conn->prepare("SELECT COUNT(*) as count FROM ".$location." ".$params);
 			if($stmt===false){
-				return 0; // Return 0 ifpreparation fails
+				return 0; // Return 0 if preparation fails
 			}
 			foreach($vars as $index => $var){
 				$stmt->bindValue($index + 1, $var);
 			}
 			$result=$stmt->execute();
 			if($result===false){
-				return 0; // Return 0 ifexecution fails
+				return 0; // Return 0 if execution fails
 			}
 			$row=$result->fetchArray(SQLITE3_ASSOC);
 			$stmt->close();
-			return $row['count'] ?? 0; // Return count or 0 ifnot found
+			return $row['count'] ?? 0; // Return count or 0 if not found
 		}
 		$result=$conn->querySingle("SELECT COUNT(*) as count FROM ".$location." ".$params, true);
 		if($result===false){
-			return 0; // Return 0 ifquery fails
+			return 0; // Return 0 if query fails
 		}
-		return $result['count'] ?? 0; // Return count or 0 ifnot found
+		return $result['count'] ?? 0; // Return count or 0 if not found
 	}
 	
 	public static function sqlite_update(string $dbms_cluster, string $location, string $fields, string $params, array $vars) : bool|int {
@@ -340,14 +339,14 @@ class sqlite_query_builder {
 			if(is_array($vars)){
 				$stmt=$conn->prepare("UPDATE ".$location." SET ".$fields." ".$params);
 				if($stmt===false){
-					return false; // Return false ifpreparation fails
+					return false; // Return false if preparation fails
 				}
 				foreach($vars as $index => $value){
 					$stmt->bindValue($index + 1, $value);
 				}
 				$result=$stmt->execute();
 				$stmt->close();
-				return $result !== false; // Return true ifexecution is successful
+				return $result !== false; // Return true if execution is successful
 			} else {
 				return $conn->exec("UPDATE ".$location." SET ".$fields." ".$params) !== false;
 			}
@@ -381,7 +380,7 @@ class sqlite_query_builder {
 		$execute_insert=function($conn) use ($location, $fields, $fields_question_marks, $vars){
 			$stmt=$conn->prepare("INSERT OR IGNORE INTO ".$location." (".$fields.") VALUES (".$fields_question_marks.")");
 			if($stmt===false){
-				return false; // Return false ifpreparation fails
+				return false; // Return false if preparation fails
 			}
 			foreach($vars as $index => $value){
 				$stmt->bindValue($index + 1, $value);
@@ -416,7 +415,7 @@ class sqlite_query_builder {
 			$query="DELETE FROM ".$location." ".$params;
 			$stmt=$conn->prepare($query);
 			if($stmt===false){
-				return false; // Return false ifpreparation fails
+				return false; // Return false if preparation fails
 			}
 			if(isset($vars)){
 				foreach($vars as $index => $value){
