@@ -46,6 +46,36 @@ class tracelog {
 		self::set_handler();
 	}
 	
+	public static function buffer_callback(mixed $buffer): mixed {
+		if(tracelog::$open===true){
+			$all_defined_functions=function(){
+				$global_functions=get_defined_functions()['user'];
+				$class_methods=[];
+				$classes=get_declared_classes();
+				foreach($classes as $class){
+					$reflection=new \ReflectionClass($class);
+					if($reflection->isUserDefined()){
+						$methods=get_class_methods($class);
+						$class_methods=array_merge($class_methods, $methods);
+					}
+				}
+				return count($global_functions)+count($class_methods);
+			};
+			$_SESSION['memory_used']=memory_get_usage();
+			$_SESSION['memory_used_peak']=memory_get_peak_usage();
+			if(is_int($function_count=$all_defined_functions())){
+				$_SESSION['defined_user_function_count']=$function_count;
+			}
+			$_SESSION['exec_time']=microtime(true)-$_SERVER["REQUEST_TIME_FLOAT"];
+			$_SESSION['included_files']=count(get_included_files());
+			if(tracelog::getPlotting()===true){
+				return $buffer."<script>window.open('".core::url_self()."dataphyre/tracelog/plotter', '_blank', 'width=1000, height=1000');</script>";
+			}
+			return $buffer."<script>window.open('".core::url_self()."dataphyre/tracelog?log=".tracelog::$file."', '_blank', 'width=1000, height=1000');</script>";
+		}
+		return $buffer;
+	}
+	
     public static function setPlotting($value){
         if(self::$plotting!==$value){
             global $rootpath;

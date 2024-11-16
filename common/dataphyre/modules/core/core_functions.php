@@ -1118,38 +1118,13 @@ class core {
 	 */
 	public static function buffer_minify(mixed $buffer) : mixed {
 		if(class_exists('dataphyre\tracelog')){
-			if(tracelog::$open===true){
-				$all_defined_functions=function(){
-					$global_functions=get_defined_functions()['user'];
-					$class_methods=[];
-					$classes=get_declared_classes();
-					foreach($classes as $class){
-						$reflection=new \ReflectionClass($class);
-						if($reflection->isUserDefined()){
-							$methods=get_class_methods($class);
-							$class_methods=array_merge($class_methods, $methods);
-						}
-					}
-					return count($global_functions)+count($class_methods);
-				};
-				$_SESSION['memory_used']=memory_get_usage();
-				$_SESSION['memory_used_peak']=memory_get_peak_usage();
-				if(is_int($function_count=$all_defined_functions())){
-					$_SESSION['defined_user_function_count']=$function_count;
-				}
-				$_SESSION['exec_time']=microtime(true)-$_SERVER["REQUEST_TIME_FLOAT"];
-				$_SESSION['included_files']=count(get_included_files());
-				if(tracelog::getPlotting()===true){
-					return $buffer."<script>window.open('".core::url_self()."dataphyre/tracelog/plotter', '_blank', 'width=1000, height=1000');</script>";
-				}
-				return $buffer."<script>window.open('".core::url_self()."dataphyre/tracelog?log=".tracelog::$file."', '_blank', 'width=1000, height=1000');</script>";
-			}
+			$buffer=\dataphyre\tracelog::buffer_callback($buffer);
 		}
 		if(class_exists('dataphyre\sql')===true){
 			$_SESSION['queries_retrieved_from_cache']=0;
 			$_SESSION['db_cache_count']=0;
 		}
-		if(core::get_config('dataphyre/core/minify')===true){
+		if(\dataphyre\core::get_config('dataphyre/core/minify')===true){
 			$buffer=preg_replace('/(?:(?:^|\s)\/\/(?!\'|").*|\/\*[\s\S]*?\*\/)/m', '', $buffer);
 			$buffer=str_replace(["\r\n", "\n", "\r", "\t", '    ', '    '], '', $buffer);
 			$buffer=str_replace(['=""', ';">'], ['', '">'], $buffer);
@@ -1410,12 +1385,12 @@ class core {
 	static function splash(int $padding=1): string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CORE_SPLASH",...func_get_args())) return $early_return;
-		$splash=str_repeat('\t', $padding).'	██████╗   ███╗ ████████╗ ███╗  ██████╗ ██╗  ██╗██╗   ██╗██████╗ ███████╗'.PHP_EOL;
-		$splash.=str_repeat('\t', $padding).'██╔══██╗ ██║██╗╚══██╔══╝██║██╗ ██╔══██║██║  ██║╚██╗ ██╔╝██╔══██╗██╔════╝'.PHP_EOL;
-		$splash.=str_repeat('\t', $padding).'██║  ██║██║  ██║  ██║  ██║  ██║██║████║██║  ██║  ╚╝██║  ██║  ██║███████╗'.PHP_EOL;
-		$splash.=str_repeat('\t', $padding).'██║  ██║██║  ██║  ██║  ██║  ██║██║═══╝ ███████║   ██╔╝  ██║████║██╔════╝'.PHP_EOL;
-		$splash.=str_repeat('\t', $padding).'██║███╔╝██║  ██║  ██║  ██║  ██║██║     ██║  ██║   ██║   ██║  ██║███████╗'.PHP_EOL;
-		$splash.=str_repeat('\t', $padding).'╚═╝╚══╝ ╚═╝  ╚═╝  ╚═╝  ╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚══════╝'.PHP_EOL;
+		$splash=str_repeat("\t", $padding).'██████╗   ███╗ ████████╗ ███╗  ██████╗ ██╗  ██╗██╗   ██╗██████╗ ███████╗'.PHP_EOL;
+		$splash.=str_repeat("\t", $padding).'██╔══██╗ ██║██╗╚══██╔══╝██║██╗ ██╔══██║██║  ██║╚██╗ ██╔╝██╔══██╗██╔════╝'.PHP_EOL;
+		$splash.=str_repeat("\t", $padding).'██║  ██║██║  ██║  ██║  ██║  ██║██║████║██║  ██║  ╚╝██║  ██║  ██║███████╗'.PHP_EOL;
+		$splash.=str_repeat("\t", $padding).'██║  ██║██║  ██║  ██║  ██║  ██║██║═══╝ ███████║   ██╔╝  ██║████║██╔════╝'.PHP_EOL;
+		$splash.=str_repeat("\t", $padding).'██║███╔╝██║  ██║  ██║  ██║  ██║██║     ██║  ██║   ██║   ██║  ██║███████╗'.PHP_EOL;
+		$splash.=str_repeat("\t", $padding).'╚═╝╚══╝ ╚═╝  ╚═╝  ╚═╝  ╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚══════╝'.PHP_EOL;
 		return $splash;
 	}
 	
