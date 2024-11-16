@@ -1,60 +1,113 @@
 ### Dataphyre Routing Module Documentation
 
-The **Routing Module** in Dataphyre handles incoming URL requests, routing them to the appropriate resources. It processes dynamic routes, validates URL patterns, and supports a range of parameter validation formats, enhancing URL handling and error management.
+The Routing Module in Dataphyre processes incoming URL requests, routing them to the appropriate resources. It manages dynamic routes, validates URL patterns, and supports extensive parameter validation formats, ensuring robust URL handling and error management.
 
-#### Key Components
+---
 
-1. **Initialization and Configuration**
-   - Loads routing configurations and defines a `404 Not Found` fallback.
-   - **`routing::not_found()`**: Redirects to a configured error page or displays a `404` error if no page is specified.
+### **Key Components**
 
-2. **Routing Mechanism**
-   - **Routing Class (`routing`)**: Manages routing operations and validates URL paths based on pre-defined routes.
-   - **Properties**:
-     - **`$page`**: Holds the current page's route.
-     - **`$realpage`**: Stores the actual file path for the current route.
+#### **Initialization and Configuration**
+- Loads routing configurations from pre-defined files and initializes required settings.
+- Ensures fallback to a 404 Not Found page when no route matches:
+  - `routing::not_found()`: Redirects to a configured error page or displays a custom 404 error if no page is specified.
 
-3. **Methods**
+---
 
-   - **`not_found()`**: Called if the requested route doesn’t match any known routes. Redirects or returns a `404` error.
-   - **`set_page($file)`**: Sets the current page and normalizes the file path. Returns the updated file path.
-   - **`check_route($route, $file)`**: Core method for validating the route. Checks if the current request matches the given route.
-     - Uses **route parameters** (enclosed in `{}`) to capture dynamic values in the URL.
-     - If matched, calls **`set_page()`** to establish the current page.
+### **Routing Mechanism**
 
-4. **Parameter Processing and Validation**
-   - **`process_format_params($param_matches, $request, $route)`**: Validates and processes dynamic parameters in the route. This method parses parameters embedded within the route and verifies them against various rules.
-   - **Supported Format Rules**:
-     - **Starts/Ends With**:
-       - `starts_with_and_length_is`: Matches if the parameter starts with a specified string and meets a specific length.
-       - `ends_with_and_length_is`: Matches if the parameter ends with a specific string and length.
-       - `starts_with`, `ends_with`: Matches if the parameter starts or ends with a specified substring.
-     - **Character-based Rules**:
-       - `character_at_position_is`: Matches if a specified character exists at a given position in the parameter.
-       - `length_is`: Ensures the parameter has an exact length.
-     - **Data Type Rules**:
-       - `is_integer`, `is_numeric`, `is_string`: Validates the parameter as an integer, numeric, or string.
-       - `is_urlcoded_json`: Checks if the parameter is URL-encoded JSON.
-       - `is_md5`: Matches if the parameter is a valid MD5 hash.
-       - `is_uuid`: Matches if the parameter is a valid UUID.
-   - **Multi-Segment Parameter** (`...`): Captures all remaining path segments after a given point in the route. Supports flexible parameter structures for dynamic routes.
+#### **Routing Class**
+The `routing` class manages URL routing operations, validates paths against routes, and handles unmatched requests.
 
-5. **Global Parameter Storage**
-   - **`$_PARAM`**: Global array to store validated parameters from the URL. Accessible throughout the application for retrieving dynamic route values.
+**Properties:**
+- `$page`: Holds the current route's resolved page path.
+- `$realpage`: Stores the actual file path for the matched route.
+- `$route_non_match_count`: Tracks the number of routes evaluated before finding a match.
+- `$verbose_non_match`: Enables detailed logging for non-matching routes.
 
-#### Error Handling
+**Methods:**
+1. **`not_found()`**: Handles unmatched routes by redirecting to a configured error page or displaying a 404 message.
+2. **`set_page($file)`**: Normalizes and sets the current page. Returns the resolved file path.
+3. **`check_route($route, $file)`**: Validates a route against the current request URI.
+   - **Features:**
+     - Captures dynamic route parameters using `{param}` notation.
+     - Calls `set_page()` upon successful matching.
+     - Logs details for matched and unmatched routes (when verbose mode is enabled).
 
-- **404 Not Found Handling**:
-  - Redirects to a specified error page or displays a custom `404` error message.
+---
 
-#### Example
+### **Parameter Processing and Validation**
 
-Suppose a route is defined as `/user/{userId}/profile`, where `{userId}` is validated to be an integer:
-- **Request URL**: `/user/123/profile`
-- **Parameter Matching**:
-  - `userId` is extracted and validated as an integer.
-  - Sets `$page` to the resolved profile page path if matched, or calls `not_found()` for invalid or unmatched URLs.
+#### **`process_format_params($param_matches, $request, $route)`**
+Validates and processes dynamic parameters embedded in routes. Each parameter can follow strict validation rules, ensuring routes are robust and secure.
 
-#### Summary
+**Supported Format Rules:**
+- **Starts/Ends With:**
+  - `starts_with_and_length_is`: Matches parameters starting with a specific string and of a specific length.
+  - `ends_with_and_length_is`: Matches parameters ending with a specific string and of a specific length.
+  - `starts_with`, `ends_with`: Matches parameters based on substrings.
 
-The Routing Module in Dataphyre provides a robust mechanism for handling dynamic routes with comprehensive parameter validation, error handling, and format-specific rules. This ensures URLs are processed accurately and dynamically, enabling flexible routing while maintaining strict validation standards.
+- **Character-based Rules:**
+  - `character_at_position_is`: Matches a character at a specified position in the parameter.
+  - `length_is`: Ensures the parameter has an exact length.
+
+- **Data Type Rules:**
+  - `is_integer`, `is_numeric`, `is_string`: Validates parameters as integers, numeric values, or strings.
+  - `is_urlcoded_json`: Checks if the parameter is valid URL-encoded JSON.
+  - `is_md5`: Matches parameters against valid MD5 hashes.
+  - `is_uuid`: Matches parameters against valid UUIDs.
+
+- **Multi-Segment Parameter (`...`):**
+  Captures all remaining path segments after a specific point in the route. Useful for flexible, dynamic routes.
+
+#### **Global Parameter Storage**
+- **`$_PARAM`**: A global array that stores all validated route parameters, making them accessible throughout the application.
+
+---
+
+### **Error Handling**
+
+- **404 Not Found Handling:**
+  - Redirects unmatched routes to a configured error page.
+  - Displays a custom 404 message if no error page is configured.
+
+---
+
+### **Detailed Logging**
+When `$verbose_non_match` is enabled, detailed logs for route matching are generated:
+- Logs non-matching routes with reasons for failure.
+- Provides verbose match information for debugging.
+
+---
+
+### **Example**
+
+#### **Defined Route**
+Suppose a route is defined as `/user/{userId}/profile`, where `{userId}` must be validated as an integer.
+
+#### **Incoming Request**
+- **URL:** `/user/123/profile`
+
+#### **Parameter Matching**
+1. `userId` is extracted from the route and validated as an integer.
+2. If valid, `$page` is set to the resolved profile page path.
+3. If invalid, `not_found()` is called to handle the unmatched route.
+
+---
+
+### **Usage Example**
+
+#### **Route Configuration**
+```php
+routing::check_route('/user/{userId}/profile', '/views/user_profile.php');
+```
+
+#### **Request Handling**
+- Request: `/user/123/profile`
+- Matches `/user/{userId}/profile`
+- Parameter extracted: `userId = 123`
+- Resolved file: `/views/user_profile.php`
+
+---
+
+### **Summary**
+The Dataphyre Routing Module is a powerful tool for managing dynamic routes with strict parameter validation and robust error handling. By supporting a wide range of validation rules and flexible configurations, it ensures accurate and secure URL processing, adaptable to any web application's needs.
