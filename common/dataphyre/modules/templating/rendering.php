@@ -56,6 +56,8 @@ trait rendering {
             $template=self::parse_partials($template, $data);
             $template=self::compose_components($template, $data);
             $template=self::bind_data($template, $data);
+			$template=self::apply_tags($template, $data);
+			$template=self::apply_filters($template, $data);
             $template=self::parse_slots($template, $data, $slots);
             $template=self::parse_fragment_cache($template);
             $template=self::parse_php_blocks($template);
