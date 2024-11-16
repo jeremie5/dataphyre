@@ -2,9 +2,12 @@
 
 # The Ultimate PHP Framework
 
-Dataphyre is a cutting-edge, highly scalable PHP framework designed to handle applications of any size, from small prototypes to world-scale platforms. Whether you're building a simple web app or an enterprise-grade distributed system, Dataphyre is engineered to grow with your needs—without requiring significant refactoring or architectural changes.
+> Why reinvent the wheel when you can just make the wheel faster.
 
-Experience the power of Dataphyre firsthand on [Shopiro](https://shopiro.ca). Discover how our framework drives a seamless and scalable marketplace, optimized for both efficiency and performance. Explore Dataphyre's features and see how it can transform your development process!
+Dataphyre is a **cutting-edge, highly scalable PHP framework** built to handle anything from small prototypes to enterprise-grade, world-scale platforms. Whether you're building a **simple web app** or a **global distributed system**, Dataphyre adapts to your needs—no refactoring, no bloat, no limits.
+
+### **Proven at Scale**  
+Meet [**Shopiro**](https://shopiro.ca), a global marketplace powered by Dataphyre. With product pages processed in an incredible **25ms**—faster than the blink of an eye— Shopiro proves what’s possible when cutting-edge performance meets world-class scalability.
 
 [![PHP Version](https://img.shields.io/badge/php-%5E8.1-blue)](https://php.net)
 [![License](https://img.shields.io/badge/license-dual-important)](https://github.com/jeremie5/dataphyre/blob/main/LICENSE.md)
@@ -55,33 +58,54 @@ Make sure to verify prerequisites for each Dataphyre module you will add to your
    ```bash
    cd dataphyre
    ```
+---
 
-## Modules Overview
-- [**Core**](/common/dataphyre/modules/core/documentation/Dataphyre_Core.md): Core functionalities, language augmentations and backbone of the Dataphyre framework.
-- [**Access**](/common/dataphyre/modules/access/documentation/Dataphyre_Access.md): Manage authentication and authorization.
-- **Aceit Engine**: The Dataphyre AceIt Engine is a sophisticated A/B testing and experimentation framework for web applications. It enables developers to set up experiments with flexible parameters, dynamically assign users to groups, and track user interactions for in-depth analysis. With custom metrics and automated reporting, it supports data-driven decision-making to enhance user experience and optimize application performance. Its modular design allows seamless integration with other Dataphyre modules, making it adaptable for various experimentation needs.
-- [**Async**](/common/dataphyre/modules/async/documentation/Dataphyre_Async.md): A robust framework for background job processing and scheduling, offering seamless integration of Promises, Coroutines, and advanced task management features for efficient asynchronous programming.
-- **Cache**: A distributed caching system seamlessly integrated with Dataphyre, designed to enhance performance by efficiently storing and retrieving key-value pairs in memory, reducing database load and accelerating dynamic web applications.
-- **Cdn** [**client**](/common/dataphyre/modules/cdn/documentation/Dataphyre_CDN_Client.md)/[**server**](/common/dataphyre/modules/cdn_server/documentation/Dataphyre_CDN_Server.md): Content Delivery Network integration for efficient resource distribution.
-- [**CASPOW**](/common/dataphyre/modules/caspow/documentation/Dataphyre_CASPOW.md): The Dataphyre CASPOW (Cryptographic Anti-Spam Proof Of Work) Module enhances web application security by requiring clients to complete a computational challenge, mitigating spam and DDoS attacks. It generates customizable cryptographic challenges using SHA-256, SHA-384, or SHA-512, incorporating unique salts and adjustable difficulty based on client device type. The module verifies client responses to ensure legitimacy, making it effective for preventing automated submissions and ensuring valid requests.
-- [**Currency**](/common/dataphyre/modules/currency/documentation/Dataphyre_Currency.md): The Dataphyre Currency Module is a PHP solution for managing currency conversion and formatting in web applications. It supports multiple currencies with features like automatic exchange rate fetching, localized formatting, and customizable base/display currencies. Ideal for e-commerce and financial applications, it ensures accurate, user-friendly currency handling for a global audience.
-- [**Datadoc**](/common/dataphyre/modules/datadoc/documentation/Dataphyre_Datadoc.md): The Datadoc module in Dataphyre automates the generation and management of project documentation directly from PHP source code. Utilizing advanced parsing techniques, it organizes and updates documentation to reflect changes in the codebase. Key features include automated documentation generation, code tokenization, synchronization with source code, and security controls. This module is ideal for maintaining internal documentation, generating API references, and facilitating project handovers.
-- [**Date Translation**](/common/dataphyre/modules/date_translation/documentation/Dataphyre_Date_Translation.md): Data translation layers for internationalization support.
-- [**Firewall**](/common/dataphyre/modules/firewall/documentation/Dataphyre_Firewall.md): The Dataphyre Firewall module is a robust security solution designed to safeguard web applications from threats like request flooding and bot traffic. Key features include dynamic request flooding prevention, rate limiting to control incoming requests, and captcha integration to distinguish legitimate users from bots. The module is highly configurable, allowing customization of settings to meet specific security needs, and it integrates seamlessly with other Dataphyre components for enhanced functionality. With diagnostic logging for monitoring and troubleshooting, the Firewall module is essential for maintaining a secure and reliable web environment.
-- [**Fulltext Engine**](/common/dataphyre/modules/fulltext_engine/documentation/Dataphyre_Fulltext_Engine.md): The Dataphyre Fulltext Engine Module enables advanced full-text search capabilities in applications. Supporting multiple backends like SQLite, SQL, Elasticsearch, and Vespa, it offers features such as tokenization, stemming, stopword removal, and various search algorithms to enhance match accuracy. Users can create and manage indexes, execute flexible search queries, and obtain relevance-scored results tailored to specific use cases. With language support and integration options for external engines, this module facilitates the development of robust, multi-lingual search experiences.
-- [**Geoposition**](/common/dataphyre/modules/geoposition/documentation/Dataphyre_Geoposition.md): The Geoposition Dataphyre Module provides robust geolocation functionalities, including postal code formatting and validation, position retrieval based on postal codes or subdivisions, and distance calculations. It enables applications to standardize and verify postal codes, fetch geographical coordinates, and compute distances using Haversine and Vincenty algorithms. This module enhances location-based services and analyses, making it ideal for applications requiring precise geolocation data.
-- **Googleauthenticator**: Integration of Google Authenticator for two-factor authentication.
-- **Perfstats**: Performance statistics and analytics.
-- [**Profanity**](/common/dataphyre/modules/profanity/documentation/Dataphyre_Profanity.md): The Dataphyre Profanity Module detects and evaluates profanity in user inputs using customizable, context-sensitive rulesets across multiple languages. Key features include unscrubbing obfuscated text, scoring profane words, and integrating with the fulltext engine for effective content moderation. This module helps maintain a respectful digital environment by filtering inappropriate content and analyzing user feedback.
-- [**Routing**](/common/dataphyre/modules/routing/documentation/Dataphyre_Routing.md): The Dataphyre Routing Module offers a robust solution for managing application routes, allowing developers to define URL patterns linked to specific actions or files. It supports dynamic route handling, custom responses for unmatched routes, and route validation to enhance security and user experience. The module simplifies URL management, enabling SEO-friendly and user-friendly URLs, while processing parameters for flexibility. By efficiently routing requests and providing clear feedback, it ensures an organized approach to request handling in web applications.
-- [**Sanitation**](/common/dataphyre/modules/sanitation/documentation/Dataphyre_Sanitation.md): The Dataphyre Sanitation Module ensures data integrity and security by sanitizing and anonymizing sensitive or user-provided data. It prevents vulnerabilities such as cross-site scripting (XSS) and SQL injection attacks through functionalities like email anonymization, data sanitization for various formats (URLs, phone numbers), and advanced pattern matching. This module enhances data privacy, prevents injection attacks, and maintains data quality while being easily extendable and efficient for high-volume applications.
-- [**Scheduling**](/common/dataphyre/modules/scheduling/documentation/Dataphyre_Scheduling.md): The Dataphyre Scheduling Module automates and manages tasks within applications, ensuring reliable execution of scripts, functions, and commands based on predefined schedules and dependencies. Key functionalities include detailed task management, dependency handling, resource consideration, and execution locks to prevent conflicts. This module supports flexible task scheduling—one-time, periodic, or conditional—and integrates seamlessly with the Dataphyre ecosystem. Practical applications include automated data processing, system health checks, user communications, and background job processing. By enhancing automation and reliability, this module plays a crucial role in maintaining efficient application operations.
-- [**SQL**](/common/dataphyre/modules/sql/documentation/Dataphyre_SQL.md): The SQL module in Dataphyre simplifies secure database interactions across multiple systems like MySQL and PostgreSQL. It offers dynamic query building, caching strategies, and robust error handling, enabling efficient data management with minimal complexity.
-- [**Stripe**](/common/dataphyre/modules/stripe/documentation/Dataphyre_Stripe.md): The Dataphyre Stripe Module provides a comprehensive interface for integrating Stripe's payment processing into applications. Key features include dynamic API key management, customer and payment method handling, payment processing with intents and webhooks, and account and transfer management for marketplaces. This module simplifies complex API interactions, ensuring secure and reliable transactions while supporting error handling and logging. Ideal for e-commerce platforms, it enables seamless payment processing, customer management, and real-time updates on transaction statuses.
-- **Supercookie**: The Supercookie Class in the Dataphyre framework manages a single cookie that can store data in JSON format. This class enhances security and data integrity by utilizing secure flags and an intuitive interface for setting, getting, and deleting values. It simplifies cookie management while optimizing browser limits, ensuring robust session and state management in web applications.
-- [**Timemachine**](/common/dataphyre/modules/timemachine/documentation/Dataphyre_Time_Machine.md): The Time Machine module in the Dataphyre framework enables robust tracking and management of user changes, allowing for easy rollback to previous data states. Key features include automatic change logging, rollback support for error correction, and a purge mechanism for managing old logs. Security measures protect sensitive information, while user control options offer flexibility in change management. This module is essential for maintaining data integrity, ensuring compliance through audit trails, and facilitating quick error recovery.
-- [**Tracelog**](/common/dataphyre/modules/tracelog/documentation/Dataphyre_Tracelog.md): The tracelog module in Dataphyre provides powerful debugging and performance monitoring capabilities. It dynamically logs system activities, errors, and performance metrics, allowing developers to track function calls, analyze execution flow, and identify bottlenecks. With configurable output options and support for visualizing execution traces, this module enhances application stability and optimizes performance.
-- [**Templating**](/common/dataphyre/modules/templating/documentation/Dataphyre_Templating.md): Dataphyre's templating module allows rendering templates dynamically, with modular support for caching, debugging, SEO, and accessibility.
+## **Modules Overview**
+Explore Dataphyre's powerful modules, designed to handle complex application needs efficiently.
+
+### **Core Framework**
+- **[Core](/common/dataphyre/modules/core/documentation/Dataphyre_Core.md):** The backbone of Dataphyre, providing essential language augmentations and core functionalities.
+
+### **Performance and Scalability**
+- **[Async](/common/dataphyre/modules/async/documentation/Dataphyre_Async.md):** High-performance background job processing and task scheduling with Promises and Coroutines.
+- **[Cache](/common/dataphyre/modules/cache/documentation/Dataphyre_Cache.md):** Distributed caching to minimize database load and accelerate web applications.
+- **[Cdn Client/Server](/common/dataphyre/modules/cdn/documentation/Dataphyre_CDN_Client.md):** Efficient content delivery with integrated CDN support for client and server-side resources.
+
+### **Security**
+- **[CASPOW](/common/dataphyre/modules/caspow/documentation/Dataphyre_CASPOW.md):** Mitigate spam and DDoS attacks using cryptographic challenges with customizable difficulty.
+- **[Firewall](/common/dataphyre/modules/firewall/documentation/Dataphyre_Firewall.md):** Prevent flooding, rate-limit requests, and integrate CAPTCHA for robust application security.
+- **[Sanitation](/common/dataphyre/modules/sanitation/documentation/Dataphyre_Sanitation.md):** Safeguard data integrity and prevent injection attacks with advanced sanitization techniques.
+- **Googleauthenticator:** Easily integrate two-factor authentication via Google Authenticator.
+- **[Access](/common/dataphyre/modules/access/documentation/Dataphyre_Access.md):** Securely manage user authentication and authorization across your application.
+
+### **Automation and Analytics**
+- **[Aceit Engine](/common/dataphyre/modules/aceit/documentation/Dataphyre_Aceit.md):** A/B testing and experimentation framework to optimize user experiences through data-driven insights.
+- **[Perfstats](/common/dataphyre/modules/perfstats/documentation/Dataphyre_Perfstats.md):** Real-time performance analytics to monitor and optimize your application.
+- **[Scheduling](/common/dataphyre/modules/scheduling/documentation/Dataphyre_Scheduling.md):** Automate and manage complex tasks with flexible schedules and dependency handling.
+
+### **Search and Data Handling**
+- **[Fulltext Engine](/common/dataphyre/modules/fulltext_engine/documentation/Dataphyre_Fulltext_Engine.md):** Advanced search capabilities with tokenization, stemming, and multi-backend support (e.g., Elasticsearch).
+- **[SQL](/common/dataphyre/modules/sql/documentation/Dataphyre_SQL.md):** Simplified and secure database interactions with dynamic query building and robust error handling.
+- **[Currency](/common/dataphyre/modules/currency/documentation/Dataphyre_Currency.md):** Streamline global currency handling with automatic exchange rates and localized formatting.
+
+### **Development Tools**
+- **[Datadoc](/common/dataphyre/modules/datadoc/documentation/Dataphyre_Datadoc.md):** Auto-generate documentation directly from your source code for streamlined project management.
+- **[Tracelog](/common/dataphyre/modules/tracelog/documentation/Dataphyre_Tracelog.md):** Debug and monitor your application with detailed execution traces and visualizations.
+
+### **User Experience**
+- **[Templating](/common/dataphyre/modules/templating/documentation/Dataphyre_Templating.md):** Dynamic template rendering with caching, SEO, and accessibility built in.
+- **[Routing](/common/dataphyre/modules/routing/documentation/Dataphyre_Routing.md):** Flexible routing with dynamic URL patterns, custom responses, and parameter handling.
+- **[Geoposition](/common/dataphyre/modules/geoposition/documentation/Dataphyre_Geoposition.md):** Add geolocation features like postal code validation, distance calculations, and coordinate retrieval.
+
+### **Content and State Management**
+- **[Profanity](/common/dataphyre/modules/profanity/documentation/Dataphyre_Profanity.md):** Detect and filter inappropriate content with multilingual support.
+- **[Supercookie](/common/dataphyre/modules/supercookie/documentation/Dataphyre_Supercookie.md):** Manage session and state data with a secure, JSON-based cookie system.
+- **[Timemachine](/common/dataphyre/modules/timemachine/documentation/Dataphyre_Time_Machine.md):** Track and roll back user changes to maintain data integrity and support error recovery.
+
+### **E-Commerce and Transactions**
+- **[Stripe](/common/dataphyre/modules/stripe/documentation/Dataphyre_Stripe.md):** Seamless integration with Stripe for secure payment processing, webhooks, and customer management.
+
+---
 
 ## Contributing
 
