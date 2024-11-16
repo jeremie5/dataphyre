@@ -33,6 +33,15 @@ function code_size(){
 	$code_size=shell_exec("du -d 0 -h ".$rootpath['common_root']);
 	return str_replace($rootpath['common_root'],'',$code_size);
 }
+
+$jit_info='';
+if(function_exists('opcache_get_status')){
+    $opcache_status=opcache_get_status();
+    if(isset($opcache_status['jit'])){
+        $jit_info=$opcache_status['jit'];
+    }
+}
+
 ?>
 <style>
 body {
@@ -51,7 +60,10 @@ b, i, body {
 <span style="font-size: 15px;">Project size: <?=code_size(); ?></span><br>
 <span style="font-size: 15px;">Loaded user functions: <?=$_SESSION['defined_user_function_count']; ?></span><br>
 <span style="font-size: 15px;">Included files: <?=$_SESSION['included_files']; ?></span><br>
-<span style="font-size: 15px;">Dataphyre mod_SQL session cache: <?=convert_storage(strlen(json_encode($_SESSION['db_cache']))); ?></span><br>
+<span style="font-size: 15px;">Dataphyre mod_SQL session cache: <?=convert_storage(strlen(serialize($_SESSION['db_cache']))); ?></span><br>
+<span style="font-size: 15px;">JIT Buffer Size: <?=isset($jit_info['buffer_size']) ? convert_storage($jit_info['buffer_size']) : 'N/A'; ?></span><br>
+<span style="font-size: 15px;">JIT Enabled: <?=isset($jit_info['enabled']) && $jit_info['enabled'] ? 'Yes' : 'No'; ?></span><br>
+<span style="font-size: 15px;">JIT Optimization Level: <?=isset($jit_info['opt_level']) ? $jit_info['opt_level'] : 'N/A'; ?></span><br>
 <?php
 if(!empty($_SESSION['tracelog_plotting'])){
 	echo'<a href="'.dataphyre\core::url_self().'dataphyre/tracelog/plotter">View plotter</a>';
