@@ -2,7 +2,7 @@
 
 # The Ultimate PHP Framework
 
-> Why reinvent the wheel when you can just make the wheel faster?
+> Why reinvent the wheel when you can just make the wheel faster.
 
 Dataphyre is a **cutting-edge, highly scalable PHP framework** built to handle anything from small prototypes to enterprise-grade, world-scale platforms. Whether you're building a **simple web app** or a **global distributed system**, Dataphyre adapts to your needs—no refactoring, no bloat, no limits.
 
