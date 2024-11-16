@@ -7,7 +7,7 @@
 Dataphyre is a **cutting-edge, highly scalable PHP framework** built to handle anything from small prototypes to enterprise-grade, world-scale platforms. Whether you're building a **simple web app** or a **global distributed system**, Dataphyre adapts to your needs—no refactoring, no bloat, no limits.
 
 ### **Proven at Scale**  
-Meet [**Shopiro**](https://shopiro.ca)—a global marketplace powered by Dataphyre. With product pages processed in an incredible **25ms**—faster than the blink of an eye—and support for **128 languages**, Shopiro proves what’s possible when cutting-edge performance meets world-class scalability.
+Meet [**Shopiro**](https://shopiro.ca), a global marketplace powered by Dataphyre. With product pages processed in an incredible **25ms**—faster than the blink of an eye— Shopiro proves what’s possible when cutting-edge performance meets world-class scalability.
 
 [![PHP Version](https://img.shields.io/badge/php-%5E8.1-blue)](https://php.net)
 [![License](https://img.shields.io/badge/license-dual-important)](https://github.com/jeremie5/dataphyre/blob/main/LICENSE.md)
