@@ -12,8 +12,10 @@
  *
  * This software is provided "as is", without any warranty of any kind.
  */
-
+ 
 namespace dataphyre;
+
+tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
 if(file_exists($filepath=$rootpath['common_dataphyre']."config/tracelog.php")){
 	require_once($filepath);
@@ -32,6 +34,7 @@ register_shutdown_function(function(){
 class tracelog {
 	
 	static $tracelog;
+	static $constructed=false;
 	static $enable=false;
 	static $open=false;
 	static $file=false;
@@ -39,6 +42,7 @@ class tracelog {
     private static $plotting=false;
     
 	public function __construct(){
+		self::$constructed=true;
 		self::set_handler();
 	}
 	
@@ -83,20 +87,21 @@ class tracelog {
 	/**
 	  * Save tracelog to session variable and or file
 	  *
-	  * @version 	1.0.4
+	  * @version 	1.0.5
 	  * @author	Jérémie Fréreault <jeremie@phyro.ca>
 	  *
-	  * @param string|null $directory
-	  * @param string|null $filename_full
-	  * @param string|null $line
-	  * @param string|null $class
-	  * @param string|null $function
-	  * @param string|null $text
-	  * @param string|null $type
-	  * @param string|null $arguments
+	  * @param ?string $directory
+	  * @param ?string $filename_full
+	  * @param ?string $line
+	  * @param ?string $class
+	  * @param ?string $function
+	  * @param ?string $text
+	  * @param ?string $type
+	  * @param ?array $arguments
+	  * @param ?float $time
 	  * @return bool											True on success, false on failure
 	  */
-	public static function tracelog(string|null $filename_full, string|null $line, string|null $class, string|null $function, string|null $text, string|null $type="info", array|null $arguments=null) : bool {
+	public static function tracelog(?string $filename_full, ?string $line, ?string $class, ?string $function, ?string $text, ?string $type="info", ?array $arguments=null, ?float $retroactive_time=null, ?int $retroactive_memory=null) : bool {
 		global $rootpath;
 		global $configurations;
 		static $last_function_signature=null;
@@ -104,7 +109,9 @@ class tracelog {
 		static $function_colors=[];
 		if(self::$enable===false)return false;
 		if(!empty($class))$function=$class.'::'.$function;
-		$tracelog_time=number_format((microtime(true)-$_SERVER["REQUEST_TIME_FLOAT"])*1000, 3, '.');
+		$time=$retroactive_time ?? microtime(true);
+		$memory=$retroactive_memory ?? memory_get_usage();
+		$tracelog_time=number_format(($time-$_SERVER["REQUEST_TIME_FLOAT"])*1000, 3, '.');
 		if(self::$plotting===true){
 			$backtrace=debug_backtrace();
 			$filtered_trace=array_filter($backtrace, function($trace){
@@ -148,14 +155,14 @@ class tracelog {
 			if(!empty($arguments))$signature=md5(json_encode($arguments));
 			if($last_function_signature!==$signature){
 				$last_function_signature=$signature;
-				$timings[$function_string][$signature]=microtime(true);
+				$timings[$function_string][$signature]=$time;
 			}
 			$current_date=date('Y-m-d H:i');
 			$dir_path=$rootpath['dataphyre'].'tracelog/profiling/'.$function_string.'/';
 			if(!is_dir($dir_path))mkdir($dir_path, 0777, true);
 			$events_file_path=$dir_path.'/'.$current_date.'.json';
 			$log_entry=array('type'=>$type,'sig'=>$signature,'text'=>$text);
-			if(isset($timings[$function][$signature]))$log_entry['timing']=microtime(true)-$timings[$function][$signature];
+			if(isset($timings[$function][$signature]))$log_entry['timing']=$time-$timings[$function][$signature];
 			file_put_contents($events_file_path, json_encode($log_entry).PHP_EOL, FILE_APPEND);
 		}
 		$pre=null;
@@ -215,9 +222,15 @@ class tracelog {
 			$text=$pre.'<span style="color:red">'.$text.'</span>';
 		}
 		$filename=basename($filename_full);
-		$log='<br><b>'.$tracelog_time.'ms ▸ </b> <i><span title="'.$filename_full.'">'.$filename.'</span>:'.$line.':</i> > <b>'.$text.'</b>';
+		$log='<br><b>'.$tracelog_time.'ms, '.core::convert_storage_unit($memory).' ▸ </b> <i><span title="'.$filename_full.'">'.$filename.'</span>:'.$line.':</i> > <b>'.$text.'</b>';
 		self::$tracelog??='';
-		self::$tracelog.=$log;
+		if(is_null($retroactive_time)){
+			self::$tracelog.=$log; //append
+		}
+		else
+		{
+			self::$tracelog=$log.self::$tracelog; //prepend
+		}
 		if(self::$file!==false){
 			if(self::$file===true){
 				foreach(glob($rootpath['dataphyre']."logs/*", GLOB_ONLYDIR) as $folder){

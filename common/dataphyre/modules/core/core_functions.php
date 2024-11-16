@@ -30,6 +30,21 @@ class core {
 	
 	public static $dialbacks=[];
 	
+	public static function load_plugins(string $type): void {
+		global $rootpath;
+		if(function_exists("tracelog")){
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Looking for $type plugins");
+		}
+		foreach(['common_dataphyre', 'dataphyre'] as $plugin_path){
+			foreach(glob($rootpath[$plugin_path].'plugins/'.$type.'/*.php') as $plugin){
+				if(function_exists("tracelog")){
+					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Loading $type plugin at $plugin");
+				}
+				require($plugin);
+			}
+		}
+	}
+	
 	/**
 	 * Triggers a dialback function associated with a given event name, passing any provided data as arguments.
 	 *
@@ -57,7 +72,7 @@ class core {
 		$result=null;
 		if(isset(core::$dialbacks[$event_name])){
 			foreach(core::$dialbacks[$event_name] as $function){
-				$result=$function($data);
+				$result=$function(...$data);
 			}
 		}
 		return $result;
@@ -86,7 +101,7 @@ class core {
 	 * 3. No validation is done on the event name; avoid using special characters or reserved words.
 	 */
 	public static function register_dialback(string $event_name, callable $dialback_function){
-		if(function_exists($dialback_function)){
+		if(is_callable($dialback_function)){
 			if(!isset(core::$dialbacks[$event_name])){
 				core::$dialbacks[$event_name]=array($dialback_function);
 				return true;
@@ -214,7 +229,7 @@ class core {
 	 *  2. Not handling the lock properly can block further delayed requests.
 	 *  3. If the lock file is not deleted after use, it may cause false positives in system availability checks.
 	 */
-	static function delayed_requests_lock() : void {
+	public static function delayed_requests_lock() : void {
 		global $rootpath;
 		if(fopen($rootpath['dataphyre']."delaying_lock", 'w+')===false){
 			log_error("Failed to create delaying lock");
@@ -245,7 +260,7 @@ class core {
 	 *  2. Not handling the lock properly can block further delayed requests.
 	 *  3. Failure to remove the lock can lead to system unavailability.
 	 */
-	static function delayed_requests_unlock() : void {
+	public static function delayed_requests_unlock() : void {
 		global $rootpath;
 		if(!unlink($rootpath['dataphyre']."delaying_lock")){
 			log_error("Failed to remove delaying lock");
@@ -275,7 +290,7 @@ class core {
 	 *  2. A maximum of 15 seconds wait is implemented; make sure delayed requests are processed within this time frame to avoid system unavailability.
 	 *  3. Failure to remove the lock from a previous operation can lead to false system unavailability.
 	 */
-	static function check_delayed_requests_lock() : void {
+	public static function check_delayed_requests_lock() : void {
 		global $rootpath;
 		$timer=0;
 		while($timer<15){
@@ -311,119 +326,10 @@ class core {
 	 *  2. This function returns the CSS as a string. Make sure to properly inject it into your HTML or CSS file.
 	 *  3. Be cautious about Content Security Policy (CSP) settings that might block external font resources.
 	 */
-	static function minified_font() : string {
+	public static function minified_font() : string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		return "@font-face{font-family:Phyro-Bold;src:url('https://cdn.shopiro.ca/assets/universal/fonts/Phyro-Bold.ttf')}.phyro-bold{font-family:'Phyro-Bold', sans-serif;font-weight:700;font-style:normal;line-height:1.15;letter-spacing:-.02em;-webkit-font-smoothing:antialiased}";
 	}
-	
-	/**
-	 * Imports CSV file content into a database table.
-	 * This method is part of the Datahyre project.
-	 * 
-	 * @author Jérémie Fréreault <jeremie@phyro.ca>
-	 * @static
-	 * 
-	 * @param string $input_file_path The path to the CSV file to be imported.
-	 * @param string $output_table The name of the database table where the CSV data will be inserted.
-	 * @param array $fields The list of fields in the table to which the CSV data will be mapped.
-	 * 
-	 * @uses sql_select To check if the table already has data.
-	 * @uses sql_insert To insert new rows into the table.
-	 * 
-	 * @return bool|void Returns false if the file doesn't exist or is unreadable. Void otherwise.
-	 * 
-	 * @example
-	 *  // Import data from 'data.csv' into 'my_table' with specified fields
-	 *  \dataphyre\core::csv_to_db('path/to/data.csv', 'my_table', ['field1', 'field2']);
-	 * 
-	 * @commonpitfalls
-	 *  1. Ensure that the CSV file and the database table have compatible columns and types.
-	 *  2. The function only supports ';' as the field delimiter in the CSV.
-	 *  3. If the table already has data, this function will not proceed with the import.
-	 *  4. Make sure the file path is correct and the file is readable.
-	 */
-	static function csv_to_db(string $input_file_path, string $output_table, array $fields): bool {
-		if(!file_exists($input_file_path) || !is_readable($input_file_path)){
-			return false;
-		}
-		$header=null;
-		if(false===sql_select(
-			$S="*", 
-			$L=$output_table, 
-			$F="LIMIT 1"
-		)){
-			if(($handle=fopen($input_file_path, 'r'))!==false){
-				while(($row=fgetcsv($handle, 1000, ';'))!==false){
-					if(!$header){
-						$header=$row;
-					}
-					else
-					{
-						$data=array_combine($header, $row);
-						sql_insert(
-							$L=$output_table, 
-							$F=$fields, 
-							$V=array_values($data)
-						);
-					}
-				}
-				fclose($handle);
-			}
-		}
-		return true;
-	}
-	
-	/**
-	 * Imports CSV file content into a SQLite database.
-	 * This method is part of the Datahyre project.
-	 * 
-	 * @author Jérémie Fréreault <jeremie@phyro.ca>
-	 * @static
-	 * 
-	 * @param string $input_file_path The path to the CSV file to be imported.
-	 * @param string $output_file_path The path to the SQLite database file where the CSV data will be inserted.
-	 * 
-	 * @return bool|void Returns false if the input file doesn't exist or is unreadable. Void otherwise.
-	 * 
-	 * @example
-	 *  // Import data from 'data.csv' into 'my_data.db' SQLite database
-	 *  \dataphyre\core::csv_to_sqlite('path/to/data.csv', 'path/to/my_data.db');
-	 * 
-	 * @commonpitfalls
-	 *  1. Ensure that the CSV file exists and is readable. The function will return false otherwise.
-	 *  2. This function uses ';' as the field delimiter in the CSV.
-	 *  3. Ensure that the SQLite database file path is writable.
-	 *  4. Exception handling for database operations is minimal; consider adding more robust error handling.
-	 */
-    static function csv_to_sqlite(string $input_file_path, string $output_file_path) : bool {
-        if(!file_exists($input_file_path) || !is_readable($input_file_path)){
-            return false;
-        }
-        $header=null;
-        $pdo=new \SQLite3($output_file_path);
-        if(($handle=fopen($input_file_path, 'r')) !== false){
-            while(($row=fgetcsv($handle, 1000, ';')) !== false){
-                if(!$header){
-                    $header=$row;
-                    $createTableQuery="CREATE TABLE IF NOT EXISTS csv_data (" . implode(", ", array_map(function($el) { return "$el TEXT"; }, $header)) . ")";
-                    $pdo->exec($createTableQuery);
-                }
-                else
-				{
-                    $data=array_combine($header, $row);
-                    $placeholders=str_repeat("?,", count($data) - 1) . "?";
-                    $insertQuery="INSERT INTO csv_data (" . implode(", ", $header) . ") VALUES ($placeholders)";
-                    try {
-                        $stmt=$pdo->prepare($insertQuery);
-                        $stmt->execute(array_values($data));
-                    } catch(PDOException $e){
-                    }
-                }
-            }
-            fclose($handle);
-        }
-		return true;
-    }
 	
 	/**
 	 * Generates an encrypted password from a given string.
@@ -448,14 +354,27 @@ class core {
 	 *  1. Ensure that the private key used for encryption is securely stored and managed.
 	 *  2. Make sure that `core::dialback` behavior is as expected when it is in use.
 	 */
-	static function get_password(#[\SensitiveParameter] string $string) : string {
+	public static function get_password(#[\SensitiveParameter] string $string) : string {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
+		global $configurations;
+		$salting_data = array($configurations['dataphyre']['private_key']);
+		$shuffle1 = '';
+		if (!empty($salting_data[0])) {
+			$shuffle1 = str_replace(array(1, 'a', 4, 6, 9, 7, 5), array(5, 1, 9, 7, 6, 4, 'a'), base64_encode($salting_data[0]));
+		}
+		$shuffle2 = '';
+		$key = substr(hash('sha256', $shuffle1 . $shuffle2), 0, 16);
+		$password = openssl_encrypt($string, "AES-256-CBC", $key, 0, $key);
+		$password = str_replace('=', '', base64_encode($password));
+		return $password;
+		
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		global $configurations;
 		if(null!==$early_return=core::dialback("CALL_CORE_GET_PASSWORD",...func_get_args())) return $early_return;
-		$salting_data = array($configurations['dataphyre']['private_key']);
-		$key = substr(hash('sha256', base64_encode($salting_data[0])), 0, 16);
-		$password = openssl_encrypt($string, "AES-256-CBC", $key, 0, $key);
-		$password = str_replace('=', '', base64_encode($password));
+		$salting_data=array($configurations['dataphyre']['private_key']);
+		$key=substr(hash('sha256', base64_encode($salting_data[0])), 0, 16);
+		$password=openssl_encrypt($string, "AES-256-CBC", $key, 0, $key);
+		$password=str_replace('=', '', base64_encode($password));
 		return $password;
 	}
 	
@@ -492,7 +411,7 @@ class core {
 	 * - Make sure to provide a valid format string, or else the function will not return the expected results.
 	 * - Ensure that the server timezone is set and valid. Otherwise, the function will throw an exception and fall back to safemode.
 	 */
-	static function high_precision_server_date(string $format='Y-m-d H:i:s.u'): string {
+	public static function high_precision_server_date(string $format='Y-m-d H:i:s.u'): string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CORE_HIGH_PRECISION_SERVER_DATE",...func_get_args())) return $early_return;
 		$server_timezone=core::get_config('app/base_timezone');
@@ -545,7 +464,7 @@ class core {
 	 * - Providing an invalid or unsupported date will result in unexpected behavior.
 	 * - Make sure to pass a valid format string.
 	 */
-	static function format_date(string $date, string $format='n/j/Y g:i A', bool $translation=true) : string {
+	public static function format_date(string $date, string $format='n/j/Y g:i A', bool $translation=true) : string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CORE_FORMAT_DATE",...func_get_args())) return $early_return;
 		if(is_numeric($date)){
@@ -597,7 +516,7 @@ class core {
 	 * - Providing an invalid or unsupported date will result in unexpected behavior.
 	 * - Ensure that the "dataphyre\date_translation" class exists and functions as expected if using translations.
 	 */
-	static function convert_to_user_date(string|int $date, string $user_timezone, string $format='n/j/Y g:i A', bool $translation=true) : string {
+	public static function convert_to_user_date(string|int $date, string $user_timezone, string $format='n/j/Y g:i A', bool $translation=true) : string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CORE_CONVERT_TO_USER_DATE",...func_get_args())) return $early_return;
 		$server_timezone=core::get_config('app/base_timezone');
@@ -663,7 +582,7 @@ class core {
 	 *    the server's timezone will be used.
 	 * 2. Providing a non-existing dialback function name will result in the function returning early.
 	 */
-	static function convert_to_server_date(string|int $date, string $user_timezone, string $format='n/j/Y g:i A') : string {
+	public static function convert_to_server_date(string|int $date, string $user_timezone, string $format='n/j/Y g:i A') : string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CORE_CONVERT_TO_SERVER_DATE",...func_get_args())) return $early_return;
 		$server_timezone=core::get_config('app/base_timezone');
@@ -717,7 +636,7 @@ class core {
 	 * - Be cautious when updating configurations dynamically as it may override existing settings.
 	 * - Passing null as the value will result in the function returning false.
 	 */
-	static function add_config(string|array $config, mixed $value=null) : bool {
+	public static function add_config(string|array $config, mixed $value=null) : bool {
 		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		}
@@ -765,7 +684,7 @@ class core {
 	 * - Attempting to access an undefined configuration index will return null.
 	 * - Be cautious when specifying nested configurations; an incorrect path will return null.
 	 */
-	static function get_config(string $index): mixed {
+	public static function get_config(string $index): mixed {
 		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		}
@@ -821,6 +740,64 @@ class core {
 	}
 	
 	/**
+	 * Set an environment variable within the dataphyre\core class.
+	 *
+	 * This function allows you to set a value in the static $env array.
+	 * It accepts either a string as an index and a value, or an associative array to set multiple values at once.
+	 *
+	 * @author Jérémie Fréreault <jeremie@phyro.ca>
+	 * @package dataphyre\core
+	 *
+	 * @param string|array $index The key (or keys if array) in the $env array to set.
+	 * @param mixed        $value The value to set for the given $index. Ignored if $index is an array.
+	 * 
+	 * @example
+	 * // Example 1: Set a single environment variable
+	 * dataphyre\core::set_env('key', 'value');
+	 * 
+	 * // Example 2: Set multiple environment variables at once
+	 * dataphyre\core::set_env(['key1' => 'value1', 'key2' => 'value2']);
+	 *
+	 * @common_pitfalls
+	 * 1. If an array is passed as $index, the $value parameter will be ignored.
+	 * 2. Providing a non-string key when $index is a string could lead to unexpected behavior.
+	 */
+    public static function set_env(string|array $index, mixed $value=null) : void {
+        self::$env[$index]=$value;
+    }
+	
+	/**
+	 * Retrieve an environment variable from the dataphyre\core class.
+	 *
+	 * This function allows you to get a value from the static $env array using the given index.
+	 * If the index does not exist in the $env array, it returns false.
+	 *
+	 * @author Jérémie Fréreault <jeremie@phyro.ca>
+	 * @package dataphyre\core
+	 *
+	 * @param mixed $index The key in the $env array to retrieve.
+	 *
+	 * @return mixed|false Returns the value if the $index exists, otherwise returns false.
+	 * 
+	 * @example
+	 * // Example 1: Retrieve a single environment variable
+	 * $value = dataphyre\core::get_env('key');
+	 * 
+	 * // Example 2: Attempt to retrieve a non-existing key
+	 * $value = dataphyre\core::get_env('non_existing_key');  // Will return false
+	 *
+	 * @common_pitfalls
+	 * 1. Querying a non-existing index will return false, which might be confusing if the actual stored value is also false.
+	 * 2. Not explicitly checking for the boolean false could lead to incorrect logic in conditionals.
+	 */
+    public static function get_env(mixed $index) : mixed {
+        if(isset(self::$env[$index])){
+            return self::$env[$index];
+        }
+        return false;
+    }
+	
+	/**
 	 * Generate a random hexadecimal color code.
 	 *
 	 * This function generates a random color code based on provided or default RGB ranges.
@@ -849,7 +826,7 @@ class core {
 	 * 1. Not specifying the RGB ranges will result in default values being used, which may not suit all use-cases.
 	 * 2. Providing invalid range arrays (e.g., non-numeric, out of bounds, etc.) could lead to unpredictable output.
 	 */
-	static function random_hex_color(array $red_range=[20,150], array $green_range=[50,175], array $blue_range=[50,255], bool $add_dash=true) : string {
+	public static function random_hex_color(array $red_range=[20,150], array $green_range=[50,175], array $blue_range=[50,255], bool $add_dash=true) : string {
 		if(null!==$early_return=core::dialback("CALL_CORE_RANDOM_HEX_COLOR",...func_get_args())) return $early_return;
 		$r=rand($red_range[0], $red_range[1]);
 		$g=rand($green_range[0], $green_range[1]);
@@ -1138,15 +1115,28 @@ class core {
 	 * @common_pitfalls
 	 * 1. Be cautious when using this function in a context where whitespace or comments are significant.
 	 * 2. If the private key as set in `dataphyre/private_key` is found in the buffer, the function will return an 'unavailable' page.
-	 * 3. If PHP tags are found in the buffer, the function will return an 'unavailable' page. 
 	 */
 	public static function buffer_minify(mixed $buffer) : mixed {
-		global $initial_memory_usage;
 		if(class_exists('dataphyre\tracelog')){
 			if(tracelog::$open===true){
+				$all_defined_functions=function(){
+					$global_functions=get_defined_functions()['user'];
+					$class_methods=[];
+					$classes=get_declared_classes();
+					foreach($classes as $class){
+						$reflection=new \ReflectionClass($class);
+						if($reflection->isUserDefined()){
+							$methods=get_class_methods($class);
+							$class_methods=array_merge($class_methods, $methods);
+						}
+					}
+					return count($global_functions)+count($class_methods);
+				};
 				$_SESSION['memory_used']=memory_get_usage();
 				$_SESSION['memory_used_peak']=memory_get_peak_usage();
-				$_SESSION['defined_user_function_count']=count(get_defined_functions()['user']);
+				if(is_int($function_count=$all_defined_functions())){
+					$_SESSION['defined_user_function_count']=$function_count;
+				}
 				$_SESSION['exec_time']=microtime(true)-$_SERVER["REQUEST_TIME_FLOAT"];
 				$_SESSION['included_files']=count(get_included_files());
 				if(tracelog::getPlotting()===true){
@@ -1308,7 +1298,6 @@ class core {
 		}
 		return $_SESSION['token'][$form_name]??false;
 	}
-
 	
 	/**
 	 * Writes data to a file, creating any necessary directories.
@@ -1346,67 +1335,6 @@ class core {
 			return $bytes;
 		}
 		return false;
-	}
-	
-	/**
-	 * Attempts to correct the syntax of a malformed JSON string.
-	 *
-	 * This function is part of the Datahyre project and tries to correct unbalanced curly braces `{}` and square brackets `[]` in a JSON string.
-	 *
-	 * @author Jérémie Fréreault <jeremie@phyro.ca>
-	 * @package dataphyre\core
-	 *
-	 * @param string $json The malformed JSON string that needs syntax correction.
-	 * @return string Returns a JSON string with balanced curly braces and square brackets.
-	 *
-	 * @example
-	 * // Correcting a malformed JSON string
-	 * $correctedJson = dataphyre\core::attempt_json_syntax_correction('{ "key": [ "value1", "value2" }');
-	 * // Returns: '{ "key": [ "value1", "value2" ] }'
-	 *
-	 * @commonpitfalls
-	 * 1. Not a JSON Validator: This function only corrects the balance of curly braces and square brackets. It doesn't validate the JSON.
-	 * 2. Incomplete Correction: The function may not correct all types of JSON syntax errors, only unbalanced braces and brackets.
-	 * 3. Data Integrity: While the function aims to correct the JSON, there's no guarantee that the corrected JSON will represent the same data structure as intended.
-	 */
-	static function attempt_json_syntax_correction(string $json): string{
-		$curlyDepth=0;
-		$bracketDepth=0;
-		$result="";
-		$length=strlen($json);
-		for($i=0; $i<$length; $i++){
-			$char=$json[$i];
-			if($char==="{"){
-				$curlyDepth++;
-			}
-			if($char==="}"){
-				$curlyDepth--;
-				if($curlyDepth < 0){
-					$result="{".$result;
-					$curlyDepth=0; // Reset depth
-				}
-			}
-			if($char==="["){
-				$bracketDepth++;
-			}
-			if($char==="]"){
-				$bracketDepth--;
-				if($bracketDepth<0){
-					$result="[".$result;
-					$bracketDepth=0; // Reset depth
-				}
-			}
-			$result.=$char;
-		}
-		while($curlyDepth>0){
-			$result.="}";
-			$curlyDepth--;
-		}
-		while($bracketDepth>0){
-			$result.="]";
-			$bracketDepth--;
-		}
-		return $result;
 	}
 	
 	/**
@@ -1457,7 +1385,7 @@ class core {
 	 * 3. Overhead: The function uses logarithmic and rounding calculations, which could have performance implications for large data sets.
 	 */
 	static function convert_storage_unit(int|float $size): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
+		// DO NOT TRACELOG, RECURSION
 		return @round($size/pow(1024,($i=floor(log($size,1024)))),2).' '.array('b','kb','mb','gb','tb','pb')[$i];
 	}
 	
@@ -1479,16 +1407,16 @@ class core {
 	 * 1. Encoding Issues: The ASCII art may not render properly in all text editors or consoles.
 	 * 2. Output Control: Since this function only returns the ASCII art string, it's up to the calling code to manage how it's displayed or stored.
 	 */
-	static function splash(): string {
+	static function splash(int $padding=1): string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CORE_SPLASH",...func_get_args())) return $early_return;
-		return '	██████╗   ███╗ ████████╗ ███╗  ██████╗ ██╗  ██╗██╗   ██╗██████╗ ███████╗
-	██╔══██╗ ██║██╗╚══██╔══╝██║██╗ ██╔══██║██║  ██║╚██╗ ██╔╝██╔══██╗██╔════╝
-	██║  ██║██║  ██║  ██║  ██║  ██║██║████║██║  ██║  ╚╝██║  ██║  ██║███████╗  
-	██║  ██║██║  ██║  ██║  ██║  ██║██║═══╝ ███████║   ██╔╝  ██║████║██╔════╝  
-	██║███╔╝██║  ██║  ██║  ██║  ██║██║     ██║  ██║   ██║   ██║  ██║███████╗
-	╚═╝╚══╝ ╚═╝  ╚═╝  ╚═╝  ╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚══════╝
-	';
+		$splash=str_repeat('\t', $padding).'	██████╗   ███╗ ████████╗ ███╗  ██████╗ ██╗  ██╗██╗   ██╗██████╗ ███████╗'.PHP_EOL;
+		$splash.=str_repeat('\t', $padding).'██╔══██╗ ██║██╗╚══██╔══╝██║██╗ ██╔══██║██║  ██║╚██╗ ██╔╝██╔══██╗██╔════╝'.PHP_EOL;
+		$splash.=str_repeat('\t', $padding).'██║  ██║██║  ██║  ██║  ██║  ██║██║████║██║  ██║  ╚╝██║  ██║  ██║███████╗'.PHP_EOL;
+		$splash.=str_repeat('\t', $padding).'██║  ██║██║  ██║  ██║  ██║  ██║██║═══╝ ███████║   ██╔╝  ██║████║██╔════╝'.PHP_EOL;
+		$splash.=str_repeat('\t', $padding).'██║███╔╝██║  ██║  ██║  ██║  ██║██║     ██║  ██║   ██║   ██║  ██║███████╗'.PHP_EOL;
+		$splash.=str_repeat('\t', $padding).'╚═╝╚══╝ ╚═╝  ╚═╝  ╚═╝  ╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚══════╝'.PHP_EOL;
+		return $splash;
 	}
 	
 }

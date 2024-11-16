@@ -15,7 +15,7 @@
 
 namespace dataphyre;
 
-tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Loaded");
+tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
 dp_module_required('access', 'sql');
 dp_module_required('access', 'firewall');
@@ -379,6 +379,7 @@ class access{
 	public static function access(bool $session_required=true, bool $must_no_session=false, bool $prevent_mobile=false, bool $prevent_robot=false) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_ACCESS",...func_get_args())) return $early_return;
+		/*
 		if(isset($_SERVER['HTTP_HOST']) && filter_var($_SERVER['HTTP_HOST'], FILTER_VALIDATE_IP)){
 			ob_end_clean();
 			http_response_code(403);
@@ -399,6 +400,7 @@ class access{
 			echo'<h3>This page cannot be displayed while using direct connection</h3>';
 			exit();
 		}
+		*/
 		if($prevent_robot===true && self::is_bot()===true){
 			if(!empty(core::get_config("dataphyre/access/requires_app_redirect"))){
 				header('Location: '.core::get_config("dataphyre/access/robot_redirect"));

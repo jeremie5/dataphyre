@@ -15,6 +15,8 @@
 
 namespace dataphyre;
 
+tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
+
 class scheduling {
 
     public static function run(string $name, string $file_path, float $frequency, float $timeout, string $memory_limit, array $dependencies, ?string $app_override=null) : bool {

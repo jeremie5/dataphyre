@@ -15,7 +15,7 @@
 
 namespace dataphyre;
 
-tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Loaded");
+tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
 dp_module_required('firewall', 'sql');
 
@@ -38,7 +38,7 @@ class firewall{
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_FIREWALL_CAPTCHA",...func_get_args())) return $early_return;
 		$ipaddress=$_SERVER['REMOTE_ADDR'];
-		if($_SESSION['captcha_unblock']===true){
+		if(isset($_SESSION['captcha_unblock'])){
 			if(dp_module_present("cache")){
 				cache::delete("fwcb".md5($ipaddress));
 			}
@@ -52,8 +52,8 @@ class firewall{
 				);
 			}
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Captcha block removed for IP $ipaddress");
-			$_SESSION['captcha_unblock']=false;
-			$_SESSION['captcha_blocked']=false;
+			unset($_SESSION['captcha_unblock']);
+			unset($_SESSION['captcha_blocked']);
 			unset($_SESSION['last_requests']);
 		}
 		else
