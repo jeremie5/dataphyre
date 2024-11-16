@@ -22,6 +22,8 @@ foreach(['helper_functions.php', 'language_additions.php', 'core_functions.php']
     require(__DIR__.'/'.$file);
 }
 
+\dataphyre\core::load_plugins('pre_init');
+
 if(!defined('RUN_MODE')){
 	if(!define('RUN_MODE', 'request')){
 		pre_init_error("Unable to assign constant RUN_MODE constant");
@@ -65,11 +67,11 @@ if(empty(dpvk())){ //Initializes private key
 }
 
 if(RUN_MODE==='request'){
-	dataphyre\core::get_server_load_level();
-	dataphyre\core::check_delayed_requests_lock();
+	\dataphyre\core::get_server_load_level();
+	\dataphyre\core::check_delayed_requests_lock();
 	if(!isset($_SESSION)){
-		if(dataphyre\core::$server_load_level===5){
-			dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, "Load shedding as visitor had no session and server load level is above 5", "loadlevel");
+		if(\dataphyre\core::$server_load_level===5){
+			\dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, "Load shedding as visitor had no session and server load level is above 5", "loadlevel");
 		}
 	}
 }
@@ -90,7 +92,7 @@ if(RUN_MODE==='request' || RUN_MODE==='diagnostic'){
 		}
 		if(RUN_MODE==='request'){
 			if(session_start()===false){
-				dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreCore: Failed starting php session', 'safemode');
+				\dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreCore: Failed starting php session', 'safemode');
 			}
 		}
 	}
@@ -118,45 +120,35 @@ if(RUN_MODE==='headless'){
 	}
 }
 
-// Logs will be visible in tracelog from here on out
-
 if(RUN_MODE!=='diagnostic'){
 
-	if($mod=dp_module_present('tracelog'))require($mod[0]);
-	if($enable_tracelog===true){
-		dataphyre\tracelog::$enable=true;	
-		if($enable_tracelog_plotting===true){
-			dataphyre\tracelog::setPlotting(true);
-		}
-	}
-	function tracelog($filename=null, $line=null, $class=null, $function=null, $text=null, $type=null, $arguments=null){
-		if(dp_module_present('tracelog')){
-			if(dataphyre\tracelog::$enable===true){
-				return dataphyre\tracelog::tracelog($filename, $line, $class, $function, $text, $type, $arguments);
+	if($mod=dp_module_present('tracelog')){
+		require($mod[0]);
+		new \dataphyre\tracelog();
+		if($enable_tracelog===true){
+			\dataphyre\tracelog::$enable=true;	
+			if($enable_tracelog_plotting===true){
+				\dataphyre\tracelog::setPlotting(true);
 			}
 		}
-		if($type==='fatal'){
-			log_error('Fatal tracelog: '.$class.'/'.$function.'(): '.$text);
-		}
-		return false;
 	}
 
 	if($mod=dp_module_present('cache')){
 		require($mod[0]);
-		new dataphyre\cache();
+		new \dataphyre\cache();
 	}
 
 	if($mod=dp_module_present('contingency')){
 		require($mod[0]);
-		dataphyre\contingency::set_handler();
+		\dataphyre\contingency::set_handler();
 		function attempt($a=null){ 
-			return dataphyre\contingency::attempt($a);
+			return \dataphyre\contingency::attempt($a);
 		}
 		function end_attempt(){ 
-			return dataphyre\contingency::end_attempt();
+			return \dataphyre\contingency::end_attempt();
 		}
 		function define_optional($a=null,$b=null){ 
-			return dataphyre\contingency::define_optional($a,$b);
+			return \dataphyre\contingency::define_optional($a,$b);
 		}
 	}
 	else
@@ -174,7 +166,7 @@ if(RUN_MODE!=='diagnostic'){
 
 	if($mod=dp_module_present('sql')){
 		require($mod[0]);
-		new dataphyre\sql();
+		new \dataphyre\sql();
 	}
 
 	if(RUN_MODE==='request'){
@@ -205,23 +197,23 @@ if(RUN_MODE!=='diagnostic'){
 
 }
 
-tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Looking for plugins");
-foreach(['common_dataphyre', 'dataphyre'] as $plugin_path){
-	foreach(glob($rootpath[$plugin_path].'plugins/*.php') as $plugin){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Loading plugin at $plugin");
-		require($plugin);
+\dataphyre\core::load_plugins('post_init');
+
+if(RUN_MODE==='request'){
+	\dataphyre\core::set_http_headers();
+}
+
+if(is_array($retroactive_tracelog)){
+	if(class_exists('\dataphyre\tracelog')){
+		if(\dataphyre\tracelog::$enable===true){
+			foreach(array_reverse($retroactive_tracelog) as $log){
+				\dataphyre\tracelog::tracelog(...$log);
+			}
+		}
 	}
 }
 
-if(RUN_MODE==='request'){
-	dataphyre\core::set_http_headers();
-}
-
-
-unset($mod);
-unset($plugin);
-unset($file);
-unset($modcache_file);
+unset($retroactive_tracelog, $mod, $plugin, $file, $modcache_file);
 
 if(RUN_MODE==='diagnostic'){
 	\dataphyre\core\diagnostic::post_tests();

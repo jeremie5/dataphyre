@@ -15,7 +15,7 @@
 
 namespace dataphyre;
 
-tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Loaded");
+tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
 if(file_exists($filepath=$rootpath['common_dataphyre']."config/sql.php")){
 	require($filepath);
@@ -103,7 +103,7 @@ class sql {
 			$cache_policy=$configurations['dataphyre']['sql']['tables'][$location]['caching'];
 			if($cache_policy===false)return false;
 		}
-		if($cache_policy['type']==='session' && RUN_MODE!=='request'){
+		if(isset($cache_policy) && $cache_policy['type']==='session' && RUN_MODE!=='request'){
 			return $configurations['dataphyre']['sql']['caching']['default_policy'];
 		}
 		if(!empty($cache_policy['type'])){

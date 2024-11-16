@@ -60,12 +60,13 @@ trait parsing {
 	}
 
     private static function parse_scoped_styles(string $template, string $component_name): string {
+        $unique_id = 'comp_' . $component_name . '_' . uniqid();
         preg_match_all('/<style scoped>(.*?)<\/style>/s', $template, $matches);
-        foreach($matches[1] as $style){
-            $scopedStyle=str_replace('.', ".{$component_name} ", $style);
-            $template=str_replace("<style scoped>$style</style>", $scopedStyle, $template);
+        foreach ($matches[1] as $style) {
+            $scoped_style = preg_replace('/(^|\s|\})\.(\w+)/', "$1.$unique_id-$2", $style);
+            $template = str_replace("<style scoped>$style</style>", "<style>$scoped_style</style>", $template);
         }
-        return $template;
+        return "<div class='$unique_id'>$template</div>";
     }
 
     private static function parse_dynamic_imports(string $template, array $data): string {

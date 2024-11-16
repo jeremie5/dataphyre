@@ -13,10 +13,9 @@
  * This software is provided "as is", without any warranty of any kind.
  */
 
-
 namespace dataphyre;
 
-tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Loaded");
+tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
 require_once(__DIR__."/similarity/jarowinkler.php");
 require_once(__DIR__."/similarity/damerau_levenshtein.php");

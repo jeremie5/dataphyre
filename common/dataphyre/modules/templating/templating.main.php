@@ -15,7 +15,7 @@
 
 namespace dataphyre;
 
-tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Loaded");
+tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
 dp_module_required('templating', 'async');
 
@@ -49,7 +49,7 @@ class templating {
 		private static function debug_render(string $template_file, array $data): string {
 		private static function render_performance_metrics(): void {
 	*/
-    use seo_and_accessibility;
+    use seo_accessibility;
 	/*
 		private static function parse_seo_tags(string $template, array $data): string {
 	*/
