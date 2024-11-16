@@ -57,7 +57,6 @@ class templating {
 	/*
 		private static function parse_components(string $template, array $data): string {
 		private static function lazy_load_components(string $template, array $data): string {
-		private static function parse_scoped_styles(string $template, string $component_name): string {
 	*/
     use conditional_parsing;
 	/*
@@ -69,7 +68,7 @@ class templating {
 	*/
     use event_system;
 	/*
-		private static $events=[ 'before_render' => [], 'after_render' => [], 'on_error' => [] ];
+		private static $events=[ 'before_render'=>[], 'after_render'=>[], 'on_error'=>[] ];
 		public static function register_event_hook(string $event, callable $callback): void {
 		private static function trigger_event(string $event, ...$args): void {
 		public static function enable_event_system(string $event, array $data): object {
@@ -116,18 +115,24 @@ class templating {
     private static $extensions=[];
     private static $global_context=[];
 	private static $helpers=[];
+	private static $tags=[];
+	private static $filters=[];
 	
 	public function __construct(bool $is_dev_mode=false){
 		global $rootpath;
 		self::$helpers=[
-			'date_format'=>function($date, $format){ return date($format, strtotime($date)); },
-			'slugify'=>function($text){ return strtolower(preg_replace('/\W+/', '-', trim($text))); }
+			'date_format'=>function($date, $format){ 
+				return date($format, strtotime($date)); 
+			},
+			'slugify'=>function($text){
+				return strtolower(preg_replace('/\W+/', '-', trim($text))); 
+			}
 		];
 		self::$cache_dir=$rootpath['dataphyre'].'cache/templating/';
 		self::$is_dev_mode=$is_dev_mode;
 	}
 
-    public static function adapt(array $values, bool $spacing=false): string {
+    public static function adapt(array $values, ?bool $spacing=false): string {
         global $user_theme_mode;
         if(!empty($values[$user_theme_mode])){
             return $spacing ? " ".$values[$user_theme_mode]." " : $values[$user_theme_mode];
@@ -141,21 +146,21 @@ class templating {
 
 	private static function bind_data(string $template, array $data): string {
 		preg_match_all('/{{\s*(\w+(\.\w+)*)\s*}}/', $template, $matches);
-		foreach ($matches[1] as $full_path) {
-			$value = self::get_value_by_path($data, $full_path);
-			$template = str_replace("{{ $full_path }}", htmlspecialchars($value ?? '[Undefined]'), $template);
+		foreach($matches[1] as $full_path){
+			$value=self::get_value_by_path($data, $full_path);
+			$template=str_replace("{{ $full_path }}", htmlspecialchars($value ?? '[Undefined]'), $template);
 		}
 		return $template;
 	}
 	
 	private static function get_value_by_path(array|object|null $data, string $path): mixed {
-		$segments = explode('.', $path);
-		foreach ($segments as $segment) {
-			if (is_array($data) && array_key_exists($segment, $data)) {
-				$data = $data[$segment];
+		$segments=explode('.', $path);
+		foreach($segments as $segment){
+			if(is_array($data) && array_key_exists($segment, $data)){
+				$data=$data[$segment];
 			}
-			elseif (is_object($data) && property_exists($data, $segment)) {
-				$data = $data->$segment;
+			elseif(is_object($data) && property_exists($data, $segment)){
+				$data=$data->$segment;
 			}
 			else
 			{
@@ -166,13 +171,13 @@ class templating {
 	}
 	
 	private static function bind_if(string $variable, mixed $value, callable $condition): void {
-		if ($condition()) {
-			self::$global_context[$variable] = $value;
+		if($condition()){
+			self::$global_context[$variable]=$value;
 		}
 	}
 	
 	private static function set_local(string $key, mixed $value): void {
-		self::$global_context[$key] = $value;
+		self::$global_context[$key]=$value;
 	}
 	
 	private static function unset_local(string $key): void {
@@ -180,24 +185,24 @@ class templating {
 	}
 		
 	private static function with_context(array $data, callable $block): string {
-		$previousContext = self::$global_context;
-		self::$global_context = array_merge(self::$global_context, $data);
-		$output = $block();
-		self::$global_context = $previousContext;
+		$previousContext=self::$global_context;
+		self::$global_context=array_merge(self::$global_context, $data);
+		$output=$block();
+		self::$global_context=$previousContext;
 		return $output;
 	}
 	
 	private static function for_each_scoped(array $items, callable $callback): string {
-		$output = '';
-		$total = count($items);
-		foreach ($items as $index => $item) {
-			$scope = [
-				'index' => $index,
-				'first' => $index === 0,
-				'last' => $index === $total - 1,
-				'item' => $item
+		$output='';
+		$total=count($items);
+		foreach($items as $index=>$item){
+			$scope=[
+				'index'=>$index,
+				'first'=>$index===0,
+				'last'=>$index===$total-1,
+				'item'=>$item
 			];
-			$output .= self::with_context($scope, fn() => $callback($item, $scope));
+			$output.=self::with_context($scope, fn()=>$callback($item, $scope));
 		}
 		return $output;
 	}
@@ -242,6 +247,41 @@ class templating {
         return $template;
     }
 	
+	public static function register_tag(string $tag, callable $callback): void {
+		self::$tags[$tag]=$callback;
+	}
+
+	private static function apply_tags(string $template, array $data): string {
+		preg_match_all('/{{\s*(\w+)(.*?)\s*}}/', $template, $matches, PREG_SET_ORDER);
+		foreach($matches as $match){
+			$tag=$match[1];
+			$args=array_map('trim', explode(',', trim($match[2])));
+			if(isset(self::$tags[$tag])){
+				$replacement=call_user_func_array(self::$tags[$tag], [$args, $data]);
+				$template=str_replace($match[0], htmlspecialchars($replacement ?? ''), $template);
+			}
+		}
+		return $template;
+	}
+	
+	public static function register_filter(string $filter, callable $callback): void {
+		self::$filters[$filter]=$callback;
+	}
+
+	private static function apply_filters(string $template, array $data): string {
+		preg_match_all('/{{\s*(\w+)\s*\|\s*(\w+)\s*}}/', $template, $matches, PREG_SET_ORDER);
+		foreach($matches as $match){
+			$variable=$match[1];
+			$filter=$match[2];
+			$value=$data[$variable] ?? null;
+			if(isset(self::$filters[$filter])){
+				$replacement=call_user_func(self::$filters[$filter], $value);
+				$template=str_replace($match[0], htmlspecialchars($replacement ?? ''), $template);
+			}
+		}
+		return $template;
+	}
+	
 	private static function apply_preprocessing_hooks(string $template, array $data): string {
 		foreach(self::$preprocessing_hooks as $hook){
 			$template=call_user_func($hook, $template, $data);
@@ -264,20 +304,6 @@ class templating {
                 $args=array_map('trim', $args);
                 $result=call_user_func_array($callback, $args);
                 $template=str_replace($match[0], htmlspecialchars($result), $template);
-            }
-        }
-        return $template;
-    }
-
-    public static function apply_filters(string $template, array $filters=[]): string {
-        foreach($filters as $filter=>$callback){
-            preg_match_all("/{{(\w+)\s*\|\s*".$filter."}}/", $template, $matches, PREG_SET_ORDER);
-            foreach($matches as $match){
-                $value=$match[1];
-                if(isset($data[$value])){
-                    $result=$callback($data[$value]);
-                    $template=str_replace($match[0], htmlspecialchars($result), $template);
-                }
             }
         }
         return $template;

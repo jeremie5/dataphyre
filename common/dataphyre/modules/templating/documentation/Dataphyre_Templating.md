@@ -233,6 +233,8 @@ The `templating` module’s context management system provides scoped and tempor
   ```
 - **Scoped Context**: Data is passed temporarily within blocks, such as when iterating over items with `for_each_scoped`.
 
+---
+
 #### Custom Transformations and Filters
 Custom transformations apply to template variables to modify output values, offering a more dynamic and reusable template experience.
 
@@ -247,6 +249,82 @@ Custom transformations apply to template variables to modify output values, offe
   ```php
   {{ title | slugify }}
   ```
+
+#### Registering Custom Tags
+Custom tags provide a way to define reusable template commands with specific functionality.
+
+- **Define a Custom Tag**:
+  ```php
+  templating::register_tag('greet', function($args, $data) {
+      $name = $args[0] ?? 'World';
+      return "Hello, $name!";
+  });
+  ```
+
+- **Using Custom Tags in Templates**:
+  ```php
+  {{ greet 'Dataphyre' }}
+  ```
+
+- **Example Output**:
+  ```html
+  Hello, Dataphyre!
+  ```
+
+#### Registering Custom Filters
+Custom filters extend the templating engine's functionality by allowing developers to manipulate data directly within the template.
+
+- **Define a Custom Filter**:
+  ```php
+  templating::register_filter('reverse', function($value) {
+      return strrev($value);
+  });
+  ```
+
+- **Using Custom Filters in Templates**:
+  ```php
+  {{ name | reverse }}
+  ```
+
+- **Example Usage**:
+  ```php
+  $data = ['name' => 'Dataphyre'];
+  $template = "{{ name | reverse }}";
+  $output = templating::render($template, $data);
+  echo $output;
+  ```
+
+- **Example Output**:
+  ```html
+  eryhpahtaD
+  ```
+
+#### Integrating Tags and Filters Together
+Tags and filters can work seamlessly together to create powerful, dynamic templates.
+
+- **Register Both a Tag and a Filter**:
+  ```php
+  templating::register_tag('shout', function($args, $data) {
+      $text = $args[0] ?? '';
+      return strtoupper($text);
+  });
+
+  templating::register_filter('exclaim', function($value) {
+      return $value . '!!!';
+  });
+  ```
+
+- **Using Them in a Template**:
+  ```php
+  {{ shout 'hello' | exclaim }}
+  ```
+
+- **Example Output**:
+  ```html
+  HELLO!!!
+  ```
+
+---
 
 ### Template Security and Best Practices
 
