@@ -378,29 +378,7 @@ class access{
 	  */
 	public static function access(bool $session_required=true, bool $must_no_session=false, bool $prevent_mobile=false, bool $prevent_robot=false) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
-		if(null!==$early_return=core::dialback("CALL_ACCESS_ACCESS",...func_get_args())) return $early_return;
-		/*
-		if(isset($_SERVER['HTTP_HOST']) && filter_var($_SERVER['HTTP_HOST'], FILTER_VALIDATE_IP)){
-			ob_end_clean();
-			http_response_code(403);
-			header('Content-Type:text/html; charset=UTF-8');
-			header('Server: Dataphyre');
-			echo'<!DOCTYPE html>';
-			echo'<html>';
-			echo'<head>';
-			echo'<link rel="preconnect" href="https://fonts.googleapis.com">';
-			echo'<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>';
-			echo'<link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">';
-			echo'<style>@import url("https://fonts.googleapis.com/css2?family=Roboto&display=swap");</style>';
-			echo'<style>'.minified_font().'</style>';
-			echo'<style>h1,h2,h3,h4,h5.h6{font-family:"Roboto", sans-serif;}</style>';
-			echo'</head>';
-			echo'<body>';
-			echo'<h1 style="font-size:60px" class="phyro-bold"><i><b>DATAPHYRE</b></i></h1>';
-			echo'<h3>This page cannot be displayed while using direct connection</h3>';
-			exit();
-		}
-		*/
+		if(null!==$early_return=core::dialback("CALL_ACCESS_ACCESS",...func_get_args()))return $early_return;
 		if($prevent_robot===true && self::is_bot()===true){
 			if(!empty(core::get_config("dataphyre/access/requires_app_redirect"))){
 				header('Location: '.core::get_config("dataphyre/access/robot_redirect"));
