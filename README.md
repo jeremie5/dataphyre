@@ -79,7 +79,7 @@ Explore Dataphyre's powerful modules, designed to handle complex application nee
 - **[Access](/common/dataphyre/modules/access/documentation/Dataphyre_Access.md):** Securely manage user authentication and authorization across your application.
 
 ### **Automation and Analytics**
-- **[Aceit Engine](/common/dataphyre/modules/aceit/documentation/Dataphyre_Aceit.md):** A/B testing and experimentation framework to optimize user experiences through data-driven insights.
+- **[Aceit Engine](/common/dataphyre/modules/aceit_engine/documentation/Dataphyre_Aceit.md):** A/B testing and experimentation framework to optimize user experiences through data-driven insights.
 - **[Perfstats](/common/dataphyre/modules/perfstats/documentation/Dataphyre_Perfstats.md):** Real-time performance analytics to monitor and optimize your application.
 - **[Scheduling](/common/dataphyre/modules/scheduling/documentation/Dataphyre_Scheduling.md):** Automate and manage complex tasks with flexible schedules and dependency handling.
 
