@@ -82,8 +82,8 @@ class access{
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_CREATE_SESSION",...func_get_args())) return $early_return;
 		global $configurations;
-		if(false!==sql::db_insert(
-			$L=$configurations["dataphyre"]["self"]["sessions_table_name"], 
+		if(false!==sql_insert(
+			$L=$configurations["dataphyre"]["access"]["sessions_table_name"], 
 			$F=[
 				"id"=>$id=self::create_id(), 
 				"userid"=>$userid,
@@ -96,7 +96,7 @@ class access{
 			$CC=true
 		)){
 			$website_name=strtolower(parse_url($_SERVER['HTTP_HOST'], PHP_URL_HOST));
-			setcookie('__Secure-'.$configurations["dataphyre"]["self"]["sessions_cookie_name"], $id, time()+(86400*7), '/', strtolower($website_name), true, true);
+			setcookie('__Secure-'.$configurations["dataphyre"]["access"]["sessions_cookie_name"], $id, time()+(86400*7), '/', strtolower($website_name), true, true);
 			$_SESSION['userid']=$userid;
 			$_SESSION['id']=$id;
 			$_SESSION['ipaddress']=REQUEST_IP_ADDRESS;
