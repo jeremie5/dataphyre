@@ -115,7 +115,7 @@ We welcome contributions to Dataphyre! Please check the issues tab for current o
 
 Dataphyre's Stripe module includes the [Stripe PHP library](https://github.com/stripe/stripe-php), which is used for payment processing. This library is licensed under the MIT License. A copy of the license can be found in the `stripe-php` directory.
 
-Dataphyre also integrates Adminer, a lightweight database management tool, for seamless SQL interaction and debugging. Adminer is open-source software licensed under the Apache License 2.0, and its compact nature makes it a reliable choice for managing databases within Dataphyre SQL.
+Dataphyre also integrates Adminer, a lightweight database management tool, for seamless SQL interaction and debugging. Adminer is open-source software licensed under the Apache License 2.0, and its compact nature makes it a reliable choice for managing databases within Dataphyre SQL. A copy of the license can be found in the `adminer` directory.
 
 ### Acknowledgments
 
