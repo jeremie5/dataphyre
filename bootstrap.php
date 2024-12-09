@@ -39,18 +39,31 @@ function tracelog($filename=null, $line=null, $class=null, $function=null, $text
 }
 
 if($bootstrap_config['prevent_keyless_direct_access']===true){
-	if(!file_exists($file=__DIR__."/direct_access_key"))file_put_contents($file, bin2hex(openssl_random_pseudo_bytes(32)));
-	if($_SERVER['HTTP_X_TRAFFIC_SOURCE']!=="haproxy" && $_SERVER['HTTP_X_TRAFFIC_SOURCE']!=="internal_traffic"){
+	if(!file_exists($file=__DIR__."/direct_access_key")){
+		file_put_contents($file, bin2hex(openssl_random_pseudo_bytes(32)));
+	}
+	if(!in_array($_SERVER['HTTP_X_TRAFFIC_SOURCE'], ["haproxy", "internal_traffic"])){
 		$key=trim(file_get_contents(__DIR__."/direct_access_key"));
 		if(empty($_REQUEST['direct_access_key']) || trim($_REQUEST['direct_access_key'])!==$key){
 			http_response_code(403);
 			die("<h1>Direct access requires authentication.</h1>");
 		}
 	}
+	else
+	{
+		if(filter_var($_SERVER['HTTP_HOST'], FILTER_VALIDATE_IP)!==false){
+			if(empty($_REQUEST['direct_access_key']) || trim($_REQUEST['direct_access_key'])!==$key){
+				http_response_code(403);
+				die("<h1>Direct access requires authentication.</h1>");
+			}
+		}
+	}
 }
 
 if($bootstrap_config['allow_app_override']===true){
-	if(!file_exists($file=__DIR__."/app_override_key"))file_put_contents($file, bin2hex(openssl_random_pseudo_bytes(32)));
+	if(!file_exists($file=__DIR__."/app_override_key")){
+		file_put_contents($file, bin2hex(openssl_random_pseudo_bytes(32)));
+	}
 	if(!empty($_COOKIE['app_override'])){
 		$key=file_get_contents(__DIR__."/app_override_key");
 		$user_app_cookie=explode(',', $_COOKIE['app_override']);
