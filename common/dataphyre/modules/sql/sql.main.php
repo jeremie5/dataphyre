@@ -656,7 +656,7 @@ class sql {
 		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		switch($dbms){
 			case"mysql":
-				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}}} // Turn booleans into integer value
+				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into integer value, arrays into json
 				if($callback){
 					mysql_query_builder::$queued_queries[$queue]['insert'][]=[
 						'location'=>$location, 
@@ -672,7 +672,7 @@ class sql {
 				$query_result=mysql_query_builder::mysql_insert($dbms_cluster, $location, $fields, $vars);
 				break;
 			case"postgresql":
-			if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=$value?'t':'f';}}} // Turn booleans into strings
+			if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=$value?'t':'f';}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into strings, arrays into json
 				if($callback){
 					postgresql_query_builder::$queued_queries[$queue]['insert'][]=[
 						'location'=>$location, 
@@ -688,7 +688,7 @@ class sql {
 				$query_result=postgresql_query_builder::postgresql_insert($dbms_cluster, $location, $fields, $vars);
 				break;
 			case"sqlite":
-				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}}} // Turn booleans into integer value
+				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into integer value, arrays into json
 				if($callback){
 					sqlite_query_builder::$queued_queries[$queue]['insert'][]=[
 						'location'=>$location, 
@@ -737,7 +737,7 @@ class sql {
 		}
 		switch($dbms){
 			case"mysql":
-				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}}} // Turn booleans into integer value
+				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into integer value, arrays into json
 				if(is_array($fields)){
 					$vars??=[];
 					$vars=array_values(array_merge(array_values($fields), $vars));
@@ -758,7 +758,7 @@ class sql {
 				$query_result=mysql_query_builder::mysql_update($dbms_cluster, $location, $fields, $params, $vars);
 				break;
 			case"postgresql":
-				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=$value?'t':'f';}}} // Turn booleans into strings
+				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=$value?'t':'f';}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into strings, arrays into json
 				if(is_array($fields)){
 					$vars??=[];
 					$vars=array_values(array_merge(array_values($fields), $vars));
@@ -779,7 +779,7 @@ class sql {
 				$query_result=postgresql_query_builder::postgresql_update($dbms_cluster, $location, $fields, $params, $vars);
 				break;
 			case"sqlite":
-				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}}} // Turn booleans into integer value
+				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into integer value, arrays into json
 				if(is_array($fields)){
 					$vars??=[];
 					$vars=array_values(array_merge(array_values($fields), $vars));
