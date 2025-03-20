@@ -21,8 +21,8 @@ class scheduling {
 
     public static function run(string $name, string $file_path, float $frequency, float $timeout, string $memory_limit, array $dependencies, ?string $app_override=null) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
-		global $rootpath, $app;
-		if(!isset($app_override))$app_override=$app;
+		global $rootpath, $bootstrap_config;
+		if(!isset($app_override))$app_override=$bootstrap_config['app'];
         $scheduler=[
             'name'=>$name,
             'file_path'=>$file_path,
@@ -43,15 +43,14 @@ class scheduling {
 			if(false!==file_put_contents($running_lock_file,'', LOCK_EX)){
 				register_shutdown_function(function($rootpath, $name, $app_override){
 					$override_key=file_get_contents($rootpath['common_root']."app_override_key");
-					$url=$_SERVER['SERVER_ADDR'].'/dataphyre/scheduler/'.$name.'?app_override='.$app_override.','.$override_key;
 					$ch=curl_init();
-					curl_setopt($ch,CURLOPT_URL,$url);
+					curl_setopt($ch,CURLOPT_URL, $_SERVER['SELF_ADDR'].'/dataphyre/scheduler/'.$name.'?app_override='.$app_override.','.$override_key);
 					curl_setopt($ch, CURLOPT_HTTPHEADER, array(
 						'X-Traffic-Source: internal_traffic'
 					));
-					curl_setopt($ch,CURLOPT_RETURNTRANSFER,1);
-					curl_setopt($ch,CURLOPT_TIMEOUT_MS,1); // Timeout after 1 millisecond
-					curl_setopt($ch,CURLOPT_NOSIGNAL,1);
+					curl_setopt($ch,CURLOPT_RETURNTRANSFER, 1);
+					curl_setopt($ch,CURLOPT_TIMEOUT_MS, 1); // Timeout after 1 millisecond
+					curl_setopt($ch,CURLOPT_NOSIGNAL, 1);
 					curl_exec($ch);
 					curl_close($ch);
 				}, $rootpath, $name, $app_override);

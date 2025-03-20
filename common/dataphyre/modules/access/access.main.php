@@ -481,7 +481,7 @@ class access{
 						if(self::logged_in()===false){
 							tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="User needs to be logged in, redirecting to login page");
 							if(!empty(core::get_config("dataphyre/access/require_session_redirect"))){
-								header('Location: '.core::get_config("dataphyre/access/require_session_redirect").'?redir='.base64_encode(ltrim($_SERVER["REQUEST_URI"], "/")));
+								header('Location: '.core::get_config("dataphyre/access/require_session_redirect").'?redir='.rtrim(base64_encode(ltrim($_SERVER["REQUEST_URI"], "/")), '='));
 								exit();
 							}
 							ob_end_clean();

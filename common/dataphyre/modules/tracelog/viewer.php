@@ -17,11 +17,17 @@
 require_once($rootpath['common_dataphyre']."modules/core/core.main.php");
 
 function convert_storage($size){
-	if(is_numeric($size)){
-		$unit=array('b','kb','mb','gb','tb','pb');
-		return @round($size/pow(1024,($i=floor(log($size,1024)))),2).' '.$unit[$i];
-	}
+    if(is_numeric($size)){
+        if ($size == 0) {
+            return '0 b';
+        }
+        $unit = array('b','kb','mb','gb','tb','pb');
+        $i = floor(log($size, 1024));
+        return round($size / pow(1024, $i), 2) . ' ' . $unit[$i];
+    }
+    return $size;
 }
+
 function lines_of_code(){
     global $rootpath;
     $command="find ".$rootpath['common_root']." -type f -name '*.php' ! -path '*/logs/*' ! -path '*/cache/*' -exec wc -l {} + | awk '{total += $1} END{print total}'";

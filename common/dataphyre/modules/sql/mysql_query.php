@@ -22,11 +22,15 @@ register_shutdown_function(function(){
 	ini_set('display_errors', 0);
 	ini_set('display_startup_errors', 0);
 	error_reporting(0);
-	do{
-		foreach(mysql_query_builder::$queued_queries as $queue=>$queue_data){
-			mysql_query_builder::execute_multiquery($queue);
-		}
-	}while(!empty(mysql_query_builder::$queued_queries));
+		do{
+			foreach(mysql_query_builder::$queued_queries as $queue=>$queue_data){
+				try {
+					mysql_query_builder::execute_multiquery($queue);
+				} catch (\Throwable $exception) {
+					log_error("MySQL Queued Query Execution Error", $exception);
+				}
+			}
+		}while(!empty(mysql_query_builder::$queued_queries));
 	ob_end_clean();
 });
 
@@ -68,7 +72,7 @@ class mysql_query_builder {
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="$endpoint is known as being unavailable, using next available server", $S="warning");
 			return false;
 		}
-		if(!$conn=mysqli_init()){
+		if(!$conn=\mysqli_init()){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Failed mysql init", $S="warning");
 			sql::flag_server_unavailable($endpoint);
 			return false;
@@ -80,7 +84,9 @@ class mysql_query_builder {
 		}
 		$username=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms_username'];
 		$database=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['database_name'];
-		if(!$conn->real_connect($endpoint, $username, core::get_password($endpoint), $database)){
+		$password=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['password'];
+		$password??=core::get_password($endpoint);
+		if(!$conn->real_connect($endpoint, $username, $password, $database)){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Failed connecting to $endpoint", $S="warning");
 			sql::flag_server_unavailable($endpoint);
 			return false;
@@ -94,7 +100,7 @@ class mysql_query_builder {
 		return self::$conns[$dbms_cluster]=$conn;
 	}
 	
-	private static function execute_prepared_statements(object $conn, array $prepared_statements, array &$results) : bool {
+	private static function execute_prepared_statements(object $conn, array $prepared_statements, array &$results, string $dbms_cluster='n/a') : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		$index=0;
 		try{
@@ -109,54 +115,65 @@ class mysql_query_builder {
 				$stmt->close();
 			}
 			$conn->commit();
-		}catch(Exception $e){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Query has failed and will be rolled back", "fatal");
+		}catch(Exception $exception){
 			$conn->rollback();
+			\dataphyre\sql::log_query_error('MySQLi', $dbms_cluster, $statement['query'], $statement['vars'], $exception);
 			return false;
 		}
 		return true;
 	}
 	
-	private static function execute_multi_query_string(object $conn, string $multi_query_string, array &$results) : void {
+	private static function execute_multi_query_string(object $conn, string $multi_query_string, array &$results, string $dbms_cluster='n/a') : void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		$index=0;
-		if($conn->multi_query($multi_query_string)){
-			do{
-				$result=$conn->store_result();
-				if($result)$results[$index]=$result->fetch_all(MYSQLI_ASSOC);
-				if($result)$result->free();
-				$index++;
-			}while($conn->more_results() && $conn->next_result());
+		try{
+			if($conn->multi_query($multi_query_string)){
+				do{
+					$result=$conn->store_result();
+					if($result)$results[$index]=$result->fetch_all(MYSQLI_ASSOC);
+					if($result)$result->free();
+					$index++;
+				}while($conn->more_results() && $conn->next_result());
+			}
+			$conn->close();
+		}catch(Exception $exception){
+			$conn->rollback();
+			\dataphyre\sql::log_query_error('MySQLi', $dbms_cluster, $multi_query_string, [], $exception);
 		}
-		$conn->close();
 	}
 	
-	private static function process_results(array $results, array $queries) : void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		foreach($results as $index=>$result){
-			$associative=isset($queries[$index]['associative'])?$queries[$index]['associative']:null;
-			$result=empty($result)?false:($associative===false?$result[0]:$result);
-			if($queries[$index]['type']==='count'){
-				$result=$result[0]['c'];
+	private static function process_results(?array $results, ?array $queries): void {
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		$query_list = [];
+		foreach ($queries as $query_type => $query_group) {
+			foreach ($query_group as $query) {
+				$query['type'] = $query_type;
+				$query_list[] = $query;
 			}
-			if(is_array($queries[$index]['caching'])){
-				if(isset($queries[$index]['hash'])){
-					sql::cache_query_result($queries[$index]['location'], $queries[$index]['hash'], $result, $queries[$index]['caching']);
-				}
+		}
+		foreach ($results as $index => $result) {
+			$query = $query_list[$index] ?? null;
+			if (!$query) {
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Skipping invalid query at index $index");
+				continue;
+			}
+			$associative = $query['associative'] ?? null;
+			$result = empty($result) || !is_array($result) ? false : ($associative === false ? $result[0] : $result);
+			if ($query['type'] === 'count' && isset($result[0]['count'])) {
+				$result = (int) $result[0]['count'];
+			}
+			if (!empty($query['caching']) && isset($query['hash'])) {
+				sql::cache_query_result($query['location'], $query['hash'], $result, $query['caching']);
 			}
 			else
 			{
-				if($result!==false && isset($queries[$index]['clear_cache']) && $queries[$index]['clear_cache']!==false){
-					if($queries[$index]['clear_cache']===true){
-						sql::invalidate_cache($queries[$index]['location']);
-					}elseif($queries[$index]['clear_cache']!==null){
-						sql::invalidate_cache($queries[$index]['clear_cache']);
-					}
+				if ($result !== false && !empty($query['clear_cache'])) {
+					sql::invalidate_cache($query['clear_cache'] === true ? $query['location'] : $query['clear_cache']);
 				}
 			}
-			if(isset($queries[$index]['callback']) && null!==$callback=$queries[$index]['callback']){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Calling callback");
-				$callback($result);
+			if (!empty($query['callback']) && is_callable($query['callback'])) {
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Calling callback");
+				$query['callback']($result);
 			}
 		}
 	}
@@ -164,35 +181,32 @@ class mysql_query_builder {
 	public static function execute_multiquery(string $queue='') : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(!isset(self::$queued_queries[$queue])) return false;
-		$queued_queries=self::$queued_queries;
+		$queued_queries=self::$queued_queries[$queue];
 		unset(self::$queued_queries[$queue]);
 		global $configurations;
 		$multipoint=false;
 		$queries=[];
+		$prepared_statements=[];
 		$multi_query_string="";
 		$index=0;
-		foreach($queued_queries[$queue] as $query_type=>$query_info_array){
+		foreach($queued_queries as $query_type=>$query_info_array){
 			foreach($query_info_array as $query_info){
-				$query="";
-				if($query_type==='select'){
-					$query_info['query']="SELECT {$query_info['select']} FROM {$query_info['location']} {$query_info['params']}";
+				switch($query_type){
+					case 'select':
+						$query_info['query']="SELECT {$query_info['select']} FROM {$query_info['location']} {$query_info['params']}";
+					case 'insert':
+						$query_info['fields_question_marks']=explode(',', $query_info['fields']);
+						$query_info['fields_question_marks']=str_repeat("?,", count($query_info['fields_question_marks']));
+						$query_info['fields_question_marks']=rtrim($query_info['fields_question_marks'],',');
+						$query_info['query']="INSERT {$query_info['ignore']} INTO {$query_info['location']} ({$query_info['fields']}) VALUES ({$query_info['fields_question_marks']})";
+					case 'update':
+						$query_info['query']="UPDATE {$query_info['location']} SET {$query_info['fields']} {$query_info['params']}";
+					case 'count':
+						$query_info['query']="SELECT COUNT(*) as count FROM {$query_info['location']} {$query_info['params']}";
+					case 'delete':
+						$query_info['query']="DELETE FROM {$query_info['location']} {$query_info['params']}";
 				}
-				elseif($query_type==='insert'){
-					$query_info['fields_question_marks']=explode(',', $query_info['fields']);
-					$query_info['fields_question_marks']=str_repeat("?,", count($query_info['fields_question_marks']));
-					$query_info['fields_question_marks']=rtrim($query_info['fields_question_marks'],',');
-					$query_info['query']="INSERT {$query_info['ignore']} INTO {$query_info['location']} ({$query_info['fields']}) VALUES ({$query_info['fields_question_marks']})";
-				}
-				elseif($query_type==='update'){
-					$query_info['query']="UPDATE {$query_info['location']} SET {$query_info['fields']} {$query_info['params']}";
-				}
-				elseif($query_type==='count'){
-					$query_info['query']="SELECT COUNT(*) as c FROM {$query_info['location']} {$query_info['params']}";
-				}
-				elseif($query_type==='delete'){
-					$query_info['query']="DELETE FROM {$query_info['location']} {$query_info['params']}";
-				}
-				if(is_array($query_info['vars'])){
+				if(isset($query_info['vars']) && is_array($query_info['vars'])){
 					$prepared_statements[$index]=['query'=>$query_info['query'], 'vars'=>$query_info['vars']];
 				}
 				else
@@ -206,20 +220,20 @@ class mysql_query_builder {
 			}
 		}
 		$results=[];
-		$dbms_cluster=$configurations['dataphyre']['sql']['tables']['raw']['cluster']??$configurations['dataphyre']['sql']['default_cluster'];
+		$dbms_cluster=$configurations['dataphyre']['sql']['tables']['raw']['cluster'] ?? $configurations['dataphyre']['sql']['default_cluster'];
 		if($multipoint===true){
 			$endpoints=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
 			if(!empty($prepared_statements)){
 				foreach($endpoints as $endpoint){
 					$conn=self::connect_to_endpoint($endpoint, $dbms_cluster);
-					if(!self::execute_prepared_statements($conn, $prepared_statements, $results))return false;
+					if(!self::execute_prepared_statements($conn, $prepared_statements, $results, $dbms_cluster))return false;
 				}
 			}
 			else
 			{
 				foreach($endpoints as $endpoint){
 					$conn=self::connect_to_endpoint($endpoint, $dbms_cluster);
-					self::execute_multi_query_string($conn, $multi_query_string, $results);
+					self::execute_multi_query_string($conn, $multi_query_string, $results, $dbms_cluster);
 				}
 			}
 		}
@@ -227,11 +241,11 @@ class mysql_query_builder {
 		{
 			self::connect_to_cluster($dbms_cluster);
 			if(!empty($prepared_statements)){
-				if(!self::execute_prepared_statements(self::$conns[$dbms_cluster], $prepared_statements, $results))return false;
+				if(!self::execute_prepared_statements(self::$conns[$dbms_cluster], $prepared_statements, $results, $dbms_cluster))return false;
 			}
 			else
 			{
-				self::execute_multi_query_string(self::$conns[$dbms_cluster], $multi_query_string, $results);
+				self::execute_multi_query_string(self::$conns[$dbms_cluster], $multi_query_string, $results, $dbms_cluster);
 			}
 		}
 		self::process_results($results, $queries);
@@ -278,8 +292,8 @@ class mysql_query_builder {
 			$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster);
 			try{
 				$result=$execute_query($conn);
-			}catch(Throwable $ex){
-				log_error("MySQLi exception", $exception);	
+			}catch(\Throwable $exception){
+				\dataphyre\sql::log_query_error('MySQLi', $dbms_cluster, $query, $vars, $exception);
 			}
 		}
 		if($result === false || !($result instanceof mysqli_result)){
@@ -302,34 +316,38 @@ class mysql_query_builder {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_SIMPLE_SELECT",...func_get_args())) return $early_return;
 		$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster);
-		if(is_array($vars)){
-			$datatypes=str_repeat("s", count($vars));
-			$stmt=$conn->prepare("SELECT ".$select." FROM ".$location." ".$params);
-			$stmt->bind_param($datatypes, ...$vars);
-			$stmt->execute();
-			$result=$stmt->get_result();
-			$stmt->close();
-		}
-		else
-		{
-			$result=mysqli_query($conn,"SELECT ".$select." FROM ".$location." ".$params);
-		}
-		if($result!=false){
-			$num_rows=mysqli_num_rows($result);
-		}
-		if($num_rows==false){
-			return false;
-		}
-		if($associative!==true){
-			$query_result=$result->fetch_assoc();
-		}
-		else
-		{
-			$row=[];
-			while($row=$result->fetch_assoc()){
-				$rows[]=$row;
+		try{
+			if(is_array($vars)){
+				$datatypes=str_repeat("s", count($vars));
+				$stmt=$conn->prepare("SELECT ".$select." FROM ".$location." ".$params);
+				$stmt->bind_param($datatypes, ...$vars);
+				$stmt->execute();
+				$result=$stmt->get_result();
+				$stmt->close();
 			}
-			$query_result=$rows;
+			else
+			{
+				$result=mysqli_query($conn,"SELECT ".$select." FROM ".$location." ".$params);
+			}
+			if($result!=false){
+				$num_rows=mysqli_num_rows($result);
+			}
+			if($num_rows==false){
+				return false;
+			}
+			if($associative!==true){
+				$query_result=$result->fetch_assoc();
+			}
+			else
+			{
+				$row=[];
+				while($row=$result->fetch_assoc()){
+					$rows[]=$row;
+				}
+				$query_result=$rows;
+			}
+		}catch(\Throwable $exception){
+			\dataphyre\sql::log_query_error('MySQLi', $dbms_cluster, $query, $vars, $exception);
 		}
 		return $query_result;
 	}
@@ -350,8 +368,8 @@ class mysql_query_builder {
 		}
 		try{
 			$result=mysqli_fetch_assoc(mysqli_query($conn,"SELECT COUNT(*) as count FROM ".$location." ".$params));
-		}catch(Throwable $ex){
-			log_error("MySQLi Exception", $ex);
+		}catch(\Throwable $exception){
+			\dataphyre\sql::log_query_error('MySQLi', $dbms_cluster, $query, $vars, $exception);
 		}
 		return $result['count'];
 	}
@@ -385,8 +403,8 @@ class mysql_query_builder {
 					mysqli_query($conn,"UPDATE ".$location." SET ".$fields." ".$params);
 					$i++;
 				}
-			}catch(Throwable $ex){
-				log_error("MySQLi Exception", $ex);
+			}catch(\Throwable $exception){
+				\dataphyre\sql::log_query_error('MySQLi', $dbms_cluster, $query, $vars, $exception);
 			}
 			if(!$is_multipoint)break;
 		}
@@ -417,8 +435,8 @@ class mysql_query_builder {
 				$stmt->execute();
 				$result_key=$stmt->insert_id;
 				$stmt->close();
-			}catch(Throwable $ex){
-				log_error("MySQLi Exception", $ex);
+			}catch(\Throwable $exception){
+				\dataphyre\sql::log_query_error('MySQLi', $dbms_cluster, $query, $vars, $exception);
 			}
 			if(!$is_multipoint)break;
 		}
@@ -456,8 +474,8 @@ class mysql_query_builder {
 					mysqli_query($conn,"DELETE FROM ".$location." ".$params);
 					$i++;
 				}
-			}catch(Throwable $ex){
-				log_error("MySQLi Exception", $ex);
+			}catch(\Throwable $exception){
+				\dataphyre\sql::log_query_error('MySQLi', $dbms_cluster, $query, $vars, $exception);
 			}
 			if(!$is_multipoint)break;
 		}

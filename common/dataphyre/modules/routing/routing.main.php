@@ -39,9 +39,9 @@ class routing{
 	
 	public static $route_non_match_count=0;
 	
-	private static $verbose_non_match=false;
+	private static $verbose_non_match=true;
 	
-	public static function check_route(string $route, string $file): string|bool {
+	public static function check_route(string $route, string $file=''): string|bool {
 		global $rootpath;
 		self::$route_non_match_count++;
 		$file=preg_replace('!([^:])(//)!', "$1/", $file);
@@ -55,15 +55,14 @@ class routing{
 		}
 		preg_match_all("/(?<={).+?(?=})/", $route, $param_matches);
 		$match=function($file) use($route){
-			$log=[
-				"Route matched after " .(self::$route_non_match_count - 1)." non-matches.",
-				"Matched route: $route",
-				"Serving file: $file"
-			];
+			$log[]="Route match after " .(self::$route_non_match_count - 1)." non-matches.";
+			$log[]="Matched route: $route";
+			if(!empty($file))$log[]="Returning file: $file";
 			foreach($log as $line){
 				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $line);
 			}
-			return self::set_page($file);
+			if(!empty($file))return self::set_page($file);
+			return true;
 		};
 		if(empty($param_matches[0])){
 			if($request===$route){
@@ -129,13 +128,18 @@ class routing{
 		$request=explode("/", $request);
 		foreach($index_num as $key=>$index){
 			if(str_starts_with($param_key[$key], "...")){
-				$array_name=substr($param_key[$key], 3);
-				for($i=$index; $i < count($request); $i++){
-					$temp_params[$array_name][]=$request[$i];
+				if('void'!==$array_name=substr($param_key[$key], 3)){
+					for($i=$index; $i < count($request); $i++){
+						$temp_params[$array_name][]=$request[$i];
+					}
+					$verbose[]="Parameter '{$array_name}' captured as array.";
+				}
+				else
+				{
+					$verbose[]="Parameter 'void' discarded.";
 				}
 				$prevalidated[$key]=true;
 				array_splice($request, $index);
-				$verbose[]="Parameter '{$array_name}' captured as array.";
 				break;
 			}
 			if(preg_match('/{(.+?)}/', $param_key[$key], $matches)){
@@ -261,6 +265,17 @@ class routing{
 					}
 					$verbose[]=$good_id_format ? "Parameter '{$param_key[$key]}' matched is_uuid." : "Parameter '{$param_key[$key]}' failed is_uuid.";
 					break;
+				case 'is_either':
+					$is_format=true;
+					$param_parts=explode(',', $param_key[$key]); 
+					$param_name=$param_parts[1];
+					$allowed_values=array_slice($param_parts, 2);
+					if (in_array($request[$index], $allowed_values, true)){
+						$temp_params[$param_name]=$request[$index];
+						$good_id_format=true;
+					}
+					$verbose[]=$good_id_format ? "Parameter '{$param_name}' matched is_either (" . implode(", ", $allowed_values) . ")." : "Parameter '{$param_name}' failed is_either (" . implode(", ", $allowed_values) . ").";
+					break;
 				default:
 					$temp_params[$format_params[0]]=$request[$index];
 					$good_id_format=true;
@@ -272,7 +287,7 @@ class routing{
 				return self::$verbose_non_match ? ['matched'=>false, 'verbose'=>$verbose] : ['matched'=>false];
 			}
 			if(!$is_format){
-				$temp_params[$param_key[$key]]=$request[$index];
+				//$temp_params[$param_key[$key]]=$request[$index];
 			}
 			$request[$index]="{.*}";
 		}

@@ -142,6 +142,7 @@ class core {
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		}
 		global $nonce;
+		header_remove("X-Powered-By");
 		header("server: Dataphyre");
 		header("X-XSS-Protection: 1; mode=block");
 		header("X-Frame-Options: deny");
@@ -839,37 +840,10 @@ class core {
 		return $hex;
 	}
 	
-	/**
-	 * Handle unavailability or errors in the Datahyre application.
-	 *
-	 * This function is used to log and handle fatal errors or unavailability situations in the application.
-	 * It incorporates various mechanisms for different modes like task mode and dpanel mode.
-	 * The function also allows for dialback functionality.
-	 *
-	 * @author Jérémie Fréreault <jeremie@phyro.ca>
-	 * @package dataphyre\core
-	 *
-	 * @param int|string $errno The error number or code.
-	 * @param string     $type  The type or description of the error.
-	 * 
-	 * @return void|mixed The function may exit the script, display an error, or redirect the user.
-	 *                    Could also return early if dialback function CALL_CORE_UNAVAILABLE is defined.
-	 *
-	 * @example
-	 * // Example 1: Trigger an unavailable situation with a generic error code and type
-	 * dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, "Failed aligning fluxes", 'safemode');
-	 *
-	 * @common_pitfalls
-	 * 1. Not providing a valid error code or type could result in a less informative error message.
-	 * 2. Inaccurate global variables like $dpanel_mode, $is_task, etc., could lead to unexpected behavior.
-	 * 3. Make sure that the configuration for 'dataphyre/core/unavailable/file_path' points to an existing file.
-	 */
 	public static function unavailable(string $file, string $line, string $class, string $function, string $error_description='unknown', string $error_type='unknown') : void {
 		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		}
-		global $is_task;
-		global $dpanel_mode;
 		global $rootpath;
 		$error_code=substr(strtoupper(md5($error_description.$error_type.$file.$class.$function)), 0, 8);
 		$known_error_conditions=json_decode(file_get_contents($known_error_conditions_file=$rootpath['dataphyre']."cache/known_error_conditions.json"),true);
@@ -884,15 +858,16 @@ class core {
 			);
 			core::file_put_contents_forced($known_error_conditions_file, json_encode($known_error_conditions));
 		}
-		if($dpanel_mode===true){
+		log_error("Unavailability: ".$error_description);
+		if(RUN_MODE==='diagnostic'){
 			if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="<h1>FATAL ERROR: $error_code $error_type</h1>", $S="fatal");
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="<h1>FATAL ERROR: $error_code ($error_type): $error_description</h1>", $S="fatal");
 			}
 			return;
 		}
-		if($is_task===true){
+		if(RUN_MODE!=='request'){
 			if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="<h1>FATAL ERROR: $error_code $error_type</h1>", $S="fatal");
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="<h1>FATAL ERROR: $error_code ($error_type): $error_description</h1>", $S="fatal");
 			}
 		}
 		else
@@ -905,7 +880,7 @@ class core {
 				'µtime'=>microtime(true), 
 				'srv'=>$_COOKIE['__Secure-SRV'], 
 				'@url'=>core::url_self(true)
-			));
+			), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 			if(file_exists(config("dataphyre/core/unavailable/file_path"))){
 				if(config("dataphyre/core/unavailable/redirection")===false){
 					$_GET['err']=urlencode(base64_encode($err_string));
@@ -923,57 +898,64 @@ class core {
 			}
 			else
 			{
-				pre_init_error($err_string);
+				pre_init_error();
 			}
 		}
 		exit();
 	}
 	
-	/**
-	 * Retrieve the current URL of the application.
-	 *
-	 * This function generates the URL of the current request, optionally including the full path and query string.
-	 * It takes into account various server variables to determine the correct protocol and host.
-	 * Dialback functionality is also integrated in the function.
-	 * 
-	 * @author Jérémie Fréreault <jeremie@phyro.ca>
-	 * @package dataphyre\core
-	 *
-	 * @param bool $full Whether to include the full URL path and query string. Defaults to false.
-	 *
-	 * @return string|mixed Returns the generated URL. Could also return early if dialback function CALL_CORE_URL_SELF is defined.
-	 * 
-	 * @example
-	 * // Example 1: Get the base URL of the current request
-	 * $baseUrl = dataphyre\core::url_self();
-	 * 
-	 * // Example 2: Get the full URL of the current request including path and query string
-	 * $fullUrl = dataphyre\core::url_self(true);
-	 *
-	 * @common_pitfalls
-	 * 1. Relying on this function behind a proxy that doesn't set HTTP_X_FORWARDED_PROTO could result in an incorrect protocol.
-	 * 2. The function doesn't sanitize the URL, so be cautious when using its output in security-sensitive contexts.
-	 * 3. Using this function for generating callback or return URLs may expose sensitive information if the URL contains query parameters.
-	 */
-	public static function url_self(bool $full=false) : string {
-		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
+		/**
+		 * Retrieve the current URL of the application.
+		 *
+		 * This function constructs the URL of the current request, optionally including the full path and query string.
+		 * It determines the correct protocol and host, ensuring compatibility with Docker environments and proxies.
+		 * The function prioritizes `HTTP_X_FORWARDED_PROTO` for detecting the protocol, then falls back to `HTTPS` or `http`.
+		 * Additionally, it removes the `uri` parameter from the query string to prevent unintended parameter leakage.
+		 *
+		 * @author Jérémie Fréreault <jeremie@phyro.ca>
+		 * @package dataphyre\core
+		 *
+		 * @param bool $full Whether to include the full URL path and query string. Defaults to false.
+		 *
+		 * @return string The generated URL of the current request, ensuring proper protocol and host resolution.
+		 *
+		 * @example
+		 * // Example 1: Get the base URL of the current request (e.g., "https://example.com/")
+		 * $baseUrl = dataphyre\core::url_self();
+		 * 
+		 * // Example 2: Get the full URL of the current request, including the path and query string
+		 * // e.g., "https://example.com/some/path?foo=bar"
+		 * $fullUrl = dataphyre\core::url_self(true);
+		 *
+		 * @common_pitfalls
+		 * 1. **Proxy Handling:** If running behind a proxy that does not set `HTTP_X_FORWARDED_PROTO`, 
+		 *    the function may default to `http` even if the request was originally made over `https`.
+		 * 2. **Docker Environment Considerations:** In a containerized setup without a domain, 
+		 *    `HTTP_HOST` may be missing. The function falls back to `SERVER_NAME` or `'localhost'` to prevent crashes.
+		 * 3. **Query Parameter Handling:** The function removes the `uri` parameter from the query string 
+		 *    to prevent potential conflicts with internal routing.
+		 * 4. **Security Implications:** The function does not sanitize the URL, so avoid using its output 
+		 *    directly in security-sensitive contexts without proper validation.
+		 */
+		public static function url_self(bool $full = false): string {
+			static $cache = [];
+			if (($cache[$full] ?? null) !== null) return $cache[$full];
+			$protocol = $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ((($_SERVER['HTTPS'] ?? '') === 'on') ? 'https' : 'http');
+			$host = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost';
+			$request_uri = $_SERVER['REQUEST_URI'] ?? '/';
+			if ($full) {
+				$parsed_url = parse_url($request_uri);
+				$path = $parsed_url['path'] ?? '/';
+				$query_string = $parsed_url['query'] ?? '';
+				if (!empty($query_string)) {
+					parse_str($query_string, $query_string_array);
+					unset($query_string_array['uri']); // Remove internal parameters if needed
+					$query_string = !empty($query_string_array) ? '?' . http_build_query($query_string_array, '', '&', PHP_QUERY_RFC3986) : '';
+				}
+				return $cache[$full] = $protocol . '://' . $host . $path . $query_string;
+			}
+			return $cache[$full] = $protocol . '://' . $host . '/';
 		}
-		if(null!==$early_return=core::dialback("CALL_CORE_URL_SELF",...func_get_args())) return $early_return;
-		static $cache=[];
-		if(isset($cache[$full])){
-			return $cache[$full];
-		}
-		if($full===true && str_contains($_SERVER['QUERY_STRING'], '?')){
-			parse_str($_SERVER['QUERY_STRING'], $query_string);
-			unset($query_string['uri']);
-			$query_string=array_map(function($val){return $cache[$full]=htmlspecialchars($val, ENT_QUOTES, 'UTF-8');}, $query_string);
-			$query_string='?'.http_build_query($query_string);
-		}
-		$protocol=isset($_SERVER['HTTP_X_FORWARDED_PROTO']) ? $_SERVER['HTTP_X_FORWARDED_PROTO'] : (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS']==='on' ? 'https' : 'http');
-		if(!isset($_SERVER['HTTP_HOST'])) return $cache[$full]=$full ? $query_string : '/';
-		return $cache[$full]=$protocol.'://'.$_SERVER['HTTP_HOST'].($full ? $_SERVER['REQUEST_URI'] : '/');
-	}
 	
 	/**
 	 * Update the query string of a given URL.
@@ -1016,6 +998,7 @@ class core {
 		if(null!==$early_return=core::dialback("CALL_CORE_URL_UPDATED_QUERYSTRING",...func_get_args())) return $early_return;
 		if(empty($value) && empty($remove))return $url;
 		$parsed_url=parse_url($url);
+		$parsed_url['query']??='';
 		parse_str($parsed_url['query'], $query_string);
 		unset($query_string['uri']);
 		if(!is_array($value)){
@@ -1283,7 +1266,7 @@ class core {
 	 * @author Jérémie Fréreault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 *
-	 * @param string $dir The directory path along with the filename where the data should be written.
+	 * @param string $path The directory path along with the filename where the data should be written.
 	 * @param string $contents The data to write to the file.
 	 * @return int|bool Returns the number of bytes written to the file, or false on failure.
 	 *
@@ -1296,7 +1279,7 @@ class core {
 	 * 2. Incorrect Directory Separator: Make sure to use the correct directory separator for the underlying operating system.
 	 * 3. Overwriting: The function will overwrite the file if it already exists, so ensure that's the desired behavior.
 	 */
-	public static function file_put_contents_forced(string $dir, string $contents): int|bool {
+	public static function file_put_contents_forced(string $dir, string $contents=''): int|bool {
 		if(null!==$early_return=core::dialback("CALL_CORE_FILE_PUT_CONTENTS_FORCED",...func_get_args())) return $early_return;
 		$parts=explode('/', $dir);
 		$file=array_pop($parts);
@@ -1311,7 +1294,7 @@ class core {
 		}
 		return false;
 	}
-	
+
 	/**
 	 * Recursively removes a directory and its contents.
 	 *
