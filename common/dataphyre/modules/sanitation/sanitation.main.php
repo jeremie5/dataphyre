@@ -85,7 +85,7 @@ class sanitation{
 		}
 		else
 		{
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Unknown sanitation type: ".$datatype, $S="fatal");
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Unknown sanitation type: ".$datatype, $S="warning");
 		}
 		// Remove XSS injection stuff. Jérémie Fréreault - Prior to 2024-07-22
 		$string=str_replace(array('&amp;','&lt;','&gt;'), array('&amp;amp;','&amp;lt;','&amp;gt;'), $string);

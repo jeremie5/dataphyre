@@ -20,11 +20,15 @@ register_shutdown_function(function(){
 	ini_set('display_errors', 0);
 	ini_set('display_startup_errors', 0);
 	error_reporting(0);
-	do{
-		foreach(sqlite_query_builder::$queued_queries as $queue=>$queue_data){
-			sqlite_query_builder::execute_multiquery($queue);
-		}
-	}while(!empty(sqlite_query_builder::$queued_queries));
+		do{
+			foreach(sqlite_query_builder::$queued_queries as $queue=>$queue_data){
+				try {
+					sqlite_query_builder::execute_multiquery($queue);
+				} catch (\Throwable $exception) {
+					log_error("SQLite Queued Query Execution Error", $exception);
+				}
+			}
+		}while(!empty(sqlite_query_builder::$queued_queries));
 	ob_end_clean();
 });
 
@@ -66,14 +70,14 @@ class sqlite_query_builder {
 		try {
 			$conn=new SQLite3($database);
 		} catch (Exception $e){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Failed to connect to SQLite database: ".$e->getMessage(), $S="warning");
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Failed to connect to SQLite database: ".$e->getMessage(), $S="fatal");
 			return false;
 		}
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="SQLite connection to $database successful");
 		return self::$conns[$dbms_cluster]=$conn;
 	}
 	
-	private static function execute_prepared_statements(object $conn, array $prepared_statements, array &$results) : bool {
+	private static function execute_prepared_statements(object $conn, array $prepared_statements, array &$results, string $dbms_cluster='n/a') : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		$index=0;
 		try {
@@ -98,9 +102,9 @@ class sqlite_query_builder {
 				$stmt->close();
 			}
 			$conn->exec('COMMIT');
-		} catch(Exception $e){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Query has failed and will be rolled back: ".$e->getMessage(), $S="fatal");
+		} catch(Exception $exception){
 			$conn->exec('ROLLBACK');
+			\dataphyre\sql::log_query_error('SQLite', $dbms_cluster, $statement['query'], $statement['vars'], $exception);
 			return false;
 		}
 		return true;
@@ -109,52 +113,62 @@ class sqlite_query_builder {
 	private static function execute_multi_query_string(object $conn, string $multi_query_string, array &$results) : void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		$index=0;
-		// Split the multi-query string into individual queries
-		$queries=explode(';', $multi_query_string);
-		foreach($queries as $query){
-			$query=trim($query);
-			if(empty($query)){
-				continue;
-			}
-			$result=$conn->query($query);
-			if($result){
-				$results[$index]=[];
-				while ($row=$result->fetchArray(SQLITE3_ASSOC)){
-					$results[$index][]=$row;
+		try {
+			// Split the multi-query string into individual queries
+			$queries=explode(';', $multi_query_string);
+			foreach($queries as $query){
+				$query=trim($query);
+				if(empty($query)){
+					continue;
 				}
-				$result->finalize();
+				$result=$conn->query($query);
+				if($result){
+					$results[$index]=[];
+					while ($row=$result->fetchArray(SQLITE3_ASSOC)){
+						$results[$index][]=$row;
+					}
+					$result->finalize();
+				}
+				$index++;
 			}
-			$index++;
+			$conn->close();
+		} catch(Exception $exception){
+			\dataphyre\sql::log_query_error('SQLite', $dbms_cluster, $statement['query'], $statement['vars'], $exception);
 		}
-		$conn->close();
 	}
 	
-	private static function process_results(array $results, array $queries) : void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		foreach($results as $index=>$result){
-			$associative=isset($queries[$index]['associative'])?$queries[$index]['associative']:null;
-			$result=empty($result)?false:($associative===false?$result[0]:$result);
-			if($queries[$index]['type']==='count'){
-				$result=$result[0]['c'];
+	private static function process_results(?array $results, ?array $queries): void {
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		$query_list = [];
+		foreach ($queries as $query_type => $query_group) {
+			foreach ($query_group as $query) {
+				$query['type'] = $query_type;
+				$query_list[] = $query;
 			}
-			if(is_array($queries[$index]['caching'])){
-				if(isset($queries[$index]['hash'])){
-					sql::cache_query_result($queries[$index]['location'], $queries[$index]['hash'], $result, $queries[$index]['caching']);
-				}
+		}
+		foreach ($results as $index => $result) {
+			$query = $query_list[$index] ?? null;
+			if (!$query) {
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Skipping invalid query at index $index");
+				continue;
+			}
+			$associative = $query['associative'] ?? null;
+			$result = empty($result) || !is_array($result) ? false : ($associative === false ? $result[0] : $result);
+			if ($query['type'] === 'count' && isset($result[0]['count'])) {
+				$result = (int) $result[0]['count'];
+			}
+			if (!empty($query['caching']) && isset($query['hash'])) {
+				sql::cache_query_result($query['location'], $query['hash'], $result, $query['caching']);
 			}
 			else
 			{
-				if($result!==false && isset($queries[$index]['clear_cache']) && $queries[$index]['clear_cache']!==false){
-					if($queries[$index]['clear_cache']===true){
-						sql::invalidate_cache($queries[$index]['location']);
-					}elseif($queries[$index]['clear_cache']!==null){
-						sql::invalidate_cache($queries[$index]['clear_cache']);
-					}
+				if ($result !== false && !empty($query['clear_cache'])) {
+					sql::invalidate_cache($query['clear_cache'] === true ? $query['location'] : $query['clear_cache']);
 				}
 			}
-			if(isset($queries[$index]['callback']) && null!==$callback=$queries[$index]['callback']){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Calling callback");
-				$callback($result);
+			if (!empty($query['callback']) && is_callable($query['callback'])) {
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Calling callback");
+				$query['callback']($result);
 			}
 		}
 	}
@@ -162,7 +176,7 @@ class sqlite_query_builder {
 	public static function execute_multiquery(string $queue='') : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(!isset(self::$queued_queries[$queue])) return false;
-		$queued_queries=self::$queued_queries;
+		$queued_queries=self::$queued_queries[$queue];
 		unset(self::$queued_queries[$queue]);
 		global $configurations;
 		$multipoint=false;
@@ -170,24 +184,30 @@ class sqlite_query_builder {
 		$multi_query_string="";
 		$index=0;
 		$prepared_statements=[];
-		foreach($queued_queries[$queue] as $query_type => $query_info_array){
+		foreach($queued_queries as $query_type => $query_info_array){
 			foreach($query_info_array as $query_info){
 				if($query_type==='select'){
 					$query_info['query']="SELECT {$query_info['select']} FROM {$query_info['location']} {$query_info['params']}";
-				} elseif($query_type==='insert'){
+				}
+				elseif($query_type==='insert'){
 					$query_info['fields_question_marks']=str_repeat("?,", count(explode(',', $query_info['fields'])));
 					$query_info['fields_question_marks']=rtrim($query_info['fields_question_marks'], ',');
 					$query_info['query']="INSERT INTO {$query_info['location']} ({$query_info['fields']}) VALUES ({$query_info['fields_question_marks']})";
-				} elseif($query_type==='update'){
+				}
+				elseif($query_type==='update'){
 					$query_info['query']="UPDATE {$query_info['location']} SET {$query_info['fields']} {$query_info['params']}";
-				} elseif($query_type==='count'){
-					$query_info['query']="SELECT COUNT(*) as c FROM {$query_info['location']} {$query_info['params']}";
-				} elseif($query_type==='delete'){
+				}
+				elseif($query_type==='count'){
+					$query_info['query']="SELECT COUNT(*) as count FROM {$query_info['location']} {$query_info['params']}";
+				}
+				elseif($query_type==='delete'){
 					$query_info['query']="DELETE FROM {$query_info['location']} {$query_info['params']}";
 				}
 				if(is_array($query_info['vars'])){
 					$prepared_statements[$index]=['query' => $query_info['query'], 'vars' => $query_info['vars']];
-				} else {
+				}
+				else
+				{
 					$multi_query_string .= $query_info['query']."; ";
 				}
 				if(isset($query_info['multipoint']) && $query_info['multipoint']===true) $multipoint=true;
@@ -199,8 +219,7 @@ class sqlite_query_builder {
 		$results=[];
 		$dbms_cluster=$configurations['dataphyre']['sql']['tables']['raw']['cluster'] ?? $configurations['dataphyre']['sql']['default_cluster'];
 		$endpoint=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'][0];
-		// Connect to the SQLite database
-		$conn=new SQLite3($endpoint);
+		self::connect_to_endpoint($endpoint);
 		if(!empty($prepared_statements)){
 			if(!self::execute_prepared_statements($conn, $prepared_statements, $results)) return false;
 		} else {
@@ -232,7 +251,9 @@ class sqlite_query_builder {
 				}
 				$stmt->close();
 				return $query_result;
-			} else {
+			}
+			else
+			{
 				$result=$conn->query($query);
 				if($result===false){
 					return false;
@@ -251,13 +272,15 @@ class sqlite_query_builder {
 				$result=$execute_query($conn);
 				$conn->close();
 			}
-		} else {
+		}
+		else
+		{
 			$endpoint=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'][0];
 			$conn=new SQLite3($endpoint);
 			try {
 				$result=$execute_query($conn);
-			} catch (Throwable $ex){
-				log_error("SQLite exception", $ex); 
+			} catch (\Throwable $exception){
+				\dataphyre\sql::log_query_error('SQLite', $dbms_cluster, $query, $vars, $exception);
 			} finally {
 				$conn->close();
 			}
@@ -269,31 +292,37 @@ class sqlite_query_builder {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null !== $early_return=core::dialback("CALL_SQL_SIMPLE_SELECT", ...func_get_args())) return $early_return;
 		$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster);
-		if(is_array($vars)){
-			$stmt=$conn->prepare("SELECT ".$select." FROM ".$location." ".$params);
-			if($stmt===false){
-				return false;
+		try{
+			if(is_array($vars)){
+				$stmt=$conn->prepare($query="SELECT ".$select." FROM ".$location." ".$params);
+				if($stmt===false){
+					return false;
+				}
+				foreach($vars as $index => $var){
+					$stmt->bindValue($index + 1, $var);
+				}
+				$result=$stmt->execute();
+				$query_result=[];
+				if($result){
+					while ($row=$result->fetchArray($associative ? SQLITE3_ASSOC : SQLITE3_NUM)){
+						$query_result[]=$row;
+					}
+				}
+				$stmt->close();
 			}
-			foreach($vars as $index => $var){
-				$stmt->bindValue($index + 1, $var);
-			}
-			$result=$stmt->execute();
-			$query_result=[];
-			if($result){
+			else
+			{
+				$result=$conn->query($query="SELECT ".$select." FROM ".$location." ".$params);
+				if($result===false){
+					return false;
+				}
+				$query_result=[];
 				while ($row=$result->fetchArray($associative ? SQLITE3_ASSOC : SQLITE3_NUM)){
 					$query_result[]=$row;
 				}
 			}
-			$stmt->close();
-		} else {
-			$result=$conn->query("SELECT ".$select." FROM ".$location." ".$params);
-			if($result===false){
-				return false;
-			}
-			$query_result=[];
-			while ($row=$result->fetchArray($associative ? SQLITE3_ASSOC : SQLITE3_NUM)){
-				$query_result[]=$row;
-			}
+		} catch (\Throwable $exception){
+			\dataphyre\sql::log_query_error('SQLite', $dbms_cluster, $stmt, $vars, $exception);
 		}
 		if(empty($query_result)){
 			return false;
@@ -305,23 +334,27 @@ class sqlite_query_builder {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null !== $early_return=core::dialback("CALL_SQL_SIMPLE_COUNT", ...func_get_args())) return $early_return;
 		$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster);
-		if(is_array($vars)){
-			$stmt=$conn->prepare("SELECT COUNT(*) as count FROM ".$location." ".$params);
-			if($stmt===false){
-				return 0; // Return 0 if preparation fails
+		try{
+			if(is_array($vars)){
+				$stmt=$conn->prepare($query="SELECT COUNT(*) as count FROM ".$location." ".$params);
+				if($stmt===false){
+					return 0; // Return 0 if preparation fails
+				}
+				foreach($vars as $index => $var){
+					$stmt->bindValue($index + 1, $var);
+				}
+				$result=$stmt->execute();
+				if($result===false){
+					return 0; // Return 0 if execution fails
+				}
+				$row=$result->fetchArray(SQLITE3_ASSOC);
+				$stmt->close();
+				return $row['count'] ?? 0; // Return count or 0 if not found
 			}
-			foreach($vars as $index => $var){
-				$stmt->bindValue($index + 1, $var);
-			}
-			$result=$stmt->execute();
-			if($result===false){
-				return 0; // Return 0 if execution fails
-			}
-			$row=$result->fetchArray(SQLITE3_ASSOC);
-			$stmt->close();
-			return $row['count'] ?? 0; // Return count or 0 if not found
+			$result=$conn->querySingle("SELECT COUNT(*) as count FROM ".$location." ".$params, true);
+		} catch (\Throwable $exception){
+			\dataphyre\sql::log_query_error('SQLite', $dbms_cluster, $query, $vars, $exception);
 		}
-		$result=$conn->querySingle("SELECT COUNT(*) as count FROM ".$location." ".$params, true);
 		if($result===false){
 			return 0; // Return 0 if query fails
 		}
@@ -337,7 +370,7 @@ class sqlite_query_builder {
 		shuffle($endpoints);
 		$execute_update=function($conn) use ($location, $fields, $params, $vars){
 			if(is_array($vars)){
-				$stmt=$conn->prepare("UPDATE ".$location." SET ".$fields." ".$params);
+				$stmt=$conn->prepare($query="UPDATE ".$location." SET ".$fields." ".$params);
 				if($stmt===false){
 					return false; // Return false if preparation fails
 				}
@@ -347,7 +380,9 @@ class sqlite_query_builder {
 				$result=$stmt->execute();
 				$stmt->close();
 				return $result !== false; // Return true if execution is successful
-			} else {
+			}
+			else
+			{
 				return $conn->exec("UPDATE ".$location." SET ".$fields." ".$params) !== false;
 			}
 		};
@@ -358,8 +393,8 @@ class sqlite_query_builder {
 				if($execute_update($conn)){
 					$i++;
 				}
-			} catch (Throwable $ex){
-				log_error("SQLite Exception", $ex);
+			} catch (\Throwable $exception){
+				\dataphyre\sql::log_query_error('SQLite', $dbms_cluster, $query, $vars, $exception);
 			}
 			if(!$is_multipoint) break;
 		}
@@ -378,7 +413,7 @@ class sqlite_query_builder {
 		$endpoints=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
 		shuffle($endpoints);
 		$execute_insert=function($conn) use ($location, $fields, $fields_question_marks, $vars){
-			$stmt=$conn->prepare("INSERT OR IGNORE INTO ".$location." (".$fields.") VALUES (".$fields_question_marks.")");
+			$stmt=$conn->prepare($query="INSERT OR IGNORE INTO ".$location." (".$fields.") VALUES (".$fields_question_marks.")");
 			if($stmt===false){
 				return false; // Return false if preparation fails
 			}
@@ -395,8 +430,8 @@ class sqlite_query_builder {
 			try {
 				$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint);
 				$result_key=$execute_insert($conn);
-			} catch (Throwable $ex){
-				log_error("SQLite Exception", $ex);
+			} catch (\Throwable $exception){
+				\dataphyre\sql::log_query_error('SQLite', $dbms_cluster, $query, $vars, $exception);
 			}
 			if(!$is_multipoint) break;
 		}
@@ -412,8 +447,7 @@ class sqlite_query_builder {
 		$endpoints=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
 		shuffle($endpoints);
 		$execute_delete=function($conn) use ($location, $params, $vars){
-			$query="DELETE FROM ".$location." ".$params;
-			$stmt=$conn->prepare($query);
+			$stmt=$conn->prepare($query="DELETE FROM ".$location." ".$params);
 			if($stmt===false){
 				return false; // Return false if preparation fails
 			}
@@ -432,8 +466,8 @@ class sqlite_query_builder {
 				if($execute_delete($conn)){
 					$i++;
 				}
-			} catch (Throwable $ex){
-				log_error("SQLite Exception", $ex);
+			} catch (\Throwable $exception){
+				\dataphyre\sql::log_query_error('SQLite', $dbms_cluster, $query, $vars, $exception);
 			}
 			if(!$is_multipoint) break;
 		}

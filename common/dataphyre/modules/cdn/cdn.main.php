@@ -120,14 +120,12 @@ class cdn{
 			{
 				$curl=curl_init($configurations['dataphyre']['cdn']['block_storage_url']."cdn_api/purge");
 				curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-				curl_setopt($curl, [
-					CURLOPT_URL=>$configurations['dataphyre']['cdn']['base_url']."cdn_api/push", 
-					CURLOPT_RETURNTRANSFER=>true,
-					CURLOPT_POST=>true,
-					CURLOPT_POSTFIELDS =>[
-						"pvk"=>dpvk(),
-						"blockid"=>$blockid,
-					],
+				curl_setopt($curl, CURLOPT_URL, $configurations['dataphyre']['cdn']['base_url'] . "cdn_api/push");
+				curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+				curl_setopt($curl, CURLOPT_POST, true);
+				curl_setopt($curl, CURLOPT_POSTFIELDS, [
+					"pvk" => dpvk(),
+					"blockid" => $blockid,
 				]);
 				if(false!==$result=curl_exec($curl)){
 					if(null!==$decoded_result=json_decode($result, true)){

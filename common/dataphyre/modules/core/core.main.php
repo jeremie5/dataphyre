@@ -12,10 +12,11 @@
  *
  * This software is provided "as is", without any warranty of any kind.
  */
+ 
+ini_set('display_errors', 0);
+ini_set('display_startup_errors', 0);
+error_reporting(~E_ALL);
 
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
 set_error_handler(function(...$args){ return;}, E_ALL);
 
 foreach(['helper_functions.php', 'language_additions.php', 'core_functions.php'] as $file){
@@ -172,6 +173,8 @@ if(RUN_MODE!=='diagnostic'){
 		if($mod=dp_module_present('caspow'))require($mod[0]);
 	}
 
+	if($mod=dp_module_present('issue'))require($mod[0]);
+	if($mod=dp_module_present('localization'))require($mod[0]);
 	if($mod=dp_module_present('scheduling'))require($mod[0]);
 	if($mod=dp_module_present('datadoc'))require($mod[0]);
 	if($mod=dp_module_present('date_translation'))require($mod[0]);

@@ -13,9 +13,9 @@
  * This software is provided "as is", without any warranty of any kind.
  */
 
-
 $scheduler_name=$_PARAM['scheduler'];
 $scheduler_path = $rootpath['dataphyre'].'cache/scheduling/'.$scheduler_name;
+$running_lock_file=$rootpath['dataphyre'].'cache/scheduling/'.$scheduler_name.'/running_lock';
 if(!file_exists($running_lock_file)){
 	if(method_exists("dataphyre\core", "unavailable")){
 		dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Failed setting scheduler task lock at runtime', $T='safemode');
