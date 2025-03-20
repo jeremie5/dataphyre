@@ -176,7 +176,7 @@ class tracelog {
 			}
 			$filePath=$rootpath['dataphyre'].'tracelog/plotting.dat';
 			$jsonTrace=json_encode($processed_trace);
-			file_put_contents($filePath, $jsonTrace . PHP_EOL, FILE_APPEND);
+			core::file_put_contents_forced($filePath, $jsonTrace . PHP_EOL, FILE_APPEND);
 		}
 		if(self::$profiling===true){
 			$function_string=$function;
@@ -193,7 +193,7 @@ class tracelog {
 			$events_file_path=$dir_path.'/'.$current_date.'.json';
 			$log_entry=array('type'=>$type,'sig'=>$signature,'text'=>$text);
 			if(isset($timings[$function][$signature]))$log_entry['timing']=$time-$timings[$function][$signature];
-			file_put_contents($events_file_path, json_encode($log_entry).PHP_EOL, FILE_APPEND);
+			core::file_put_contents_forced($events_file_path, json_encode($log_entry).PHP_EOL, FILE_APPEND);
 		}
 		$pre=null;
 		if(!empty($function)){

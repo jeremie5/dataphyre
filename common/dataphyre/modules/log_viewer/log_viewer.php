@@ -1,11 +1,12 @@
 <?php
 $logDirectory = $rootpath['dataphyre'] . "logs";
+$maxLogsPerRequest = 20;
 
-// Function to get the latest file from directory based on the filename date-time
 function getLatestFile($directory) {
     $files = scandir($directory);
     $latestHtmlFile = null;
     $latestLogFile = null;
+
     foreach ($files as $file) {
         if ($file == "." || $file == "..") continue;
         $pathinfo = pathinfo($file);
@@ -21,62 +22,174 @@ function getLatestFile($directory) {
             }
         }
     }
-    if ($latestHtmlFile !== null) {
-        return $directory . "/" . $latestHtmlFile;
-    } elseif ($latestLogFile !== null) {
-        return $directory . "/" . $latestLogFile;
+
+    return $latestHtmlFile ? "$directory/$latestHtmlFile" : ($latestLogFile ? "$directory/$latestLogFile" : null);
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax']) && $_POST['ajax'] == '1') {
+    header('Content-Type: application/json');
+
+    $latestFilePath = getLatestFile($logDirectory);
+    if (!$latestFilePath) {
+        echo json_encode(['log_date' => '', 'new_entries' => [], 'last_entry_hash' => '']);
+        exit;
     }
-    return null;
-}
 
-$latestFilePath = getLatestFile($logDirectory);
+    $lastReadEntryHash = isset($_POST['last_entry_hash']) ? $_POST['last_entry_hash'] : '';
 
-$log_date=str_replace($logDirectory, '', $latestFilePath);
-$log_date=str_replace('/', '', $log_date);
-$log_date=str_replace('.html', '', $log_date);
-$log_date.='.log';
-
-// Display file content if exists
-if ($latestFilePath) {
     $fileContent = file_get_contents($latestFilePath);
-	$fileContent=explode('<!--ENDLOG-->', $fileContent);
-	$fileContent=array_reverse($fileContent);
-	$fileContent=implode('', $fileContent);
-	echo <<<HTML
-	<!DOCTYPE html>
-	<html>
-	<head>
-		<meta http-equiv="refresh" content="1">
-		<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-		<style>
-			.table td, .table th {
-				word-break: break-all;
-			}
-		</style>
-	</head>
-	<body>
-		<div class="container mt-5" style="max-width:1800px">
-			<h1>Dataphyre Failure Logs ($log_date)</h1>
-			<table class="table table-bordered">
-				<thead>
-					<tr>
-						<th style="min-width:180px;">Timestamp</th>
-						<th>Error</th>
-					</tr>
-				</thead>
-				<tbody>
-					$fileContent
-				</tbody>
-			</table>
-		</div>
-	</body>
-	</html>
-	HTML;
+$logEntries = explode("<!--ENDLOG-->", $fileContent);
+$logEntries = array_map('trim', $logEntries);
+$logEntries = array_filter($logEntries, fn($entry) => !empty($entry));
+$logEntries = array_reverse($logEntries); // Ensure newest logs are at the top
+
+
+$foundLastEntry = false;
+$newEntries = [];
+
+// Ensure we are processing the newest first
+foreach ($logEntries as $entry) {
+  //  $entry = trim(preg_replace('/\s+/', ' ', $entry)); // Normalize formatting
+    $entryHash = md5(trim(preg_replace('/\s+/', ' ', $entry)));
+
+    if ($entryHash === $lastReadEntryHash) {
+        $foundLastEntry = true;
+        continue;
+    }
+
+    // If `lastReadEntryHash` is empty or not found, only grab the latest 100 logs
+    if ($foundLastEntry || $lastReadEntryHash === '' || count($newEntries) < $maxLogsPerRequest) {
+        $newEntries[] = $entry;
+    }
 }
-else
-{
-    echo "No files found in the log directory.";
+
+// Ensure correct hash for next request
+$newLastEntryHash = !empty($newEntries) ? md5(end($newEntries)) : $lastReadEntryHash;
+
+
+// If lastReadEntryHash is missing from current logs, assume logs were rotated and take the latest ones
+if (!$foundLastEntry && !empty($logEntries)) {
+    $newEntries = array_slice($logEntries, 0, $maxLogsPerRequest);
+}
+
+// Ensure we return the correct last entry hash
+$newLastEntryHash = !empty($newEntries) ? md5(trim(preg_replace('/\s+/', ' ', end($newEntries)))) : '';
+
+echo json_encode([
+    'log_date' => basename($latestFilePath),
+    'new_entries' => array_values($newEntries),
+    'last_entry_hash' => $newLastEntryHash
+]);
+exit;
+
 }
 ?>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dataphyre Failure Logs</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+    <style>
+        .table td, .table th {
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5" style="max-width:1800px">
+        <h1 id="log-title">Dataphyre Failure Logs</h1>
+		<button id="toggle-logs" class="btn btn-primary mb-3">Pause Logs</button>
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th style="min-width:180px;">Timestamp</th>
+                    <th>Error</th>
+                </tr>
+            </thead>
+            <tbody id="log-content">
+                <tr><td colspan="2">Waiting for log events...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+let lastReadEntryHash = "";
+let pollingInterval = 2000;
+let maxDisplayedEntries = 50; // Limit entries to prevent performance issues
+let isSelecting = false;
+
+$('#log-content').on('mousedown', function () {
+    isSelecting = true;
+});
+$('#log-content').on('mouseup', function () {
+    setTimeout(() => { isSelecting = false; }, 2000);
+});
+
+function startFetchingLogs() {
+    fetchLogs();
+    setTimeout(startFetchingLogs, pollingInterval);
+}
+
+let logsPaused = false;
+
+$('#toggle-logs').click(function () {
+    logsPaused = !logsPaused;
+    $(this).text(logsPaused ? 'Resume Logs' : 'Pause Logs');
+});
+
+function fetchLogs() {
+    if (logsPaused) return; // Stop updating logs if paused
+	if (logsPaused || isSelecting) return; // Skip updating logs if selecting
+	
+    $.ajax({
+        url: window.location.pathname,
+        method: 'POST',
+        dataType: 'json',
+        data: {
+            ajax: '1',
+            last_entry_hash: lastReadEntryHash
+        },
+        success: function(response) {
+            if (response.new_entries.length > 0) {
+                let newRows = "";
+                response.new_entries.forEach(entry => {
+                    if (entry.trim().length > 0) {
+                        newRows += `<tr><td colspan="2">${entry}</td></tr>`; // Ensure proper row formatting
+                    }
+                });
+
+                let logContent = $('#log-content');
+                let waitingMessage = logContent.find('tr:first-child:contains("Waiting for log events...")');
+                if (waitingMessage.length) waitingMessage.remove();
+
+                if (newRows !== "") {
+                    let tempContainer = document.createElement('tbody');
+                    tempContainer.innerHTML = newRows;
+                    logContent.prepend(tempContainer.childNodes);
+                    
+                    while (logContent.children().length > maxDisplayedEntries) {
+                        logContent.children().last().remove();
+                    }
+
+                    if (response.last_entry_hash !== "") {
+                        lastReadEntryHash = response.last_entry_hash;
+                    }
+                }
+            }
+        },
+        error: function() {
+            console.error('Error loading logs.');
+        }
+    });
+}
+
+
+$(document).ready(function () {
+    startFetchingLogs();
+});
+
+</script>
 </body>
 </html>

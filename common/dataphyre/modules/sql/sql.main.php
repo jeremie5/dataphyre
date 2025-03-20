@@ -75,6 +75,24 @@ class sql {
 		self::migration();
 	}
 	
+	public static function log_query_error(string $dbms, string $cluster, string $query, array $vars=[], \Throwable $exception=null): void {
+		$errorMessage = $exception ? $exception->getMessage() : "Unknown error";
+		$errorTrace = $exception ? nl2br(htmlspecialchars($exception->getTraceAsString())) : "No stack trace available";
+		$formattedQuery = htmlspecialchars($query);
+		$formattedVars = !empty($vars) ? json_encode($vars, JSON_PRETTY_PRINT) : "None";
+		$error='
+		<div class="alert alert-danger" role="alert">
+			<h4 class="alert-heading">Dataphyre mod_SQL: '.$dbms.' query error on cluster '.$cluster.'</h4>
+			<p><strong>Query:</strong> <code>'.$formattedQuery.'</code></p>
+			<p><strong>Bound Variables:</strong> <pre>'.$formattedVars.'</pre></p>
+			<p><strong>Error Message:</strong> '.$errorMessage.'</p>
+			<hr>
+			<p class="mb-0"><strong>Stack Trace:</strong></p>
+			<pre style="background: #f8d7da; padding: 10px; border-radius: 5px;">'.$errorTrace.'</pre>
+		</div>';
+		log_error($error);
+	}
+	
 	public static function migration(){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $rootpath;
@@ -145,7 +163,8 @@ class sql {
 		if($cache_policy!==false){
 			if($cache_policy['type']==="shared_cache"){
 				if(dp_module_present('cache')){
-					$table_cache_version=(int)cache::get('table_version_'.$location);
+					$table_cache_version=(int)cache::get('table_version_'.$location) ?? 0;
+					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Shared cache table version for $location: $table_cache_version)");
 					if($table_cache_version>2147483600)cache::set('table_version_'.$location, $table_cache_version=0); // Prevent integer overflow by resetting table version
 					if(is_array($shared_cache_result=cache::get($key=$location.'_'.$hash))){
 						if($shared_cache_result[0]===$table_cache_version){
@@ -155,6 +174,8 @@ class sql {
 							if($shared_cache_result[1]==="false")return false;
 							return $shared_cache_result[1];
 						}
+						tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Table version mismatch", $S="warning");
+						return null;
 					}
 					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Query not cached in shared cache (".$key.")", $S="warning");
 					return null;
@@ -206,12 +227,20 @@ class sql {
 			$cache_policy=self::get_table_cache_policy($location);
 		}
 		if($cache_policy!==false){
+			if(empty($location)){
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Invalid cache location", $S="fatal");
+				return false;
+			}
+			if(empty($hash)){
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Invalid cache hash", $S="fatal");
+				return false;
+			}
 			if($cache_policy['type']==='shared_cache'){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Caching in shared cache");
 				if($query_result===false)$query_result='false';
-				$table_cache_version=(int)cache::get('table_version_'.$location);
+				$table_cache_version=(int)cache::get('table_version_'.$location) ?? 0;
 				if($table_cache_version>2147483600)cache::set('table_version_'.$location, $table_cache_version=0); // Prevent integer overflow by resetting table version
-				cache::set($location.'_'.$hash, array($table_cache_version,$query_result), strtotime('+'.$cache_policy['max_lifespan']));
+				cache::set($location.'_'.$hash, array($table_cache_version,$query_result), strtotime($cache_policy['max_lifespan']));
 			}
 			elseif($cache_policy['type']==='session'){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Caching in session");
@@ -287,10 +316,10 @@ class sql {
 			foreach($clear_cache_for as $clear_cache_index){
 				foreach($_SESSION['db_cache_invalidation_index'][$clear_cache_index] as $invalidation_cache){
 					if($invalidation_cache[0]==='shared_cache'){
-						unset($_SESSION['db_cache'][$invalidation_cache[0]][$invalidation_cache[1]]);
+						cache::delete($invalidation_cache[0].'_'.$invalidation_cache[1]);
 					}
 					elseif($invalidation_cache[0]==='session'){
-						cache::delete($invalidation_cache[0].'_'.$invalidation_cache[1]);
+						unset($_SESSION['db_cache'][$invalidation_cache[0]][$invalidation_cache[1]]);
 					}
 					elseif($invalidation_cache[0]==='fs'){
 						unlink(__DIR__."/../../cache/sql/".$invalidation_cache[0]."/".$invalidation_cache[1]);
@@ -645,15 +674,15 @@ class sql {
 			$vars=array_values($fields);
 			$fields=implode(',', array_keys($fields));
 		}
+		if($clear_cache===null)$clear_cache=false;
+		if(str_contains($location, '.')===false)$location=$configurations['dataphyre']['sql']['default_database_location'].".".$location;
+		$dbms_cluster=$configurations['dataphyre']['sql']['tables'][$location]['cluster']??$configurations['dataphyre']['sql']['default_cluster'];
+		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($vars)){
 			if(isset($vars[$dbms])){
 				$vars=$vars[$dbms];
 			}
 		}
-		if($clear_cache===null)$clear_cache=false;
-		if(str_contains($location, '.')===false)$location=$configurations['dataphyre']['sql']['default_database_location'].".".$location;
-		$dbms_cluster=$configurations['dataphyre']['sql']['tables'][$location]['cluster']??$configurations['dataphyre']['sql']['default_cluster'];
-		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		switch($dbms){
 			case"mysql":
 				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into integer value, arrays into json
@@ -704,7 +733,9 @@ class sql {
 				$query_result=sqlite_query_builder::mysql_insert($dbms_cluster, $location, $fields, $vars);
 				break;
 		}
-		if($query_result!==false && $clear_cache!==false)self::invalidate_cache($clear_cache===true?$location:$clear_cache);
+		if($query_result!==false && $clear_cache!==false){
+			self::invalidate_cache($clear_cache===true ? $location : $clear_cache);
+		}
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Insert query finished, returning result");
 		return $query_result;
 	}
@@ -741,6 +772,7 @@ class sql {
 				if(is_array($fields)){
 					$vars??=[];
 					$vars=array_values(array_merge(array_values($fields), $vars));
+					if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into integer value, arrays into json
 					$fields=implode('=?,', array_keys($fields)).'=?';
 				}
 				if($callback){
@@ -758,12 +790,12 @@ class sql {
 				$query_result=mysql_query_builder::mysql_update($dbms_cluster, $location, $fields, $params, $vars);
 				break;
 			case"postgresql":
-				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=$value?'t':'f';}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into strings, arrays into json
 				if(is_array($fields)){
 					$vars??=[];
 					$vars=array_values(array_merge(array_values($fields), $vars));
 					$fields=implode('=?,', array_keys($fields)).'=?';
 				}
+				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=$value?'t':'f';}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into strings, arrays into json
 				if($callback){
 					postgresql_query_builder::$queued_queries[$queue]['update'][]=[
 						'location'=>$location,
@@ -779,12 +811,12 @@ class sql {
 				$query_result=postgresql_query_builder::postgresql_update($dbms_cluster, $location, $fields, $params, $vars);
 				break;
 			case"sqlite":
-				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into integer value, arrays into json
 				if(is_array($fields)){
 					$vars??=[];
 					$vars=array_values(array_merge(array_values($fields), $vars));
 					$fields=implode('=?,', array_keys($fields)).'=?';
 				}
+				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into integer value, arrays into json
 				if($callback){
 					sqlite_query_builder::$queued_queries[$queue]['update'][]=[
 						'location'=>$location,
@@ -800,7 +832,9 @@ class sql {
 				$query_result=sqlite_query_builder::mysql_update($dbms_cluster, $location, $fields, $params, $vars);
 				break;
 		}
-		if($query_result!==false && $clear_cache!==false)self::invalidate_cache($clear_cache===true?$location:$clear_cache);
+		if($query_result!==false && $clear_cache!==false){
+			self::invalidate_cache($clear_cache===true ? $location : $clear_cache);
+		}
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Update query finished, returning result");
 		return $query_result;
 	}
@@ -872,7 +906,9 @@ class sql {
 				$query_result=sqlite_query_builder::mysql_delete($dbms_cluster, $location, $params, $vars);
 				break;
 		}
-		if($query_result!==false && $clear_cache!==false)self::invalidate_cache($clear_cache===true?$location:$clear_cache);
+		if($query_result!==false && $clear_cache!==false){
+			self::invalidate_cache($clear_cache===true ? $location : $clear_cache);
+		}
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Delete query finished, returning result");
 		return $query_result;
 	}
