@@ -1,0 +1,53 @@
+[
+    {
+        "name": "Detect Googlebot",
+        "function": "is_bot",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "args": [],
+        "expected": true,
+        "dependencies": {
+            "global_variable": [
+                "REQUEST_USER_AGENT",
+                "configurations"
+            ],
+            "class": [
+                "dataphyre\\access"
+            ]
+        },
+    },
+    {
+        "name": "Detect Bingbot",
+        "function": "is_bot",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "args": [],
+        "expected": true,
+        "dependencies": {
+            "global_variable": [
+                "REQUEST_USER_AGENT",
+                "configurations"
+            ],
+            "class": [
+                "dataphyre\\access"
+            ]
+        },
+    },
+    {
+        "name": "Ignore regular user agent",
+        "function": "is_bot",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "args": [],
+        "expected": false,
+        "dependencies": {
+            "global_variable": [
+                "REQUEST_USER_AGENT",
+                "configurations"
+            ],
+            "class": [
+                "dataphyre\\access"
+            ]
+        },
+    }
+]

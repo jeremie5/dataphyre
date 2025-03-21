@@ -1,0 +1,38 @@
+[
+  {
+    "name": "VerifyPayload_Valid",
+    "function": "verify_payload",
+    "class": "dataphyre\\caspow",
+    "static_method": true,
+    "args": [
+      {
+        "custom_script": "[$salt, $number] = ['abcd1234abcd1234abcd1234', 54321]; $challenge=\\dataphyre\\caspow::create_challenge($salt, $number); return base64_encode(json_encode(['salt'=>$salt, 'number'=>$number, 'challenge'=>$challenge['challenge'], 'algorithm'=>$challenge['algorithm'], 'signature'=>$challenge['signature']]));"
+      }
+    ],
+    "expected": true,
+    "dependencies": {
+      "function": ["dpvk"],
+      "class": {
+        "dataphyre\\caspow": "Required caspow class"
+      }
+    },
+  },
+  {
+    "name": "VerifyPayload_InvalidSignature",
+    "function": "verify_payload",
+    "class": "dataphyre\\caspow",
+    "static_method": true,
+    "args": [
+      {
+        "custom_script": "[$salt, $number] = ['abcd1234abcd1234abcd1234', 54321]; $challenge=\\dataphyre\\caspow::create_challenge($salt, $number); $challenge['signature'] = 'tampered'; return base64_encode(json_encode(['salt'=>$salt, 'number'=>$number, 'challenge'=>$challenge['challenge'], 'algorithm'=>$challenge['algorithm'], 'signature'=>$challenge['signature']]));"
+      }
+    ],
+    "expected": false,
+    "dependencies": {
+      "function": ["dpvk"],
+      "class": {
+        "dataphyre\\caspow": "Required caspow class"
+      }
+    },
+  }
+]

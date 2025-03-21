@@ -1,0 +1,52 @@
+[
+    {
+        "name": "DisableAllSessionsOfUser - Valid User",
+        "function": "disable_all_sessions_of_user",
+        "args": [
+            12345
+        ],
+        "expected": [
+            true
+        ],
+        "dependencies": {
+            "function": [
+                "disable_all_sessions_of_user",
+                "sql::db_update"
+            ],
+            "class": [
+                "dataphyre\\access"
+            ],
+            "global_variable": [
+                "_SESSION"
+            ]
+        },
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "max_millis": 100
+    },
+    {
+        "name": "DisableAllSessionsOfUser - SQL Fail",
+        "function": "disable_all_sessions_of_user",
+        "args": [
+            67890
+        ],
+        "expected": [
+            false
+        ],
+        "dependencies": {
+            "function": [
+                "disable_all_sessions_of_user",
+                "sql::db_update"
+            ],
+            "class": [
+                "dataphyre\\access"
+            ],
+            "global_variable": [
+                "_SESSION"
+            ]
+        },
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "max_millis": 100
+    }
+]

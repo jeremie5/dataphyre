@@ -1,0 +1,9 @@
+[
+  {
+    "name": "Basic true test",
+    "function": "is_array",
+    "args": [[]],
+    "expected": [true],
+    "dependencies": {}
+  }
+]

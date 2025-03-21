@@ -1,0 +1,17 @@
+[
+	{
+		"name": "create_id returns 64-character string",
+		"function": "create_id",
+		"class": "dataphyre\\access",
+		"static_method": true,
+		"args": [],
+		"expected": {
+			"custom_script": "return is_string(\$result) && strlen(\$result) === 64 && preg_match('/^[a-f0-9]{64}$/', \$result);"
+		},
+		"dependencies": {
+			"class": ["dataphyre\\access"],
+			"function": ["dataphyre\\access::create_id"]
+		},
+		"max_millis": 10
+	}
+]
