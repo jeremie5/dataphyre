@@ -19,6 +19,7 @@ tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
 if(RUN_MODE==='dpanel'){
 	require(__DIR__.'/dpanel.diagnostic.php');
+	\dataphyre\dpanel\diagnostic::tests();
 }
 
 class dpanel{ 
@@ -38,12 +39,12 @@ class dpanel{
 		global $roothpath;
 		$all_passed=true;
 		if(!file_exists($json_file_path)){
-			throw new Exception("JSON file not found: $json_file_path");
+			throw new \Exception("JSON file not found: $json_file_path");
 		}
 		$json_content=file_get_contents($json_file_path);
 		$test_definitions=json_decode($json_content, true);
 		if(json_last_error() !== JSON_ERROR_NONE){
-			throw new Exception("Invalid JSON format: ".json_last_error_msg());
+			throw new \Exception("Invalid JSON format: ".json_last_error_msg());
 		}
 		$validate_array_structure=function($array, $structure)use(&$validate_array_structure){
 			if(!is_array($array) || !is_array($structure) || $structure[0] !== 'array'){
@@ -257,7 +258,7 @@ class dpanel{
 						'passed'=>true,
 					];
 				}
-			}catch(Exception $e){
+			}catch(\Exception $e){
 				$verbose[]=[
 					'type'=>'unit_test',
 					'function'=>$function ?? 'Unknown',
@@ -317,7 +318,7 @@ class dpanel{
 		try{
 			token_get_all("\n$code", TOKEN_PARSE);
 		}
-		catch(Throwable $ex){
+		catch(\Throwable $ex){
 			$error=$ex->getMessage();
 			$line=$ex->getLine()-1;
 			$error="Line $line:\n\n$error";

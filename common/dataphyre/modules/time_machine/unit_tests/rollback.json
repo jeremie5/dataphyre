@@ -1,0 +1,13 @@
+[
+	{
+		"name": "Rollback_Success",
+		"function": "rollback",
+		"class": "dataphyre\\time_machine",
+		"static_method": true,
+		"args": ["changeid123", 42, 0],
+		"expected": [true, false],
+		"dependencies": {
+			"function": ["sql_select", "sql_update", "core::decrypt_data", "sql_delete", "sql_insert", "user::get", "user::clear_cache"],
+		}
+	}
+]

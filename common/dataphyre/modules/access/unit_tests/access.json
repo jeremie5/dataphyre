@@ -1,0 +1,94 @@
+[
+    {
+        "name": "default_access_granted_when_logged_in",
+        "function": "access",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "args": [
+            true,
+            false,
+            false,
+            false
+        ],
+        "expected": [
+            true
+        ],
+        "dependencies": {
+            "function": [
+                "dataphyre\\access::logged_in"
+            ],
+            "class": [
+                "dataphyre\\access"
+            ]
+        },
+    },
+    {
+        "name": "prevent_mobile_blocks_mobile",
+        "function": "access",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "args": [
+            false,
+            false,
+            true,
+            false
+        ],
+        "expected": [
+            false
+        ],
+        "dependencies": {
+            "function": [
+                "dataphyre\\access::is_mobile"
+            ],
+            "class": [
+                "dataphyre\\access"
+            ]
+        },
+    },
+    {
+        "name": "prevent_robot_blocks_bot",
+        "function": "access",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "args": [
+            false,
+            false,
+            false,
+            true
+        ],
+        "expected": [
+            false
+        ],
+        "dependencies": {
+            "function": [
+                "dataphyre\\access::is_bot"
+            ],
+            "class": [
+                "dataphyre\\access"
+            ]
+        },
+    },
+    {
+        "name": "must_no_session_blocks_logged_user",
+        "function": "access",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "args": [
+            false,
+            true,
+            false,
+            false
+        ],
+        "expected": [
+            false
+        ],
+        "dependencies": {
+            "function": [
+                "dataphyre\\access::logged_in"
+            ],
+            "class": [
+                "dataphyre\\access"
+            ]
+        },
+    }
+]

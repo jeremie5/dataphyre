@@ -1,0 +1,24 @@
+[
+	{
+		"name": "PurgeOld_DefaultPeriod",
+		"function": "purge_old",
+		"class": "dataphyre\\time_machine",
+		"static_method": true,
+		"args": [],
+		"expected": [true, false],
+		"dependencies": {
+			"function": ["sql_delete"],
+		}
+	},
+	{
+		"name": "PurgeOld_CustomPeriod",
+		"function": "purge_old",
+		"class": "dataphyre\\time_machine",
+		"static_method": true,
+		"args": ["30 days"],
+		"expected": [true, false],
+		"dependencies": {
+			"function": ["sql_delete"],
+		}
+	}
+]
