@@ -1,0 +1,14 @@
+[
+	{
+		"name": "Create_BasicRollback",
+		"function": "create",
+		"class": "dataphyre\\time_machine",
+		"static_method": true,
+		"args": ["setting", "USER_PARAMETER", {"setting_name": "lang", "old_value": "fr"}, true],
+		"expected": ["regex:/^[a-zA-Z0-9]+$/", false],
+		"dependencies": {
+			"function": ["sql_insert", "core::encrypt_data"],
+			"global_variable": ["userid"],
+		}
+	}
+]

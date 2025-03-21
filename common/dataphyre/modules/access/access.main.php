@@ -17,6 +17,11 @@ namespace dataphyre;
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
+if(RUN_MODE==='dpanel'){
+	require(__DIR__.'/access.diagnostic.php');
+	\dataphyre\access\diagnostic::tests();
+}
+
 dp_module_required('access', 'sql');
 dp_module_required('access', 'firewall');
 

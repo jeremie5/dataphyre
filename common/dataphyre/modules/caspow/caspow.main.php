@@ -17,6 +17,11 @@ namespace dataphyre;
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
+if(RUN_MODE==='dpanel'){
+	require(__DIR__.'/caspow.diagnostic.php');
+	\dataphyre\caspow\diagnostic::tests();
+}
+
 class caspow{
 	
     protected static string $algorithm='sha-256';

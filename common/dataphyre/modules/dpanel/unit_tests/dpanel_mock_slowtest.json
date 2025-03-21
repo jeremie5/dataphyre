@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Test function slow execution warning",
+    "function": "sleep",
+    "args": [1],
+    "expected": [0],
+    "max_millis": 200,
+    "dependencies": {
+      "function": ["sleep"]
+    }
+  }
+]
