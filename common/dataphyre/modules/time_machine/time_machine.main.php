@@ -17,11 +17,6 @@ namespace dataphyre;
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
-if(RUN_MODE==='dpanel'){
-	require(__DIR__.'/time_machine.diagnostic.php');
-	\dataphyre\time_machine\diagnostic::tests();
-}
-
 dp_module_required('time_machine', 'sql');
 
 class time_machine{
@@ -45,7 +40,7 @@ class time_machine{
 		return false;
 	}
 
-	public static function rollback(string $changeid, int $userid, int $rollback_request_userid=0) : bool {
+	public static function rollback(string $changeid, int $userid, int $rollback_request_userid=0): bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_TIME_MACHINE_ROLLBACK",...func_get_args())) return $early_return;
 		if(false!==$change=sql_select(
@@ -165,7 +160,7 @@ class time_machine{
 		return false;
 	}
 	
-	public static function create(string $type, string $rollback_type, array $change_data, bool $user_can_rollback=false) bool| {
+	public static function create(string $type, string $rollback_type, array $change_data, bool $user_can_rollback=false): bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_TIME_MACHINE_CREATE",...func_get_args())) return $early_return;
 		global $userid;

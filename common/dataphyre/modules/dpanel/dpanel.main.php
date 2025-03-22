@@ -15,36 +15,51 @@
 
 namespace dataphyre;
 
-tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
+define("RUN_MODE", "diagnostic");
 
-if(RUN_MODE==='dpanel'){
-	require(__DIR__.'/dpanel.diagnostic.php');
-	\dataphyre\dpanel\diagnostic::tests();
-}
+tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
 class dpanel{ 
 
-	public static $catched_tracelog=['errors'=>'', 'info'=>''];
-	private static $core_module_path;
-	public static $external_verbose;
+	private static $verbose=[];
+	private static $catched_tracelog=[];
 
-	function __construct(){
-		global $rootpath;
-		define("RUN_MODE", "diagnostic");
-		require_once('tracelog_override.php');
-		self::$core_module_path=$rootpath['common_dataphyre'].'/modules/core/core.main.php';
+	public static function get_verbose(bool $clear=true) : array {
+		$result=self::$verbose;
+		if($clear)self::$verbose=[];
+		return $result ?? [];
 	}
 
-	public static function unit_test(string $json_file_path, array &$verbose=[]): bool {
+	public static function tracelog_bypass($filename=null, $line=null, $class=null, $function=null, $text=null, $type=null, $arguments=null): void {
+		if(is_string($text)){
+			self::$catched_tracelog[]=["file"=>$filename, "line"=>$line, "class"=>$class, "function"=>$function, "message"=>$text, "type"=>$type, "arguments"=>$arguments];
+		}
+	}
+	
+	public static function get_tracelog(bool $clear=true): array {
+		$result=self::$catched_tracelog;
+		if($clear)self::$catched_tracelog=[];
+		return $result;
+	}
+
+	public static function unit_test(string $json_file_path): bool {
 		global $roothpath;
 		$all_passed=true;
-		if(!file_exists($json_file_path)){
-			throw new \Exception("JSON file not found: $json_file_path");
+		if(!is_readable($json_file_path)){
+			throw new \Exception("JSON file not readable: $json_file_path");
 		}
-		$json_content=file_get_contents($json_file_path);
+		if(false===$json_content=file_get_contents($json_file_path) || empty($json_content)){
+			self::$verbose[]=[
+				'type'=>'unit_test',
+				'file'=>$json_file_path,
+				'fail_string'=>"JSON file unreadable.",
+				'passed'=>false,
+			];
+			return false;
+		}
 		$test_definitions=json_decode($json_content, true);
 		if(json_last_error() !== JSON_ERROR_NONE){
-			throw new \Exception("Invalid JSON format: ".json_last_error_msg());
+			throw new \Exception("Invalid JSON format : ".json_last_error_msg().PHP_EOL.$json_file_path);
 		}
 		$validate_array_structure=function($array, $structure)use(&$validate_array_structure){
 			if(!is_array($array) || !is_array($structure) || $structure[0] !== 'array'){
@@ -96,7 +111,7 @@ class dpanel{
 		foreach($test_definitions as $test_case){
 			try{
 				if(!isset($test_case['function'], $test_case['args'], $test_case['expected'])){
-					$verbose[]=[
+					self::$verbose[]=[
 						'type'=>'unit_test',
 						'function'=>$function,
 						'test_name'=>$test_case['name'],
@@ -127,7 +142,7 @@ class dpanel{
 								$fail_string="Function for unit test $function is dependant upon the $dependency $dependency_element which is not initialized.";
 							}
 							if(!call_user_func($dependency_function, $dependency_element)){
-								$verbose[]=[
+								self::$verbose[]=[
 									'type'=>'unit_test',
 									'test_name'=>$test_case['name'],
 									'fail_string'=>$fail_string,
@@ -145,7 +160,7 @@ class dpanel{
 				}
 				$test_case_file=isset($test_case['file']) ? $roothpath['root'].$test_case['file'] : (isset($test_case['file_dynamic']) ? eval($test_case['file_dynamic']) : null);
 				if(!$test_case_file || !is_readable($test_case_file)){
-					$verbose[]=[
+					self::$verbose[]=[
 						'type'=>'unit_test',
 						'test_name'=>$test_case['name'],
 						'test_case_file'=>$test_case_file,
@@ -159,7 +174,7 @@ class dpanel{
 				if(isset($test_case['class'])){
 					$class_name=$test_case['class'];
 					if(!class_exists($class_name)){
-						$verbose[]=[
+						self::$verbose[]=[
 							'type'=>'unit_test',
 							'function'=>$function,
 							'test_name'=>$test_case['name'],
@@ -181,7 +196,7 @@ class dpanel{
 						$callable=[$instance, $function];
 					}
 					if(!is_callable($callable)){
-						$verbose[]=[
+						self::$verbose[]=[
 							'type'=>'unit_test',
 							'function'=>$function,
 							'test_name'=>$test_case['name'],
@@ -200,7 +215,7 @@ class dpanel{
 				else
 				{
 					if(!function_exists($function)){
-						$verbose[]=[
+						self::$verbose[]=[
 							'type'=>'unit_test',
 							'function'=>$function,
 							'test_name'=>$test_case['name'],
@@ -217,7 +232,7 @@ class dpanel{
 					$execution_time=microtime(true)-$start_time;
 				}
                 if(isset($test_case['max_millis']) && $execution_time>($test_case['max_millis']/1000)){
-                    $verbose[]=[
+                    self::$verbose[]=[
                         'type'=>'performance_warning',
                         'test_name'=>$test_case['name'],
 						'test_case_file'=>$test_case_file,
@@ -235,7 +250,7 @@ class dpanel{
 					}
 				}
 				if(!$matched){
-					$verbose[]=[
+					self::$verbose[]=[
 						'type'=>'unit_test',
 						'function'=>$function,
 						'test_name'=>$test_case['name'],
@@ -249,7 +264,7 @@ class dpanel{
 				}
 				else
 				{
-					$verbose[]=[
+					self::$verbose[]=[
 						'type'=>'unit_test',
 						'function'=>$function,
 						'test_name'=>$test_case['name'],
@@ -258,8 +273,8 @@ class dpanel{
 						'passed'=>true,
 					];
 				}
-			}catch(\Exception $e){
-				$verbose[]=[
+			}catch(\Throwable $e){
+				self::$verbose[]=[
 					'type'=>'unit_test',
 					'function'=>$function ?? 'Unknown',
 					'test_name'=>$test_case['name'] ?? 'Unknown',
@@ -275,40 +290,101 @@ class dpanel{
 		return $all_passed;
 	}
 
-	public static function diagnose_module(string $module, array &$verbose=[]): bool {
+	public static function diagnose_module(string $module): bool {
 		global $rootpath;
-		$procedure=function(string $module, string $module_path, array &$verbose, array $rootpath){
+		$procedure=function(string $module, string $module_path, array $rootpath){
 			if(false===$content=file_get_contents($module_path)){
-				$verbose[]=['type'=>'file_missing', 'module'=>$module, 'file'=>$module_path, 'time'=>time()];
+				self::$verbose[]=[
+					'type'=>'file_missing', 
+					'module'=>$module, 
+					'file'=>$module_path, 
+					'time'=>time()
+				];
 				return false;
 			}
 			if(false===$validation=self::validate_php($content)){
-				$verbose[]=['type'=>'php_validation_error', 'module'=>$module, 'error'=>$validation, 'time'=>time()];
+				self::$verbose[]=[
+					'type'=>'php_validation_error', 
+					'module'=>$module, 
+					'error'=>$validation, 
+					'time'=>time()
+				];
 				return false;
 			}
 			try{
 				require_once($module_path);
-				$verbose=array_merge($verbose, $external_verbose);
-				$verbose[]=['type'=>'tracelog', 'module'=>$module, 'tracelog'=>self::catch_tracelog(), 'time'=>time()];
+				if(!empty($tracelog=self::get_tracelog())){
+					self::$verbose[]=[
+						'type'=>'tracelog', 
+						'module'=>$module, 
+						'tracelog'=>$tracelog,
+						'time'=>time()
+					];
+				}
+				$unit_test_dir=dirname($module_path).'/unit_tests';
+				if(is_dir($unit_test_dir)){
+					$test_files=glob($unit_test_dir . '/*.json');
+					$all_tests_passed=true;
+					foreach($test_files as $json_file){
+						$unit_verbose=[];
+						$passed=self::unit_test($json_file, $unit_verbose);
+						foreach($unit_verbose as $entry){
+							$entry['module']=$module;
+							self::$verbose[]=$entry;
+						}
+						if(!$passed){
+							$all_tests_passed=false;
+						}
+					}
+					if(!$all_tests_passed){
+						self::$verbose[]=[
+							'type'=>'unit_test_failed', 
+							'module'=>$module, 
+							'time'=>time()
+						];
+						return false;
+					}
+				}
+				else
+				{
+					self::$verbose[]=[
+						'type'=>'unit_test_skipped', 
+						'reason'=>'unit_tests folder missing', 
+						'folder'=>$unit_test_dir, 
+						'module'=>$module, 
+						'time'=>time()
+					];
+				}
 				return true;
 			}catch(\Throwable $exception){
-				$verbose[]=['type'=>'php_exception', 'module'=>$module, 'exception'=>$exception, 'time'=>time()];
+				self::$verbose[]=[
+					'type'=>'php_exception', 
+					'module'=>$module, 
+					'exception'=>$exception, 
+					'time'=>time()
+				];
 				return false;
 			}
 		};
-		if(DP_CORE_LOADED){
-			if(!$procedure('core', self::$core_module_path, $verbose, $rootpath)){
+		if(!defined("DP_CORE_LOADED")){
+			if(!$procedure('core', $rootpath['common_dataphyre'].'/modules/core/core.main.php', $rootpath)){
 				return false;
 			}
 		}
 		if($module_path=dp_module_present($module)[0]){
-			if($procedure($module, $module_path, $verbose, $rootpath)){
-				return true;
+			if(!in_array($module_path, get_included_files())){
+				if($procedure($module, $module_path, $rootpath)){
+					return true;
+				}
 			}
 		}
 		else
 		{
-			$verbose[]=['type'=>'module_missing', 'module'=>$module, 'time'=>time()];	
+			self::$verbose[]=[
+				'type'=>'module_missing', 
+				'module'=>$module, 
+				'time'=>time()
+			];	
 		}
 		return false;
 	}
@@ -332,13 +408,19 @@ class dpanel{
 		return true;
 	}
 
-	public static function catch_tracelog(bool $clear=true): string {
-		$result=self::$catched_tracelog;
-		if($clear){
-			self::$catched_tracelog['errors']='';
-			self::$catched_tracelog['info']='';
+	public static function diagnose_modules_in_folder(string $folder): void {
+		$iterator=new \RecursiveIteratorIterator(
+			new \RecursiveDirectoryIterator($folder, \FilesystemIterator::SKIP_DOTS)
+		);
+		foreach($iterator as $file){
+			$path=$file->getPathname();
+			if(substr($path, -9)==='.main.php'){
+				$relativePath=substr($path, strlen($folder) + 1); // remove base folder
+				$relativePath=str_replace(['/', '\\'], '/', $relativePath); // unify slashes
+				$moduleName=basename($relativePath, '.main.php'); // get filename without .main.php
+				self::diagnose_module($moduleName);
+			}
 		}
-		return $result;
 	}
 
 }

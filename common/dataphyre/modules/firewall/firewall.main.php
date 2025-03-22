@@ -18,6 +18,7 @@ namespace dataphyre;
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
 dp_module_required('firewall', 'sql');
+dp_module_required('firewall', 'cache');
 
 if(file_exists($filepath=$rootpath['common_dataphyre']."config/firewall.php")){
 	require_once($filepath);
