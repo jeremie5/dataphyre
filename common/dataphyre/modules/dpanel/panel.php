@@ -18,8 +18,10 @@ ini_set('display_errors', 0);
  
 require(__DIR__."/dpanel.main.php");
 
-if(isset($_POST['full_diagnosis'])){
-	$full_diagnosis_result=full_diagnosis();
+if(isset($_POST['dataphyre_full'])){
+	\dataphyre\dpanel::diagnose_modules_in_folder($rootpath['common_dataphyre']."modules");
+	\dataphyre\dpanel::diagnose_modules_in_folder($rootpath['dataphyre']."modules");
+	$trace=\dataphyre\dpanel::get_verbose();
 }
 else
 {
@@ -34,46 +36,116 @@ else
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
     <title>Dataphyre Dpanel</title>
   </head>
-  <body>
-	<div class="container pt-5 ">
+  <body class="bg-dark">
+	<div class="p-4 ">
 		<div class="row justify-content-center">
-			<div class="col col-lg-10">
-				<h1 class="text-center">Dataphyre Dpanel</h1>
+			<div class="col-lg-6 col-12">
+				<h1 class="text-center text-white">Dataphyre Dpanel</h1>
+				<h5 class="text-center text-secondary">Dpanel provides a comprehensive, in-depth diagnostic interface. It validates PHP syntax, traces execution logs, and runs JSON-defined unit tests to ensure module integrity and stability. Use this tool to debug issues, verify system health, and confirm readiness for production.</h6>
+			</div>
+			<div class="col-12">
 				<div class="py-3">
-					<div class="card bg-dark text-white p-2" style="height:750px;overflow:auto;">
-						<div class="">
-							<?=$full_diagnosis_result["log"];?>
+					<div class="card bg-secondary text-white rounded p-2" style="max-height: 750px; overflow: auto;">
+						<div class="card-body p-0">
+							<?php if (is_array($trace) && count($trace) > 0): ?>
+								<div style="overflow-x: auto;">
+									<table class="table table-sm table-dark table-bordered mb-0">
+										<thead class="thead-light text-dark">
+											<tr>
+												<th>Type</th>
+												<th>File / Module</th>
+												<th>Line</th>
+												<th style="min-width: 300px;">Message</th>
+											</tr>
+										</thead>
+										<tbody>
+											<?php foreach ($trace as $index => $entry): ?>
+												<?php
+													$type = htmlspecialchars($entry['type'] ?? 'Info');
+													$filename = $entry['file'] ?? $entry['test_case_file'] ?? $entry['module'] ?? 'N/A';
+													$filenameDisplay = $filename ? basename($filename) : 'N/A';
+													$filenameTooltip = $filename ? "title=\"$filename\"" : '';
+													$line = isset($entry['line']) && $entry['line'] != 0 ? htmlspecialchars($entry['line']) : 'N/A';
+													$traceHtml = '';
+													if ($type === 'php_exception' && isset($entry['exception']) && $entry['exception'] instanceof \Throwable) {
+														$exception = $entry['exception'];
+														$message = $exception->getMessage();
+														$filenameDisplay = basename($exception->getFile());
+														$filenameTooltip = "title=\"" . $exception->getFile() . "\"";
+														$line = $exception->getLine();
+														$traceHtml = "<pre class=\"mb-0 text-light bg-dark p-2\" style=\"white-space: pre-wrap; overflow-x: auto;\">"
+															. htmlspecialchars($exception->getTraceAsString()) . "</pre>";
+													}
+													elseif ($type === 'tracelog' && isset($entry['tracelog']) && is_array($entry['tracelog'])) {
+														ob_start(); ?>
+														<table class="table table-sm table-bordered table-dark bg-secondary mb-0">
+															<thead>
+																<tr>
+																	<th>File</th>
+																	<th>Line</th>
+																	<th>Class</th>
+																	<th>Function</th>
+																	<th>Message</th>
+																</tr>
+															</thead>
+															<tbody>
+																<?php foreach ($entry['tracelog'] as $log): ?>
+																	<tr>
+																		<td><span title="<?= htmlspecialchars($log['file'] ?? '') ?>"><?= htmlspecialchars(basename($log['file'] ?? 'Unknown')) ?></span></td>
+																		<td><?= htmlspecialchars($log['line'] ?? '—') ?></td>
+																		<td><?= htmlspecialchars($log['class'] ?? '—') ?></td>
+																		<td><?= htmlspecialchars($log['function'] ?? '—') ?></td>
+																		<td><pre class="mb-0 text-light bg-dark p-2" style="white-space: pre-wrap;"><?= nl2br(htmlspecialchars($log['message'] ?? '')) ?></pre></td>
+																	</tr>
+																<?php endforeach; ?>
+															</tbody>
+														</table>
+														<?php $traceHtml = ob_get_clean();
+														$message = '<i>' . count($entry['tracelog']) . ' trace entries</i>';
+													}
+													else {
+														$message = $entry['fail_string'] ?? $entry['warning_string'] ?? $entry['error'] ?? $entry['message'] ?? $entry['reason'] ?? '';
+														$message = !empty($message) ? nl2br(htmlspecialchars($message)) : '<i>No message provided</i>';
+													}
+												?>
+												<tr>
+													<td>
+														<span class="badge bg-<?= ($type === 'php_exception') ? 'danger' : ($type === 'unit_test_failed' ? 'warning' : 'info') ?>">
+															<?= $type ?>
+														</span>
+													</td>
+													<td><span <?= $filenameTooltip ?>><?= htmlspecialchars($filenameDisplay) ?></span></td>
+													<td><?= $line ?></td>
+													<td>
+														<div class="d-flex justify-content-between align-items-center">
+															<pre class="mb-0 text-light bg-dark p-2 flex-grow-1" style="white-space: pre-wrap; overflow-x: auto;"><?= $message ?></pre>
+															<?php if (!empty($traceHtml)): ?>
+																<button class="btn btn-sm btn-outline-light ms-2" onclick="document.getElementById('trace-<?= $index ?>').classList.toggle('d-none');">
+																	<?= $type === 'tracelog' ? 'Expand Logs' : 'Stack Trace' ?>
+																</button>
+															<?php endif; ?>
+														</div>
+														<?php if (!empty($traceHtml)): ?>
+															<div id="trace-<?= $index ?>" class="d-none mt-2"><?= $traceHtml ?></div>
+														<?php endif; ?>
+													</td>
+												</tr>
+											<?php endforeach; ?>
+										</tbody>
+									</table>
+								</div>
+							<?php else: ?>
+								<h3 class="text-center">No log data captured.<br>Press a button below to perform a scan.</h3>
+							<?php endif; ?>
 						</div>
 					</div>
 					<div class="py-3 text-center ">
 						<form method="post">
-							<input type="submit" name="full_diagnosis" class="btn btn-primary" value="Run full project diagnosis">
+							<input type="submit" name="dataphyre_full" class="btn btn-lg btn-primary" value="Diagnose Dataphyre">
+							<input type="submit" name="project_full" class="btn btn-lg btn-primary" value="Diagnose All Projects">
+							<input type="submit" name="project_full" class="btn btn-lg btn-primary" value="Diagnose <?=ucfirst($bootstrap_config['app']);?>">
 						</form>
 					</div>
-				</div>
-				<div class="py-3">
-					<?php
-					if(isset($_SERVER['HTTP_X_FORWARDED_PROTO'])){
-						echo'<span class="text-success">You are connected to a load balancer or proxy using https.</span><br>';
-						if($_SERVER['HTTP_X_FORWARDED_PROTO']==='https'){
-							echo'<span class="text-success">Traffic between web server and load balancer or proxy is encrypted.</span><br>';
-						}
-						else
-						{
-							echo'<span class="text-warning">Traffic between web server and load balancer or proxy is unencrypted.</span><br>';
-						}
-					}
-					else
-					{
-						if($_SERVER['HTTPS']==='on'){
-							echo'<span class="text-success">You ('.$_SERVER['REMOTE_ADDR'].') are connected directly to the server using https.</span><br>';
-						}
-						else
-						{
-							echo'<span class="text-danger">You ('.$_SERVER['REMOTE_ADDR'].') are connected directly to the server without https.</span><br>';
-						}
-					}
-					?>
 				</div>
 			</div>
 		</div>

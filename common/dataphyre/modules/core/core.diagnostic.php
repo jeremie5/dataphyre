@@ -19,6 +19,27 @@ class diagnostic{
 
 	public static function pre_tests(array &$verbose=[]): bool {
 		$all_passed=true;
+		// Runtime information
+		if(isset($_SERVER['HTTP_X_FORWARDED_PROTO'])){
+			$verbose[]=['module'=>'core', 'info'=>'You are connected to a load balancer or proxy using https.', 'time'=>time()];
+			if($_SERVER['HTTP_X_FORWARDED_PROTO']==='https'){
+				$verbose[]=['module'=>'core', 'info'=>'Traffic between web server and load balancer or proxy is encrypted.', 'time'=>time()];
+			}
+			else
+			{
+				$verbose[]=['module'=>'core', 'info'=>'Traffic between web server and load balancer or proxy is encrypted.', 'time'=>time()];
+			}
+		}
+		else
+		{
+			if($_SERVER['HTTPS']==='on'){
+				$verbose[]=['module'=>'core', 'info'=>'You ('.$_SERVER['REMOTE_ADDR'].') are connected directly to the server using https.', 'time'=>time()];
+			}
+			else
+			{
+				$verbose[]=['module'=>'core', 'info'=>'Traffic between web server and load balancer or proxy is encrypted.', 'time'=>time()];
+			}
+		}
 		// Check for rootpath definition
 		if(empty($GLOBALS['rootpath'])){
 			$verbose[]=['module'=>'core', 'error'=>'Rootpaths are not defined.', 'time'=>time()];
@@ -88,11 +109,6 @@ class diagnostic{
             $verbose[]=['module'=>'core', 'error'=>'Max execution time is not set according to configuration.', 'time'=>time()];
             $all_passed=false;
         }
-		foreach(glob(__DIR__."/unit_tests/*.json") as $file){
-			if(false===\dataphyre\dpanel::unit_test($file, $verbose)){
-				$all_passed=false;
-			}
-		}
         return $all_passed;
     }
 
