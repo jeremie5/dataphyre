@@ -13,8 +13,15 @@
  * This software is provided "as is", without any warranty of any kind.
  */
 
+$modcache=[];
+$modcache_file=$rootpath['dataphyre']."modcache.php";
+if(filemtime($modcache_file)+300>time()){
+	$modcache=require($modcache_file);
+}
+
 function dp_modcache_save(): void {
-	global $modcache, $modcache_file;
+	global $rootpath, $modcache;
+	$modcache_file=$rootpath['dataphyre']."modcache.php";
 	$cache_data='<?php return '.var_export($modcache, true).';';
 	file_put_contents($modcache_file, $cache_data);
 }
@@ -36,15 +43,18 @@ function dp_module_present(string $module): array|bool {
     return $modcache[$module];
 }
 
-function dp_module_required(string $module, string $required_module, string $minimum_version='1.0', string $maximum_version='1.0'): void {
-	global $rootpath;
-	if(!$presence=dp_module_present($required_module) || 
-		(is_array($presence) && 
-			(!version_compare($presence[1], $minimum_version, '>=') || 
-				!version_compare($presence[1], $maximum_version, '<=')))
-	){
-		pre_init_error("Module '$module' requires module '$required_module'");
-	}
+function dp_module_required(string $module, string $required_module, string $min_version = '1.0', string $max_version='1.0'): void {
+    if(!$presence=dp_module_present($required_module) || (is_array($presence) && (version_compare($presence[1], $min_version, '<') || version_compare($presence[1], $max_version, '>')))){
+        if(RUN_MODE !== 'diagnostic'){
+            pre_init_error("Module '$module' requires '$required_module' (v$min_version - v$max_version)");
+        }
+        return;
+    }
+    if(RUN_MODE==='diagnostic'){
+		if(!in_array($presence[0], get_included_files())){
+			\dataphyre\dpanel::diagnose_module($module);
+		}
+    }
 }
 
 function dpvks(): array {

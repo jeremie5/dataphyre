@@ -19,11 +19,10 @@ error_reporting(~E_ALL);
 
 set_error_handler(function(...$args){ return;}, E_ALL);
 
-foreach(['helper_functions.php', 'language_additions.php', 'core_functions.php'] as $file){
-    require(__DIR__.'/'.$file);
+// To ensure single application setups still work
+if(!isset($rootpath['common_dataphyre'])){
+	$rootpath['common_dataphyre']=$rootpath['dataphyre'];
 }
-
-\dataphyre\core::load_plugins('pre_init');
 
 if(!defined('RUN_MODE')){
 	if(!define('RUN_MODE', 'request')){
@@ -45,9 +44,11 @@ else
 	}
 }
 
-if(!isset($rootpath['common_dataphyre'])){
-	$rootpath['common_dataphyre']=$rootpath['dataphyre'];
+foreach(['helper_functions.php', 'language_additions.php', 'core_functions.php'] as $file){
+    require(__DIR__.'/'.$file);
 }
+
+\dataphyre\core::load_plugins('pre_init');
 
 if(!define('REQUEST_IP_ADDRESS', isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '0.0.0.0')){
 	pre_init_error("Unable to assign constant REQUEST_IP_ADDRESS constant");
@@ -55,12 +56,6 @@ if(!define('REQUEST_IP_ADDRESS', isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMO
 
 if(!define('REQUEST_USER_AGENT', isset($_SERVER['HTTP_USER_AGENT']) ? substr($_SERVER['HTTP_USER_AGENT'], 0, 255) : 'Unknown UA')){
 	pre_init_error("Unable to assign constant REQUEST_USER_AGENT constant");
-}
-
-$modcache=[];
-$modcache_file=$rootpath['dataphyre']."modcache.php";
-if(filemtime($modcache_file)+300>time()){
-	$modcache=require($modcache_file);
 }
 
 if(empty(dpvk())){ //Initializes private key
@@ -142,15 +137,6 @@ if(RUN_MODE!=='diagnostic'){
 	if($mod=dp_module_present('contingency')){
 		require($mod[0]);
 		\dataphyre\contingency::set_handler();
-		function attempt($a=null){ return \dataphyre\contingency::attempt($a);}
-		function end_attempt(){return \dataphyre\contingency::end_attempt();}
-		function define_optional($a=null,$b=null){return \dataphyre\contingency::define_optional($a,$b);}
-	}
-	else
-	{
-		function attempt($a){return true;}
-		function end_attempt(){return false;}
-		function define_optional($a, $b){return false;}
 	}
 
 	if($mod=dp_module_present('sql')){
@@ -210,7 +196,8 @@ if(is_array($retroactive_tracelog)){
 	}
 }
 
-unset($retroactive_tracelog, $mod, $plugin, $file, $modcache_file);
+unset($retroactive_tracelog, $mod, $plugin, $file); 
+//DO NOT UNSET modcache_file
 
 if(RUN_MODE==='diagnostic'){
 	\dataphyre\core\diagnostic::post_tests();

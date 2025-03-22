@@ -24,7 +24,7 @@ if(file_exists($filepath=$rootpath['dataphyre']."config/sql.php")){
 	require($filepath);
 }
 if(!isset($configurations['dataphyre']['sql'])){
-	core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreSQL: No configuration.', 'safemode');
+	//core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreSQL: No configuration.', 'safemode');
 }
 
 require(__DIR__."/mysql_query.php");
@@ -76,19 +76,19 @@ class sql {
 	}
 	
 	public static function log_query_error(string $dbms, string $cluster, string $query, array $vars=[], \Throwable $exception=null): void {
-		$errorMessage = $exception ? $exception->getMessage() : "Unknown error";
-		$errorTrace = $exception ? nl2br(htmlspecialchars($exception->getTraceAsString())) : "No stack trace available";
-		$formattedQuery = htmlspecialchars($query);
-		$formattedVars = !empty($vars) ? json_encode($vars, JSON_PRETTY_PRINT) : "None";
+		$error_message=$exception ? $exception->getMessage() : "Unknown error";
+		$error_trace=$exception ? nl2br(htmlspecialchars($exception->getTraceAsString())) : "No stack trace available";
+		$formatted_query = htmlspecialchars($query);
+		$formatted_vars = !empty($vars) ? json_encode($vars, JSON_PRETTY_PRINT) : "None";
 		$error='
 		<div class="alert alert-danger" role="alert">
 			<h4 class="alert-heading">Dataphyre mod_SQL: '.$dbms.' query error on cluster '.$cluster.'</h4>
-			<p><strong>Query:</strong> <code>'.$formattedQuery.'</code></p>
-			<p><strong>Bound Variables:</strong> <pre>'.$formattedVars.'</pre></p>
-			<p><strong>Error Message:</strong> '.$errorMessage.'</p>
+			<p><strong>Query:</strong> <code>'.$formatted_query.'</code></p>
+			<p><strong>Bound Variables:</strong> <pre>'.$formatted_vars.'</pre></p>
+			<p><strong>Error Message:</strong> '.$error_message.'</p>
 			<hr>
 			<p class="mb-0"><strong>Stack Trace:</strong></p>
-			<pre style="background: #f8d7da; padding: 10px; border-radius: 5px;">'.$errorTrace.'</pre>
+			<pre style="background: #f8d7da; padding: 10px; border-radius: 5px;">'.$error_trace.'</pre>
 		</div>';
 		log_error($error);
 	}

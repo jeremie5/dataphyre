@@ -24,7 +24,7 @@ if(file_exists($filepath=$rootpath['dataphyre']."config/tracelog.php")){
 	require_once($filepath);
 }
 if(!isset($configurations['dataphyre']['tracelog'])){
-	core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='Dataphyre: Tracelog: No configuration available', 'safemode');
+	//core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='Dataphyre: Tracelog: No configuration available', 'safemode');
 }
 
 register_shutdown_function(function(){
