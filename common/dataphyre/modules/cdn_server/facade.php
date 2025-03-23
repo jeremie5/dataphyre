@@ -15,7 +15,7 @@
 ?>
 <meta charset="utf-8">
 <meta name="robots" content="noindex">
-<title>CDN</title>
+<title>ShopiroCDN</title>
 <link href="https://cdn.shopiro.ca/res/assets/img/favicon-32x32.png" rel="icon" sizes="32x32" type="image/png">
 <link href="https://cdn.shopiro.ca/res/assets/img/favicon-16x16.png" rel="icon" sizes="16x16" type="image/png">
 <style>
@@ -37,10 +37,17 @@
 <br>
 <br>
 <center>
-	<span style='font-size:100px;color:black;' class='phyro-bold'><a href="" style="text-decoration:none;color:black;"><i></i></a> CDN</span><br>
+	<span style='font-size:100px;color:black;' class='phyro-bold'><a href="https://shopiro.ca/" style="text-decoration:none;color:black;"><i>Shopiro</i></a> CDN</span><br>
 	<span style='font-size:30px;font-family:"Roboto",sans-serif;'>Powered by</span><br>
 	<span style='font-size:60px;' class='phyro-bold'>Dataphyre™</span>
+	<p style='max-width:50%;font-size:20px;font-family:"Roboto",sans-serif;'>
+	ShopiroCDN is a content delivery network (CDN) that is specifically used by the platform Shopiro.<br>
+	It is designed to deliver various types of content, such as images, videos, stylesheets, and scripts. 
+	</p>
+	<p style='max-width:50%;font-size:20px;font-family:"Roboto",sans-serif;'>
+	By leveraging the capabilities of ShopiroCDN, Shopiro aims to enhance the performance and load times, providing a seamless and efficient shopping experience for end users. <br>
+	</p>
 	<br>
 	<br>
-	<span style='font-family:"Roboto",sans-serif;'>© <?=date("Y");?> All Rights Reserved. Powered by Dataphyre™</span>
+	<span style='font-family:"Roboto",sans-serif;'>© <?=date("Y");?> Shopiro Ltd. All Rights Reserved. Powered by Dataphyre™</span>
 </center>

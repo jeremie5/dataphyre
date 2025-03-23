@@ -21,11 +21,12 @@ class traversal_gc{
     private $timeout;
 
     public function __construct(){
-        $this->timeout=$GLOBALS['configurations']['dataphyre']['cdn_server']['gc_timeout']-1;
+        $this->timeout=$GLOBALS['configurations']['dataphyre']['cdn_server']['gc']['traversal_timeout']-1;
         $this->start_time=time();
     }
 
-    public function garbage_collect($directory){
+    public function garbage_collect(string $directory){
+		echo "Processing directory $directory<br><br>";
         $entries=scandir($directory);
         $entries=array_diff($entries, ['.', '..']);
         $entries=array_values($entries);
@@ -56,15 +57,17 @@ class traversal_gc{
         }
     }
 
-    private function process_files($files){
+    private function process_files(array $files){
         shuffle($files);
         foreach($files as $file){
             if($this->has_timed_out()){
                 return;
             }
-			$filepath=str_replace(\dataphyre\cdn_server::$storage_filepath, '', $file);
-			$blockid=\dataphyre\cdn_server::blockpath_to_blockid($filepath);
-            \dataphyre\cdn_server::enforce_block_integrity($blockid);
+			$filepath=str_replace(\dataphyre\cdn_server::$storage_filepath."/", '', $file);
+			$blockpath=str_replace("/", "-", $filepath);
+			$encoded_blockpath=\dataphyre\cdn_server::encode_blockpath($filepath);
+			$blockid=\dataphyre\cdn_server::blockpath_to_blockid($blockpath);
+            echo "Block $blockid ($encoded_blockpath) is valid? ".json_encode(\dataphyre\cdn_server::enforce_block_integrity($blockid))."<br>";
         }
     }
 
@@ -76,3 +79,8 @@ class traversal_gc{
 // Initialize the garbage collection process
 $cdn_gc=new \dataphyre\cdn_server\traversal_gc();
 $cdn_gc->garbage_collect(\dataphyre\cdn_server::$storage_filepath);
+
+sql_delete(
+	$L="dataphyre.cdn_blocks",
+	$P="WHERE replication_count<0",
+);
