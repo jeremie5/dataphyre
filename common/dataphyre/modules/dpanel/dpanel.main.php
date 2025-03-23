@@ -24,6 +24,10 @@ class dpanel{
 	private static $verbose=[];
 	private static $catched_tracelog=[];
 
+	public static function add_verbose(?array $verboses) : void {
+		if(!empty($verboses))self::$verbose=array_merge(self::$verbose, $verboses);
+	}
+
 	public static function get_verbose(bool $clear=true) : array {
 		$result=self::$verbose;
 		if($clear)self::$verbose=[];
@@ -367,7 +371,7 @@ class dpanel{
 			}
 		};
 		if(!defined("DP_CORE_LOADED")){
-			if(!$procedure('core', $rootpath['common_dataphyre'].'/modules/core/core.main.php', $rootpath)){
+			if(!$procedure('core', $rootpath['common_dataphyre'].'modules/core/core.main.php', $rootpath)){
 				return false;
 			}
 		}

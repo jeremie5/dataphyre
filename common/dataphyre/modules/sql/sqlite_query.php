@@ -267,11 +267,13 @@ class sqlite_query_builder {
 		};
 		if($multipoint===true){
 			$endpoints=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
+			$results=[];
 			foreach($endpoints as $endpoint){
 				$conn=new SQLite3($endpoint);
-				$result=$execute_query($conn);
+				$results[]=$execute_query($conn);
 				$conn->close();
 			}
+			$result=array_values(array_filter($results, fn($r)=>count(array_filter($results, fn($x)=>$x===$r))===1))[0]??$results[0]; // Oddest one out algorithm (failure bias)
 		}
 		else
 		{
