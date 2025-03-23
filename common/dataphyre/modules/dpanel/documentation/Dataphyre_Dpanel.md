@@ -4,6 +4,8 @@
 
 The `Dpanel` module in Dataphyre is a fully-fledged diagnostic and testing environment, designed as a powerful tool for both project and framework-level analysis. Far beyond a standard unit testing tool, `Dpanel` serves as an all-encompassing diagnostic suite with both web and in the future, CLI interfaces, capable of executing tests and diagnostics across entire applications, specific modules, or individual files. It provides a meticulous and formatted view of all system diagnostics, making it a cornerstone for any development environment built with Dataphyre.
 
+![Dataphyre Dpanel Example](Dpanel_Example.png "Dataphyre Dpanel Example")
+
 With `Dpanel`, developers can:
 
 1. **Run Comprehensive Unit Tests and Diagnostics**: `Dpanel` can execute unit tests across files, individual applications or parts thereof, or the framework or parts thereof, allowing for granular or broad-based testing as needed. This flexibility ensures that both targeted and global integrity checks can be performed seamlessly.
@@ -63,19 +65,6 @@ With `RUN_MODE` set to `dpanel`, Dpanel loads diagnostic tools, unit testing fun
 ---
 
 ## Core Functions
-
-### Constructor
-
-```php
-function __construct()
-```
-
-Upon instantiation:
-- Defines `RUN_MODE` as `"diagnostic"`.
-- Loads the `tracelog_override.php` for overriding default Tracelog behavior.
-- Initializes `$core_module_path` to the path of the core module.
-
----
 
 ### Unit Testing
 
