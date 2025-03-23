@@ -91,6 +91,7 @@ Explore Dataphyre's powerful modules, designed to handle complex application nee
 ### **Development Tools**
 - **[Datadoc](/common/dataphyre/modules/datadoc/documentation/Dataphyre_Datadoc.md):** Auto-generate documentation directly from your source code for streamlined project management.
 - **[Tracelog](/common/dataphyre/modules/tracelog/documentation/Dataphyre_Tracelog.md):** Debug and monitor your application with detailed execution traces and visualizations.
+- **[Dpanel](/common/dataphyre/modules/dpanel/documentation/Dataphyre_Dpanel.md):**: Diagnose, unit test, and validate your Dataphyre modules and project(s) using dynamic JSON test cases with deep structure validation, performance checks, and automated dependency resolution.
 
 ### **User Experience**
 - **[Templating](/common/dataphyre/modules/templating/documentation/Dataphyre_Templating.md):** Dynamic template rendering with caching, SEO, and accessibility built in.
