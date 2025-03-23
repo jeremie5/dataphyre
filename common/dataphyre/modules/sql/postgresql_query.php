@@ -70,7 +70,7 @@ class postgresql_query_builder {
 		$port=$configurations['dataphyre']['sql']['datacenters'][$datacenter]['dbms_clusters'][$dbms_cluster]['dbms_port']??5432;
 		$password=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['password'];
 		$password??=core::get_password($endpoint);
-		$conn_string="host=$endpoint port=$port dbname=$database user=$username password=$password options='--client_encoding=UTF8' connect_timeout=1";
+		$conn_string="host=$endpoint port=$port dbname=$database user=$username password=$password options='--client_encoding=UTF8 --timezone=UTC' connect_timeout=1";
 		if(!$conn=pg_connect($conn_string)){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Failed connecting to $endpoint", $S="warning");
 			sql::flag_server_unavailable($endpoint);
@@ -283,11 +283,11 @@ class postgresql_query_builder {
         return true;
     }
 	
-	public static function postgresql_query(string $dbms_cluster, string $query, array|null $vars, bool|null $associative, bool|null $multipoint=true): bool|array {
+	public static function postgresql_query(string $dbms_cluster, string $query, ?array $vars, ?bool $associative, ?bool $multipoint=true): bool|array {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
 		if(null!==$early_return=core::dialback("CALL_POSTGRESQL_SIMPLE_SELECT", ...func_get_args())) return $early_return;
-		$execute_query=function($conn) use ($query, $vars, $associative){
+		$execute_query=function($conn) use ($query, $vars, $associative, $dbms_cluster){
 			try{
 				if(is_array($vars)){
 					// Start: Basic MySQL compatibility layer
@@ -312,36 +312,30 @@ class postgresql_query_builder {
 			}catch(\Throwable $exception){
 				\dataphyre\sql::log_query_error('PostgreSQL', $dbms_cluster, $query, $vars, $exception);
 			}
-			if($result===false){
-				return false;
-			}
 			return $result;
 		};
 		if($multipoint===true){
 			$endpoints=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
+			$results=[];
 			foreach($endpoints as $endpoint){
-				$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint, 'pgsql');
-				$result=$execute_query($conn);
+				$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint, $dbms_cluster);
+				$results[]=$execute_query($conn);
 			}
+			$result=array_values(array_filter($results, fn($r)=>count(array_filter($results, fn($x)=>$x===$r))===1))[0]??$results[0]; // Oddest one out algorithm (failure bias)
 		}
 		else
 		{
-			$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster, 'pgsql');
-			try{
-				$result=$execute_query($conn);
-			}catch(\Throwable $ex){
-				log_error("PgSQL exception", $ex);
-			}
+			$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster);
+			$result=$execute_query($conn);
 		}
 		if($result===false){
 			return false;
 		}
 		$query_result=[];
 		if($associative!==true){
-			while($row=pg_fetch_assoc($result)){
+			if(false!==$row=pg_fetch_assoc($result)){
 				foreach($row as $key=>$value)if(pg_field_type($result, pg_field_num($result, $key))==='bool')$row[$key]=$value==='t'?true:false; // Hack to convert pg's stringed booleans to true booleans
-				$query_result[]=$row;
-				break;
+				$query_result=$row;
 			}
 		}
 		else
@@ -355,7 +349,7 @@ class postgresql_query_builder {
 		return $query_result;
 	}
 	
-	public static function postgresql_select(string $dbms_cluster, string $select, string $location, string|null $params, array|null $vars, bool|null $associative): bool|array {
+	public static function postgresql_select(string $dbms_cluster, string $select, string $location, ?string $params, ?array $vars, ?bool $associative): bool|array {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_POSTGRESQL_SIMPLE_SELECT", ...func_get_args())) return $early_return;
 		$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster);

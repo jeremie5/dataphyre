@@ -45,10 +45,11 @@ else
 			</div>
 			<div class="col-12">
 				<div class="py-3">
-					<div class="card bg-secondary text-white rounded p-2" style="max-height: 750px; overflow: auto;">
+					<div class="card bg-secondary text-white rounded p-2">
 						<div class="card-body p-0">
+
 							<?php if (is_array($trace) && count($trace) > 0): ?>
-								<div style="overflow-x: auto;">
+								<div style="max-height: 750px; overflow: auto;">
 									<table class="table table-sm table-dark table-bordered mb-0">
 										<thead class="thead-light text-dark">
 											<tr>
@@ -77,6 +78,15 @@ else
 															. htmlspecialchars($exception->getTraceAsString()) . "</pre>";
 													}
 													elseif ($type === 'tracelog' && isset($entry['tracelog']) && is_array($entry['tracelog'])) {
+														$countTypes = [];
+														foreach ($entry['tracelog'] as $logEntry) {
+															$msgType = strtolower($logEntry['type'] ?? 'info');
+															$countTypes[$msgType] = ($countTypes[$msgType] ?? 0) + 1;
+														}
+														$typeSummary = [];
+														foreach ($countTypes as $msgType => $msgCount) {
+															$typeSummary[] = "$msgCount $msgType";
+														}
 														ob_start(); ?>
 														<table class="table table-sm table-bordered table-dark bg-secondary mb-0">
 															<thead>
@@ -101,28 +111,29 @@ else
 															</tbody>
 														</table>
 														<?php $traceHtml = ob_get_clean();
-														$message = '<i>' . count($entry['tracelog']) . ' trace entries</i>';
+														$message = '<i>' . count($entry['tracelog']) . ' trace entries (' . implode(', ', $typeSummary) . ')</i>';
 													}
-													else {
+													else 
+													{
 														$message = $entry['fail_string'] ?? $entry['warning_string'] ?? $entry['error'] ?? $entry['message'] ?? $entry['reason'] ?? '';
 														$message = !empty($message) ? nl2br(htmlspecialchars($message)) : '<i>No message provided</i>';
 													}
 												?>
 												<tr>
-													<td>
-														<span class="badge bg-<?= ($type === 'php_exception') ? 'danger' : ($type === 'unit_test_failed' ? 'warning' : 'info') ?>">
-															<?= $type ?>
-														</span>
+													<td style="vertical-align: middle;">
+														<h4><span class="badge bg-info"><?= $type ?></span></h4>
 													</td>
-													<td><span <?= $filenameTooltip ?>><?= htmlspecialchars($filenameDisplay) ?></span></td>
-													<td><?= $line ?></td>
+													<td style="vertical-align: middle;">
+														<span <?= $filenameTooltip ?>><?= htmlspecialchars($filenameDisplay) ?></span>
+													</td>
+													<td style="vertical-align: middle;">
+														<?= $line ?>
+													</td>
 													<td>
 														<div class="d-flex justify-content-between align-items-center">
 															<pre class="mb-0 text-light bg-dark p-2 flex-grow-1" style="white-space: pre-wrap; overflow-x: auto;"><?= $message ?></pre>
 															<?php if (!empty($traceHtml)): ?>
-																<button class="btn btn-sm btn-outline-light ms-2" onclick="document.getElementById('trace-<?= $index ?>').classList.toggle('d-none');">
-																	<?= $type === 'tracelog' ? 'Expand Logs' : 'Stack Trace' ?>
-																</button>
+																<button class="btn btn-sm btn-outline-light ms-2" onclick="document.getElementById('trace-<?= $index ?>').classList.toggle('d-none');">Expand Logs</button>
 															<?php endif; ?>
 														</div>
 														<?php if (!empty($traceHtml)): ?>
@@ -137,13 +148,22 @@ else
 							<?php else: ?>
 								<h3 class="text-center">No log data captured.<br>Press a button below to perform a scan.</h3>
 							<?php endif; ?>
+
 						</div>
 					</div>
-					<div class="py-3 text-center ">
+					<div class="py-3 text-center">
 						<form method="post">
 							<input type="submit" name="dataphyre_full" class="btn btn-lg btn-primary" value="Diagnose Dataphyre">
 							<input type="submit" name="project_full" class="btn btn-lg btn-primary" value="Diagnose All Projects">
 							<input type="submit" name="project_full" class="btn btn-lg btn-primary" value="Diagnose <?=ucfirst($bootstrap_config['app']);?>">
+							<!--
+							<div class="d-flex justify-content-center mt-3">
+								<div class="custom-control custom-checkbox">
+									<input type="checkbox" class="custom-control-input" id="showErrorOnly" name="show_error_only" value="1" checked>
+									<label class="custom-control-label" for="showErrorOnly">Show Errors Only</label>
+								</div>
+							</div>
+							-->
 						</form>
 					</div>
 				</div>

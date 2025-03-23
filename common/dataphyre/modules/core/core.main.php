@@ -129,26 +129,14 @@ if(RUN_MODE!=='diagnostic'){
 		}
 	}
 
-	if($mod=dp_module_present('cache')){
-		require($mod[0]);
-		new \dataphyre\cache();
-	}
+	if($mod=dp_module_present('cache'))require($mod[0]);
 
 	if($mod=dp_module_present('contingency')){
 		require($mod[0]);
 		\dataphyre\contingency::set_handler();
 	}
 
-	if($mod=dp_module_present('sql')){
-		require($mod[0]);
-		new \dataphyre\sql();
-		function sql_count($a=null,$b=null,$c=null, $d=null, $e=null, $f=null){return dataphyre\sql::db_count($a,$b,$c,$d,$e,$f);}
-		function sql_select($a=null,$b=null,$c=null,$d=null,$e=null,$f=null,$g=null,$h=null){return dataphyre\sql::db_select($a,$b,$c,$d,$e,$f,$g,$h);}
-		function sql_delete($a=null,$b=null,$c=null,$d=null,$e=null,$f=null){return dataphyre\sql::db_delete($a,$b,$c,$d,$e,$f);}
-		function sql_update($a=null,$b=null,$c=null,$d=null,$e=null,$f=null,$g=null){return dataphyre\sql::db_update($a,$b,$c,$d,$e,$f,$g);}
-		function sql_insert($a=null,$b=null,$c=null,$d=null,$e=null,$f=null){return dataphyre\sql::db_insert($a,$b,$c,$d,$e,$f);}
-		function sql_query($a=null,$b=null,$c=null,$d=null,$e=null,$f=null, $g=null, $h=null){return dataphyre\sql::db_query($a,$b,$c,$d,$e,$f,$g,$h);}
-	}
+	if($mod=dp_module_present('sql'))require($mod[0]);
 
 	if(RUN_MODE==='request'){
 		if($mod=dp_module_present('async'))require($mod[0]);

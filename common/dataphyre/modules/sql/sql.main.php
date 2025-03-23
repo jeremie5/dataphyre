@@ -27,6 +27,7 @@ if(!isset($configurations['dataphyre']['sql'])){
 	//core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreSQL: No configuration.', 'safemode');
 }
 
+require(__DIR__."/sql.global.php");
 require(__DIR__."/mysql_query.php");
 require(__DIR__."/postgresql_query.php");
 require(__DIR__."/sqlite_query.php");
@@ -66,6 +67,11 @@ else
 	}
 }
 
+if(RUN_MODE==='diagnostic'){
+	require_once(__DIR__.'/sql.diagnostic.php');
+	\dataphyre\sql\diagnostic::tests();
+}
+
 class sql {
 
 	public function __Construct($dbms_cluster="sql"){
@@ -75,7 +81,7 @@ class sql {
 		self::migration();
 	}
 	
-	public static function log_query_error(string $dbms, string $cluster, string $query, array $vars=[], \Throwable $exception=null): void {
+	public static function log_query_error(string $dbms, string $cluster, string $query, ?array $vars=[], \Throwable $exception=null): void {
 		$error_message=$exception ? $exception->getMessage() : "Unknown error";
 		$error_trace=$exception ? nl2br(htmlspecialchars($exception->getTraceAsString())) : "No stack trace available";
 		$formatted_query = htmlspecialchars($query);
@@ -333,7 +339,7 @@ class sql {
 		return true;
 	}
 	
-    public static function db_query(string|array $query, ?array $vars, ?bool $associative=false, $multipoint=false, null|bool|array|string $caching=[true], bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : mixed {
+    public static function db_query(string|array $query, ?array $vars, ?bool $associative=false, $multipoint=false, null|bool|array|string $caching=[false], bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : mixed {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_SELECT",...func_get_args())) return $early_return;
 		global $configurations;
@@ -359,6 +365,7 @@ class sql {
 			if(is_array($clear_cache)===false)$clear_cache=[$clear_cache];
 		}
 		$dbms_cluster=$configurations['dataphyre']['sql']['tables'][$location]['cluster']??$configurations['dataphyre']['sql']['default_cluster'];
+		if(isset($query['dbms_cluster_override']))$dbms_cluster=$query['dbms_cluster_override'];
 		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($query)){
 			if(!isset($query[$dbms])){
@@ -389,7 +396,7 @@ class sql {
 					];
 					return null;
 				}
-				$query_result=mysql_query_builder::simple_query($dbms_cluster, $query, $vars, $associative, $multipoint);
+				$query_result=mysql_query_builder::mysql_query($dbms_cluster, $query, $vars, $associative, $multipoint);
 				break;
 			case"postgresql":
 				if($callback){
@@ -424,7 +431,7 @@ class sql {
 					];
 					return null;
 				}
-				$query_result=sqlite_query_builder::simple_query($dbms_cluster, $query, $vars, $associative, $multipoint);
+				$query_result=sqlite_query_builder::sqlite_query($dbms_cluster, $query, $vars, $associative, $multipoint);
 				break;
 		}
 		if($caching!==false && $cache_policy!==false){
