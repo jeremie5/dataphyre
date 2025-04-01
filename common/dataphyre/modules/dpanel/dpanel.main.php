@@ -49,10 +49,7 @@ class dpanel{
 	public static function unit_test(string $json_file_path): bool {
 		global $roothpath;
 		$all_passed=true;
-		if(!is_readable($json_file_path)){
-			throw new \Exception("JSON file not readable: $json_file_path");
-		}
-		if(false===$json_content=file_get_contents($json_file_path) || empty($json_content)){
+		if(!is_readable($json_file_path) || false===$json_content=file_get_contents($json_file_path) || empty($json_content)){
 			self::$verbose[]=[
 				'type'=>'unit_test',
 				'file'=>$json_file_path,
@@ -62,8 +59,14 @@ class dpanel{
 			return false;
 		}
 		$test_definitions=json_decode($json_content, true);
-		if(json_last_error() !== JSON_ERROR_NONE){
-			throw new \Exception("Invalid JSON format : ".json_last_error_msg().PHP_EOL.$json_file_path);
+		if(null===$test_definitions || json_last_error() !== JSON_ERROR_NONE){
+			self::$verbose[]=[
+				'type'=>'unit_test',
+				'file'=>$json_file_path,
+				'fail_string'=>"Invalid JSON format : ".json_last_error_msg().PHP_EOL.$json_file_path,
+				'passed'=>false,
+			];
+			return false;
 		}
 		$validate_array_structure=function($array, $structure)use(&$validate_array_structure){
 			if(!is_array($array) || !is_array($structure) || $structure[0] !== 'array'){
@@ -302,7 +305,6 @@ class dpanel{
 					'type'=>'file_missing', 
 					'module'=>$module, 
 					'file'=>$module_path, 
-					'time'=>time()
 				];
 				return false;
 			}
@@ -311,7 +313,6 @@ class dpanel{
 					'type'=>'php_validation_error', 
 					'module'=>$module, 
 					'error'=>$validation, 
-					'time'=>time()
 				];
 				return false;
 			}
@@ -322,7 +323,6 @@ class dpanel{
 						'type'=>'tracelog', 
 						'module'=>$module, 
 						'tracelog'=>$tracelog,
-						'time'=>time()
 					];
 				}
 				$unit_test_dir=dirname($module_path).'/unit_tests';
@@ -330,12 +330,7 @@ class dpanel{
 					$test_files=glob($unit_test_dir . '/*.json');
 					$all_tests_passed=true;
 					foreach($test_files as $json_file){
-						$unit_verbose=[];
-						$passed=self::unit_test($json_file, $unit_verbose);
-						foreach($unit_verbose as $entry){
-							$entry['module']=$module;
-							self::$verbose[]=$entry;
-						}
+						$passed=self::unit_test($json_file);
 						if(!$passed){
 							$all_tests_passed=false;
 						}
@@ -344,7 +339,6 @@ class dpanel{
 						self::$verbose[]=[
 							'type'=>'unit_test_failed', 
 							'module'=>$module, 
-							'time'=>time()
 						];
 						return false;
 					}
@@ -356,7 +350,6 @@ class dpanel{
 						'reason'=>'unit_tests folder missing', 
 						'folder'=>$unit_test_dir, 
 						'module'=>$module, 
-						'time'=>time()
 					];
 				}
 				return true;
@@ -365,7 +358,6 @@ class dpanel{
 					'type'=>'php_exception', 
 					'module'=>$module, 
 					'exception'=>$exception, 
-					'time'=>time()
 				];
 				return false;
 			}
@@ -387,7 +379,6 @@ class dpanel{
 			self::$verbose[]=[
 				'type'=>'module_missing', 
 				'module'=>$module, 
-				'time'=>time()
 			];	
 		}
 		return false;
