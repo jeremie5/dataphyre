@@ -30,6 +30,8 @@ class core {
 	
 	public static $dialbacks=[];
 	
+	public static $display_language="en";
+	
 	public static function load_plugins(string $type): void {
 		global $rootpath;
 		if(function_exists("tracelog")){
@@ -475,8 +477,7 @@ class core {
 		$result=$datetime->format($format);
 		if($translation===true){
 			if(class_exists("dataphyre\date_translation")){
-				global $lang;
-				$result=date_translation::translate_date($result, $lang, $format);
+				$result=date_translation::translate_date($result, self::$display_language, $format);
 			}
 		}
 		return $result;
@@ -536,8 +537,7 @@ class core {
 				$result=$datetime->format($format);
 				if($translation===true){
 					if(class_exists("dataphyre\date_translation")){
-						global $lang;
-						$result=date_translation::translate_date($result, $lang, $format);
+						$result=date_translation::translate_date($result, self::$display_language, $format);
 					}
 				}
 				return $result;
