@@ -21,3 +21,4 @@ function sql_delete($a=null,$b=null,$c=null,$d=null,$e=null,$f=null){return data
 function sql_update($a=null,$b=null,$c=null,$d=null,$e=null,$f=null,$g=null){return dataphyre\sql::db_update($a,$b,$c,$d,$e,$f,$g);}
 function sql_insert($a=null,$b=null,$c=null,$d=null,$e=null,$f=null){return dataphyre\sql::db_insert($a,$b,$c,$d,$e,$f);}
 function sql_query($a=null,$b=null,$c=null,$d=null,$e=null,$f=null, $g=null, $h=null){return dataphyre\sql::db_query($a,$b,$c,$d,$e,$f,$g,$h);}
+function sql_upsert($a=null,$b=null,$c=null,$d=null,$e=null,$f=null, $g=null){return dataphyre\sql::db_upsert($a,$b,$c,$d,$e,$f,$g);}

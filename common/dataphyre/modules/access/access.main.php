@@ -219,7 +219,7 @@ class access{
 			)){
 				$_SESSION=[];
 				session_destroy();
-				$_SESSION['dp']['self_cache']['no_known_recoverable_session']=true;
+				$_SESSION['dp']['access_cache']['no_known_recoverable_session']=true;
 				unset($_SESSION['last_valid_session']);
 				setcookie("__Secure-DPID", "", time()-3600, '/');
 				setcookie("__Secure-SID", "", time()-3600, '/');
@@ -246,7 +246,7 @@ class access{
 			$V=array(false, $userid), 
 			$CC=true
 		)){
-			$_SESSION['dp']['self_cache']['no_known_recoverable_session']=true;
+			$_SESSION['dp']['access_cache']['no_known_recoverable_session']=true;
 			return true;
 		}
 		return false;
@@ -313,7 +313,7 @@ class access{
 	public static function recover_session() : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_RECOVER_SESSION",...func_get_args())) return $early_return;
-		if(!isset($_SESSION['dp']['self_cache']['no_known_recoverable_session'])){
+		if(!isset($_SESSION['dp']['access_cache']['no_known_recoverable_session'])){
 			if(isset($_COOKIE['__Secure-'.core::get_config("dataphyre/access/sessions_cookie_name")])){
 				$id=$_COOKIE['__Secure-'.core::get_config("dataphyre/access/sessions_cookie_name")];
 				if(!isset($_SESSION['id']) || !isset($_SESSION['userid'])){
@@ -338,7 +338,7 @@ class access{
 				}
 			}
 		}
-		$_SESSION['dp']['self_cache']['no_known_recoverable_session']=true;
+		$_SESSION['dp']['access_cache']['no_known_recoverable_session']=true;
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="No session to recover");
 		return false;
 	}
@@ -379,13 +379,13 @@ class access{
 	public static function access(bool $session_required=true, bool $must_no_session=false, bool $prevent_mobile=false, bool $prevent_robot=false) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_ACCESS",...func_get_args()))return $early_return;
-		if($prevent_robot===true && self::is_bot()===true){
+		$error=function(string $error_string='Unknown error', int $response_code=403){
 			if(!empty(core::get_config("dataphyre/access/requires_app_redirect"))){
 				header('Location: '.core::get_config("dataphyre/access/robot_redirect"));
 				exit();
 			}
 			ob_end_clean();
-			http_response_code(403);
+			http_response_code($response_code);
 			header('Content-Type:text/html; charset=UTF-8');
 			header('Server: Dataphyre');
 			echo'<!DOCTYPE html>';
@@ -400,8 +400,15 @@ class access{
 			echo'</head>';
 			echo'<body>';
 			echo'<h1 style="font-size:60px" class="phyro-bold"><i><b>DATAPHYRE</b></i></h1>';
-			echo'<h3>This page cannot be selfed by robots.</h3>';
+			echo'<h3>'.$error_string.'</h3>';
 			exit();
+		};
+		if($prevent_robot===true && self::is_bot()===true){
+			if(!empty(core::get_config("dataphyre/access/requires_app_redirect"))){
+				header('Location: '.core::get_config("dataphyre/access/robot_redirect"));
+				exit();
+			}
+			$error('This page cannot be selfed by robots.', 403);
 		}
 		else
 		{
@@ -410,24 +417,7 @@ class access{
 					header('Location: '.core::get_config("dataphyre/access/requires_app_redirect"));
 					exit();
 				}
-				ob_end_clean();
-				http_response_code(403);
-				header('Content-Type:text/html; charset=UTF-8');
-				header('Server: Dataphyre');
-				echo'<!DOCTYPE html>';
-				echo'<html>';
-				echo'<head>';
-				echo'<link rel="preconnect" href="https://fonts.googleapis.com">';
-				echo'<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>';
-				echo'<link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">';
-				echo'<style>@import url("https://fonts.googleapis.com/css2?family=Roboto&display=swap");</style>';
-				echo'<style>'.minified_font().'</style>';
-				echo'<style>h1,h2,h3,h4,h5.h6{font-family:"Roboto", sans-serif;}</style>';
-				echo'</head>';
-				echo'<body>';
-				echo'<h1 style="font-size:60px" class="phyro-bold"><i><b>DATAPHYRE</b></i></h1>';
-				echo'<h3>This page cannot be selfed by mobile devices without an application.</h3>';
-				exit();
+				$error('This page cannot be selfed by mobile devices without an application.', 403);
 			}
 			else
 			{
@@ -438,24 +428,7 @@ class access{
 							header('Location: '.core::get_config("dataphyre/access/must_no_session_redirect"));
 							exit();
 						}
-						ob_end_clean();
-						http_response_code(401);
-						header('Content-Type:text/html; charset=UTF-8');
-						header('Server: Dataphyre');
-						echo'<!DOCTYPE html>';
-						echo'<html>';
-						echo'<head>';
-						echo'<link rel="preconnect" href="https://fonts.googleapis.com">';
-						echo'<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>';
-						echo'<link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">';
-						echo'<style>@import url("https://fonts.googleapis.com/css2?family=Roboto&display=swap");</style>';
-						echo'<style>'.minified_font().'</style>';
-						echo'<style>h1,h2,h3,h4,h5.h6{font-family:"Roboto", sans-serif;}</style>';
-						echo'</head>';
-						echo'<body>';
-						echo'<h1 style="font-size:60px" class="phyro-bold"><i><b>DATAPHYRE</b></i></h1>';
-						echo'<h3>This page requires you to not have an active session.</h3>';
-						exit();
+						$error('This page requires you to not have an active session.', 401);
 					}
 					else
 					{
@@ -484,24 +457,7 @@ class access{
 								header('Location: '.core::get_config("dataphyre/access/require_session_redirect").'?redir='.rtrim(base64_encode(ltrim($_SERVER["REQUEST_URI"], "/")), '='));
 								exit();
 							}
-							ob_end_clean();
-							http_response_code(401);
-							header('Content-Type:text/html; charset=UTF-8');
-							header('Server: Dataphyre');
-							echo'<!DOCTYPE html>';
-							echo'<html>';
-							echo'<head>';
-							echo'<link rel="preconnect" href="https://fonts.googleapis.com">';
-							echo'<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>';
-							echo'<link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">';
-							echo'<style>@import url("https://fonts.googleapis.com/css2?family=Roboto&display=swap");</style>';
-							echo'<style>'.minified_font().'</style>';
-							echo'<style>h1,h2,h3,h4,h5.h6{font-family:"Roboto", sans-serif;}</style>';
-							echo'</head>';
-							echo'<body>';
-							echo'<h1 style="font-size:60px" class="phyro-bold"><i><b>DATAPHYRE</b></i></h1>';
-							echo'<h3>This page requires authentication.</h3>';
-							exit();
+							$error('This page requires authentication.', 401);
 						}
 						else
 						{

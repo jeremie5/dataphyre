@@ -84,7 +84,7 @@ class currency{
 		global $configurations;
 		if(empty($_SESSION['exchange_rate_data']) || !in_array($_SESSION['exchange_rate_data']['source'], $configurations['dataphyre']['currency']['exchange_rate_sources']) || $_SESSION['exchange_rate_data']['time']>strtotime("+60 Minutes")){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Cached exchange rates expired, invalid or missing", $S="warning");
-			if(false!==$row=sql::db_select(
+			if(false!==$row=sql_select(
 				$S="*", 
 				$L="dataphyre.exchange_rates", 
 				$P=[
@@ -192,7 +192,7 @@ class currency{
 			$_SESSION['exchange_rate_data']['time']=time();
 			$_SESSION['exchange_rate_data']['source']=$source;
 			$exchange_data_json=json_encode($rates);
-			sql::db_insert(
+			sql_insert(
 				$L="dataphyre.exchange_rates", 
 				$F=[
 					"data"=>$exchange_data_json,
@@ -234,7 +234,9 @@ class currency{
 	public static function convert(float|null $amount, string $source_currency, string $target_currency, bool|null $formatted=false, bool|null $show_free=true): string|float {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CONVERT_TO_USER_CURRENCY",...func_get_args())) return $early_return;
-		if(empty($_SESSION['exchange_rate_data']))core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreCurrency: No cached rates available in session.', 'safemode');
+		if(empty($_SESSION['exchange_rate_data'])){
+			core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreCurrency: No cached rates available in session.', 'safemode');
+		}
 		$amount=(float)$amount;
 		$source_multiplier=$_SESSION['exchange_rate_data']['data'][$source_currency] ?? 1;
 		$target_multiplier=$_SESSION['exchange_rate_data']['data'][$target_currency] ?? 1;
