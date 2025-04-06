@@ -74,7 +74,7 @@ if(RUN_MODE==='diagnostic'){
 
 class sql {
 
-	public function __Construct($dbms_cluster="sql"){
+	public function __construct($dbms_cluster="sql"){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
 		if(null!==$early_return=core::dialback("CALL_SQL_CONSTRUCT",...func_get_args())) return $early_return;
@@ -82,10 +82,11 @@ class sql {
 	}
 	
 	public static function log_query_error(string $dbms, string $cluster, string $query, ?array $vars=[], \Throwable $exception=null): void {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		$error_message=$exception ? $exception->getMessage() : "Unknown error";
 		$error_trace=$exception ? nl2br(htmlspecialchars($exception->getTraceAsString())) : "No stack trace available";
-		$formatted_query = htmlspecialchars($query);
-		$formatted_vars = !empty($vars) ? json_encode($vars, JSON_PRETTY_PRINT) : "None";
+		$formatted_query=htmlspecialchars($query);
+		$formatted_vars=!empty($vars) ? json_encode($vars, JSON_PRETTY_PRINT) : "None";
 		$error='
 		<div class="alert alert-danger" role="alert">
 			<h4 class="alert-heading">Dataphyre mod_SQL: '.$dbms.' query error on cluster '.$cluster.'</h4>
@@ -97,6 +98,7 @@ class sql {
 			<pre style="background: #f8d7da; padding: 10px; border-radius: 5px;">'.$error_trace.'</pre>
 		</div>';
 		log_error($error);
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=$error, $S='warning');
 	}
 	
 	public static function migration(){
@@ -234,11 +236,11 @@ class sql {
 		}
 		if($cache_policy!==false){
 			if(empty($location)){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Invalid cache location", $S="fatal");
+				self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), new Exception("Invalid cache location"));
 				return false;
 			}
 			if(empty($hash)){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Invalid cache hash", $S="fatal");
+				self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), new Exception("Invalid cache hash"));
 				return false;
 			}
 			if($cache_policy['type']==='shared_cache'){
@@ -268,7 +270,7 @@ class sql {
 			}
 			else
 			{
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Unknown cache policy type for table $location", $S="fatal");
+				self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), new Exception("Unknown cache policy type for table $location"));
 				return false;
 			}
 			foreach($caching as $cache_index){
@@ -307,13 +309,13 @@ class sql {
 				}
 				else
 				{
-					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Unknown cache policy type for table", $S="fatal");
+					self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), new Exception("Unknown cache policy type for table"));
 					return false;
 				}
 			}
 			else
 			{
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="clear_cache_for parameter must be a string if valid cache policy parameter is given", $S="fatal");
+				self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), new Exception("clear_cache_for parameter must be a string if valid cache policy parameter is given"));
 				return false;
 			}
 		}
@@ -333,7 +335,7 @@ class sql {
 					$_SESSION['db_cache_count']--;
 				}
 				unset($_SESSION['db_cache_invalidation_index'][$clear_cache_index]);
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Cleared shared cache for invalidation index $clear_cache_index");
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Cleared shared cache for invalidation index $clear_cache_index for table ".$invalidation_cache[1]);
 			}
 		}
 		return true;
@@ -369,48 +371,37 @@ class sql {
 		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($query)){
 			if(!isset($query[$dbms])){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Query has no compatibility for DBMS ($dbms) for location $location. Stack trace:\n".json_encode(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS)), $S="fatal");
+				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Query has no compatibility for DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$query=$query[$dbms];
 		}
-		if(is_array($vars)){
-			if(isset($vars[$dbms])){
-				$vars=$vars[$dbms];
-			}
+		if(is_array($vars) && isset($vars[$dbms]))$vars=$vars[$dbms];
+		if($callback){
+			$query_queue=[
+				'location'=>$location, 
+				'query'=>$query,
+				'vars'=>$vars,
+				'associative'=>$associative, 
+				'caching'=>$caching,
+				'multipoint'=>$multipoint,
+				'clear_cache'=>$clear_cache,
+				'callback'=>$callback,
+				'hash'=>$hash
+			];
 		}
 		switch($dbms){
 			case"mysql":
 				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}}} // Turn booleans into integer value
 				if($callback){
-					mysql_query_builder::$queued_queries[$queue]['raw'][]=[
-						'location'=>$location, 
-						'query'=>$query,
-						'vars'=>$vars,
-						'associative'=>$associative, 
-						'caching'=>$caching,
-						'multipoint'=>$multipoint,
-						'clear_cache'=>$clear_cache,
-						'callback'=>$callback,
-						'hash'=>$hash
-					];
+					mysql_query_builder::$queued_queries[$queue]['raw'][]=$query_queue;
 					return null;
 				}
 				$query_result=mysql_query_builder::mysql_query($dbms_cluster, $query, $vars, $associative, $multipoint);
 				break;
 			case"postgresql":
 				if($callback){
-					postgresql_query_builder::$queued_queries[$queue]['raw'][]=[
-						'location'=>$location, 
-						'query'=>$query,
-						'vars'=>$vars,
-						'associative'=>$associative, 
-						'caching'=>$caching,
-						'multipoint'=>$multipoint,
-						'clear_cache'=>$clear_cache,
-						'callback'=>$callback,
-						'hash'=>$hash
-					];
+					postgresql_query_builder::$queued_queries[$queue]['raw'][]=$query_queue;
 					return null;
 				}
 				$query_result=postgresql_query_builder::postgresql_query($dbms_cluster, $query, $vars, $associative, $multipoint);
@@ -418,17 +409,7 @@ class sql {
 			case"sqlite":
 				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}}} // Turn booleans into integer value
 				if($callback){
-					sqlite_query_builder::$queued_queries[$queue]['raw'][]=[
-						'location'=>$location, 
-						'query'=>$query,
-						'vars'=>$vars,
-						'associative'=>$associative, 
-						'caching'=>$caching,
-						'multipoint'=>$multipoint,
-						'clear_cache'=>$clear_cache,
-						'callback'=>$callback,
-						'hash'=>$hash
-					];
+					sqlite_query_builder::$queued_queries[$queue]['raw'][]=$query_queue;
 					return null;
 				}
 				$query_result=sqlite_query_builder::sqlite_query($dbms_cluster, $query, $vars, $associative, $multipoint);
@@ -472,13 +453,13 @@ class sql {
 					}
 					if(null!==$cache=self::get_query_cached_result($location, $hash, $cache_policy)){
 						if(is_integer($cache)){
-							tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Unexpected cached query result, possible hash collision. Returning false.", $S="fatal");
+							self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Unexpected cached query result, possible hash collision. Returning false."));
 							return false;
 						}
 						if($associative===true && is_array($cache)){
 							foreach($cache as $item){
 								if(!is_array($item)){
-									tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Cached query result is not a multidimensional array as expected, possible hash collision. Returning false.", $S="fatal");
+									self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Cached query result is not a multidimensional array as expected, possible hash collision. Returning false."));
 									return false;
 								}
 							}
@@ -493,38 +474,37 @@ class sql {
 		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($select)){
 			if(!isset($select[$dbms])){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Query's selection has no compatibility for DBMS ($dbms) for location $location. Stack trace:\n".json_encode(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS)), $S="fatal");
+				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Query's selection has no compatibility for DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$select=$select[$dbms];
 		}
 		if(is_array($params)){
 			if(!isset($params[$dbms])){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Query's parameters has no compatibility for DBMS ($dbms) for location $location. Stack trace:\n".json_encode(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS)), $S="fatal");
+				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Query's parameters has no compatibility for DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$params=$params[$dbms];
 		}
-		if(is_array($vars)){
-			if(isset($vars[$dbms])){
-				$vars=$vars[$dbms];
-			}
-		}
+		if(is_array($vars) && isset($vars[$dbms]))$vars=$vars[$dbms];
 		if($associative!==true && stripos($params, 'limit')===false && !is_null($params))$params.=' LIMIT 1'; 
+		if($callback){
+			$query_queue=[
+				'select'=>$select, 
+				'location'=>$location,
+				'params'=>$params, 
+				'vars'=>$vars, 
+				'associative'=>$associative, 
+				'caching'=>$caching,
+				'callback'=>$callback,
+				'hash'=>$hash
+			];
+		}
 		switch($dbms){
 			case"mysql":
 				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}}} // Turn booleans into integer value
 				if($callback){
-					mysql_query_builder::$queued_queries[$queue]['select'][]=[
-						'select'=>$select, 
-						'location'=>$location,
-						'params'=>$params, 
-						'vars'=>$vars, 
-						'associative'=>$associative, 
-						'caching'=>$caching,
-						'callback'=>$callback,
-						'hash'=>$hash
-					];
+					mysql_query_builder::$queued_queries[$queue]['select'][]=$query_queue;
 					return null;
 				}
 				$query_result=mysql_query_builder::mysql_select($dbms_cluster, $select, $location, $params, $vars, $associative);
@@ -532,16 +512,7 @@ class sql {
 			case"postgresql":
 				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=$value?'t':'f';}}} // Turn booleans into strings
 				if($callback){
-					postgresql_query_builder::$queued_queries[$queue]['select'][]=[
-						'select'=>$select, 
-						'location'=>$location,
-						'params'=>$params, 
-						'vars'=>$vars, 
-						'associative'=>$associative, 
-						'caching'=>$caching,
-						'callback'=>$callback,
-						'hash'=>$hash
-					];
+					postgresql_query_builder::$queued_queries[$queue]['select'][]=$query_queue;
 					return null;
 				}
 				$query_result=postgresql_query_builder::postgresql_select($dbms_cluster, $select, $location, $params, $vars, $associative);
@@ -549,19 +520,10 @@ class sql {
 			case"sqlite":
 				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}}} // Turn booleans into integer value
 				if($callback){
-					sqlite_query_builder::$queued_queries[$queue]['select'][]=[
-						'select'=>$select, 
-						'location'=>$location,
-						'params'=>$params, 
-						'vars'=>$vars, 
-						'associative'=>$associative, 
-						'caching'=>$caching,
-						'callback'=>$callback,
-						'hash'=>$hash
-					];
+					sqlite_query_builder::$queued_queries[$queue]['select'][]=$query_queue;
 					return null;
 				}
-				$query_result=sqlite_query_builder::mysql_select($dbms_cluster, $select, $location, $params, $vars, $associative);
+				$query_result=sqlite_query_builder::sqlite_select($dbms_cluster, $select, $location, $params, $vars, $associative);
 				break;
 		}
 		if($caching!==false && $cache_policy!==false){
@@ -589,7 +551,7 @@ class sql {
 				}
 				if(null!==$cache=self::get_query_cached_result($location, $hash, $cache_policy)){
 					if(is_integer($cache)===false){
-						tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Unexpected cached query result, possible hash collision. Returning false.", $S="fatal");
+						self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Unexpected cached query result, possible hash collision. Returning false."));
 						return false;
 					}
 					if(null!==$callback)$callback($cache);
@@ -600,33 +562,32 @@ class sql {
 		$dbms_cluster=$configurations['dataphyre']['sql']['tables'][$location]['cluster']??$configurations['dataphyre']['sql']['default_cluster'];
 		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if($query_dbms && $dbms!==$query_dbms){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Query has explicit DBMS compatibility flag $query_dbms that is not compatible with DBMS ($dbms) for location $location. Stack trace:\n".json_encode(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS)), $S="fatal");
+			self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Query has explicit DBMS compatibility flag $query_dbms that is not compatible with DBMS ($dbms) for location $location."));
 			return false;
 		}
 		if(is_array($params)){
 			if(!isset($params[$dbms])){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Query's parameters have no compatibility for DBMS ($dbms) for location $location. Stack trace:\n".json_encode(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS)), $S="fatal");
+				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Query's parameters have no compatibility for DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$params=$params[$dbms];
 		}
-		if(is_array($vars)){
-			if(isset($vars[$dbms])){
-				$vars=$vars[$dbms];
-			}
+		if(is_array($vars) && isset($vars[$dbms]))$vars=$vars[$dbms];
+		if($callback){
+			$query_queue=[
+				'location'=>$location, 
+				'params'=>$params,
+				'vars'=>$vars, 
+				'caching'=>$caching, 
+				'callback'=>$callback,
+				'hash'=>$hash
+			];
 		}
 		switch($dbms){
 			case"mysql":
 				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}}} // Turn booleans into integer value
 				if($callback){
-					mysql_query_builder::$queued_queries[$queue]['count'][]=[
-						'location'=>$location, 
-						'params'=>$params,
-						'vars'=>$vars, 
-						'caching'=>$caching, 
-						'callback'=>$callback,
-						'hash'=>$hash
-					];
+					mysql_query_builder::$queued_queries[$queue]['count'][]=$query_queue;
 					return null;
 				}
 				$query_result=mysql_query_builder::mysql_count($dbms_cluster, $location, $params, $vars);
@@ -634,14 +595,7 @@ class sql {
 			case"postgresql":
 				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=$value?'t':'f';}}} // Turn booleans into strings
 				if($callback){
-					postgresql_query_builder::$queued_queries[$queue]['count'][]=[
-						'location'=>$location, 
-						'params'=>$params,
-						'vars'=>$vars, 
-						'caching'=>$caching, 
-						'callback'=>$callback,
-						'hash'=>$hash
-					];
+					postgresql_query_builder::$queued_queries[$queue]['count'][]=$query_queue;
 					return null;
 				}
 				$query_result=postgresql_query_builder::postgresql_count($dbms_cluster, $location, $params, $vars);
@@ -649,17 +603,10 @@ class sql {
 			case"sqlite":
 				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}}} // Turn booleans into integer value
 				if($callback){
-					sqlite_query_builder::$queued_queries[$queue]['count'][]=[
-						'location'=>$location, 
-						'params'=>$params,
-						'vars'=>$vars, 
-						'caching'=>$caching, 
-						'callback'=>$callback,
-						'hash'=>$hash
-					];
+					sqlite_query_builder::$queued_queries[$queue]['count'][]=$query_queue;
 					return null;
 				}
-				$query_result=sqlite_query_builder::mysql_count($dbms_cluster, $location, $params, $vars);
+				$query_result=sqlite_query_builder::sqlite_count($dbms_cluster, $location, $params, $vars);
 				break;
 		}
 		if($caching!==false && $cache_policy!==false){
@@ -675,7 +622,7 @@ class sql {
 		global $configurations;
 		if(is_array($fields)){
 			if(!empty($vars)){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Variables has to be empty when fields is of type array", $S="fatal");
+				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Variables has to be empty when fields is of type array."));
 				return false;
 			}
 			$vars=array_values($fields);
@@ -690,19 +637,22 @@ class sql {
 				$vars=$vars[$dbms];
 			}
 		}
+		if($callback){
+			$query_queue=[
+				'location'=>$location, 
+				'ignore'=>'IGNORE',
+				'fields'=>$fields, 
+				'vars'=>$vars, 
+				'clear_cache'=>$clear_cache, 
+				'callback'=>$callback,
+				'multipoint'=>true
+			];
+		}
 		switch($dbms){
 			case"mysql":
 				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into integer value, arrays into json
 				if($callback){
-					mysql_query_builder::$queued_queries[$queue]['insert'][]=[
-						'location'=>$location, 
-						'ignore'=>'IGNORE',
-						'fields'=>$fields, 
-						'vars'=>$vars, 
-						'clear_cache'=>$clear_cache, 
-						'callback'=>$callback,
-						'multipoint'=>true
-					];
+					mysql_query_builder::$queued_queries[$queue]['insert'][]=$query_queue;
 					return null;
 				}
 				$query_result=mysql_query_builder::mysql_insert($dbms_cluster, $location, $fields, $vars);
@@ -710,15 +660,7 @@ class sql {
 			case"postgresql":
 			if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=$value?'t':'f';}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into strings, arrays into json
 				if($callback){
-					postgresql_query_builder::$queued_queries[$queue]['insert'][]=[
-						'location'=>$location, 
-						'ignore'=>'IGNORE',
-						'fields'=>$fields, 
-						'vars'=>$vars, 
-						'clear_cache'=>$clear_cache, 
-						'callback'=>$callback,
-						'multipoint'=>true
-					];
+					postgresql_query_builder::$queued_queries[$queue]['insert'][]=$query_queue;
 					return null;
 				}
 				$query_result=postgresql_query_builder::postgresql_insert($dbms_cluster, $location, $fields, $vars);
@@ -726,18 +668,10 @@ class sql {
 			case"sqlite":
 				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into integer value, arrays into json
 				if($callback){
-					sqlite_query_builder::$queued_queries[$queue]['insert'][]=[
-						'location'=>$location, 
-						'ignore'=>'IGNORE',
-						'fields'=>$fields, 
-						'vars'=>$vars, 
-						'clear_cache'=>$clear_cache, 
-						'callback'=>$callback,
-						'multipoint'=>true
-					];
+					sqlite_query_builder::$queued_queries[$queue]['insert'][]=$query_queue;
 					return null;
 				}
-				$query_result=sqlite_query_builder::mysql_insert($dbms_cluster, $location, $fields, $vars);
+				$query_result=sqlite_query_builder::sqlite_insert($dbms_cluster, $location, $fields, $vars);
 				break;
 		}
 		if($query_result!==false && $clear_cache!==false){
@@ -756,22 +690,25 @@ class sql {
 		if(str_contains($location, '.')===false)$location=$configurations['dataphyre']['sql']['default_database_location'].".".$location;
 		$dbms_cluster=$configurations['dataphyre']['sql']['tables'][$location]['cluster']??$configurations['dataphyre']['sql']['default_cluster'];
 		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
-		if(is_array($fields)){
-			if(isset($fields[$dbms])){
-				$fields=$fields[$dbms];
-			}
-		}
-		if(is_array($vars)){
-			if(isset($vars[$dbms])){
-				$vars=$vars[$dbms];
-			}
-		}
+		if(is_array($fields) && isset($fields[$dbms]))$fields=$fields[$dbms];
+		if(is_array($vars) && isset($vars[$dbms]))$vars=$vars[$dbms];
 		if(is_array($params)){
 			if(!isset($params[$dbms])){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Query's parameters have no compatibility for DBMS ($dbms) for location $location. Stack trace:\n".json_encode(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS)), $S="fatal");
+				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Query's parameters have no compatibility for DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$params=$params[$dbms];
+		}
+		if($callback){
+			$queued_query=[
+				'location'=>$location,
+				'fields'=>$fields, 
+				'params'=>$params,
+				'vars'=>$vars,
+				'clear_cache'=>$clear_cache,
+				'callback'=>$callback,
+				'multipoint'=>true
+			];
 		}
 		switch($dbms){
 			case"mysql":
@@ -783,15 +720,7 @@ class sql {
 					$fields=implode('=?,', array_keys($fields)).'=?';
 				}
 				if($callback){
-					mysql_query_builder::$queued_queries[$queue]['update'][]=[
-						'location'=>$location,
-						'fields'=>$fields, 
-						'params'=>$params,
-						'vars'=>$vars,
-						'clear_cache'=>$clear_cache,
-						'callback'=>$callback,
-						'multipoint'=>true
-					];
+					mysql_query_builder::$queued_queries[$queue]['update'][]=$queued_query;
 					return null;
 				}
 				$query_result=mysql_query_builder::mysql_update($dbms_cluster, $location, $fields, $params, $vars);
@@ -804,15 +733,7 @@ class sql {
 				}
 				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=$value?'t':'f';}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into strings, arrays into json
 				if($callback){
-					postgresql_query_builder::$queued_queries[$queue]['update'][]=[
-						'location'=>$location,
-						'fields'=>$fields, 
-						'params'=>$params,
-						'vars'=>$vars,
-						'clear_cache'=>$clear_cache,
-						'callback'=>$callback,
-						'multipoint'=>true
-					];
+					postgresql_query_builder::$queued_queries[$queue]['update'][]=$queued_query;
 					return null;
 				}
 				$query_result=postgresql_query_builder::postgresql_update($dbms_cluster, $location, $fields, $params, $vars);
@@ -825,18 +746,10 @@ class sql {
 				}
 				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into integer value, arrays into json
 				if($callback){
-					sqlite_query_builder::$queued_queries[$queue]['update'][]=[
-						'location'=>$location,
-						'fields'=>$fields, 
-						'params'=>$params,
-						'vars'=>$vars,
-						'clear_cache'=>$clear_cache,
-						'callback'=>$callback,
-						'multipoint'=>true
-					];
+					sqlite_query_builder::$queued_queries[$queue]['update'][]=$queued_query;
 					return null;
 				}
-				$query_result=sqlite_query_builder::mysql_update($dbms_cluster, $location, $fields, $params, $vars);
+				$query_result=sqlite_query_builder::sqlite_update($dbms_cluster, $location, $fields, $params, $vars);
 				break;
 		}
 		if($query_result!==false && $clear_cache!==false){
@@ -855,29 +768,34 @@ class sql {
 		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($params)){
 			if(!isset($params[$dbms])){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Query has no compatibility with DBMS ($dbms) for location $location. Stack trace:\n".json_encode(debug_backtrace()), $S="fatal");
+				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Query has no compatibility with DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$params=$params[$dbms];
 		}
-		if(is_array($vars)){
-			if(isset($vars[$dbms])){
-				$vars=$vars[$dbms];
+		if(is_array($vars) && isset($vars[$dbms]))$vars=$vars[$dbms];
+		if(!isset($clear_cache))$clear_cache=false;
+		if($callback){
+			$queued_query=[
+				'location'=>$location, 
+				'params'=>$params,
+				'vars'=>$vars,
+				'clear_cache'=>$clear_cache,
+				'callback'=>$callback,
+				'multipoint'=>true
+			];
+		}
+		if(stripos($params, 'WHERE')!==false){
+			if($configurations['dataphyre']['sql']['safe_delete']===false){
+				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Query attempted to delete all rows of a table but safe_delete is not false."));
+				return false;
 			}
 		}
-		if(!isset($clear_cache))$clear_cache=false;
 		switch($dbms){
 			case"mysql":
 				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}}} // Turn booleans into integer value
 				if($callback){
-					mysql_query_builder::$queued_queries[$queue]['delete'][]=[
-						'location'=>$location, 
-						'params'=>$params,
-						'vars'=>$vars,
-						'clear_cache'=>$clear_cache,
-						'callback'=>$callback,
-						'multipoint'=>true
-					];
+					mysql_query_builder::$queued_queries[$queue]['delete'][]=$queued_query;
 					return null;
 				}
 				$query_result=mysql_query_builder::mysql_delete($dbms_cluster, $location, $params, $vars);
@@ -885,14 +803,7 @@ class sql {
 			case"postgresql":
 				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=$value?'t':'f';}}} // Turn booleans into strings
 				if($callback){
-					postgresql_query_builder::$queued_queries[$queue]['delete'][]=[
-						'location'=>$location, 
-						'params'=>$params,
-						'vars'=>$vars,
-						'clear_cache'=>$clear_cache,
-						'callback'=>$callback,
-						'multipoint'=>true
-					];
+					postgresql_query_builder::$queued_queries[$queue]['delete'][]=$queued_query;
 					return null;
 				}
 				$query_result=postgresql_query_builder::postgresql_delete($dbms_cluster, $location, $params, $vars);
@@ -900,17 +811,10 @@ class sql {
 			case"sqlite":
 				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}}} // Turn booleans into integer value
 				if($callback){
-					sqlite_query_builder::$queued_queries[$queue]['delete'][]=[
-						'location'=>$location, 
-						'params'=>$params,
-						'vars'=>$vars,
-						'clear_cache'=>$clear_cache,
-						'callback'=>$callback,
-						'multipoint'=>true
-					];
+					sqlite_query_builder::$queued_queries[$queue]['delete'][]=$queued_query;
 					return null;
 				}
-				$query_result=sqlite_query_builder::mysql_delete($dbms_cluster, $location, $params, $vars);
+				$query_result=sqlite_query_builder::sqlite_delete($dbms_cluster, $location, $params, $vars);
 				break;
 		}
 		if($query_result!==false && $clear_cache!==false){
@@ -918,6 +822,94 @@ class sql {
 		}
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Delete query finished, returning result");
 		return $query_result;
+	}
+	
+	public static function db_upsert(string $location, array $fields, string|array|null $update_params=null, ?array $update_vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null): int|bool|null {
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		if(null !== $early_return=core::dialback("CALL_SQL_DB_UPSERT", ...func_get_args())) return $early_return;
+		global $configurations;
+		$update_vars ??= [];
+		if($clear_cache===null) $clear_cache=false;
+		if(!str_contains($location, '.')) $location=$configurations['dataphyre']['sql']['default_database_location'].".".$location;
+		$dbms_cluster=$configurations['dataphyre']['sql']['tables'][$location]['cluster'] ?? $configurations['dataphyre']['sql']['default_cluster'];
+		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
+		if(is_array($fields[$dbms] ?? null)){
+			if($dbms==='postgresql'){
+				if(!empty($fields[$dbms]['columns']) && !empty($fields[$dbms]['conflict_keys'])){
+					$conflict_keys=$fields[$dbms]['conflict_keys'] ?? ['id'];
+					$fields=$fields[$dbms]['columns'];
+				}
+				else
+				{
+					self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception('Key conflict scope unknown for postgresql'));
+					return false;
+				}
+			}
+			else
+			{
+				$fields=$fields[$dbms];
+			}
+		}
+		if(is_array($update_vars[$dbms] ?? null)) $update_vars=$update_vars[$dbms];
+		foreach($fields as $id=>&$value){
+			if(is_bool($value)){
+				$value=($dbms==='postgresql') ? ($value ? 't' : 'f') : (int)$value;
+			}
+			elseif(is_array($value)){
+				$value=json_encode($value);
+			}
+		}
+		unset($value);
+		$columns=array_keys($fields);
+		$vars=array_values($fields);
+		if(!$update_params){
+			if($callback){
+				$queued_query=[
+					'location'=>$location,
+					'query'=>$sql,
+					'vars'=>$vars,
+					'associative'=>false,
+					'caching'=>false,
+					'multipoint'=>false,
+					'clear_cache'=>$clear_cache,
+					'callback'=>$callback
+				];
+			}
+			switch($dbms){
+				case "mysql":
+					$placeholders=implode(",", array_fill(0, count($fields), "?"));
+					$updates=implode(",", array_map(fn($k)=>"`$k`=VALUES(`$k`)", $columns));
+					$sql="INSERT INTO `$location` (`".implode("`,`", $columns)."`) VALUES ($placeholders) ON DUPLICATE KEY UPDATE $updates";
+					if($callback){
+						mysql_query_builder::$queued_queries[$queue]['raw'][]=$queued_query;
+						return null;
+					}
+					return mysql_query_builder::mysql_query($dbms_cluster, $sql, $vars);
+				case "postgresql":
+					$conflict_target='('.implode(',', array_map(fn($k)=>"\"$k\"", $conflict_keys)).')';
+					$updates=implode(',', array_map(fn($k)=>"\"$k\"=EXCLUDED.\"$k\"", array_keys($fields)));
+					$sql="INSERT INTO \"$location\" (\"".implode('","', array_keys($fields))."\") VALUES ($placeholders) ON CONFLICT $conflict_target DO UPDATE SET $updates";
+					if($callback){
+						postgresql_query_builder::$queued_queries[$queue]['raw'][]=$queued_query;
+						return null;
+					}
+					return postgresql_query_builder::postgresql_query($dbms_cluster, $sql, $vars);
+				case "sqlite":
+					$placeholders=implode(",", array_fill(0, count($fields), "?"));
+					$updates=implode(",", array_map(fn($k)=>"\"$k\"=excluded.\"$k\"", $columns));
+					$sql="INSERT INTO \"$location\" (\"".implode('","', $columns)."\") VALUES ($placeholders) ON CONFLICT DO UPDATE SET $updates";
+					if($callback){
+						sqlite_query_builder::$queued_queries[$queue]['raw'][]=$queued_query;
+						return null;
+					}
+					return sqlite_query_builder::sqlite_query($dbms_cluster, $sql, $vars);
+			}
+		}
+		$updated=self::db_update($location, $fields, $update_params, $update_vars, $clear_cache, $queue, $callback);
+		if($updated===0){
+			return self::db_insert($location, $fields, null, $clear_cache, $queue, $callback);
+		}
+		return $updated;
 	}
 
 }
