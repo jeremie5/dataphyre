@@ -1,0 +1,17 @@
+<?php
+ /*************************************************************************
+ *  2020-2024 Shopiro Ltd.
+ *  All Rights Reserved.
+ * 
+ * NOTICE: All information contained herein is, and remains the 
+ * property of Shopiro Ltd. and is provided under a dual licensing model.
+ * 
+ * This software is available for personal use under the Free Personal Use License.
+ * For commercial applications that generate revenue, a Commercial License must be 
+ * obtained. See the LICENSE file for details.
+ *
+ * This software is provided "as is", without any warranty of any kind.
+ */
+ 
+function locale($a=null, $b=null, $c=null, $d=null, $e=null){ return \dataphyre\localization::locale($a, $b, $c, $d, $e); }
+function __($a=null, $b=null, $c=null, $d=null, $e=null){ return \dataphyre\localization::locale($a, $b, $c, $d, $e); }
