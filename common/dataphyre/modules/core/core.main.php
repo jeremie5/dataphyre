@@ -19,6 +19,18 @@ error_reporting(~E_ALL);
 
 set_error_handler(function(...$args){ return;}, E_ALL);
 
+tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Dataphyre Core initializing");
+
+if(!defined('BS_VERSION')){
+	pre_init_error("Dataphyre Bootstrap version unknown");
+}
+else
+{
+	if(version_compare(BS_VERSION, $min_bs='1.0.0', '<')){
+		pre_init_error("Dataphyre Core is incompatible with Dataphyre Bootstrap version ".BS_VERSION.". Please update to ".$min_bs);
+	}
+}
+
 // To ensure single application setups still work
 if(!isset($rootpath['common_dataphyre'])){
 	$rootpath['common_dataphyre']=$rootpath['dataphyre'];
@@ -26,7 +38,7 @@ if(!isset($rootpath['common_dataphyre'])){
 
 if(!defined('RUN_MODE')){
 	if(!define('RUN_MODE', 'request')){
-		pre_init_error("Unable to assign constant RUN_MODE constant");
+		pre_init_error("Unable to assign RUN_MODE constant");
 	}
 }
 else
@@ -51,10 +63,10 @@ foreach(['helper_functions.php', 'language_additions.php', 'core_functions.php']
 \dataphyre\core::load_plugins('pre_init');
 
 if(!define('REQUEST_USER_AGENT', isset($_SERVER['HTTP_USER_AGENT']) ? substr($_SERVER['HTTP_USER_AGENT'], 0, 255) : 'Unknown UA')){
-	pre_init_error("Unable to assign constant REQUEST_USER_AGENT constant");
+	pre_init_error("Unable to assign REQUEST_USER_AGENT constant");
 }
 
-if(empty(dpvk())){ //Initializes private key
+if(empty(dpvk())){
 	pre_init_error("Failed initializing DPVK");
 }
 
@@ -72,7 +84,7 @@ if(file_exists($file=$rootpath['common_dataphyre'].'config/core.php'))require($f
 if(file_exists($file=$rootpath['dataphyre'].'config/core.php'))require($file);
 
 if(!define('REQUEST_IP_ADDRESS', \dataphyre\core::get_client_ip())){
-	pre_init_error("Unable to assign constant REQUEST_IP_ADDRESS constant");
+	pre_init_error("Unable to assign REQUEST_IP_ADDRESS constant");
 }
 else
 {
@@ -132,6 +144,16 @@ if(RUN_MODE!=='diagnostic'){
 			}
 		}
 	}
+	if(is_array($retroactive_tracelog)){
+		if(class_exists('\dataphyre\tracelog')){
+			if(\dataphyre\tracelog::$enable===true){
+				foreach(array_reverse($retroactive_tracelog) as $log){
+					\dataphyre\tracelog::tracelog(...$log);
+				}
+			}
+		}
+	}
+	unset($retroactive_tracelog);
 
 	if($mod=dp_module_present('cache'))require($mod[0]);
 
@@ -178,17 +200,7 @@ if(RUN_MODE==='request'){
 	\dataphyre\core::set_http_headers();
 }
 
-if(is_array($retroactive_tracelog)){
-	if(class_exists('\dataphyre\tracelog')){
-		if(\dataphyre\tracelog::$enable===true){
-			foreach(array_reverse($retroactive_tracelog) as $log){
-				\dataphyre\tracelog::tracelog(...$log);
-			}
-		}
-	}
-}
-
-unset($retroactive_tracelog, $mod, $plugin, $file); 
+unset($mod, $plugin, $file); 
 //DO NOT UNSET modcache_file
 
 if(RUN_MODE==='diagnostic'){
