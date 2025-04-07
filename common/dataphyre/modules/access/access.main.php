@@ -33,10 +33,15 @@ if(empty($configurations['dataphyre']['access']['sessions_table_name'])){
 
 class access{
 	
+	private static $session_cookie='__Secure-DPID';
+	private static $fingerprint=[];
 	static $useragent_mismatch=false;
 	
 	public  function __construct(){
 		global $configurations;
+		if(isset($configurations['dataphyre']['access']['sessions_cookie_name'])){
+			self::$session_cookie='__Secure-'.$configurations['dataphyre']['access']['sessions_cookie_name'];
+		}
 		if(isset($_SESSION)){
 			if(isset($_SESSION['previous_useragent'])){
 				if($configurations['dataphyre']['access']['sanction_on_useragent_change']===true){
@@ -52,6 +57,14 @@ class access{
 			}
 			$_SESSION['previous_useragent']=REQUEST_USER_AGENT;
 		}
+		self::$fingerprint=[
+			'user_agent'=>$_SERVER['HTTP_USER_AGENT'] ?? '',
+			'accept_language'=>$_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? '',
+			'ip_subnet'=>self::extract_subnet(REQUEST_IP_ADDRESS),
+			'cf_country'=>$_SERVER['HTTP_CF_IPCOUNTRY'] ?? '',
+			'cf_connecting_ip'=>self::extract_subnet($_SERVER['HTTP_CF_CONNECTING_IP'] ?? ''),
+			'dnt'=>$_SERVER['HTTP_DNT'] ?? '',
+		];
 		if(self::logged_in()===true){
 			if(self::validate_session()===false){
 				if(self::recover_session()===false){
@@ -66,6 +79,51 @@ class access{
 		{
 			self::recover_session();
 		}
+		self::enforce_fingerprint_drift();
+	}
+	
+	private static function enforce_fingerprint_drift() : void {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		if(isset($_SESSION['access']['fingerprint'])){
+			if(1<self::fingerprint_drift_score(self::$fingerprint, $_SESSION['access']['fingerprint'])){
+				$_SESSION['minimum_security_reqs_alert']=true;
+				if(self::disable_session()===false){
+					core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreAccess: User session is invalid (fingerprint drift) and couldn\'t be destroyed..', 'safemode');
+				}
+				if(dp_module_present('firewall')===true){
+					firewall::captcha_block_user('fingerprint_drift');
+				}
+			}
+		}
+		$_SESSION['access']['fingerprint']=self::$fingerprint;
+	}
+	
+	private static function extract_subnet(string $ip): string {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		if(filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)){
+			return implode('.', array_slice(explode('.', $ip), 0, 3)); // Class C
+		}
+		if(filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+			return implode(':', array_slice(explode(':', $ip), 0, 4)); // Heuristic
+		}
+		return $ip;
+	}
+	
+	private static function fingerprint_drift_score(array $stored, array $current): int {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		$diffs=0;
+		foreach($stored as $key=>$value){
+			if(!isset($current[$key]) || $current[$key] !== $value){
+				$diffs++;
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Fingerprint drift detected for ".$key, $S="warning");
+			}
+			else
+			{
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="No fingerprint drift for ".$key);
+			}
+		}
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Returning $diffs mismatches");
+		return $diffs;
 	}
 	
 	/**
@@ -82,10 +140,13 @@ class access{
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_CREATE_SESSION",...func_get_args())) return $early_return;
 		global $configurations;
+		if(session_status()!==PHP_SESSION_ACTIVE){
+			session_start();
+		}
 		if(false!==sql_insert(
 			$L=$configurations["dataphyre"]["access"]["sessions_table_name"], 
 			$F=[
-				"id"=>$id=self::create_id(), 
+				"id"=>$dpid=self::create_id(), 
 				"userid"=>$userid,
 				"useragent"=>REQUEST_USER_AGENT,
 				"ipaddress"=>REQUEST_IP_ADDRESS, 
@@ -96,9 +157,9 @@ class access{
 			$CC=true
 		)){
 			$website_name=strtolower(parse_url($_SERVER['HTTP_HOST'], PHP_URL_HOST));
-			setcookie('__Secure-'.$configurations["dataphyre"]["access"]["sessions_cookie_name"], $id, time()+(86400*7), '/', strtolower($website_name), true, true);
+			setcookie(self::$session_cookie, $dpid, time()+(86400*7), '/', strtolower($website_name), true, true);
 			$_SESSION['userid']=$userid;
-			$_SESSION['id']=$id;
+			$_SESSION['id']=$dpid;
 			$_SESSION['ipaddress']=REQUEST_IP_ADDRESS;
 			unset($_SESSION['self_no_known_recoverable_session']);
 			return true;
@@ -116,14 +177,37 @@ class access{
 	  */
 	public static function create_id() : string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
-		if(null!==$early_return=core::dialback("CALL_ACCESS_CREATE_DPID",...func_get_args())) return $early_return;
-		$id=bin2hex(openssl_random_pseudo_bytes(32)); //Generate a 64 character long cryptographically secure string to be used as a session ID
-		if(strlen($id)===64){
-			return $id;
-		}
-		core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreAccess: Failed creating a DPID.', 'safemode');
+		$dpid=rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+		$signature=substr(hash_hmac('sha256', $dpid, dpvk()), 0, 8);
+		return 'DPID_'.$dpid.'_'.$signature;
 	}
 	
+	public static function validate_id(string $dpid) : bool {
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $S = null, $T = 'function_call', $A = func_get_args());
+		if(null !== $early_return=core::dialback("CALL_ACCESS_VALIDATE_ID", ...func_get_args())) return $early_return;
+		$valid=false;
+		if(preg_match('/^DPID_([A-Za-z0-9\-_]{43})_([a-f0-9]{8})$/', $dpid, $matches)){
+			$dpid=$matches[1];
+			$signature=$matches[2];
+			$expected_signature=substr(hash_hmac('sha256', $dpid, dpvk()), 0, 8);
+			if(hash_equals($expected_signature, $signature)){
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Valid DPID");
+				return true;
+			}
+			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Invalid DPID signature");
+		}
+		else
+		{
+			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Invalid DPID format: $dpid");
+		}
+		$_SESSION['minimum_security_reqs_alert']=true;
+		self::disable_session();
+		if(dp_module_present('firewall')===true){
+			firewall::captcha_block_user('forged_dpid');
+		}
+		return false;
+	}
+
 	/**
 	  * Get the userid of a current user session
 	  *
@@ -205,8 +289,8 @@ class access{
 	public static function disable_session() : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_DISABLE_SESSION",...func_get_args())) return $early_return;
-		if(isset($_COOKIE['__Secure-'.core::get_config("dataphyre/access/sessions_cookie_name")])){
-			$id=$_COOKIE['__Secure-'.core::get_config("dataphyre/access/sessions_cookie_name")];
+		if(isset($_COOKIE[self::$session_cookie])){
+			$dpid=$_COOKIE[self::$session_cookie];
 			if(false!==sql::db_update(
 				$L=core::get_config("dataphyre/access/sessions_table_name"), 
 				$F=[
@@ -214,11 +298,11 @@ class access{
 					"postgresql"=>"active=false"
 				],
 				$P="WHERE id=?", 
-				$V=array($id), 
+				$V=array($dpid), 
 				$CC=true
 			)){
-				$_SESSION=[];
-				session_destroy();
+				unset($_SESSION['userid']);
+				unset($_SESSION['id']);
 				$_SESSION['dp']['access_cache']['no_known_recoverable_session']=true;
 				unset($_SESSION['last_valid_session']);
 				setcookie("__Secure-DPID", "", time()-3600, '/');
@@ -262,41 +346,42 @@ class access{
 				return true;
 			}
 		}
-		if(isset($_COOKIE['__Secure-'.$configurations['dataphyre']['access']['sessions_cookie_name']])){
-			$id=$_COOKIE['__Secure-'.$configurations['dataphyre']['access']['sessions_cookie_name']];
+		if(isset($_COOKIE[self::$session_cookie])){
+			$dpid=$_COOKIE[self::$session_cookie];
 			if(!empty($_SESSION['userid']) && !empty($_SESSION['id'])){
-				if($_SESSION['ipaddress']!==REQUEST_IP_ADDRESS){
-					sql::db_update(
+				if(self::validate_id($dpid)){
+					if($_SESSION['ipaddress']!==REQUEST_IP_ADDRESS){
+						sql::db_update(
+							$L=$configurations['dataphyre']['access']['sessions_table_name'], 
+							$F="ipaddress=?", 
+							$P=[
+								"mysql"=>"WHERE id=? AND userid=? AND active=1 AND useragent=? AND ipaddress=?", 
+								"postgresql"=>"WHERE id=? AND userid=? AND active=true AND useragent=? AND ipaddress=?"
+							],
+							$V=array(REQUEST_IP_ADDRESS,$dpid,$_SESSION['userid'],REQUEST_USER_AGENT,$_SESSION['ipaddress']), 
+							$CC=true
+						);
+					}
+					if(false!==$row=sql_select(
+						$S="*", 
 						$L=$configurations['dataphyre']['access']['sessions_table_name'], 
-						$F="ipaddress=?", 
 						$P=[
 							"mysql"=>"WHERE id=? AND userid=? AND active=1 AND useragent=? AND ipaddress=?", 
 							"postgresql"=>"WHERE id=? AND userid=? AND active=true AND useragent=? AND ipaddress=?"
 						],
-						$V=array(REQUEST_IP_ADDRESS,$id,$_SESSION['userid'],REQUEST_USER_AGENT,$_SESSION['ipaddress']), 
-						$CC=true
-					);
-				}
-				if(false!==$row=sql_select(
-					$S="*", 
-					$L=$configurations['dataphyre']['access']['sessions_table_name'], 
-					$P=[
-						"mysql"=>"WHERE id=? AND userid=? AND active=1 AND useragent=? AND ipaddress=?", 
-						"postgresql"=>"WHERE id=? AND userid=? AND active=true AND useragent=? AND ipaddress=?"
-					],
-					$V=array($id, $_SESSION['userid'], REQUEST_USER_AGENT, REQUEST_IP_ADDRESS), 
-					$F=false, 
-					$C=false
-				)){
-					if($row['date']>strtotime('-7 days') && $row['keepalive']==true || $row['date']>strtotime('-30 minutes')){
-						$_SESSION['ipaddress']=REQUEST_IP_ADDRESS;
-						$_SESSION['last_valid_session']=time();
-						tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Session is valid");
-						return true;
+						$V=array($dpid, $_SESSION['userid'], REQUEST_USER_AGENT, REQUEST_IP_ADDRESS), 
+						$F=false, 
+						$C=false
+					)){
+						if($row['date']>strtotime('-7 days') && $row['keepalive']==true || $row['date']>strtotime('-30 minutes')){
+							$_SESSION['ipaddress']=REQUEST_IP_ADDRESS;
+							$_SESSION['last_valid_session']=time();
+							tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Session is valid");
+							return true;
+						}
 					}
 				}
 			}
-			self::disable_session();
 		}
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="No session");
 		return false;
@@ -313,29 +398,33 @@ class access{
 	public static function recover_session() : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_RECOVER_SESSION",...func_get_args())) return $early_return;
+		global $configurations;
 		if(!isset($_SESSION['dp']['access_cache']['no_known_recoverable_session'])){
-			if(isset($_COOKIE['__Secure-'.core::get_config("dataphyre/access/sessions_cookie_name")])){
-				$id=$_COOKIE['__Secure-'.core::get_config("dataphyre/access/sessions_cookie_name")];
-				if(!isset($_SESSION['id']) || !isset($_SESSION['userid'])){
-					if(false!==$row=sql_select(
-						$S="*", 
-						$L=core::get_config("dataphyre/access/sessions_table_name"), 
-						$P=[
-							"mysql"=>"WHERE id=? AND active=1 AND keepalive=1 AND useragent=? AND ipaddress=?", 
-							"postgresql"=>"WHERE id=? AND active=true AND keepalive=true AND useragent=? AND ipaddress=?"
-						],
-						$V=array($id, REQUEST_USER_AGENT, REQUEST_IP_ADDRESS), 
-						$F=false, 
-						$C=false
-					)){
-						if($row['date']>strtotime('-7 days') && $row['keepalive']==true || $row['date']>strtotime('-30 minutes')){
-							$_SESSION['userid']=$row['userid'];
-							$_SESSION['id']=$row['id'];
-							$_SESSION['ipaddress']=REQUEST_IP_ADDRESS;
-							return true;
+			if(isset($_COOKIE[self::$session_cookie])){
+				$dpid=$_COOKIE[self::$session_cookie];
+				if(self::validate_id($dpid)){
+					if(!isset($_SESSION['id']) || !isset($_SESSION['userid'])){
+						if(false!==$row=sql_select(
+							$S="*", 
+							$L=core::get_config("dataphyre/access/sessions_table_name"), 
+							$P=[
+								"mysql"=>"WHERE id=? AND active=1 AND keepalive=1 AND useragent=? AND ipaddress=?", 
+								"postgresql"=>"WHERE id=? AND active=true AND keepalive=true AND useragent=? AND ipaddress=?"
+							],
+							$V=array($dpid, REQUEST_USER_AGENT, REQUEST_IP_ADDRESS), 
+							$F=false, 
+							$C=false
+						)){
+							if($row['date']>strtotime('-7 days') && $row['keepalive']==true || $row['date']>strtotime('-30 minutes')){
+								$_SESSION['userid']=$row['userid'];
+								$_SESSION['id']=$row['id'];
+								$_SESSION['ipaddress']=REQUEST_IP_ADDRESS;
+								return true;
+							}
 						}
 					}
 				}
+				self::disable_session();
 			}
 		}
 		$_SESSION['dp']['access_cache']['no_known_recoverable_session']=true;
@@ -380,11 +469,8 @@ class access{
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_ACCESS",...func_get_args()))return $early_return;
 		$error=function(string $error_string='Unknown error', int $response_code=403){
-			if(!empty(core::get_config("dataphyre/access/requires_app_redirect"))){
-				header('Location: '.core::get_config("dataphyre/access/robot_redirect"));
-				exit();
-			}
 			ob_end_clean();
+			flush();
 			http_response_code($response_code);
 			header('Content-Type:text/html; charset=UTF-8');
 			header('Server: Dataphyre');
@@ -405,6 +491,8 @@ class access{
 		};
 		if($prevent_robot===true && self::is_bot()===true){
 			if(!empty(core::get_config("dataphyre/access/requires_app_redirect"))){
+				ob_end_clean(); 
+				flush();
 				header('Location: '.core::get_config("dataphyre/access/robot_redirect"));
 				exit();
 			}
@@ -414,6 +502,8 @@ class access{
 		{
 			if($prevent_mobile===true && self::is_mobile()===true){
 				if(!empty(core::get_config("dataphyre/access/requires_app_redirect"))){
+					ob_end_clean(); 
+					flush();
 					header('Location: '.core::get_config("dataphyre/access/requires_app_redirect"));
 					exit();
 				}
@@ -425,6 +515,8 @@ class access{
 					if(self::logged_in()===true){
 						tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="File ".basename($_SERVER["SCRIPT_FILENAME"])." can't be loaded as user is logged in, redirecting to homepage");
 						if(!empty(core::get_config("dataphyre/access/must_no_session_redirect"))){
+							ob_end_clean(); 
+							flush();
 							header('Location: '.core::get_config("dataphyre/access/must_no_session_redirect"));
 							exit();
 						}
@@ -454,6 +546,8 @@ class access{
 						if(self::logged_in()===false){
 							tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="User needs to be logged in, redirecting to login page");
 							if(!empty(core::get_config("dataphyre/access/require_session_redirect"))){
+								ob_end_clean(); 
+								flush();
 								header('Location: '.core::get_config("dataphyre/access/require_session_redirect").'?redir='.rtrim(base64_encode(ltrim($_SERVER["REQUEST_URI"], "/")), '='));
 								exit();
 							}

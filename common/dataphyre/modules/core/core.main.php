@@ -50,10 +50,6 @@ foreach(['helper_functions.php', 'language_additions.php', 'core_functions.php']
 
 \dataphyre\core::load_plugins('pre_init');
 
-if(!define('REQUEST_IP_ADDRESS', isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '0.0.0.0')){
-	pre_init_error("Unable to assign constant REQUEST_IP_ADDRESS constant");
-}
-
 if(!define('REQUEST_USER_AGENT', isset($_SERVER['HTTP_USER_AGENT']) ? substr($_SERVER['HTTP_USER_AGENT'], 0, 255) : 'Unknown UA')){
 	pre_init_error("Unable to assign constant REQUEST_USER_AGENT constant");
 }
@@ -74,6 +70,14 @@ if(RUN_MODE==='request'){
 
 if(file_exists($file=$rootpath['common_dataphyre'].'config/core.php'))require($file);
 if(file_exists($file=$rootpath['dataphyre'].'config/core.php'))require($file);
+
+if(!define('REQUEST_IP_ADDRESS', \dataphyre\core::get_client_ip())){
+	pre_init_error("Unable to assign constant REQUEST_IP_ADDRESS constant");
+}
+else
+{
+	tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Client IP is ".REQUEST_IP_ADDRESS);
+}
 
 if(RUN_MODE==='request' || RUN_MODE==='diagnostic'){
 	if(!isset($_SESSION) && $configurations['dataphyre']['core']['php_session']['enabled']!==false){
