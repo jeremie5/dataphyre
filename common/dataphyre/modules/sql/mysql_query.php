@@ -109,7 +109,13 @@ class mysql_query_builder {
 				$stmt=$conn->prepare($statement['query']);
 				$stmt->bind_param(str_repeat('s', count($statement['vars'])), ...$statement['vars']);
 				$stmt->execute();
-				$result=$stmt->get_result();
+				if(!empty($result_key=$stmt->insert_id)){
+					$result=$result_key;
+				}
+				else
+				{
+					$result=$stmt->get_result();
+				}
 				if($result)$results[$index]=$result->fetch_all(MYSQLI_ASSOC);
 				$index++;
 				$stmt->close();
