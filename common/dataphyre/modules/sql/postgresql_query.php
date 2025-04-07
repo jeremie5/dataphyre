@@ -171,34 +171,34 @@ class postgresql_query_builder {
 	
 	private static function process_results(?array $results, ?array $queries): void {
 		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
-		$query_list = [];
-		foreach ($queries as $query_type => $query_group) {
-			foreach ($query_group as $query) {
-				$query['type'] = $query_type;
-				$query_list[] = $query;
+		$query_list=[];
+		foreach($queries as $query_type=>$query_group){
+			foreach($query_group as $query){
+				$query['type']=$query_type;
+				$query_list[]=$query;
 			}
 		}
-		foreach ($results as $index => $result) {
-			$query = $query_list[$index] ?? null;
-			if (!$query) {
+		foreach($results as $index=>$result){
+			$query=$query_list[$index] ?? null;
+			if(!$query){
 				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Skipping invalid query at index $index");
 				continue;
 			}
-			$associative = $query['associative'] ?? null;
-			$result = empty($result) || !is_array($result) ? false : ($associative === false ? $result[0] : $result);
-			if ($query['type'] === 'count' && isset($result[0]['count'])) {
-				$result = (int) $result[0]['count'];
+			$associative=$query['associative'] ?? null;
+			$result=empty($result) || !is_array($result) ? false : ($associative === false ? $result[0] : $result);
+			if($query['type']==='count' && isset($result[0]['count'])){
+				$result=(int)$result[0]['count'];
 			}
-			if (!empty($query['caching']) && isset($query['hash'])) {
+			if(!empty($query['caching']) && isset($query['hash'])){
 				sql::cache_query_result($query['location'], $query['hash'], $result, $query['caching']);
 			}
 			else
 			{
-				if ($result !== false && !empty($query['clear_cache'])) {
-					sql::invalidate_cache($query['clear_cache'] === true ? $query['location'] : $query['clear_cache']);
+				if($result !== false && !empty($query['clear_cache'])){
+					sql::invalidate_cache($query['clear_cache']===true ? $query['location'] : $query['clear_cache']);
 				}
 			}
-			if (!empty($query['callback']) && is_callable($query['callback'])) {
+			if(!empty($query['callback']) && is_callable($query['callback'])){
 				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Calling callback");
 				$query['callback']($result);
 			}
