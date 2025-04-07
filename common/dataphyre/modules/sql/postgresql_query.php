@@ -86,26 +86,42 @@ class postgresql_query_builder {
 				throw new \Exception("Failed initiating transaction");
 			}
 			foreach($prepared_statements as $index=>$statement){
+				$statementid=uuid();
 				$query=preg_replace_callback('/\?/', function($matches){static $index=0;return'$'.(++$index);}, $statement['query']);
 				$query=preg_replace('/RAND\(\)/i', 'RANDOM()', $query);
 				$query=str_ireplace("UNIX_TIMESTAMP()","NOW()", $query);
 				$query=str_ireplace("UNIX_TIMESTAMP(","TO_TIMESTAMP(", $query);
-				if(!pg_prepare($conn, "stmt".$index, $query)){
+				if(!pg_prepare($conn, "stmt".$statementid, $query)){
 					throw new \Exception("Preparation of statement failed: ".pg_last_error($conn));
 				}
-				if(!$result=pg_execute($conn, "stmt".$index, $statement['vars'])){
+				if(!$result=pg_execute($conn, "stmt".$statementid, $statement['vars'])){
 					throw new \Exception("Execution of prepared statement failed: ".pg_last_error($conn));
 				}
-				foreach($result as $key=>$value){
-					$fieldType=pg_field_type($result, pg_field_num($result, $key));
-					if($fieldType==='bool'){
-						$result[$key]=$value==='t'?true:false;
+				if(pg_num_fields($result)===0){
+					$results[$index]=true;
+				}
+				else
+				{
+					$rows=pg_fetch_all($result);
+					if($rows===false){
+						$results[$index]=[];
 					}
-					elseif($fieldType==='int4' || $fieldType==='int8'){
-						$result[$key]=(int)$value;
+					else
+					{
+						foreach($rows as &$row){
+							foreach($row as $key=>&$value){
+								$field_type=pg_field_type($result, pg_field_num($result, $key));
+								if($field_type==='bool'){
+									$value=$value==='t';
+								}
+								elseif($field_type==='int4' || $field_type==='int8'){
+									$value=(int)$value;
+								}
+							}
+						}
+						$results[$index]=$rows;
 					}
 				}
-				$results[$index]=pg_fetch_all($result);
 			}
 			if(!pg_query($conn, "COMMIT")){
 				throw new \Exception("Failed commiting transaction: ".pg_last_error($conn));
@@ -141,11 +157,11 @@ class postgresql_query_builder {
 				while($result=pg_get_result($conn)){
 					if($result){
 						foreach($result as $key=>$value){
-							$fieldType=pg_field_type($result, pg_field_num($result, $key));
-							if($fieldType==='bool'){
+							$field_type=pg_field_type($result, pg_field_num($result, $key));
+							if($field_type==='bool'){
 								$result[$key]=$value==='t'?true:false;
 							}
-							elseif($fieldType==='int4' || $fieldType==='int8'){
+							elseif($field_type==='int4' || $field_type==='int8'){
 								$result[$key]=(int)$value;
 							}
 						}
@@ -181,11 +197,13 @@ class postgresql_query_builder {
 		foreach($results as $index=>$result){
 			$query=$query_list[$index] ?? null;
 			if(!$query){
-				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Skipping invalid query at index $index");
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Skipping invalid query at index $index", $S="warning");
 				continue;
 			}
 			$associative=$query['associative'] ?? null;
-			$result=empty($result) || !is_array($result) ? false : ($associative === false ? $result[0] : $result);
+			if(is_array($result)){
+				$result=empty($result) || !is_array($result) ? false : ($associative === false ? $result[0] : $result);
+			}
 			if($query['type']==='count' && isset($result[0]['count'])){
 				$result=(int)$result[0]['count'];
 			}
@@ -199,7 +217,7 @@ class postgresql_query_builder {
 				}
 			}
 			if(!empty($query['callback']) && is_callable($query['callback'])){
-				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Calling callback");
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Calling callback".$result);
 				$query['callback']($result);
 			}
 		}
@@ -224,7 +242,14 @@ class postgresql_query_builder {
                         break;
                     case 'insert':
 						$placeholders=array_map(fn($i)=>'$'.$i, range(1, substr_count($query_info['fields'], ',')+1));
-                        $query_info['query']="INSERT INTO {$query_info['location']} ({$query_info['fields']}) VALUES (".implode(',',$placeholders).")";
+						$return_column=$configurations['dataphyre']['sql']['tables'][$query_info['location']]['primary_column'] ?? null;
+						if(isset($return_column)){
+							$query_info['query']="INSERT INTO {$query_info['location']} ({$query_info['fields']}) VALUES (".implode(", ", $placeholders).") ON CONFLICT DO NOTHING RETURNING ".$return_column;
+						}
+						else
+						{
+							$query_info['query']="INSERT INTO {$query_info['location']} ({$query_info['fields']}) VALUES (".implode(", ", $placeholders).") ON CONFLICT DO NOTHING";
+						}
                         break;
                     case 'update':
                         $fields=explode(',',$query_info['fields']);
