@@ -198,7 +198,7 @@ class localization{
 			else
 			{
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locale file at $path is corrupted, attempting rebuilding it: ".json_last_error_msg(), "warning");
-				//self::rebuild_locale([$scope], [$user_language], [$user_theme], [$user_theme]);
+				self::rebuild_locale([$scope], [$user_language], [$user_theme], [$user_theme]);
 			}
 		}
 		elseif($scope==="theme"){
@@ -217,7 +217,7 @@ class localization{
 			else
 			{
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locale file at $path is corrupted, attempting rebuilding it: ".json_last_error_msg(), "warning");
-				//self::rebuild_locale([$scope], [$user_language], [$user_theme], [$user_theme]);
+				self::rebuild_locale([$scope], [$user_language], [$user_theme], [$user_theme]);
 			}
 		}
 		elseif($scope==="local"){
@@ -236,7 +236,7 @@ class localization{
 			else
 			{
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locale file at $path is corrupted, attempting rebuilding it: ".json_last_error_msg(), "warning");
-				//self::rebuild_locale([$scope], [$user_language], [$user_theme], [$user_theme]);
+				self::rebuild_locale([$scope], [$user_language], [$user_theme], [$user_theme]);
 			}
 		}
 		if(!empty($fallback_string)){
