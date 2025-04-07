@@ -1376,7 +1376,10 @@ class core {
 		$splash.=str_repeat("\t", $padding).'╚═╝╚══╝ ╚═╝  ╚═╝  ╚═╝  ╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚══════╝'.PHP_EOL;
 		return $splash;
 	}
-		
+
+	/**
+	 * Returns the client's IP address, trusting forwarded headers only if the source IP is in a trusted list.
+	 */
 	public static function get_client_ip() : string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		global $configurations;
