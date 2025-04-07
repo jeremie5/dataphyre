@@ -491,8 +491,6 @@ class access{
 		};
 		if($prevent_robot===true && self::is_bot()===true){
 			if(!empty(core::get_config("dataphyre/access/requires_app_redirect"))){
-				ob_end_clean(); 
-				flush();
 				header('Location: '.core::get_config("dataphyre/access/robot_redirect"));
 				exit();
 			}
@@ -502,8 +500,6 @@ class access{
 		{
 			if($prevent_mobile===true && self::is_mobile()===true){
 				if(!empty(core::get_config("dataphyre/access/requires_app_redirect"))){
-					ob_end_clean(); 
-					flush();
 					header('Location: '.core::get_config("dataphyre/access/requires_app_redirect"));
 					exit();
 				}
@@ -515,8 +511,6 @@ class access{
 					if(self::logged_in()===true){
 						tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="File ".basename($_SERVER["SCRIPT_FILENAME"])." can't be loaded as user is logged in, redirecting to homepage");
 						if(!empty(core::get_config("dataphyre/access/must_no_session_redirect"))){
-							ob_end_clean(); 
-							flush();
 							header('Location: '.core::get_config("dataphyre/access/must_no_session_redirect"));
 							exit();
 						}
@@ -546,8 +540,6 @@ class access{
 						if(self::logged_in()===false){
 							tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="User needs to be logged in, redirecting to login page");
 							if(!empty(core::get_config("dataphyre/access/require_session_redirect"))){
-								ob_end_clean(); 
-								flush();
 								header('Location: '.core::get_config("dataphyre/access/require_session_redirect").'?redir='.rtrim(base64_encode(ltrim($_SERVER["REQUEST_URI"], "/")), '='));
 								exit();
 							}
