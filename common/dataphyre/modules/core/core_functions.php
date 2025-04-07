@@ -1315,7 +1315,7 @@ class core {
 	 * 2. Security Risks: Using `exec` for file operations can expose the system to risks if not handled carefully.
 	 * 3. Data Loss: The function will remove all files and directories under the given path. Use it carefully.
 	 */
-	static function force_rmdir(string $path): void {
+	public static function force_rmdir(string $path): void {
 		if(!empty($path)){
 			exec('rm -rf "'.$path.'"');
 		}
@@ -1342,7 +1342,7 @@ class core {
 	 * 2. Logarithmic Error: When the input is zero or negative, the function might behave unpredictably.
 	 * 3. Overhead: The function uses logarithmic and rounding calculations, which could have performance implications for large data sets.
 	 */
-	static function convert_storage_unit(int|float $size): string {
+	public static function convert_storage_unit(int|float $size): string {
 		// DO NOT TRACELOG, RECURSION
 		return @round($size/pow(1024,($i=floor(log($size,1024)))),2).' '.array('b','kb','mb','gb','tb','pb')[$i];
 	}
@@ -1365,7 +1365,7 @@ class core {
 	 * 1. Encoding Issues: The ASCII art may not render properly in all text editors or consoles.
 	 * 2. Output Control: Since this function only returns the ASCII art string, it's up to the calling code to manage how it's displayed or stored.
 	 */
-	static function splash(int $padding=1): string {
+	public static function splash(int $padding=1): string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CORE_SPLASH",...func_get_args())) return $early_return;
 		$splash=str_repeat("\t", $padding).'██████╗   ███╗ ████████╗ ███╗  ██████╗ ██╗  ██╗██╗   ██╗██████╗ ███████╗'.PHP_EOL;
@@ -1376,5 +1376,59 @@ class core {
 		$splash.=str_repeat("\t", $padding).'╚═╝╚══╝ ╚═╝  ╚═╝  ╚═╝  ╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚══════╝'.PHP_EOL;
 		return $splash;
 	}
-	
+		
+	public static function get_client_ip() : string {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
+		global $configurations;
+		$core_config=$configurations['dataphyre']['core']['client_ip_identification'] ?? [];
+		$remote_addr=$_SERVER['REMOTE_ADDR'] ?? $core_config['default_ip'] ?? '0.0.0.0';
+		$trusted_proxies=$core_config['trusted_proxies'] ?? [];
+		$trusted_headers=$core_config['trusted_ip_headers'] ?? [];
+		$ip_to_binary=function($ip) {
+			$packed=@inet_pton($ip);
+			return $packed===false?null:unpack('A*', $packed)[1];
+		};
+		$cidr_match=function($ip, $cidr)use($ip_to_binary){
+			[$subnet, $bits]=explode('/', $cidr);
+			$ip_bin=$ip_to_binary($ip);
+			$subnet_bin=$ip_to_binary($subnet);
+			if($ip_bin===null || $subnet_bin===null || strlen($ip_bin)!==strlen($subnet_bin)){
+				return false;
+			}
+			$bit_count=(int)$bits;
+			$byte_len=strlen($subnet_bin);
+			$ip_bits='';
+			$subnet_bits='';
+			for($i=0; $i<$byte_len; $i++){
+				$ip_bits.=str_pad(decbin(ord($ip_bin[$i])), 8, '0', STR_PAD_LEFT);
+				$subnet_bits.=str_pad(decbin(ord($subnet_bin[$i])), 8, '0', STR_PAD_LEFT);
+			}
+			return substr($ip_bits, 0, $bit_count)===substr($subnet_bits, 0, $bit_count);
+		};
+		$ip_in_trusted_list=function($ip)use($trusted_proxies, $cidr_match){
+			foreach($trusted_proxies as $trusted){
+				if(strpos($trusted, '/')!==false){
+					if($cidr_match($ip, $trusted))return true;
+				}
+				else
+				{
+					if($ip===$trusted)return true;
+				}
+			}
+			return false;
+		};
+		if($ip_in_trusted_list($remote_addr)){
+			foreach($trusted_headers as $header){
+				if(!empty($_SERVER[$header])){
+					$ip_list=explode(',', $_SERVER[$header]);
+					$ip=trim($ip_list[0]);
+					if(filter_var($ip, FILTER_VALIDATE_IP)){
+						return $ip;
+					}
+				}
+			}
+		}
+		return $remote_addr;
+	}
+
 }
