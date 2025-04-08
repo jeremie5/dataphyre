@@ -12,8 +12,7 @@
  *
  * This software is provided "as is", without any warranty of any kind.
  */
-
-
+ 
 namespace dataphyre;
 
 register_shutdown_function(function(){
@@ -37,6 +36,32 @@ class postgresql_query_builder {
 	
 	public static $conns=[];
 	public static $queued_queries=[];
+	
+	private static function mysql_compatibility_layer(string $query='') : string {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		$query=preg_replace_callback('/\?/', function($matches){static $index=0;return'$'.(++$index);}, $query);
+		$query=preg_replace('/RAND\(\)/i', 'RANDOM()', $query);
+		$query=str_ireplace('UNIX_TIMESTAMP()','NOW()', $query);
+		$query=str_ireplace('UNIX_TIMESTAMP(','TO_TIMESTAMP(', $query);
+		$query=preg_replace('/\bIFNULL\s*\(/i', 'COALESCE(', $query);
+		$query=preg_replace('/\bNOW\s*\(\s*\)/i', 'CURRENT_TIMESTAMP', $query);
+		$query=preg_replace('/\bLIMIT\s+(\d+)\s*,\s*(\d+)/i', 'LIMIT $2 OFFSET $1', $query);
+		$query=preg_replace('/\bFROM_UNIXTIME\s*\(/i', 'TO_TIMESTAMP(', $query);
+		$query=preg_replace('/!=/', '<>', $query);
+		return $query;
+	}
+	
+	private static function normalize_pg_value(array &$query_result, object $result) : void{
+		foreach($query_result as $key=>$value){
+			$field_type=pg_field_type($result, pg_field_num($result, $key));
+			if($field_type==='bool'){
+				$query_result[$key]=$value==='t' ? true : false;
+			}
+			elseif($field_type==='int4' || $field_type==='int8'){
+				$query_result[$key]=(int)$value;
+			}
+		}
+	}
 	
 	private static function connect_to_cluster(string $dbms_cluster) : mixed {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
@@ -81,57 +106,49 @@ class postgresql_query_builder {
 
 	private static function execute_prepared_statements(object $conn, array $prepared_statements, array &$results, string $dbms_cluster='n/a'): bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		$has_write=sql::query_has_write(serialize($prepared_statements));
 		try{
-			if(!pg_query($conn, "BEGIN")){
+			if($has_write && !pg_query($conn, "BEGIN")){
 				throw new \Exception("Failed initiating transaction");
 			}
 			foreach($prepared_statements as $index=>$statement){
 				$statementid=uuid();
-				$query=preg_replace_callback('/\?/', function($matches){static $index=0;return'$'.(++$index);}, $statement['query']);
-				$query=preg_replace('/RAND\(\)/i', 'RANDOM()', $query);
-				$query=str_ireplace("UNIX_TIMESTAMP()","NOW()", $query);
-				$query=str_ireplace("UNIX_TIMESTAMP(","TO_TIMESTAMP(", $query);
+				$query=self::mysql_compatibility_layer($statement['query']);
 				if(!pg_prepare($conn, "stmt".$statementid, $query)){
 					throw new \Exception("Preparation of statement failed: ".pg_last_error($conn));
 				}
 				if(!$result=pg_execute($conn, "stmt".$statementid, $statement['vars'])){
 					throw new \Exception("Execution of prepared statement failed: ".pg_last_error($conn));
 				}
-				if(pg_num_fields($result)===0){
-					$results[$index]=true;
-				}
-				else
-				{
-					$rows=pg_fetch_all($result);
-					if($rows===false){
-						$results[$index]=[];
+				if($result instanceof \PgSql\Result){
+					if(pg_num_fields($result)===0){
+						$results[$index]=true;
 					}
 					else
 					{
-						foreach($rows as &$row){
-							foreach($row as $key=>&$value){
-								$field_type=pg_field_type($result, pg_field_num($result, $key));
-								if($field_type==='bool'){
-									$value=$value==='t';
-								}
-								elseif($field_type==='int4' || $field_type==='int8'){
-									$value=(int)$value;
-								}
-							}
+						$rows=pg_fetch_all($result);
+						if($rows===false){
+							$results[$index]=[];
 						}
-						$results[$index]=$rows;
+						else
+						{
+							foreach($rows as &$row){
+								self::normalize_pg_value($row, $result);
+							}
+							$results[$index]=$rows;
+						}
 					}
 				}
 			}
-			if(!pg_query($conn, "COMMIT")){
+			if($has_write && !pg_query($conn, "COMMIT")){
 				throw new \Exception("Failed commiting transaction: ".pg_last_error($conn));
 			}
 		}catch(\Throwable $exception){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Query has failed and will be rolled back", "warning");
-			if(!pg_query($conn, "ROLLBACK")){
+			if($has_write && !pg_query($conn, "ROLLBACK")){
 				throw new \Exception("Rollback failed: ".pg_last_error($conn));
 			}
-			\dataphyre\sql::log_query_error('PostgreSQL', $dbms_cluster, $query, $statement['vars'], $exception);
+			sql::log_query_error('PostgreSQL', $dbms_cluster, $query, $statement['vars'] ?? [], $exception);
 			return false;
 		}
 		return true;
@@ -139,49 +156,45 @@ class postgresql_query_builder {
 
 	private static function execute_multi_query_string(object $conn, string $multi_query_string, array &$results, string $dbms_cluster='n/a'): void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		$queries=explode(";", $multi_query_string); // Split the multi-query string into individual queries based on a delimiter
+		$queries=explode(";", $multi_query_string);
+		$has_write=sql::query_has_write(serialize($multi_query_string));
 		$index=0;
-		foreach($queries as $query){
-			$query=trim($query);
-			if(empty($query))continue;
-			// Start: Basic MySQL compatibility layer
-			$query=preg_replace_callback('/\?/', function($matches){static $index=0;return'$'.(++$index);}, $query);
-			$query=preg_replace('/RAND\(\)/i', 'RANDOM()', $query);
-			$query=str_ireplace("UNIX_TIMESTAMP()","NOW()", $query);
-			$query=str_ireplace("UNIX_TIMESTAMP(","TO_TIMESTAMP(", $query);
-			// End: Basic MySQL compatibility layer
-			try{
+		try{
+			if($has_write && !pg_query($conn, "BEGIN")){
+				throw new \Exception("Failed initiating transaction");
+			}
+			foreach($queries as $query){
+				$query=trim($query);
+				if(empty($query))continue;
+				$query=self::mysql_compatibility_layer($query);
 				if(!pg_send_query($conn, $query)){
 					throw new \Exception("Query failed: ".pg_last_error($conn));
 				}
 				while($result=pg_get_result($conn)){
 					if($result){
-						foreach($result as $key=>$value){
-							$field_type=pg_field_type($result, pg_field_num($result, $key));
-							if($field_type==='bool'){
-								$result[$key]=$value==='t'?true:false;
-							}
-							elseif($field_type==='int4' || $field_type==='int8'){
-								$result[$key]=(int)$value;
-							}
-						}
 						if($error=pg_result_error($result)){
-							throw new \Exception("Query failed: ".pg_last_error($conn));
-							$results[$index]=['error'=>$error];
 							if(!pg_free_result($result)){
-								throw new \Exception("Failed freeing result");
+								throw new \Exception("Failed freeing result: ".pg_last_error($conn));
 							}
-							continue;
+							throw new \Exception("Query failed: ".pg_last_error($conn));
 						}
-						$fetchedResults=pg_fetch_all($result, PGSQL_ASSOC);
-						$results[$index]=$fetchedResults?$fetchedResults:[];
+						$fetched_results=pg_fetch_all($result, PGSQL_ASSOC);
+						self::normalize_pg_value($fetched_results, $result);
+						$results[$index]=$fetched_results?$fetched_results:[];
 						pg_free_result($result);
 					}
 					$index++;
 				}
-			}catch(\Throwable $exception){
-				\dataphyre\sql::log_query_error('PostgreSQL', $dbms_cluster, $query, [], $exception);
 			}
+			if($has_write && !pg_query($conn, "COMMIT")){
+				throw new \Exception("Failed commiting transaction: ".pg_last_error($conn));
+			}
+		}catch(\Throwable $exception){
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Query has failed and will be rolled back", "warning");
+			if($has_write && !pg_query($conn, "ROLLBACK")){
+				throw new \Exception("Rollback failed: ".pg_last_error($conn));
+			}
+			sql::log_query_error('PostgreSQL', $dbms_cluster, $query, [], $exception);
 		}
 	}
 	
@@ -242,14 +255,7 @@ class postgresql_query_builder {
                         break;
                     case 'insert':
 						$placeholders=array_map(fn($i)=>'$'.$i, range(1, substr_count($query_info['fields'], ',')+1));
-						$return_column=$configurations['dataphyre']['sql']['tables'][$query_info['location']]['primary_column'] ?? null;
-						if(isset($return_column)){
-							$query_info['query']="INSERT INTO {$query_info['location']} ({$query_info['fields']}) VALUES (".implode(", ", $placeholders).") ON CONFLICT DO NOTHING RETURNING ".$return_column;
-						}
-						else
-						{
-							$query_info['query']="INSERT INTO {$query_info['location']} ({$query_info['fields']}) VALUES (".implode(", ", $placeholders).") ON CONFLICT DO NOTHING";
-						}
+						$query_info['query']="INSERT INTO {$query_info['location']} ({$query_info['fields']}) VALUES (".implode(", ", $placeholders).") ON CONFLICT DO NOTHING RETURNING ".$query_info['returning'];
                         break;
                     case 'update':
                         $fields=explode(',',$query_info['fields']);
@@ -308,19 +314,14 @@ class postgresql_query_builder {
         return true;
     }
 	
-	public static function postgresql_query(string $dbms_cluster, string $query, ?array $vars, ?bool $associative, ?bool $multipoint=true): bool|array {
+	public static function postgresql_query(string $dbms_cluster, string $query, ?array $vars, ?bool $associative, bool $multipoint=true): bool|array {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
 		if(null!==$early_return=core::dialback("CALL_POSTGRESQL_SIMPLE_SELECT", ...func_get_args())) return $early_return;
 		$execute_query=function($conn) use ($query, $vars, $associative, $dbms_cluster){
 			try{
 				if(is_array($vars)){
-					// Start: Basic MySQL compatibility layer
-					$query=preg_replace_callback('/\?/', function($matches){static $index=0;return'$'.(++$index);}, $query);
-					$query=preg_replace('/RAND\(\)/i', 'RANDOM()', $query);
-					$query=str_ireplace("UNIX_TIMESTAMP()","NOW()", $query);
-					$query=str_ireplace("UNIX_TIMESTAMP(","TO_TIMESTAMP(", $query);
-					// End: Basic MySQL compatibility layer
+					$query=self::mysql_compatibility_layer($query);
 					if(!$stmt=pg_prepare($conn, "", $query)){
 						throw new \Exception("Failed to prepare statement: ".pg_last_error($conn));
 					}
@@ -335,7 +336,7 @@ class postgresql_query_builder {
 					}
 				}
 			}catch(\Throwable $exception){
-				\dataphyre\sql::log_query_error('PostgreSQL', $dbms_cluster, $query, $vars, $exception);
+				sql::log_query_error('PostgreSQL', $dbms_cluster, $query, $vars, $exception);
 			}
 			return $result;
 		};
@@ -357,20 +358,22 @@ class postgresql_query_builder {
 			return false;
 		}
 		$query_result=[];
-		if($associative!==true){
-			if(false!==$row=pg_fetch_assoc($result)){
-				foreach($row as $key=>$value)if(pg_field_type($result, pg_field_num($result, $key))==='bool')$row[$key]=$value==='t'?true:false; // Hack to convert pg's stringed booleans to true booleans
-				$query_result=$row;
+		if($result instanceof \PgSql\Result){
+			if($associative!==true){
+				if(false!==$row=pg_fetch_assoc($result)){
+					self::normalize_pg_value($row, $result);
+					$query_result=$row;
+				}
 			}
-		}
-		else
-		{
-			while($row=pg_fetch_assoc($result)){
-				foreach($row as $key=>$value)if(pg_field_type($result, pg_field_num($result, $key))==='bool')$row[$key]=$value==='t'?true:false; // Hack to convert pg's stringed booleans to true booleans
-				$query_result[]=$row;
+			else
+			{
+				while($row=pg_fetch_assoc($result)){
+					self::normalize_pg_value($row, $result);
+					$query_result[]=$row;
+				}
 			}
+			pg_free_result($result);
 		}
-		pg_free_result($result);
 		return $query_result;
 	}
 	
@@ -381,12 +384,7 @@ class postgresql_query_builder {
 		$query_result=[];
 		$query="SELECT ".$select." FROM ".$location." ".$params;
 		try{
-			// Start: Basic MySQL compatibility layer
-			$query=preg_replace_callback('/\?/', function($matches){static $index=0;return'$'.(++$index);}, $query);
-			$query=preg_replace('/RAND\(\)/i', 'RANDOM()', $query);
-			$query=str_ireplace("UNIX_TIMESTAMP()","NOW()", $query);
-			$query=str_ireplace("UNIX_TIMESTAMP(","TO_TIMESTAMP(", $query);
-			// End: Basic MySQL compatibility layer
+			$query=self::mysql_compatibility_layer($query);
 			if(is_array($vars) && count($vars)>0){
 				if(!$stmt=pg_prepare($conn, "", $query)){
 					throw new \Exception("Failed to prepare statement: ($query) ".pg_last_error($conn));
@@ -402,55 +400,37 @@ class postgresql_query_builder {
 				}
 			}
 		}catch(\Throwable $exception){
-			\dataphyre\sql::log_query_error('PostgreSQL', $dbms_cluster, $query, $vars ?? [], $exception);
+			sql::log_query_error('PostgreSQL', $dbms_cluster, $query, $vars ?? [], $exception);
 		}
 		if($result===false){
 			return false;
 		}
-		if($associative!==true){
-			if(false!==$query_result=pg_fetch_assoc($result)){
-				foreach($query_result as $key=>$value){
-					$fieldType=pg_field_type($result, pg_field_num($result, $key));
-					if ($fieldType==='bool'){
-						$query_result[$key]=$value === 't' ? true : false;
-					}
-					elseif($fieldType==='int4' || $fieldType==='int8'){
-						$query_result[$key]=(int)$value;
-					}
+		if($result instanceof \PgSql\Result){
+			if($associative!==true){
+				if(false!==$query_result=pg_fetch_assoc($result)){
+					self::normalize_pg_value($query_result, $result);
 				}
 			}
-		}
-		else
-		{
-			while($row=pg_fetch_assoc($result)){
-				foreach($row as $key=>$value){
-					$fieldType=pg_field_type($result, pg_field_num($result, $key));
-					if ($fieldType==='bool'){
-						$row[$key]=$value === 't' ? true : false;
-					}
-					elseif($fieldType==='int4' || $fieldType==='int8'){
-						$row[$key]=(int)$value;
-					}
+			else
+			{
+				while($row=pg_fetch_assoc($result)){
+					self::normalize_pg_value($row, $result);
+					$query_result[]=$row;
 				}
-				$query_result[]=$row;
 			}
 		}
 		return $query_result ?: false;
 	}
 
-	public static function postgresql_count(string $dbms_cluster, string $location, string $params, ?array $vars): int {
+	public static function postgresql_count(string $dbms_cluster, string $location, string $params, ?array $vars): bool|int {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_POSTGRESQL_SIMPLE_COUNT", ...func_get_args())) return $early_return;
 		$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster);
-		$count=0;
+		$count=false;
 		$query="SELECT COUNT(*) as count FROM ".$location." ".$params;
 		try{
 			if(is_array($vars) && count($vars)>0){
-				// Start: Basic MySQL compatibility layer
-				$query=preg_replace_callback('/\?/', function($matches){static $index=0;return'$'.(++$index);}, $query);
-				$query=str_ireplace("UNIX_TIMESTAMP()","NOW()", $query);
-				$query=str_ireplace("UNIX_TIMESTAMP(","TO_TIMESTAMP(", $query);
-				// End: Basic MySQL compatibility layer
+				$query=self::mysql_compatibility_layer($query);
 				if(!$stmt=pg_prepare($conn, "", $query)){
 					throw new \Exception("Failed to prepare statement: ".pg_last_error($conn));
 				}
@@ -465,15 +445,17 @@ class postgresql_query_builder {
 				}
 			}
 		}catch(\Throwable $exception){
-			\dataphyre\sql::log_query_error('PostgreSQL', $dbms_cluster, $query, $vars, $exception);
+			sql::log_query_error('PostgreSQL', $dbms_cluster, $query, $vars, $exception);
 		}
 		if($result===false){
 			return $count;
 		}
-		if($row=pg_fetch_assoc($result)){
-			$count=$row['count'];
+		if($result instanceof \PgSql\Result){
+			if($row=pg_fetch_assoc($result)){
+				$count=$row['count'];
+			}
 		}
-		return (int)$count;
+		return $count;
 	}
 	
 	public static function postgresql_update(string $dbms_cluster, string $location, string $fields, string $params, array $vars): bool|int {
@@ -488,11 +470,7 @@ class postgresql_query_builder {
 			try{
 				$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint, $dbms_cluster);
 				$query="UPDATE ".$location." SET ".$fields." ".$params;
-				// Start: Basic MySQL compatibility layer
-				$query=preg_replace_callback('/\?/', function($matches){static $index=0;return'$'.(++$index);}, $query);
-				$query=str_ireplace("UNIX_TIMESTAMP()","NOW()", $query);
-				$query=str_ireplace("UNIX_TIMESTAMP(","TO_TIMESTAMP(", $query);
-				// Start: End MySQL compatibility layer
+				$query=self::mysql_compatibility_layer($query);
 				if(!$stmt=pg_prepare($conn, "", $query)){
 					throw new \Exception("Failed to prepare statement: ".pg_last_error($conn));
 				}
@@ -501,14 +479,14 @@ class postgresql_query_builder {
 				}
 				$i++;
 			}catch(\Throwable $exception){
-				\dataphyre\sql::log_query_error('PostgreSQL', $dbms_cluster, $query, $vars, $exception);
+				sql::log_query_error('PostgreSQL', $dbms_cluster, $query, $vars, $exception);
 			}
 			if(!$is_multipoint) break;
 		}
 		return $i >= 1 ? $i : false;
 	}
 	
-	public static function postgresql_insert(string $dbms_cluster, string $location, string $fields, array $vars, int $retry_count=3): mixed {
+	public static function postgresql_insert(string $dbms_cluster, string $location, string $fields, array $vars, string $returning='*', int $retry_count=3): array|bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
 		if(null!==$early_return=core::dialback("CALL_POSTGRESQL_SIMPLE_INSERT", ...func_get_args())) return $early_return;
@@ -520,36 +498,26 @@ class postgresql_query_builder {
 			try{
 				$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint, $dbms_cluster);
 				$placeholders=array_map(function($k){ return '$'.($k+1); }, array_keys($vars));
-				$return_column=$configurations['dataphyre']['sql']['tables'][$location]['primary_column']??null;
-				if(isset($return_column)){
-					$query="INSERT INTO ".$location." (".$fields.") VALUES (".implode(", ", $placeholders).") ON CONFLICT DO NOTHING RETURNING ".$return_column;
-				}
-				else
-				{
-					$query="INSERT INTO ".$location." (".$fields.") VALUES (".implode(", ", $placeholders).") ON CONFLICT DO NOTHING";
-				}
-				// Start: Basic MySQL compatibility layer
-				$query=str_ireplace("UNIX_TIMESTAMP()","NOW()", $query);
-				$query=str_ireplace("UNIX_TIMESTAMP(","TO_TIMESTAMP(", $query);
-				// End: Basic MySQL compatibility layer
+				$query="INSERT INTO ".$location." (".$fields.") VALUES (".implode(", ", $placeholders).") ON CONFLICT DO NOTHING RETURNING ".$returning;
+				$query=self::mysql_compatibility_layer($query);
 				if(!$stmt=pg_prepare($conn, "", $query)){
 					throw new \Exception("Failed to prepare statement: ".pg_last_error($conn));
 				}
 				if(!$result=pg_execute($conn, "", $vars)){
 					throw new \Exception("Failed to execute statement: ".pg_last_error($conn));
 				}
-				$row=pg_fetch_assoc($result);
-				$result_key=true;
-				if(isset($return_column)){
-					$result_key=$row[$return_column];
+				if($result instanceof \PgSql\Result){
+					if($row=pg_fetch_assoc($result)){
+						$result_key=$row;
+					}
 				}
 			}catch(\Throwable $exception){
 				if($retry_count>0 && strpos($exception->getMessage(), 'unique constraint')!==false && strpos($exception->getMessage(), 'uuid')!==false){
 					$retry_count--;
 					log_error("Retrying insert due to UUID constraint violation. Retries left: {$retry_count}", $exception);
-					return self::postgresql_insert($dbms_cluster, $location, $fields, $vars, $retry_count);
+					return self::postgresql_insert($dbms_cluster, $location, $fields, $vars, $returning, $retry_count);
 				}
-				\dataphyre\sql::log_query_error('PostgreSQL', $dbms_cluster, $query, $vars, $exception);
+				sql::log_query_error('PostgreSQL', $dbms_cluster, $query, $vars, $exception);
 			}
 			if(!$is_multipoint)break;
 		}
@@ -568,10 +536,7 @@ class postgresql_query_builder {
 			try{
 				$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint, $dbms_cluster);
 				$query="DELETE FROM ".$location." ".$params;
-				// Start: Basic MySQL compatibility layer
-				$query=str_ireplace("UNIX_TIMESTAMP()","NOW()", $query);
-				$query=str_ireplace("UNIX_TIMESTAMP(","TO_TIMESTAMP(", $query);
-				// End: Basic MySQL compatibility layer
+				$query=self::mysql_compatibility_layer($query);
 				if(!empty($vars)){
 					$query=preg_replace_callback('/\?/', function($matches){static $index=0;return'$'.(++$index);}, $query);
 					if(!$stmt=pg_prepare($conn, "", $query)){
@@ -590,7 +555,7 @@ class postgresql_query_builder {
 					$i++;
 				}
 			}catch(\Throwable $exception){
-				\dataphyre\sql::log_query_error('PostgreSQL', $dbms_cluster, $query, $vars, $exception);
+				sql::log_query_error('PostgreSQL', $dbms_cluster, $query, $vars, $exception);
 			}
 			if(!$is_multipoint) break;
 		}
