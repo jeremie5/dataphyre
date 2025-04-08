@@ -23,9 +23,6 @@ if(file_exists($filepath=$rootpath['common_dataphyre']."config/sql.php")){
 if(file_exists($filepath=$rootpath['dataphyre']."config/sql.php")){
 	require($filepath);
 }
-if(!isset($configurations['dataphyre']['sql'])){
-	//core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreSQL: No configuration.', 'safemode');
-}
 
 require(__DIR__."/sql.global.php");
 require(__DIR__."/mysql_query.php");
@@ -119,6 +116,26 @@ class sql {
 				core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='Database migration ongoing', 'maintenance');
 			}
 		}
+	}
+	
+	public static function query_has_write(string $query) : bool {
+		static $write_ops=null;
+		if($write_ops===null){
+			$write_ops=array_flip([
+				'INSERT','UPDATE','DELETE','REPLACE','CREATE','DROP','ALTER',
+				'VACUUM','PRAGMA','TRUNCATE','GRANT','REVOKE','SET','ANALYZE','EXECUTE','MERGE'
+			]);
+		}
+		$query=preg_replace(['@--.*@', '@/\*.*?\*/@s'], '', $query);
+		$trimmed=strtoupper(ltrim($query));
+		$first_word=strtok($trimmed, " \t\n\r(");
+		if($first_word==='WITH'){
+			$pattern='/\b(SELECT|INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|VACUUM|PRAGMA|TRUNCATE|GRANT|REVOKE|SET|ANALYZE|EXECUTE|MERGE)\b/i';
+			if(preg_match($pattern, $trimmed, $matches)){
+				$first_word=strtoupper($matches[1]);
+			}
+		}
+		return isset($write_ops[$first_word]);
 	}
 	
 	public static function get_table_cache_policy(string $location):array|bool{
@@ -643,6 +660,7 @@ class sql {
 				$vars=$vars[$dbms];
 			}
 		}
+		$returning='*';
 		if($callback){
 			$query_queue=function($vars)use($location, $fields, $clear_cache, $callback){
 				return [
@@ -652,7 +670,8 @@ class sql {
 					'vars'=>$vars, 
 					'clear_cache'=>$clear_cache, 
 					'callback'=>$callback,
-					'multipoint'=>true
+					'multipoint'=>true,
+					'returning'=>$returning
 				];
 			};
 		}
@@ -663,7 +682,7 @@ class sql {
 					mysql_query_builder::$queued_queries[$queue]['insert'][]=$query_queue($vars);
 					return null;
 				}
-				$query_result=mysql_query_builder::mysql_insert($dbms_cluster, $location, $fields, $vars);
+				$query_result=mysql_query_builder::mysql_insert($dbms_cluster, $location, $fields, $vars, $returning);
 				break;
 			case"postgresql":
 			if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=$value?'t':'f';}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into strings, arrays into json
@@ -671,7 +690,7 @@ class sql {
 					postgresql_query_builder::$queued_queries[$queue]['insert'][]=$query_queue($vars);
 					return null;
 				}
-				$query_result=postgresql_query_builder::postgresql_insert($dbms_cluster, $location, $fields, $vars);
+				$query_result=postgresql_query_builder::postgresql_insert($dbms_cluster, $location, $fields, $vars, $returning);
 				break;
 			case"sqlite":
 				if(is_array($vars)){foreach($vars as $id=>$value){if(is_bool($value)){$vars[$id]=(int)$value;}if(is_array($value)){$vars[$id]=json_encode($value);}}} // Turn booleans into integer value, arrays into json
@@ -679,7 +698,7 @@ class sql {
 					sqlite_query_builder::$queued_queries[$queue]['insert'][]=$query_queue($vars);
 					return null;
 				}
-				$query_result=sqlite_query_builder::sqlite_insert($dbms_cluster, $location, $fields, $vars);
+				$query_result=sqlite_query_builder::sqlite_insert($dbms_cluster, $location, $fields, $vars, $returning);
 				break;
 		}
 		if($query_result!==false && $clear_cache!==false){
