@@ -66,7 +66,6 @@ class geoposition{
 			$C=true
 		)){
 			if(0===preg_match($row['validation_regex'], $postal_code)){
-				echo 'here';
 				return false;
 			}
 		}
@@ -90,28 +89,6 @@ class geoposition{
 		}
 		return false;
 	}
-	/*
-	public static function get_position_for_subdivision(string $country, string $subdivision='', $count=15){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
-		if(false!==$rows=sql_select(
-			$S="latitude, longitude", 
-			$L="dataphyre.postal_codes", 
-			$P="WHERE country=? AND subdivision=? ORDER BY random() LIMIT ?", 
-			$V=array($country, $subdivision, $count), 
-			$F=true
-		)){
-			$totalLat=0;
-			$totalLong=0;
-			$count=count($rows); 
-			foreach($rows as $row){
-				$totalLat+=$row['latitude'];
-				$totalLong+=$row['longitude'];
-			}
-			return['latitude'=>$totalLat/$count, 'longitude'=>$totalLong/$count];
-		}
-		return false;
-	}
-	*/
 
 	public static function get_position_for_subdivision(string $country, string $subdivision): array|bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
