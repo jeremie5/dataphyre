@@ -15,6 +15,8 @@
 
 namespace dataphyre;
 
+dp_module_required('geoposition', 'sql');
+
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
 class geoposition{
