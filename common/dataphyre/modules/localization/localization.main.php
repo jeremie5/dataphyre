@@ -15,11 +15,20 @@
 
 namespace dataphyre;
 
-dp_module_required('access', 'sql');
+dp_module_required('localization', 'sql');
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
+if(file_exists($filepath=$rootpath['common_dataphyre']."config/localization.php")){
+	require_once($filepath);
+}
+if(file_exists($filepath=$rootpath['dataphyre']."config/localization.php")){
+	require_once($filepath);
+}
+
 require(__DIR__."/localization.global.php");
+
+new localization();
 
 class localization{
 
@@ -43,7 +52,7 @@ class localization{
 	private static $theme_locale_path;
 	private static $local_locale_path;
 	
-	function __construct(array $initialization){
+	function __construct(?array $initialization=null){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		global $rootpath;
 		self::$rebuilder_running_lock_file=$rootpath['dataphyre']."cache/locks/locale_rebuilding";
@@ -52,17 +61,17 @@ class localization{
 		self::$last_locale_sync_file=$rootpath['dataphyre']."cache/last_locale_sync";
 		self::$last_locales_file=$rootpath['dataphyre']."cache/last_locales_file";
 		self::$custom_parameters=$initialization['custom_parameters'] ?? [];
-		self::$enable_theme_locales=$initialization['enable_theme_locales'] ?? false;
-		self::$enable_global_locales=$initialization['enable_global_locales'] ?? false;
+		self::$enable_theme_locales=$initialization['enable_theme_locales'] ?? true;
+		self::$enable_global_locales=$initialization['enable_global_locales'] ?? true;
 		self::$locales_table=$initialization['locales_table'] ?? 'locales';
-		self::$translation_callback=$initialization['translation_callback'];
-		self::$default_language=$initialization['default_language'];
-		self::$available_languages=$initialization['available_languages'];
-		self::$user_theme=$initialization['user_theme'];
-		self::$user_language=$initialization['user_language'];
-		self::$global_locale_path=$initialization['global_locale_path'];
-		self::$theme_locale_path=$initialization['theme_locale_path'];
-		self::$local_locale_path=$initialization['local_locale_path'];
+		self::$default_language=$initialization['default_language'] ?? 'en-CA';
+		self::$user_language=$initialization['user_language'] ?? 'en-CA';
+		self::$translation_callback=$initialization['translation_callback'] ?? null;
+		self::$available_languages=$initialization['available_languages'] ?? null;
+		self::$user_theme=$initialization['user_theme'] ?? null;
+		self::$global_locale_path=$initialization['global_locale_path'] ?? null;
+		self::$theme_locale_path=$initialization['theme_locale_path'] ?? null;
+		self::$local_locale_path=$initialization['local_locale_path'] ?? null;
 		\dataphyre\core::$display_language=self::$user_language;
 	}
 	
@@ -73,7 +82,6 @@ class localization{
 		}
 		if(!isset(self::$available_languages[$lang])){
 			$lang=self::$default_language;
-			die($lang);
 		}
 		return $lang;
 	}
@@ -184,7 +192,7 @@ class localization{
 		}
 		if($scope==="global"){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Reading locale file $path into memory");
-			if(null!==$locale_data=json_decode(file_get_contents($path), true)){
+			if(file_exists($path) && null!==$locale_data=json_decode(file_get_contents($path), true)){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Done reading");
 				self::$locale=array_merge(self::$locale, $locale_data);
 				if(isset(self::$locale[$string_name])){
@@ -197,13 +205,13 @@ class localization{
 			}
 			else
 			{
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locale file at $path is corrupted, attempting rebuilding it: ".json_last_error_msg(), "warning");
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locale file at $path is corrupted or does not exist, attempting rebuild.", "warning");
 				self::rebuild_locale([$scope], [$user_language], [$user_theme], [$user_theme]);
 			}
 		}
 		elseif($scope==="theme"){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Reading locale file $path into memory");
-			if(null!==$locale_data=json_decode(file_get_contents($path), true)){
+			if(file_exists($path) && null!==$locale_data=json_decode(file_get_contents($path), true)){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Done reading");
 				self::$locale[$user_theme]=$locale_data;
 				if(isset(self::$locale[$user_theme][$string_name])){
@@ -216,13 +224,13 @@ class localization{
 			}
 			else
 			{
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locale file at $path is corrupted, attempting rebuilding it: ".json_last_error_msg(), "warning");
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locale file at $path is corrupted or does not exist, attempting rebuild.", "warning");
 				self::rebuild_locale([$scope], [$user_language], [$user_theme], [$user_theme]);
 			}
 		}
 		elseif($scope==="local"){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Reading locale file $path into memory");
-			if(null!==$locale_data=json_decode(file_get_contents($path), true)){
+			if(file_exists($path) && null!==$locale_data=json_decode(file_get_contents($path), true)){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Done reading");
 				self::$locale[$user_theme][$active_page]=$locale_data;
 				if(isset(self::$locale[$user_theme][$active_page][$string_name])){
@@ -235,7 +243,7 @@ class localization{
 			}
 			else
 			{
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locale file at $path is corrupted, attempting rebuilding it: ".json_last_error_msg(), "warning");
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locale file at $path is corrupted or does not exist, attempting rebuild.", "warning");
 				self::rebuild_locale([$scope], [$user_language], [$user_theme], [$user_theme]);
 			}
 		}
@@ -247,7 +255,6 @@ class localization{
 	}
 
 	protected static function create_unknown_locale_data(string $path='', string $scope='', string $string_name='', string $string=''){
-		return;
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		if(!empty(self::$user_language)){
 			if(!empty($string)){
@@ -393,11 +400,11 @@ class localization{
 	public static function sync_locales($forced=false){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		if(!file_exists(self::$rebuilder_running_lock_file)){
-			$last_sync=file_exists($file=self::$last_locale_sync_file_time) ? file_get_contents($file) : 0;
+			$last_sync=file_exists($file=self::$last_locale_sync_file) ? file_get_contents($file) : 0;
 			if($last_sync<strtotime("-5 minutes") || $last_sync==false || $forced){
-				\dataphyre\core::file_put_contents_forced(self::$last_locale_sync_file_time, time());
+				\dataphyre\core::file_put_contents_forced(self::$last_locale_sync_file, time());
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locales are due to be synced to latest definitions");
-				$last_update=file_exists($file=self::$last_locale_sync_file_time) ? file_get_contents($file) : 0;
+				$last_update=file_exists($file=self::$last_locale_sync_file) ? file_get_contents($file) : 0;
 				$last_locales_file_synced=file_exists($file=self::$last_locales_file) ? file_get_contents($file) : "null";
 				if(empty($last_locales_file_synced))$last_locales_file_synced="null";
 				if(false!==$count=sql_count(
@@ -432,7 +439,7 @@ class localization{
 										$synced_locales[]=$row['id'];
 									}
 								}
-								\dataphyre\core::file_put_contents_forced(self::$last_locale_sync_file_time, strtotime($row['edit_time']));
+								\dataphyre\core::file_put_contents_forced(self::$last_locale_sync_file, strtotime($row['edit_time']));
 							}
 						}
 					}
@@ -447,7 +454,6 @@ class localization{
 
 	public static function rebuild_locale(?array $type=[], ?array $lang=[], ?array $theme=[], ?array $paths=[]){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
-		clearstatcache();
 		\dataphyre\core::file_put_contents_forced(self::$rebuilder_running_lock_file, "");
 		if(in_array("*", $lang) || empty($lang)){
 			$lang=array_keys(self::$available_languages);
