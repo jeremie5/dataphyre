@@ -111,6 +111,7 @@ function minified_font(){
 function log_error(string $error, ?object $exception=null){
 	global $rootpath;
 	$timestamp=gmdate('Y-m-d H:i:s T');
+	$log_data='';
 	if($exception!==null){
 		$log_data='<div class="card bg-light mb-3">';
 		$log_data.='<div class="card-header">Exception: '.htmlspecialchars(get_class($exception)).'</div>';
@@ -122,7 +123,7 @@ function log_error(string $error, ?object $exception=null){
 	file_put_contents($rootpath['dataphyre'].'logs/'.gmdate('Y-m-d H:00').'.log', '\n'.$log_data.strip_tags($error), FILE_APPEND);
 	$log_file=$rootpath['dataphyre'].'logs/'.$log_date=gmdate('Y-m-d H:00') . '.html';
 	$new_entry='<tr><td>'.$timestamp.'</td><td>'.$error.$log_data.'</td></tr><!--ENDLOG-->';
-	file_put_contents($log_file, '\n'.$new_entry, FILE_APPEND);
+	file_put_contents($log_file, $new_entry, FILE_APPEND);
 }
 
 function pre_init_error(?string $error_message=null, ?object $exception=null){

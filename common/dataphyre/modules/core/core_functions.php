@@ -938,23 +938,23 @@ class core {
 		 *    directly in security-sensitive contexts without proper validation.
 		 */
 		public static function url_self(bool $full = false): string {
-			static $cache = [];
-			if (($cache[$full] ?? null) !== null) return $cache[$full];
-			$protocol = $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ((($_SERVER['HTTPS'] ?? '') === 'on') ? 'https' : 'http');
-			$host = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost';
-			$request_uri = $_SERVER['REQUEST_URI'] ?? '/';
-			if ($full) {
-				$parsed_url = parse_url($request_uri);
-				$path = $parsed_url['path'] ?? '/';
-				$query_string = $parsed_url['query'] ?? '';
-				if (!empty($query_string)) {
+			static $cache=[];
+			if(($cache[$full] ?? null)!==null)return $cache[$full];
+			$protocol=$_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ((($_SERVER['HTTPS'] ?? '')==='on') ? 'https' : 'http');
+			$host=$_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost';
+			$request_uri=$_SERVER['REQUEST_URI'] ?? '/';
+			if($full){
+				$parsed_url=parse_url($request_uri);
+				$path=$parsed_url['path'] ?? '/';
+				$query_string=$parsed_url['query'] ?? '';
+				if(!empty($query_string)){
 					parse_str($query_string, $query_string_array);
 					unset($query_string_array['uri']); // Remove internal parameters if needed
-					$query_string = !empty($query_string_array) ? '?' . http_build_query($query_string_array, '', '&', PHP_QUERY_RFC3986) : '';
+					$query_string=!empty($query_string_array) ? '?' . http_build_query($query_string_array, '', '&', PHP_QUERY_RFC3986) : '';
 				}
-				return $cache[$full] = $protocol . '://' . $host . $path . $query_string;
+				return $cache[$full]=$protocol.'://'.$host.$path.$query_string;
 			}
-			return $cache[$full] = $protocol . '://' . $host . '/';
+			return $cache[$full]=$protocol.'://'.$host.'/';
 		}
 	
 	/**
