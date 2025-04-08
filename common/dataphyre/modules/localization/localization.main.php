@@ -365,10 +365,11 @@ class localization{
 				foreach($languages_to_update as $language){
 					$string=$new_string;
 					if($language!==self::$default_language){
-						$string=html_entity_decode(self::$translation_callback($language, $string));
-						if($string===false){
-							return $function_exit("invalid_translation");
+						$translation_callback=self::$translation_callback;
+						if(false===is_callable($translation_callback)){
+							return $function_exit("no_translation_callback");
 						}
+						$string=html_entity_decode($translation_callback($language, $string));
 					}
 					if(!empty($string)){
 						if($scope==="global"){
