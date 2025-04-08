@@ -113,57 +113,13 @@ if(RUN_MODE==='request' || RUN_MODE==='diagnostic'){
 date_default_timezone_set($configurations['dataphyre']['timezone']);
 
 ini_set('memory_limit',$configurations['dataphyre']['max_execution_memory']);
-
 ini_set('max_execution_time', $configurations['dataphyre']['max_execution_time']);
 
-if(RUN_MODE==='request'){
-	if($configurations['dataphyre']['force_https_for_non_headless']!==false){
-		if(!str_starts_with($_SERVER['REQUEST_URI'], "https")){
-			//dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreCore: Non headless execution requires the use of HTTPS.', 'safemode');
-		}
-	}
-}
-	
-if(RUN_MODE==='headless'){
-	if($configurations['dataphyre']['force_https_for_headless']!==false){
-		if(!str_starts_with($_SERVER['REQUEST_URI'], "https")){
-			//dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreCore: Headless execution requires the use of HTTPS.', 'safemode');
-		}
-	}
-}
-
 if(RUN_MODE!=='diagnostic'){
-
-	if($mod=dp_module_present('tracelog')){
-		require($mod[0]);
-		new \dataphyre\tracelog();
-		if($enable_tracelog===true){
-			\dataphyre\tracelog::$enable=true;	
-			if($enable_tracelog_plotting===true){
-				\dataphyre\tracelog::setPlotting(true);
-			}
-		}
-	}
-	if(is_array($retroactive_tracelog)){
-		if(class_exists('\dataphyre\tracelog')){
-			if(\dataphyre\tracelog::$enable===true){
-				foreach(array_reverse($retroactive_tracelog) as $log){
-					\dataphyre\tracelog::tracelog(...$log);
-				}
-			}
-		}
-	}
-	unset($retroactive_tracelog);
-
+	if($mod=dp_module_present('tracelog'))require($mod[0]);
 	if($mod=dp_module_present('cache'))require($mod[0]);
-
-	if($mod=dp_module_present('contingency')){
-		require($mod[0]);
-		\dataphyre\contingency::set_handler();
-	}
-
+	if($mod=dp_module_present('contingency'))require($mod[0]);
 	if($mod=dp_module_present('sql'))require($mod[0]);
-
 	if(RUN_MODE==='request'){
 		if($mod=dp_module_present('async'))require($mod[0]);
 		if($mod=dp_module_present('google_authenticator'))require($mod[0]);
@@ -172,16 +128,14 @@ if(RUN_MODE!=='diagnostic'){
 		if($mod=dp_module_present('country_blocking'))require($mod[0]);
 		if($mod=dp_module_present('caspow'))require($mod[0]);
 	}
-
-	if($mod=dp_module_present('issue'))require($mod[0]);
 	if($mod=dp_module_present('localization'))require($mod[0]);
+	if($mod=dp_module_present('issue'))require($mod[0]);
 	if($mod=dp_module_present('scheduling'))require($mod[0]);
 	if($mod=dp_module_present('datadoc'))require($mod[0]);
 	if($mod=dp_module_present('date_translation'))require($mod[0]);
 	if($mod=dp_module_present('currency'))require($mod[0]);
 	if($mod=dp_module_present('templating'))require($mod[0]);
 	if($mod=dp_module_present('geoposition'))require($mod[0]);
-	if($mod=dp_module_present('cdn'))require($mod[0]);
 	if($mod=dp_module_present('sanitation'))require($mod[0]);
 	if($mod=dp_module_present('stripe'))require($mod[0]);
 	if($mod=dp_module_present('fulltext_engine'))require($mod[0]);
@@ -191,7 +145,7 @@ if(RUN_MODE!=='diagnostic'){
 	if($mod=dp_module_present('supercookie'))require($mod[0]);
 	if($mod=dp_module_present('fraudar'))require($mod[0]);
 	if($mod=dp_module_present('cdn_server'))require($mod[0]);
-
+	if($mod=dp_module_present('cdn'))require($mod[0]);
 }
 
 \dataphyre\core::load_plugins('post_init');
@@ -200,8 +154,7 @@ if(RUN_MODE==='request'){
 	\dataphyre\core::set_http_headers();
 }
 
-unset($mod, $plugin, $file); 
-//DO NOT UNSET modcache_file
+unset($mod, $file); 
 
 if(RUN_MODE==='diagnostic'){
 	\dataphyre\core\diagnostic::post_tests();

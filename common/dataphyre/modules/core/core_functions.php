@@ -845,6 +845,7 @@ class core {
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		}
 		global $rootpath;
+		log_error("Service unavailability: ".$error_description, new \Exception(json_encode(func_get_args())));
 		$error_code=substr(strtoupper(md5($error_description.$error_type.$file.$class.$function)), 0, 8);
 		$known_error_conditions=json_decode(file_get_contents($known_error_conditions_file=$rootpath['dataphyre']."cache/known_error_conditions.json"),true);
 		$known_error_conditions??=[];
@@ -858,16 +859,15 @@ class core {
 			);
 			core::file_put_contents_forced($known_error_conditions_file, json_encode($known_error_conditions));
 		}
-		log_error("Unavailability: ".$error_description);
 		if(RUN_MODE==='diagnostic'){
 			if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="<h1>FATAL ERROR: $error_code ($error_type): $error_description</h1>", $S="fatal");
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="<h1>Service unavailability: $error_code ($error_type): $error_description</h1>", $S="fatal");
 			}
 			return;
 		}
 		if(RUN_MODE!=='request'){
 			if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="<h1>FATAL ERROR: $error_code ($error_type): $error_description</h1>", $S="fatal");
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="<h1>Service unavailability: $error_code ($error_type): $error_description</h1>", $S="fatal");
 			}
 		}
 		else
@@ -898,7 +898,7 @@ class core {
 			}
 			else
 			{
-				pre_init_error();
+				pre_init_error("Unavailability: ".$error_description, new \Exception(json_encode(func_get_args())));
 			}
 		}
 		exit();

@@ -23,13 +23,29 @@ if(file_exists($filepath=$rootpath['common_dataphyre']."config/tracelog.php")){
 if(file_exists($filepath=$rootpath['dataphyre']."config/tracelog.php")){
 	require_once($filepath);
 }
-if(!isset($configurations['dataphyre']['tracelog'])){
-	//core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='Dataphyre: Tracelog: No configuration available', 'safemode');
-}
 
 register_shutdown_function(function(){
 	$_SESSION['tracelog']=tracelog::$tracelog;
 });
+
+new tracelog();
+
+if($enable_tracelog===true){
+	tracelog::$enable=true;	
+	if($enable_tracelog_plotting===true){
+		tracelog::setPlotting(true);
+	}
+}
+if(is_array($retroactive_tracelog)){
+	if(class_exists('\dataphyre\tracelog')){
+		if(tracelog::$enable===true){
+			foreach(array_reverse($retroactive_tracelog) as $log){
+				tracelog::tracelog(...$log);
+			}
+		}
+	}
+}
+unset($retroactive_tracelog);
 
 class tracelog {
 	
