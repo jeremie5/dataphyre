@@ -33,12 +33,12 @@ class core {
 	public static $display_language="en";
 	
 	public static function load_plugins(string $type): void {
-		global $rootpath;
+	
 		if(function_exists("tracelog")){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Looking for $type plugins");
 		}
 		foreach(['common_dataphyre', 'dataphyre'] as $plugin_path){
-			foreach(glob($rootpath[$plugin_path].'plugins/'.$type.'/*.php') as $plugin){
+			foreach(glob(ROOTPATH[$plugin_path].'plugins/'.$type.'/*.php') as $plugin){
 				if(function_exists("tracelog")){
 					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Loading $type plugin at $plugin");
 				}
@@ -216,7 +216,7 @@ class core {
 	 * @package dataphyre\core
 	 * @static
 	 * 
-	 * @global array $rootpath Contains the root paths used within the Datahyre application.
+	 * @global array ROOTPATH Contains the root paths used within the Datahyre application.
 	 * 
 	 * @uses log_error Logs errors related to lock file creation.
 	 * @uses core::unavailable Handles server unavailability scenarios.
@@ -228,13 +228,13 @@ class core {
 	 *  \dataphyre\core::delayed_requests_lock();
 	 * 
 	 * @commonpitfalls
-	 *  1. Make sure you have write permission to the directory specified in $rootpath['dataphyre'] to avoid failure in lock creation.
+	 *  1. Make sure you have write permission to the directory specified in ROOTPATH['dataphyre'] to avoid failure in lock creation.
 	 *  2. Not handling the lock properly can block further delayed requests.
 	 *  3. If the lock file is not deleted after use, it may cause false positives in system availability checks.
 	 */
 	public static function delayed_requests_lock() : void {
-		global $rootpath;
-		if(fopen($rootpath['dataphyre']."delaying_lock", 'w+')===false){
+	
+		if(fopen(ROOTPATH['dataphyre']."delaying_lock", 'w+')===false){
 			log_error("Failed to create delaying lock");
 			core::unavailable("DPE-003", "safemode");
 		}
@@ -247,7 +247,7 @@ class core {
 	 * @package dataphyre\core
 	 * @static
 	 * 
-	 * @global array $rootpath Contains the root paths used within the Datahyre application.
+	 * @global array ROOTPATH Contains the root paths used within the Datahyre application.
 	 * 
 	 * @uses log_error Logs errors related to lock file removal.
 	 * @uses core::unavailable Handles server unavailability scenarios.
@@ -259,13 +259,13 @@ class core {
 	 *  \dataphyre\core::delayed_requests_unlock();
 	 * 
 	 * @commonpitfalls
-	 *  1. Ensure you have write permission to the directory specified in $rootpath['dataphyre'] to avoid failure in lock removal.
+	 *  1. Ensure you have write permission to the directory specified in ROOTPATH['dataphyre'] to avoid failure in lock removal.
 	 *  2. Not handling the lock properly can block further delayed requests.
 	 *  3. Failure to remove the lock can lead to system unavailability.
 	 */
 	public static function delayed_requests_unlock() : void {
-		global $rootpath;
-		if(!unlink($rootpath['dataphyre']."delaying_lock")){
+	
+		if(!unlink(ROOTPATH['dataphyre']."delaying_lock")){
 			log_error("Failed to remove delaying lock");
 			core::unavailable("DPE-003", "safemode");
 		}
@@ -278,7 +278,7 @@ class core {
 	 * @package dataphyre\core
 	 * @static
 	 * 
-	 * @global array $rootpath Contains the root paths used within the Datahyre application.
+	 * @global array ROOTPATH Contains the root paths used within the Datahyre application.
 	 * 
 	 * @uses core::unavailable Handles server unavailability scenarios if the lock file persists.
 	 * 
@@ -294,16 +294,16 @@ class core {
 	 *  3. Failure to remove the lock from a previous operation can lead to false system unavailability.
 	 */
 	public static function check_delayed_requests_lock() : void {
-		global $rootpath;
+	
 		$timer=0;
 		while($timer<15){
-			if(!is_file($rootpath['dataphyre']."delaying_lock")){
+			if(!is_file(ROOTPATH['dataphyre']."delaying_lock")){
 				break;
 			}
 			sleep(1);
 			$timer++;
 		}
-		if(is_file($rootpath['dataphyre']."delaying_lock")){
+		if(is_file(ROOTPATH['dataphyre']."delaying_lock")){
 			core::unavailable("DPE-004", "safemode");
 		}
 	}
@@ -840,14 +840,14 @@ class core {
 		return $hex;
 	}
 	
-	public static function unavailable(string $file, string $line, string $class, string $function, string $error_description='unknown', string $error_type='unknown') : void {
+	public static function unavailable(string $file, string $line, string $class, string $function, string $error_description='unknown', string $error_type='unknown') : never {
 		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		}
-		global $rootpath;
+	
 		log_error("Service unavailability: ".$error_description, new \Exception(json_encode(func_get_args())));
 		$error_code=substr(strtoupper(md5($error_description.$error_type.$file.$class.$function)), 0, 8);
-		$known_error_conditions=json_decode(file_get_contents($known_error_conditions_file=$rootpath['dataphyre']."cache/known_error_conditions.json"),true);
+		$known_error_conditions=json_decode(file_get_contents($known_error_conditions_file=ROOTPATH['dataphyre']."cache/known_error_conditions.json"),true);
 		$known_error_conditions??=[];
 		if(!isset($known_error_conditions[$error_code])){
 			$known_error_conditions[$error_code]=array(
@@ -863,7 +863,7 @@ class core {
 			if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="<h1>Service unavailability: $error_code ($error_type): $error_description</h1>", $S="fatal");
 			}
-			return;
+			exit();
 		}
 		if(RUN_MODE!=='request'){
 			if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){

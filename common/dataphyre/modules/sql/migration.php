@@ -14,12 +14,12 @@
  */
 
 
-$rootpath['common_dataphyre']='/../../'
+//ROOTPATH['common_dataphyre']='/../../'
 $is_task=true;
 
-$table_versions=json_decode(file_get_contents($rootpath['common_dataphyre']."sql_migration/table_versions.json"), true);
+$table_versions=json_decode(file_get_contents(ROOTPATH['common_dataphyre']."sql_migration/table_versions.json"), true);
 foreach($table_versions as $table_name=>$version){
-    $files=glob($rootpath['common_dataphyre']."sql_migration/tables/{$table_name}/*.php");
+    $files=glob(ROOTPATH['common_dataphyre']."sql_migration/tables/{$table_name}/*.php");
     sort($files);
     foreach($files as $file){
         if(preg_match("/(\d+)\.php$/", basename($file), $matches)){
@@ -31,5 +31,5 @@ foreach($table_versions as $table_name=>$version){
         }
     }
 }
-file_put_contents($rootpath['common_dataphyre']."sql_migration/table_versions.json", json_encode($table_versions));
-unlink($rootpath['common_dataphyre']."sql_migration/migrating");
+file_put_contents(ROOTPATH['common_dataphyre']."sql_migration/table_versions.json", json_encode($table_versions));
+unlink(ROOTPATH['common_dataphyre']."sql_migration/migrating");

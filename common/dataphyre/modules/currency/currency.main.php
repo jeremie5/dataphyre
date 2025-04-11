@@ -21,10 +21,10 @@ tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
 dp_module_required('currency', 'sql');
 
-if(file_exists($filepath=$rootpath['common_dataphyre']."config/currency.php")){
+if(file_exists($filepath=ROOTPATH['common_dataphyre']."config/currency.php")){
 	require_once($filepath);
 }
-if(file_exists($filepath=$rootpath['dataphyre']."config/currency.php")){
+if(file_exists($filepath=ROOTPATH['dataphyre']."config/currency.php")){
 	require_once($filepath);
 }
 

@@ -179,9 +179,9 @@ class sqlite_query_builder {
 		}
 	}
 	
-	public static function execute_multiquery(string $queue='') : bool {
+	public static function execute_multiquery(string $queue='') : null|bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(!isset(self::$queued_queries[$queue])) return false;
+		if(!isset(self::$queued_queries[$queue]))return null;
 		$queued_queries=self::$queued_queries[$queue];
 		unset(self::$queued_queries[$queue]);
 		global $configurations;

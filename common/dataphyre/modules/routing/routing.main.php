@@ -19,10 +19,10 @@ tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
 $_PARAM=[];
 
-if(file_exists($filepath=$rootpath['common_dataphyre']."config/routing.php")){
+if(file_exists($filepath=ROOTPATH['common_dataphyre']."config/routing.php")){
 	require_once($filepath);
 }
-if(file_exists($filepath=$rootpath['dataphyre']."config/routing.php")){
+if(file_exists($filepath=ROOTPATH['dataphyre']."config/routing.php")){
 	require_once($filepath);
 }
 if(!isset($configurations['dataphyre']['routing'])){
@@ -42,7 +42,7 @@ class routing{
 	private static $verbose_non_match=true;
 	
 	public static function check_route(string $route, string $file=''): string|bool {
-		global $rootpath;
+	
 		self::$route_non_match_count++;
 		$file=preg_replace('!([^:])(//)!', "$1/", $file);
 		if($_REQUEST['uri']==='/router.php'){
@@ -92,7 +92,7 @@ class routing{
 		return $match($file);
 	}
 	
-	public static function not_found(): void {
+	public static function not_found(): never {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
 		self::set_page("/".$configurations['dataphyre']['routing']['not_found_errorpage']);
@@ -106,8 +106,8 @@ class routing{
 
 	private static function set_page(string $file): string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		global $rootpath;
-		self::$realpage="/".str_replace($rootpath['views'], '', substr($file, 0, strrpos($file, ".")));
+	
+		self::$realpage="/".str_replace(ROOTPATH['views'], '', substr($file, 0, strrpos($file, ".")));
 		self::$page=self::$realpage;
 		return $file;
 	}
@@ -270,7 +270,7 @@ class routing{
 					$param_parts=explode(',', $param_key[$key]); 
 					$param_name=$param_parts[1];
 					$allowed_values=array_slice($param_parts, 2);
-					if (in_array($request[$index], $allowed_values, true)){
+					if(in_array($request[$index], $allowed_values, true)){
 						$temp_params[$param_name]=$request[$index];
 						$good_id_format=true;
 					}
@@ -285,9 +285,6 @@ class routing{
 			if(!$good_id_format){
 				$verbose[]="Parameter '{$param_key[$key]}' failed all rules.";
 				return self::$verbose_non_match ? ['matched'=>false, 'verbose'=>$verbose] : ['matched'=>false];
-			}
-			if(!$is_format){
-				//$temp_params[$param_key[$key]]=$request[$index];
 			}
 			$request[$index]="{.*}";
 		}

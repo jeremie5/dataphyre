@@ -14,13 +14,12 @@
  */
 
 
-/*************** DATAPHYRE  INIT ***************/
-$enable_tracelog_plotting=false;
-$enable_tracelog=false;
+/*************** START DATAPHYRE  INIT ***************/
+
 if(isset($_GET['tracelog'])){
-	$enable_tracelog=true;
+	define('TRACELOG_BOOT_ENABLE', true);
 	if(isset($_GET['plotting'])){
-		$enable_tracelog_plotting=true;
+		define('TRACELOG_BOOT_PLOTTING_ENABLE', true);
 	}
 }
 
@@ -36,31 +35,6 @@ try{
 	}
 }
 
-new dataphyre\access;
-
-if(RUN_MODE==='request'){
-	tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Starting output buffer");
-	ob_start(function($buffer){
-		global $dont_show_copyright;
-		$_SESSION['listing_retrieved_from_cache']=0;
-		if($dont_show_copyright!==true){
-			if(function_exists("source_copyright")){
-				return source_copyright().dataphyre\core::buffer_minify($buffer);
-			}
-		}
-		return dataphyre\core::buffer_minify($buffer);	
-	});
-}
-
-if(isset($_GET['tracelog']) && $_GET['tracelog']==config("dataphyre/tracelog/password")){
-	dataphyre\tracelog::$enable=true;
-	dataphyre\tracelog::$open=true;
-}
-else
-{
-	dataphyre\tracelog::$enable=false;
-}
-
-/********************************************/
+/*************** END DATAPHYRE  INIT ***************/
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Loaded");

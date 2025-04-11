@@ -119,7 +119,7 @@ class templating {
 	private static $filters=[];
 	
 	public function __construct(bool $is_dev_mode=false){
-		global $rootpath;
+	
 		self::$helpers=[
 			'date_format'=>function($date, $format){ 
 				return date($format, strtotime($date)); 
@@ -128,7 +128,7 @@ class templating {
 				return strtolower(preg_replace('/\W+/', '-', trim($text))); 
 			}
 		];
-		self::$cache_dir=$rootpath['dataphyre'].'cache/templating/';
+		self::$cache_dir=ROOTPATH['dataphyre'].'cache/templating/';
 		self::$is_dev_mode=$is_dev_mode;
 	}
 

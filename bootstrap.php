@@ -13,10 +13,12 @@
 * This software is provided "as is", without any warranty of any kind.
 */
 
-define('BS_VERSION', '1.0.0');
+define('BS_VERSION', '1.0.1');
 
 $rootpath['dataphyre']=__DIR__;
-$initial_memory_usage=memory_get_usage();
+
+define('INITIAL_MEMORY_USAGE', memory_get_usage());
+
 $_SERVER['REQUEST_TIME_FLOAT']=microtime(true);
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Bootstrap initialization');
@@ -33,27 +35,6 @@ if(in_array($_SERVER['SERVER_ADDR'], ['localhost', '127.0.0.1', '192.168.0.1', '
 }
 
 set_time_limit($bootstrap_config['max_execution_time'] ?? 30);
-
-function tracelog($filename=null, $line=null, $class=null, $function=null, $text=null, $type=null, $arguments=null){
-	if(class_exists('\dataphyre\dpanel', false)){
-		\dataphyre\dpanel::tracelog_bypass($filename, $line, $class, $function, $text, $type, $arguments);
-	}
-	if(class_exists('\dataphyre\tracelog', false) && \dataphyre\tracelog::$constructed===true){
-		if(\dataphyre\tracelog::$enable===true){
-			return \dataphyre\tracelog::tracelog($filename, $line, $class, $function, $text, $type, $arguments);
-		}
-	}
-	else
-	{
-		global $retroactive_tracelog;
-		$retroactive_tracelog??=[];
-		$retroactive_tracelog[]=[$filename, $line, $class, $function, $text, $type, $arguments, microtime(true), memory_get_usage()];
-	}
-	if($type==='fatal'){
-		log_error('Fatal tracelog: '.$class.'/'.$function.'(): '.$text);
-	}
-	return false;
-}
 
 if(isset($_SERVER['HTTP_X_DATAPHYRE_APPLICATION'])){
 	$bootstrap_config['app']=$_SERVER['HTTP_X_DATAPHYRE_APPLICATION'];
@@ -102,14 +83,110 @@ define('APP', $bootstrap_config['app']);
 
 unset($bootstrap_config, $user_app, $key, $file);
 
+try{
+	tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Starting application bootstrap');
+	include(__DIR__.'/applications/'.APP.'/application_bootstrap.php');
+}catch(\Throwable $exception){
+	pre_init_error('Fatal error: Unable to load application bootstrap', $exception);
+}
+
+
+
 // Bootstrap helper functions
+
+/**
+ * Quantum Constant Expansion (QCE)
+ * ---------------------------------
+ * A Dataphyre pattern for deferred, introspectable constant definitions.
+ *
+ * Values passed as closures will be lazily evaluated on string cast,
+ * cached on first access, and display their quantum state during debug.
+ *
+ * Example:
+ * heisenconstant('MY_CONST', [
+ *     'now' => fn() => date('c'),
+ *     'uuid' => fn() => bin2hex(random_bytes(16)),
+ * ]);
+ *
+ * echo MY_CONST['now']; // triggers evaluation
+ * var_dump(MY_CONST);   // shows eval status
+ *
+ * Warning: Here be dragons.
+ * Jérémie Fréreault – 2025-04-10
+ */
+function heisenconstant(string $name, array $map): void {
+    foreach($map as $key=>$value){
+        if($value instanceof Closure){
+            $map[$key]=new class($value){
+                private Closure $fn;
+                private mixed $cached=null;
+                public function __construct(Closure $fn){
+                    $this->fn=$fn;
+                }
+                public function __toString(): string{
+                    return (string)($this->cached ??= ($this->fn)());
+                }
+                public function toInt(): int{
+                    return (int)($this->cached ??=($this->fn)());
+                }
+                public function toFloat(): float{
+                    return (float)($this->cached ??=($this->fn)());
+                }
+                public function toArray(): array{
+                    return (array)($this->cached ??=($this->fn)());
+                }
+                public function toBool(): bool{
+                    return (bool)($this->cached ??=($this->fn)());
+                }
+                public function raw(): mixed{
+                    return $this->cached ??=($this->fn)();
+                }
+                public function reset(): void {
+                    $this->cached=null;
+                    $this->evaluated=false;
+                }
+                private function evaluate(): mixed{
+                    $this->evaluated=true;
+                    return ($this->fn)();
+                }
+                public function __debugInfo(): array{
+                    return[
+                        'status'=>$this->cached===null ? 'unevaluated' : 'evaluated',
+                        'value'=>$this->cached ?? '[not yet evaluated]'
+                    ];
+                }
+            };
+        }
+    }
+    define($name, $map);
+}
+
+function tracelog($filename=null, $line=null, $class=null, $function=null, $text=null, $type=null, $arguments=null){
+	if(class_exists('\dataphyre\dpanel', false)){
+		\dataphyre\dpanel::tracelog_bypass($filename, $line, $class, $function, $text, $type, $arguments);
+	}
+	if(class_exists('\dataphyre\tracelog', false) && \dataphyre\tracelog::$constructed===true){
+		if(\dataphyre\tracelog::$enable===true){
+			return \dataphyre\tracelog::tracelog($filename, $line, $class, $function, $text, $type, $arguments);
+		}
+	}
+	else
+	{
+		global $retroactive_tracelog;
+		$retroactive_tracelog??=[];
+		$retroactive_tracelog[]=[$filename, $line, $class, $function, $text, $type, $arguments, microtime(true), memory_get_usage()];
+	}
+	if($type==='fatal'){
+		log_error('Fatal tracelog: '.$class.'/'.$function.'(): '.$text);
+	}
+	return false;
+}
 
 function minified_font(){
 	return "@font-face{font-family:Phyro-Bold;src:url('https://cdn.shopiro.ca/res/assets/genesis/fonts/Phyro-Bold.ttf')}.phyro-bold{font-family:'Phyro-Bold', sans-serif;font-weight:700;font-style:normal;line-height:1.15;letter-spacing:-.02em;-webkit-font-smoothing:antialiased}";
 }
 
 function log_error(string $error, ?object $exception=null){
-	global $rootpath;
 	$timestamp=gmdate('Y-m-d H:i:s T');
 	$log_data='';
 	if($exception!==null){
@@ -120,20 +197,20 @@ function log_error(string $error, ?object $exception=null){
 		$log_data.='<p class="card-text"><strong>Line:</strong> '.htmlspecialchars($exception->getLine()).'</p>';
 		$log_data.='<pre class="card-text bg-dark text-white p-2"><strong>Trace:</strong> '.htmlspecialchars($exception->getTraceAsString()).'</pre></div></div>';
 	}
-	file_put_contents($rootpath['dataphyre'].'logs/'.gmdate('Y-m-d H:00').'.log', '\n'.$log_data.strip_tags($error), FILE_APPEND);
-	$log_file=$rootpath['dataphyre'].'logs/'.$log_date=gmdate('Y-m-d H:00') . '.html';
+	$log_file=__DIR__.'/applications/'.APP.'/backend/dataphyre/logs/'.$log_date=gmdate('Y-m-d H:00') . '.html';
+	$log_file=$GLOBALS['rootpath']['dataphyre'].'logs/'.$log_date=gmdate('Y-m-d H:00') . '.html';
 	$new_entry='<tr><td>'.$timestamp.'</td><td>'.$error.$log_data.'</td></tr><!--ENDLOG-->';
 	file_put_contents($log_file, $new_entry, FILE_APPEND);
 }
 
-function pre_init_error(?string $error_message=null, ?object $exception=null){
+function pre_init_error(?string $error_message=null, ?object $exception=null) : never {
 	while(ob_get_level()!==0){
 		ob_end_clean();
 	}
 	if(isset($error_message)){
 		log_error('Pre-init error: '.$error_message, $exception);
 	}
-	http_response_code(503);
+	http_response_code(200);
 	header('Retry-After: 300');
 	header('Content-Type: text/html');
 	echo'<!DOCTYPE html>';
@@ -153,11 +230,4 @@ function pre_init_error(?string $error_message=null, ?object $exception=null){
 	echo'</body>';
 	echo'</html>';
 	exit();
-}
-
-try{
-	tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Starting application bootstrap');
-	include(__DIR__.'/applications/'.APP.'/application_bootstrap.php');
-}catch(\Throwable $exception){
-	pre_init_error('Fatal error: Unable to load application bootstrap', $exception);
 }

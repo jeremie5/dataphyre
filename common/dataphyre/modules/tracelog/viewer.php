@@ -13,8 +13,7 @@
  * This software is provided "as is", without any warranty of any kind.
  */
 
-
-require_once($rootpath['common_dataphyre']."modules/core/core.main.php");
+require_once(ROOTPATH['common_dataphyre']."modules/core/core.main.php");
 
 function convert_storage($size){
     if(is_numeric($size)){
@@ -29,17 +28,15 @@ function convert_storage($size){
 }
 
 function lines_of_code(){
-    global $rootpath;
 	if(isset($_SESSION['tracelog_sloc'])) return $_SESSION['tracelog_sloc'];
-    $command="find ".$rootpath['common_root']." -type f -name '*.php' ! -path '*/logs/*' ! -path '*/cache/*' -exec wc -l {} + | awk '{total += $1} END{print total}'";
+    $command="find ".ROOTPATH['common_root']." -type f -name '*.php' ! -path '*/logs/*' ! -path '*/cache/*' -exec wc -l {} + | awk '{total += $1} END{print total}'";
     return $_SESSION['tracelog_sloc']=shell_exec($command);
 }
 
 function code_size(){
-	global $rootpath;
 	if(isset($_SESSION['tracelog_code_size'])) return $_SESSION['tracelog_code_size'];
-	$code_size=shell_exec("du -d 0 -h ".$rootpath['common_root']);
-	return $_SESSION['tracelog_code_size']=str_replace($rootpath['common_root'],'',$code_size);
+	$code_size=shell_exec("du -d 0 -h ".ROOTPATH['common_root']);
+	return $_SESSION['tracelog_code_size']=str_replace(ROOTPATH['common_root'],'',$code_size);
 }
 
 $jit_info='';
@@ -59,11 +56,12 @@ b, i, body {
 }
 </style>
 <h1>Dataphyre: Tracelog Viewer</h1>
-<span style="font-size: 15px;">Memory: <?=convert_storage($_SESSION['memory_used']); ?> out of <?=convert_storage($_SESSION['memory_used_peak']); ?></span><br>
 <span style="font-size: 15px;">CPU: <?=sys_getloadavg()[0]; ?>%</span><br>
-<span style="font-size: 15px;">Execution: <?=$_SESSION['exec_time']; ?>ms</span><br>
 <span style="font-size: 15px;">PHP: <?=phpversion(); ?></span><br>
-<span style="font-size: 15px;">SLOC: <?=number_format(lines_of_code(), 0, '.', ","); ?></span><br>
+<span style="font-size: 15px;">Project execution: <?=number_format($_SESSION['exec_time'], 3); ?>s</span><br>
+<span style="font-size: 15px;">Project SLOC: <?=number_format(lines_of_code(), 0, '.', ","); ?></span><br>
+<span style="font-size: 15px;">Project memory: <?=convert_storage($_SESSION['memory_used']-$_SESSION['runtime_memory_used']); ?> out of <?=convert_storage($_SESSION['memory_used_peak']-$_SESSION['runtime_memory_used']); ?></span><br>
+<span style="font-size: 15px;">Runtime overhead: <?=convert_storage($_SESSION['runtime_memory_used']); ?></span><br>
 <span style="font-size: 15px;">Project size: <?=code_size(); ?></span><br>
 <span style="font-size: 15px;">Loaded user functions: <?=$_SESSION['defined_user_function_count']; ?></span><br>
 <span style="font-size: 15px;">Included files: <?=$_SESSION['included_files']; ?></span><br>
