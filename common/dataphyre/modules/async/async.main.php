@@ -17,10 +17,10 @@ namespace dataphyre;
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
-if(file_exists($filepath=$rootpath['common_dataphyre']."config/async.php")){
+if(file_exists($filepath=ROOTPATH['common_dataphyre']."config/async.php")){
 	require_once($filepath);
 }
-if(file_exists($filepath=$rootpath['dataphyre']."config/async.php")){
+if(file_exists($filepath=ROOTPATH['dataphyre']."config/async.php")){
 	require_once($filepath);
 }
 if(!isset($configurations['dataphyre']['async'])){
@@ -204,7 +204,7 @@ class async {
 						CURLOPT_FOLLOWLOCATION=>true,
 						CURLOPT_HTTPHEADER=>$headers
 					];
-					$result=self::send_curl_request($url, $options);
+					$result=yield self::send_curl_request($url, $options);
 					$response=$result['response'];
 					$info=$result['info'];
 					if($return_headers){
@@ -231,7 +231,7 @@ class async {
 						CURLOPT_POSTFIELDS=>http_build_query($data),
 						CURLOPT_HTTPHEADER=>$headers
 					];
-					$result=self::send_curl_request($url, $options);
+					$result=yield self::send_curl_request($url, $options);
 					$response=$result['response'];
 					$info=$result['info'];
 					if($return_headers){
@@ -251,7 +251,7 @@ class async {
 		$promise=new promise(function($resolve, $reject)use($url){
 			coroutine::create(function()use($url, $resolve, $reject){
 				try{
-					$response=self::send_curl_request($url, [
+					$response=yield self::send_curl_request($url, [
 						CURLOPT_RETURNTRANSFER=>true,
 						CURLOPT_HTTPHEADER=>['Content-Type: application/json'],
 					]);
@@ -271,7 +271,7 @@ class async {
 		$promise=new promise(function($resolve, $reject)use($url, $data){
 			coroutine::create(function()use($url, $data, $resolve, $reject){
 				try{
-					$response=self::send_curl_request($url, [
+					$response=yield self::send_curl_request($url, [
 						CURLOPT_RETURNTRANSFER=>true,
 						CURLOPT_POST=>true,
 						CURLOPT_POSTFIELDS=>json_encode($data),

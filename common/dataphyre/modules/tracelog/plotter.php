@@ -20,7 +20,7 @@
  
  ini_set('memory_limit','1024M');
  
-$filePath = $rootpath['dataphyre'] . 'tracelog/plotting.dat';
+$filePath = ROOTPATH['dataphyre'] . 'tracelog/plotting.dat';
 if(file_exists($filePath)){
 	$lines = file($filePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
 	$allTraces = [];

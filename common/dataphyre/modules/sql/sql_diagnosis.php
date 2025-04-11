@@ -41,7 +41,7 @@ if(!function_exists('get_tracelog_errors')){
 }
 
 function sql_diagnosis(){
-	global $rootpath;
+
 	global $dpanel_mode;
 	global $configurations;
 	$log='';

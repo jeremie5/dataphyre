@@ -14,29 +14,29 @@
  */
 
 $modcache=[];
-$modcache_file=$rootpath['dataphyre']."modcache.php";
+$modcache_file=ROOTPATH['dataphyre']."modcache.php";
 if(filemtime($modcache_file)+300>time()){
 	$modcache=require($modcache_file);
 }
 
 function dp_modcache_save(): void {
-	global $rootpath, $modcache;
-	$modcache_file=$rootpath['dataphyre']."modcache.php";
+	global $modcache;
+	$modcache_file=ROOTPATH['dataphyre']."modcache.php";
 	$cache_data='<?php return '.var_export($modcache, true).';';
 	file_put_contents($modcache_file, $cache_data);
 }
 
 function dp_module_present(string $module): array|bool {
-    global $rootpath, $modcache;
+    global $modcache;
     if(!is_array($modcache))$modcache=[];
     if(isset($modcache[$module]))return $modcache[$module];
-    $p=$rootpath['dataphyre']."modules/$module/";
-    $c=$rootpath['common_dataphyre']."modules/$module/";
+    $p=ROOTPATH['dataphyre']."modules/$module/";
+    $c=ROOTPATH['common_dataphyre']."modules/$module/";
 	$modcache[$module]=false;
     if(file_exists($p."$module.main.php")){
         $modcache[$module]=[$p."$module.main.php", file_exists($p."version")?trim(file_get_contents($p."version")):'1.0'];
     }
-    elseif(!file_exists($rootpath['dataphyre']."modules/-$module/") && file_exists($c)){
+    elseif(!file_exists(ROOTPATH['dataphyre']."modules/-$module/") && file_exists($c)){
         $modcache[$module]=[$c."$module.main.php", file_exists($c."version")?trim(file_get_contents($c."version")):'1.0'];
     }
     dp_modcache_save();
@@ -59,8 +59,8 @@ function dp_module_required(string $module, string $required_module, string $min
 
 function dpvks(): array {
 	global $configurations;
-	global $rootpath;
-	if(false!=$keys=file_get_contents($rootpath['dataphyre']."config/static/dpvk")){
+
+	if(false!=$keys=file_get_contents(ROOTPATH['dataphyre']."config/static/dpvk")){
 		return explode(",", $keys);
 	}
 	if(isset($configurations['dataphyre']['private_key'])){

@@ -20,10 +20,10 @@ tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 dp_module_required('access', 'sql');
 dp_module_required('access', 'firewall');
 
-if(file_exists($filepath=$rootpath['common_dataphyre']."config/access.php")){
+if(file_exists($filepath=ROOTPATH['common_dataphyre']."config/access.php")){
 	require_once($filepath);
 }
-if(file_exists($filepath=$rootpath['dataphyre']."config/access.php")){
+if(file_exists($filepath=ROOTPATH['dataphyre']."config/access.php")){
 	require_once($filepath);
 }
 

@@ -41,7 +41,7 @@ if(!function_exists('get_tracelog_errors')){
 }
 
 function authenticator_diagnosis(){
-	global $rootpath;
+	global ROOTPATH;
 	global $dpanel_mode;
 	global $configurations;
 	$log='';

@@ -20,10 +20,10 @@ tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 dp_module_required('firewall', 'sql');
 dp_module_required('firewall', 'cache');
 
-if(file_exists($filepath=$rootpath['common_dataphyre']."config/firewall.php")){
+if(file_exists($filepath=ROOTPATH['common_dataphyre']."config/firewall.php")){
 	require_once($filepath);
 }
-if(file_exists($filepath=$rootpath['dataphyre']."config/firewall.php")){
+if(file_exists($filepath=ROOTPATH['dataphyre']."config/firewall.php")){
 	require_once($filepath);
 }
 if(!isset($configurations['dataphyre']['firewall'])){
