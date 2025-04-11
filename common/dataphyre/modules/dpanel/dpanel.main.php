@@ -47,7 +47,7 @@ class dpanel{
 	}
 
 	public static function unit_test(string $json_file_path): bool {
-		global $roothpath;
+		
 		$all_passed=true;
 		if(!is_readable($json_file_path) || false===$json_content=file_get_contents($json_file_path) || empty($json_content)){
 			self::$verbose[]=[
@@ -298,8 +298,8 @@ class dpanel{
 	}
 
 	public static function diagnose_module(string $module): bool {
-		global $rootpath;
-		$procedure=function(string $module, string $module_path, array $rootpath){
+	
+		$procedure=function(string $module, string $module_path, array ROOTPATH){
 			if(false===$content=file_get_contents($module_path)){
 				self::$verbose[]=[
 					'type'=>'file_missing', 
@@ -363,13 +363,13 @@ class dpanel{
 			}
 		};
 		if(!defined("DP_CORE_LOADED")){
-			if(!$procedure('core', $rootpath['common_dataphyre'].'modules/core/core.main.php', $rootpath)){
+			if(!$procedure('core', ROOTPATH['common_dataphyre'].'modules/core/core.main.php', ROOTPATH)){
 				return false;
 			}
 		}
 		if($module_path=dp_module_present($module)[0]){
 			if(!in_array($module_path, get_included_files())){
-				if($procedure($module, $module_path, $rootpath)){
+				if($procedure($module, $module_path, ROOTPATH)){
 					return true;
 				}
 			}

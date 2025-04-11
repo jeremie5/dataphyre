@@ -17,39 +17,30 @@ namespace dataphyre;
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
-if(file_exists($filepath=$rootpath['common_dataphyre']."config/stripe.php")){
+if(file_exists($filepath=ROOTPATH['common_dataphyre']."config/stripe.php")){
 	require_once($filepath);
 }
-if(file_exists($filepath=$rootpath['dataphyre']."config/stripe.php")){
+if(file_exists($filepath=ROOTPATH['dataphyre']."config/stripe.php")){
 	require_once($filepath);
 }
 
 class stripe {
 	
-	public static function get_platform_account_for_country($country){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
-		//global $configurations;
-		//if(array_key_exists($country, $configurations['dataphyre']['stripe']['platform_accounts'])){
-		//	return $country;
-		//}
-		return 'DEFAULT';
-	}
-	
 	public static function get_platform_account(){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		return \Stripe\Stripe::$apiKey;
+		return \Stripe\self::$apiKey;
 	}
 	
-	public static function set_platform_account($platform_account='DEFAULT'){
+	public static function set_platform_account(string $platform_account='DEFAULT'){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()){
-			\Stripe\Stripe::$apiKey=stripe::get_secret_key($platform_account);
+		if(self::load_stripe()){
+			\Stripe\self::$apiKey=self::get_secret_key($platform_account);
 			return true;
 		}
 		return false;
 	}
 	
-	public static function get_publishable_key($platform_account='DEFAULT') : string|bool {
+	public static function get_publishable_key(string $platform_account='DEFAULT') : string|bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
 		if(!isset($configurations["dataphyre"]["stripe"]["platform_accounts"][$platform_account]))$platform_account='DEFAULT';
@@ -65,7 +56,7 @@ class stripe {
 		return false;
 	}
 	
-	public static function get_webhook_secret_key($platform_account='DEFAULT') : string|bool {
+	public static function get_webhook_secret_key(string $platform_account='DEFAULT') : string|bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
 		if(!isset($configurations["dataphyre"]["stripe"]["platform_accounts"][$platform_account]))$platform_account='DEFAULT';
@@ -75,7 +66,7 @@ class stripe {
 		return false;
 	}
 	
-	public static function get_secret_key($platform_account='DEFAULT') : string|bool {
+	public static function get_secret_key(string $platform_account='DEFAULT') : string|bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
 		if(!isset($configurations["dataphyre"]["stripe"]["platform_accounts"][$platform_account]))$platform_account='DEFAULT';
@@ -94,7 +85,7 @@ class stripe {
 	public static function load_stripe() : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_LOAD_STRIPE",...func_get_args())) return $early_return;
-		global $rootpath;
+	
 		global $configurations;
 		if(!class_exists("\Stripe\Stripe")){
 			try{
@@ -102,12 +93,12 @@ class stripe {
 			}catch(\Exception $e){
 				core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreStripe: Unable to load stripe library. Server\'s data is like corrupted.', 'safemode');
 			}
-			\Stripe\Stripe::$apiKey=stripe::get_secret_key();
-			\Stripe\Stripe::setMaxNetworkRetries(3);
+			\Stripe\self::$apiKey=self::get_secret_key();
+			\Stripe\self::setMaxNetworkRetries(3);
 		}
 		else
 		{
-			if(empty(\Stripe\Stripe::$apiKey)){
+			if(empty(\Stripe\self::$apiKey)){
 				core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreStripe: Stripe API key not set.', 'safemode');
 			}
 		}
@@ -118,21 +109,18 @@ class stripe {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
 		$platform_account=$configurations['dataphyre']['stripe']['platform_accountid_to_key'][$_SERVER['HTTP_STRIPE_ACCOUNT']];
-		if(stripe::set_platform_account($platform_account)){
-			if(stripe::load_stripe()===true){
-				// Verify webhook signature
+		if(self::set_platform_account($platform_account)){
+			if(self::load_stripe()===true){
 				$signature=$_SERVER['HTTP_STRIPE_SIGNATURE'];
 				$payload=file_get_contents('php://input');
-				$webhook_secret_key=stripe::get_webhook_secret_key($platform_account);
+				$webhook_secret_key=self::get_webhook_secret_key($platform_account);
 				try{
 					$event=\Stripe\Webhook::constructEvent($payload,$signature,$webhook_secret_key);
 				}catch(\Exception $e){
-					// Invalid signature, handle the error
 					http_response_code(400);
 					echo 'Webhook Error: '.$e->getMessage();
 					return;
 				}
-				// Process the webhook event based on its type
 				$event_type=$event->type;
 				$function_name='stripe_webhook_'.str_replace('.', '_', $event_type);
 				if(function_exists($function_name)){
@@ -140,12 +128,10 @@ class stripe {
 				}
 				else
 				{
-					// Unsupported event type
 					http_response_code(400);
 					echo 'Unsupported webhook event type: '.$event_type;
 					return;
 				}
-				// Send a response to acknowledge the webhook event
 				http_response_code(200);
 				echo 'Webhook Event Processed';
 				exit();
@@ -156,7 +142,7 @@ class stripe {
 	
 	public static function get_platform_balance(){
 		tracelog( __FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$balance=\Stripe\Balance::retrieve();
 				return $balance;
@@ -169,14 +155,14 @@ class stripe {
 	
 	public static function handle_new_payment_method(string $stripe_token, int $userid, string $stripe_customer_id, string $name_on_card, ?callable $no_customer_account_callback=null){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
-			if(false===sql::db_select(
+		if(self::load_stripe()===true){
+			if(false===sql_select(
 				$S="id", 
 				$L="stripe_payment_methods", 
 				$P="WHERE id=?", 
 				$V=array($stripe_token)
 			)){
-				if(false===$payment_method=stripe::retrieve_payment_method($stripe_token)){
+				if(false===$payment_method=self::retrieve_payment_method($stripe_token)){
 					return 'bad_token';
 				}
 				if(empty($stripe_customer_id) && is_callable($no_customer_account_callback)){
@@ -184,7 +170,7 @@ class stripe {
 						return 'failed_customer_creation_callback';
 					}
 				}
-				$platform_account=stripe::get_platform_account_for_country($payment_method->card->country);
+				$platform_account=self::get_platform_account_for_country($payment_method->card->country);
 				$values=array(
 					$payment_method->id,
 					$payment_method->card->brand,
@@ -198,7 +184,7 @@ class stripe {
 					$payment_method->card->exp_year,
 					$name_on_card
 				);
-				if(false===$insertid=sql::db_insert(
+				if(false===$insertid=sql_insert(
 					$L="stripe_payment_methods", 
 					$F="id, brand, type, platform_account, userid, country, last_four_digits, postal_code, expiration_month, expiration_year, name_on_card", 
 					$V=$values, 
@@ -206,7 +192,7 @@ class stripe {
 				)){
 					return 'failed_creating_method';
 				}
-				$result=stripe::attach_payment_method($stripe_token, $stripe_customer_id);
+				$result=self::attach_payment_method($stripe_token, $stripe_customer_id);
 				if($result===false || is_string($result)){
 					sql::db_delete(
 						$L="stripe_payment_methods", 
@@ -242,9 +228,9 @@ class stripe {
 		return false;
 	}
 	
-	public static function create_customer($userid, $email, $name){
+	public static function create_customer(int $userid, string $email, string $name){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$customer=\Stripe\Customer::create([
 					'email'=>$email,
@@ -259,9 +245,9 @@ class stripe {
 		return false;
 	}
 	
-    public static function create_account($params){
+    public static function create_account(array $params){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$account=\Stripe\Account::create($params);
 				return $account;
@@ -272,9 +258,9 @@ class stripe {
 		return false;
     }
 	
-	public static function verify_account($account_id, $params){
+	public static function verify_account(string $account_id, array $params){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$account=\Stripe\Account::update($account_id, $params);
 				return $account;
@@ -285,9 +271,9 @@ class stripe {
 		return false;
 	}
 	
-	public static function create_bank_account($account_id, $params){
+	public static function create_bank_account(string $account_id, array $params){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$bank_account=\Stripe\Account::createExternalAccount($account_id, ['external_account' => $params]);
 				return $bank_account;
@@ -298,9 +284,9 @@ class stripe {
 		return false;
 	}
 	
-	public static function set_default_for_payouts($account_id, $bank_account_id){
+	public static function set_default_for_payouts(string $account_id, string $bank_account_id){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$account=\Stripe\Account::update($account_id, ['default_for_currency' => $bank_account_id]);
 				return $account;
@@ -311,9 +297,9 @@ class stripe {
 		return false;
 	}
 	
-	public static function update_account($accountId, $params){
+	public static function update_account(string $accountId, array $params){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$account=\Stripe\Account::update($accountId, $params);
 				return $account;
@@ -324,9 +310,9 @@ class stripe {
 		return false;
 	}
 
-    public static function create_payment_intent($params){
+    public static function create_payment_intent(array $params){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$payment_intent=\Stripe\PaymentIntent::create($params);
 				return $payment_intent;
@@ -337,9 +323,9 @@ class stripe {
 		return false;
     }
 	
-	public static function check_payment_status($payment_intent_id){
+	public static function check_payment_status(string $payment_intent_id){
 		tracelog( __FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$payment_intent=\Stripe\PaymentIntent::retrieve($payment_intent_id);
 				return $payment_intent->status;
@@ -350,9 +336,9 @@ class stripe {
 		return false;
 	}
 	
-	public static function cancel_payment($payment_intentId){
+	public static function cancel_payment(string $payment_intentId){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$payment_intent=\Stripe\PaymentIntent::retrieve($payment_intentId);
 				$payment_intent->cancel();
@@ -364,9 +350,9 @@ class stripe {
 		return false;
 	}
 	
-	public static function create_account_link($accountId, $return_url, $refresh_url){
+	public static function create_account_link(string $accountId, string $return_url, string $refresh_url){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$accountLink=\Stripe\AccountLink::create([
 				  'account'=>$accountId,
@@ -382,9 +368,9 @@ class stripe {
 		return false;
 	}
 	
-	public static function check_account_status($accountId){
+	public static function check_account_status(string $accountId){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$account = \Stripe\Account::retrieve($accountId);
 				return $account;
@@ -395,9 +381,9 @@ class stripe {
 		return false;
 	}
 	
-	public static function initiate_transfer($params){
+	public static function initiate_transfer(array $params){
 		tracelog( __FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$transfer=\Stripe\Transfer::create($params);
 				return $transfer;
@@ -408,9 +394,9 @@ class stripe {
 		return false;
 	}
 	
-	public static function create_payout($params, $options=[]){
+	public static function create_payout(array $params, $options=[]){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$payout=\Stripe\Payout::create($params, $options);
 				return $payout;
@@ -421,9 +407,9 @@ class stripe {
 		return false;
 	}
 	
-	public static function submit_payment($payment_intentId){
+	public static function submit_payment(string $payment_intentId){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$payment_intent=\Stripe\PaymentIntent::retrieve($payment_intentId);
 				$payment_intent->confirm();
@@ -435,9 +421,9 @@ class stripe {
 		return false;
 	}
 	
-	public static function submit_refund($payment_intent_id, $amount_to_refund){
+	public static function submit_refund(string $payment_intent_id, $amount_to_refund){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$payment_intent=\Stripe\PaymentIntent::retrieve($payment_intent_id);
 				$charge_id=$payment_intent->charges->data[0]->id;
@@ -460,9 +446,9 @@ class stripe {
 		return false;
 	}
 	
-	public static function delete_payment_method($payment_method_id){
+	public static function delete_payment_method(string $payment_method_id){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$payment_method=\Stripe\PaymentMethod::retrieve($payment_method_id);
 				$payment_method->detach();
@@ -480,9 +466,9 @@ class stripe {
 		return false;
 	}
 	
-	public static function retrieve_payment_method($payment_method_id){
+	public static function retrieve_payment_method(string $payment_method_id){
 	  tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 		try{
 		  $payment_method=\Stripe\PaymentMethod::retrieve($payment_method_id);
 		  return $payment_method;
@@ -493,9 +479,9 @@ class stripe {
 	  return false;
 	}
 	
-	public static function retrieve_payment_intent($payment_intentId){
+	public static function retrieve_payment_intent(string $payment_intentId){
 	  tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 		try{
 		  $payment_intent=\Stripe\PaymentIntent::retrieve($payment_intentId);
 		  return $payment_intent;
@@ -506,9 +492,9 @@ class stripe {
 	  return false;
 	}
 	
-	public static function capture_payment_intent($payment_intentId){
+	public static function capture_payment_intent(string $payment_intentId){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$payment_intent=\Stripe\PaymentIntent::retrieve($payment_intentId);
 				$payment_intent->capture();
@@ -520,9 +506,9 @@ class stripe {
 		return false;
 	}
 	
-	public static function retrieve_all_payment_methods($customerId){
+	public static function retrieve_all_payment_methods(string $customerId){
 	  tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-	  if(stripe::load_stripe()===true){
+	  if(self::load_stripe()===true){
 		try{
 		  $payment_methods=\Stripe\PaymentMethod::all([
 			'customer' => $customerId,
@@ -536,9 +522,9 @@ class stripe {
 	  return false;
 	}
 
-	public static function attach_payment_method($payment_method_id, $customerId){
+	public static function attach_payment_method(string $payment_method_id, string $customerId){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(stripe::load_stripe()===true){
+		if(self::load_stripe()===true){
 			try{
 				$payment_method=\Stripe\PaymentMethod::retrieve($payment_method_id);
 				$payment_method->attach(['customer'=>$customerId]);

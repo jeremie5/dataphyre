@@ -17,10 +17,10 @@ namespace dataphyre;
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
-if(file_exists($filepath=$rootpath['common_dataphyre']."config/sql.php")){
+if(file_exists($filepath=ROOTPATH['common_dataphyre']."config/sql.php")){
 	require($filepath);
 }
-if(file_exists($filepath=$rootpath['dataphyre']."config/sql.php")){
+if(file_exists($filepath=ROOTPATH['dataphyre']."config/sql.php")){
 	require($filepath);
 }
 
@@ -49,16 +49,16 @@ else
 	unset($key, $location);
 }
 
-if(file_exists($rootpath['common_dataphyre']."sql_migration/migrating")){
+if(file_exists(ROOTPATH['common_dataphyre']."sql_migration/migrating")){
 	if(!$is_task){
 		core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='Database migration ongoing', 'maintenance');
 	}
 }
 else
 {
-	if(file_exists($rootpath['common_dataphyre']."sql_migration/run_migrations")){
-		file_put_contents($rootpath['common_dataphyre']."sql_migration/migrating", '');
-		file_put_contents($rootpath['common_dataphyre']."sql_migration/rootpaths.php", "<?php\n\$rootpath=".var_export($rootpath, true).";\n");
+	if(file_exists(ROOTPATH['common_dataphyre']."sql_migration/run_migrations")){
+		file_put_contents(ROOTPATH['common_dataphyre']."sql_migration/migrating", '');
+		file_put_contents(ROOTPATH['common_dataphyre']."sql_migration/rootpaths.php", "<?php\n\ROOTPATH=".var_export(ROOTPATH, true).";\n");
 		exec("php ".__DIR__."/migration.php > /dev/null 2> /dev/null &", $process_pid);
 		core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='Database migration ongoing', 'maintenance');
 	}
@@ -100,18 +100,18 @@ class sql {
 	
 	public static function migration(){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		global $rootpath;
+	
 		global $is_task;
-		if(file_exists($rootpath['common_dataphyre']."sql_migration/migrating")){
+		if(file_exists(ROOTPATH['common_dataphyre']."sql_migration/migrating")){
 			if(!$is_task){
 				core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='Database migration ongoing', 'maintenance');
 			}
 		}
 		else
 		{
-			if(file_exists($rootpath['common_dataphyre']."sql_migration/run_migrations")){
-				file_put_contents($rootpath['common_dataphyre']."sql_migration/migrating", '');
-				file_put_contents($rootpath['common_dataphyre']."sql_migration/rootpaths.php", "<?php\n\$rootpath=".var_export($rootpath, true).";\n");
+			if(file_exists(ROOTPATH['common_dataphyre']."sql_migration/run_migrations")){
+				file_put_contents(ROOTPATH['common_dataphyre']."sql_migration/migrating", '');
+				file_put_contents(ROOTPATH['common_dataphyre']."sql_migration/rootpaths.php", "<?php\n\ROOTPATH=".var_export(ROOTPATH, true).";\n");
 				exec("php ".__DIR__."/migration.php > /dev/null 2> /dev/null &", $process_pid);
 				core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='Database migration ongoing', 'maintenance');
 			}
@@ -138,7 +138,7 @@ class sql {
 		return isset($write_ops[$first_word]);
 	}
 	
-	public static function get_table_cache_policy(string $location):array|bool{
+	public static function get_table_cache_policy(string $location) : array|bool{
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_GET_TABLE_CACHE_POLICY",...func_get_args())) return $early_return;
 		global $configurations;
@@ -155,9 +155,12 @@ class sql {
 		return $configurations['dataphyre']['sql']['caching']['default_policy'];
 	}
 	
-	public static function execute_queue(string $queue='end') : void {
-		mysql_query_builder::execute_multiquery($queue);
-		postgresql_query_builder::execute_multiquery($queue);
+	public static function execute_queue(string $queue='end') : null|bool {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		if(null!==$return=mysql_query_builder::execute_multiquery($queue))return $return;
+		if(null!==$return=postgresql_query_builder::execute_multiquery($queue))return $return;
+		if(null!==$return=sqlite_query_builder::execute_multiquery($queue))return $return;
+		return null;
 	}
 	
 	public static function flag_server_unavailable(string $serverip) : bool {
@@ -434,7 +437,7 @@ class sql {
 				$query_result=sqlite_query_builder::sqlite_query($dbms_cluster, $query, $vars, $associative, $multipoint);
 				break;
 		}
-		if($caching!==false && $cache_policy!==false){
+		if($caching!==false && $caching!=='lazy' && $cache_policy!==false){
 			self::cache_query_result($location, $hash, $query_result, $caching, $cache_policy);
 		}
 		if($query_result!==false){
@@ -547,14 +550,14 @@ class sql {
 				$query_result=sqlite_query_builder::sqlite_select($dbms_cluster, $select, $location, $params, $vars, $associative);
 				break;
 		}
-		if($caching!==false && $cache_policy!==false){
+		if($caching!==false && $caching!=='lazy' && $cache_policy!==false){
 			self::cache_query_result($location, $hash, $query_result, $caching, $cache_policy);
 		}
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Select query finished, returning result");
 		return $query_result;
 	}
 	
-	public static function db_count(string $location, array|string|null $params=null, ?array $vars=null, ?bool $caching=true, ?string $queue='end', ?callable $callback=null) : int|bool|null {
+	public static function db_count(string $location, array|string|null $params=null, ?array $vars=null, null|bool|array|string $caching=[true], ?string $queue='end', ?callable $callback=null) : int|bool|null {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_COUNT",...func_get_args())) return $early_return;
 		global $configurations;
@@ -632,7 +635,7 @@ class sql {
 				$query_result=sqlite_query_builder::sqlite_count($dbms_cluster, $location, $params, $vars);
 				break;
 		}
-		if($caching!==false && $cache_policy!==false){
+		if($caching!==false && $caching!=='lazy' && $cache_policy!==false){
 			self::cache_query_result($location, $hash, $query_result, $caching, $cache_policy);
 		}
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Count query finished, returning result");
@@ -662,7 +665,7 @@ class sql {
 		}
 		$returning='*';
 		if($callback){
-			$query_queue=function($vars)use($location, $fields, $clear_cache, $callback){
+			$query_queue=function($vars)use($location, $fields, $clear_cache, $callback, $returning){
 				return [
 					'location'=>$location, 
 					'ignore'=>'IGNORE',
@@ -671,6 +674,7 @@ class sql {
 					'clear_cache'=>$clear_cache, 
 					'callback'=>$callback,
 					'multipoint'=>true,
+					'associative'=>false,
 					'returning'=>$returning
 				];
 			};

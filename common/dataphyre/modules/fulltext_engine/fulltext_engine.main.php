@@ -30,7 +30,7 @@ require_once(__DIR__."/external_engines/elastic.php");
 $configurations['dataphyre']['fulltext_engine']['fs_index_entry_count']=1000;
 $configurations['dataphyre']['fulltext_engine']['fs_index_entry_count_for_sql']=100000;
 
-$configurations['dataphyre']['fulltext_engine']['indexes']=json_decode(file_get_contents($rootpath['dataphyre']."config/fulltext_engine/indexes.json"), true);
+$configurations['dataphyre']['fulltext_engine']['indexes']=json_decode(file_get_contents(ROOTPATH['dataphyre']."config/fulltext_engine/indexes.json"), true);
 
 class fulltext_engine{
 
@@ -227,7 +227,7 @@ class fulltext_engine{
     public static function update_in_index(string $index_name, array $values, string $language='en') : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
         global $configurations;
-		global $rootpath;
+	
         $index_type=$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['type'];
 		if(!isset($values[$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name']])){
 			core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: Primary key not found for index.', 'safemode');
@@ -241,7 +241,7 @@ class fulltext_engine{
 				if(!extension_loaded('sqlite3')){
 					core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: SQLite3 is not enabled in the current environment.', 'safemode');
 				}
-				$index_folder=$rootpath['dataphyre']."fulltext_indexes/sqlite/".$index_name;
+				$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/sqlite/".$index_name;
 				$fileid=0;
 				$found_file=false;
 				while(true){
@@ -301,7 +301,7 @@ class fulltext_engine{
 				fulltext_engine\vespa::update($index_name, $values, $primary_key, $primary_key_value, $language);
 			}
 			elseif($index_type==='json'){
-				$index_folder=$rootpath['dataphyre']."fulltext_indexes/json/".$index_name;
+				$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/json/".$index_name;
 				$fileid=0;
 				$filepath=$index_folder."/".$fileid;
 				$found_file=false;
@@ -335,7 +335,7 @@ class fulltext_engine{
     public static function add_to_index(string $index_name, array $values, string $language='en') : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
         global $configurations;
-		global $rootpath;
+	
 		if(!isset($configurations['dataphyre']['fulltext_engine']['indexes'][$index_name])){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Index is not defined");
 		}
@@ -354,7 +354,7 @@ class fulltext_engine{
 					if(!extension_loaded('sqlite3')){
 						core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: SQLite3 is not enabled in the current environment.', 'safemode');
 					}
-					$index_folder=$rootpath['dataphyre']."fulltext_indexes/sqlite/".$index_name;
+					$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/sqlite/".$index_name;
 					if (!is_dir($index_folder)) {
 						mkdir($index_folder, 0777, true);
 					}
@@ -412,7 +412,7 @@ class fulltext_engine{
 					$result_primarykeys=fulltext_engine\vespa::add($index_name, $values, $primary_column_name, $primary_key_value, $language);
 				}
 				elseif($index_type==='json'){
-					$index_folder=$rootpath['dataphyre']."fulltext_indexes/json/".$index_name;
+					$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/json/".$index_name;
 					$fileid=0;
 					$filepath=$index_folder."/".$fileid;
 					$found_file=false;
@@ -452,7 +452,7 @@ class fulltext_engine{
 	public static function remove_from_index(string $index_name, string $primary_key_value) : string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
-		global $rootpath;
+	
 		if(!isset($values[$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name']])){
 			core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: Primary key not found for index.', 'safemode');
 		}
@@ -463,7 +463,7 @@ class fulltext_engine{
 				if(!extension_loaded('sqlite3')){
 					core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: SQLite3 is not enabled in the current environment.', 'safemode');
 				}
-				$index_folder=$rootpath['dataphyre']."fulltext_indexes/sqlite/".$index_name;
+				$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/sqlite/".$index_name;
 				$fileid=0;
 				$found_file=false;
 				while(true){
@@ -519,7 +519,7 @@ class fulltext_engine{
 				$result_primarykeys=fulltext_engine\vespa::remove($index_name, $primary_column_name, $primary_key_value);
 			}
 			elseif($index_type==='json'){
-				$index_folder=$rootpath['dataphyre']."fulltext_indexes/json/".$index_name;
+				$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/json/".$index_name;
 				$primary_column_name=$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name'];
 				$fileid=0;
 				while(true){
@@ -564,8 +564,8 @@ class fulltext_engine{
 	public static function delete_index(string $index_name) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
-		global $rootpath;
-		$filepath=$rootpath['dataphyre']."config/fulltext_engine/indexes.json";
+	
+		$filepath=ROOTPATH['dataphyre']."config/fulltext_engine/indexes.json";
 		if(false!==$index_definitions=json_decode(file_get_contents($filepath),true)){
 			if(isset($index_definitions[$index_name])){
 				$type=$index_definitions[$index_name]['type'];
@@ -573,7 +573,7 @@ class fulltext_engine{
 					if(!extension_loaded('sqlite3')){
 						core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: SQLite3 is not enabled in the current environment.', 'safemode');
 					}
-					core::force_rmdir($rootpath['dataphyre']."fulltext_indexes/sqlite/".$index_name);
+					core::force_rmdir(ROOTPATH['dataphyre']."fulltext_indexes/sqlite/".$index_name);
 				}
 				elseif($type==='sql'){
 					// Delete sql index
@@ -582,7 +582,7 @@ class fulltext_engine{
 					fulltext_engine\elasticsearch::delete_index($index_name);
 				}
 				elseif($type==='json'){
-					core::force_rmdir($rootpath['dataphyre']."fulltext_indexes/json/".$index_name);
+					core::force_rmdir(ROOTPATH['dataphyre']."fulltext_indexes/json/".$index_name);
 				}
 				else
 				{
@@ -610,8 +610,8 @@ class fulltext_engine{
 	public static function create_index(string $index_name, string $primary_key_column_name, string $type="json") : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
-		global $rootpath;
-		$filepath=$rootpath['dataphyre']."config/fulltext_engine/indexes.json";
+	
+		$filepath=ROOTPATH['dataphyre']."config/fulltext_engine/indexes.json";
 		$index_definitions=json_decode(file_get_contents($filepath),true);
 		if(!isset($index_definitions[$index_name])){
 			if($type==='sqlite'){
@@ -662,7 +662,7 @@ class fulltext_engine{
 	public static function find_in_index(string $index_name, array $search_data, string $language='en', bool $boolean_mode=false, int $max_results=50, float $threshold=0.85, string $forced_algorithms='') : bool|array {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
-		global $rootpath;
+	
 		$result_primarykeys=[];
 		if(!isset($configurations['dataphyre']['fulltext_engine']['indexes'][$index_name])){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Index $index_name does not exist", $S='fatal');
@@ -680,7 +680,7 @@ class fulltext_engine{
 				if(!extension_loaded('sqlite3')){
 					core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: SQLite3 is not enabled in the current environment.', 'safemode');
 				}
-				$index_folder=$rootpath['dataphyre']."fulltext_indexes/sqlite/".$index_name;
+				$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/sqlite/".$index_name;
 				$fileid=0;
 				while($max_results>count($result_primarykeys)){
 					$filepath=$index_folder."/".$fileid.".db";
@@ -740,7 +740,7 @@ class fulltext_engine{
 				$result_primarykeys=fulltext_engine\vespa::find($index_name, $search_data, $primary_column_name, $boolean_mode, $language, $max_results, $threshold);
 			}
 			elseif($index_type==='json'){
-				$index_folder=$rootpath['dataphyre']."fulltext_indexes/json/".$index_name;
+				$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/json/".$index_name;
 				$fileid=0;
 				while($max_results>count($result_primarykeys)){
 					$filepath=$index_folder."/".$fileid;

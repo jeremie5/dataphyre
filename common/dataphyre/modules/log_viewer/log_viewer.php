@@ -13,7 +13,7 @@
  * This software is provided "as is", without any warranty of any kind.
  */
  
-$logDirectory=$rootpath['dataphyre']."logs";
+$logDirectory=ROOTPATH['dataphyre']."logs";
 $maxLogsPerRequest=20;
 
 function getLatestFile($directory){

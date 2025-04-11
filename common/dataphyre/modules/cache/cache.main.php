@@ -21,9 +21,6 @@ class cache{
 	
     protected static $memcached;
     public static $started=false;
-
-    public function __construct(){
-    }
 	
 	private static function start(){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call

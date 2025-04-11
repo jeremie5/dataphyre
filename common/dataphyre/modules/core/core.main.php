@@ -12,12 +12,6 @@
  *
  * This software is provided "as is", without any warranty of any kind.
  */
- 
-ini_set('display_errors', 0);
-ini_set('display_startup_errors', 0);
-error_reporting(~E_ALL);
-
-set_error_handler(function(...$args){ return;}, E_ALL);
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Dataphyre Core initializing");
 
@@ -26,14 +20,18 @@ if(!defined('BS_VERSION')){
 }
 else
 {
-	if(version_compare(BS_VERSION, $min_bs='1.0.0', '<')){
+	if(version_compare(BS_VERSION, $min_bs='1.0.1', '<')){
 		pre_init_error("Dataphyre Core is incompatible with Dataphyre Bootstrap version ".BS_VERSION.". Please update to ".$min_bs);
 	}
 }
 
+if(!defined('ALLOW_OUTPUT_POSTPROCESSING')){
+	define('ALLOW_OUTPUT_POSTPROCESSING', true);
+}
+
 // To ensure single application setups still work
-if(!isset($rootpath['common_dataphyre'])){
-	$rootpath['common_dataphyre']=$rootpath['dataphyre'];
+if(!isset(ROOTPATH['common_dataphyre'])){
+	$rootpath['common_dataphyre']=ROOTPATH['dataphyre'];
 }
 
 if(!defined('RUN_MODE')){
@@ -50,7 +48,7 @@ else
 	}
 	else
 	{
-		if(!file_exists($rootpath['dataphyre']."cache/verified")){
+		if(!file_exists(ROOTPATH['dataphyre']."cache/verified")){
 			pre_init_error('Failed verification of dataphyre install.');
 		}
 	}
@@ -80,8 +78,8 @@ if(RUN_MODE==='request'){
 	}
 }
 
-if(file_exists($file=$rootpath['common_dataphyre'].'config/core.php'))require($file);
-if(file_exists($file=$rootpath['dataphyre'].'config/core.php'))require($file);
+if(file_exists($file=ROOTPATH['common_dataphyre'].'config/core.php'))require($file);
+if(file_exists($file=ROOTPATH['dataphyre'].'config/core.php'))require($file);
 
 if(!define('REQUEST_IP_ADDRESS', \dataphyre\core::get_client_ip())){
 	pre_init_error("Unable to assign REQUEST_IP_ADDRESS constant");
@@ -112,7 +110,7 @@ if(RUN_MODE==='request' || RUN_MODE==='diagnostic'){
 
 date_default_timezone_set($configurations['dataphyre']['timezone']);
 
-ini_set('memory_limit',$configurations['dataphyre']['max_execution_memory']);
+ini_set('memory_limit', $configurations['dataphyre']['max_execution_memory']);
 ini_set('max_execution_time', $configurations['dataphyre']['max_execution_time']);
 
 if(RUN_MODE!=='diagnostic'){

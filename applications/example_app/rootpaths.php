@@ -24,3 +24,7 @@ $rootpath['common_root']=__DIR__."/../../";
 $rootpath['common_debug']=__DIR__."/../../common/debug/";
 $rootpath['common_backend']=__DIR__."/../../common/backend/";
 $rootpath['common_dataphyre']=__DIR__."/../../common/dataphyre/";
+
+heisenconstant('ROOTPATH', array_merge($rootpath, [
+    'theme'=>fn()=>$GLOBALS['rootpath']['theme']
+]));

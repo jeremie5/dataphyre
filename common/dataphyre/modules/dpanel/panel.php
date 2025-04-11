@@ -19,8 +19,8 @@ ini_set('display_errors', 0);
 require(__DIR__."/dpanel.main.php");
 
 if(isset($_POST['dataphyre_full'])){
-	\dataphyre\dpanel::diagnose_modules_in_folder($rootpath['common_dataphyre']."modules");
-	\dataphyre\dpanel::diagnose_modules_in_folder($rootpath['dataphyre']."modules");
+	\dataphyre\dpanel::diagnose_modules_in_folder(ROOTPATH['common_dataphyre']."modules");
+	\dataphyre\dpanel::diagnose_modules_in_folder(ROOTPATH['dataphyre']."modules");
 	$trace=\dataphyre\dpanel::get_verbose();
 }
 else

@@ -19,10 +19,10 @@ dp_module_required('localization', 'sql');
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
-if(file_exists($filepath=$rootpath['common_dataphyre']."config/localization.php")){
+if(file_exists($filepath=ROOTPATH['common_dataphyre']."config/localization.php")){
 	require_once($filepath);
 }
-if(file_exists($filepath=$rootpath['dataphyre']."config/localization.php")){
+if(file_exists($filepath=ROOTPATH['dataphyre']."config/localization.php")){
 	require_once($filepath);
 }
 
@@ -54,12 +54,12 @@ class localization{
 	
 	function __construct(?array $initialization=null){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
-		global $rootpath;
-		self::$rebuilder_running_lock_file=$rootpath['dataphyre']."cache/locks/locale_rebuilding";
-		self::$learning_lock_file=$rootpath['dataphyre']."cache/locks/locale_learning";
-		self::$unknown_locales_file=$rootpath['dataphyre']."cache/unknown_locales";
-		self::$last_locale_sync_file=$rootpath['dataphyre']."cache/last_locale_sync";
-		self::$last_locales_file=$rootpath['dataphyre']."cache/last_locales_file";
+	
+		self::$rebuilder_running_lock_file=ROOTPATH['dataphyre']."cache/locks/locale_rebuilding";
+		self::$learning_lock_file=ROOTPATH['dataphyre']."cache/locks/locale_learning";
+		self::$unknown_locales_file=ROOTPATH['dataphyre']."cache/unknown_locales";
+		self::$last_locale_sync_file=ROOTPATH['dataphyre']."cache/last_locale_sync";
+		self::$last_locales_file=ROOTPATH['dataphyre']."cache/last_locales_file";
 		self::$custom_parameters=$initialization['custom_parameters'] ?? [];
 		self::$enable_theme_locales=$initialization['enable_theme_locales'] ?? true;
 		self::$enable_global_locales=$initialization['enable_global_locales'] ?? true;
@@ -369,7 +369,8 @@ class localization{
 						if(false===is_callable($translation_callback)){
 							return $function_exit("no_translation_callback");
 						}
-						$string=html_entity_decode($translation_callback($language, $string));
+						$translation=$translation_callback($language, $string);
+						$string=html_entity_decode($translation);
 					}
 					if(!empty($string)){
 						if($scope==="global"){

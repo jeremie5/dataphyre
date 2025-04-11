@@ -17,14 +17,13 @@ namespace dataphyre;
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
-require_once(__DIR__."/../../config/cdn.php");
+if(file_exists($filepath=ROOTPATH['common_dataphyre']."config/cdn.php")){
+	require_once($filepath);
+}
+if(file_exists($filepath=ROOTPATH['dataphyre']."config/cdn.php")){
+	require_once($filepath);
+}
 
-if(file_exists($filepath=$rootpath['common_dataphyre']."config/cdn.php")){
-	require_once($filepath);
-}
-if(file_exists($filepath=$rootpath['dataphyre']."config/cdn.php")){
-	require_once($filepath);
-}
 if(!isset($configurations['dataphyre']['cdn'])){
 	//core::unavailable("MOD_ASYNC_NO_CONFIG", "safemode");
 }

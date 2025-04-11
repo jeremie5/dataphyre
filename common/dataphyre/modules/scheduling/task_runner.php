@@ -14,14 +14,14 @@
  */
 
 $scheduler_name=$_PARAM['scheduler'];
-$scheduler_path = $rootpath['dataphyre'].'cache/scheduling/'.$scheduler_name;
-$running_lock_file=$rootpath['dataphyre'].'cache/scheduling/'.$scheduler_name.'/running_lock';
+$scheduler_path = ROOTPATH['dataphyre'].'cache/scheduling/'.$scheduler_name;
+$running_lock_file=ROOTPATH['dataphyre'].'cache/scheduling/'.$scheduler_name.'/running_lock';
 if(!file_exists($running_lock_file)){
 	if(method_exists("dataphyre\core", "unavailable")){
 		dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Failed setting scheduler task lock at runtime', $T='safemode');
 	}
 }
-$scheduler=file_get_contents($scheduler_properties_file=$rootpath['dataphyre'].'cache/scheduling/'.$scheduler_name.'/properties.json');
+$scheduler=file_get_contents($scheduler_properties_file=ROOTPATH['dataphyre'].'cache/scheduling/'.$scheduler_name.'/properties.json');
 if(null!==$scheduler=json_decode($scheduler,true)){
 	try {
 		set_time_limit($scheduler['timeout']);
@@ -74,9 +74,9 @@ else
 }
 
 register_shutdown_function(function()use($scheduler_path){
-	global $rootpath, $scheduler_name;
-	$running_lock_file=$rootpath['dataphyre'].'cache/scheduling/'.$scheduler_name.'/running_lock';
-	$last_run_file=$rootpath['dataphyre'].'cache/scheduling/'.$scheduler_name.'/last_run';
+	global $scheduler_name;
+	$running_lock_file=ROOTPATH['dataphyre'].'cache/scheduling/'.$scheduler_name.'/running_lock';
+	$last_run_file=ROOTPATH['dataphyre'].'cache/scheduling/'.$scheduler_name.'/last_run';
     if(dp_module_present('tracelog')){
         file_put_contents($scheduler_path.'/tracelog.html', dataphyre\tracelog::$tracelog, LOCK_EX);
 		echo '<br>';
