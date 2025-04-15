@@ -55,7 +55,7 @@ else
 											<tr>
 												<th>Type</th>
 												<th>File / Module</th>
-												<th>Line</th>
+												<!--<th>Line</th>-->
 												<th style="min-width: 300px;">Message</th>
 											</tr>
 										</thead>
@@ -82,6 +82,7 @@ else
 														foreach ($entry['tracelog'] as $logEntry) {
 															$msgType = strtolower($logEntry['type'] ?? 'info');
 															$countTypes[$msgType] = ($countTypes[$msgType] ?? 0) + 1;
+															$entry['level']=$msgType;
 														}
 														$typeSummary = [];
 														foreach ($countTypes as $msgType => $msgCount) {
@@ -118,17 +119,30 @@ else
 														$message = $entry['fail_string'] ?? $entry['warning_string'] ?? $entry['error'] ?? $entry['message'] ?? $entry['reason'] ?? '';
 														$message = !empty($message) ? nl2br(htmlspecialchars($message)) : '<i>No message provided</i>';
 													}
+													if($entry['level']==='fatal'){
+														$level_color='bg-danger';
+													}
+													elseif($entry['level']==='error'){
+														$level_color='bg-danger';
+													}
+													elseif($entry['level']==='warning'){
+														$level_color='bg-warning';
+													}
+													else
+													{
+														$level_color='bg-info';
+													}
 												?>
 												<tr>
 													<td style="vertical-align: middle;">
-														<h4><span class="badge bg-info"><?= $type ?></span></h4>
+														<h4><span class="badge <?=$level_color;?>"><?= $type ?></span></h4>
 													</td>
 													<td style="vertical-align: middle;">
 														<span <?= $filenameTooltip ?>><?= htmlspecialchars($filenameDisplay) ?></span>
 													</td>
-													<td style="vertical-align: middle;">
+													<!--<td style="vertical-align: middle;">
 														<?= $line ?>
-													</td>
+													</td>-->
 													<td>
 														<div class="d-flex justify-content-between align-items-center">
 															<pre class="mb-0 text-light bg-dark p-2 flex-grow-1" style="white-space: pre-wrap; overflow-x: auto;"><?= $message ?></pre>

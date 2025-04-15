@@ -29,7 +29,7 @@ function convert_storage($size){
 
 function lines_of_code(){
 	if(isset($_SESSION['tracelog_sloc'])) return $_SESSION['tracelog_sloc'];
-    $command="find ".ROOTPATH['common_root']." -type f -name '*.php' ! -path '*/logs/*' ! -path '*/cache/*' -exec wc -l {} + | awk '{total += $1} END{print total}'";
+   $command="find ".ROOTPATH['common_root']." -type f -name '*.php' ! -path '*/logs/*' ! -path '*/cache/*' -print0 | xargs -0 cat | wc -l";
     return $_SESSION['tracelog_sloc']=shell_exec($command);
 }
 
@@ -56,11 +56,11 @@ b, i, body {
 }
 </style>
 <h1>Dataphyre: Tracelog Viewer</h1>
-<span style="font-size: 15px;">CPU: <?=sys_getloadavg()[0]; ?>%</span><br>
+<span style="font-size: 15px;">CPU Usage: <?=round(sys_getloadavg()[0], 3); ?>%</span><br>
 <span style="font-size: 15px;">PHP: <?=phpversion(); ?></span><br>
 <span style="font-size: 15px;">Project execution: <?=number_format($_SESSION['exec_time'], 3); ?>s</span><br>
-<span style="font-size: 15px;">Project SLOC: <?=number_format(lines_of_code(), 0, '.', ","); ?></span><br>
-<span style="font-size: 15px;">Project memory: <?=convert_storage($_SESSION['memory_used']-$_SESSION['runtime_memory_used']); ?> out of <?=convert_storage($_SESSION['memory_used_peak']-$_SESSION['runtime_memory_used']); ?></span><br>
+<span style="font-size: 15px;">Project PHP SLOC: <?=number_format(lines_of_code(), 0, '.', ","); ?></span><br>
+<span style="font-size: 15px;">Project memory: <?=convert_storage($_SESSION['memory_used']-$_SESSION['runtime_memory_used']); ?> out of dynamic allocation of <?=convert_storage($_SESSION['memory_used_peak']-$_SESSION['runtime_memory_used']); ?></span><br>
 <span style="font-size: 15px;">Runtime overhead: <?=convert_storage($_SESSION['runtime_memory_used']); ?></span><br>
 <span style="font-size: 15px;">Project size: <?=code_size(); ?></span><br>
 <span style="font-size: 15px;">Loaded user functions: <?=$_SESSION['defined_user_function_count']; ?></span><br>

@@ -1,0 +1,56 @@
+[
+    {
+        "name": "CreateSessionSuccess",
+        "function": "create_session",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "args": [
+            123,
+            false
+        ],
+        "expected": [
+            true
+        ],
+        "dependencies": {
+            "function": [
+                "sql_insert"
+            ],
+            "constant": [
+               "REQUEST_USER_AGENT",
+               "REQUEST_IP_ADDRESS"
+             ],
+            "global_variable": [
+                "_SESSION",
+                "_SERVER"
+            ]
+        },
+        "max_millis": 500
+    },
+    {
+        "name": "CreateSessionFailSqlInsert",
+        "function": "create_session",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "args": [
+            999,
+            true
+        ],
+        "expected": [
+            false
+        ],
+        "dependencies": {
+            "function": [
+                "sql_insert"
+            ],
+            "constant": [
+               "REQUEST_USER_AGENT",
+               "REQUEST_IP_ADDRESS"
+             ],
+            "global_variable": [
+                "_SESSION",
+                "_SERVER"
+            ]
+        },
+        "max_millis": 500
+    }
+]

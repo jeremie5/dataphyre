@@ -291,8 +291,8 @@ class access{
 		if(null!==$early_return=core::dialback("CALL_ACCESS_DISABLE_SESSION",...func_get_args())) return $early_return;
 		if(isset($_COOKIE[self::$session_cookie])){
 			$dpid=$_COOKIE[self::$session_cookie];
-			if(false!==sql::db_update(
-				$L=core::get_config("dataphyre/access/sessions_table_name"), 
+			if(false!==sql_update(
+				$L=config("dataphyre/access/sessions_table_name"), 
 				$F=[
 					"mysql"=>"active=0", 
 					"postgresql"=>"active=false"
@@ -323,8 +323,8 @@ class access{
 	public static function disable_all_sessions_of_user(int $userid) : bool {
 		if(null!==$early_return=core::dialback("CALL_ACCESS_DISABLE_ALL_SESSIONS_OF_USER",...func_get_args())) return $early_return;
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
-		if(false!==sql::db_update(
-			$L=core::get_config("dataphyre/access/sessions_table_name"), 
+		if(false!==sql_update(
+			$L=config("dataphyre/access/sessions_table_name"), 
 			$F="active=?", 
 			$P="WHERE userid=?", 
 			$V=array(false, $userid), 
@@ -351,7 +351,7 @@ class access{
 			if(!empty($_SESSION['userid']) && !empty($_SESSION['id'])){
 				if(self::validate_id($dpid)){
 					if($_SESSION['ipaddress']!==REQUEST_IP_ADDRESS){
-						sql::db_update(
+						sql_update(
 							$L=$configurations['dataphyre']['access']['sessions_table_name'], 
 							$F="ipaddress=?", 
 							$P=[
@@ -406,7 +406,7 @@ class access{
 					if(!isset($_SESSION['id']) || !isset($_SESSION['userid'])){
 						if(false!==$row=sql_select(
 							$S="*", 
-							$L=core::get_config("dataphyre/access/sessions_table_name"), 
+							$L=config("dataphyre/access/sessions_table_name"), 
 							$P=[
 								"mysql"=>"WHERE id=? AND active=1 AND keepalive=1 AND useragent=? AND ipaddress=?", 
 								"postgresql"=>"WHERE id=? AND active=true AND keepalive=true AND useragent=? AND ipaddress=?"
@@ -490,8 +490,8 @@ class access{
 			exit();
 		};
 		if($prevent_robot===true && self::is_bot()===true){
-			if(!empty(core::get_config("dataphyre/access/requires_app_redirect"))){
-				header('Location: '.core::get_config("dataphyre/access/robot_redirect"));
+			if(!empty(config("dataphyre/access/requires_app_redirect"))){
+				header('Location: '.config("dataphyre/access/robot_redirect"));
 				exit();
 			}
 			$error('This page cannot be selfed by robots.', 403);
@@ -499,8 +499,8 @@ class access{
 		else
 		{
 			if($prevent_mobile===true && self::is_mobile()===true){
-				if(!empty(core::get_config("dataphyre/access/requires_app_redirect"))){
-					header('Location: '.core::get_config("dataphyre/access/requires_app_redirect"));
+				if(!empty(config("dataphyre/access/requires_app_redirect"))){
+					header('Location: '.config("dataphyre/access/requires_app_redirect"));
 					exit();
 				}
 				$error('This page cannot be selfed by mobile devices without an application.', 403);
@@ -510,8 +510,8 @@ class access{
 				if($must_no_session===true){
 					if(self::logged_in()===true){
 						tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="File ".basename($_SERVER["SCRIPT_FILENAME"])." can't be loaded as user is logged in, redirecting to homepage");
-						if(!empty(core::get_config("dataphyre/access/must_no_session_redirect"))){
-							header('Location: '.core::get_config("dataphyre/access/must_no_session_redirect"));
+						if(!empty(config("dataphyre/access/must_no_session_redirect"))){
+							header('Location: '.config("dataphyre/access/must_no_session_redirect"));
 							exit();
 						}
 						$error('This page requires you to not have an active session.', 401);
@@ -539,8 +539,8 @@ class access{
 					{
 						if(self::logged_in()===false){
 							tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="User needs to be logged in, redirecting to login page");
-							if(!empty(core::get_config("dataphyre/access/require_session_redirect"))){
-								header('Location: '.core::get_config("dataphyre/access/require_session_redirect").'?redir='.rtrim(base64_encode(ltrim($_SERVER["REQUEST_URI"], "/")), '='));
+							if(!empty(config("dataphyre/access/require_session_redirect"))){
+								header('Location: '.config("dataphyre/access/require_session_redirect").'?redir='.rtrim(base64_encode(ltrim($_SERVER["REQUEST_URI"], "/")), '='));
 								exit();
 							}
 							$error('This page requires authentication.', 401);

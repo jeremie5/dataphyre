@@ -47,23 +47,25 @@ class dpanel{
 	}
 
 	public static function unit_test(string $json_file_path): bool {
-		
 		$all_passed=true;
-		if(!is_readable($json_file_path) || false===$json_content=file_get_contents($json_file_path) || empty($json_content)){
+		if(false===$json_content=file_get_contents($json_file_path)){
 			self::$verbose[]=[
 				'type'=>'unit_test',
 				'file'=>$json_file_path,
-				'fail_string'=>"JSON file unreadable.",
+				'message'=>"JSON file unreadable.",
+				'level'=>'error',
 				'passed'=>false,
 			];
 			return false;
 		}
+		if(empty($json_content)) return false;
 		$test_definitions=json_decode($json_content, true);
 		if(null===$test_definitions || json_last_error() !== JSON_ERROR_NONE){
 			self::$verbose[]=[
 				'type'=>'unit_test',
 				'file'=>$json_file_path,
-				'fail_string'=>"Invalid JSON format : ".json_last_error_msg().PHP_EOL.$json_file_path,
+				'message'=>"Invalid JSON format : ".json_last_error_msg().PHP_EOL.$json_file_path,
+				'level'=>'error',
 				'passed'=>false,
 			];
 			return false;
@@ -122,7 +124,9 @@ class dpanel{
 						'type'=>'unit_test',
 						'function'=>$function,
 						'test_name'=>$test_case['name'],
-						'fail_string'=>"Invalid test case structure.",
+						'message'=>"Invalid test case structure.",
+						'file'=>basename($json_file_path),
+						'level'=>'error',
 						'passed'=>false,
 					];
 					$all_passed=false;
@@ -131,32 +135,36 @@ class dpanel{
 				$function=$test_case['function'];
 				$args=$test_case['args'];
 				$expected_outcomes=is_array($test_case['expected']) ? $test_case['expected'] : [$test_case['expected']];
+				$failed_dependencies=false;
 				foreach([
 					"function"=>"function_exists", 
 					"class"=>"class_exists", 
-					"constant"=>function($const) { return defined($const); },
-					"global_variable"=>function($var) { return isset($GLOBALS[$var]); }
-					] as $dependency=>$dependency_function
-				){		
-					if(is_array($test_case['dependencies'][$dependency])){
+					"constant"=>fn($const)=>defined($const),
+					"global_variable"=>fn($var)=>isset($GLOBALS[$var])
+				] as $dependency=>$dependency_function){
+					if(isset($test_case['dependencies'][$dependency]) && is_array($test_case['dependencies'][$dependency])){
 						foreach($test_case['dependencies'][$dependency] as $dependency_element){
 							if(is_array($dependency_element)){
-								$dependency_element=array_keys($dependency_element)[0];
-								$fail_string=array_values($dependency_element)[0];
+								$keys=array_keys($dependency_element);
+								$dependency_element_name=$keys[0];
+								$fail_string=$dependency_element[$dependency_element_name];
 							}
 							else
 							{
-								$fail_string="Function for unit test $function is dependant upon the $dependency $dependency_element which is not initialized.";
+								$dependency_element_name=$dependency_element;
+								$fail_string="Function for unit test \"$function\" is dependant upon the $dependency \"$dependency_element_name\" which is not initialized.";
 							}
-							if(!call_user_func($dependency_function, $dependency_element)){
+							if(!call_user_func($dependency_function, $dependency_element_name)){
 								self::$verbose[]=[
 									'type'=>'unit_test',
 									'test_name'=>$test_case['name'],
-									'fail_string'=>$fail_string,
+									'level'=>'error',
+									'file'=>basename($json_file_path),
+									'message'=>$fail_string,
 									'passed'=>false,
 								];
 								$failed_dependencies=true;
-								break;
+								break 2; // break both loops since one failure is enough
 							}
 						}
 					}
@@ -165,19 +173,23 @@ class dpanel{
 					$all_passed=false;
 					continue;
 				}
-				$test_case_file=isset($test_case['file']) ? $roothpath['root'].$test_case['file'] : (isset($test_case['file_dynamic']) ? eval($test_case['file_dynamic']) : null);
-				if(!$test_case_file || !is_readable($test_case_file)){
-					self::$verbose[]=[
-						'type'=>'unit_test',
-						'test_name'=>$test_case['name'],
-						'test_case_file'=>$test_case_file,
-						'fail_string'=>"Test case file not found or unreadable: $test_case_file.",
-						'passed'=>false,
-					];
-					$all_passed=false;
-					continue;
+				$test_case_file=isset($test_case['file']) ? ROOTPATH['root'].$test_case['file'] :(isset($test_case['file_dynamic']) ? eval($test_case['file_dynamic']) : null);
+				if(!empty($test_case_file)){
+					if(!$test_case_file || !is_string($test_case_file) || !is_readable($test_case_file)){
+						self::$verbose[]=[
+							'type'=>'unit_test',
+							'test_name'=>$test_case['name'],
+							'test_case_file'=>(string)$test_case_file,
+							'message'=>"Test case file not found or unreadable: $test_case_file.",
+							'level'=>'error',
+							'file'=>basename($json_file_path),
+							'passed'=>false,
+						];
+						$all_passed=false;
+						continue;
+					}
+					include_once($test_case_file);
 				}
-				include_once($test_case_file);
 				if(isset($test_case['class'])){
 					$class_name=$test_case['class'];
 					if(!class_exists($class_name)){
@@ -186,8 +198,10 @@ class dpanel{
 							'function'=>$function,
 							'test_name'=>$test_case['name'],
 							'test_case_file'=>$test_case_file,
-							'fail_string'=>"Class $class_name does not exist in $test_case_file",
+							'message'=>"Class $class_name does not exist in $test_case_file",
+							'level'=>'error',
 							'input'=>json_encode($args),
+							'file'=>basename($json_file_path),
 							'passed'=>false,
 						];
 						$all_passed=false;
@@ -208,8 +222,10 @@ class dpanel{
 							'function'=>$function,
 							'test_name'=>$test_case['name'],
 							'test_case_file'=>$test_case_file,
-							'fail_string'=>"Method $function does not exist in class $class_name",
+							'message'=>"Method $function does not exist in class $class_name",
+							'level'=>'error',
 							'input'=>json_encode($args),
+							'file'=>basename($json_file_path),
 							'passed'=>false,
 						];
 						$all_passed=false;
@@ -227,8 +243,10 @@ class dpanel{
 							'function'=>$function,
 							'test_name'=>$test_case['name'],
 							'test_case_file'=>$test_case_file,
-							'fail_string'=>"Function $function does not exist in $test_case_file",
+							'message'=>"Function $function does not exist in $test_case_file",
+							'level'=>'error',
 							'input'=>json_encode($args),
+							'file'=>basename($json_file_path),
 							'passed'=>false,
 						];
 						$all_passed=false;
@@ -243,8 +261,10 @@ class dpanel{
                         'type'=>'performance_warning',
                         'test_name'=>$test_case['name'],
 						'test_case_file'=>$test_case_file,
-                        'warning_string'=>"Execution time exceeded max_millis threshold: {$execution_time}s",
+                        'message'=>"Execution time exceeded max_millis threshold: {$execution_time}s",
+						'level'=>'error',
 						'execution_time'=>$execution_time,
+						'file'=>basename($json_file_path),
 						'passed'=>false
                     ];
 					$all_passed=false;
@@ -262,8 +282,10 @@ class dpanel{
 						'function'=>$function,
 						'test_name'=>$test_case['name'],
 						'test_case_file'=>$test_case_file,
-						'fail_string'=>"Unit test ".$test_case['name']."expected one of ".json_encode($expected_outcomes)." but got ".json_encode($result),
+						'message'=>"Unit test \"".$test_case['name']."\" expected one of ".json_encode($expected_outcomes)." but got ".json_encode($result),
+						'level'=>'error',
 						'execution_time'=>$execution_time,
+						'file'=>basename($json_file_path),
 						'passed'=>false,
 					];
 					$all_passed=false;
@@ -277,6 +299,8 @@ class dpanel{
 						'test_name'=>$test_case['name'],
 						'test_case_file'=>$test_case_file,
 						'execution_time'=>$execution_time,
+						'file'=>basename($json_file_path),
+						'message'=>'Unit test "'.$test_case['name'].'" for function "'.$function.'" passed in '.number_format($execution_time, 8).'s',
 						'passed'=>true,
 					];
 				}
@@ -285,9 +309,10 @@ class dpanel{
 					'type'=>'unit_test',
 					'function'=>$function ?? 'Unknown',
 					'test_name'=>$test_case['name'] ?? 'Unknown',
-					'fail_string'=>$e->getMessage(),
+					'message'=>$e->getMessage(),
 					'line'=>$e->getLine(),
-					'error'=>'unexpected_error',
+					'file'=>basename($json_file_path),
+					'level'=>'error',
 					'passed'=>false,
 				];
 				$all_passed=false;
@@ -298,11 +323,11 @@ class dpanel{
 	}
 
 	public static function diagnose_module(string $module): bool {
-	
-		$procedure=function(string $module, string $module_path, array ROOTPATH){
+		$procedure=function(string $module, string $module_path){
 			if(false===$content=file_get_contents($module_path)){
 				self::$verbose[]=[
 					'type'=>'file_missing', 
+					'level'=>'error',
 					'module'=>$module, 
 					'file'=>$module_path, 
 				];
@@ -311,6 +336,7 @@ class dpanel{
 			if(false===$validation=self::validate_php($content)){
 				self::$verbose[]=[
 					'type'=>'php_validation_error', 
+					'level'=>'error',
 					'module'=>$module, 
 					'error'=>$validation, 
 				];
@@ -329,6 +355,14 @@ class dpanel{
 				if(is_dir($unit_test_dir)){
 					$test_files=glob($unit_test_dir . '/*.json');
 					$all_tests_passed=true;
+					usort($test_files, function ($a, $b){
+						$a_has_construct=stripos($a, 'construct') !== false;
+						$b_has_construct=stripos($b, 'construct') !== false;
+						if($a_has_construct===$b_has_construct){
+							return 0;
+						}
+						return $a_has_construct ? -1 : 1;
+					});
 					foreach($test_files as $json_file){
 						$passed=self::unit_test($json_file);
 						if(!$passed){
@@ -337,25 +371,26 @@ class dpanel{
 					}
 					if(!$all_tests_passed){
 						self::$verbose[]=[
-							'type'=>'unit_test_failed', 
+							'type'=>'unit_test', 
 							'module'=>$module, 
+							'message'=>'Unit tests failed for module '.$module, 
+							'level'=>'error',
 						];
 						return false;
 					}
-				}
-				else
-				{
-					self::$verbose[]=[
-						'type'=>'unit_test_skipped', 
-						'reason'=>'unit_tests folder missing', 
-						'folder'=>$unit_test_dir, 
-						'module'=>$module, 
-					];
+					else
+					{
+						self::$verbose[]=[
+							'message'=>'Unit tests passed for module '.$module, 
+							'module'=>$module, 
+						];
+					}
 				}
 				return true;
 			}catch(\Throwable $exception){
 				self::$verbose[]=[
 					'type'=>'php_exception', 
+					'level'=>'error',
 					'module'=>$module, 
 					'exception'=>$exception, 
 				];
@@ -363,13 +398,13 @@ class dpanel{
 			}
 		};
 		if(!defined("DP_CORE_LOADED")){
-			if(!$procedure('core', ROOTPATH['common_dataphyre'].'modules/core/core.main.php', ROOTPATH)){
+			if(!$procedure('core', ROOTPATH['common_dataphyre'].'modules/core/core.main.php')){
 				return false;
 			}
 		}
 		if($module_path=dp_module_present($module)[0]){
 			if(!in_array($module_path, get_included_files())){
-				if($procedure($module, $module_path, ROOTPATH)){
+				if($procedure($module, $module_path)){
 					return true;
 				}
 			}
@@ -378,6 +413,7 @@ class dpanel{
 		{
 			self::$verbose[]=[
 				'type'=>'module_missing', 
+				'level'=>'error',
 				'module'=>$module, 
 			];	
 		}

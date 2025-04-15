@@ -33,6 +33,7 @@ new localization();
 class localization{
 
 	public static $available_languages;
+	public static $available_themes;
 
 	private static $locale=[];
 	private static $translation_callback;
@@ -68,6 +69,7 @@ class localization{
 		self::$user_language=$initialization['user_language'] ?? 'en-CA';
 		self::$translation_callback=$initialization['translation_callback'] ?? null;
 		self::$available_languages=$initialization['available_languages'] ?? null;
+		self::$available_themes=$initialization['available_themes'] ?? null;
 		self::$user_theme=$initialization['user_theme'] ?? null;
 		self::$global_locale_path=$initialization['global_locale_path'] ?? null;
 		self::$theme_locale_path=$initialization['theme_locale_path'] ?? null;

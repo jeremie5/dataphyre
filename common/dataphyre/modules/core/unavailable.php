@@ -39,7 +39,7 @@ $show_error_code=true;
 $title='';
 $content='';
 if($_GET['t']==="maintenance"){
-	$httpcode=503;
+	$httpcode=IS_PRODUCTION ? 503 : 200;
 	$content.='<center><p style="font-size:40px">We\'re currently in maintenance mode</center>';
 	$content.='<center><p style="font-size:25px">We\'re sorry for the inconvenience this may have caused you.</center><br><br>';
 	if(!empty($configurations["dataphyre"]["core"]["unavailable"]["status_url"])){
@@ -48,13 +48,13 @@ if($_GET['t']==="maintenance"){
 	}
 }
 elseif($_GET['t']==="country_blocked"){
-	$httpcode=503;
+	$httpcode=IS_PRODUCTION ? 503 : 200;
 	$show_error_code=false;
 	$title='Information';
 	$content.='<center><b style="font-size:40px">'.$configurations['dataphyre']['public_app_name'].' isn\'t currently available in your country.</b></center><br><br><br><br><br>';
 }
 elseif($_GET['t']==="loadlevel"){
-	$httpcode=503;
+	$httpcode=IS_PRODUCTION ? 503 : 200;
 	$title='Servers Are Currently Overloaded';
 	$content.='<center><p style="font-size:40px">Our servers are currently at capacity 🙁</center>';
 	$content.='<center><p style="font-size:25px">We\'re sorry for the inconvenience this may have caused you.</center><br>';
@@ -66,7 +66,7 @@ elseif($_GET['t']==="loadlevel"){
 }
 else
 {
-	$httpcode=503;
+	$httpcode=IS_PRODUCTION ? 503 : 200;
 	$title='Something Went Wrong';
 	$content.='<center><p style="font-size:40px">Something went wrong on our end 🙁</center>';
 	$content.='<center><p style="font-size:25px">We\'re sorry for the inconvenience this may have caused you.</center><br><br>';

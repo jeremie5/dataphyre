@@ -1,0 +1,40 @@
+[
+    {
+        "name": "user_logged_in",
+        "function": "logged_in",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "args": [],
+        "expected": true,
+        "dependencies": {
+            "class": [
+                "dataphyre\\access"
+            ],
+            "function": [
+                "dataphyre\\access::logged_in"
+            ],
+            "global_variable": [
+                "_SESSION"
+            ]
+        }
+    },
+    {
+        "name": "user_not_logged_in",
+        "function": "logged_in",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "args": [],
+        "expected": false,
+        "dependencies": {
+            "class": [
+                "dataphyre\\access"
+            ],
+            "function": [
+                "dataphyre\\access::logged_in"
+            ],
+            "global_variable": [
+                "_SESSION"
+            ]
+        }
+    }
+]

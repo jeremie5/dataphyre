@@ -20,7 +20,7 @@ use \DateTimeZone;
 
 class core {
 	
-	public static $server_load_level=1; // 1 to 5, 5 representing highest server load. Dynamic value. Jérémie Fréreault - Prior to 2024-07-22 
+	public static $server_load_level=null; // null or 1 to 5, 5 representing highest server load. Dynamic value. Jérémie Fréreault - Prior to 2024-07-22 
 	
 	public static $server_load_bottleneck=null; // String cause of resource bottlenecking. Jérémie Fréreault - Prior to 2024-07-22
 	
@@ -33,18 +33,30 @@ class core {
 	public static $display_language="en";
 	
 	public static function load_plugins(string $type): void {
-	
-		if(function_exists("tracelog")){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Looking for $type plugins");
-		}
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Looking for $type plugins");
 		foreach(['common_dataphyre', 'dataphyre'] as $plugin_path){
 			foreach(glob(ROOTPATH[$plugin_path].'plugins/'.$type.'/*.php') as $plugin){
-				if(function_exists("tracelog")){
-					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Loading $type plugin at $plugin");
-				}
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Loading $type plugin at $plugin");
 				require($plugin);
 			}
 		}
+	}
+
+	public static function end_client_connection(?string $output=null): void {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
+		ignore_user_abort(true);
+		if(ob_get_level()===0) ob_start();
+		if($output===null) $output=ob_get_contents();
+		ob_end_clean();
+		ob_start();
+		header('Connection: close');
+		header('Content-Length: '.strlen($output));
+		echo $output;
+		ob_end_flush();
+		flush();
+		if(function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+		if(session_status()===PHP_SESSION_ACTIVE) session_write_close();
 	}
 	
 	/**
@@ -115,30 +127,6 @@ class core {
 		core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D="Dialback function does not exist.", $T="safemode");
 	}
 	
-	/**
-	 * Sets various HTTP security headers for the response.
-	 * This method is part of the Datahyre project and is designed to improve the security of web applications.
-	 * 
-	 * @author Jérémie Fréreault <jeremie@phyro.ca>
-	 * @package dataphyre\core
-	 * @static
-	 * 
-	 * @global string $nonce A unique cryptographic token used for security.
-	 * 
-	 * @uses \dataphyre\tracelog Traces the function call if the tracelog class exists.
-	 * @uses core::dialback Allows for early return or modification via a dialback mechanism.
-	 * 
-	 * @return mixed The result of the dialback if it provides an early return, otherwise void.
-	 * 
-	 * @example
-	 *  // In a bootstrap or front-controller file:
-	 *  \dataphyre\core::set_http_headers();
-	 * 
-	 * @commonpitfalls
-	 *  1. Ensure this function is called before any output is sent to avoid "headers already sent" errors.
-	 *  2. Custom headers set after calling this function may override these settings.
-	 *  3. This function sets a strict Content-Security-Policy, which might break inline scripts or styles if not properly accounted for.
-	 */
 	public static function set_http_headers(){
 		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
@@ -171,7 +159,7 @@ class core {
 	 * @uses core::dialback Allows for early return or modification via a dialback mechanism.
 	 * @uses core::unavailable Handles server unavailability scenarios based on resource overload.
 	 * 
-	 * @return int|mixed Returns the server load level (from 0 to 5), or the result of the dialback if it provides an early return.
+	 * @return int Returns the server load level (from 0 to 5), or the result of the dialback if it provides an early return.
 	 * 
 	 * @example
 	 *  // Retrieve the current server load level
@@ -182,153 +170,90 @@ class core {
 	 *  2. High CPU or memory usage will trigger an unavailable status, effectively shutting down the service. Ensure proper resource management.
 	 *  3. Caching the server load level can result in stale or inaccurate data.
 	 */
-	public static function get_server_load_level() : string {
-		if(null!==$early_return=core::dialback("CALL_CORE_GET_SERVER_LOAD_LEVEL",...func_get_args())) return $early_return;
-		if(isset(core::$server_load_level)){
-			return core::$server_load_level;
+	public static function get_server_load_level() : int {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
+		if(null!==$early_return=self::dialback("CALL_CORE_GET_SERVER_LOAD_LEVEL", ...func_get_args())) return $early_return;
+		if(self::$server_load_level!==null) return self::$server_load_level;
+		$cache_file=ROOTPATH['common_dataphyre'].'cache/load_level.php';
+		if(file_exists($cache_file) && is_readable($cache_file)){
+			$cache=include($cache_file);
+			if(is_array($cache) && isset($cache['level'], $cache['timestamp'], $cache['bottleneck'])){
+				if(time()-$cache['timestamp']<5){
+					self::$server_load_bottleneck=$cache['bottleneck'];
+					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, "Level: ".$cache['level']." | Bottleneck: ".$cache['bottleneck']);
+					return self::$server_load_level=$cache['level'];
+				}
+			}
+		}
+		$meminfo=[];
+		$fh=fopen('/proc/meminfo', 'r');
+		if($fh){
+			while(($line=fgets($fh))!==false){
+				if(preg_match('/^(\w+):\s+(\d+)/', $line, $matches)){
+					$meminfo[$matches[1]]=(int)$matches[2];
+				}
+			}
+			fclose($fh);
+		}
+		$cpu_load=CPU_USAGE;
+		$memory_usage=0;
+		if(!empty($meminfo['MemAvailable']) && !empty($meminfo['MemTotal'])){
+			$used=$meminfo['MemTotal']-$meminfo['MemAvailable'];
+			$memory_usage=round(($used/$meminfo['MemTotal'])*100, 1);
+		}
+		if($cpu_load>=85){
+			$level=5;
+			$bottleneck='cpu';
+		}
+		elseif($memory_usage>=85){
+			$level=5;
+			$bottleneck='memory';
 		}
 		else
 		{
-			$mem=array_merge(array_filter(explode(" ", explode("\n", (string)trim(shell_exec('free')))[1])));
-			$memory_usage=round($mem[2]/$mem[1], 3);
-			$cpu_load=sys_getloadavg()[0];
-			if($cpu_load>=85){
-				$level=5;
-				core::$server_load_bottleneck="cpu";
-			}
-			elseif($memory_usage>=85){
-				$level=5;
-				core::$server_load_bottleneck="memory";
-			}
-			else
-			{
-				$collective_average=($memory_usage+$cpu_load)/2;
-				$level=round(($collective_average*5)/100);
-			}
-			return core::$server_load_level=$level;
+			$collective_average=($memory_usage+$cpu_load) / 2;
+			$level=round(($collective_average*5) / 100);
+			$bottleneck='balanced';
 		}
+		self::$server_load_level=$level;
+		self::$server_load_bottleneck=$bottleneck;
+		$tracelog="Level: $level | Bottleneck: $bottleneck | CPU: ".round($cpu_load,1)." % | Memory: ".round($memory_usage,1)." %";
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $tracelog);
+		$payload="<?php return ['level'=>".var_export($level,true).", 'bottleneck'=>".var_export($bottleneck,true).", 'timestamp'=>".time()."];";
+		self::file_put_contents_forced($cache_file, $payload, LOCK_EX);
+		return $level;
 	}
-	
-	/**
-	 * Creates a lock file to indicate that delayed requests are being processed.
-	 * 
-	 * @author Jérémie Fréreault <jeremie@phyro.ca>
-	 * @package dataphyre\core
-	 * @static
-	 * 
-	 * @global array ROOTPATH Contains the root paths used within the Datahyre application.
-	 * 
-	 * @uses log_error Logs errors related to lock file creation.
-	 * @uses core::unavailable Handles server unavailability scenarios.
-	 * 
-	 * @return void
-	 * 
-	 * @example
-	 *  // Lock the system for delayed requests processing
-	 *  \dataphyre\core::delayed_requests_lock();
-	 * 
-	 * @commonpitfalls
-	 *  1. Make sure you have write permission to the directory specified in ROOTPATH['dataphyre'] to avoid failure in lock creation.
-	 *  2. Not handling the lock properly can block further delayed requests.
-	 *  3. If the lock file is not deleted after use, it may cause false positives in system availability checks.
-	 */
+
 	public static function delayed_requests_lock() : void {
-	
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		if(fopen(ROOTPATH['dataphyre']."delaying_lock", 'w+')===false){
-			log_error("Failed to create delaying lock");
-			core::unavailable("DPE-003", "safemode");
+			self::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D="Failed to create delaying lock", $T="safemode");
 		}
 	}
 	
-	/**
-	 * Removes the lock file indicating that delayed requests are being processed.
-	 * 
-	 * @author Jérémie Fréreault <jeremie@phyro.ca>
-	 * @package dataphyre\core
-	 * @static
-	 * 
-	 * @global array ROOTPATH Contains the root paths used within the Datahyre application.
-	 * 
-	 * @uses log_error Logs errors related to lock file removal.
-	 * @uses core::unavailable Handles server unavailability scenarios.
-	 * 
-	 * @return void
-	 * 
-	 * @example
-	 *  // Unlock the system after processing delayed requests
-	 *  \dataphyre\core::delayed_requests_unlock();
-	 * 
-	 * @commonpitfalls
-	 *  1. Ensure you have write permission to the directory specified in ROOTPATH['dataphyre'] to avoid failure in lock removal.
-	 *  2. Not handling the lock properly can block further delayed requests.
-	 *  3. Failure to remove the lock can lead to system unavailability.
-	 */
 	public static function delayed_requests_unlock() : void {
-	
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		if(!unlink(ROOTPATH['dataphyre']."delaying_lock")){
-			log_error("Failed to remove delaying lock");
-			core::unavailable("DPE-003", "safemode");
+			self::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D="Failed to remove delaying lock", $T="safemode");
 		}
 	}
-	
-	/**
-	 * Checks for the presence of a lock file and waits if it exists, indicating that delayed requests are being processed.
-	 * 
-	 * @author Jérémie Fréreault <jeremie@phyro.ca>
-	 * @package dataphyre\core
-	 * @static
-	 * 
-	 * @global array ROOTPATH Contains the root paths used within the Datahyre application.
-	 * 
-	 * @uses core::unavailable Handles server unavailability scenarios if the lock file persists.
-	 * 
-	 * @return void
-	 * 
-	 * @example
-	 *  // Check and wait for the delayed requests lock to be released
-	 *  \dataphyre\core::check_delayed_requests_lock();
-	 * 
-	 * @commonpitfalls
-	 *  1. Ensure that this method is used cautiously to avoid waiting unnecessarily, which can block other operations.
-	 *  2. A maximum of 15 seconds wait is implemented; make sure delayed requests are processed within this time frame to avoid system unavailability.
-	 *  3. Failure to remove the lock from a previous operation can lead to false system unavailability.
-	 */
+
 	public static function check_delayed_requests_lock() : void {
-	
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		$timer=0;
-		while($timer<15){
+		while($timer<5){
 			if(!is_file(ROOTPATH['dataphyre']."delaying_lock")){
 				break;
 			}
-			sleep(1);
+			usleep(100000);
 			$timer++;
 		}
 		if(is_file(ROOTPATH['dataphyre']."delaying_lock")){
+			core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D="Delaying lock is active", $T="maintenance");
 			core::unavailable("DPE-004", "safemode");
 		}
 	}
 	
-	/**
-	 * Returns a minified CSS string to load and apply the Phyro-Bold font from a CDN.
-	 * This method is part of the Datahyre project.
-	 * 
-	 * @author Jérémie Fréreault <jeremie@phyro.ca>
-	 * @package dataphyre\core
-	 * @static
-	 * 
-	 * @uses tracelog Logs the function call for debugging and traceability.
-	 * 
-	 * @return string Minified CSS for applying the Phyro-Bold font.
-	 * 
-	 * @example
-	 *  // Get the minified CSS string for Phyro-Bold font
-	 *  $cssString = \dataphyre\core::minified_font();  // Output would be the minified CSS
-	 * 
-	 * @commonpitfalls
-	 *  1. The font is loaded from a CDN, make sure the URL is reachable from the client's location.
-	 *  2. This function returns the CSS as a string. Make sure to properly inject it into your HTML or CSS file.
-	 *  3. Be cautious about Content Security Policy (CSP) settings that might block external font resources.
-	 */
 	public static function minified_font() : string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		return "@font-face{font-family:Phyro-Bold;src:url('https://cdn.shopiro.ca/assets/universal/fonts/Phyro-Bold.ttf')}.phyro-bold{font-family:'Phyro-Bold', sans-serif;font-weight:700;font-style:normal;line-height:1.15;letter-spacing:-.02em;-webkit-font-smoothing:antialiased}";
@@ -844,7 +769,6 @@ class core {
 		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		}
-	
 		log_error("Service unavailability: ".$error_description, new \Exception(json_encode(func_get_args())));
 		$error_code=substr(strtoupper(md5($error_description.$error_type.$file.$class.$function)), 0, 8);
 		$known_error_conditions=json_decode(file_get_contents($known_error_conditions_file=ROOTPATH['dataphyre']."cache/known_error_conditions.json"),true);
@@ -949,7 +873,7 @@ class core {
 				$query_string=$parsed_url['query'] ?? '';
 				if(!empty($query_string)){
 					parse_str($query_string, $query_string_array);
-					unset($query_string_array['uri']); // Remove internal parameters if needed
+					unset($query_string_array['uri']);
 					$query_string=!empty($query_string_array) ? '?' . http_build_query($query_string_array, '', '&', PHP_QUERY_RFC3986) : '';
 				}
 				return $cache[$full]=$protocol.'://'.$host.$path.$query_string;

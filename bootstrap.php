@@ -18,6 +18,7 @@ define('BS_VERSION', '1.0.1');
 $rootpath['dataphyre']=__DIR__;
 
 define('INITIAL_MEMORY_USAGE', memory_get_usage());
+define('CPU_USAGE', sys_getloadavg()[0]);
 
 $_SERVER['REQUEST_TIME_FLOAT']=microtime(true);
 
@@ -28,6 +29,10 @@ header_remove('X-Powered-By');
 header('Server: Dataphyre');
 
 $bootstrap_config=require(__DIR__.'/config.php');
+
+define('IS_PRODUCTION', $bootstrap_config['is_production'] ?? true);
+
+define('LICENSE', $bootstrap_config['license'] ?? false);
 
 if(in_array($_SERVER['SERVER_ADDR'], ['localhost', '127.0.0.1', '192.168.0.1', '0.0.0.0'])){
 	$_SERVER['SERVER_ADDR']=$bootstrap_config['public_ip_address'];
@@ -210,7 +215,7 @@ function pre_init_error(?string $error_message=null, ?object $exception=null) : 
 	if(isset($error_message)){
 		log_error('Pre-init error: '.$error_message, $exception);
 	}
-	http_response_code(200);
+	http_response_code(IS_PRODUCTION ? 503 : 200);
 	header('Retry-After: 300');
 	header('Content-Type: text/html');
 	echo'<!DOCTYPE html>';

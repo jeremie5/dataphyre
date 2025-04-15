@@ -25,6 +25,10 @@ if(file_exists($filepath=ROOTPATH['dataphyre']."config/tracelog.php")){
 }
 
 register_shutdown_function(function(){
+	if(tracelog::$defer){
+		tracelog::$defer=false;
+		tracelog::process_retroactive();
+	}
 	$_SESSION['tracelog']=tracelog::$tracelog;
 });
 
@@ -35,17 +39,8 @@ if(defined('TRACELOG_BOOT_ENABLE')){
 	if(defined('TRACELOG_BOOT_ENABLE_PLOTTING')){
 		tracelog::setPlotting(true);
 	}
-	if(isset($retroactive_tracelog) && is_array($retroactive_tracelog)){
-		if(class_exists('\dataphyre\tracelog')){
-			if(tracelog::$enable===true){
-				foreach(array_reverse($retroactive_tracelog) as $log){
-					tracelog::tracelog(...$log);
-				}
-			}
-		}
-	}
+	tracelog::process_retroactive();
 }
-unset($retroactive_tracelog, $log);
 
 class tracelog {
 	
@@ -56,14 +51,33 @@ class tracelog {
 	public static $file=false;
 	public static $profiling=false;
     public static $plotting=false;
+    public static $defer=true;
     
 	public function __construct(){
 		self::$constructed=true;
 		self::set_handler();
 	}
 	
+	public static function process_retroactive(): void {
+		global $retroactive_tracelog;
+		if(isset($retroactive_tracelog) && is_array($retroactive_tracelog)){
+			if(self::$enable===true){
+				foreach(array_reverse($retroactive_tracelog) as $log){
+					if(is_string($log)){
+						self::$tracelog=$log.self::$tracelog;
+					}
+					else
+					{
+						self::tracelog(...$log);
+					}
+				}
+			}
+		}
+		unset($retroactive_tracelog);
+	}
+	
 	public static function buffer_callback(mixed $buffer): mixed {
-		if(tracelog::$open===true){
+		if(self::$open===true){
 			$all_defined_functions=function(){
 				$global_functions=get_defined_functions()['user'];
 				$class_methods=[];
@@ -115,12 +129,19 @@ class tracelog {
 				core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreTracelog: Fatal error during execution.', 'safemode');
 			}
 			if(self::$enable===true){
-				self::$tracelog.='<br><table style="border: 1px solid white;"><tr><th style="color:red">Error</th><th style="color:red">File</th><th style="color:red">Line</th></tr><tr><td style="border: 1px solid white;">'.htmlspecialchars($errstr).'</td><td style="border: 1px solid white;">'.$errfile.'</td> <td style="border: 1px solid white;">'.$errline.'</td></tr></table>';
+				$log='<br><table style="border: 1px solid white;"><tr><th style="color:red">Error</th><th style="color:red">File</th><th style="color:red">Line</th></tr><tr><td style="border: 1px solid white;">'.htmlspecialchars($errstr).'</td><td style="border: 1px solid white;">'.$errfile.'</td> <td style="border: 1px solid white;">'.$errline.'</td></tr></table>';
+				if(self::$defer===true){
+					$GLOBALS['retroactive_tracelog'][]=$log;
+				}
+				else
+				{
+					self::$tracelog.=$log;
+				}
 			}
 			return true;
 		});
 	}
-	
+
 	/**
 	  * Save tracelog to session variable and or file
 	  *
@@ -139,12 +160,16 @@ class tracelog {
 	  * @return bool											True on success, false on failure
 	  */
 	public static function tracelog(?string $filename_full, ?string $line, ?string $class, ?string $function, ?string $text, ?string $type="info", ?array $arguments=null, ?float $retroactive_time=null, ?int $retroactive_memory=null) : bool {
-		if(self::$enable===false)return false;
+		if(self::$enable===false) return false;
+		if(self::$defer===true){
+			$GLOBALS['retroactive_tracelog'][]=[$filename_full, $line, $class, $function, $text, $type, $arguments, microtime(true), memory_get_usage()];
+			return true;
+		}
 		static $last_function_signature=null;
 		static $function_colors=[];
 		if(!empty($class))$function=$class.'::'.$function;
 		$time=$retroactive_time ?? microtime(true);
-		$memory=$retroactive_memory ?? memory_get_usage()-INITIAL_MEMORY_USAGE;
+		$memory=($retroactive_memory ?? memory_get_usage())-INITIAL_MEMORY_USAGE;
 		$tracelog_time=number_format(($time-$_SERVER["REQUEST_TIME_FLOAT"])*1000, 3, '.');
 		$pre='';
 		if(!empty($function)){

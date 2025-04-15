@@ -1,0 +1,21 @@
+[
+  {
+    "name": "Basic Access Constructor Init",
+    "function": "__construct",
+    "args": [],
+    "class": "dataphyre\\access",
+    "static_method": false,
+    "expected": "object",
+    "dependencies": {
+      "class": ["dataphyre\\access"],
+      "global_variable": [
+        "_SESSION",
+        "_SERVER",
+        "configurations"
+      ],
+      "constant": ["REQUEST_USER_AGENT", "REQUEST_IP_ADDRESS"]
+    },
+     "file_dynamic": "return dp_module_present(\"access\")[0];",
+    "max_millis": 100
+  }
+]

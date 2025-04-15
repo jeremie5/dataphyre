@@ -1,0 +1,65 @@
+[
+    {
+        "name": "DetectAndroidDevice",
+        "function": "is_mobile",
+        "args": [],
+        "expected": true,
+        "file": "/dataphyre/access.php",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "dependencies": {
+            "function": [
+                "is_mobile"
+            ],
+            "class": [
+                "dataphyre\\access"
+            ],
+            "global_variable": [
+                "_SESSION"
+            ]
+        },
+        "max_millis": 100
+    },
+    {
+        "name": "DetectDesktopDevice",
+        "function": "is_mobile",
+        "args": [],
+        "expected": false,
+        "file": "/dataphyre/access.php",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "dependencies": {
+            "function": [
+                "is_mobile"
+            ],
+            "class": [
+                "dataphyre\\access"
+            ],
+            "global_variable": [
+                "_SESSION"
+            ]
+        },
+        "max_millis": 100
+    },
+    {
+        "name": "DetectiPhoneDevice",
+        "function": "is_mobile",
+        "args": [],
+        "expected": true,
+        "file_dynamic": "return $roothpath['dataphyre'].'access.php';",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "dependencies": {
+            "function": [
+                "is_mobile"
+            ],
+            "class": [
+                "dataphyre\\access"
+            ],
+            "global_variable": [
+                "_SESSION"
+            ]
+        },
+        "max_millis": 100
+    }
+]
