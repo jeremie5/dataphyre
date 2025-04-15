@@ -1,0 +1,32 @@
+[
+    {
+        "name": "User is logged in",
+        "function": "userid",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "args": [],
+        "expected": [
+            123
+        ],
+        "dependencies": {
+            "global_variable": [
+                "_SESSION"
+            ]
+        }
+    },
+    {
+        "name": "User is not logged in",
+        "function": "userid",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "args": [],
+        "expected": [
+            false
+        ],
+        "dependencies": {
+            "global_variable": [
+                "_SESSION"
+            ]
+        }
+    }
+]

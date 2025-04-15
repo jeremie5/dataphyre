@@ -1,0 +1,38 @@
+[
+    {
+        "name": "Valid session recently validated (cached)",
+        "function": "validate_session",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "args": [
+            true
+        ],
+        "expected": true,
+        "dependencies": {
+            "class": [
+                "dataphyre\\access"
+            ],
+            "function": [
+                "sql_select"
+            ]
+        }
+    },
+    {
+        "name": "Session not valid due to IP mismatch",
+        "function": "validate_session",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "args": [
+            false
+        ],
+        "expected": false,
+        "dependencies": {
+            "class": [
+                "dataphyre\\access"
+            ],
+            "function": [
+                "sql_select"
+            ]
+        }
+    }
+]

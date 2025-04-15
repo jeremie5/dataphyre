@@ -1,0 +1,71 @@
+[
+    {
+        "name": "disable_session_valid_cookie",
+        "function": "disable_session",
+        "args": [],
+        "expected": [
+            true
+        ],
+        "dependencies": {
+            "function": [
+                "disable_session"
+            ],
+            "class": [
+                "dataphyre\\access"
+            ],
+            "global_variable": [
+                "_SESSION",
+                "_COOKIE"
+            ]
+        },
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "max_millis": 200
+    },
+    {
+        "name": "disable_session_no_cookie_set",
+        "function": "disable_session",
+        "args": [],
+        "expected": [
+            true
+        ],
+        "dependencies": {
+            "function": [
+                "disable_session"
+            ],
+            "class": [
+                "dataphyre\\access"
+            ],
+            "global_variable": [
+                "_SESSION",
+                "_COOKIE"
+            ]
+        },
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "max_millis": 200
+    },
+    {
+        "name": "disable_session_cookie_set_but_no_session_in_db",
+        "function": "disable_session",
+        "args": [],
+        "expected": [
+            true
+        ],
+        "dependencies": {
+            "function": [
+                "disable_session"
+            ],
+            "class": [
+                "dataphyre\\access"
+            ],
+            "global_variable": [
+                "_SESSION",
+                "_COOKIE"
+            ]
+        },
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "max_millis": 200
+    }
+]

@@ -34,8 +34,7 @@ class scheduling {
 		if(!file_exists($properties)){
 			core::file_put_contents_forced($properties, json_encode($scheduler));
 		}
-		if (self::can_run($scheduler)===true) {
-			clearstatcache();
+		if(self::can_run($scheduler)===true){
 			$last_run_file=ROOTPATH['dataphyre'].'cache/scheduling/'.$name.'/last_run';
 			file_put_contents($last_run_file, time(), LOCK_EX);
 			$running_lock_file=ROOTPATH['dataphyre'].'cache/scheduling/'.$name.'/running_lock';
@@ -48,11 +47,11 @@ class scheduling {
 						'X-Traffic-Source: internal_traffic'
 					));
 					curl_setopt($ch,CURLOPT_RETURNTRANSFER, 1);
-					curl_setopt($ch,CURLOPT_TIMEOUT_MS, 1); // Timeout after 1 millisecond
+					curl_setopt($ch,CURLOPT_TIMEOUT_MS, 1);
 					curl_setopt($ch,CURLOPT_NOSIGNAL, 1);
 					curl_exec($ch);
 					curl_close($ch);
-				}, ROOTPATH, $name, $app_override);
+				}, $name, $app_override);
 			}
 			else
 			{
@@ -64,7 +63,6 @@ class scheduling {
 
 	private static function can_run(array $scheduler) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
-	
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Execution frequency is '.$scheduler['frequency']);
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Execution timeout is '.$scheduler['timeout']);
 		\dataphyre\core::get_server_load_level();
@@ -72,7 +70,6 @@ class scheduling {
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Server load too high for scheduler', "warning");
 			return false;
 		}
-		clearstatcache();
 		$last_run=999999;
 		$last_run_file=ROOTPATH['dataphyre'].'cache/scheduling/'.$scheduler['name'].'/last_run';
 		if(file_exists($last_run_file)){

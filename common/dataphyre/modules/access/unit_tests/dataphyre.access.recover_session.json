@@ -1,0 +1,21 @@
+[
+    {
+        "function": "recover_session",
+        "name": "recover_existing_valid_session",
+        "dependencies": {
+            "function": [
+                "recover_session",
+                "sql_select"
+            ],
+            "global_variable": [
+                "_SESSION",
+                "_COOKIE"
+            ]
+        },
+        "args": [],
+        "expected": true,
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "max_millis": 50
+    }
+]

@@ -28,7 +28,9 @@ if(file_exists($filepath=ROOTPATH['dataphyre']."config/currency.php")){
 	require_once($filepath);
 }
 
-currency::get_exchange_rates();
+if(RUN_MODE!=='diagnostic'){
+	currency::get_exchange_rates();
+}
 
 class currency{
 
@@ -235,7 +237,9 @@ class currency{
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CONVERT_TO_USER_CURRENCY",...func_get_args())) return $early_return;
 		if(empty($_SESSION['exchange_rate_data'])){
-			core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreCurrency: No cached rates available in session.', 'safemode');
+			if(RUN_MODE!=='diagnostic'){
+				core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreCurrency: No cached rates available in session.', 'safemode');
+			}
 		}
 		$amount=(float)$amount;
 		$source_multiplier=$_SESSION['exchange_rate_data']['data'][$source_currency] ?? 1;

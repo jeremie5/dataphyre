@@ -12,8 +12,16 @@
  *
  * This software is provided "as is", without any warranty of any kind.
  */
-
+ 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Dataphyre Core initializing");
+
+foreach(['core.global.php', 'helper_functions.php', 'language_additions.php', 'core_functions.php'] as $file){
+    require(__DIR__.'/'.$file);
+}
+
+\dataphyre\core::load_plugins('pre_init');
+
+if(!defined('ROOTPATH')) pre_init_error("ROOTPATH constant not defined");
 
 if(!defined('BS_VERSION')){
 	pre_init_error("Dataphyre Bootstrap version unknown");
@@ -25,48 +33,48 @@ else
 	}
 }
 
-if(!defined('ALLOW_OUTPUT_POSTPROCESSING')){
-	define('ALLOW_OUTPUT_POSTPROCESSING', true);
-}
-
-// To ensure single application setups still work
-if(!isset(ROOTPATH['common_dataphyre'])){
-	$rootpath['common_dataphyre']=ROOTPATH['dataphyre'];
-}
-
-if(!defined('RUN_MODE')){
-	if(!define('RUN_MODE', 'request')){
-		pre_init_error("Unable to assign RUN_MODE constant");
+if(PHP_INT_SIZE<8){
+	tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Dataphyre requires a 64 bit PHP build for production safety.", $S="warning");
+	if(!defined('IS_PRODUCTION') || IS_PRODUCTION===true){
+		pre_init_error("64-bit PHP build required in production.");
 	}
+}
+
+if(!defined('ALLOW_OUTPUT_POSTPROCESSING')){
+	if(!define('ALLOW_OUTPUT_POSTPROCESSING', true)) pre_init_error("Unable to assign ALLOW_OUTPUT_POSTPROCESSING constant");
+}
+
+if(!file_exists(ROOTPATH['dataphyre']."cache/verified")){
+	if(!define('DP_VERIFIED', false)) pre_init_error("Unable to assign DP_VERIFIED constant as false");
 }
 else
 {
-	if(RUN_MODE==='diagnostic'){
-		define('DP_CORE_LOADED', true);
-		require(__DIR__.'/core.diagnostic.php');
-		\dataphyre\core\diagnostic::pre_tests();
+	if(!define('DP_VERIFIED', true)) pre_init_error("Unable to assign DP_VERIFIED constant as true");
+}
+
+if(!defined('RUN_MODE') || RUN_MODE==='request'){
+	if(DP_VERIFIED===true){
+		if(!define('RUN_MODE', 'request')) pre_init_error("Unable to assign RUN_MODE constant as request");
 	}
 	else
 	{
-		if(!file_exists(ROOTPATH['dataphyre']."cache/verified")){
-			pre_init_error('Failed verification of dataphyre install.');
-		}
+		if(!define('DP_VERIFIED', false)) pre_init_error("Dataphyre install must be verified by Dpanel.");
 	}
 }
 
-foreach(['helper_functions.php', 'language_additions.php', 'core_functions.php'] as $file){
-    require(__DIR__.'/'.$file);
-}
+tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Run mode is ".RUN_MODE);
 
-\dataphyre\core::load_plugins('pre_init');
+if(RUN_MODE==='diagnostic'){
+	if(!define('DP_CORE_LOADED', true)) pre_init_error("Unable to assign DP_CORE_LOADED constant");
+	require(__DIR__.'/core.diagnostic.php');
+	\dataphyre\core\diagnostic::pre_tests();
+}
 
 if(!define('REQUEST_USER_AGENT', isset($_SERVER['HTTP_USER_AGENT']) ? substr($_SERVER['HTTP_USER_AGENT'], 0, 255) : 'Unknown UA')){
 	pre_init_error("Unable to assign REQUEST_USER_AGENT constant");
 }
 
-if(empty(dpvk())){
-	pre_init_error("Failed initializing DPVK");
-}
+if(empty(dpvk())) pre_init_error("Failed initializing DPVK");
 
 if(RUN_MODE==='request'){
 	\dataphyre\core::get_server_load_level();
@@ -78,40 +86,36 @@ if(RUN_MODE==='request'){
 	}
 }
 
-if(file_exists($file=ROOTPATH['common_dataphyre'].'config/core.php'))require($file);
-if(file_exists($file=ROOTPATH['dataphyre'].'config/core.php'))require($file);
+if(file_exists($file=ROOTPATH['common_dataphyre'].'config/core.php')) require($file);
+if(file_exists($file=ROOTPATH['dataphyre'].'config/core.php')) require($file);
 
-if(!define('REQUEST_IP_ADDRESS', \dataphyre\core::get_client_ip())){
-	pre_init_error("Unable to assign REQUEST_IP_ADDRESS constant");
-}
-else
-{
-	tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Client IP is ".REQUEST_IP_ADDRESS);
-}
+global $configurations;
+
+if(!define('REQUEST_IP_ADDRESS', \dataphyre\core::get_client_ip())) pre_init_error("Unable to assign REQUEST_IP_ADDRESS constant");
+
+tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Client IP is ".REQUEST_IP_ADDRESS);
 
 if(RUN_MODE==='request' || RUN_MODE==='diagnostic'){
-	if(!isset($_SESSION) && $configurations['dataphyre']['core']['php_session']['enabled']!==false){
-		ini_set('session.cookie_lifetime', $configurations['dataphyre']['core']['php_session']['lifespan']);
-		ini_set('session.gc_maxlifetime', $configurations['dataphyre']['core']['php_session']['lifespan']);
-		ini_set('session.name', $configurations['dataphyre']['core']['php_session']['cookie']['name']);
+	if(!isset($_SESSION) && $configurations['dataphyre']['core']['php_session']['enabled'] ?? true !==false){
+		if(false===ini_set('session.cookie_lifetime', $configurations['dataphyre']['core']['php_session']['lifespan'])
+		|| false===ini_set('session.gc_maxlifetime', $configurations['dataphyre']['core']['php_session']['lifespan'])
+		|| false===ini_set('session.name', $configurations['dataphyre']['core']['php_session']['cookie']['name'])) pre_init_error("Failed to ini_set() session parameters");
 		if($configurations['dataphyre']['core']['php_session']['cookie']['secure']===true){
-			ini_set('session.cookie_httponly', true);
-			ini_set('session.cookie_samesite', 'Strict');
-			ini_set('session.cookie_secure', true);
-			ini_set('session.use_only_cookies', true);
+			if(false===ini_set('session.cookie_httponly', true)
+			|| false===ini_set('session.cookie_samesite', 'Strict')
+			|| false===ini_set('session.cookie_secure', true)
+			|| false===ini_set('session.use_only_cookies', true)) pre_init_error("Failed to ini_set() session parameters");
 		}
 		if(RUN_MODE==='request'){
-			if(session_start()===false){
-				\dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreCore: Failed starting php session', 'safemode');
-			}
+			if(session_start()===false) \dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreCore: Failed starting php session', 'safemode');
 		}
 	}
 }
 
-date_default_timezone_set($configurations['dataphyre']['timezone']);
+if(false===ini_set('memory_limit', $configurations['dataphyre']['max_execution_memory'] ?? '16M')) pre_init_error("Failed to ini_set() memory_limit");
+if(false===ini_set('max_execution_time', $configurations['dataphyre']['max_execution_time'] ?? 30)) pre_init_error("Failed to ini_set() max_execution_time");
 
-ini_set('memory_limit', $configurations['dataphyre']['max_execution_memory']);
-ini_set('max_execution_time', $configurations['dataphyre']['max_execution_time']);
+if(!@date_default_timezone_set($tz=$configurations['dataphyre']['timezone'])) pre_init_error("Invalid timezone: $tz");
 
 if(RUN_MODE!=='diagnostic'){
 	if($mod=dp_module_present('tracelog'))require($mod[0]);
@@ -152,7 +156,7 @@ if(RUN_MODE==='request'){
 	\dataphyre\core::set_http_headers();
 }
 
-unset($mod, $file); 
+unset($mod, $file, $min_bs, $tz, $D, $T, $S);
 
 if(RUN_MODE==='diagnostic'){
 	\dataphyre\core\diagnostic::post_tests();

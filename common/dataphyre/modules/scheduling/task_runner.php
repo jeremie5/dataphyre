@@ -14,7 +14,7 @@
  */
 
 $scheduler_name=$_PARAM['scheduler'];
-$scheduler_path = ROOTPATH['dataphyre'].'cache/scheduling/'.$scheduler_name;
+$scheduler_path=ROOTPATH['dataphyre'].'cache/scheduling/'.$scheduler_name;
 $running_lock_file=ROOTPATH['dataphyre'].'cache/scheduling/'.$scheduler_name.'/running_lock';
 if(!file_exists($running_lock_file)){
 	if(method_exists("dataphyre\core", "unavailable")){
@@ -23,14 +23,13 @@ if(!file_exists($running_lock_file)){
 }
 $scheduler=file_get_contents($scheduler_properties_file=ROOTPATH['dataphyre'].'cache/scheduling/'.$scheduler_name.'/properties.json');
 if(null!==$scheduler=json_decode($scheduler,true)){
-	try {
+	try{
 		set_time_limit($scheduler['timeout']);
 		ini_set('max_execution_time', $scheduler['timeout']);
 		ini_set('memory_limit', $scheduler['memory_limit']);
-		$is_task=true;
 		define('RUN_MODE', 'headless');
 		foreach($scheduler['dependencies'] as $dependency){
-			echo'Including '.$dependency.'<br>';
+			if(IS_PRODUCTION===false) echo'Including '.$dependency.'<br>';
 			require_once($dependency);
 		}
 		if(function_exists("dp_module_present") && dp_module_present('tracelog')){
@@ -48,9 +47,9 @@ if(null!==$scheduler=json_decode($scheduler,true)){
 				}
 			}
 		}
-		echo 'Running '.$scheduler['file_path'].'<br>';
+		if(IS_PRODUCTION===false) echo 'Running '.$scheduler['file_path'].'<br>';
 		require_once($scheduler['file_path']);
-	} catch(Throwable $e) {
+	}catch(Throwable $e){
 		if(method_exists("dataphyre\core", "dialback")){
 			$task=["scheduler"=>$scheduler];
 			dataphyre\core::dialback("SCHEDULING_TASK_FAILED", $task);
@@ -81,7 +80,7 @@ register_shutdown_function(function()use($scheduler_path){
         file_put_contents($scheduler_path.'/tracelog.html', dataphyre\tracelog::$tracelog, LOCK_EX);
 		echo '<br>';
 		echo '<br>';
-		echo dataphyre\tracelog::$tracelog;
+		if(IS_PRODUCTION===false) dataphyre\tracelog::$tracelog;
     }
     file_put_contents($last_run_file, time(), LOCK_EX);
 	unlink($running_lock_file);

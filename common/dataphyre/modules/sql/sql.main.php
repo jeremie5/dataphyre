@@ -29,41 +29,6 @@ require(__DIR__."/mysql_query.php");
 require(__DIR__."/postgresql_query.php");
 require(__DIR__."/sqlite_query.php");
 
-$_SESSION['db_cache_count']=0;
-if(!isset($_SESSION['db_cache']) || !is_array($_SESSION['db_cache'])){
-	$_SESSION['db_cache']=[];
-}
-else
-{
-	while(count($_SESSION['db_cache'])>500){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Limiting amount of tables cached in session variable", $S="warning");
-		array_shift($_SESSION['db_cache']);
-	}
-	foreach($_SESSION['db_cache'] as $location=>$data){
-		$_SESSION['db_cache_count']+=count($data);
-		if(count($data)>128){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Limiting amount of entries in table \"$location\" cached in session variable", $S="warning");
-			array_shift($_SESSION['db_cache'][$location]);
-		}
-	}
-	unset($key, $location);
-}
-
-if(file_exists(ROOTPATH['common_dataphyre']."sql_migration/migrating")){
-	if(!$is_task){
-		core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='Database migration ongoing', 'maintenance');
-	}
-}
-else
-{
-	if(file_exists(ROOTPATH['common_dataphyre']."sql_migration/run_migrations")){
-		file_put_contents(ROOTPATH['common_dataphyre']."sql_migration/migrating", '');
-		file_put_contents(ROOTPATH['common_dataphyre']."sql_migration/rootpaths.php", "<?php\n\ROOTPATH=".var_export(ROOTPATH, true).";\n");
-		exec("php ".__DIR__."/migration.php > /dev/null 2> /dev/null &", $process_pid);
-		core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='Database migration ongoing', 'maintenance');
-	}
-}
-
 if(RUN_MODE==='diagnostic'){
 	require_once(__DIR__.'/sql.diagnostic.php');
 	\dataphyre\sql\diagnostic::tests();
@@ -76,6 +41,67 @@ class sql {
 		global $configurations;
 		if(null!==$early_return=core::dialback("CALL_SQL_CONSTRUCT",...func_get_args())) return $early_return;
 		self::migration();
+		self::session_cache_gc();
+	}
+	
+	public static function session_cache_gc(): void {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		$_SESSION['db_cache_count']=0;
+		if(!isset($_SESSION['db_cache']) || !is_array($_SESSION['db_cache'])){
+			$_SESSION['db_cache']=[];
+			return;
+		}
+		$start=microtime(true);
+		$time_budget=0.02; // 20ms budget
+		$max_tables=500;
+		$max_entries_per_table=128;
+		$ttl_entry=600; // 10 minutes
+		$memory_soft_limit=12*1024*1024; // 12 MB
+		if(count($_SESSION['db_cache'])>$max_tables){
+			uasort($_SESSION['db_cache'], function($a, $b){
+				$at=reset($a)[1] ?? PHP_INT_MAX;
+				$bt=reset($b)[1] ?? PHP_INT_MAX;
+				return $at<=>$bt;
+			});
+			while(count($_SESSION['db_cache'])>$max_tables){
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Limiting amount of tables cached in session variable", $S="warning");
+				array_shift($_SESSION['db_cache']);
+				if(microtime(true)-$start>$time_budget) return;
+			}
+		}
+		foreach($_SESSION['db_cache'] as $location=>&$entries){
+			foreach($entries as $hash=>$entry){
+				if(time()-($entry[1] ?? 0)>$ttl_entry){
+					unset($entries[$hash]);
+					if(microtime(true)-$start>$time_budget) return;
+				}
+			}
+			if(count($entries)>$max_entries_per_table){
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Limiting amount of entries in table \"$location\" cached in session variable", $S="warning");
+				uasort($entries, fn($a, $b)=>($a[1] ?? 0)<=>($b[1] ?? 0));
+				while(count($entries)>$max_entries_per_table){
+					array_shift($entries);
+					if(microtime(true)-$start>$time_budget) return;
+				}
+			}
+			$_SESSION['db_cache_count']+=count($entries);
+		}
+		unset($entries);
+		if(memory_get_usage()>$memory_soft_limit){
+			$all=[];
+			foreach($_SESSION['db_cache'] as $location=>$entries){
+				foreach($entries as $hash=>$entry){
+					$all[]=[$location, $hash, $entry[1] ?? 0];
+				}
+			}
+			usort($all, fn($a, $b)=>$a[2]<=>$b[2]);
+			foreach($all as [$location, $hash, $_]){
+				unset($_SESSION['db_cache'][$location][$hash]);
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Emergency GC: freeing memory from db_cache[$location][$hash]", $S="warning");
+				if(memory_get_usage()<$memory_soft_limit*0.9) break;
+				if(microtime(true)-$start>$time_budget) return;
+			}
+		}
 	}
 	
 	public static function log_query_error(string $dbms, string $cluster, string $query, ?array $vars=[], \Throwable $exception=null): void {
@@ -100,25 +126,22 @@ class sql {
 	
 	public static function migration(){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-	
-		global $is_task;
 		if(file_exists(ROOTPATH['common_dataphyre']."sql_migration/migrating")){
-			if(!$is_task){
-				core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='Database migration ongoing', 'maintenance');
-			}
+			core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='Database migration ongoing', 'maintenance');
 		}
 		else
 		{
 			if(file_exists(ROOTPATH['common_dataphyre']."sql_migration/run_migrations")){
 				file_put_contents(ROOTPATH['common_dataphyre']."sql_migration/migrating", '');
 				file_put_contents(ROOTPATH['common_dataphyre']."sql_migration/rootpaths.php", "<?php\n\ROOTPATH=".var_export(ROOTPATH, true).";\n");
-				exec("php ".__DIR__."/migration.php > /dev/null 2> /dev/null &", $process_pid);
+				exec("php ".__DIR__."/migration.php>/dev/null 2> /dev/null &", $process_pid);
 				core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='Database migration ongoing', 'maintenance');
 			}
 		}
 	}
 	
 	public static function query_has_write(string $query) : bool {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		static $write_ops=null;
 		if($write_ops===null){
 			$write_ops=array_flip([
@@ -193,7 +216,6 @@ class sql {
 				if(dp_module_present('cache')){
 					$table_cache_version=(int)cache::get('table_version_'.$location) ?? 0;
 					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Shared cache table version for $location: $table_cache_version)");
-					if($table_cache_version>2147483600)cache::set('table_version_'.$location, $table_cache_version=0); // Prevent integer overflow by resetting table version
 					if(is_array($shared_cache_result=cache::get($key=$location.'_'.$hash))){
 						if($shared_cache_result[0]===$table_cache_version){
 							tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Read from shared cache (".$key.")");
@@ -267,8 +289,7 @@ class sql {
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Caching in shared cache");
 				if($query_result===false)$query_result='false';
 				$table_cache_version=(int)cache::get('table_version_'.$location) ?? 0;
-				if($table_cache_version>2147483600)cache::set('table_version_'.$location, $table_cache_version=0); // Prevent integer overflow by resetting table version
-				cache::set($location.'_'.$hash, array($table_cache_version,$query_result), strtotime($cache_policy['max_lifespan']));
+				cache::set($location.'_'.$hash, array($table_cache_version, $query_result), strtotime($cache_policy['max_lifespan']));
 			}
 			elseif($cache_policy['type']==='session'){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Caching in session");
