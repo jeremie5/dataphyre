@@ -36,7 +36,7 @@ Dataphyre isn’t just a framework—it’s an ideology. Contributions are welco
 
 Before you start, make sure you have the following installed:
 
-- **PHP** (>= 8.1)
+- **PHP** ≥ 8.1 (JIT recommended)
 - **Composer** for dependency management
 
 Make sure to verify prerequisites for each Dataphyre module you will add to your project.
