@@ -15,6 +15,10 @@
 
 namespace dataphyre;
 
+tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
+
+dp_module_required('issue', 'sql');
+
 class issue{
 	
 	private static $application_version;
@@ -42,10 +46,10 @@ class issue{
 				$F=false, 
 				$C=false, 
 				$Q='end', 
-				function($row){
+				$K=function($row){
 					if($row!==false){
 						$new_data=[];
-						$new_data['context']=\dataphyre\core::decrypt_data($row['email_address'], array($row['date'],$row['server_name']), 'return');
+						$new_data['context']=\dataphyre\core::decrypt_data($row['context'], array($row['date'],$row['server_name']), 'return');
 						sql_update(
 							$L="issues", 
 							$F=$new_data, 
@@ -64,14 +68,13 @@ class issue{
 
 	public static function create(string $type, array $context=[], string $description='', int $severity=0) : bool|int {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		return false;
-		if(!isset(self::$email_sending_callback)){
+		if(!is_callable(self::$email_sending_callback)){
 			return false; // Perhaps should be dataphyre\core::unvailable().
 		}
 		$context["app_version"]=self::$application_version;
 		$md5=md5($type.json_encode($context).$severity);
 		// Static context from hereon 
-		$context["load_level"]=dataphyre\core::get_server_load_level();
+		$context["load_level"]=\dataphyre\core::get_server_load_level();
 		sql_select(
 			$S="issueid", 
 			$L="issues", 
@@ -82,14 +85,14 @@ class issue{
 			$Q='issue_creation', 
 			$C=function($result)use($type,$context,$md5,$description,$severity){
 				if($result===false){
-					$execution_ip=$_SERVER['REMOTE_ADDR'];
+					$execution_ip=REQUEST_IP_ADDRESS;
 					$server_ip=$_SERVER['SERVER_ADDR'];
 					$time=date('Y-m-d H:i:s', strtotime('now'));
 					$status="pending";
 					$context=array_merge($context, self::$additional_context);
 					$context=json_encode($context);
 					$context_encrypted=\dataphyre\core::encrypt_data($context, array($time,$server_name));
-					if(false===$issueid=sql_insert(
+					if(false===$issue=sql_insert(
 						$L="issues", 
 						$F=[
 							"md5"=>$md5,
@@ -105,6 +108,7 @@ class issue{
 					)){
 						tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Failed creating issue in database", $S="fatal");
 					}
+					$issueid=$issue['issueid'];
 					$body.='Description: '.$description.'<br><br>';
 					$body.='Server IP: '.$server_ip.'<br>';
 					$body.='Execution IP: '.$execution_ip.'<br>';

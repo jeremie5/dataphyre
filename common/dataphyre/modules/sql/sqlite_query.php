@@ -16,10 +16,7 @@
 namespace dataphyre;
 
 register_shutdown_function(function(){
-	ob_start();
-	ini_set('display_errors', 0);
-	ini_set('display_startup_errors', 0);
-	error_reporting(0);
+	try{
 		do{
 			foreach(sqlite_query_builder::$queued_queries as $queue=>$queue_data){
 				try {
@@ -29,7 +26,9 @@ register_shutdown_function(function(){
 				}
 			}
 		}while(!empty(sqlite_query_builder::$queued_queries));
-	ob_end_clean();
+	}catch(\Throwable $exception){
+		pre_init_error('Exception on Dataphyre SQL SQLite shutdown callback', $exception);
+	}
 });
 
 class sqlite_query_builder {
@@ -38,7 +37,7 @@ class sqlite_query_builder {
 	public static $queued_queries=[];
 	
 	private static function connect_to_cluster(string $dbms_cluster){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_OPEN_MAIN_CONNECTION",...func_get_args())) return $early_return;
 		global $configurations;
 		$endpoints=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
@@ -61,7 +60,7 @@ class sqlite_query_builder {
 	}
 	
 	private static function connect_to_endpoint(string $endpoint, string $dbms_cluster='default') : object {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		global $configurations;
 		if(isset(self::$conns[$dbms_cluster])){
 			return self::$conns[$dbms_cluster];
@@ -144,7 +143,7 @@ class sqlite_query_builder {
 	}
 	
 	private static function process_results(?array $results, ?array $queries): void {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
 		$query_list=[];
 		foreach($queries as $query_type=>$query_group){
 			foreach($query_group as $query){
@@ -237,7 +236,7 @@ class sqlite_query_builder {
 		return true;
 	}
 	
-	public static function sqlite_query(string $dbms_cluster, string $query, array|null $vars, bool|null $associative, bool|null $multipoint=true) : bool|array {
+	public static function sqlite_query(string $dbms_cluster, string $query, ?array $vars, ?bool $associative, ?bool $multipoint=true) : bool|array {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
 		if(null !== $early_return=core::dialback("CALL_SQL_SIMPLE_SELECT", ...func_get_args())) return $early_return;
@@ -298,8 +297,8 @@ class sqlite_query_builder {
 		return $result===false ? false : $result;
 	}
 	
-	public static function sqlite_select(string $dbms_cluster, string $select, string $location, string|null $params, array|null $vars, bool|null $associative) : bool|array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+	public static function sqlite_select(string $dbms_cluster, string $select, string $location, ?string $params, ?array $vars, ?bool $associative) : bool|array {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null !== $early_return=core::dialback("CALL_SQL_SIMPLE_SELECT", ...func_get_args())) return $early_return;
 		$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster);
 		try{
@@ -342,7 +341,7 @@ class sqlite_query_builder {
 	}
 	
 	public static function sqlite_count(string $dbms_cluster, string $location, string $params, ?array $vars) : int {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null !== $early_return=core::dialback("CALL_SQL_SIMPLE_COUNT", ...func_get_args())) return $early_return;
 		$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster);
 		try{

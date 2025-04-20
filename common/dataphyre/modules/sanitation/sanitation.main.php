@@ -20,14 +20,14 @@ tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 class sanitation{
 	
 	public static function anonymize_email(string $str, int $count=2, string $char='*') : string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SANITATION_ANONYMIZE_EMAIL",...func_get_args())) return $early_return;
 		list($local, $domain)=explode("@",$str);
 		return substr($local,0,$count).str_repeat($char,strlen($local)-$count)."@".$domain;
 	}
 
 	public static function sanitize(mixed $string, string $datatype="default") : string|bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SANITATION_SANITIZE",...func_get_args())) return $early_return;
 		if(!is_string($string)){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Input to be sanitized was not a string", $S="warning");

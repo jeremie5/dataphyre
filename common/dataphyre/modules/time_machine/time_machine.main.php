@@ -17,7 +17,9 @@ namespace dataphyre;
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
-dp_module_required('time_machine', 'sql');
+if(RUN_MODE==='diagnostic'){
+	require_once(__DIR__.'/time_machine.diagnostic.php');
+}
 
 class time_machine{
 
@@ -52,7 +54,7 @@ class time_machine{
 			$C=false
 		)){
 			if($change['userid']===$rollback_request_userid){
-				if($change['user_can_rollback']!==true){
+				if($change['can_rollback']!==true){
 					return false;
 				}
 			}
@@ -160,29 +162,30 @@ class time_machine{
 		return false;
 	}
 	
-	public static function create(string $type, string $rollback_type, array $change_data, bool $user_can_rollback=false): bool {
+	public static function create(string $type, string $rollback_type, array $change_data, bool $can_rollback=false): bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_TIME_MACHINE_CREATE",...func_get_args())) return $early_return;
 		global $userid;
-		$executor_data=array(
-			"session_id"=>$_SESSION['id']
-		);
+		$executor_data=[
+			"dpid"=>DPID,
+			"rqid"=>RQID
+		];
 		$executor_data=json_encode($executor_data);
 		$executor_data=core::encrypt_data($executor_data, array($userid));
 		$change_data=json_encode($change_data);
 		$change_data=core::encrypt_data($change_data, array($userid));
-		if(false!==$changeid=sql_insert(
+		if(false!==$change=sql_insert(
 			$L="dataphyre.user_changes", 
 			$F=[
 				"type"=>$type,
 				"rollback_type"=>$rollback_type,
-				"user_can_rollback"=>$user_can_rollback,
+				"can_rollback"=>$can_rollback,
 				"userid"=>$userid,
 				"data"=>$change_data,
 				"executor"=>$executor_data, 
 			]
 		)){
-			return $changeid;
+			return $change['changeid'];
 		}
 		core::dialback("DP_TIMEMACHINE_FAILED_CREATING");
 		return false;

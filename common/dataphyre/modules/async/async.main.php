@@ -174,7 +174,7 @@ class async {
 	private static $cancellation_tokens=[];
 
     private static function send_curl_request(string $url, array $options): promise {
-        tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+        tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
         return new promise(function($resolve, $reject)use($url, $options){
             coroutine::create(function()use($url, $options, $resolve, $reject){
                 $ch=curl_init($url);
@@ -195,7 +195,7 @@ class async {
     }
 
 	public static function get_url(string $url, array $headers=[], bool $return_headers=false, int $priority=0): object {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		return coroutine::async(function()use($url, $headers, $return_headers, $priority){
 			self::add_to_event_loop(function()use($url, $headers, $return_headers){
 				self::manage_concurrency(function()use($url, $headers, $return_headers){
@@ -220,7 +220,7 @@ class async {
 	}
 	
 	public static function post_url(string $url, array $data, array $headers=[], bool $return_headers=false, int $priority=0): object {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		return coroutine::async(function()use($url, $data, $headers, $return_headers, $priority){
 			self::add_to_event_loop(function()use($url, $data, $headers, $return_headers){
 				self::manage_concurrency(function()use($url, $data, $headers, $return_headers){
@@ -247,7 +247,7 @@ class async {
 	}
 
 	public static function get_json(string $url): promise {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		$promise=new promise(function($resolve, $reject)use($url){
 			coroutine::create(function()use($url, $resolve, $reject){
 				try{
@@ -267,7 +267,7 @@ class async {
 	}
 
 	public static function post_json(string $url, array $data): promise {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		$promise=new promise(function($resolve, $reject)use($url, $data){
 			coroutine::create(function()use($url, $data, $resolve, $reject){
 				try{
@@ -289,7 +289,7 @@ class async {
 	}
 	
     public static function read_stream($stream): promise {
-        tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+        tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
         return new promise(function($resolve, $reject)use($stream){
             coroutine::create(function()use($stream, $resolve, $reject){
                 $data='';
@@ -310,7 +310,7 @@ class async {
     }
 
     public static function write_stream($stream, $data): promise {
-        tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+        tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
         return new promise(function($resolve, $reject)use($stream, $data){
             coroutine::create(function()use($stream, $data, $resolve, $reject){
                 $result=fwrite($stream, $data);
@@ -326,7 +326,7 @@ class async {
     }
 	
 	public static function throttle(string $key, callable $task, int $interval): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(!isset(self::$throttle_tasks[$key])){
 			self::$throttle_tasks[$key]=false;
 		}
@@ -340,7 +340,7 @@ class async {
 	}
 
 	public static function debounce(string $key, callable $task, int $interval): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(isset(self::$debounce_tasks[$key])){
 			self::cancel(self::$debounce_tasks[$key]);
 		}
@@ -348,7 +348,7 @@ class async {
 	}
 		
 	public static function queue(callable $task): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		self::$task_queue[]=$task;
 		if(count(self::$task_queue)===1){
 			self::process_next_in_queue();
@@ -356,26 +356,26 @@ class async {
 	}
 	
 	public static function set_logger(callable $logger): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		self::$logger=$logger;
 	}
 
 	private static function log(string $message): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(self::$logger){
 			call_user_func(self::$logger, $message);
 		}
 	}
 	
 	private static function handle_error(\Exception $ex): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		self::log('Error: '.$ex->getMessage());
 		self::log('Stack trace: '.$ex->getTraceAsString());
 		throw $ex;
 	}
 
 	private static function process_next_in_queue(): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(!empty(self::$task_queue)){
 			$task=array_shift(self::$task_queue);
 			$task();
@@ -384,26 +384,26 @@ class async {
 	}
 		
 	public static function create_cancellation_token(): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		$token=uniqid('token_', true);
 		self::$cancellation_tokens[$token]=false;
 		return $token;
 	}
 
 	public static function cancel_token(string $token): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(isset(self::$cancellation_tokens[$token])){
 			self::$cancellation_tokens[$token]=true;
 		}
 	}
 
 	public static function is_cancelled(string $token): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		return self::$cancellation_tokens[$token]??false;
 	}
 	
 	public static function process_batches(): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		while(!empty(self::$prioritized_event_loop)){
 			self::process_batch();
 		}
@@ -413,7 +413,7 @@ class async {
 	}
 		
 	private static function manage_rate_limiting(callable $task): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(self::$current_rate<self::$rate_limit){
 			self::$current_rate++;
 			$task();
@@ -425,7 +425,7 @@ class async {
 	}
 
 	private static function task_rate_complete(): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		self::$current_rate--;
 		if(!empty(self::$waiting_queue)){
 			$task=array_shift(self::$waiting_queue);
@@ -434,7 +434,7 @@ class async {
 	}
 	
 	private static function manage_concurrency(callable $task): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(self::$current_concurrency<self::$concurrency_limit){
 			self::$current_concurrency++;
 			$task();
@@ -446,17 +446,17 @@ class async {
 	}
 	
 	public static function on_event(string $event, callable $listener, int $priority=0): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		event_emitter::on($event, $listener, $priority);
 	}
 
 	public static function add_listener_with_metadata(string $event, callable $listener, array $metadata): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		event_emitter::add_listener_with_metadata($event, $listener, $metadata);
 	}
 
 	private static function task_complete(): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		self::$current_concurrency--;
 		if(!empty(self::$waiting_queue)){
 			$task=array_shift(self::$waiting_queue);
@@ -465,7 +465,7 @@ class async {
 	}
 
 	private static function add_to_event_loop(callable $task, int $priority=0): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(!isset(self::$prioritized_event_loop[$priority])){
 			self::$prioritized_event_loop[$priority]=[];
 		}
@@ -474,7 +474,7 @@ class async {
 	}
 
 	private static function process_batch(): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		$batch=self::$current_batch;
 		self::$current_batch=[];
 		foreach($batch as $task){
@@ -483,7 +483,7 @@ class async {
 	}
 
 	public static function run_event_loop(): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		while(!empty(self::$prioritized_event_loop) || !empty(self::$current_batch)){
 			if(!empty(self::$prioritized_event_loop)){
 				$priorities=array_keys(self::$prioritized_event_loop);
@@ -502,7 +502,7 @@ class async {
 	}
 	
 	public static function with_timeout(callable $executor, int $timeout): promise {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		$promise=new promise($executor);
 		self::set_timeout(function()use($promise){
 			$promise->cancel();
@@ -511,7 +511,7 @@ class async {
 	}
 	
 	public static function parallel(array $tasks): promise {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		return promise::all(array_map(function($task){
 			return self::await($task);
 		}, $tasks));

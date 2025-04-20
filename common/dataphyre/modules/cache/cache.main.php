@@ -23,7 +23,7 @@ class cache{
     public static $started=false;
 	
 	private static function start(){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(!is_object(self::$memcached)){
 			self::$memcached=new \Memcached();
 			if(false===self::$memcached->addServer('localhost', 11211)){
@@ -45,7 +45,7 @@ class cache{
 	}
 	
 	public static function get($key){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(self::$started===false)self::start();
 		if(false===$value=self::$memcached->get($key)){
 			$result_code=self::$memcached->getResultCode();

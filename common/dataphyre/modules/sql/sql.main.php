@@ -31,21 +31,26 @@ require(__DIR__."/sqlite_query.php");
 
 if(RUN_MODE==='diagnostic'){
 	require_once(__DIR__.'/sql.diagnostic.php');
-	\dataphyre\sql\diagnostic::tests();
 }
 
 class sql {
 
-	public function __construct($dbms_cluster="sql"){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+	public function __construct(string $dbms_cluster="sql"){
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		global $configurations;
-		if(null!==$early_return=core::dialback("CALL_SQL_CONSTRUCT",...func_get_args())) return $early_return;
+		core::dialback("CALL_SQL_CONSTRUCT",...func_get_args());
 		self::migration();
-		self::session_cache_gc();
+		register_shutdown_function(function(){
+			try{
+				self::session_cache_gc();
+			}catch(\Throwable $exception){
+				pre_init_error('Fatal error on Dataphyre SQL seesion cache garbage collection shutdown callback', $exception);
+			}
+		});
 	}
 	
 	public static function session_cache_gc(): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		$_SESSION['db_cache_count']=0;
 		if(!isset($_SESSION['db_cache']) || !is_array($_SESSION['db_cache'])){
 			$_SESSION['db_cache']=[];
@@ -104,12 +109,14 @@ class sql {
 		}
 	}
 	
-	public static function log_query_error(string $dbms, string $cluster, string $query, ?array $vars=[], \Throwable $exception=null): void {
+	public static function log_query_error(string $dbms, string $cluster, string $query, ?array $vars=[], ?\Throwable $exception=null): void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Error with '.$dbms.' query on cluster '.$cluster, $S='error');
 		$error_message=$exception ? $exception->getMessage() : "Unknown error";
 		$error_trace=$exception ? nl2br(htmlspecialchars($exception->getTraceAsString())) : "No stack trace available";
 		$formatted_query=htmlspecialchars($query);
 		$formatted_vars=!empty($vars) ? json_encode($vars, JSON_PRETTY_PRINT) : "None";
+		$formatted_vars=ellipsis($formatted_vars, 512);
 		$error='
 		<div class="alert alert-danger" role="alert">
 			<h4 class="alert-heading">Dataphyre mod_SQL: '.$dbms.' query error on cluster '.$cluster.'</h4>
@@ -141,7 +148,7 @@ class sql {
 	}
 	
 	public static function query_has_write(string $query) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		static $write_ops=null;
 		if($write_ops===null){
 			$write_ops=array_flip([
@@ -162,7 +169,7 @@ class sql {
 	}
 	
 	public static function get_table_cache_policy(string $location) : array|bool{
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_GET_TABLE_CACHE_POLICY",...func_get_args())) return $early_return;
 		global $configurations;
 		if(isset($configurations['dataphyre']['sql']['tables'][$location]['caching'])){
@@ -207,7 +214,7 @@ class sql {
 	}
 	
 	public static function get_query_cached_result(string $location, string $hash, array|bool|null $cache_policy=null) : mixed {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if($cache_policy===null){
 			$cache_policy=self::get_table_cache_policy($location);
 		}
@@ -278,11 +285,11 @@ class sql {
 		}
 		if($cache_policy!==false){
 			if(empty($location)){
-				self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), new Exception("Invalid cache location"));
+				self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), [], new \Exception("Invalid cache location"));
 				return false;
 			}
 			if(empty($hash)){
-				self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), new Exception("Invalid cache hash"));
+				self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), [], new \Exception("Invalid cache hash"));
 				return false;
 			}
 			if($cache_policy['type']==='shared_cache'){
@@ -311,7 +318,7 @@ class sql {
 			}
 			else
 			{
-				self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), new Exception("Unknown cache policy type for table $location"));
+				self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), [], new \Exception("Unknown cache policy type for table $location"));
 				return false;
 			}
 			foreach($caching as $cache_index){
@@ -350,13 +357,13 @@ class sql {
 				}
 				else
 				{
-					self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), new Exception("Unknown cache policy type for table"));
+					self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), [], new \Exception("Unknown cache policy type for table"));
 					return false;
 				}
 			}
 			else
 			{
-				self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), new Exception("clear_cache_for parameter must be a string if valid cache policy parameter is given"));
+				self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), [], new \Exception("clear_cache_for parameter must be a string if valid cache policy parameter is given"));
 				return false;
 			}
 		}
@@ -382,7 +389,7 @@ class sql {
 		return true;
 	}
 	
-    public static function db_query(string|array $query, ?array $vars, ?bool $associative=false, $multipoint=false, null|bool|array|string $caching=[false], bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : mixed {
+    public static function db_query(string|array $query, ?array $vars, ?bool $associative=false, ?bool $multipoint=false, null|bool|array|string $caching=[false], bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : mixed {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_SELECT",...func_get_args())) return $early_return;
 		global $configurations;
@@ -412,7 +419,7 @@ class sql {
 		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($query)){
 			if(!isset($query[$dbms])){
-				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Query has no compatibility for DBMS ($dbms) for location $location."));
+				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Query has no compatibility for DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$query=$query[$dbms];
@@ -475,7 +482,7 @@ class sql {
     }
 	
 	public static function db_select(string|array $select, string $location, array|string|null $params=null, ?array $vars=null, ?bool $associative=false, null|bool|array|string $caching=[true], ?string $queue='end', ?callable $callback=null) : mixed { //bool|array|null
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_SELECT",...func_get_args())) return $early_return;
 		global $configurations;
 		list($query_dbms, $location)=strpos($location, ':')!==false?explode(':', $location, 2):[null, $location];
@@ -496,13 +503,13 @@ class sql {
 					}
 					if(null!==$cache=self::get_query_cached_result($location, $hash, $cache_policy)){
 						if(is_integer($cache)){
-							self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Unexpected cached query result, possible hash collision. Returning false."));
+							self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Unexpected cached query result, possible hash collision. Returning false."));
 							return false;
 						}
 						if($associative===true && is_array($cache)){
 							foreach($cache as $item){
 								if(!is_array($item)){
-									self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Cached query result is not a multidimensional array as expected, possible hash collision. Returning false."));
+									self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Cached query result is not a multidimensional array as expected, possible hash collision. Returning false."));
 									return false;
 								}
 							}
@@ -517,14 +524,14 @@ class sql {
 		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($select)){
 			if(!isset($select[$dbms])){
-				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Query's selection has no compatibility for DBMS ($dbms) for location $location."));
+				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Query's selection has no compatibility for DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$select=$select[$dbms];
 		}
 		if(is_array($params)){
 			if(!isset($params[$dbms])){
-				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Query's parameters has no compatibility for DBMS ($dbms) for location $location."));
+				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Query's parameters has no compatibility for DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$params=$params[$dbms];
@@ -579,7 +586,7 @@ class sql {
 	}
 	
 	public static function db_count(string $location, array|string|null $params=null, ?array $vars=null, null|bool|array|string $caching=[true], ?string $queue='end', ?callable $callback=null) : int|bool|null {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_COUNT",...func_get_args())) return $early_return;
 		global $configurations;
 		list($query_dbms, $location)=strpos($location, ':')!==false?explode(':', $location, 2):[null, $location];
@@ -596,7 +603,7 @@ class sql {
 				}
 				if(null!==$cache=self::get_query_cached_result($location, $hash, $cache_policy)){
 					if(is_integer($cache)===false){
-						self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Unexpected cached query result, possible hash collision. Returning false."));
+						self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Unexpected cached query result, possible hash collision. Returning false."));
 						return false;
 					}
 					if(null!==$callback)$callback($cache);
@@ -607,12 +614,12 @@ class sql {
 		$dbms_cluster=$configurations['dataphyre']['sql']['tables'][$location]['cluster']??$configurations['dataphyre']['sql']['default_cluster'];
 		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if($query_dbms && $dbms!==$query_dbms){
-			self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Query has explicit DBMS compatibility flag $query_dbms that is not compatible with DBMS ($dbms) for location $location."));
+			self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Query has explicit DBMS compatibility flag $query_dbms that is not compatible with DBMS ($dbms) for location $location."));
 			return false;
 		}
 		if(is_array($params)){
 			if(!isset($params[$dbms])){
-				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Query's parameters have no compatibility for DBMS ($dbms) for location $location."));
+				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Query's parameters have no compatibility for DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$params=$params[$dbms];
@@ -669,7 +676,7 @@ class sql {
 		global $configurations;
 		if(is_array($fields)){
 			if(!empty($vars)){
-				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Variables has to be empty when fields is of type array."));
+				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Variables has to be empty when fields is of type array."));
 				return false;
 			}
 			$vars=array_values($fields);
@@ -733,7 +740,7 @@ class sql {
 		return $query_result;
 	}
 
-	public static function db_update(string $location, string|array $fields, string|array $params, ?array $vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : int|bool|null {
+	public static function db_update(string $location, string|array $fields, null|string|array $params, ?array $vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : int|bool|null {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_UPDATE",...func_get_args())) return $early_return;
 		global $configurations;
@@ -746,7 +753,7 @@ class sql {
 		if(is_array($vars) && isset($vars[$dbms]))$vars=$vars[$dbms];
 		if(is_array($params)){
 			if(!isset($params[$dbms])){
-				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Query's parameters have no compatibility for DBMS ($dbms) for location $location."));
+				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Query's parameters have no compatibility for DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$params=$params[$dbms];
@@ -813,7 +820,7 @@ class sql {
 		return $query_result;
 	}
 
-	public static function db_delete(string $location, array|string $params=null, ?array $vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : bool|null {
+	public static function db_delete(string $location, array|string|null $params=null, ?array $vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : bool|null {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_DELETE",...func_get_args())) return $early_return;
 		global $configurations;
@@ -822,7 +829,7 @@ class sql {
 		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($params)){
 			if(!isset($params[$dbms])){
-				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Query has no compatibility with DBMS ($dbms) for location $location."));
+				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Query has no compatibility with DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$params=$params[$dbms];
@@ -843,7 +850,7 @@ class sql {
 		}
 		if(stripos($params, 'WHERE')!==false){
 			if($configurations['dataphyre']['sql']['safe_delete']===false){
-				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception("Query attempted to delete all rows of a table but safe_delete is not false."));
+				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Query attempted to delete all rows of a table but safe_delete is not false."));
 				return false;
 			}
 		}
@@ -884,7 +891,7 @@ class sql {
 		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
 		if(null !== $early_return=core::dialback("CALL_SQL_DB_UPSERT", ...func_get_args())) return $early_return;
 		global $configurations;
-		$update_vars ??= [];
+		$update_vars ??=[];
 		if($clear_cache===null) $clear_cache=false;
 		if(!str_contains($location, '.')) $location=$configurations['dataphyre']['sql']['default_database_location'].".".$location;
 		$dbms_cluster=$configurations['dataphyre']['sql']['tables'][$location]['cluster'] ?? $configurations['dataphyre']['sql']['default_cluster'];
@@ -897,7 +904,7 @@ class sql {
 				}
 				else
 				{
-					self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), new Exception('Key conflict scope unknown for postgresql'));
+					self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception('Key conflict scope unknown for postgresql'));
 					return false;
 				}
 			}

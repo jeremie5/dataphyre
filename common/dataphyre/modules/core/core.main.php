@@ -64,8 +64,9 @@ if(!defined('RUN_MODE') || RUN_MODE==='request'){
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Run mode is ".RUN_MODE);
 
+if(!define('DP_CORE_LOADED', true)) pre_init_error("Unable to assign DP_CORE_LOADED constant");
+
 if(RUN_MODE==='diagnostic'){
-	if(!define('DP_CORE_LOADED', true)) pre_init_error("Unable to assign DP_CORE_LOADED constant");
 	require(__DIR__.'/core.diagnostic.php');
 	\dataphyre\core\diagnostic::pre_tests();
 }
@@ -97,10 +98,10 @@ tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Client IP is ".REQUEST_IP
 
 if(RUN_MODE==='request' || RUN_MODE==='diagnostic'){
 	if(!isset($_SESSION) && $configurations['dataphyre']['core']['php_session']['enabled'] ?? true !==false){
-		if(false===ini_set('session.cookie_lifetime', $configurations['dataphyre']['core']['php_session']['lifespan'])
-		|| false===ini_set('session.gc_maxlifetime', $configurations['dataphyre']['core']['php_session']['lifespan'])
+		if(false===ini_set('session.cookie_lifetime', $configurations['dataphyre']['core']['php_session']['lifespan'] ?? 900)
+		|| false===ini_set('session.gc_maxlifetime', $configurations['dataphyre']['core']['php_session']['lifespan'] ?? 900)
 		|| false===ini_set('session.name', $configurations['dataphyre']['core']['php_session']['cookie']['name'])) pre_init_error("Failed to ini_set() session parameters");
-		if($configurations['dataphyre']['core']['php_session']['cookie']['secure']===true){
+		if($configurations['dataphyre']['core']['php_session']['cookie']['secure'] ?? true===true){
 			if(false===ini_set('session.cookie_httponly', true)
 			|| false===ini_set('session.cookie_samesite', 'Strict')
 			|| false===ini_set('session.cookie_secure', true)
@@ -120,7 +121,6 @@ if(!@date_default_timezone_set($tz=$configurations['dataphyre']['timezone'])) pr
 if(RUN_MODE!=='diagnostic'){
 	if($mod=dp_module_present('tracelog'))require($mod[0]);
 	if($mod=dp_module_present('cache'))require($mod[0]);
-	if($mod=dp_module_present('contingency'))require($mod[0]);
 	if($mod=dp_module_present('sql'))require($mod[0]);
 	if(RUN_MODE==='request'){
 		if($mod=dp_module_present('async'))require($mod[0]);
@@ -148,6 +148,8 @@ if(RUN_MODE!=='diagnostic'){
 	if($mod=dp_module_present('fraudar'))require($mod[0]);
 	if($mod=dp_module_present('cdn_server'))require($mod[0]);
 	if($mod=dp_module_present('cdn'))require($mod[0]);
+	if($mod=dp_module_present('sentinel'))require($mod[0]);
+	if($mod=dp_module_present('contingency'))require($mod[0]);
 }
 
 \dataphyre\core::load_plugins('post_init');

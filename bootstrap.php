@@ -13,80 +13,101 @@
 * This software is provided "as is", without any warranty of any kind.
 */
 
-define('BS_VERSION', '1.0.1');
+try{
 
-$rootpath['dataphyre']=__DIR__;
+	if(isset($_GET['show'])){
+		ini_set('display_errors', 1);
+	}
+	else
+	{
+		ini_set('display_errors', 0);
 
-define('INITIAL_MEMORY_USAGE', memory_get_usage());
-define('CPU_USAGE', sys_getloadavg()[0]);
+		set_error_handler(function(...$args){ return;}, E_ALL);
+	}
 
-$_SERVER['REQUEST_TIME_FLOAT']=microtime(true);
+	define('BS_VERSION', '1.0.1');
 
-tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Bootstrap initialization');
+	$rootpath['root']=__DIR__;
 
-date_default_timezone_set('UTC');
-header_remove('X-Powered-By');
-header('Server: Dataphyre');
+	define('INITIAL_MEMORY_USAGE', memory_get_usage());
+	define('CPU_USAGE', sys_getloadavg()[0]);
 
-$bootstrap_config=require(__DIR__.'/config.php');
+	$_SERVER['REQUEST_TIME_FLOAT']=microtime(true);
 
-define('IS_PRODUCTION', $bootstrap_config['is_production'] ?? true);
+	tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Bootstrap initialization');
 
-define('LICENSE', $bootstrap_config['license'] ?? false);
+	date_default_timezone_set('UTC');
+	header_remove('X-Powered-By');
+	header('Server: Dataphyre');
 
-if(in_array($_SERVER['SERVER_ADDR'], ['localhost', '127.0.0.1', '192.168.0.1', '0.0.0.0'])){
-	$_SERVER['SERVER_ADDR']=$bootstrap_config['public_ip_address'];
-	$_SERVER['SELF_ADDR']=$_SERVER['SERVER_ADDR'].':'.$bootstrap_config['web_server_port'];
-}
+	$bootstrap_config=require(__DIR__.'/config.php');
 
-set_time_limit($bootstrap_config['max_execution_time'] ?? 30);
+	define('IS_PRODUCTION', $bootstrap_config['is_production'] ?? true);
 
-if(isset($_SERVER['HTTP_X_DATAPHYRE_APPLICATION'])){
-	$bootstrap_config['app']=$_SERVER['HTTP_X_DATAPHYRE_APPLICATION'];
-}
-else
-{
-	if($bootstrap_config['prevent_keyless_direct_access']===true){
-		if(!file_exists($file=__DIR__.'/direct_access_key')){
-			file_put_contents($file, bin2hex(openssl_random_pseudo_bytes(32)));
-		}
-		if(!in_array($_SERVER['HTTP_X_TRAFFIC_SOURCE'], ['haproxy', 'internal_traffic'])){
-			$key=trim(file_get_contents(__DIR__.'/direct_access_key'));
-			if(empty($_REQUEST['direct_access_key']) || trim($_REQUEST['direct_access_key'])!==$key){
-				http_response_code(403);
-				die('<h1>Direct access requires authentication.</h1>');
+	define('LICENSE', $bootstrap_config['license'] ?? false);
+	
+	if(!defined('RQID')){
+		heisenconstant('RQID', fn()=>'rq_'.bin2hex(random_bytes(16)));
+	}
+	
+	if(in_array($_SERVER['SERVER_ADDR'], ['localhost', '127.0.0.1', '192.168.0.1', '0.0.0.0'])){
+		$_SERVER['SERVER_ADDR']=$bootstrap_config['public_ip_address'];
+		$_SERVER['SELF_ADDR']=$_SERVER['SERVER_ADDR'].':'.$bootstrap_config['web_server_port'];
+	}
+
+	set_time_limit($bootstrap_config['max_execution_time'] ?? 30);
+
+	if(isset($_SERVER['HTTP_X_DATAPHYRE_APPLICATION'])){
+		$bootstrap_config['app']=$_SERVER['HTTP_X_DATAPHYRE_APPLICATION'];
+	}
+	else
+	{
+		if($bootstrap_config['prevent_keyless_direct_access']===true){
+			if(!file_exists($file=__DIR__.'/direct_access_key')){
+				file_put_contents($file, bin2hex(openssl_random_pseudo_bytes(32)));
 			}
-		}
-		else
-		{
-			if(filter_var($_SERVER['HTTP_HOST'], FILTER_VALIDATE_IP)!==false){
+			if(!in_array($_SERVER['HTTP_X_TRAFFIC_SOURCE'], ['haproxy', 'internal_traffic'])){
+				$key=trim(file_get_contents(__DIR__.'/direct_access_key'));
 				if(empty($_REQUEST['direct_access_key']) || trim($_REQUEST['direct_access_key'])!==$key){
 					http_response_code(403);
 					die('<h1>Direct access requires authentication.</h1>');
 				}
 			}
-		}
-	}
-}
-
-if($bootstrap_config['allow_app_override']===true){
-	if(!file_exists($file=__DIR__.'/app_override_key')){
-		file_put_contents($file, bin2hex(openssl_random_pseudo_bytes(32)));
-	}
-	foreach(['_POST', '_GET', '_COOKIE'] as $source){
-		if(!empty($$source['app_override'])){
-			$key=file_get_contents(__DIR__.'/app_override_key');
-			$user_app=explode(',', $$source['app_override']);
-			if($user_app[1]===$key){
-				$bootstrap_config['app']=$user_app[0];
+			else
+			{
+				if(filter_var($_SERVER['HTTP_HOST'], FILTER_VALIDATE_IP)!==false){
+					if(empty($_REQUEST['direct_access_key']) || trim($_REQUEST['direct_access_key'])!==$key){
+						http_response_code(403);
+						die('<h1>Direct access requires authentication.</h1>');
+					}
+				}
 			}
 		}
 	}
+
+	if($bootstrap_config['allow_app_override']===true){
+		if(!file_exists($file=__DIR__.'/app_override_key')){
+			file_put_contents($file, bin2hex(openssl_random_pseudo_bytes(32)));
+		}
+		foreach(['_POST', '_GET', '_COOKIE'] as $source){
+			if(!empty($$source['app_override'])){
+				$key=file_get_contents(__DIR__.'/app_override_key');
+				$user_app=explode(',', $$source['app_override']);
+				if($user_app[1]===$key){
+					$bootstrap_config['app']=$user_app[0];
+				}
+			}
+		}
+	}
+
+	define('APP', $bootstrap_config['app']);
+
+	unset($bootstrap_config, $user_app, $key, $file);
+	
+}catch(\Throwable $exception){
+	pre_init_error('Fatal error: Unable to load dataphyre bootstrap', $exception);
 }
 
-define('APP', $bootstrap_config['app']);
-
-unset($bootstrap_config, $user_app, $key, $file);
 
 try{
 	tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Starting application bootstrap');
@@ -101,73 +122,90 @@ try{
 
 /**
  * Quantum Constant Expansion (QCE)
- * ---------------------------------
- * A Dataphyre pattern for deferred, introspectable constant definitions.
+ * --------------------------------
+ * A Dataphyre pattern for deferred, introspectable, single-evaluation constants.
  *
- * Values passed as closures will be lazily evaluated on string cast,
- * cached on first access, and display their quantum state during debug.
+ * Heisenconstants are "quantum constants" — lazily evaluated, cached after first access,
+ * and introspectable for debug purposes. Their state collapses only when observed.
  *
- * Example:
+ * Any Closure in the passed value (or array of values) will be wrapped in a container
+ * that handles caching, string/int/array/bool coercion, and debug visibility.
+ *
+ * Usage example:
+ *
  * heisenconstant('MY_CONST', [
  *     'now' => fn() => date('c'),
  *     'uuid' => fn() => bin2hex(random_bytes(16)),
  * ]);
  *
- * echo MY_CONST['now']; // triggers evaluation
- * var_dump(MY_CONST);   // shows eval status
+ * echo MY_CONST['now'];     // triggers evaluation of 'now'
+ * var_dump(MY_CONST);       // displays evaluation status
  *
- * Warning: Here be dragons.
+ * 🧠 Ideal for: runtime-defined per-request globals like CSP nonces, UUIDs, AB test IDs,
+ * or anything you "might" need — but only if needed.
+ *
+ * Warning: Here be dragons. Constants that aren’t.
  * Jérémie Fréreault – 2025-04-10
  */
-function heisenconstant(string $name, array $map): void {
-    foreach($map as $key=>$value){
-        if($value instanceof Closure){
-            $map[$key]=new class($value){
-                private Closure $fn;
-                private mixed $cached=null;
-                public function __construct(Closure $fn){
-                    $this->fn=$fn;
-                }
-                public function __toString(): string{
-                    return (string)($this->cached ??= ($this->fn)());
-                }
-                public function toInt(): int{
-                    return (int)($this->cached ??=($this->fn)());
-                }
-                public function toFloat(): float{
-                    return (float)($this->cached ??=($this->fn)());
-                }
-                public function toArray(): array{
-                    return (array)($this->cached ??=($this->fn)());
-                }
-                public function toBool(): bool{
-                    return (bool)($this->cached ??=($this->fn)());
-                }
-                public function raw(): mixed{
-                    return $this->cached ??=($this->fn)();
-                }
-                public function reset(): void {
-                    $this->cached=null;
-                    $this->evaluated=false;
-                }
-                private function evaluate(): mixed{
-                    $this->evaluated=true;
-                    return ($this->fn)();
-                }
-                public function __debugInfo(): array{
-                    return[
-                        'status'=>$this->cached===null ? 'unevaluated' : 'evaluated',
-                        'value'=>$this->cached ?? '[not yet evaluated]'
-                    ];
-                }
-            };
-        }
-    }
-    define($name, $map);
+function heisenconstant(string $name, mixed $value): void {
+    $wrap_closure=function(mixed $v){
+        if(!$v instanceof Closure) return $v;
+        return new class($v){
+			private Closure $fn;
+			private mixed $cached=null;
+			private bool $evaluated=false;
+			public function __construct(Closure $fn){
+				$this->fn=$fn;
+			}
+			public function __toString(): string{
+				return (string)($this->cached ??= ($this->fn)());
+			}
+			public function toInt(): int{
+				return (int)($this->cached ??=($this->fn)());
+			}
+			public function toFloat(): float{
+				return (float)($this->cached ??=($this->fn)());
+			}
+			public function toArray(): array{
+				return (array)($this->cached ??=($this->fn)());
+			}
+			public function toBool(): bool{
+				return (bool)($this->cached ??=($this->fn)());
+			}
+			public function raw(): mixed{
+				return $this->cached ??=($this->fn)();
+			}
+			public function reset(): void {
+				$this->cached=null;
+				$this->evaluated=false;
+			}
+			private function evaluate(): mixed{
+				$this->evaluated=true;
+				return ($this->fn)();
+			}
+			public function __debugInfo(): array{
+				return[
+					'status'=>$this->cached===null ? 'unevaluated' : 'evaluated',
+					'value'=>$this->cached ?? '[not yet evaluated]'
+				];
+			}
+		};
+	};
+	if(is_array($value)){
+		foreach($value as $k=>$v){
+			$value[$k]=$wrap_closure($v);
+		}
+	}
+	else
+	{
+		$value=$wrap_closure($value);
+	}
+	define($name, $value);
 }
 
 function tracelog($filename=null, $line=null, $class=null, $function=null, $text=null, $type=null, $arguments=null){
 	if(class_exists('\dataphyre\dpanel', false)){
+		if(defined('RUN_MODE') && RUN_MODE!=='diagnostic') return;
 		\dataphyre\dpanel::tracelog_bypass($filename, $line, $class, $function, $text, $type, $arguments);
 	}
 	if(class_exists('\dataphyre\tracelog', false) && \dataphyre\tracelog::$constructed===true){
@@ -202,13 +240,35 @@ function log_error(string $error, ?object $exception=null){
 		$log_data.='<p class="card-text"><strong>Line:</strong> '.htmlspecialchars($exception->getLine()).'</p>';
 		$log_data.='<pre class="card-text bg-dark text-white p-2"><strong>Trace:</strong> '.htmlspecialchars($exception->getTraceAsString()).'</pre></div></div>';
 	}
-	$log_file=__DIR__.'/applications/'.APP.'/backend/dataphyre/logs/'.$log_date=gmdate('Y-m-d H:00') . '.html';
-	$log_file=$GLOBALS['rootpath']['dataphyre'].'logs/'.$log_date=gmdate('Y-m-d H:00') . '.html';
+	$log_file=$GLOBALS['rootpath']['dataphyre'].'logs/'.$log_date=gmdate('Y-m-d H:00').'.html';
 	$new_entry='<tr><td>'.$timestamp.'</td><td>'.$error.$log_data.'</td></tr><!--ENDLOG-->';
 	file_put_contents($log_file, $new_entry, FILE_APPEND);
 }
 
-function pre_init_error(?string $error_message=null, ?object $exception=null) : never {
+function pre_init_error(?string $error_message=null, ?object $exception=null, ?bool $is_from_unavailable=false) : never {
+	if(defined('DP_CORE_LOADED') && $is_from_unavailable===false){
+		\dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='Pre init error: '.$error_message, 'safemode', $exception);
+	}
+	if(!defined('RUN_MODE') || RUN_MODE!=='diagnostic'){
+		if(class_exists('dataphyre\sentinel', false)){
+			dataphyre\sentinel::trigger('pre_init_error', [
+				'exception'=>$exception,
+				'collect_tracelog'=>true
+			], 5);
+		}
+		if(class_exists('dataphyre\contingency', false)){
+			if(!defined('IS_CONTINGENCY')){
+				dataphyre\contingency::replay([
+					'trigger'=>[
+						'type'=>'exception',
+						'exception'=>(array)$exception,
+					],
+					'prevent_attempt'=>dataphyre\contingency::$current_attempt,
+					'revoke'=>dataphyre\contingency::$unassignable
+				]);
+			}
+		}
+	}
 	while(ob_get_level()!==0){
 		ob_end_clean();
 	}

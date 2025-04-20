@@ -24,22 +24,35 @@ if(file_exists($filepath=ROOTPATH['dataphyre']."config/tracelog.php")){
 	require_once($filepath);
 }
 
+\heisenconstant('TRID', fn()=>RQID);
+
 register_shutdown_function(function(){
-	if(tracelog::$defer){
-		tracelog::$defer=false;
-		tracelog::process_retroactive();
+	try{
+		if(tracelog::$enable===true){
+			if(tracelog::$defer){
+				tracelog::$defer=false;
+			}
+			tracelog::process_retroactive();
+			$_SESSION['tracelog']=tracelog::$tracelog;
+			if(tracelog::$save_to_sql===true){
+				tracelog::save_to_database($GLOBALS['tracelog_rqid'] ?? TRID);
+			}
+		}
+	}catch(\Throwable $exception){
+		pre_init_error('Exception on Dataphyre Tracelog shutdown callback', $exception);
 	}
-	$_SESSION['tracelog']=tracelog::$tracelog;
 });
 
-new tracelog();
-
-if(defined('TRACELOG_BOOT_ENABLE')){
-	tracelog::$enable=true;	
+if(defined('TRACELOG_BOOT_ENABLE') || defined('TRACELOG_FORCE_ENABLE')){
+	new tracelog();
+	tracelog::$enable=true;
 	if(defined('TRACELOG_BOOT_ENABLE_PLOTTING')){
-		tracelog::setPlotting(true);
+		tracelog::set_plotting(true);
 	}
-	tracelog::process_retroactive();
+}
+
+if(RUN_MODE==='diagnostic'){
+	require_once(__DIR__.'/tracelog.diagnostic.php');
 }
 
 class tracelog {
@@ -48,18 +61,36 @@ class tracelog {
 	public static $constructed=false;
 	public static $enable=false;
 	public static $open=false;
-	public static $file=false;
-	public static $profiling=false;
     public static $plotting=false;
+    public static $dynamic_unit_testing=false;
     public static $defer=true;
+    public static $save_to_sql=false;
     
 	public function __construct(){
 		self::$constructed=true;
 		self::set_handler();
 	}
 	
+	public static function save_to_database(string $rqid): void {
+		$time=date('Y-m-d H:i:s', strtotime('now'));
+		if(false===$log=sql_insert(
+			$L="dataphyre.tracelogs", 
+			$F=[
+				"rqid"=>$rqid,
+				"log"=>self::$tracelog,
+				"server"=>$_SERVER['SERVER_ADDR'],
+				"app"=>APP,
+				"date"=>$time
+			]
+		)){
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Failed creating log in database", $S="fatal");
+		}
+	}
+	
 	public static function process_retroactive(): void {
 		global $retroactive_tracelog;
+		$initial_memory=ini_get("memory_limit");
+		ini_set("memory_limit", "256M");
 		if(isset($retroactive_tracelog) && is_array($retroactive_tracelog)){
 			if(self::$enable===true){
 				foreach(array_reverse($retroactive_tracelog) as $log){
@@ -73,41 +104,44 @@ class tracelog {
 				}
 			}
 		}
+		ini_set("memory_limit", $initial_memory);
 		unset($retroactive_tracelog);
 	}
 	
 	public static function buffer_callback(mixed $buffer): mixed {
-		if(self::$open===true){
-			$all_defined_functions=function(){
-				$global_functions=get_defined_functions()['user'];
-				$class_methods=[];
-				$classes=get_declared_classes();
-				foreach($classes as $class){
-					$reflection=new \ReflectionClass($class);
-					if($reflection->isUserDefined()){
-						$methods=get_class_methods($class);
-						$class_methods=array_merge($class_methods, $methods);
+		if(self::$enable===true){
+			if(self::$open===true){
+				$all_defined_functions=function(){
+					$global_functions=get_defined_functions()['user'];
+					$class_methods=[];
+					$classes=get_declared_classes();
+					foreach($classes as $class){
+						$reflection=new \ReflectionClass($class);
+						if($reflection->isUserDefined()){
+							$methods=get_class_methods($class);
+							$class_methods=array_merge($class_methods, $methods);
+						}
 					}
+					return count($global_functions)+count($class_methods);
+				};
+				$_SESSION['runtime_memory_used']=INITIAL_MEMORY_USAGE;
+				$_SESSION['memory_used']=memory_get_usage()-INITIAL_MEMORY_USAGE;
+				$_SESSION['memory_used_peak']=memory_get_peak_usage()-INITIAL_MEMORY_USAGE;
+				if(is_int($function_count=$all_defined_functions())){
+					$_SESSION['defined_user_function_count']=$function_count;
 				}
-				return count($global_functions)+count($class_methods);
-			};
-			$_SESSION['runtime_memory_used']=INITIAL_MEMORY_USAGE;
-			$_SESSION['memory_used']=memory_get_usage()-INITIAL_MEMORY_USAGE;
-			$_SESSION['memory_used_peak']=memory_get_peak_usage()-INITIAL_MEMORY_USAGE;
-			if(is_int($function_count=$all_defined_functions())){
-				$_SESSION['defined_user_function_count']=$function_count;
+				$_SESSION['exec_time']=microtime(true)-$_SERVER["REQUEST_TIME_FLOAT"];
+				$_SESSION['included_files']=count(get_included_files());
+				if(self::$plotting===true){
+					return $buffer."<script>window.open('".core::url_self()."dataphyre/tracelog/plotter', '_blank', 'width=1000, height=1000');</script>";
+				}
+				return $buffer."<script>window.open('".core::url_self()."dataphyre/tracelog', '_blank', 'width=1000, height=1000');</script>";
 			}
-			$_SESSION['exec_time']=microtime(true)-$_SERVER["REQUEST_TIME_FLOAT"];
-			$_SESSION['included_files']=count(get_included_files());
-			if(self::$plotting===true){
-				return $buffer."<script>window.open('".core::url_self()."dataphyre/tracelog/plotter', '_blank', 'width=1000, height=1000');</script>";
-			}
-			return $buffer."<script>window.open('".core::url_self()."dataphyre/tracelog?log=".tracelog::$file."', '_blank', 'width=1000, height=1000');</script>";
 		}
 		return $buffer;
 	}
 	
-    public static function setPlotting($value){
+    public static function set_plotting($value){
         if(self::$plotting!==$value){
             self::$plotting=$value;
             if($value) @unlink(ROOTPATH['dataphyre'].'tracelog/plotting.dat');
@@ -143,13 +177,13 @@ class tracelog {
 	}
 
 	/**
-	  * Save tracelog to session variable and or file
+	  * Save tracelog to session variable
 	  *
 	  * @version 	1.0.6
 	  * @author	Jérémie Fréreault <jeremie@phyro.ca>
 	  *
 	  * @param ?string $directory
-	  * @param ?string $filename_full
+	  * @param ?string $file
 	  * @param ?string $line
 	  * @param ?string $class
 	  * @param ?string $function
@@ -159,11 +193,19 @@ class tracelog {
 	  * @param ?float $time
 	  * @return bool											True on success, false on failure
 	  */
-	public static function tracelog(?string $filename_full, ?string $line, ?string $class, ?string $function, ?string $text, ?string $type="info", ?array $arguments=null, ?float $retroactive_time=null, ?int $retroactive_memory=null) : bool {
+	public static function tracelog(?string $file, ?string $line, ?string $class, ?string $function, ?string $text, ?string $type='info', ?array $arguments=null, ?float $retroactive_time=null, ?int $retroactive_memory=null) : bool {
 		if(self::$enable===false) return false;
 		if(self::$defer===true){
-			$GLOBALS['retroactive_tracelog'][]=[$filename_full, $line, $class, $function, $text, $type, $arguments, microtime(true), memory_get_usage()];
+			$GLOBALS['retroactive_tracelog'][]=[$file, $line, $class, $function, $text, $type, $arguments, microtime(true), memory_get_usage()];
 			return true;
+		}
+		if($type==='function_call_with_test'){
+			if(class_exists('dataphyre\dpanel') || $dpanel=dp_module_present('dpanel')){
+				if(is_array($dpanel)){
+					require_once($dpanel[0]);
+				}
+				\dataphyre\dpanel::generate_dynamic_unit_test($file, $line, $class, $function, $arguments);
+			}
 		}
 		static $last_function_signature=null;
 		static $function_colors=[];
@@ -209,11 +251,14 @@ class tracelog {
 			}
 			$function_colors[$function]??=core::random_hex_color();
 			if($type==='function_call'){
-				$text='<span style="color:#85f1ff;">Function call:</span> <span style="color:'.$function_colors[$function].'">'.$function.'('.$text.')</span>';
+				$text='<span style="color:#85f1ff;">FC:</span> <span style="color:'.$function_colors[$function].'">'.$function.'('.$text.')</span>';
+			}
+			elseif($type==='function_call_with_test'){
+				$text='<span style="color:#84b3ff;" title="Function Call with dynamic unit Test generation">FCwT:</span> <span style="color:'.$function_colors[$function].'">'.$function.'('.$text.')</span>';
 			}
 			else
 			{
-				$pre='<span style="color:'.$function_colors[$function].'">'.$function.'():</span> ';
+				$pre='<span style="color:'.$function_colors[$function].'">FC: '.$function.'():</span> ';
 			}
 		}
 		if(empty($type) || $type==='info'){
@@ -231,31 +276,13 @@ class tracelog {
 			$text=$pre.'<span style="color:red">'.$text.'</span>';
 		}
 		self::$tracelog??='';
-		$log='<br><b>'.$tracelog_time.'ms, '.core::convert_storage_unit($memory).' ▸ </b> <i><span title="'.$filename_full.'">'.basename($filename_full).'</span>:'.$line.':</i> > <b>'.$text.'</b>';
+		$log='<br><b>'.$tracelog_time.'ms, '.core::convert_storage_unit($memory).' ▸ </b> <i><span title="'.$file.'">'.basename($file).'</span>:'.$line.':</i> > <b>'.$text.'</b>';
 		if(is_null($retroactive_time)){
 			self::$tracelog.=$log;
 		}
 		else
 		{
 			self::$tracelog=$log.self::$tracelog;
-		}
-		if(self::$file!==false){
-			if(self::$file===true){
-				foreach(glob(ROOTPATH['dataphyre']."logs/*", GLOB_ONLYDIR) as $folder){
-					if(strtotime(basename($folder))<=strtotime('-'.$GLOBALS['configurations']['dataphyre']['tracelog']['file_lifespan'].' hours')){
-						core::force_rmdir(ROOTPATH['dataphyre']."logs/".basename($folder));
-					}
-				}
-				if(false===realpath($tracelog_folder=ROOTPATH['dataphyre']."logs/".date("Y-m-d H:00", time()))){
-					mkdir($tracelog_folder);
-				}
-				self::$file=$tracelog_folder."/".date("H:i:s", time())."_".$type.".html";
-				fwrite($file=fopen(self::$file, "w"), self::$tracelog.PHP_EOL);
-				fclose($file);
-				return true;
-			}
-			fwrite($file=fopen(self::$file, "a"), $log.PHP_EOL);
-			fclose($file);
 		}
 		if(self::$plotting===true){
 			$backtrace=debug_backtrace();
@@ -289,31 +316,9 @@ class tracelog {
 				});
 				$processed_trace[]=$entry;
 			}
-			$file_path=ROOTPATH['dataphyre'].'tracelog/plotting.dat';
+			$file_path=ROOTPATH['dataphyre'].'cache/tracelog_plotting.dat';
 			$json_trace=json_encode($processed_trace);
 			core::file_put_contents_forced($file_path, $json_trace . PHP_EOL, FILE_APPEND);
-		}
-		if(self::$profiling===true){
-			static $timings=[];
-			$function_string=$function;
-			if(empty($function))$function_string='global';
-			$signature=null;
-			if(!empty($arguments))$signature=md5(json_encode($arguments));
-			if($last_function_signature!==$signature){
-				$last_function_signature=$signature;
-				$timings[$function_string][$signature]=$time;
-			}
-			$current_date=date('Y-m-d H:i');
-			$dir_path=ROOTPATH['dataphyre'].'tracelog/profiling/'.$function_string.'/';
-			if(!is_dir($dir_path))mkdir($dir_path, 0777, true);
-			$events_file_path=$dir_path.'/'.$current_date.'.json';
-			$log_entry=[
-				'type'=>$type,
-				'sig'=>$signature,
-				'text'=>$text
-			];
-			if(isset($timings[$function][$signature]))$log_entry['timing']=$time-$timings[$function][$signature];
-			core::file_put_contents_forced($events_file_path, json_encode($log_entry).PHP_EOL, FILE_APPEND);
 		}
 		return true;
 	}

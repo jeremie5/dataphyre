@@ -13,14 +13,9 @@
  * This software is provided "as is", without any warranty of any kind.
  */
 
-
- ini_set('display_errors', 1);
- ini_set('display_startup_errors', 1);
- error_reporting(E_ALL);
+ini_set('memory_limit','1024M');
  
- ini_set('memory_limit','1024M');
- 
-$filePath = ROOTPATH['dataphyre'] . 'tracelog/plotting.dat';
+$filePath = ROOTPATH['dataphyre'] . 'cache/tracelog_plotting.dat';
 if(file_exists($filePath)){
 	$lines = file($filePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
 	$allTraces = [];

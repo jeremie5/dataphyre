@@ -15,16 +15,18 @@
 
 namespace dataphyre;
 
-define("RUN_MODE", "diagnostic");
+if(!defined('RUN_MODE')){
+	define('RUN_MODE', 'diagnostic');
+}
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
-class dpanel{ 
+class dpanel{
 
 	private static $verbose=[];
 	private static $catched_tracelog=[];
 
-	public static function add_verbose(?array $verboses) : void {
+	public static function add_verbose(?array $verboses): void {
 		if(!empty($verboses))self::$verbose=array_merge(self::$verbose, $verboses);
 	}
 
@@ -44,6 +46,64 @@ class dpanel{
 		$result=self::$catched_tracelog;
 		if($clear)self::$catched_tracelog=[];
 		return $result;
+	}
+
+	public static function get_type_shape(mixed $value): mixed {
+		if(is_array($value)){
+			$types=[];
+			foreach($value as $item){
+				$types[]=self::get_type_shape($item);
+			}
+			ksort($types);
+			$types=array_values($types);
+			return ['array', array_unique($types)];
+		}
+		if(is_object($value)) return get_class($value);
+		if(is_null($value)) return 'null';
+		if(is_bool($value)) return json_encode($value);
+		if(is_string($value)) return 'string';
+		if(is_int($value)) return 'int';
+		if(is_float($value)) return 'float';
+		return 'unknown';
+	}
+	
+	public static function get_type_shape_signature(mixed $type_shape): string {
+		return md5(serialize($type_shape));
+	}
+	
+	public static function generate_dynamic_unit_test(string $file=null, string $line=null, string $class=null, string $function=null, array $arguments=null, mixed $return_value=null) : void {
+		if($return_value===null){
+			try{
+				$callable=!empty($class) ? [$class, $function] : $function;
+				if(is_callable($callable)){
+					$return_value=call_user_func_array($callable, $arguments);
+				}
+			}catch(\Throwable $e){
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, "Failed to call $function for return value inference: ".$e->getMessage(), "warning");
+				return;
+			}
+		}
+		if(empty($function) || !isset($arguments) || $return_value===null) return;
+		$type_shape=self::get_type_shape($return_value);
+		$signature=self::get_type_shape_signature($type_shape);
+		$filepath=ROOTPATH['dataphyre']."unit_tests/dynamic/{$class}.{$function}/{$signature}.json";
+		$test=[
+			'name'=>"Dynamic_{$signature}",
+			'class'=>$class,
+			'function'=>$function,
+			'args'=>$arguments,
+			'expected'=>$type_shape,
+			'auto'=>true,
+			'line'=>$line,
+			'file'=>$file,
+		];
+		$meta_path=ROOTPATH['dataphyre']."unit_tests/dynamic/{$class}.{$function}/{$signature}.meta.json";
+		$meta=is_file($meta_path) ? json_decode(file_get_contents($meta_path), true) : [];
+		$meta['calls']=($meta['calls'] ?? 0)+1;
+		$meta['last_called_at']=date('c');
+		core::file_put_contents_forced($meta_path, json_encode($meta, JSON_PRETTY_PRINT));
+		if(file_exists($filepath)) return;
+		core::file_put_contents_forced($filepath, json_encode([$test], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES));
 	}
 
 	public static function unit_test(string $json_file_path): bool {
@@ -119,7 +179,7 @@ class dpanel{
 		};
 		foreach($test_definitions as $test_case){
 			try{
-				if(!isset($test_case['function'], $test_case['args'], $test_case['expected'])){
+				if(!isset($test_case['function'], $test_case['args']) || (!isset($test_case['expected']) && empty($test_case['auto'])===false)){
 					self::$verbose[]=[
 						'type'=>'unit_test',
 						'function'=>$function,
@@ -134,7 +194,7 @@ class dpanel{
 				}
 				$function=$test_case['function'];
 				$args=$test_case['args'];
-				$expected_outcomes=is_array($test_case['expected']) ? $test_case['expected'] : [$test_case['expected']];
+				$expected_outcomes=isset($test_case['expected']) ? (is_array($test_case['expected']) ? $test_case['expected'] : [$test_case['expected']]) : [];
 				$failed_dependencies=false;
 				foreach([
 					"function"=>"function_exists", 
@@ -352,39 +412,40 @@ class dpanel{
 					];
 				}
 				$unit_test_dir=dirname($module_path).'/unit_tests';
+				$test_files=[];
 				if(is_dir($unit_test_dir)){
-					$test_files=glob($unit_test_dir . '/*.json');
-					$all_tests_passed=true;
-					usort($test_files, function ($a, $b){
-						$a_has_construct=stripos($a, 'construct') !== false;
-						$b_has_construct=stripos($b, 'construct') !== false;
-						if($a_has_construct===$b_has_construct){
-							return 0;
-						}
-						return $a_has_construct ? -1 : 1;
-					});
-					foreach($test_files as $json_file){
-						$passed=self::unit_test($json_file);
-						if(!$passed){
-							$all_tests_passed=false;
-						}
+					$test_files=array_merge($test_files, glob($unit_test_dir . '/*.json'));
+				}
+				$dynamic_test_dir=ROOTPATH['dataphyre'].'unit_tests/dynamic/';
+				$dynamic_test_files=glob($dynamic_test_dir.'dataphyre\\'.$module.'.*/*.json');
+				$test_files=array_merge($test_files, $dynamic_test_files);
+				if(empty($test_files)) return true;
+				$all_tests_passed=true;
+				usort($test_files, function($a, $b){
+					$a_has_construct=stripos($a, 'construct')!==false;
+					$b_has_construct=stripos($b, 'construct')!==false;
+					return $a_has_construct===$b_has_construct ? 0 : ($a_has_construct ? -1 : 1);
+				});
+				foreach($test_files as $json_file){
+					if(false===$passed=self::unit_test($json_file)){
+						$all_tests_passed=false;
 					}
-					if(!$all_tests_passed){
-						self::$verbose[]=[
-							'type'=>'unit_test', 
-							'module'=>$module, 
-							'message'=>'Unit tests failed for module '.$module, 
-							'level'=>'error',
-						];
-						return false;
-					}
-					else
-					{
-						self::$verbose[]=[
-							'message'=>'Unit tests passed for module '.$module, 
-							'module'=>$module, 
-						];
-					}
+				}
+				if(!$all_tests_passed){
+					self::$verbose[]=[
+						'type'=>'unit_test', 
+						'module'=>$module, 
+						'message'=>'Unit tests failed for module '.$module, 
+						'level'=>'error',
+					];
+					return false;
+				}
+				else
+				{
+					self::$verbose[]=[
+						'message'=>'Unit tests passed for module '.$module, 
+						'module'=>$module, 
+					];
 				}
 				return true;
 			}catch(\Throwable $exception){

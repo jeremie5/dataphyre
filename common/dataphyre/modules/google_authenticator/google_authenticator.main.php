@@ -20,13 +20,13 @@ tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 class google_authenticator{
 
 	static function create_secret(){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_GOOGLE_AUTHENTICATOR_CREATE_SECRET",...func_get_args())) return $early_return;
 		return bin2hex(openssl_random_pseudo_bytes(24));	
 	}
 
 	static function get_pairing_image(string $secret, string $username) : bool|string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_GOOGLE_AUTHENTICATOR_GET_PAIRING_IMAGE",...func_get_args())) return $early_return;
 		if(false!==$link=file_get_contents("https://www.authenticatorApi.com/pair.aspx?AppName=".urlencode(core::get_config("dataphyre/public_app_name"))."&AppInfo=".urlencode($username)."&SecretCode=".$secret)){
 			$link=explode("src='", $link)[1];
@@ -43,7 +43,7 @@ class google_authenticator{
 	}
 
 	static function verify(string $secret, string $code){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_GOOGLE_AUTHENTICATOR_VERIFY",...func_get_args())) return $early_return;
 		if(is_numeric($code) && strlen($code)===6){
 			if(false!==$result=file_get_contents("https://www.authenticatorApi.com/Validate.aspx?Pin=".$code."&SecretCode=".$secret)){

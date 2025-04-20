@@ -30,12 +30,15 @@ require_once(__DIR__."/external_engines/elastic.php");
 $configurations['dataphyre']['fulltext_engine']['fs_index_entry_count']=1000;
 $configurations['dataphyre']['fulltext_engine']['fs_index_entry_count_for_sql']=100000;
 
-$configurations['dataphyre']['fulltext_engine']['indexes']=json_decode(file_get_contents(ROOTPATH['dataphyre']."config/fulltext_engine/indexes.json"), true);
-
 class fulltext_engine{
 
+	private static function init(): void {
+		global $configurations;
+		$configurations['dataphyre']['fulltext_engine']['indexes']=json_decode(file_get_contents(ROOTPATH['dataphyre']."config/fulltext_engine/indexes.json"), true);
+	}
+
     public static function search(string $index_name, array $data, string $language='en', int $max_results=50, bool $boolean_mode=true, float $threshold=0.3, string $forced_algorithms='') : array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		$start_micros=microtime(true);
 		$results=[];
 		if(false!==$search_results=self::find_in_index($index_name, $data, $language, $boolean_mode, $max_results, $threshold, $forced_algorithms)){
@@ -63,7 +66,7 @@ class fulltext_engine{
 	}
 	
 	public static function tokenize(string $text, string $language='en') : array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(strlen($text)>2){
 			$text=self::remove_stopwords($text, $language);
 			$text=self::apply_stemming($text, $language);
@@ -80,7 +83,7 @@ class fulltext_engine{
 	}
 	
 	public static function get_score(string $index_value, string $search_value, string $search_value_raw, string $language='en', bool $boolean_mode=false, string $forced_algorithms='') : float{
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		$normalized_score=0;
 		if($boolean_mode===true){
 			$tokens=self::tokenize_expression($search_value_raw);
@@ -144,16 +147,12 @@ class fulltext_engine{
 		return $normalized_score;
 	}
 	
-	public static function get_synonyms(string $word, string $language="en") : void {
-		
-	}
-	
 	public static function tokenize_string(string $string) : array {
 		return array_unique(str_word_count(strtolower($string), 1));
 	}
 	
 	public static function evaluate_expression(string $index_value, array $expression) : array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		$stack=[];
 		foreach($expression as $term){
 			if($term==='AND' || $term==='OR' || $term==='NOT'){
@@ -187,7 +186,7 @@ class fulltext_engine{
 	}
 
 	public static function tokenize_expression(string $search_value) : array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		$pattern='/(\(|\)|\+|-|AND\s+|OR\s+|NOT\s+)/i';
 		$parts=preg_split($pattern, $search_value, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
 		$expr=[];
@@ -201,7 +200,7 @@ class fulltext_engine{
 	}
 
 	public static function parse_expression(array $tokens) : array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		$output=[];
 		$operators=[];
 		foreach($tokens as $token){
@@ -227,7 +226,7 @@ class fulltext_engine{
     public static function update_in_index(string $index_name, array $values, string $language='en') : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
         global $configurations;
-	
+		self::init();
         $index_type=$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['type'];
 		if(!isset($values[$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name']])){
 			core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: Primary key not found for index.', 'safemode');
@@ -278,11 +277,8 @@ class fulltext_engine{
 					$db->close();
 					return true;
 				}
-				else
-				{
-					$db->close();
-					return false;
-				}
+				$db->close();
+				return false;
 			}
 			elseif($index_type==='sql'){
 				$values_list=implode(',', array_keys($values));
@@ -293,12 +289,13 @@ class fulltext_engine{
 					$V=array($values, $primary_key, $primary_key_value),
 					$CC=true
 				);
+				return true;
 			}
 			elseif($index_type==='elastic'){
-				fulltext_engine\elasticsearch::update($index_name, $values, $primary_key, $primary_key_value, $language);
+				return fulltext_engine\elasticsearch::update($index_name, $values, $primary_key, $primary_key_value, $language);
 			}
 			elseif($index_type==='vespa'){
-				fulltext_engine\vespa::update($index_name, $values, $primary_key, $primary_key_value, $language);
+				return fulltext_engine\vespa::update($index_name, $values, $primary_key, $primary_key_value, $language);
 			}
 			elseif($index_type==='json'){
 				$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/json/".$index_name;
@@ -335,430 +332,414 @@ class fulltext_engine{
     public static function add_to_index(string $index_name, array $values, string $language='en') : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
         global $configurations;
-	
+		self::init();
 		if(!isset($configurations['dataphyre']['fulltext_engine']['indexes'][$index_name])){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Index is not defined");
+			return false;
 		}
-		else
-		{
-			$index_type=$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['type'];
-			if(!isset($values[$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name']])){
-				core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: Primary key not found for index.', 'safemode');
+		$index_type=$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['type'];
+		if(!isset($values[$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name']])){
+			core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: Primary key not found for index.', 'safemode');
+		}
+		$primary_key_value=$values[$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name']];
+		$primary_key=$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name'];
+		unset($values[$primary_key]);
+		if($index_type==='sqlite'){
+			if(!extension_loaded('sqlite3')){
+				core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: SQLite3 is not enabled in the current environment.', 'safemode');
 			}
-			else
-			{
-				$primary_key_value=$values[$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name']];
-				$primary_key=$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name'];
-				unset($values[$primary_key]);
-				if($index_type==='sqlite'){
-					if(!extension_loaded('sqlite3')){
-						core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: SQLite3 is not enabled in the current environment.', 'safemode');
-					}
-					$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/sqlite/".$index_name;
-					if (!is_dir($index_folder)) {
-						mkdir($index_folder, 0777, true);
-					}
-					$fileid=0;
-					while(true){
-						$filepath=$index_folder."/".$fileid.".db";
-						$db=new \SQLite3($filepath);
-						$db->exec('CREATE TABLE IF NOT EXISTS entries (primary_key TEXT, index_value TEXT)');
-						$stmt=$db->prepare('SELECT COUNT(*) as count FROM entries WHERE primary_key=:primary_key_value');
-						$stmt->bindValue(':primary_key_value', $primary_key_value);
-						$result = $stmt->execute()->fetchArray(SQLITE3_ASSOC);
-						if($result['count']>0){
-							$db->close();
-							return false;
-						}
-						$stmt=$db->prepare('SELECT COUNT(*) as count FROM entries');
-						$result=$stmt->execute()->fetchArray(SQLITE3_ASSOC);
-						if($result['count']<$configurations['dataphyre']['fulltext_engine']['fs_index_entry_count_for_sql']){
-							break;
-						}
-						$db->close();
-						$fileid++;
-					}
-					foreach($values as $key=>$value){
-						$index_value=self::tokenize($value, $language);
-						$values[$key]=implode(' ', $index_value);
-					}
-					$values_json=json_encode($values);
-					$stmt = $db->prepare('INSERT INTO entries (primary_key, index_value) VALUES (:primary_key_value, :values_json)');
-					$stmt->bindValue(':primary_key_value', $primary_key_value);
-					$stmt->bindValue(':values_json', $values_json);
-					if($stmt->execute()){
-						$db->close();
-						return true;
-					}
-					else
-					{
-						$db->close();
-						return false;
-					}
-				}
-				elseif($index_type==='sql'){
-					$values_list=implode(',', array_keys($values));
-					sql_insert(
-						$L="dataphyre_fulltext_engine.index_".$index_name, 
-						$F=$values_list,
-						$V=array($values),
-						$CC=true
-					);
-				}
-				elseif($index_type==='elastic'){
-					$result_primarykeys=fulltext_engine\elasticsearch::add($index_name, $values, $primary_column_name, $primary_key_value, $language);
-				}
-				elseif($index_type==='vespa'){
-					$result_primarykeys=fulltext_engine\vespa::add($index_name, $values, $primary_column_name, $primary_key_value, $language);
-				}
-				elseif($index_type==='json'){
-					$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/json/".$index_name;
-					$fileid=0;
-					$filepath=$index_folder."/".$fileid;
-					$found_file=false;
-					while(file_exists($filepath)){
-						$current_index=json_decode(file_get_contents($filepath), true);
-						if(in_array($primary_key_value, $current_index)){
-							return false;
-						}
-						if(count($current_index)<$configurations['dataphyre']['fulltext_engine']['fs_index_entry_count']){
-							$found_file=true;
-							break;
-						}
-						$fileid++;
-						$filepath=$index_folder."/".$fileid;
-					}
-					if(!$found_file){
-						$current_index=[];
-					}
-					foreach($values as $key=>$value){
-						$index_value=self::tokenize($value, $language);
-						$values[$key]=implode(' ', $index_value);
-					}
-					$current_index[$primary_key_value]=$values;
-					if(false!==core::file_put_contents_forced($filepath, json_encode($current_index))){
-						return true;
-					}
-				}
-				else
-				{
-					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Unknown index type");
+			$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/sqlite/".$index_name;
+			if (!is_dir($index_folder)) {
+				mkdir($index_folder, 0777, true);
+			}
+			$fileid=0;
+			while(true){
+				$filepath=$index_folder."/".$fileid.".db";
+				$db=new \SQLite3($filepath);
+				$db->exec('CREATE TABLE IF NOT EXISTS entries (primary_key TEXT, index_value TEXT)');
+				$stmt=$db->prepare('SELECT COUNT(*) as count FROM entries WHERE primary_key=:primary_key_value');
+				$stmt->bindValue(':primary_key_value', $primary_key_value);
+				$result = $stmt->execute()->fetchArray(SQLITE3_ASSOC);
+				if($result['count']>0){
+					$db->close();
 					return false;
 				}
+				$stmt=$db->prepare('SELECT COUNT(*) as count FROM entries');
+				$result=$stmt->execute()->fetchArray(SQLITE3_ASSOC);
+				if($result['count']<$configurations['dataphyre']['fulltext_engine']['fs_index_entry_count_for_sql']){
+					break;
+				}
+				$db->close();
+				$fileid++;
+			}
+			foreach($values as $key=>$value){
+				$index_value=self::tokenize($value, $language);
+				$values[$key]=implode(' ', $index_value);
+			}
+			$values_json=json_encode($values);
+			$stmt = $db->prepare('INSERT INTO entries (primary_key, index_value) VALUES (:primary_key_value, :values_json)');
+			$stmt->bindValue(':primary_key_value', $primary_key_value);
+			$stmt->bindValue(':values_json', $values_json);
+			if($stmt->execute()){
+				$db->close();
+				return true;
+			}
+			$db->close();
+			return false;
+		}
+		elseif($index_type==='sql'){
+			$values_list=implode(',', array_keys($values));
+			sql_insert(
+				$L="dataphyre_fulltext_engine.index_".$index_name, 
+				$F=$values_list,
+				$V=array($values),
+				$CC=true
+			);
+		}
+		elseif($index_type==='elastic'){
+			return fulltext_engine\elasticsearch::add($index_name, $values, $primary_key, $primary_key_value, $language);
+		}
+		elseif($index_type==='vespa'){
+			return fulltext_engine\vespa::add($index_name, $values, $primary_key, $primary_key_value, $language);
+		}
+		elseif($index_type==='json'){
+			$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/json/".$index_name;
+			$fileid=0;
+			$filepath=$index_folder."/".$fileid;
+			$found_file=false;
+			while(file_exists($filepath)){
+				$current_index=json_decode(file_get_contents($filepath), true);
+				if(in_array($primary_key_value, $current_index)){
+					return false;
+				}
+				if(count($current_index)<$configurations['dataphyre']['fulltext_engine']['fs_index_entry_count']){
+					$found_file=true;
+					break;
+				}
+				$fileid++;
+				$filepath=$index_folder."/".$fileid;
+			}
+			if(!$found_file){
+				$current_index=[];
+			}
+			foreach($values as $key=>$value){
+				$index_value=self::tokenize($value, $language);
+				$values[$key]=implode(' ', $index_value);
+			}
+			$current_index[$primary_key_value]=$values;
+			if(false!==core::file_put_contents_forced($filepath, json_encode($current_index))){
+				return true;
 			}
 		}
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Unknown index type");
+		return false;
 	}
 
 	public static function remove_from_index(string $index_name, string $primary_key_value) : string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
-	
-		if(!isset($values[$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name']])){
+		self::init();
+		if(!isset($configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name'])){
 			core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: Primary key not found for index.', 'safemode');
 		}
-		else
-		{
-			$index_type=$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['type'];
-			if($index_type==='sqlite'){
-				if(!extension_loaded('sqlite3')){
-					core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: SQLite3 is not enabled in the current environment.', 'safemode');
+		$index_type=$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['type'];
+		if($index_type==='sqlite'){
+			if(!extension_loaded('sqlite3')){
+				core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: SQLite3 is not enabled in the current environment.', 'safemode');
+			}
+			$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/sqlite/".$index_name;
+			$fileid=0;
+			$found_file=false;
+			while(true){
+				$filepath=$index_folder."/".$fileid.".db";
+				if(file_exists($filepath)){
+					$db=new \SQLite3($filepath);
+					$stmt=$db->prepare('SELECT COUNT(*) as count FROM entries WHERE primary_key = :primary_key_value');
+					$stmt->bindValue(':primary_key_value', $primary_key_value);
+					$result=$stmt->execute()->fetchArray(SQLITE3_ASSOC);
+					if($result['count']>0){
+						$found_file=true;
+						break;
+					}
+					$db->close();
 				}
-				$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/sqlite/".$index_name;
-				$fileid=0;
-				$found_file=false;
-				while(true){
-					$filepath=$index_folder."/".$fileid.".db";
-					if(file_exists($filepath)){
-						$db=new \SQLite3($filepath);
-						$stmt=$db->prepare('SELECT COUNT(*) as count FROM entries WHERE primary_key = :primary_key_value');
-						$stmt->bindValue(':primary_key_value', $primary_key_value);
-						$result=$stmt->execute()->fetchArray(SQLITE3_ASSOC);
-						if($result['count']>0){
-							$found_file=true;
+				else
+				{
+					break;
+				}
+				$fileid++;
+			}
+			if(!$found_file){
+				return false;
+			}
+			foreach($values as $key=>$value){
+				$index_value=self::tokenize($value, $language);
+				$values[$key]=implode(' ', $index_value);
+			}
+			$values_json=json_encode($values);
+			$stmt=$db->prepare('DELETE FROM entries WHERE primary_key = :primary_key_value');
+			$stmt->bindValue(':primary_key_value', $primary_key_value);
+			if($stmt->execute()){
+				$db->close();
+				return true;
+			}
+			else
+			{
+				$db->close();
+				return false;
+			}
+		}
+		elseif($index_type==='sql'){
+			sql_delete(
+				$L="dataphyre_fulltext_engine.index_".$index_name, 
+				$P="WHERE ".$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name']."=?", 
+				$V=array($primary_key_value)
+			);
+		}
+		elseif($index_type==='elastic'){
+			return fulltext_engine\elasticsearch::remove($index_name, $primary_column_name, $primary_key_value);
+		}
+		elseif($index_type==='vespa'){
+			return fulltext_engine\vespa::remove($index_name, $primary_column_name, $primary_key_value);
+		}
+		elseif($index_type==='json'){
+			$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/json/".$index_name;
+			$primary_column_name=$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name'];
+			$fileid=0;
+			while(true){
+				$filepath=$index_folder."/".$fileid;
+				if(!file_exists($filepath)){
+					break;
+				}
+				else
+				{
+					if(false!==$current_index=json_decode(file_get_contents($filepath),true)){
+						if(in_array($primary_key_value, $current_index)){
 							break;
 						}
-						$db->close();
 					}
 					else
 					{
-						break;
+						core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: Failed reading index.', 'safemode');
 					}
 					$fileid++;
 				}
-				if(!$found_file){
-					return false;
-				}
-				foreach($values as $key=>$value){
-					$index_value=self::tokenize($value, $language);
-					$values[$key]=implode(' ', $index_value);
-				}
-				$values_json=json_encode($values);
-				$stmt=$db->prepare('DELETE FROM entries WHERE primary_key = :primary_key_value');
-				$stmt->bindValue(':primary_key_value', $primary_key_value);
-				if($stmt->execute()){
-					$db->close();
-					return true;
-				}
-				else
-				{
-					$db->close();
-					return false;
-				}
 			}
-			elseif($index_type==='sql'){
-				sql_delete(
-					$L="dataphyre_fulltext_engine.index_".$index_name, 
-					$P="WHERE ".$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name']."=?", 
-					$V=array($primary_key_value)
-				);
-			}
-			elseif($index_type==='elastic'){
-				$result_primarykeys=fulltext_engine\elasticsearch::remove($index_name, $primary_column_name, $primary_key_value);
-			}
-			elseif($index_type==='vespa'){
-				$result_primarykeys=fulltext_engine\vespa::remove($index_name, $primary_column_name, $primary_key_value);
-			}
-			elseif($index_type==='json'){
-				$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/json/".$index_name;
-				$primary_column_name=$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name'];
-				$fileid=0;
-				while(true){
-					$filepath=$index_folder."/".$fileid;
-					if(!file_exists($filepath)){
-						break;
-					}
-					else
-					{
-						if(false!==$current_index=json_decode(file_get_contents($filepath),true)){
-							if(in_array($primary_key_value, $current_index)){
-								break;
-							}
-						}
-						else
-						{
-							core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: Failed reading index.', 'safemode');
-						}
-						$fileid++;
-					}
-				}
-				if(!empty($current_index)){
-					unset($current_index[$primary_key_value]);
-					file_put_contents($filepath, json_encode($current_index));
-					if(count($current_index)===0){
-						unlink($filepath);
-					}
-				}
-				else
-				{
-					core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: Failed finding index for removal.', 'safemode');
+			if(!empty($current_index)){
+				unset($current_index[$primary_key_value]);
+				file_put_contents($filepath, json_encode($current_index));
+				if(count($current_index)===0){
+					unlink($filepath);
 				}
 			}
 			else
 			{
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Unknown index type");
-				return false;
+				core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: Failed finding index for removal.', 'safemode');
 			}
 		}
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Unknown index type");
+		return false;
 	}
 	
 	public static function delete_index(string $index_name) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
-	
+		self::init();
 		$filepath=ROOTPATH['dataphyre']."config/fulltext_engine/indexes.json";
-		if(false!==$index_definitions=json_decode(file_get_contents($filepath),true)){
-			if(isset($index_definitions[$index_name])){
-				$type=$index_definitions[$index_name]['type'];
-				if($type==='sqlite'){
-					if(!extension_loaded('sqlite3')){
-						core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: SQLite3 is not enabled in the current environment.', 'safemode');
-					}
-					core::force_rmdir(ROOTPATH['dataphyre']."fulltext_indexes/sqlite/".$index_name);
-				}
-				elseif($type==='sql'){
-					// Delete sql index
-				}
-				elseif($type==='elastic'){
-					fulltext_engine\elasticsearch::delete_index($index_name);
-				}
-				elseif($type==='json'){
-					core::force_rmdir(ROOTPATH['dataphyre']."fulltext_indexes/json/".$index_name);
-				}
-				else
-				{
-					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Unknown index type");
-					return false;
-				}
-				unset($index_definitions[$index_name]);
-				if(false!==file_put_contents($filepath, json_encode($index_definitions))){
-					$configurations['dataphyre']['fulltext_engine']['indexes']=$index_definitions;
-					return true;
-				}
+		if(false===$index_definitions=json_decode(file_get_contents($filepath),true)){
+			core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: Failed reading index definition.', 'safemode');
+		}
+		if(!isset($index_definitions[$index_name])){
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Index not defined");
+		}
+		$type=$index_definitions[$index_name]['type'];
+		if($type==='sqlite'){
+			if(!extension_loaded('sqlite3')){
+				core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: SQLite3 is not enabled in the current environment.', 'safemode');
 			}
-			else
-			{
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Index not defined");
-			}
+			core::force_rmdir(ROOTPATH['dataphyre']."fulltext_indexes/sqlite/".$index_name);
+			return true;
+		}
+		elseif($type==='sql'){
+			// Delete sql index
+		}
+		elseif($type==='elastic'){
+			return fulltext_engine\elasticsearch::delete_index($index_name);
+		}
+		elseif($type==='json'){
+			return core::force_rmdir(ROOTPATH['dataphyre']."fulltext_indexes/json/".$index_name);
 		}
 		else
 		{
-			core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: Failed reading index definition.', 'safemode');
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Unknown index type");
+			return false;
 		}
+		unset($index_definitions[$index_name]);
+		if(false!==file_put_contents($filepath, json_encode($index_definitions))){
+			$configurations['dataphyre']['fulltext_engine']['indexes']=$index_definitions;
+			return true;
+		}
+		core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: Failed reading index definition.', 'safemode');
 		return false;
 	}
 
-	public static function create_index(string $index_name, string $primary_key_column_name, string $type="json") : bool {
+	public static function create_index(string $index_name, string $primary_key_column_name, string $type="json", $language='en') : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
-	
+		self::init();
 		$filepath=ROOTPATH['dataphyre']."config/fulltext_engine/indexes.json";
 		$index_definitions=json_decode(file_get_contents($filepath),true);
-		if(!isset($index_definitions[$index_name])){
-			if($type==='sqlite'){
-				if(!extension_loaded('sqlite3')){
-					core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: SQLite3 is not enabled in the current environment.', 'safemode');
-				}
-				$index_definitions[$index_name]=array(
-					"type"=>$type,
-					"primary_key_column_name"=>$primary_key_column_name
-				);
+		if(isset($index_definitions[$index_name])){
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Index already defined");
+			return false;
+		}
+		if($type==='sqlite'){
+			if(!extension_loaded('sqlite3')){
+				core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: SQLite3 is not enabled in the current environment.', 'safemode');
 			}
-			elseif($type==='sql'){
-				$index_definitions[$index_name]=array(
-					"type"=>$type,
-					"primary_key_column_name"=>$primary_key_column_name
-				);
-			}
-			elseif($type==='elastic'){
-				$index_definitions[$index_name]=array(
-					"type"=>$type,
-					"primary_key_column_name"=>$primary_key_column_name
-				);
-				fulltext_engine\elasticsearch::create_index($index_name, $primary_key_column_name);
-			}
-			elseif($type==='json'){
-				$index_definitions[$index_name]=array(
-					"type"=>$type,
-					"primary_key_column_name"=>$primary_key_column_name
-				);
-			}
-			else
-			{
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Unknown index type \"$type\"", "fatal");
-				return false;
-			}
-			if(false!==core::file_put_contents_forced($filepath, json_encode($index_definitions))){
-				$configurations['dataphyre']['fulltext_engine']['indexes']=$index_definitions;
-				return true;
-			}
+			$index_definitions[$index_name]=array(
+				"type"=>$type,
+				"primary_key_column_name"=>$primary_key_column_name
+			);
+		}
+		elseif($type==='sql'){
+			$index_definitions[$index_name]=array(
+				"type"=>$type,
+				"primary_key_column_name"=>$primary_key_column_name
+			);
+		}
+		elseif($type==='vespa'){
+			$index_definitions[$index_name]=array(
+				"type"=>$type,
+				"primary_key_column_name"=>$primary_key_column_name
+			);
+			fulltext_engine\vespa::create_index($index_name, $primary_key_column_name);
+		}
+		elseif($type==='elastic'){
+			$index_definitions[$index_name]=array(
+				"type"=>$type,
+				"primary_key_column_name"=>$primary_key_column_name
+			);
+			fulltext_engine\elasticsearch::create_index($index_name, $primary_key_column_name, $language);
+		}
+		elseif($type==='json'){
+			$index_definitions[$index_name]=array(
+				"type"=>$type,
+				"primary_key_column_name"=>$primary_key_column_name
+			);
 		}
 		else
 		{
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Index already defined");
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Unknown index type \"$type\"", "fatal");
+			return false;
+		}
+		if(false!==core::file_put_contents_forced($filepath, json_encode($index_definitions))){
+			$configurations['dataphyre']['fulltext_engine']['indexes']=$index_definitions;
+			return true;
 		}
 		return false;
 	}
 	
 	public static function find_in_index(string $index_name, array $search_data, string $language='en', bool $boolean_mode=false, int $max_results=50, float $threshold=0.85, string $forced_algorithms='') : bool|array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		global $configurations;
-	
+		self::init();
 		$result_primarykeys=[];
 		if(!isset($configurations['dataphyre']['fulltext_engine']['indexes'][$index_name])){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Index $index_name does not exist", $S='fatal');
 			return false;
 		}
-		else
-		{
-			$search_values_raw=$search_data;
-			foreach($search_data as $key=>$value){
-				$search_value=self::tokenize($value, $language);
-				$search_data[$key]=implode(' ', $search_value);
+		$search_values_raw=$search_data;
+		foreach($search_data as $key=>$value){
+			$search_value=self::tokenize($value, $language);
+			$search_data[$key]=implode(' ', $search_value);
+		}
+		$index_type=$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['type'];
+		if($index_type==='sqlite'){
+			if(!extension_loaded('sqlite3')){
+				core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: SQLite3 is not enabled in the current environment.', 'safemode');
 			}
-			$index_type=$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['type'];
-			if($index_type==='sqlite'){
-				if(!extension_loaded('sqlite3')){
-					core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: SQLite3 is not enabled in the current environment.', 'safemode');
-				}
-				$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/sqlite/".$index_name;
-				$fileid=0;
-				while($max_results>count($result_primarykeys)){
-					$filepath=$index_folder."/".$fileid.".db";
-					if(!file_exists($filepath)){
-						break;
-					} 
-					else
-					{
-						$db=new \SQLite3($filepath);
-						$stmt=$db->prepare('SELECT * FROM entries');
-						$results=$stmt->execute();
-						while($row=$results->fetchArray(SQLITE3_ASSOC)){
-							$primary_key=$row['primary_key'];
-							$entry=json_decode($row['index_value'], true);
-							foreach($entry as $key1=>$index_value){
-								foreach($search_data as $key2=>$search_value){
-									if($key1===$key2 || $key2==='*'){
-										if($score=self::get_score($index_value, $search_value, $search_values_raw[$key2], $language, $boolean_mode, $forced_algorithms)){
-											if($score>=$threshold){
-												$result_primarykeys[]=array($primary_key=>$score);
-											}
+			$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/sqlite/".$index_name;
+			$fileid=0;
+			while($max_results>count($result_primarykeys)){
+				$filepath=$index_folder."/".$fileid.".db";
+				if(!file_exists($filepath)){
+					break;
+				} 
+				else
+				{
+					$db=new \SQLite3($filepath);
+					$stmt=$db->prepare('SELECT * FROM entries');
+					$results=$stmt->execute();
+					while($row=$results->fetchArray(SQLITE3_ASSOC)){
+						$primary_key=$row['primary_key'];
+						$entry=json_decode($row['index_value'], true);
+						foreach($entry as $key1=>$index_value){
+							foreach($search_data as $key2=>$search_value){
+								if($key1===$key2 || $key2==='*'){
+									if($score=self::get_score($index_value, $search_value, $search_values_raw[$key2], $language, $boolean_mode, $forced_algorithms)){
+										if($score>=$threshold){
+											$result_primarykeys[]=array($primary_key=>$score);
 										}
 									}
 								}
 							}
 						}
-						$db->close();
-						$fileid++;
 					}
+					$db->close();
+					$fileid++;
 				}
 			}
-			elseif($index_type==='sql'){
-				$primary_column_name=$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name'];
-				foreach($search_data as $key=>$value){
-					$extracted=fulltext_engine\keyword_extraction::extract_keywords($value, false, $language);
-					$bigram=fulltext_engine_ngram::bigram(implode(' ', $extracted));
-					$smoothed=fulltext_engine_ngram::laplace_smoothing($ngrams);
-					$search_data[$key]=implode(' ', $smoothed);
+			return $result_primarykeys;
+		}
+		elseif($index_type==='sql'){
+			$primary_column_name=$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name'];
+			foreach($search_data as $key=>$value){
+				$extracted=fulltext_engine\keyword_extraction::extract_keywords($value, false, $language);
+				$bigram=fulltext_engine_ngram::bigram(implode(' ', $extracted));
+				$smoothed=fulltext_engine_ngram::laplace_smoothing($ngrams);
+				$search_data[$key]=implode(' ', $smoothed);
+			}
+			$query_fields=implode(',',array_keys($search_data));
+			if(false!==$rows=sql_select(
+				$S=$primary_column_name.", MATCH(?) AGAINST(? IN NATURAL LANGUAGE MODE) as score", 
+				$L="dataphyre_fulltext_engine.index_".$index_name, 
+				$P="WHERE MATCH(?) AGAINST(? IN NATURAL LANGUAGE MODE) LIMIT ?", 
+				$V=array($search_data, $query_fields, $search_data, $query_fields, $max_results), 
+				$F=true
+			)){
+				foreach($rows as $row){
+					$result_primarykeys[]=array($row[$primary_column_name]=>$row['score']);
 				}
-				$query_fields=implode(',',array_keys($search_data));
-				if(false!==$rows=sql_select(
-					$S=$primary_column_name.", MATCH(?) AGAINST(? IN NATURAL LANGUAGE MODE) as score", 
-					$L="dataphyre_fulltext_engine.index_".$index_name, 
-					$P="WHERE MATCH(?) AGAINST(? IN NATURAL LANGUAGE MODE) LIMIT ?", 
-					$V=array($search_data, $query_fields, $search_data, $query_fields, $max_results), 
-					$F=true
-				)){
-					foreach($rows as $row){
-						$result_primarykeys[]=array($row[$primary_column_name]=>$row['score']);
-					}
+				return $result_primarykeys;
+			}
+		}
+		elseif($index_type==='elastic'){
+			$primary_column_name=$configurations['dataphyre']['fulltext_engine']['indexes'][$index_name]['primary_key_column_name'];
+			return fulltext_engine\elasticsearch::find($index_name, $search_data, $primary_column_name, $boolean_mode, $language, $max_results, $threshold);
+		}
+		elseif($index_type==='vespa'){
+			return fulltext_engine\vespa::find($index_name, $search_data, $primary_column_name, $boolean_mode, $language, $max_results, $threshold);
+		}
+		elseif($index_type==='json'){
+			$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/json/".$index_name;
+			$fileid=0;
+			while($max_results>count($result_primarykeys)){
+				$filepath=$index_folder."/".$fileid;
+				if(!file_exists($filepath)){
+					break;
 				}
-			}
-			elseif($index_type==='elastic'){
-				$result_primarykeys=fulltext_engine\elasticsearch::find($index_name, $search_data, $primary_column_name, $boolean_mode, $language, $max_results, $threshold);
-			}
-			elseif($index_type==='vespa'){
-				$result_primarykeys=fulltext_engine\vespa::find($index_name, $search_data, $primary_column_name, $boolean_mode, $language, $max_results, $threshold);
-			}
-			elseif($index_type==='json'){
-				$index_folder=ROOTPATH['dataphyre']."fulltext_indexes/json/".$index_name;
-				$fileid=0;
-				while($max_results>count($result_primarykeys)){
-					$filepath=$index_folder."/".$fileid;
-					if(!file_exists($filepath)){
-						break;
-					}
-					else
-					{
-						if(false!==$current_index=json_decode(file_get_contents($filepath),true)){
-							foreach($current_index as $primary_key=>$entry){
-								foreach($entry as $key1=>$index_value){
-									if($max_results>count($result_primarykeys)){
-										foreach($search_data as $key2=>$search_value){
-											if($key1===$key2 || $key2==='*'){
-												if($score=self::get_score($index_value, $search_value, $search_values_raw[$key2], $language, $boolean_mode, $forced_algorithms)){
-													if($score>=$threshold){
-														$result_primarykeys[]=array($primary_key=>$score);
-													}
+				else
+				{
+					if(false!==$current_index=json_decode(file_get_contents($filepath),true)){
+						foreach($current_index as $primary_key=>$entry){
+							foreach($entry as $key1=>$index_value){
+								if($max_results>count($result_primarykeys)){
+									foreach($search_data as $key2=>$search_value){
+										if($key1===$key2 || $key2==='*'){
+											if($score=self::get_score($index_value, $search_value, $search_values_raw[$key2], $language, $boolean_mode, $forced_algorithms)){
+												if($score>=$threshold){
+													$result_primarykeys[]=array($primary_key=>$score);
 												}
 											}
 										}
@@ -766,26 +747,22 @@ class fulltext_engine{
 								}
 							}
 						}
-						else
-						{
-							core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: Failed reading index.', 'safemode');
-						}
-						$fileid++;
+						return $result_primarykeys;
 					}
+					else
+					{
+						core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: Failed reading index.', 'safemode');
+					}
+					$fileid++;
 				}
 			}
-			else
-			{
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Unknown index type");
-				return false;
-			}
-			return $result_primarykeys;
 		}
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Unknown index type");
 		return false;
 	}
 	
 	public static function get_stopwords(string $language) : array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		$include=function($language)use(&$stopwords){
 			$filePath=__DIR__."/stopwords/{$language}_stopwords.php";
 			if(file_exists($filePath)){
@@ -804,7 +781,7 @@ class fulltext_engine{
 	}
 
 	public static function remove_stopwords(string $query, string $language) : string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		$stopwords=self::get_stopwords($language);
 		$words=explode(' ', strtolower($query));
 		$filteredWords=array_filter($words, function($word) use ($stopwords){ return !in_array($word, $stopwords); });
@@ -813,7 +790,7 @@ class fulltext_engine{
 	}
 
 	public static function apply_stemming(string $query, string $language) : string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		$load_stemmer=function($language){
 			$language_prefix=substr($language, 0, 2);
 			$file_path=__DIR__."/stemmers/{$language_prefix}_stemmer.php";
@@ -841,7 +818,7 @@ class fulltext_engine{
 	}
 
 	private static function sort_by_relevance(array &$results) : array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		usort($results, function($a, $b){
 			$a_value=reset($a);
 			$b_value=reset($b);

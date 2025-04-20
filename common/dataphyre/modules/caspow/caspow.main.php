@@ -24,6 +24,7 @@ class caspow{
     protected static int $range_max=75000;
 
     public static function create_challenge(?string $salt=null, ?int $number=null) : array {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
         $salt=$salt??bin2hex(random_bytes(12));
 		if(is_null($number)){
 			if(access::is_mobile()===true){
@@ -51,6 +52,7 @@ class caspow{
     }
 
     public static function verify_payload(mixed $payload) : bool {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(is_string($payload)){
 			if(null!==$json=json_decode(base64_decode($payload), true)){
 				$check=self::create_challenge($json['salt'], $json['number']);
