@@ -17,9 +17,6 @@ namespace dataphyre;
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
-dp_module_required('access', 'sql');
-dp_module_required('access', 'firewall');
-
 if(file_exists($filepath=ROOTPATH['common_dataphyre']."config/access.php")){
 	require_once($filepath);
 }
@@ -27,8 +24,12 @@ if(file_exists($filepath=ROOTPATH['dataphyre']."config/access.php")){
 	require_once($filepath);
 }
 
-if(empty($configurations['dataphyre']['access']['sessions_table_name'])){
-	$configurations['dataphyre']['access']['sessions_table_name']="dataphyre.sessions";
+$configurations['dataphyre']['access']['sessions_table_name']??="dataphyre.sessions";
+
+\heisenconstant('DPID', fn()=>$_SESSION['dp_access']['dpid']);
+
+if(RUN_MODE==='diagnostic'){
+	require_once(__DIR__.'/access.diagnostic.php');
 }
 
 class access{
@@ -43,11 +44,11 @@ class access{
 			self::$session_cookie='__Secure-'.$configurations['dataphyre']['access']['sessions_cookie_name'];
 		}
 		if(isset($_SESSION)){
-			if(isset($_SESSION['previous_useragent'])){
+			if(isset($_SESSION['dp_access']['previous_useragent'])){
 				if($configurations['dataphyre']['access']['sanction_on_useragent_change']===true){
-					if(REQUEST_USER_AGENT!==$_SESSION['previous_useragent']){
+					if(REQUEST_USER_AGENT!==$_SESSION['dp_access']['previous_useragent']){
 						self::$useragent_mismatch=true;
-						$_SESSION['minimum_security_reqs_alert']=true;
+						$_SESSION['dp_access']['minimum_security_alert']=true;
 						self::disable_session();
 						if(dp_module_present('firewall')===true){
 							firewall::captcha_block_user('useragent_mismatch');
@@ -55,7 +56,7 @@ class access{
 					}
 				}
 			}
-			$_SESSION['previous_useragent']=REQUEST_USER_AGENT;
+			$_SESSION['dp_access']['previous_useragent']=REQUEST_USER_AGENT;
 		}
 		self::$fingerprint=[
 			'user_agent'=>$_SERVER['HTTP_USER_AGENT'] ?? '',
@@ -80,13 +81,18 @@ class access{
 			self::recover_session();
 		}
 		self::enforce_fingerprint_drift();
+		DPID->reset();
+	}
+	
+	public static function get_session_cookie_name(): string {
+		return self::$session_cookie;
 	}
 	
 	private static function enforce_fingerprint_drift() : void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
-		if(isset($_SESSION['access']['fingerprint'])){
-			if(1<self::fingerprint_drift_score(self::$fingerprint, $_SESSION['access']['fingerprint'])){
-				$_SESSION['minimum_security_reqs_alert']=true;
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		if(isset($_SESSION['dp_access']['fingerprint'])){
+			if(1<self::fingerprint_drift_score(self::$fingerprint, $_SESSION['dp_access']['fingerprint'])){
+				$_SESSION['dp_access']['minimum_security_alert']=true;
 				if(self::disable_session()===false){
 					core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreAccess: User session is invalid (fingerprint drift) and couldn\'t be destroyed..', 'safemode');
 				}
@@ -95,11 +101,11 @@ class access{
 				}
 			}
 		}
-		$_SESSION['access']['fingerprint']=self::$fingerprint;
+		$_SESSION['dp_access']['fingerprint']=self::$fingerprint;
 	}
 	
 	private static function extract_subnet(string $ip): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)){
 			return implode('.', array_slice(explode('.', $ip), 0, 3)); // Class C
 		}
@@ -110,7 +116,7 @@ class access{
 	}
 	
 	private static function fingerprint_drift_score(array $stored, array $current): int {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		$diffs=0;
 		foreach($stored as $key=>$value){
 			if(!isset($current[$key]) || $current[$key] !== $value){
@@ -158,10 +164,10 @@ class access{
 		)){
 			$website_name=strtolower(parse_url($_SERVER['HTTP_HOST'], PHP_URL_HOST));
 			setcookie(self::$session_cookie, $dpid, time()+(86400*7), '/', strtolower($website_name), true, true);
-			$_SESSION['userid']=$userid;
-			$_SESSION['id']=$dpid;
-			$_SESSION['ipaddress']=REQUEST_IP_ADDRESS;
-			unset($_SESSION['self_no_known_recoverable_session']);
+			$_SESSION['dp_access']['userid']=$userid;
+			$_SESSION['dp_access']['dpid']=$dpid;
+			$_SESSION['dp_access']['ip_address']=REQUEST_IP_ADDRESS;
+			unset($_SESSION['dp_access']['no_known_recoverable_session']);
 			return true;
 		}
 		return false;
@@ -176,15 +182,15 @@ class access{
 	  * @return string Session identifier
 	  */
 	public static function create_id() : string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		$dpid=rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
 		$signature=substr(hash_hmac('sha256', $dpid, dpvk()), 0, 8);
 		return 'DPID_'.$dpid.'_'.$signature;
 	}
 	
 	public static function validate_id(string $dpid) : bool {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $S = null, $T = 'function_call', $A = func_get_args());
-		if(null !== $early_return=core::dialback("CALL_ACCESS_VALIDATE_ID", ...func_get_args())) return $early_return;
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		if(null!==$early_return=core::dialback("CALL_ACCESS_VALIDATE_ID", ...func_get_args())) return $early_return;
 		$valid=false;
 		if(preg_match('/^DPID_([A-Za-z0-9\-_]{43})_([a-f0-9]{8})$/', $dpid, $matches)){
 			$dpid=$matches[1];
@@ -200,7 +206,7 @@ class access{
 		{
 			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Invalid DPID format: $dpid");
 		}
-		$_SESSION['minimum_security_reqs_alert']=true;
+		$_SESSION['dp_access']['minimum_security_alert']=true;
 		self::disable_session();
 		if(dp_module_present('firewall')===true){
 			firewall::captcha_block_user('forged_dpid');
@@ -217,10 +223,10 @@ class access{
 	  * @return mixed		Userid if user is logged in otherwise false
 	  */
 	public static function userid() : bool|int {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_USERID",...func_get_args())) return $early_return;
 		if(self::logged_in()===true){
-			return $_SESSION['userid'];
+			return $_SESSION['dp_access']['userid'];
 		}
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Failed, user not logged-in");
 		return false;
@@ -234,8 +240,8 @@ class access{
 	  *
 	  * @return bool		True if positive, false on negative
 	  */
-	public static function is_bot() : bool{
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+	public static function is_bot() : bool {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		global $configurations;
 		static $cache=null;
 		if($cache!==null)return $cache;
@@ -261,7 +267,7 @@ class access{
 	  * @return bool		True on success, false on failure
 	  */
 	public static function is_mobile() : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		static $cache=null;
 		if($cache!==null)return $cache;
 		if(null!==$early_return=core::dialback("CALL_ACCESS_IS_MOBILE",...func_get_args())) return $early_return;
@@ -301,10 +307,10 @@ class access{
 				$V=array($dpid), 
 				$CC=true
 			)){
-				unset($_SESSION['userid']);
-				unset($_SESSION['id']);
-				$_SESSION['dp']['access_cache']['no_known_recoverable_session']=true;
-				unset($_SESSION['last_valid_session']);
+				unset($_SESSION['dp_access']['userid']);
+				unset($_SESSION['dp_access']['dpid']);
+				$_SESSION['dp_access']['no_known_recoverable_session']=true;
+				unset($_SESSION['dp_access']['last_valid_session']);
 				setcookie("__Secure-DPID", "", time()-3600, '/');
 				setcookie("__Secure-SID", "", time()-3600, '/');
 			}
@@ -330,27 +336,27 @@ class access{
 			$V=array(false, $userid), 
 			$CC=true
 		)){
-			$_SESSION['dp']['access_cache']['no_known_recoverable_session']=true;
+			$_SESSION['dp_access']['no_known_recoverable_session']=true;
 			return true;
 		}
 		return false;
 	}
 	
 	public static function validate_session(bool $cache=true) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_VALIDATE_SESSION",...func_get_args())) return $early_return;
 		global $configurations;
-		if($cache===true && isset($_SESSION['last_valid_session'])){
-			if($_SESSION['last_valid_session']>strtotime("-30 seconds")){
+		if($cache===true && isset($_SESSION['dp_access']['last_valid_session'])){
+			if($_SESSION['dp_access']['last_valid_session']>strtotime("-30 seconds")){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Session was known as valid less than 30 seconds ago");
 				return true;
 			}
 		}
 		if(isset($_COOKIE[self::$session_cookie])){
 			$dpid=$_COOKIE[self::$session_cookie];
-			if(!empty($_SESSION['userid']) && !empty($_SESSION['id'])){
+			if(!empty($_SESSION['dp_access']['userid']) && !empty($_SESSION['dp_access']['dpid'])){
 				if(self::validate_id($dpid)){
-					if($_SESSION['ipaddress']!==REQUEST_IP_ADDRESS){
+					if($_SESSION['dp_access']['ip_address']!==REQUEST_IP_ADDRESS){
 						sql_update(
 							$L=$configurations['dataphyre']['access']['sessions_table_name'], 
 							$F="ipaddress=?", 
@@ -358,7 +364,7 @@ class access{
 								"mysql"=>"WHERE id=? AND userid=? AND active=1 AND useragent=? AND ipaddress=?", 
 								"postgresql"=>"WHERE id=? AND userid=? AND active=true AND useragent=? AND ipaddress=?"
 							],
-							$V=array(REQUEST_IP_ADDRESS,$dpid,$_SESSION['userid'],REQUEST_USER_AGENT,$_SESSION['ipaddress']), 
+							$V=array(REQUEST_IP_ADDRESS,$dpid,$_SESSION['dp_access']['userid'],REQUEST_USER_AGENT,$_SESSION['dp_access']['ip_address']), 
 							$CC=true
 						);
 					}
@@ -369,13 +375,13 @@ class access{
 							"mysql"=>"WHERE id=? AND userid=? AND active=1 AND useragent=? AND ipaddress=?", 
 							"postgresql"=>"WHERE id=? AND userid=? AND active=true AND useragent=? AND ipaddress=?"
 						],
-						$V=array($dpid, $_SESSION['userid'], REQUEST_USER_AGENT, REQUEST_IP_ADDRESS), 
+						$V=array($dpid, $_SESSION['dp_access']['userid'], REQUEST_USER_AGENT, REQUEST_IP_ADDRESS), 
 						$F=false, 
 						$C=false
 					)){
 						if($row['date']>strtotime('-7 days') && $row['keepalive']==true || $row['date']>strtotime('-30 minutes')){
-							$_SESSION['ipaddress']=REQUEST_IP_ADDRESS;
-							$_SESSION['last_valid_session']=time();
+							$_SESSION['dp_access']['ip_address']=REQUEST_IP_ADDRESS;
+							$_SESSION['dp_access']['last_valid_session']=time();
 							tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Session is valid");
 							return true;
 						}
@@ -396,14 +402,14 @@ class access{
 	  * @return bool		 True on success, false on failure
 	  */
 	public static function recover_session() : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_RECOVER_SESSION",...func_get_args())) return $early_return;
 		global $configurations;
-		if(!isset($_SESSION['dp']['access_cache']['no_known_recoverable_session'])){
+		if(!isset($_SESSION['dp_access']['no_known_recoverable_session'])){
 			if(isset($_COOKIE[self::$session_cookie])){
 				$dpid=$_COOKIE[self::$session_cookie];
 				if(self::validate_id($dpid)){
-					if(!isset($_SESSION['id']) || !isset($_SESSION['userid'])){
+					if(!isset($_SESSION['dp_access']['dpid']) || !isset($_SESSION['dp_access']['userid'])){
 						if(false!==$row=sql_select(
 							$S="*", 
 							$L=config("dataphyre/access/sessions_table_name"), 
@@ -416,9 +422,9 @@ class access{
 							$C=false
 						)){
 							if($row['date']>strtotime('-7 days') && $row['keepalive']==true || $row['date']>strtotime('-30 minutes')){
-								$_SESSION['userid']=$row['userid'];
-								$_SESSION['id']=$row['id'];
-								$_SESSION['ipaddress']=REQUEST_IP_ADDRESS;
+								$_SESSION['dp_access']['userid']=$row['userid'];
+								$_SESSION['dp_access']['dpid']=$row['id'];
+								$_SESSION['dp_access']['ip_address']=REQUEST_IP_ADDRESS;
 								return true;
 							}
 						}
@@ -427,7 +433,7 @@ class access{
 				self::disable_session();
 			}
 		}
-		$_SESSION['dp']['access_cache']['no_known_recoverable_session']=true;
+		$_SESSION['dp_access']['no_known_recoverable_session']=true;
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="No session to recover");
 		return false;
 	}
@@ -441,10 +447,10 @@ class access{
 	  * @return bool		True on positive, false on negative
 	  */
 	public static function logged_in() : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_LOGGED_IN",...func_get_args())) return $early_return;
 		if(isset($_SESSION)){
-			if(!empty($_SESSION['userid']) && !empty($_SESSION['id'])){
+			if(!empty($_SESSION['dp_access']['userid']) && !empty($_SESSION['dp_access']['dpid'])){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="User is logged in");
 				return true;
 			}

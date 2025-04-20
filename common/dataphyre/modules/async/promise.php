@@ -26,7 +26,7 @@ class promise {
 	private $cancel_callbacks=[];
 
 	public function __construct(callable $executor, callable $on_cancel=null){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		$resolve=function($value){
 			$this->resolve($value);
 		};
@@ -42,7 +42,7 @@ class promise {
 	}
 
 	public static function all(array $promises): self {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		return new self(function($resolve, $reject)use($promises){
 			$results=[];
 			$remaining=count($promises);
@@ -60,7 +60,7 @@ class promise {
 	}
 	
 	public static function retry(callable $task, int $retries, int $delay=0): self {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		return new self(function($resolve, $reject)use($task, $retries, $delay){
 			$attempt=0;
 			$try=function()use($task, &$attempt, $resolve, $reject, $retries, $delay, &$try){
@@ -86,7 +86,7 @@ class promise {
 	}
 
 	public static function race(array $promises): self {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		return new self(function($resolve, $reject)use($promises){
 			foreach($promises as $promise){
 				$promise->then($resolve, $reject);
@@ -95,7 +95,7 @@ class promise {
 	}
 
 	public static function allSettled(array $promises): self {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		return new self(function($resolve)use($promises){
 			$results=[];
 			$remaining=count($promises);
@@ -115,7 +115,7 @@ class promise {
 	}
 
 	public static function with_timeout(callable $executor, int $timeout): self {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		return new self(function($resolve, $reject)use($executor, $timeout){
 			$timer=set_timeout(function()use($reject){
 				$reject(new \Exception("Promise timed out"));
@@ -134,7 +134,7 @@ class promise {
 	}
 
 	public function then(?callable $on_fulfilled=null, ?callable $on_rejected=null): self {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		return new self(function($resolve, $reject)use($on_fulfilled, $on_rejected){
 			$this->handle(function($value)use($on_fulfilled, $resolve, $reject){
 				if(is_callable($on_fulfilled)){
@@ -165,12 +165,12 @@ class promise {
 	}
 
 	public function catch(callable $on_rejected): self {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		return $this->then(null, $on_rejected);
 	}
 
 	public function finally(callable $on_finally): self {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		return $this->then(
 			function($value)use($on_finally){
 				$on_finally();
@@ -184,7 +184,7 @@ class promise {
 	}
 
 	public function cancel(): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		$this->is_cancelled=true;
 		foreach($this->cancel_callbacks as $callback){
 			call_user_func($callback);
@@ -195,13 +195,13 @@ class promise {
 	}
 	
 	public function on_cancel(callable $callback): self {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		$this->cancel_callbacks[]=$callback;
 		return $this;
 	}
 
 	private function handle(callable $on_fulfilled, callable $on_rejected): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if($this->is_cancelled){
 			return;
 		}
@@ -218,7 +218,7 @@ class promise {
 	}
 
 	private function resolve(mixed $value): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if($this->state !== 'pending'){
 			return;
 		}
@@ -234,7 +234,7 @@ class promise {
 	}
 
 	private function reject(string|object $reason): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if($this->state !== 'pending'){
 			return;
 		}

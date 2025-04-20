@@ -15,6 +15,8 @@
  
 namespace dataphyre\sql;
 
+\dataphyre\sql\diagnostic::tests();
+
 class diagnostic{
 
     public static function tests(): void {
@@ -36,7 +38,10 @@ class diagnostic{
 			if(empty($matching_clusters))continue;
 			foreach($matching_clusters as $cluster){
 				if(false!==$result=sql_query(
-					$Q=["dbms_cluster_override"=>$cluster, $dbms=>$query[$dbms]],
+					$Q=[
+						"dbms_cluster_override"=>$cluster, 
+						$dbms=>$query[$dbms]
+					],
 					$V=null, 
 					$M=true, 
 					$C=true, 

@@ -19,8 +19,6 @@ use simplexml;
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
-dp_module_required('currency', 'sql');
-
 if(file_exists($filepath=ROOTPATH['common_dataphyre']."config/currency.php")){
 	require_once($filepath);
 }
@@ -30,6 +28,10 @@ if(file_exists($filepath=ROOTPATH['dataphyre']."config/currency.php")){
 
 if(RUN_MODE!=='diagnostic'){
 	currency::get_exchange_rates();
+}
+else
+{
+	require_once(__DIR__.'/currency.diagnostic.php');
 }
 
 class currency{
@@ -80,7 +82,7 @@ class currency{
     }
 
 	public static function get_exchange_rates(){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CURRENCY_GET_EXCHANGE_RATES",...func_get_args())) return $early_return;
 		global $is_task;
 		global $configurations;
@@ -136,7 +138,7 @@ class currency{
 	}
 	
 	public static function get_rates_data(string $source){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CURRENCY_FORMATTER",...func_get_args())) return $early_return;
 		if($source==='exchangerate.host'){
 			$exchange_data=file_get_contents('https://api.exchangerate.host/latest?base=USD');
@@ -234,7 +236,7 @@ class currency{
 	}
 	
 	public static function convert(float|null $amount, string $source_currency, string $target_currency, bool|null $formatted=false, bool|null $show_free=true): string|float {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CONVERT_TO_USER_CURRENCY",...func_get_args())) return $early_return;
 		if(empty($_SESSION['exchange_rate_data'])){
 			if(RUN_MODE!=='diagnostic'){
@@ -254,13 +256,13 @@ class currency{
 	}
 
 	public static function convert_to_user_currency(float|null $amount, bool|null $formatted=false, bool|null $show_free=true, string|null $currency=null) : string|float {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if($currency===null)$currency=currency::$display_currency;
 		return self::convert($amount, currency::$base_currency, $currency, $formatted, $show_free);
 	}
 
 	public static function convert_to_website_currency(float|null $amount, string $original_currency, bool|null $formatted=false, bool|null $show_free=true) : string|float {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		return self::convert($amount, $original_currency, currency::$base_currency, $formatted, $show_free);
 	}
 	

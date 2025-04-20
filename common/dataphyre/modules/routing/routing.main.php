@@ -42,16 +42,12 @@ class routing{
 	private static $verbose_non_match=true;
 	
 	public static function check_route(string $route, string $file=''): string|bool {
-	
 		self::$route_non_match_count++;
 		$file=preg_replace('!([^:])(//)!', "$1/", $file);
-		if($_REQUEST['uri']==='/router.php'){
-			routing::not_found();
-		}
 		$request="/";
-		if(!empty($_REQUEST['uri'])){
+		if(!empty($_GET['uri'])){
 			$route=preg_replace("/(^\/)|(\/$)/", "", $route);
-			$request=preg_replace("/(^\/)|(\/$)/", "", $_REQUEST['uri']);
+			$request=preg_replace("/(^\/)|(\/$)/", "", $_GET['uri']);
 		}
 		preg_match_all("/(?<={).+?(?=})/", $route, $param_matches);
 		$match=function($file) use($route){
@@ -106,7 +102,6 @@ class routing{
 
 	private static function set_page(string $file): string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-	
 		self::$realpage="/".str_replace(ROOTPATH['views'], '', substr($file, 0, strrpos($file, ".")));
 		self::$page=self::$realpage;
 		return $file;

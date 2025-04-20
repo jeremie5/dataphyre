@@ -79,11 +79,16 @@ else
 													}
 													elseif ($type === 'tracelog' && isset($entry['tracelog']) && is_array($entry['tracelog'])) {
 														$countTypes = [];
+														$severityOrder = ['info' => 0, 'warning' => 1, 'error' => 2, 'fatal' => 3];
+														$worstLevel = 'info';
 														foreach ($entry['tracelog'] as $logEntry) {
 															$msgType = strtolower($logEntry['type'] ?? 'info');
 															$countTypes[$msgType] = ($countTypes[$msgType] ?? 0) + 1;
-															$entry['level']=$msgType;
+															if ($severityOrder[$msgType] > $severityOrder[$worstLevel]) {
+																$worstLevel = $msgType;
+															}
 														}
+														$entry['level'] = $worstLevel;
 														$typeSummary = [];
 														foreach ($countTypes as $msgType => $msgCount) {
 															$typeSummary[] = "$msgCount $msgType";

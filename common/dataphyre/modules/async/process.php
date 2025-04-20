@@ -23,7 +23,7 @@ class process {
 	public static $waitfor_loop_time=1000; // in microseconds
 
 	static function waitfor_all(){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ASYNC_WAITFOR_ALL",...func_get_args())) return $early_return;
 		if(!empty(self::$queued_tasks)){
 			foreach(self::$queued_tasks as $taskid){
@@ -34,7 +34,7 @@ class process {
 	}
 
 	static function waitfor(string|null $taskid){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ASYNC_WAITFOR",...func_get_args())) return $early_return;
 		$time=0;
 		if(!is_null($taskid)){
@@ -63,7 +63,7 @@ class process {
 	}
 	
 	static function result(string|null $taskid, $wipe=true){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ASYNC_RESULT",...func_get_args())) return $early_return;
 		if(!is_null($taskid)){
 			if(false!==$result=file_get_contents(__DIR__."/../../cache/tasks/".$taskid."_done.php")){
@@ -83,7 +83,7 @@ class process {
 	}
 	
 	static function create(int $start_line, string $file, array|null $variables=array(), $logging=false) : string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ASYNC_CREATE",...func_get_args())) return $early_return;
 		global $configurations;
 		$lines="";

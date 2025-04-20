@@ -20,7 +20,7 @@ tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 class scheduling {
 
     public static function run(string $name, string $file_path, float $frequency, float $timeout, string $memory_limit, array $dependencies, ?string $app_override=null) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(!isset($app_override))$app_override=APP;
         $scheduler=[
             'name'=>$name,
@@ -36,21 +36,25 @@ class scheduling {
 		}
 		if(self::can_run($scheduler)===true){
 			$last_run_file=ROOTPATH['dataphyre'].'cache/scheduling/'.$name.'/last_run';
-			file_put_contents($last_run_file, time(), LOCK_EX);
+			core::file_put_contents_forced($last_run_file, time(), LOCK_EX);
 			$running_lock_file=ROOTPATH['dataphyre'].'cache/scheduling/'.$name.'/running_lock';
-			if(false!==file_put_contents($running_lock_file,'', LOCK_EX)){
+			if(false!==core::file_put_contents_forced($running_lock_file,'', LOCK_EX)){
 				register_shutdown_function(function($name, $app_override){
-					$override_key=file_get_contents(ROOTPATH['common_root']."app_override_key");
-					$ch=curl_init();
-					curl_setopt($ch,CURLOPT_URL, $_SERVER['SELF_ADDR'].'/dataphyre/scheduler/'.$name.'?app_override='.$app_override.','.$override_key);
-					curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-						'X-Traffic-Source: internal_traffic'
-					));
-					curl_setopt($ch,CURLOPT_RETURNTRANSFER, 1);
-					curl_setopt($ch,CURLOPT_TIMEOUT_MS, 1);
-					curl_setopt($ch,CURLOPT_NOSIGNAL, 1);
-					curl_exec($ch);
-					curl_close($ch);
+					try{
+						$override_key=file_get_contents(ROOTPATH['common_root']."app_override_key");
+						$ch=curl_init();
+						curl_setopt($ch,CURLOPT_URL, $_SERVER['SELF_ADDR'].'/dataphyre/scheduler/'.$name.'?app_override='.$app_override.','.$override_key);
+						curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+							'X-Traffic-Source: internal_traffic'
+						));
+						curl_setopt($ch,CURLOPT_RETURNTRANSFER, 1);
+						curl_setopt($ch,CURLOPT_TIMEOUT_MS, 1);
+						curl_setopt($ch,CURLOPT_NOSIGNAL, 1);
+						curl_exec($ch);
+						curl_close($ch);
+					}catch(\Throwable $exception){
+						pre_init_error('Fatal error on Dataphyre Scheduling shutdown callback', $exception);
+					}
 				}, $name, $app_override);
 			}
 			else
@@ -62,7 +66,7 @@ class scheduling {
     }
 
 	private static function can_run(array $scheduler) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Execution frequency is '.$scheduler['frequency']);
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Execution timeout is '.$scheduler['timeout']);
 		\dataphyre\core::get_server_load_level();
@@ -70,12 +74,11 @@ class scheduling {
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Server load too high for scheduler', "warning");
 			return false;
 		}
-		$last_run=999999;
 		$last_run_file=ROOTPATH['dataphyre'].'cache/scheduling/'.$scheduler['name'].'/last_run';
 		if(file_exists($last_run_file)){
 			$last_run=file_get_contents($last_run_file);
 		}
-		$time_since_last_run=(time()-(int)$last_run);
+		$time_since_last_run=(time()-(int)$last_run ?? 999999);
 		$running_lock_file=ROOTPATH['dataphyre'].'cache/scheduling/'.$scheduler['name'].'/running_lock';
 		if(file_exists($running_lock_file)){
 			if($time_since_last_run>=$scheduler['timeout']){

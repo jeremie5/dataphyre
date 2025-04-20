@@ -15,8 +15,6 @@
 
 namespace dataphyre;
 
-dp_module_required('localization', 'sql');
-
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
 if(file_exists($filepath=ROOTPATH['common_dataphyre']."config/localization.php")){
@@ -28,7 +26,13 @@ if(file_exists($filepath=ROOTPATH['dataphyre']."config/localization.php")){
 
 require(__DIR__."/localization.global.php");
 
-new localization();
+if(RUN_MODE!=='diagnostic'){
+	new localization();	
+}
+else
+{
+	require_once(__DIR__.'/localization.diagnostic.php');
+}
 
 class localization{
 
@@ -54,8 +58,7 @@ class localization{
 	private static $local_locale_path;
 	
 	function __construct(?array $initialization=null){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
-	
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		self::$rebuilder_running_lock_file=ROOTPATH['dataphyre']."cache/locks/locale_rebuilding";
 		self::$learning_lock_file=ROOTPATH['dataphyre']."cache/locks/locale_learning";
 		self::$unknown_locales_file=ROOTPATH['dataphyre']."cache/unknown_locales";
@@ -78,7 +81,7 @@ class localization{
 	}
 	
 	public static function validate_language_code(string $lang): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(!isset(self::$available_languages)){
 			\dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D="Available languages unknown when dataphyre\localization::validate_language_code() was called.", "safemode");
 		}
@@ -89,7 +92,7 @@ class localization{
 	}
 
 	public static function get_locales(string $scope, string $path, string $language) : array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		$locales=[];
 		if(str_starts_with($path, '/')){
 			$path=str_replace(['%theme%', '%language%', '%active_page%'], [self::$user_theme, $language, $path], self::$local_locale_path);
@@ -107,7 +110,7 @@ class localization{
 	}
 
 	public static function locale_parameters(string $string, ?array $parameters=[]): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		$string=str_replace('&lt;{','<{', str_replace('}&gt;','}>', $string));
 		if(str_contains($string, '<{') && str_contains($string, '}>')){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locale contains parameters");
@@ -131,7 +134,7 @@ class localization{
 	}
 
 	public static function locale(string $string_name, ?string $fallback_string=null, ?array $parameters=null, ?string $forced_language=null, ?string $forced_page=null) : string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		$user_theme=self::$user_theme;
 		$user_language=self::$user_language;
 		if(isset($forced_language)){
@@ -146,7 +149,7 @@ class localization{
 		}
 		else
 		{
-			if(class_exists("dataphyre\\routing")){
+			if(class_exists('dataphyre\routing', false)){
 				$active_page=\dataphyre\routing::$page;
 			}
 			else

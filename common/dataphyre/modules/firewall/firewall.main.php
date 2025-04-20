@@ -17,21 +17,21 @@ namespace dataphyre;
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
-dp_module_required('firewall', 'sql');
-dp_module_required('firewall', 'cache');
-
 if(file_exists($filepath=ROOTPATH['common_dataphyre']."config/firewall.php")){
 	require_once($filepath);
 }
 if(file_exists($filepath=ROOTPATH['dataphyre']."config/firewall.php")){
 	require_once($filepath);
 }
-if(!isset($configurations['dataphyre']['firewall'])){
-	//core::unavailable("MOD_FIREWALL_NO_CONFIG", "safemode");
-}
 
-firewall::flooding_check();
-firewall::captcha();
+if(RUN_MODE!=='diagnostic'){
+	firewall::flooding_check();
+	firewall::captcha();
+}
+else
+{
+	require_once(__DIR__.'/firewall.diagnostic.php');
+}
 	
 class firewall{
 
@@ -40,7 +40,7 @@ class firewall{
 		if(null!==$early_return=core::dialback("CALL_FIREWALL_CAPTCHA",...func_get_args())) return $early_return;
 		$ipaddress=$_SERVER['REMOTE_ADDR'];
 		if(isset($_SESSION['captcha_unblock'])){
-			if(dp_module_present("cache")){
+			if(class_exists('dataphyre\cache')){
 				cache::delete("fwcb".md5($ipaddress));
 			}
 			else
@@ -64,7 +64,7 @@ class firewall{
 	}
 	
 	public static function flooding_threshold(){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_FIREWALL_FLOODING_CHECK",...func_get_args())) return $early_return;
 		$threshold=3;
 		if(dp_module_present("access")){
@@ -116,7 +116,7 @@ class firewall{
 
 	public static function rps_limiter(int $timing) : bool {
 		return true;
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_FIREWALL_RPS_LIMITER",...func_get_args())) return $early_return;
 		if(isset($_SESSION['last_requests'][0])){
 			if(microtime(true)-$_SESSION['last_requests'][0]<$timing/1000){
@@ -128,10 +128,10 @@ class firewall{
 	}
 
 	public static function check_if_captcha_blocked() : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_FIREWALL_CHECK_IF_CAPTCHA_BLOCKED",...func_get_args())) return $early_return;
 		$ipaddress=$_SERVER['REMOTE_ADDR'];
-		if(dp_module_present("cache")){
+		if(class_exists('dataphyre\cache')){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Using cache module if it's started");
 			if(cache::$started===true){
 				if(null!==cache::get("fwcb".md5($ipaddress))){
@@ -142,7 +142,7 @@ class firewall{
 		else
 		{
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Using sql module");
-			if(false!==$row=sql::db_select(
+			if(false!==$row=sql_select(
 				$S="*", 
 				$L="dataphyre.captcha_blocks", 
 				$P="WHERE expiry>now() AND ip_address=?", 
@@ -171,13 +171,13 @@ class firewall{
 		$ipaddress=$_SERVER['REMOTE_ADDR'];
 		$expiry=strtotime("+6 hours");
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Checking if IP isn't already captcha blocked");
-		if(dp_module_present("cache")){
+		if(class_exists('dataphyre\cache')){
 			cache::set("fwcb".md5($ipaddress), $reason, $expiry);
 		}
 		else
 		{
 			$expiry=date('Y-m-d H:i:s', $expiry);
-			if(false!==sql::db_select(
+			if(false!==sql_select(
 				$S="*", 
 				$L="dataphyre.captcha_blocks", 
 				$P="WHERE expiry>now() AND ip_address=?", 
@@ -190,7 +190,7 @@ class firewall{
 			else
 			{
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Created captcha block"); 
-				sql::db_insert(
+				sql_insert(
 					$L="dataphyre.captcha_blocks", 
 					$F=[
 						"ip_address"=>$ipaddress,

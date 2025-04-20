@@ -21,7 +21,7 @@ class supercookie{
 	
 	static $cookie_name='DATA';
 	
-	static function del(string $name){
+	static function del(string $name): bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SUPERCOOKIE_DEL",...func_get_args())) return $early_return;
 		if(isset($_COOKIE['__Secure-'.self::$cookie_name])){
@@ -41,7 +41,7 @@ class supercookie{
 	}
 
 	static function get(string $name){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SUPERCOOKIE_GET",...func_get_args())) return $early_return;
 		if(isset($_COOKIE['__Secure-'.self::$cookie_name])){
 			$params_array=json_decode($_COOKIE['__Secure-'.self::$cookie_name], true);
