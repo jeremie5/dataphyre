@@ -28,6 +28,7 @@ require(__DIR__."/sql.global.php");
 require(__DIR__."/mysql_query.php");
 require(__DIR__."/postgresql_query.php");
 require(__DIR__."/sqlite_query.php");
+require(__DIR__."/migration.php");
 
 if(RUN_MODE==='diagnostic'){
 	require_once(__DIR__.'/sql.diagnostic.php');
@@ -39,7 +40,6 @@ class sql {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		global $configurations;
 		core::dialback("CALL_SQL_CONSTRUCT",...func_get_args());
-		self::migration();
 		register_shutdown_function(function(){
 			try{
 				self::session_cache_gc();
@@ -102,7 +102,7 @@ class sql {
 			usort($all, fn($a, $b)=>$a[2]<=>$b[2]);
 			foreach($all as [$location, $hash, $_]){
 				unset($_SESSION['db_cache'][$location][$hash]);
-				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Emergency GC: freeing memory from db_cache[$location][$hash]", $S="warning");
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Emergency GC: freeing memory from cache[$location][$hash]", $S="warning");
 				if(memory_get_usage()<$memory_soft_limit*0.9) break;
 				if(microtime(true)-$start>$time_budget) return;
 			}
@@ -129,22 +129,6 @@ class sql {
 		</div>';
 		log_error($error);
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=$error, $S='warning');
-	}
-	
-	public static function migration(){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(file_exists(ROOTPATH['common_dataphyre']."sql_migration/migrating")){
-			core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='Database migration ongoing', 'maintenance');
-		}
-		else
-		{
-			if(file_exists(ROOTPATH['common_dataphyre']."sql_migration/run_migrations")){
-				file_put_contents(ROOTPATH['common_dataphyre']."sql_migration/migrating", '');
-				file_put_contents(ROOTPATH['common_dataphyre']."sql_migration/rootpaths.php", "<?php\n\ROOTPATH=".var_export(ROOTPATH, true).";\n");
-				exec("php ".__DIR__."/migration.php>/dev/null 2> /dev/null &", $process_pid);
-				core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='Database migration ongoing', 'maintenance');
-			}
-		}
 	}
 	
 	public static function query_has_write(string $query) : bool {
@@ -388,8 +372,61 @@ class sql {
 		}
 		return true;
 	}
+
+	public static function table(string $location, ?string &$query_dbms=null): string {
+		global $configurations;
+		list($query_dbms, $location)=strpos($location, ':')!==false?explode(':', $location, 2):[null, $location];
+		if(str_contains($location, '.')===false)$location=$configurations['dataphyre']['sql']['default_database_location'].".".$location;
+		return $location;
+	}
+
+	public static function assert(mixed $result, string $msg): mixed {
+		if($result===false){
+			throw new \RuntimeException($msg);
+		}
+		return $result;
+	}
 	
-    public static function db_query(string|array $query, ?array $vars, ?bool $associative=false, ?bool $multipoint=false, null|bool|array|string $caching=[false], bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : mixed {
+	public static function transaction(callable $fn, ?string $cluster=null): bool {
+		self::begin($cluster);
+		try{
+			$fn();
+			self::commit($cluster);
+			return true;
+		}catch(\Throwable $e){
+			self::rollback($cluster);
+			return false;
+		}
+	}
+	
+	public static function begin(?string $cluster=null): bool {
+		return false!==self::query([
+			'mysql'=>'START TRANSACTION',
+			'postgresql'=>'BEGIN',
+			'sqlite'=>'BEGIN TRANSACTION',
+			'dbms_cluster_override'=>$cluster
+		]);
+	}
+
+	public static function commit(?string $cluster=null): bool {
+		return false!==self::query([
+			'mysql'=>'COMMIT',
+			'postgresql'=>'COMMIT',
+			'sqlite'=>'COMMIT',
+			'dbms_cluster_override'=>$cluster
+		]);
+	}
+
+	public static function rollback(?string $cluster=null): bool {
+		return false!==self::query([
+			'mysql'=>'ROLLBACK',
+			'postgresql'=>'ROLLBACK',
+			'sqlite'=>'ROLLBACK',
+			'dbms_cluster_override'=>$cluster
+		]);
+	}
+	
+    public static function query(string|array $query, ?array $vars=null, ?bool $associative=false, ?bool $multipoint=false, null|bool|array|string $caching=[false], bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : mixed {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_SELECT",...func_get_args())) return $early_return;
 		global $configurations;
@@ -481,12 +518,11 @@ class sql {
 		return $query_result;
     }
 	
-	public static function db_select(string|array $select, string $location, array|string|null $params=null, ?array $vars=null, ?bool $associative=false, null|bool|array|string $caching=[true], ?string $queue='end', ?callable $callback=null) : mixed { //bool|array|null
+	public static function select(string|array $select, string $location, array|string|null $params=null, ?array $vars=null, ?bool $associative=false, null|bool|array|string $caching=[true], ?string $queue='end', ?callable $callback=null) : mixed { //bool|array|null
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_SELECT",...func_get_args())) return $early_return;
 		global $configurations;
-		list($query_dbms, $location)=strpos($location, ':')!==false?explode(':', $location, 2):[null, $location];
-		if(str_contains($location, '.')===false)$location=$configurations['dataphyre']['sql']['default_database_location'].".".$location;
+		$location=self::table($location, $query_dbms);
 		if($caching!==false){
 			if(!is_array($caching))$caching=[$caching];
 			if(false!==$cache_policy=self::get_table_cache_policy($location)){
@@ -585,12 +621,11 @@ class sql {
 		return $query_result;
 	}
 	
-	public static function db_count(string $location, array|string|null $params=null, ?array $vars=null, null|bool|array|string $caching=[true], ?string $queue='end', ?callable $callback=null) : int|bool|null {
+	public static function count(string $location, array|string|null $params=null, ?array $vars=null, null|bool|array|string $caching=[true], ?string $queue='end', ?callable $callback=null) : int|bool|null {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_COUNT",...func_get_args())) return $early_return;
 		global $configurations;
-		list($query_dbms, $location)=strpos($location, ':')!==false?explode(':', $location, 2):[null, $location];
-		if(str_contains($location, '.')===false)$location=$configurations['dataphyre']['sql']['default_database_location'].".".$location;
+		$location=self::table($location, $query_dbms);
 		if($caching!==false){
 			if(is_array($caching)===false)$caching=[$caching];
 			if(false!==$cache_policy=self::get_table_cache_policy($location)){
@@ -670,7 +705,7 @@ class sql {
 		return $query_result;
 	}
 
-	public static function db_insert(string $location, string|array $fields, ?array $vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : mixed {
+	public static function insert(string $location, string|array $fields, ?array $vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : mixed {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_INSERT",...func_get_args())) return $early_return;
 		global $configurations;
@@ -683,7 +718,7 @@ class sql {
 			$fields=implode(',', array_keys($fields));
 		}
 		if($clear_cache===null)$clear_cache=false;
-		if(str_contains($location, '.')===false)$location=$configurations['dataphyre']['sql']['default_database_location'].".".$location;
+		$location=self::table($location, $query_dbms);
 		$dbms_cluster=$configurations['dataphyre']['sql']['tables'][$location]['cluster']??$configurations['dataphyre']['sql']['default_cluster'];
 		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($vars)){
@@ -740,13 +775,13 @@ class sql {
 		return $query_result;
 	}
 
-	public static function db_update(string $location, string|array $fields, null|string|array $params, ?array $vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : int|bool|null {
+	public static function update(string $location, string|array $fields, null|string|array $params, ?array $vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : int|bool|null {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_UPDATE",...func_get_args())) return $early_return;
 		global $configurations;
 		$vars??=[];
 		if($clear_cache===null)$clear_cache=false;
-		if(str_contains($location, '.')===false)$location=$configurations['dataphyre']['sql']['default_database_location'].".".$location;
+		$location=self::table($location, $query_dbms);
 		$dbms_cluster=$configurations['dataphyre']['sql']['tables'][$location]['cluster']??$configurations['dataphyre']['sql']['default_cluster'];
 		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($fields) && isset($fields[$dbms]))$fields=$fields[$dbms];
@@ -820,11 +855,11 @@ class sql {
 		return $query_result;
 	}
 
-	public static function db_delete(string $location, array|string|null $params=null, ?array $vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : bool|null {
+	public static function delete(string $location, array|string|null $params=null, ?array $vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : bool|null {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_DELETE",...func_get_args())) return $early_return;
 		global $configurations;
-		if(str_contains($location, '.')===false)$location=$configurations['dataphyre']['sql']['default_database_location'].".".$location;
+		$location=self::table($location, $query_dbms);
 		$dbms_cluster=$configurations['dataphyre']['sql']['tables'][$location]['cluster']??$configurations['dataphyre']['sql']['default_cluster'];
 		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($params)){
@@ -887,13 +922,13 @@ class sql {
 		return $query_result;
 	}
 	
-	public static function db_upsert(string $location, array $fields, string|array|null $update_params=null, ?array $update_vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null): int|bool|null {
+	public static function upsert(string $location, array $fields, string|array|null $update_params=null, ?array $update_vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null): int|bool|null {
 		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
 		if(null !== $early_return=core::dialback("CALL_SQL_DB_UPSERT", ...func_get_args())) return $early_return;
 		global $configurations;
 		$update_vars ??=[];
 		if($clear_cache===null) $clear_cache=false;
-		if(!str_contains($location, '.')) $location=$configurations['dataphyre']['sql']['default_database_location'].".".$location;
+		$location=self::table($location, $query_dbms);
 		$dbms_cluster=$configurations['dataphyre']['sql']['tables'][$location]['cluster'] ?? $configurations['dataphyre']['sql']['default_cluster'];
 		$dbms=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($fields[$dbms] ?? null)){
@@ -970,9 +1005,9 @@ class sql {
 					return sqlite_query_builder::sqlite_query($dbms_cluster, $sql, $vars);
 			}
 		}
-		$updated=self::db_update($location, $fields, $update_params, $update_vars, $clear_cache, $queue, $callback);
+		$updated=self::update($location, $fields, $update_params, $update_vars, $clear_cache, $queue, $callback);
 		if($updated===0){
-			return self::db_insert($location, $fields, null, $clear_cache, $queue, $callback);
+			return self::insert($location, $fields, null, $clear_cache, $queue, $callback);
 		}
 		return $updated;
 	}

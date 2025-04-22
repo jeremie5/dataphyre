@@ -264,13 +264,13 @@ class mysql_query_builder {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		global $configurations;
 		if(null!==$early_return=core::dialback("CALL_SQL_SIMPLE_SELECT",...func_get_args())) return $early_return;
-		$execute_query = function($conn) use ($query, $vars) {
+		$execute_query=function($conn) use ($query, $vars) {
 			if(is_array($vars)){
-				$datatypes = str_repeat("s", count($vars));
-				$stmt = $conn->prepare($query);
+				$datatypes=str_repeat("s", count($vars));
+				$stmt=$conn->prepare($query);
 				$stmt->bind_param($datatypes, ...$vars);
 				$stmt->execute();
-				$result = $stmt->get_result();
+				$result=$stmt->get_result();
 				$stmt->close();
 				return $result;
 			}
@@ -278,8 +278,8 @@ class mysql_query_builder {
 			{
 				if(mysqli_multi_query($conn, $query)){
 					do {
-						if ($result = mysqli_store_result($conn)) {
-							$firstResult = $result;
+						if ($result=mysqli_store_result($conn)) {
+							$firstResult=$result;
 							mysqli_free_result($result);
 						}
 					} while (mysqli_next_result($conn));
@@ -433,7 +433,7 @@ class mysql_query_builder {
 			$datatypes.=is_bool($value)?'i':(is_int($value)?'i':'s');
 			if(is_bool($value))$value=(int)$value;
 		}
-		$fields_question_marks = rtrim(str_repeat('?,', count(explode(',', $fields))), ',');
+		$fields_question_marks=rtrim(str_repeat('?,', count(explode(',', $fields))), ',');
 		$is_multipoint=$configurations['dataphyre']['sql']['tables'][$location]['multipoint_writes']??false;
 		$endpoints=$configurations['dataphyre']['sql']['datacenters'][$configurations['dataphyre']['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
 		shuffle($endpoints);
