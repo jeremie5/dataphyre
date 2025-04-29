@@ -133,6 +133,7 @@ License included in the `adminer` directory.
 
 ## License
 
-Dataphyre is MIT-licensed.  
+Dataphyre is MIT-licensed.
+The Dataphyre trademark may not be used to endorse or promote derived products without prior written permission.
 Some proprietary modules (e.g., Dataphyre CDN, A/B Testing, Stripe, NLP moderation, fraud analysis, sentinel error reporting) are **not** included and power **Shopiro**.  
 These may be released later under SaaS or separate licenses. Community alternatives are encouraged!
