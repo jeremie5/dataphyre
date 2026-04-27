@@ -1,0 +1,54 @@
+[
+	{
+		"name": "sanitize supports legacy numeric signature",
+		"function": "sanitize",
+		"class": "dataphyre\\sanitation",
+		"static_method": true,
+		"args": [" 42 ", true, true, "numeric"],
+		"expected": "42",
+		"dependencies": {
+			"class": ["dataphyre\\sanitation"]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "sanitize rejects invalid email",
+		"function": "sanitize",
+		"class": "dataphyre\\sanitation",
+		"static_method": true,
+		"args": ["not-an-email", "email"],
+		"expected": false,
+		"dependencies": {
+			"class": ["dataphyre\\sanitation"]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "sanitize formats person names",
+		"function": "sanitize",
+		"class": "dataphyre\\sanitation",
+		"static_method": true,
+		"args": ["  jOhn o'connor  ", "person_name"],
+		"expected": {
+			"custom_script": "return $result===\"John O'Connor\";"
+		},
+		"dependencies": {
+			"class": ["dataphyre\\sanitation"]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "sanitize strips dangerous basic html",
+		"function": "sanitize",
+		"class": "dataphyre\\sanitation",
+		"static_method": true,
+		"args": ["<script>alert(1)</script><b>Hi</b>", "basic_html"],
+		"expected": {
+			"custom_script": "return is_string($result) && strpos($result, '<script')===false && strpos($result, '<b>Hi</b>')!==false;"
+		},
+		"dependencies": {
+			"class": ["dataphyre\\sanitation"]
+		},
+		"max_millis": 10
+	}
+]

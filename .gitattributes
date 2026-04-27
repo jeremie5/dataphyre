@@ -1,0 +1,14 @@
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.crt text
+
+# Bundled third-party clients keep their upstream shape.
+runtime/modules/stripe/src/** linguist-vendored
+runtime/modules/sql/third_party/** linguist-vendored
+runtime/modules/sql/third_party/adminer/** linguist-vendored
+runtime/modules/private_adapter/private_adapter-client/** linguist-vendored
+runtime/modules/private_adapter/***REMOVED***/** linguist-vendored

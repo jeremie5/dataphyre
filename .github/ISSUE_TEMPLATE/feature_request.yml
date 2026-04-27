@@ -1,0 +1,44 @@
+name: Feature request
+description: Suggest a Dataphyre feature or module improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What are you trying to build or improve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: Describe the API, module behavior, or workflow you would like.
+    validations:
+      required: true
+  - type: input
+    id: module
+    attributes:
+      label: Module or area
+      placeholder: sql, templating, routing, new module, docs
+    validations:
+      required: false
+  - type: dropdown
+    id: compatibility
+    attributes:
+      label: Compatibility impact
+      options:
+        - Backward compatible
+        - Breaking change
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional, but useful for design discussion.
+    validations:
+      required: false

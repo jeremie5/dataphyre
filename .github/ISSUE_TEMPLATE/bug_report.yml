@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a reproducible Dataphyre bug.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a Dataphyre bug. Please include enough detail for someone else to reproduce it, and remove private install data before posting.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+    validations:
+      required: true
+  - type: input
+    id: module
+    attributes:
+      label: Module or area
+      description: Example: core, routing, sql, templating, flightdeck, embedded install.
+      placeholder: core
+    validations:
+      required: false
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the shortest path that reproduces the problem.
+      placeholder: |
+        1. Configure ...
+        2. Request ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: PHP version, web server, OS, Dataphyre installation shape, and relevant extensions.
+      placeholder: |
+        PHP:
+        OS:
+        Web server:
+        Extensions:
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or trace output
+      description: Remove secrets, cookies, local keys, private hostnames, and customer data before posting.
+      render: text
+    validations:
+      required: false

@@ -1,0 +1,36 @@
+[
+	{
+		"name": "verify_payload accepts valid signed proof",
+		"function": "verify_payload",
+		"class": "dataphyre\\caspow",
+		"static_method": true,
+		"args": [
+			{
+				"custom_script": "$challenge=\\dataphyre\\caspow::create_challenge('unit_test_verify', ['hardware_concurrency'=>1,'device_memory'=>1,'save_data'=>true,'reduced_motion'=>true]);\n$counter=0;\n$digest='';\n$target=(int)$challenge['difficulty_bits'];\nwhile(true){\n\t$digest=hash('sha256', $challenge['challenge_id'].':'.$challenge['nonce'].':'.$counter);\n\t$bits=0;\n\tfor($i=0; $i<strlen($digest); $i++){\n\t\t$nibble=hexdec($digest[$i]);\n\t\tif($nibble===0){\n\t\t\t$bits+=4;\n\t\t\tcontinue;\n\t\t}\n\t\tif(($nibble & 8)===0){ $bits++; } else { break; }\n\t\tif(($nibble & 4)===0){ $bits++; } else { break; }\n\t\tif(($nibble & 2)===0){ $bits++; } else { break; }\n\t\tif(($nibble & 1)===0){ $bits++; }\n\t\tbreak;\n\t}\n\tif($bits>=$target){\n\t\tbreak;\n\t}\n\t$counter++;\n}\nreturn base64_encode(json_encode([\n\t'version'=>$challenge['version'],\n\t'challenge_id'=>$challenge['challenge_id'],\n\t'scope'=>$challenge['scope'],\n\t'algorithm'=>$challenge['algorithm'],\n\t'nonce'=>$challenge['nonce'],\n\t'signature'=>$challenge['signature'],\n\t'counter'=>$counter,\n\t'digest'=>$digest,\n\t'duration_ms'=>1,\n\t'iterations'=>$counter+1,\n\t'worker'=>false,\n]));"
+			}
+		],
+		"expected": true,
+		"dependencies": {
+			"class": ["dataphyre\\caspow"],
+			"function": ["dpvk"]
+		},
+		"max_millis": 750
+	},
+	{
+		"name": "verify_payload rejects tampered signature",
+		"function": "verify_payload",
+		"class": "dataphyre\\caspow",
+		"static_method": true,
+		"args": [
+			{
+				"custom_script": "$challenge=\\dataphyre\\caspow::create_challenge('unit_test_verify', ['hardware_concurrency'=>1,'device_memory'=>1,'save_data'=>true,'reduced_motion'=>true]);\n$counter=0;\n$digest='';\n$target=(int)$challenge['difficulty_bits'];\nwhile(true){\n\t$digest=hash('sha256', $challenge['challenge_id'].':'.$challenge['nonce'].':'.$counter);\n\t$bits=0;\n\tfor($i=0; $i<strlen($digest); $i++){\n\t\t$nibble=hexdec($digest[$i]);\n\t\tif($nibble===0){\n\t\t\t$bits+=4;\n\t\t\tcontinue;\n\t\t}\n\t\tif(($nibble & 8)===0){ $bits++; } else { break; }\n\t\tif(($nibble & 4)===0){ $bits++; } else { break; }\n\t\tif(($nibble & 2)===0){ $bits++; } else { break; }\n\t\tif(($nibble & 1)===0){ $bits++; }\n\t\tbreak;\n\t}\n\tif($bits>=$target){\n\t\tbreak;\n\t}\n\t$counter++;\n}\nreturn base64_encode(json_encode([\n\t'version'=>$challenge['version'],\n\t'challenge_id'=>$challenge['challenge_id'],\n\t'scope'=>$challenge['scope'],\n\t'algorithm'=>$challenge['algorithm'],\n\t'nonce'=>$challenge['nonce'],\n\t'signature'=>'tampered',\n\t'counter'=>$counter,\n\t'digest'=>$digest,\n\t'duration_ms'=>1,\n\t'iterations'=>$counter+1,\n\t'worker'=>false,\n]));"
+			}
+		],
+		"expected": false,
+		"dependencies": {
+			"class": ["dataphyre\\caspow"],
+			"function": ["dpvk"]
+		},
+		"max_millis": 750
+	}
+]

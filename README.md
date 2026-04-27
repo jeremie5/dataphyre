@@ -1,135 +1,119 @@
-![Dataphyre Logo](logo.png)
-
 # Dataphyre
 
-Dataphyre is the runtime engine behind Shopiro.ca.
+Dataphyre is a modular PHP runtime engine. This repository layout mirrors a live
+Dataphyre installation: the reusable engine lives in `runtime/`, while the
+top-level folders hold install-specific configuration, plugins, cache state, and
+bootstrap settings.
 
-It is a collection of modules created to make a very large PHP application observable, testable, diagnosable, and safe to evolve.
+For a first-run path, start with [Getting started](GETTING_STARTED.md) or the
+[minimal embedded example](examples/minimal/README.md). For framework
+documentation, see the [runtime README](runtime/README.md) and the
+[documentation index](runtime/documentation/README.md).
 
-Dataphyre is not an MVC framework. It does not try to abstract PHP. It provides tools to understand and control what an application is doing at runtime.
+## Repository Layout
 
-**License: MIT**
-
-[![PHP Version](https://img.shields.io/badge/php-%5E8.1-blue)](https://php.net)
-![GitHub License](https://img.shields.io/github/license/jeremie5/dataphyre)
-[![Documentation](https://img.shields.io/badge/docs-available-brightgreen)](https://github.com/jeremie5/dataphyre/wiki)
-[![GitHub issues](https://img.shields.io/github/issues/jeremie5/dataphyre)](https://github.com/jeremie5/dataphyre/issues)
-[![Contributors](https://img.shields.io/github/contributors/jeremie5/dataphyre)](https://github.com/jeremie5/dataphyre/graphs/contributors)
-[![GitHub stars](https://img.shields.io/github/stars/jeremie5/dataphyre?style=social)](https://github.com/jeremie5/dataphyre/stargazers)
-
----
-
-## Why Dataphyre Exists
-
-While building Shopiro, several problems appeared that traditional frameworks did not solve well:
-
-* Knowing exactly what happened during a request
-* Refactoring safely in a multi-million line codebase
-* Managing localization across hundreds of pages and languages
-* Making routing expressive without becoming fragile
-* Handling SQL, caching, and diagnostics in a predictable way
-
-Dataphyre is the result of solving those problems directly.
-
----
-
-## Repository Structure
-
-Dataphyre is designed to support shared runtime and app-specific overrides.
-
-```
-common_dataphyre/   → shared runtime modules
-dataphyre/          → app-specific config and overrides
+```text
+runtime/                  Dataphyre runtime engine, modules, docs, and public metadata
+config/                   Install-level module configuration and public examples
+plugins/                  Install-level pre-init and post-init extension hooks
+cache/                    Generated runtime state
+logs/                     Generated runtime logs
+flight_sheet.example.php  Public install bootstrap template
+flight_sheet.php          Local install bootstrap sheet, ignored for public export
 ```
 
-Modules are independent and optional.
-Documentation for each module lives inside its folder.
+## Runtime Boundary
 
----
+`runtime/` is the portable core. It contains `bootstrap.php`, module kernels,
+framework classes, and module-level documentation. Keeping this boundary explicit
+lets Dataphyre run embedded inside a larger application while still presenting a
+clear public project shape.
 
-## What Dataphyre Provides
+The parent directory is the installation shell. It is expected to vary per
+application and may contain local config, generated state, and deployment
+settings.
 
-Rather than a framework, Dataphyre provides runtime systems for:
-
-* Request tracing and diagnostics
-* Dynamic unit test generation
-* Localization learning and syncing
-* Parameter-driven routing
-* SQL abstraction with caching and failover support
-* Modular security components
-* Async task scheduling
-
----
+For the public/export split, see [Public export boundary](PUBLIC_EXPORT.md).
 
 ## Getting Started
 
-### Prerequisites
+Requirements:
 
-* PHP ≥ 8.1
-* Composer
+- PHP 8.1 or newer
+- Composer, if you want dependency metadata or future package tooling
 
-### Installation
+Minimal bootstrap path:
 
+```php
+<?php
+
+require __DIR__.'/runtime/bootstrap.php';
 ```
-git clone https://github.com/jeremie5/dataphyre.git
-cd dataphyre
+
+Most applications should provide a `flight_sheet.php` at the installation root
+and one or more application roots through the bootstrap configuration. See the
+[getting-started guide](GETTING_STARTED.md) for the full minimal file shape.
+
+## Documentation
+
+- [Runtime overview](runtime/README.md)
+- [Getting started](GETTING_STARTED.md)
+- [Architecture](ARCHITECTURE.md)
+- [Configuration reference](CONFIGURATION.md)
+- [Package contract](PACKAGE.md)
+- [Stability policy](STABILITY.md)
+- [Public export boundary](PUBLIC_EXPORT.md)
+- [Third-party notices](THIRD_PARTY_NOTICES.md)
+- [Minimal embedded example](examples/minimal/README.md)
+- [Module index](MODULES.md)
+- [Documentation index](runtime/documentation/README.md)
+- [Release checklist](RELEASE_CHECKLIST.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+- [Support](SUPPORT.md)
+- [Security policy](SECURITY.md)
+- [License](LICENSE)
+
+## Verification
+
+Run the release surface checks with PowerShell:
+
+```powershell
+./tools/release_check
 ```
 
----
+The script checks module documentation coverage, local Markdown links, JSON
+fixtures, stale license wording, and MIT/SPDX headers for Dataphyre-owned PHP
+files.
 
-## Modules
+After preparing a sanitized public export tree, run:
 
-### Core & Execution
+```powershell
+./tools/check_export -Root C:\path\to\dataphyre-export
+```
 
-* **[Core](common/dataphyre/modules/core/documentation/Dataphyre_Core.md)** — foundational runtime hooks
-* **[Routing](common/dataphyre/modules/routing/documentation/Dataphyre_Routing.md)** — parameter-aware routing system
-* **[Templating](common/dataphyre/modules/templating/documentation/Dataphyre_Templating.md)** — layout inheritance, scoped styles, async rendering
-* **[Supercookie](common/dataphyre/modules/supercookie/documentation/Dataphyre_Supercookie.md)** — JSON session and state handling
+The export check uses `.distignore` to catch local install files and scans for
+high-confidence secret markers.
 
-### Performance & Async
+To build that sanitized tree from the embedded working copy:
 
-* **[Async](common/dataphyre/modules/async/documentation/Dataphyre_Async.md)** — background tasks and scheduling
-* **[Cache](common/dataphyre/modules/cache/documentation/Dataphyre_Cache.md)** — Memcached interface
-* **[Scheduling](common/dataphyre/modules/scheduling/documentation/Dataphyre_Scheduling.md)** — dependency-aware cron
-* **[Perfstats](common/dataphyre/modules/perfstats/documentation/Dataphyre_Perfstats.md)** — runtime performance tracking
+```powershell
+./tools/prepare_export -Output C:\path\to\dataphyre-export
+```
 
-### Security
+The prepare script copies the public surface, applies `.distignore`, then runs
+the public export and release checks against the output.
 
-* **[CASPOW](common/dataphyre/modules/caspow/documentation/Dataphyre_CASPOW.md)** — anti-spam proof-of-work
-* **[Firewall](common/dataphyre/modules/firewall/documentation/Dataphyre_Firewall.md)** — rate limiting and flood protection
-* **[Sanitation](common/dataphyre/modules/sanitation/documentation/Dataphyre_Sanitation.md)** — input filtering
-* **[Access](common/dataphyre/modules/access/documentation/Dataphyre_Access.md)** — auth and permissions
-* **Googleauthenticator** — TOTP 2FA
+Lint real PHP files with:
 
-### Data & Search
+```powershell
+./tools/lint_php.ps1
+```
 
-* **[SQL](common/dataphyre/modules/sql/documentation/Dataphyre_SQL.md)** — DB abstraction with queueing and caching
-* **[Fulltext Engine](common/dataphyre/modules/fulltext_engine/documentation/Dataphyre_Fulltext_Engine.md)** — multi-backend search engine
-* **[Currency](common/dataphyre/modules/currency/documentation/Dataphyre_Currency.md)** — currency handling and formatting
-
-### Developer Tools
-
-* **[Tracelog](common/dataphyre/modules/tracelog/documentation/Dataphyre_Tracelog.md)** — full request execution tracing
-* **[Dpanel](common/dataphyre/modules/dpanel/documentation/Dataphyre_Dpanel.md)** — dynamic unit testing and diagnostics
-
----
-
-## Contributing
-
-Contributions are welcome.
-See the issues tab or open a new one.
-
----
-
-## Third-Party Libraries
-
-Dataphyre includes **Adminer** (Apache 2.0) in the `adminer` directory.
-
----
+CI runs the same release checks, public export checks, export preparation smoke
+test, Composer metadata validation, and PHP linting on the public checkout.
 
 ## License
 
-Dataphyre is MIT-licensed.
-The Dataphyre trademark may not be used to endorse derived products.
-
-Which is exactly the perception you need before they open any module file.
+Dataphyre is released under the MIT License. Third-party libraries bundled under
+specific modules retain their own license files.

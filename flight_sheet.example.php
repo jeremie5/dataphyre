@@ -1,0 +1,101 @@
+<?php
+/*************************************************************************
+ * Dataphyre
+ *
+ * Copyright (c) 2025 Shopiro Ltd.
+ * SPDX-License-Identifier: MIT
+ */
+return [
+	'bootstrap'=>[
+		'app'=>'example_app',
+		'public_ip_address'=>null,
+		'web_server_port'=>null,
+		'prevent_keyless_direct_access'=>true,
+		'allow_app_override'=>false,
+		'is_production'=>true,
+		'license'=>false,
+		'max_execution_time'=>30,
+		'application_roots'=>[
+			__DIR__.'/examples/minimal/applications',
+		],
+		'flightdeck'=>[
+			'enabled'=>false,
+			'password'=>null,
+			'password_hash'=>getenv('DATAPHYRE_FLIGHTDECK_PASSWORD_HASH') ?: null,
+			'session_ttl'=>43200,
+			'rate_limit'=>[
+				'window'=>300,
+				'max_attempts'=>5,
+			],
+			'debugbar'=>[
+				'enabled'=>false,
+			],
+		],
+	],
+	'install'=>[
+		'shared'=>[
+			'directories'=>[
+				'cache',
+				'cache/flightdeck',
+				'logs',
+				'plugins',
+				'plugins/pre_init',
+				'plugins/post_init',
+				'sql_migration',
+				'sql_migration/plans',
+				'sql_migration/snapshots',
+			],
+			'files'=>[
+				[
+					'path'=>'cache/load_level.php',
+					'type'=>'literal',
+					'contents'=>"<?php return ['level'=>0,'timestamp'=>0,'bottleneck'=>null];\n",
+				],
+				[
+					'path'=>'sql_migration/table_versions.json',
+					'type'=>'literal',
+					'contents'=>"{}\n",
+				],
+			],
+		],
+		'app'=>[
+			'directories'=>[
+				'cache',
+				'cache/locks',
+				'config',
+				'config/static',
+				'fulltext_indexes',
+				'logs',
+				'modules',
+				'plugins',
+				'plugins/pre_init',
+				'plugins/post_init',
+			],
+			'files'=>[
+				[
+					'path'=>'modcache.php',
+					'type'=>'literal',
+					'contents'=>"<?php return [];\n",
+				],
+				[
+					'path'=>'cache/known_error_conditions.json',
+					'type'=>'literal',
+					'contents'=>"{}\n",
+				],
+				[
+					'path'=>'config/static/dpvk',
+					'type'=>'generated_dpvk',
+				],
+				[
+					'path'=>'unavailable.php',
+					'type'=>'literal',
+					'contents'=>"<?php\nhttp_response_code(503);\necho '<h1>Service unavailable</h1>';\nexit();\n",
+				],
+				[
+					'path'=>'cache/verified',
+					'type'=>'generated_verified',
+				],
+			],
+		],
+	],
+];

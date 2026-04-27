@@ -1,0 +1,28 @@
+name: Documentation issue
+description: Report missing, stale, or confusing Dataphyre documentation.
+title: "[Docs]: "
+labels:
+  - documentation
+body:
+  - type: textarea
+    id: page
+    attributes:
+      label: Page or module
+      description: Link to the page or name the module/doc area.
+      placeholder: runtime/modules/sql/documentation/Dataphyre_SQL.md
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: What should change?
+      description: Describe what is missing, incorrect, or hard to follow.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested wording or examples
+      description: Optional, but examples help.
+    validations:
+      required: false
