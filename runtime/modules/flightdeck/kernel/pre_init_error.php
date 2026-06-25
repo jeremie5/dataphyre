@@ -6,9 +6,10 @@
  * SPDX-License-Identifier: MIT
  */
 
-if(class_exists('dataphyre_flightdeck_pre_init_error', false)){
+if(defined('DATAPHYRE_FLIGHTDECK_PRE_INIT_ERROR_LOADED')){
 	return;
 }
+define('DATAPHYRE_FLIGHTDECK_PRE_INIT_ERROR_LOADED', true);
 
 $flightdeck_auth_file=__DIR__.'/auth.php';
 $flightdeck_stack_snippets_file=__DIR__.'/stack_snippets.php';
@@ -19,8 +20,28 @@ if(is_file($flightdeck_stack_snippets_file)){
 	require_once($flightdeck_stack_snippets_file);
 }
 
+/**
+ * Renders Flightdeck diagnostics before the full Dataphyre runtime is available.
+ *
+ * This pre-init renderer is intentionally self-contained: it gates sensitive
+ * bootstrap errors behind Flightdeck authentication, renders stack snippets when
+ * possible, and links snippets back to Datadoc records when the database layer is
+ * already usable. It avoids depending on framework services that may have failed
+ * during bootstrap.
+ */
 final class dataphyre_flightdeck_pre_init_error {
 
+	/**
+	 * Attempts to render a gated bootstrap diagnostic page.
+	 *
+	 * The method returns false when the authentication helper is unavailable or
+	 * Flightdeck is disabled so upstream error handlers can fall back to another
+	 * response. A true return means a complete HTML response was emitted.
+	 *
+	 * @param ?string $message Human-readable bootstrap failure message.
+	 * @param ?object $exception Throwable-like object carrying trace information.
+	 * @return bool True when this renderer emitted a response.
+	 */
 	public static function render(?string $message, ?object $exception): bool {
 		if(class_exists('dataphyre_flightdeck_auth', false)!==true){
 			return false;
@@ -36,6 +57,11 @@ final class dataphyre_flightdeck_pre_init_error {
 		return true;
 	}
 
+	/**
+	 * Emits the authentication gate shown before diagnostic details are revealed.
+	 *
+	 * @param ?string $message Bootstrap message safe enough to show before login.
+	 */
 	private static function render_login_gate(?string $message): void {
 		http_response_code(500);
 		header('Content-Type: text/html; charset=utf-8');
@@ -49,6 +75,7 @@ final class dataphyre_flightdeck_pre_init_error {
 				$error='Invalid form token.';
 			}
 			elseif(dataphyre_flightdeck_auth::login($password)===true){
+				http_response_code(302);
 				header('Location: '.dataphyre_flightdeck_auth::current_uri());
 				exit;
 			}
@@ -65,10 +92,17 @@ final class dataphyre_flightdeck_pre_init_error {
 		if($error!==null){
 			echo '<div class="fd-alert">'.self::e($error).'</div>';
 		}
-		echo '<form method="post"><input type="hidden" name="csrf" value="'.self::e(dataphyre_flightdeck_auth::csrf_token()).'"><input type="password" name="password" placeholder="Flightdeck password" autofocus><button type="submit">View Diagnostic Report</button></form></section></main>';
+		$action='/dataphyre/login?'.http_build_query(['return'=>dataphyre_flightdeck_auth::current_uri()]);
+		echo '<form method="post" action="'.self::e($action).'"><input type="hidden" name="csrf" value="'.self::e(dataphyre_flightdeck_auth::csrf_token()).'"><input type="password" name="password" placeholder="Flightdeck password" autofocus><button type="submit">View Diagnostic Report</button></form></section></main>';
 		echo self::html_end();
 	}
 
+	/**
+	 * Emits the authenticated bootstrap diagnostic report.
+	 *
+	 * @param ?string $message Bootstrap failure message.
+	 * @param ?object $exception Throwable-like object carrying file, line, and trace details.
+	 */
 	private static function render_exception_page(?string $message, ?object $exception): void {
 		http_response_code(500);
 		header('Content-Type: text/html; charset=utf-8');
@@ -119,6 +153,12 @@ final class dataphyre_flightdeck_pre_init_error {
 		echo self::html_end();
 	}
 
+	/**
+	 * Extracts stack frames from the exception or the optional snippet helper.
+	 *
+	 * @param ?object $exception Throwable-like object.
+	 * @return array Stack frames with file, line, symbol, index, and kind metadata.
+	 */
 	private static function frames(?object $exception): array {
 		if(class_exists('dataphyre_flightdeck_stack_snippets', false)){
 			return dataphyre_flightdeck_stack_snippets::frames_from_exception($exception);
@@ -145,6 +185,12 @@ final class dataphyre_flightdeck_pre_init_error {
 		return $frames;
 	}
 
+	/**
+	 * Builds a readable symbol label for a stack frame.
+	 *
+	 * @param array{function?:string,class?:string,type?:string,call?:string} $frame Raw stack frame from Throwable::getTrace() or snippet normalization.
+	 * @return string Symbol label such as Class::method or function.
+	 */
 	private static function frame_symbol(array $frame): string {
 		if(class_exists('dataphyre_flightdeck_stack_snippets', false)){
 			return dataphyre_flightdeck_stack_snippets::frame_symbol($frame);
@@ -158,6 +204,14 @@ final class dataphyre_flightdeck_pre_init_error {
 		return $class!=='' ? $class.$type.$function : $function;
 	}
 
+	/**
+	 * Delegates smart diagnostic rendering to the optional stack snippet helper.
+	 *
+	 * @param ?string $message Bootstrap failure message.
+	 * @param ?object $exception Throwable-like object.
+	 * @param array<int,array{index?:int,file?:string,line?:int,function?:string,class?:string,type?:string,symbol?:string,kind?:string}> $frames Stack frames already extracted for the report.
+	 * @return string Diagnostic HTML or an empty string when helper support is unavailable.
+	 */
 	private static function render_smart_diagnostics(?string $message, ?object $exception, array $frames): string {
 		if(class_exists('dataphyre_flightdeck_stack_snippets', false)!==true){
 			return '';
@@ -166,6 +220,12 @@ final class dataphyre_flightdeck_pre_init_error {
 		return dataphyre_flightdeck_stack_snippets::render_diagnostics($text, $frames);
 	}
 
+	/**
+	 * Renders quick navigation links for the displayed stack frames.
+	 *
+	 * @param array<int,array{index?:int,file?:string,line?:int,function?:string,class?:string,type?:string,symbol?:string,kind?:string}> $frames Stack frame payloads.
+	 * @return string Stack map HTML.
+	 */
 	private static function render_stack_map(array $frames): string {
 		if(class_exists('dataphyre_flightdeck_stack_snippets', false)){
 			return dataphyre_flightdeck_stack_snippets::render_stack_map($frames);
@@ -180,6 +240,13 @@ final class dataphyre_flightdeck_pre_init_error {
 		return $html.'</div>';
 	}
 
+	/**
+	 * Describes whether a snippet is the origin frame or a callsite.
+	 *
+	 * @param array{kind?:string,index?:int,file?:string,line?:int,symbol?:string} $frame Stack frame payload.
+	 * @param string $symbol Readable frame symbol.
+	 * @return string Badge HTML or an empty string for unknown frame kinds.
+	 */
 	private static function stack_reference_badge(array $frame, string $symbol): string {
 		$kind=(string)($frame['kind'] ?? '');
 		if($kind==='origin'){
@@ -191,6 +258,17 @@ final class dataphyre_flightdeck_pre_init_error {
 		return '';
 	}
 
+	/**
+	 * Renders a source snippet for one stack frame.
+	 *
+	 * The renderer prefers Datadoc highlighting and linkification, then falls
+	 * back to escaped preformatted source when Datadoc is not available during
+	 * early bootstrap.
+	 *
+	 * @param array{index?:int,file?:string,line?:int,function?:string,class?:string,type?:string,symbol?:string,kind?:string} $frame Stack frame payload.
+	 * @param array<int,array{index?:int,file?:string,line?:int,function?:string,class?:string,type?:string,symbol?:string,kind?:string}> $frames Complete frame list used for caller/callee links.
+	 * @return string Source snippet HTML.
+	 */
 	private static function render_snippet(array $frame, array $frames=[]): string {
 		if(class_exists('dataphyre_flightdeck_stack_snippets', false)){
 			return dataphyre_flightdeck_stack_snippets::render_snippet($frame, $frames);
@@ -230,6 +308,15 @@ final class dataphyre_flightdeck_pre_init_error {
 		return '<div class="fd-snippet" id="fd-frame-'.$frame_index.'"><div class="fd-snippet-head"><h3><span class="fd-frame-index">#'.$frame_index.'</span> '.self::e($file).':'.self::e((string)$line).'</h3>'.self::snippet_actions($datadoc_context, $frame, $frames).'</div>'.self::stack_reference_badge($frame, $symbol).$highlighted.'</div>';
 	}
 
+	/**
+	 * Highlights a PHP snippet with Datadoc and linkifies known symbols.
+	 *
+	 * @param string $code Source code excerpt.
+	 * @param int $start First source line represented in the excerpt.
+	 * @param int $line Frame line to highlight.
+	 * @param array{project?:string,namespace?:string,class?:string,function?:string,datadoc_url?:?string,project_url?:?string} $context Datadoc project, namespace, class, and function context.
+	 * @return ?string Highlighted HTML, or null when Datadoc highlighter is unavailable.
+	 */
 	private static function datadoc_highlight(string $code, int $start, int $line, array $context=[]): ?string {
 		$highlighter=dirname(__DIR__, 2).'/datadoc/kernel/highlighter.php';
 		if(!is_file($highlighter)){
@@ -259,6 +346,12 @@ final class dataphyre_flightdeck_pre_init_error {
 		}
 	}
 
+	/**
+	 * Removes shared indentation from a displayed snippet window.
+	 *
+	 * @param array<int,string> $lines Source lines keyed by their zero-based file index.
+	 * @return array<int,string> Lines with the common leading whitespace removed.
+	 */
 	private static function normalize_snippet_lines(array $lines): array {
 		$common_prefix=null;
 		foreach($lines as $line){
@@ -297,6 +390,16 @@ final class dataphyre_flightdeck_pre_init_error {
 		return $lines;
 	}
 
+	/**
+	 * Locates the Datadoc project and nearest indexed record for a frame.
+	 *
+	 * Database access is best-effort because pre-init failures may happen before
+	 * SQL is configured; errors are swallowed and represented as an empty context.
+	 *
+	 * @param string $file Absolute frame file path.
+	 * @param int $line Frame line number.
+	 * @return array{project:string,namespace:string,class:string,function:string,datadoc_url:?string,project_url:?string} Datadoc context with project, symbol, and URL fields.
+	 */
 	private static function datadoc_frame_context(string $file, int $line): array {
 		$context=[
 			'project'=>'',
@@ -376,6 +479,14 @@ final class dataphyre_flightdeck_pre_init_error {
 		return $context;
 	}
 
+	/**
+	 * Builds contextual links for a source snippet.
+	 *
+	 * @param array{project?:string,namespace?:string,class?:string,function?:string,datadoc_url?:?string,project_url?:?string} $context Datadoc context returned by datadoc_frame_context().
+	 * @param array{index?:int,file?:string,line?:int,function?:string,class?:string,type?:string,symbol?:string,kind?:string} $frame Current stack frame.
+	 * @param array<int,array{index?:int,file?:string,line?:int,function?:string,class?:string,type?:string,symbol?:string,kind?:string}> $frames Complete frame list.
+	 * @return string Link toolbar HTML or an empty string.
+	 */
 	private static function snippet_actions(array $context, array $frame=[], array $frames=[]): string {
 		$links=[];
 		if(!empty($context['datadoc_url'])){
@@ -399,10 +510,23 @@ final class dataphyre_flightdeck_pre_init_error {
 		return '<div class="fd-snippet-actions">'.implode('', $links).'</div>';
 	}
 
+	/**
+	 * Builds the Datadoc project URL for a project name.
+	 *
+	 * @param string $project Datadoc project name.
+	 * @return string Project URL.
+	 */
 	private static function datadoc_project_url(string $project): string {
 		return self::datadoc_base_url().'/'.rawurlencode($project);
 	}
 
+	/**
+	 * Builds a Datadoc record URL from an indexed symbol row.
+	 *
+	 * @param string $project Datadoc project name.
+	 * @param array{type?:string,namespace?:string,class?:string,function?:string,content?:string} $record Datadoc data row containing type and symbol fields.
+	 * @return string Record URL.
+	 */
 	private static function datadoc_record_url(string $project, array $record): string {
 		return self::datadoc_project_url($project).'/dynadoc?'.http_build_query([
 			'type'=>(string)($record['type'] ?? ''),
@@ -413,6 +537,11 @@ final class dataphyre_flightdeck_pre_init_error {
 		]);
 	}
 
+	/**
+	 * Resolves the Datadoc base URL without requiring full framework boot.
+	 *
+	 * @return string Datadoc base URL.
+	 */
 	private static function datadoc_base_url(): string {
 		if(class_exists('\dataphyre\core', false)){
 			return rtrim(\dataphyre\core::url_self(), '/').'/dataphyre/datadoc';
@@ -420,6 +549,11 @@ final class dataphyre_flightdeck_pre_init_error {
 		return '/dataphyre/datadoc';
 	}
 
+	/**
+	 * Renders the retroactive tracelog captured before Flightdeck initialized.
+	 *
+	 * @return string Tracelog HTML or an empty-state paragraph.
+	 */
 	private static function render_retroactive_tracelog(): string {
 		$entries=$GLOBALS['retroactive_tracelog'] ?? [];
 		if(!is_array($entries) || empty($entries)){
@@ -438,6 +572,12 @@ final class dataphyre_flightdeck_pre_init_error {
 		return $html.'</div>';
 	}
 
+	/**
+	 * Renders key-value diagnostics as a definition list.
+	 *
+	 * @param array<string,scalar|null> $items Diagnostic labels and scalar values rendered with HTML escaping.
+	 * @return string Definition-list HTML.
+	 */
 	private static function definition_list(array $items): string {
 		$html='<dl class="fd-dl">';
 		foreach($items as $key=>$value){
@@ -446,18 +586,40 @@ final class dataphyre_flightdeck_pre_init_error {
 		return $html.'</dl>';
 	}
 
+	/**
+	 * Builds the opening HTML document shell for pre-init pages.
+	 *
+	 * @param string $title Document title.
+	 * @return string Opening HTML, head, and body markup.
+	 */
 	private static function html_start(string $title): string {
 		return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>'.self::e($title).'</title><style>'.self::css().'</style></head><body>';
 	}
 
+	/**
+	 * Builds the closing HTML document shell.
+	 *
+	 * @return string Closing body and html tags.
+	 */
 	private static function html_end(): string {
 		return '</body></html>';
 	}
 
+	/**
+	 * Provides the self-contained stylesheet for pre-init diagnostic pages.
+	 *
+	 * @return string CSS used by the login gate and diagnostic report.
+	 */
 	private static function css(): string {
 		return ':root{--bg:#07111f;--panel:#f8fafc;--line:#cbd5e1;--text:#0f172a;--muted:#64748b;--accent:#0ea5e9;--danger:#dc2626;--ink:#e6f0ff}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top left,rgba(14,165,233,.25),transparent 32rem),linear-gradient(135deg,#07111f,#101827 54%,#162033);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.fd-shell{max-width:1500px;margin:0 auto;padding:28px}.fd-center{min-height:100vh;display:flex;align-items:center;justify-content:center}.fd-top{display:flex;align-items:center;justify-content:space-between;gap:18px;color:#fff;margin-bottom:20px}.fd-top h1{margin:.2rem 0 0;font-size:2.6rem}.fd-top a{color:#dff6ff;text-decoration:none;border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:10px 14px}.fd-mark{text-transform:uppercase;letter-spacing:.16em;font-size:.75rem;color:#8bd3ff;font-weight:800}.fd-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}.fd-span{grid-column:1/-1}.fd-card{background:rgba(248,250,252,.96);border:1px solid rgba(203,213,225,.75);box-shadow:0 24px 80px rgba(0,0,0,.28);border-radius:22px;padding:22px;margin-bottom:18px}.fd-card h1,.fd-card h2,.fd-card h3{margin-top:0}.fd-login{max-width:520px}.fd-login input{width:100%;border:1px solid var(--line);border-radius:14px;padding:13px 14px;margin:12px 0;font-size:1rem}.fd-login button{border:0;border-radius:14px;background:#0f172a;color:#fff;padding:13px 16px;font-weight:800;cursor:pointer;width:100%}.fd-alert{padding:12px 14px;border-radius:14px;background:#fee2e2;color:#991b1b;margin:12px 0}.fd-muted{color:var(--muted)}.fd-exception{font-size:1.25rem;font-weight:800;color:var(--danger);word-break:break-word}.fd-dl{display:grid;grid-template-columns:130px 1fr;gap:8px 14px}.fd-dl dt{color:var(--muted);font-weight:700}.fd-dl dd{margin:0;word-break:break-word}.fd-stack-map{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 4px}.fd-stack-map a{display:inline-flex;gap:7px;align-items:center;border:1px solid rgba(14,165,233,.25);border-radius:999px;padding:8px 11px;color:#075985;background:#e0f2fe;text-decoration:none;font-size:.84rem;font-weight:800}.fd-stack-map span{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;border-radius:999px;background:#0f172a;color:#dff6ff}.fd-snippet{scroll-margin-top:20px;margin-top:18px;background:#030712;color:#f8fafc;border:1px solid rgba(125,211,252,.22);box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);border-radius:18px;padding:14px}.fd-snippet-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}.fd-snippet h3{font-size:.95rem;color:#cbd5e1;margin:0}.fd-frame-index{display:inline-flex;align-items:center;justify-content:center;min-width:32px;height:24px;margin-right:8px;border-radius:999px;background:rgba(14,165,233,.18);color:#dff6ff}.fd-snippet-meta{margin:0 0 12px;color:#bfdbfe}.fd-snippet-meta code{color:#fed7aa;background:rgba(249,115,22,.14);border-radius:8px;padding:2px 5px}.fd-snippet-actions{display:flex;gap:8px;flex-wrap:wrap}.fd-snippet-actions a{display:inline-flex;align-items:center;border:1px solid rgba(125,211,252,.28);border-radius:999px;padding:7px 10px;color:#dff6ff;text-decoration:none;background:rgba(14,165,233,.12);font-size:.82rem;font-weight:800}.fd-snippet .fd-muted{color:#94a3b8}.fd-snippet [id^=codeContainer]{background:transparent!important;color:#f8fafc!important;box-shadow:none!important}.fd-snippet .fd-callsite-line{display:inline-block;background:rgba(249,115,22,.20)!important;border-left:4px solid #fb923c!important;margin-left:-8px;padding-left:8px;width:100%}.fd-code,.fd-trace{background:#07111f;color:#dbeafe;border-radius:16px;padding:16px;overflow:auto;white-space:pre-wrap;line-height:1.55}.fd-code{margin:0}.fd-code span{display:block}.fd-code .fd-hit{background:rgba(14,165,233,.22);margin:0 -8px;padding:0 8px;border-left:4px solid #38bdf8}.fd-code .fd-callsite{background:rgba(249,115,22,.20);border-left-color:#fb923c}.fd-diagnostics h2{margin-top:0}.fd-diagnostic{border:1px solid #dbe3ee;background:#fff;border-radius:16px;padding:14px;margin-top:12px}.fd-diagnostic h3{margin:.1rem 0 .4rem;color:#0f172a}.fd-diagnostic p{color:#334155}.fd-diagnostic dl{display:grid;grid-template-columns:170px 1fr;gap:6px 12px}.fd-diagnostic dt{color:#64748b;font-weight:800}.fd-diagnostic dd{margin:0;word-break:break-word}.fd-log{display:grid;gap:10px}.fd-log div{border:1px solid #dbe3ee;background:#fff;border-radius:14px;padding:12px}.fd-log span{color:#64748b}.fd-log p{margin:.4rem 0 0}@media(max-width:900px){.fd-grid{grid-template-columns:1fr}.fd-shell{padding:16px}.fd-top{display:block}.fd-dl,.fd-diagnostic dl{grid-template-columns:1fr}}';
 	}
 
+	/**
+	 * Formats byte counts for diagnostic memory summaries.
+	 *
+	 * @param int $bytes Raw byte count.
+	 * @return string Human-readable size.
+	 */
 	private static function format_bytes(int $bytes): string {
 		if($bytes>=1073741824){
 			return round($bytes / 1073741824, 2).' GB';
@@ -471,6 +633,12 @@ final class dataphyre_flightdeck_pre_init_error {
 		return $bytes.' B';
 	}
 
+	/**
+	 * Escapes diagnostic text for safe HTML output.
+	 *
+	 * @param string $value Raw diagnostic value.
+	 * @return string UTF-8 safe escaped value.
+	 */
 	private static function e(string $value): string {
 		return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 	}

@@ -9,12 +9,30 @@ namespace dataphyre;
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
+/**
+ * Translates formatted English date fragments into configured locale labels.
+ *
+ * Locale dictionaries are loaded lazily from application overrides first and
+ * common Dataphyre config second. PHP arrays are used when opcache is enabled;
+ * JSON dictionaries are used otherwise.
+ */
 class date_translation{
 	
 	private static $date_locales=[];
 	
+	/**
+	 * Translates month, weekday, abstract, and ordinal date tokens.
+	 *
+	 * English locales return the input unchanged. French date formats receive
+	 * additional ordering and ordinal handling for legacy display formats.
+	 *
+	 * @param string $string Formatted date string to translate.
+	 * @param string $lang Locale key used to load a date_translation dictionary.
+	 * @param string $format Original date format, used for locale-specific ordering.
+	 * @return string|null Translated date string, or null if legacy loading leaves no locale payload.
+	 */
 	static function translate_date(string $string, string $lang, string $format) : string|null {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
 		if(str_starts_with($lang, 'en')){
 			return $string;
 		}

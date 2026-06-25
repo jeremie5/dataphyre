@@ -1,0 +1,14 @@
+[{
+    "max_millis":  10,
+    "name":  "get_config_value_supports_nested_lookup_via_get_config",
+    "function":  "dp_core_unit_config_round_trip",
+    "args":  [
+
+             ],
+    "expected":  [
+                     {
+                         "custom_script":  "return is_array($result) \u0026\u0026 ($result[\u0027nested\u0027] ?? null)===\u0027ok\u0027 \u0026\u0026 array_key_exists(\u0027missing\u0027, $result) \u0026\u0026 $result[\u0027missing\u0027]===null;"
+                     }
+                 ],
+    "file":  "/common/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
+}]

@@ -9,18 +9,31 @@ namespace dataphyre\time_machine;
 
 \dataphyre\time_machine\diagnostic::tests();
 
+/**
+ * Verifies Time Machine dependencies and persistence bootstrap readiness.
+ *
+ * The diagnostic declares SQL and Access dependencies, checks PHP/runtime
+ * prerequisites, and creates the user change journal table when SQL helpers are
+ * available in the current entrypoint.
+ */
 class diagnostic{
 
+	/**
+	 * Collects Time Machine health findings and initializes change storage.
+	 *
+	 * Embedded documentation and tooling scans may load this file without SQL
+	 * helper functions; in that case table checks are skipped with a warning
+	 * instead of turning diagnostics into a bootstrap failure.
+	 *
+	 * @return void Findings are appended to dpanel verbose output.
+	 */
 	public static function tests(): void {
 		$verbose=[];
-		// Runtime information
 		\dp_module_required('time_machine', 'sql');
 		\dp_module_required('time_machine', 'access');
-		// Check for PHP version
 		if(version_compare(PHP_VERSION, $ver='8.1.0') < 0){
 			$verbose[]=['module'=>'time_machine', 'error'=>'PHP version '.$ver.' or higher is required.', 'time'=>time()];
 		}
-		// Check each required extension for module
 		$required_extensions=[
 			'json',
 			'date',

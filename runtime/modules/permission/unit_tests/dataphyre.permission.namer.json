@@ -1,0 +1,32 @@
+[
+    {
+        "name": "name_builds_semantic_panel_permission",
+        "function": "name",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": ["orders", "update"],
+        "expected": "panel.orders.update",
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    },
+    {
+        "name": "from_shield_converts_view_any_permission",
+        "function": "fromShield",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": ["view_any_order"],
+        "expected": "panel.orders.view_any",
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    },
+    {
+        "name": "from_shield_converts_negative_permission",
+        "function": "fromShield",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": ["-delete_order"],
+        "expected": "-panel.orders.delete",
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    }
+]

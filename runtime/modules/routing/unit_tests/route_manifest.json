@@ -1,0 +1,80 @@
+[
+  {
+    "name": "CompilableRoute interface is available before manifest route tests",
+    "file": "/common/dataphyre/runtime/modules/routing/Framework/CompilableRoute.php",
+    "function": "interface_exists",
+    "args": [
+      "Dataphyre\\Routing\\CompilableRoute"
+    ],
+    "expected": true
+  },
+  {
+    "name": "Route class is available before manifest named URL tests",
+    "file": "/common/dataphyre/runtime/modules/routing/Framework/Route.php",
+    "function": "class_exists",
+    "args": [
+      "Dataphyre\\Routing\\Route"
+    ],
+    "expected": true
+  },
+  {
+    "name": "RouteManifest namedUrl generates parameterized URL",
+    "file": "/common/dataphyre/runtime/modules/routing/Framework/RouteManifest.php",
+    "class": "Dataphyre\\Routing\\RouteManifest",
+    "static_method": true,
+    "function": "namedUrl",
+    "args": [
+      {
+        "routes": [
+          {
+            "name": "products.show",
+            "path": "/products/{slug}"
+          }
+        ]
+      },
+      "products.show",
+      {
+        "slug": "native routing"
+      },
+      {
+        "preview": "yes"
+      }
+    ],
+    "expected": "/products/native%20routing?preview=yes"
+  },
+  {
+    "name": "RouteManifest routeMetadata reads scalar metadata by key",
+    "file": "/common/dataphyre/runtime/modules/routing/Framework/RouteManifest.php",
+    "class": "Dataphyre\\Routing\\RouteManifest",
+    "static_method": true,
+    "function": "routeMetadata",
+    "args": [
+      {
+        "metadata": {
+          "auth": true,
+          "section": "catalog"
+        }
+      },
+      "section",
+      "missing"
+    ],
+    "expected": "catalog"
+  },
+  {
+    "name": "RouteManifest routeMetadata returns default for missing key",
+    "file": "/common/dataphyre/runtime/modules/routing/Framework/RouteManifest.php",
+    "class": "Dataphyre\\Routing\\RouteManifest",
+    "static_method": true,
+    "function": "routeMetadata",
+    "args": [
+      {
+        "metadata": {
+          "section": "catalog"
+        }
+      },
+      "permission",
+      "public"
+    ],
+    "expected": "public"
+  }
+]

@@ -1,0 +1,28 @@
+[
+    {
+        "name": "conditions_empty_by_default",
+        "function": "conditions",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [],
+        "expected": [],
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    },
+    {
+        "name": "check_when_unknown_condition_denies",
+        "function": "checkWhen",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            "panel.orders.view",
+            "unknown_condition",
+            {
+                "permissions": ["panel.orders.view"]
+            }
+        ],
+        "expected": false,
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    }
+]

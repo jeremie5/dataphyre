@@ -1,0 +1,76 @@
+[
+  {
+    "name": "Response make returns response instance",
+    "file": "/common/dataphyre/runtime/modules/http/Framework/Response.php",
+    "class": "Dataphyre\\Http\\Response",
+    "static_method": true,
+    "function": "make",
+    "args": [
+      "Dataphyre",
+      201,
+      {
+        "X-Test": "yes"
+      }
+    ],
+    "expected": "Dataphyre\\Http\\Response"
+  },
+  {
+    "name": "Response json returns response instance for array payload",
+    "file": "/common/dataphyre/runtime/modules/http/Framework/Response.php",
+    "class": "Dataphyre\\Http\\Response",
+    "static_method": true,
+    "function": "json",
+    "args": [
+      {
+        "ok": true,
+        "path": "/dataphyre"
+      },
+      202
+    ],
+    "expected": "Dataphyre\\Http\\Response"
+  },
+  {
+    "name": "Response html returns response instance",
+    "file": "/common/dataphyre/runtime/modules/http/Framework/Response.php",
+    "class": "Dataphyre\\Http\\Response",
+    "static_method": true,
+    "function": "html",
+    "args": [
+      "<p>Dataphyre</p>",
+      206
+    ],
+    "expected": "Dataphyre\\Http\\Response"
+  },
+  {
+    "name": "Response no content returns response instance",
+    "file": "/common/dataphyre/runtime/modules/http/Framework/Response.php",
+    "class": "Dataphyre\\Http\\Response",
+    "static_method": true,
+    "function": "no_content",
+    "args": [],
+    "expected": "Dataphyre\\Http\\Response"
+  },
+  {
+    "name": "Response normalize converts null to response instance",
+    "file": "/common/dataphyre/runtime/modules/http/Framework/Response.php",
+    "class": "Dataphyre\\Http\\Response",
+    "static_method": true,
+    "function": "normalize",
+    "args": [
+      null
+    ],
+    "expected": "Dataphyre\\Http\\Response"
+  },
+  {
+    "name": "Response normalize converts HTML string to response instance",
+    "file": "/common/dataphyre/runtime/modules/http/Framework/Response.php",
+    "class": "Dataphyre\\Http\\Response",
+    "static_method": true,
+    "function": "normalize",
+    "args": [
+      "<strong>Dataphyre</strong>",
+      "html"
+    ],
+    "expected": "Dataphyre\\Http\\Response"
+  }
+]

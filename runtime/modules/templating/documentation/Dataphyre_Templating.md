@@ -66,7 +66,7 @@ Kernel registration helpers:
 Kernel example:
 
 ```php
-\dataphyre\templating::add_to_global_context('brand_name', 'Volumetrix');
+\dataphyre\templating::add_to_global_context('brand_name', 'Example App');
 
 \dataphyre\templating::register_tag('build', fn()=>APP_VERSION);
 \dataphyre\templating::register_filter('upper', fn($value)=>mb_strtoupper((string)$value));
@@ -196,7 +196,7 @@ $view=Templating::template('/var/www/app/views/orders.tpl')
 	->withData(['tenant_id'=>$tenant_id])
 	->withBinding('orders', Templating::binding(
 		fn(BindingContext $context)=>OrderRepository::query()
-			->where_eq('tenant_id', $context->get('tenant_id'))
+			->whereEq('tenant_id', $context->get('tenant_id'))
 			->latest('created_at')
 			->getRecords(),
 		'orders.query'
@@ -210,7 +210,7 @@ $view=Templating::template('/var/www/app/views/orders.tpl')
 	->withQuery(
 		'orders',
 		OrderRepository::query()
-			->where_eq('tenant_id', $tenant_id)
+			->whereEq('tenant_id', $tenant_id)
 			->latest('created_at'),
 		'records',
 		[
@@ -229,7 +229,7 @@ $view=Templating::template('/var/www/app/views/orders.tpl')
 	->withQueryIdentity(
 		'orders',
 		OrderRepository::query()
-			->where_eq('tenant_id', $tenant_id)
+			->whereEq('tenant_id', $tenant_id)
 			->latest('created_at'),
 		'records'
 	);
@@ -276,7 +276,7 @@ $view=Templating::template('/var/www/app/views/orders.tpl')
 	])
 	->withQueryWhen(
 		'orders',
-		OrderRepository::query()->where_eq('tenant_id', $tenant_id)->latest('created_at'),
+		OrderRepository::query()->whereEq('tenant_id', $tenant_id)->latest('created_at'),
 		fn(BindingContext $context)=>$context->get('show_orders')===true,
 		'records'
 	);
@@ -403,7 +403,7 @@ Use a context when you want a temporary templating state without mutating the gl
 $context=Templating::context(
 	is_dev_mode: true,
 	cache_dir: ROOTPATH['dataphyre'].'cache/templating/dev',
-	global_context: ['tenant'=>'shopiro'],
+	global_context: ['tenant'=>'example_app'],
 	asset_policy: AssetPolicy::defaults()->scriptDefer()
 );
 
@@ -415,7 +415,7 @@ Context example with globals, contracts, and inline source rendering:
 ```php
 $context=Templating::context()
 	->withDevMode(true)
-	->withGlobal('tenant', 'shopiro')
+	->withGlobal('tenant', 'example_app')
 	->withStrictMode(true)
 	->withTemplateContract(
 		'/var/www/app/views/orders.tpl',
@@ -625,7 +625,7 @@ SQL and search bindings can be created directly and then attached to a view:
 
 ```php
 $orders_binding=Templating::queryBinding(
-	OrderRepository::query()->where_eq('tenant_id', $tenant_id)->latest('created_at'),
+	OrderRepository::query()->whereEq('tenant_id', $tenant_id)->latest('created_at'),
 	'records',
 	['binding_cache'=>60]
 )->inheritIdentity();
@@ -718,7 +718,7 @@ Templating::setAssetPolicy(
 Global context is shared across renders unless a framework context overrides it temporarily.
 
 ```php
-Templating::addGlobal('brand_name', 'Volumetrix');
+Templating::addGlobal('brand_name', 'Example App');
 
 $state=Templating::state();
 $globals=$state->globalContext();

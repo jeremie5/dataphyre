@@ -9,8 +9,22 @@ namespace dataphyre\datadoc;
 
 \dataphyre\datadoc\diagnostic::tests();
 
+/**
+ * Diagnostic runner for the Datadoc module.
+ *
+ * Creates the SQL tables Datadoc depends on during diagnostic mode and exercises project, file, tokenizer, stale-file, sync, and delete flows. It mutates Datadoc SQL tables and is intended for operational verification, not browser rendering.
+ *
+ * @internal Diagnostic-only entrypoint used when `RUN_MODE` is `diagnostic`.
+ */
 class diagnostic{
 
+	/**
+	 * Runs the Datadoc diagnostic test sequence.
+	 *
+	 * Creates required tables, registers a temporary diagnostic project, indexes source fixtures, validates stale-file and sync behavior, and removes diagnostic rows afterward.
+	 *
+	 * @internal Diagnostic-only; mutates Datadoc SQL tables.
+	 */
 	public static function tests(): void {
 		$verbose=[];
 		// Runtime information
@@ -44,6 +58,16 @@ class diagnostic{
 		}
 		else
 		{
+			\sql_query([
+				"sqlite"=>'SELECT 1',
+				"mysql"=>'SELECT 1',
+				"postgresql"=>'CREATE SCHEMA IF NOT EXISTS datadoc',
+			]);
+			\sql_query([
+				"sqlite"=>'SELECT 1',
+				"mysql"=>'SELECT 1',
+				"postgresql"=>'CREATE SCHEMA IF NOT EXISTS dataphyre',
+			]);
 			\sql_query([
 				"sqlite"=>'CREATE TABLE IF NOT EXISTS datadoc.projects(
 					id INTEGER PRIMARY KEY AUTOINCREMENT,

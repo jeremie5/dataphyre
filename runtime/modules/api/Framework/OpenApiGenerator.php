@@ -7,12 +7,30 @@
  */
 namespace Dataphyre\Api;
 
+/**
+ * Converts Dataphyre API endpoint metadata into an OpenAPI 3.1 document.
+ *
+ * The generator preserves endpoint-provided operations, parameters, request
+ * bodies, responses, tags, servers, and security requirements while collecting
+ * reusable security schemes into components.
+ */
 final class OpenApiGenerator {
 
+	/**
+	 * Generates an OpenAPI document from endpoint descriptors.
+	 *
+	 * Invalid endpoint rows and unsupported HTTP methods are skipped. Document
+	 * servers come from explicit options first, then the first endpoint that
+	 * declares servers.
+	 *
+	 * @param array<int,array<string,mixed>> $endpoints Endpoint descriptors collected by the API module.
+	 * @param array{title?:string, version?:string, description?:string, termsOfService?:string, contact?:array<string,mixed>, license?:array<string,mixed>, servers?:array<int,string|array<string,mixed>>} $options Document-level OpenAPI metadata and server overrides.
+	 * @return array<string,mixed> OpenAPI 3.1 document.
+	 */
 	public function generate(array $endpoints, array $options=[]): array {
 		$paths=[];
-		$security_schemes=[];
-		$default_servers=$this->normalizeServers($options['servers'] ?? []);
+		$securitySchemes=[];
+		$defaultServers=$this->normalizeServers($options['servers'] ?? []);
 		foreach($endpoints as $endpoint){
 			if(!is_array($endpoint)){
 				continue;
@@ -22,16 +40,16 @@ final class OpenApiGenerator {
 				$paths[$path][strtolower($method)]=$this->buildOperation($endpoint, $method);
 			}
 			foreach(($endpoint['security_schemes'] ?? []) as $name=>$scheme){
-				if(isset($security_schemes[$name])){
+				if(isset($securitySchemes[$name])){
 					continue;
 				}
 				$openapi=$scheme['openapi'] ?? null;
 				if(is_array($openapi) && $openapi!==[]){
-					$security_schemes[$name]=$openapi;
+					$securitySchemes[$name]=$openapi;
 				}
 			}
-			if($default_servers===[] && !empty($endpoint['servers']) && is_array($endpoint['servers'])){
-				$default_servers=$this->normalizeServers($endpoint['servers']);
+			if($defaultServers===[] && !empty($endpoint['servers']) && is_array($endpoint['servers'])){
+				$defaultServers=$this->normalizeServers($endpoint['servers']);
 			}
 		}
 
@@ -40,17 +58,27 @@ final class OpenApiGenerator {
 			'info'=>$this->buildInfo($options),
 			'paths'=>$paths,
 		];
-		if($default_servers!==[]){
-			$document['servers']=$default_servers;
+		if($defaultServers!==[]){
+			$document['servers']=$defaultServers;
 		}
-		if($security_schemes!==[]){
+		if($securitySchemes!==[]){
 			$document['components']=[
-				'securitySchemes'=>$security_schemes,
+				'securitySchemes'=>$securitySchemes,
 			];
 		}
 		return $document;
 	}
 
+	/**
+	 * Builds the OpenAPI info object from generator options.
+	 *
+	 * Empty scalar values are omitted except title and version, which fall back to
+	 * Dataphyre API and 1.0.0. Contact and license are trusted as caller-provided
+	 * OpenAPI objects when non-empty.
+	 *
+	 * @param array<string, mixed> $options Document metadata options.
+	 * @return array<string,mixed> OpenAPI info object.
+	 */
 	private function buildInfo(array $options): array {
 		$info=[
 			'title'=>trim((string)($options['title'] ?? 'Dataphyre API')),
@@ -70,6 +98,17 @@ final class OpenApiGenerator {
 		return $info;
 	}
 
+	/**
+	 * Builds an OpenAPI operation object for one endpoint method.
+	 *
+	 * Endpoint metadata is copied through only when it already has the OpenAPI shape
+	 * expected by downstream consumers. The Dataphyre method extension preserves the
+	 * original uppercase method used to build the lower-case path operation key.
+	 *
+	 * @param array<string, mixed> $endpoint Endpoint descriptor from API route metadata.
+	 * @param string $method Normalized uppercase HTTP method.
+	 * @return array<string,mixed> OpenAPI operation object.
+	 */
 	private function buildOperation(array $endpoint, string $method): array {
 		$operation=[
 			'responses'=>$this->normalizeResponses($endpoint['responses'] ?? []),
@@ -79,8 +118,8 @@ final class OpenApiGenerator {
 			if(!is_string($value) || trim($value)===''){
 				continue;
 			}
-			$target_key=$key==='operation_id' ? 'operationId' : $key;
-			$operation[$target_key]=trim($value);
+			$targetKey=$key==='operation_id' ? 'operationId' : $key;
+			$operation[$targetKey]=trim($value);
 		}
 		if(!empty($endpoint['tags']) && is_array($endpoint['tags'])){
 			$operation['tags']=array_values($endpoint['tags']);
@@ -104,6 +143,15 @@ final class OpenApiGenerator {
 		return $operation;
 	}
 
+	/**
+	 * Normalizes response descriptors and supplies a default 200 response.
+	 *
+	 * String/scalar response values become description-only response objects. Array
+	 * responses without a description receive a generic Response label.
+	 *
+	 * @param array<string|int, mixed> $responses Response map keyed by HTTP status or default.
+	 * @return array<string,array<string,mixed>> OpenAPI responses object.
+	 */
 	private function normalizeResponses(array $responses): array {
 		$normalized=[];
 		foreach($responses as $status=>$response){
@@ -119,6 +167,15 @@ final class OpenApiGenerator {
 		return $normalized!==[] ? $normalized : ['200'=>['description'=>'OK']];
 	}
 
+	/**
+	 * Filters endpoint methods to valid OpenAPI HTTP methods.
+	 *
+	 * Method names are uppercased, trimmed, de-duplicated, and limited to verbs that
+	 * OpenAPI path items can represent.
+	 *
+	 * @param array<int, mixed> $methods Raw method list from endpoint metadata.
+	 * @return array<int,string> Unique uppercase HTTP methods.
+	 */
 	private function normalizeMethods(array $methods): array {
 		$normalized=[];
 		foreach($methods as $method){
@@ -131,6 +188,16 @@ final class OpenApiGenerator {
 		return array_values($normalized);
 	}
 
+	/**
+	 * Normalizes string or object server definitions.
+	 *
+	 * String entries become `{url: ...}` objects. Array entries are passed through
+	 * only when they include a non-empty `url`, preserving optional OpenAPI server
+	 * variables and descriptions.
+	 *
+	 * @param array<int, string|array<string,mixed>|mixed> $servers Server URL strings or OpenAPI server objects.
+	 * @return array<int,array<string,mixed>> OpenAPI server objects.
+	 */
 	private function normalizeServers(array $servers): array {
 		$normalized=[];
 		foreach($servers as $server){

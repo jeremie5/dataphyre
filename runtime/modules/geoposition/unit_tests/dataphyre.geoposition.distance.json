@@ -1,0 +1,42 @@
+[
+  {
+    "name": "distance_between_points_returns_false_for_invalid_point",
+    "file": "/common/dataphyre/runtime/modules/geoposition/unit_tests/geoposition_test_helpers.php",
+    "function": "DataphyreUnitTests\\geoposition_distance_between_points_rounded",
+    "args": [
+      {
+        "latitude": "45.5017",
+        "longitude": "-73.5673"
+      },
+      {
+        "latitude": "missing"
+      }
+    ],
+    "expected": false,
+    "max_millis": 5
+  },
+  {
+    "name": "haversine_distance_same_point_is_zero",
+    "file": "/common/dataphyre/runtime/modules/geoposition/unit_tests/geoposition_test_helpers.php",
+    "function": "DataphyreUnitTests\\geoposition_haversine_rounded",
+    "args": [45.5017, -73.5673, 45.5017, -73.5673],
+    "expected": 0.0,
+    "max_millis": 5
+  },
+  {
+    "name": "haversine_distance_montreal_to_toronto_is_stable",
+    "file": "/common/dataphyre/runtime/modules/geoposition/unit_tests/geoposition_test_helpers.php",
+    "function": "DataphyreUnitTests\\geoposition_haversine_rounded",
+    "args": [45.5017, -73.5673, 43.6532, -79.3832],
+    "expected": 504.262,
+    "max_millis": 5
+  },
+  {
+    "name": "vincenty_distance_montreal_to_toronto_is_stable",
+    "file": "/common/dataphyre/runtime/modules/geoposition/unit_tests/geoposition_test_helpers.php",
+    "function": "DataphyreUnitTests\\geoposition_vincenty_rounded",
+    "args": [45.5017, -73.5673, 43.6532, -79.3832],
+    "expected": 505.375,
+    "max_millis": 5
+  }
+]

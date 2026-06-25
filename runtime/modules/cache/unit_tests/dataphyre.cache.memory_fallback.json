@@ -1,0 +1,111 @@
+[
+	{
+		"name": "cache_round_trips_scalar_value",
+		"function": "dp_cache_unit_test_round_trip",
+		"args": [
+			"unit:test:scalar",
+			"value"
+		],
+		"expected": [
+			"value"
+		],
+		"file": "/common/dataphyre/runtime/modules/cache/unit_tests/cache_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\cache"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "cache_round_trips_array_value",
+		"function": "dp_cache_unit_test_round_trip_json",
+		"args": [
+			"unit:test:array",
+			{
+				"id": 42,
+				"tags": [
+					"alpha",
+					"beta"
+				]
+			}
+		],
+		"expected": [
+			"{\"id\":42,\"tags\":[\"alpha\",\"beta\"]}"
+		],
+		"file": "/common/dataphyre/runtime/modules/cache/unit_tests/cache_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\cache"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "cache_delete_removes_existing_key",
+		"function": "dp_cache_unit_test_delete_removes_key",
+		"args": [
+			"unit:test:delete",
+			"temporary"
+		],
+		"expected": [
+			true
+		],
+		"file": "/common/dataphyre/runtime/modules/cache/unit_tests/cache_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\cache"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "cache_increment_and_decrement_use_integer_floor",
+		"function": "dp_cache_unit_test_increment_decrement_json",
+		"args": [
+			"unit:test:counter"
+		],
+		"expected": [
+			"{\"increment\":3,\"decrement\":1,\"floor\":0}"
+		],
+		"file": "/common/dataphyre/runtime/modules/cache/unit_tests/cache_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\cache"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "cache_flush_clears_multiple_memory_keys",
+		"function": "dp_cache_unit_test_flush_clears_all_keys",
+		"args": [],
+		"expected": [
+			true
+		],
+		"file": "/common/dataphyre/runtime/modules/cache/unit_tests/cache_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\cache"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "cache_memory_fallback_expires_stale_entries",
+		"function": "dp_cache_unit_test_memory_expiration_json",
+		"args": [
+			"unit:test:expires"
+		],
+		"expected": [
+			"{\"first\":null,\"second\":null,\"removed\":true}"
+		],
+		"file": "/common/dataphyre/runtime/modules/cache/unit_tests/cache_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\cache"
+			]
+		},
+		"max_millis": 10
+	}
+]

@@ -1,0 +1,32 @@
+[
+    {
+        "name": "config_reads_default_provider",
+        "function": "config",
+        "class": "dataphyre\\mailer",
+        "static_method": true,
+        "args": ["default_provider"],
+        "expected": "log",
+        "file_dynamic": "return dp_module_present(\"mailer\")[0];",
+        "max_millis": 5
+    },
+    {
+        "name": "config_reads_nested_from_email",
+        "function": "config",
+        "class": "dataphyre\\mailer",
+        "static_method": true,
+        "args": ["from.email"],
+        "expected": "no-reply@example.invalid",
+        "file_dynamic": "return dp_module_present(\"mailer\")[0];",
+        "max_millis": 5
+    },
+    {
+        "name": "config_returns_default_for_missing_nested_key",
+        "function": "config",
+        "class": "dataphyre\\mailer",
+        "static_method": true,
+        "args": ["providers.missing.endpoint", "fallback"],
+        "expected": "fallback",
+        "file_dynamic": "return dp_module_present(\"mailer\")[0];",
+        "max_millis": 5
+    }
+]

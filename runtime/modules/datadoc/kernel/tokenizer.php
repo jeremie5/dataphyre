@@ -7,26 +7,68 @@
  */
 namespace dataphyre\datadoc;
 
+/**
+ * Static PHP tokenizer used by Datadoc indexing.
+ *
+ * The tokenizer reads source text without executing project code, pairs each discovered symbol
+ * with the closest preceding PHPDoc block, and returns the compact record shape consumed by
+ * `datadoc_data`. It intentionally favors stable indexing over full PHP semantic analysis:
+ * scripts embedded in mixed PHP/HTML files are skipped, symbol bodies are captured by brace
+ * balance, and PHPDoc tags are preserved as strings or repeated-tag lists.
+ */
 class tokenizer{
 
+	/**
+	 * Parses a raw PHPDoc block into Datadoc description and tag fields.
+	 *
+	 * Freeform prose before the first tag becomes `description`. Every `@tag` payload is stored
+	 * under its tag name; repeated tags such as `@param` are promoted to a list so Datadoc does
+	 * not lose overload, parameter, or example metadata during indexing.
+	 *
+	 * @param string $phpdoc Raw `/** ... *\/` block text.
+	 * @return array{description:string,tags:array<string,string|list<string>>}
+	 */
 	protected static function parse_phpdoc(string $phpdoc): array {
 		$tags=[];
 		$current_type='';
+		$current_index=null;
 		$description=[];
 		$lines=explode("\n", $phpdoc);
 		foreach($lines as $phpdoc_line){
-			$phpdoc_line=trim($phpdoc_line);
-			$comment_line=trim(str_replace(['/**', '*/', '*'], '', $phpdoc_line));
+			$comment_line=trim($phpdoc_line);
+			$comment_line=preg_replace('#^/\*\*#', '', $comment_line);
+			$comment_line=preg_replace('#\*/$#', '', $comment_line);
+			$comment_line=preg_replace('#^\*\s?#', '', trim((string)$comment_line));
+			$comment_line=trim((string)$comment_line);
 			if($comment_line===''){
 				continue;
 			}
 			if(preg_match('/@(\w+)\s*(.*)/', $comment_line, $matches)){
 				$current_type=$matches[1];
-				$tags[$current_type]=trim($matches[2]);
+				$current_index=null;
+				$value=trim($matches[2]);
+				if(isset($tags[$current_type])){
+					if(!is_array($tags[$current_type]) || array_is_list($tags[$current_type])===false){
+						$tags[$current_type]=[$tags[$current_type]];
+					}
+					$tags[$current_type][]=$value;
+					$current_index=count($tags[$current_type])-1;
+				}
+				else
+				{
+					$tags[$current_type]=$value;
+				}
 				continue;
 			}
 			if($current_type!==''){
-				$tags[$current_type]=trim(($tags[$current_type] ?? '')."\n".$comment_line);
+				if(is_array($tags[$current_type])){
+					$index=$current_index ?? (count($tags[$current_type])-1);
+					$tags[$current_type][$index]=trim(((string)($tags[$current_type][$index] ?? ''))."\n".$comment_line);
+				}
+				else
+				{
+					$tags[$current_type]=trim(((string)($tags[$current_type] ?? ''))."\n".$comment_line);
+				}
 				continue;
 			}
 			$description[]=$comment_line;
@@ -37,6 +79,46 @@ class tokenizer{
 		];
 	}
 
+	/**
+	 * Tracks whether the current line is part of a multi-line quoted string.
+	 *
+	 * Datadoc's tokenizer is intentionally lightweight and line-oriented. This
+	 * guard prevents SQL DDL strings and similar embedded text from being
+	 * mistaken for PHP declarations such as `class TEXT`.
+	 */
+	private static function line_is_multiline_string(?string &$quote, string $line): bool {
+		$started_in_string=$quote!==null;
+		$length=strlen($line);
+		for($i=0; $i<$length; $i++){
+			$char=$line[$i];
+			if($char==='\\'){
+				$i++;
+				continue;
+			}
+			if($quote!==null){
+				if($char===$quote){
+					$quote=null;
+				}
+				continue;
+			}
+			if($char==='\'' || $char==='"'){
+				$quote=$char;
+			}
+		}
+		return $started_in_string || $quote!==null;
+	}
+
+	/**
+	 * Tokenizes a PHP source file for Datadoc indexing.
+	 *
+	 * Reads the file line by line, skips embedded `<script>` blocks, captures namespace, class,
+	 * function, and variable declarations, and attaches the most recent PHPDoc block to the next
+	 * symbol. Captured `content` is the declaration/body slice Datadoc uses for highlighting and
+	 * contextual display rather than a normalized AST.
+	 *
+	 * @param non-empty-string $filename PHP source file to inspect without executing it.
+	 * @return list<array{type:string,namespace:string,class:string,function:string,content:string,line:int,phpdoc:array{description:string,tags:array<string,string|list<string>>}}>|false
+	 */
 	public static function tokenize($filename){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(!file_exists($filename)){
@@ -54,6 +136,7 @@ class tokenizer{
 		$active_namespace=null;
 		$active_class=null;
 		$active_function=null;
+		$multiline_string_quote=null;
 		$file=fopen($filename, "r");
 		if(!$file){
 			return false;
@@ -111,6 +194,10 @@ class tokenizer{
 					}
 					$$active_var=null;
 				}
+			}
+
+			if(self::line_is_multiline_string($multiline_string_quote, $line)){
+				continue;
 			}
 
 			if(preg_match('/^namespace\s+([a-zA-Z_\x80-\xff][a-zA-Z0-9_\x80-\xff]*(?:\\\\[a-zA-Z_\x80-\xff][a-zA-Z0-9_\x80-\xff]*)*)/', $trimmed_line, $matches)){

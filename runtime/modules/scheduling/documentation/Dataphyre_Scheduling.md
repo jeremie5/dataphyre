@@ -1,9 +1,11 @@
 ### Scheduling Module
 
-The **Scheduling** module in Dataphyre is a kernel-only background task trigger. It lets a request register work that should run later through Dataphyre's internal scheduler route, while keeping execution frequency, timeout, memory, and lock state under the module's control.
+The **Scheduling** module in Dataphyre is a request-driven background task trigger with a small Framework layer. It lets a request register work that should run later through Dataphyre's internal scheduler route, while keeping execution frequency, timeout, memory, and lock state under the module's control.
 
-The module is intentionally small:
+The module is intentionally small, but now has two surfaces:
 
+- build named tasks with `Dataphyre\Scheduling\Scheduling` and `ScheduledTask`
+- set periods with readable values like `15 minutes`, `hourly`, `daily`, or `Period::hours(2)`
 - register a named task
 - persist the task definition under Dataphyre cache
 - trigger the internal scheduler route on shutdown when the task is due
@@ -19,7 +21,7 @@ Use the scheduling module when:
 - the task can be identified by a stable scheduler name
 - the task can run from a plain PHP file plus a small list of dependencies
 
-The module does **not** provide a framework queue abstraction. It is a kernel scheduler that works by registering task files and running them through Dataphyre's internal route:
+The module does **not** provide a full queue abstraction. It is a scheduler that works by registering task files and running them through Dataphyre's internal route:
 
 ```text
 /dataphyre/scheduler/{scheduler}
@@ -28,6 +30,66 @@ The module does **not** provide a framework queue abstraction. It is a kernel sc
 ---
 
 #### Public API
+
+##### Framework Facade
+
+Load the Framework surface through `\dataphyre\core::load_framework_modules('scheduling')` or require `modules/scheduling/Framework/Bootstrap.php` directly when working outside the framework loader.
+
+```php
+use Dataphyre\Scheduling\Scheduling;
+
+Scheduling::task('catalog.reindex', __DIR__.'/tasks/reindex_catalog.php')
+	->every('15 minutes')
+	->timeout('10 minutes')
+	->memory('256M')
+	->dependency(__DIR__.'/bootstrap_catalog.php')
+	->run();
+```
+
+##### `Scheduling::task(string $name, ?string $filePath=null): ScheduledTask`
+
+Starts a fluent scheduler definition. Call `run()` or `register()` to persist and dispatch when due.
+
+##### `ScheduledTask` period tools
+
+Periods normalize to scheduler-compatible seconds:
+
+```php
+Scheduling::task('reports.hourly', __DIR__.'/tasks/reports.php')
+	->hourly()
+	->timeout('5 minutes')
+	->run();
+
+Scheduling::task('feeds.daily', __DIR__.'/tasks/feed.php')
+	->setPeriod(\Dataphyre\Scheduling\Period::days(1))
+	->setTimeout(\Dataphyre\Scheduling\Period::hours(2))
+	->run();
+```
+
+Supported period inputs:
+
+- numeric seconds: `300`
+- compact values: `30s`, `5m`, `2h`, `1d`, `1w`
+- readable values: `30 seconds`, `5 minutes`, `2 hours`, `1 day`, `1 week`
+- aliases: `secondly`, `minutely`, `hourly`, `daily`, `weekly`, `monthly`
+- `DateInterval`
+
+##### `Scheduling::run(...)`
+
+Registers a task in one call with the same period parsing:
+
+```php
+Scheduling::run(
+	'catalog.reindex',
+	__DIR__.'/tasks/reindex_catalog.php',
+	'15 minutes',
+	'10 minutes',
+	'256M',
+	[__DIR__.'/bootstrap_catalog.php'],
+);
+```
+
+##### Kernel API
 
 ##### `run(string $name, string $file_path, float $frequency, float $timeout, string $memory_limit, array $dependencies, ?string $app_override=null): bool`
 
@@ -96,7 +158,7 @@ Returns the scheduler `last_run` path.
 ```php
 register_shutdown_function(function(){
 	\dataphyre\scheduling::run(
-		'cdn_server_gc',
+		'expired_cache_cleanup',
 		__FILE__,
 		0.5,
 		30,

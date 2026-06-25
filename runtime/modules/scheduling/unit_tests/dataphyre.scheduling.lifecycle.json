@@ -1,0 +1,82 @@
+[
+  {
+    "name": "scheduler_name_validation_accepts_safe_names_only",
+    "file": "/common/dataphyre/runtime/modules/scheduling/unit_tests/scheduling_test_helpers.php",
+    "function": "DataphyreUnitTests\\scheduling_name_validation_summary_json",
+    "args": [],
+    "expected": "{\"plain\":true,\"trimmed\":true,\"empty\":false,\"slash\":false,\"colon\":false}",
+    "max_millis": 5
+  },
+  {
+    "name": "task_runner_lifecycle_tracks_current_scheduler",
+    "file": "/common/dataphyre/runtime/modules/scheduling/unit_tests/scheduling_test_helpers.php",
+    "function": "DataphyreUnitTests\\scheduling_task_runner_lifecycle_summary_json",
+    "args": [],
+    "expected": "{\"initial\":false,\"active\":true,\"current\":\"worker.1\",\"invalid_current\":null,\"ended\":false}",
+    "max_millis": 5
+  },
+  {
+    "name": "scheduler_path_helpers_normalize_names",
+    "file": "/common/dataphyre/runtime/modules/scheduling/unit_tests/scheduling_test_helpers.php",
+    "function": "DataphyreUnitTests\\scheduling_path_summary_json",
+    "args": [],
+    "expected": "{\"directory_suffix\":\"cache/scheduling/report.run/\",\"properties_file\":\"properties.json\",\"lock_file\":\"running_lock\",\"last_run_file\":\"last_run\",\"invalid_directory_suffix\":\"cache/scheduling/\"}",
+    "max_millis": 5
+  },
+  {
+    "name": "read_scheduler_normalizes_persisted_definition",
+    "file": "/common/dataphyre/runtime/modules/scheduling/unit_tests/scheduling_test_helpers.php",
+    "function": "DataphyreUnitTests\\scheduling_read_scheduler_normalizes_properties_json",
+    "args": [],
+    "expected": "{\"name\":\"unit_read_scheduler\",\"file_is_helper\":true,\"frequency\":0,\"timeout\":1,\"memory_limit\":\"128M\",\"dependency_count\":1,\"app_override\":\"unit-app\"}",
+    "max_millis": 100
+  },
+  {
+    "name": "read_scheduler_rejects_invalid_payloads",
+    "file": "/common/dataphyre/runtime/modules/scheduling/unit_tests/scheduling_test_helpers.php",
+    "function": "DataphyreUnitTests\\scheduling_read_scheduler_rejects_invalid_payloads_json",
+    "args": [],
+    "expected": "{\"invalid_json\":null,\"empty_file\":null,\"missing_file\":null,\"invalid_name\":null}",
+    "max_millis": 100
+  },
+  {
+    "name": "scheduler_definition_normalization_clamps_and_deduplicates",
+    "file": "/common/dataphyre/runtime/modules/scheduling/unit_tests/scheduling_test_helpers.php",
+    "function": "DataphyreUnitTests\\scheduling_normalize_definition_summary_json",
+    "args": [],
+    "expected": "{\"name\":\"unit_normalize\",\"file_is_helper\":true,\"frequency\":0,\"timeout\":1,\"memory_limit\":\"128M\",\"dependency_count\":1,\"missing_file\":null}",
+    "max_millis": 10
+  },
+  {
+    "name": "scheduler_dispatch_url_uses_request_scheme_and_self_addr",
+    "file": "/common/dataphyre/runtime/modules/scheduling/unit_tests/scheduling_test_helpers.php",
+    "function": "DataphyreUnitTests\\scheduling_dispatch_url_summary_json",
+    "args": [],
+    "expected": "{\"missing\":null,\"https\":\"https://example.test:8443/dataphyre/scheduler/nightly.export\"}",
+    "max_millis": 10
+  },
+  {
+    "name": "framework_periods_parse_named_and_compact_values",
+    "file": "/common/dataphyre/runtime/modules/scheduling/unit_tests/scheduling_test_helpers.php",
+    "function": "DataphyreUnitTests\\scheduling_framework_period_summary_json",
+    "args": [],
+    "expected": "{\"numeric\":90,\"minutes\":300,\"compact_hours\":7200,\"daily\":86400,\"date_interval\":45,\"unknown\":0}",
+    "max_millis": 10
+  },
+  {
+    "name": "framework_task_definition_sets_periods_and_options",
+    "file": "/common/dataphyre/runtime/modules/scheduling/unit_tests/scheduling_test_helpers.php",
+    "function": "DataphyreUnitTests\\scheduling_framework_task_definition_summary_json",
+    "args": [],
+    "expected": "{\"name\":\"framework.cleanup\",\"file_is_helper\":true,\"frequency\":900,\"timeout\":7200,\"memory_limit\":\"256M\",\"dependency_count\":1,\"app_override\":\"unit-app\"}",
+    "max_millis": 10
+  },
+  {
+    "name": "framework_facade_exposes_kernel_context_helpers",
+    "file": "/common/dataphyre/runtime/modules/scheduling/unit_tests/scheduling_test_helpers.php",
+    "function": "DataphyreUnitTests\\scheduling_framework_facade_summary_json",
+    "args": [],
+    "expected": "{\"valid_name\":true,\"invalid_name\":false,\"period_seconds\":604800,\"in_runner\":false,\"current\":null}",
+    "max_millis": 10
+  }
+]

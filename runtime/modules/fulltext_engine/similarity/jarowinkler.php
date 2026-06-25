@@ -7,8 +7,26 @@
  */
 namespace dataphyre;
 
+/**
+ * Computes case-insensitive Jaro-Winkler similarity for fulltext ranking.
+ *
+ * The implementation lowercases inputs before splitting multibyte characters,
+ * rewards a shared prefix up to four characters, and returns a normalized 0..1
+ * score where higher values indicate closer strings.
+ */
 class fulltext_engine_jaro_winkler{
-	
+
+	/**
+	 * Returns the Jaro-Winkler similarity score for two strings.
+	 *
+	 * Matching uses the standard Jaro window based on string length, counts
+	 * transpositions, and applies the Winkler prefix boost with a 0.1 scaling
+	 * factor. Strings with no matching characters return zero.
+	 *
+	 * @param string $str1 First string to compare.
+	 * @param string $str2 Second string to compare.
+	 * @return float Similarity score from 0.0 to 1.0.
+	 */
 	public static function similarity(string $str1, string $str2): float{
 		$str1=strtolower($str1);
 		$str2=strtolower($str2);
@@ -51,7 +69,6 @@ class fulltext_engine_jaro_winkler{
 			}
 			$k++;
 		}
-		// Calculate the common prefix length, limit it to a maximum of 4 characters
 		for($i=0; $i<min(4, $len1, $len2); $i++){
 			if($str1Chars[$i]===$str2Chars[$i]){
 				$prefix++;
@@ -62,7 +79,6 @@ class fulltext_engine_jaro_winkler{
 			}
 		}
 		$jaro=($matches/$len1+$matches/$len2+($matches-($transpositions/2))/$matches)/3;
-		// Adjust the scaling factor to ensure the similarity score stays between 0 and 1
 		$jaroWinkler=$jaro+($prefix*0.1*(1-$jaro));
 		return $jaroWinkler;
 	}

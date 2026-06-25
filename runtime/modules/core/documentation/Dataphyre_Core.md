@@ -1,6 +1,6 @@
 # Dataphyre Core Module
 
-The core module is Dataphyre's runtime foundation. It owns bootstrap flow, application discovery, module loading, autoload registration, configuration state, environment state, dialbacks, URL helpers, and common date/time utilities.
+The core module is Dataphyre's runtime foundation. It owns bootstrap flow, application discovery, module loading, autoload registration, configuration state, dialbacks, URL helpers, and common date/time utilities. Request-local environment state lives in the optional framework `Dataphyre\Env` repository.
 
 The kernel remains the lowest-level path through `\dataphyre\core`, `\dataphyre\runtime`, `\dataphyre\app_locator`, and `\dataphyre\application_definition`. The optional framework layer gives those same capabilities a cleaner, application-facing API under the `Dataphyre\...` namespace.
 
@@ -11,7 +11,7 @@ The kernel side is responsible for:
 - loading and booting the current application
 - locating applications across configured application roots
 - loading module kernel and framework entrypoints
-- holding runtime configuration and environment state
+- holding runtime configuration state
 - registering and firing dialbacks
 - shared URL, date, CSRF, and utility helpers
 
@@ -22,10 +22,6 @@ Important kernel entrypoints include:
 - `\dataphyre\core::add_config(...)`
 - `\dataphyre\core::get_config(...)`
 - `\dataphyre\core::config_all()`
-- `\dataphyre\core::set_env(...)`
-- `\dataphyre\core::get_env(...)`
-- `\dataphyre\core::env_all()`
-- `\dataphyre\core::forget_env(...)`
 - `\dataphyre\core::register_dialback(...)`
 - `\dataphyre\core::dialback(...)`
 - `\dataphyre\runtime::boot(...)`
@@ -187,9 +183,6 @@ If you already know the kernel layer, this is the shortest translation table:
 | `\dataphyre\core::load_framework_modules(...)` | `App::loadFrameworkModules(...)` or `Module::loadFrameworkMany(...)` | you are enabling several framework modules together |
 | `\dataphyre\core::get_config(...)` | `Config::get(...)` | you want nested reads with defaults |
 | `\dataphyre\core::add_config(...)` | `Config::set(...)` / `Config::merge(...)` | you want scoped config mutation instead of raw arrays |
-| `\dataphyre\core::get_env(...)` | `Env::get(...)` | you want request-local reads |
-| `\dataphyre\core::set_env(...)` | `Env::set(...)` / `Env::merge(...)` | you want request-local mutation |
-| `\dataphyre\core::forget_env(...)` | `Env::forget(...)` / `Env::pull(...)` | you want to clear or consume request-local state |
 | `\dataphyre\core::register_dialback(...)` | `Dialback::register(...)` | you want typed dialback registration and later inspection |
 | `\dataphyre\core::dialback(...)` | `Dialback::fire(...)` | you want a named dialback dispatch path |
 | `\dataphyre\runtime::resolve_application_definition(...)` | `Application::discover(...)` or `Bootstrap::resolve(...)` | you need typed application or boot planning |
@@ -352,7 +345,6 @@ When you need lower-level control, drop straight back to the kernel:
 
 ```php
 $timezone=\dataphyre\core::get_config('app/base_timezone');
-\dataphyre\core::set_env('request_id', 'rq_123');
 ```
 
 ## Common Workflows
@@ -364,7 +356,7 @@ $timezone=\dataphyre\core::get_config('app/base_timezone');
 
 use Dataphyre\Bootstrap;
 
-$plan=Bootstrap::resolve('shopiro');
+$plan=Bootstrap::resolve('example_app');
 
 if($plan===null){
 	throw new RuntimeException('Application not found.');
@@ -383,7 +375,7 @@ if(!$plan->canBoot()){
 use Dataphyre\Bootstrap;
 use Dataphyre\Runtime;
 
-$planned=Bootstrap::resolve('shopiro');
+$planned=Bootstrap::resolve('example_app');
 $active=Runtime::bootstrap();
 
 $planned_mode=$planned?->bootMode();
@@ -397,7 +389,7 @@ $active_mode=$active?->bootMode();
 
 use Dataphyre\Bootstrap;
 
-$plan=Bootstrap::resolve('shopiro');
+$plan=Bootstrap::resolve('example_app');
 
 if($plan===null){
 	throw new RuntimeException('Application not found.');
@@ -627,7 +619,7 @@ $names=$applications->names();
 Inspect:
 
 ```php
-$plan=Bootstrap::resolve('shopiro');
+$plan=Bootstrap::resolve('example_app');
 $paths=$plan?->bootPaths();
 $missing=$plan?->missingBootModes();
 ```
@@ -745,7 +737,7 @@ $boot=App::bootstrap();
 
 $known_apps=App::available();
 
-$has_shopiro=App::has('shopiro');
+$has_example_app=App::has('example_app');
 
 App::loadFrameworkModules(['sql', 'access']);
 ```
@@ -821,7 +813,7 @@ foreach($catalog as $application){
 	$boot_mode=$application->bootMode();
 }
 
-$shopiro=$catalog->get('shopiro');
+$example_app=$catalog->get('example_app');
 ```
 
 ## `Dataphyre\Config`
@@ -929,7 +921,7 @@ $feature_snapshot=$snapshot->scope('features');
 
 ## `Dataphyre\Env`
 
-`Env` is the framework facade over in-process runtime environment state.
+`Env` is the framework facade over in-process runtime environment state. It is independent from `\dataphyre\core` and does not read or write PHP's OS-level environment table.
 
 Methods include:
 
@@ -1125,7 +1117,7 @@ Methods include:
 Example:
 
 ```php
-$plan=Bootstrap::resolve('shopiro');
+$plan=Bootstrap::resolve('example_app');
 
 if($plan!==null && $plan->canBoot()){
 	$summary=$plan->summary();
@@ -1161,7 +1153,7 @@ Methods include:
 Example:
 
 ```php
-$plan=Bootstrap::resolve('shopiro');
+$plan=Bootstrap::resolve('example_app');
 
 if($plan!==null){
 	$boot_mode=$plan->bootMode();
@@ -1197,7 +1189,7 @@ Example:
 $catalog=Bootstrap::catalog();
 
 $bootable=$catalog->bootableNames();
-$shopiro=$catalog->get('shopiro');
+$example_app=$catalog->get('example_app');
 ```
 
 ## `Dataphyre\Url`

@@ -55,34 +55,34 @@ else
 												<?php
 													$type = htmlspecialchars($entry['type'] ?? 'Info');
 													$filename = $entry['file'] ?? $entry['test_case_file'] ?? $entry['module'] ?? 'N/A';
-													$filenameDisplay = $filename ? basename($filename) : 'N/A';
-													$filenameTooltip = $filename ? "title=\"$filename\"" : '';
+													$filename_display = $filename ? basename($filename) : 'N/A';
+													$filename_tooltip = $filename ? "title=\"$filename\"" : '';
 													$line = isset($entry['line']) && $entry['line'] != 0 ? htmlspecialchars($entry['line']) : 'N/A';
-													$traceHtml = '';
+													$trace_html = '';
 													if ($type === 'php_exception' && isset($entry['exception']) && $entry['exception'] instanceof \Throwable) {
 														$exception = $entry['exception'];
 														$message = $exception->getMessage();
-														$filenameDisplay = basename($exception->getFile());
-														$filenameTooltip = "title=\"" . $exception->getFile() . "\"";
+														$filename_display = basename($exception->getFile());
+														$filename_tooltip = "title=\"" . $exception->getFile() . "\"";
 														$line = $exception->getLine();
-														$traceHtml = "<pre class=\"mb-0 text-light bg-dark p-2\" style=\"white-space: pre-wrap; overflow-x: auto;\">"
+														$trace_html = "<pre class=\"mb-0 text-light bg-dark p-2\" style=\"white-space: pre-wrap; overflow-x: auto;\">"
 															. htmlspecialchars($exception->getTraceAsString()) . "</pre>";
 													}
 													elseif ($type === 'tracelog' && isset($entry['tracelog']) && is_array($entry['tracelog'])) {
-														$countTypes = [];
-														$severityOrder = ['info' => 0, 'warning' => 1, 'error' => 2, 'fatal' => 3];
-														$worstLevel = 'info';
-														foreach ($entry['tracelog'] as $logEntry) {
-															$msgType = strtolower($logEntry['type'] ?? 'info');
-															$countTypes[$msgType] = ($countTypes[$msgType] ?? 0) + 1;
-															if ($severityOrder[$msgType] > $severityOrder[$worstLevel]) {
-																$worstLevel = $msgType;
+														$count_types = [];
+														$severity_order = ['info' => 0, 'warning' => 1, 'error' => 2, 'fatal' => 3];
+														$worst_level = 'info';
+														foreach ($entry['tracelog'] as $log_entry) {
+															$msg_type = strtolower($log_entry['type'] ?? 'info');
+															$count_types[$msg_type] = ($count_types[$msg_type] ?? 0) + 1;
+															if ($severity_order[$msg_type] > $severity_order[$worst_level]) {
+																$worst_level = $msg_type;
 															}
 														}
-														$entry['level'] = $worstLevel;
-														$typeSummary = [];
-														foreach ($countTypes as $msgType => $msgCount) {
-															$typeSummary[] = "$msgCount $msgType";
+														$entry['level'] = $worst_level;
+														$type_summary = [];
+														foreach ($count_types as $msg_type => $msg_count) {
+															$type_summary[] = "$msgCount $msgType";
 														}
 														ob_start(); ?>
 														<table class="table table-sm table-bordered table-dark bg-secondary mb-0">
@@ -107,8 +107,8 @@ else
 																<?php endforeach; ?>
 															</tbody>
 														</table>
-														<?php $traceHtml = ob_get_clean();
-														$message = '<i>' . count($entry['tracelog']) . ' trace entries (' . implode(', ', $typeSummary) . ')</i>';
+														<?php $trace_html = ob_get_clean();
+														$message = '<i>' . count($entry['tracelog']) . ' trace entries (' . implode(', ', $type_summary) . ')</i>';
 													}
 													else 
 													{
@@ -134,7 +134,7 @@ else
 														<h4><span class="badge <?=$level_color;?>"><?= $type ?></span></h4>
 													</td>
 													<td style="vertical-align: middle;">
-														<span <?= $filenameTooltip ?>><?= htmlspecialchars($filenameDisplay) ?></span>
+														<span <?= $filename_tooltip ?>><?= htmlspecialchars($filename_display) ?></span>
 													</td>
 													<!--<td style="vertical-align: middle;">
 														<?= $line ?>
@@ -142,12 +142,12 @@ else
 													<td>
 														<div class="d-flex justify-content-between align-items-center">
 															<pre class="mb-0 text-light bg-dark p-2 flex-grow-1" style="white-space: pre-wrap; overflow-x: auto;"><?= $message ?></pre>
-															<?php if (!empty($traceHtml)): ?>
+															<?php if (!empty($trace_html)): ?>
 																<button class="btn btn-sm btn-outline-light ms-2" onclick="document.getElementById('trace-<?= $index ?>').classList.toggle('d-none');">Expand Logs</button>
 															<?php endif; ?>
 														</div>
-														<?php if (!empty($traceHtml)): ?>
-															<div id="trace-<?= $index ?>" class="d-none mt-2"><?= $traceHtml ?></div>
+														<?php if (!empty($trace_html)): ?>
+															<div id="trace-<?= $index ?>" class="d-none mt-2"><?= $trace_html ?></div>
 														<?php endif; ?>
 													</td>
 												</tr>

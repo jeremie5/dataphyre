@@ -1,0 +1,40 @@
+[
+  {
+    "name": "make_returns_validator_instance",
+    "function": "make",
+    "class": "Dataphyre\\Mvc\\Validator",
+    "static_method": true,
+    "args": [
+      {
+        "email": "buyer@example.com"
+      },
+      {
+        "email": "required|email"
+      }
+    ],
+    "expected": "Dataphyre\\Mvc\\Validator",
+    "file": "/common/dataphyre/runtime/modules/mvc/Framework/Validator.php",
+    "max_millis": 5
+  },
+  {
+    "name": "validate_accepts_required_email_and_integer_rules",
+    "function": "validate",
+    "class": "Dataphyre\\Mvc\\Validator",
+    "static_method": true,
+    "args": [
+      {
+        "email": "buyer@example.com",
+        "quantity": "3",
+        "status": "paid"
+      },
+      {
+        "email": "required|email",
+        "quantity": "required|integer|min:1|max:5",
+        "status": "required|in:paid,pending"
+      }
+    ],
+    "expected": "array",
+    "file": "/common/dataphyre/runtime/modules/mvc/Framework/Validator.php",
+    "max_millis": 5
+  }
+]

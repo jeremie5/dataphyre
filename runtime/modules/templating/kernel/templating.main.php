@@ -22,85 +22,27 @@ require(__DIR__."/render_helpers.php");
 require(__DIR__."/rendering.php");
 require(__DIR__."/parsing.php");
 
+/**
+ * Static templating kernel for rendering, inspection, contracts, and asset plans.
+ *
+ * The templating kernel owns process-local render state: cache configuration,
+ * helpers, tags, filters, preprocessing and postprocessing hooks, global context,
+ * template/component contracts, manifest capture, strict-mode validation, plan
+ * caches, dependency graph expansion, asset policy normalization, and legacy
+ * rendering helpers. Public methods remain snake_case for kernel consumers.
+ */
 class templating {
 
     use caching;
-	/*
-		private static function load_from_cache(string $template_file): ?string {
-		private static function save_to_cache(string $template_content, string $template_file): string {
-		private static function conditional_cache(string $template, array $data, string $condition): string {
-		private static function parse_fragment_cache(string $template): string {
-		private static function store_in_cache(string $cache_key, string $content, int $duration): void {
-		private static function get_from_cache(string $cache_key) ?string {
-	*/
     use debugging;
-	/*
-		private static function debug(string $template, array $data): string {
-		private static function profile_render(string $template_file, array $data): string {
-		private static function render_error_template(object $error): string {
-		private static function debug_render(string $template_file, array $data): string {
-		private static function render_performance_metrics(): void {
-	*/
     use seo_accessibility;
-	/*
-		private static function parse_seo_tags(string $template, array $data): string {
-	*/
     use component_management;
-	/*
-		private static function parse_components(string $template, array $data): string {
-		private static function lazy_load_components(string $template, array $data): string {
-	*/
     use conditional_parsing;
-	/*
-		private static function parse_loops(string $template, array $data): string {
-		private static function parse_conditionals(string $template, array $data): string {
-		private static function parse_inline_conditionals(string $template, array $data): string {
-		private static function evaluate_condition(string $expression, array $data): mixed {
-		private static function parse_advanced_conditionals(string $template, array $data): string {
-	*/
     use event_system;
-	/*
-		private static $events=[ 'before_render'=>[], 'after_render'=>[], 'on_error'=>[] ];
-		public static function register_event_hook(string $event, callable $callback): void {
-		private static function trigger_event(string $event, ...$args): void {
-		public static function enable_event_system(string $event, array $data): object {
-		private static function enable_watch_mode(string $template_file): void {
-	*/
     use form_handling;
-	/*
-		private static function parse_form(string $template, array $data): string {
-		private static function parse_form_fields(array $template, array $data): string {
-	*/
     use render_helpers;
-	/*
-		private static function parse_assets(string $template): string {
-		public static function apply_helpers(string $template): string {
-		private static function apply_pipelines(string $template, array $filters): string {
-		public static function register_extension(string $name, callable $extension): void {
-	*/
     use rendering;
-	/*
-		public static function render(string $template_file, array $data=[], array $theme_values=[], array $slots=[]): mixed {
-		public static function render_with_fallback(string $template_file, array $data=[], string $fallback_file='fallback.tpl'): string {
-		public static function full_render(string $template_file, array $data=[], array $theme_values=[], array $slots=[]): mixed {
-		public static function async_render(string $template_file, array $data=[]): object {
-	*/
     use parsing;
-	/*
-		private static function bind_data(string $template, array &$data): string {
-		private static function handle_undefined_variables(string $template, array $data): string {
-		private static function parse_lazy_load_components(string $template, array $data): string {
-		private static function parse_slots(string $template, array $data, array $slots=[]): string {
-		private static function parse_scoped_styles(string $template, string $component_name): string {
-		private static function parse_dynamic_imports(string $template, array $data): string {
-		private static function parse_attributes(string $template, array $data): string {
-		private static function parse_layout_inheritance(string $template): string {
-		private static function parse_php_blocks(string $template): string {
-		private static function parse_debug(string $template, array $data): string {
-		private static function parse_partials(string $template, array $data): string {
-		private static function replace_placeholders(string $template, array $data): string {
-		private static function parse_loop_controls(string $template, array $data): string {
-	*/
 
     private static $cache_dir;
     private static $is_dev_mode=false;
@@ -125,11 +67,33 @@ class templating {
 	private static $strict_mode=false;
 	private static $template_contracts=[];
 	private static $asset_policy=[];
-	
+
+	/**
+	 * Initializes the templating runtime for instance-style legacy callers.
+	 *
+	 * The templating kernel is primarily static; constructing the class delegates to
+	 * init() so older code that instantiates templating still configures cache,
+	 * helpers, filters, strict mode, and asset policy defaults.
+	 *
+	 * @param bool $is_dev_mode Whether rendering should start in development mode.
+	 */
 	public function __construct(bool $is_dev_mode=false){
 		self::init($is_dev_mode);
 	}
 
+	/**
+	 * Initializes process-local templating runtime state.
+	 *
+	 * Default helpers and filters are registered without removing existing custom
+	 * entries. Cache directory, development mode, strict contract enforcement, and
+	 * asset policy are normalized, and the cache directory is created when missing.
+	 *
+	 * @param bool $is_dev_mode Enable development-mode rendering behavior.
+	 * @param string|null $cache_dir Optional cache directory override.
+	 * @param bool|null $strict_mode Optional strict contract enforcement override.
+	 * @param array|null $asset_policy Optional asset preload/script/style/font policy.
+	 * @return void
+	 */
 	public static function init(bool $is_dev_mode=false, ?string $cache_dir=null, ?bool $strict_mode=null, ?array $asset_policy=null): void {
 		self::$helpers=array_replace([
 			'date_format'=>static function($date, $format){
@@ -159,12 +123,31 @@ class templating {
 		}
 	}
 
+	/**
+	 * Ensures the static templating runtime has a normalized baseline.
+	 *
+	 * All public entry points and private helpers that depend on cache paths,
+	 * default helpers, filters, strict mode, or asset policy call this before
+	 * touching process-local state. The method is idempotent and only delegates to
+	 * init() when no initialization has occurred in the current PHP process.
+	 *
+	 * @return void
+	 */
 	private static function ensure_initialized(): void {
 		if(self::$initialized!==true){
 			self::init();
 		}
 	}
 
+	/**
+	 * Returns the current process-local templating configuration state.
+	 *
+	 * The payload is intended for diagnostics, tests, and framework wrappers.
+	 * It includes mutable global context and registered contracts, so callers should
+	 * treat it as a snapshot rather than durable configuration storage.
+	 *
+	 * @return array{is_dev_mode:bool,cache_dir:string|null,global_context:array<string,mixed>,strict_mode:bool,template_contracts:array<string,array<string,mixed>>,asset_policy:array<string,mixed>} Runtime state snapshot.
+	 */
 	public static function state(): array {
 		self::ensure_initialized();
 		return [
@@ -177,6 +160,19 @@ class templating {
 		];
 	}
 
+	/**
+	 * Renders a template file while capturing its manifest and render diagnostics.
+	 *
+	 * Inspection bypasses normal cache strategy in the capture root and records data
+	 * keys, theme value keys, slots, rendered templates, assets, missing references,
+	 * and other manifest details generated during full_render().
+	 *
+	 * @param string $template_file Template file reference to render and inspect.
+	 * @param array<string,mixed> $data Render data made available to the template.
+	 * @param array<string,mixed> $theme_values Theme values passed to rendering.
+	 * @param array<string,string> $slots Slot content keyed by slot name.
+	 * @return array Manifest capture payload for the rendered template file.
+	 */
 	public static function inspect(string $template_file, array $data=[], array $theme_values=[], array $slots=[]): array {
 		self::ensure_initialized();
 		return self::with_manifest_capture(
@@ -192,6 +188,19 @@ class templating {
 		);
 	}
 
+	/**
+	 * Renders inline template source while capturing manifest diagnostics.
+	 *
+	 * Inline inspection records the supplied template name, marks the capture as
+	 * inline, and collects the same render manifest details as inspect().
+	 *
+	 * @param string $template Inline template source.
+	 * @param array<string,mixed> $data Render data made available to the template.
+	 * @param array<string,mixed> $theme_values Theme values passed to rendering.
+	 * @param array<string,string> $slots Slot content keyed by slot name.
+	 * @param string $template_name Display name used for diagnostics and contracts.
+	 * @return array Manifest capture payload for the inline render.
+	 */
 	public static function inspect_string(
 		string $template,
 		array $data=[],
@@ -213,6 +222,18 @@ class templating {
 		);
 	}
 
+	/**
+	 * Compiles or loads a dependency plan for a template file.
+	 *
+	 * File references are normalized, unreadable templates throw, and plans are cached
+	 * by source modification time plus registry signature. The returned plan includes
+	 * direct analysis, expanded dependency graph, aggregate references, inferred
+	 * contract, and asset manifest data.
+	 *
+	 * @param string $template_file Template file reference to analyze.
+	 * @return array<string, mixed> Expanded template plan payload.
+	 * @throws \RuntimeException When the normalized template file cannot be read.
+	 */
 	public static function plan(string $template_file): array {
 		self::ensure_initialized();
 		$template_file=self::normalize_template_reference($template_file);
@@ -253,11 +274,31 @@ class templating {
 		return $plan;
 	}
 
+	/**
+	 * Builds an asset manifest for a template file plan.
+	 *
+	 * The manifest is derived from plan() and therefore includes assets discovered in
+	 * dependencies as well as the root template.
+	 *
+	 * @param string $template_file Template file reference to analyze.
+	 * @return array<string, mixed> Asset manifest grouped by type, tag placement, policy, and missing references.
+	 */
 	public static function asset_manifest(string $template_file): array {
 		self::ensure_initialized();
 		return self::build_asset_manifest_from_plan(self::plan($template_file));
 	}
 
+	/**
+	 * Compiles or loads a dependency plan for inline template source.
+	 *
+	 * Inline plans are cached in memory by template name, source hash, and registry
+	 * signature. They still expand file-based dependencies referenced by the inline
+	 * source when those references can be resolved.
+	 *
+	 * @param string $template Inline template source to analyze.
+	 * @param string $template_name Display name used in graph nodes and diagnostics.
+	 * @return array<string, mixed> Expanded inline template plan payload.
+	 */
 	public static function plan_string(string $template, string $template_name='inline.tpl'): array {
 		self::ensure_initialized();
 		$memory_key='inline:'.sha1($template_name."\0".$template."\0".self::plan_registry_signature());
@@ -278,11 +319,31 @@ class templating {
 		return $plan;
 	}
 
+	/**
+	 * Builds an asset manifest for inline template source.
+	 *
+	 * The manifest is derived from plan_string() and reflects the same asset policy
+	 * normalization used for file-based plans.
+	 *
+	 * @param string $template Inline template source to analyze.
+	 * @param string $template_name Display name used in plan diagnostics.
+	 * @return array<string, mixed> Asset manifest grouped by type, tag placement, policy, and missing references.
+	 */
 	public static function asset_manifest_string(string $template, string $template_name='inline.tpl'): array {
 		self::ensure_initialized();
 		return self::build_asset_manifest_from_plan(self::plan_string($template, $template_name));
 	}
 
+	/**
+	 * Applies a state snapshot or selected overrides to the templating runtime.
+	 *
+	 * Recognized keys include is_dev_mode, cache_dir, global_context, strict_mode,
+	 * template_contracts, and asset_policy. Template contract keys are normalized as
+	 * template references and contract payloads are normalized before storage.
+	 *
+	 * @param array{is_dev_mode?:bool,cache_dir?:string,global_context?:array<string,mixed>,strict_mode?:bool,template_contracts?:array<string,array<string,mixed>>,asset_policy?:array<string,mixed>} $overrides Partial state payload to apply.
+	 * @return void
+	 */
 	public static function apply_state(array $overrides): void {
 		self::ensure_initialized();
 		if(array_key_exists('is_dev_mode', $overrides)){
@@ -315,45 +376,122 @@ class templating {
 		}
 	}
 
+	/**
+	 * Returns global render context shared across template renders.
+	 *
+	 * Global context is merged by rendering helpers and can be mutated through
+	 * add_to_global_context() or apply_state().
+	 *
+	 * @return array<string, mixed> Current global context values.
+	 */
 	public static function global_context(): array {
 		self::ensure_initialized();
 		return self::$global_context;
 	}
 
+	/**
+	 * Clears all global render context values.
+	 *
+	 * This does not reset local render data, contract defaults, helpers, filters, or
+	 * cached template plans.
+	 *
+	 * @return void
+	 */
 	public static function clear_global_context(): void {
 		self::$global_context=[];
 	}
 
+	/**
+	 * Returns whether strict template contract enforcement is enabled.
+	 *
+	 * Strict mode converts missing required data, slot, asset, and type violations
+	 * into runtime exceptions during rendering.
+	 *
+	 * @return bool True when strict contract enforcement is active.
+	 */
 	public static function strict_mode(): bool {
 		self::ensure_initialized();
 		return self::$strict_mode;
 	}
 
+	/**
+	 * Enables or disables strict template contract enforcement.
+	 *
+	 * The flag affects subsequent render and contract validation operations for the
+	 * current process.
+	 *
+	 * @param bool $strict_mode New strict-mode setting.
+	 * @return void
+	 */
 	public static function set_strict_mode(bool $strict_mode): void {
 		self::$strict_mode=$strict_mode;
 	}
 
+	/**
+	 * Returns the normalized asset rendering policy.
+	 *
+	 * The policy controls which asset types receive preload tags, script loading
+	 * strategy, script type handling, stylesheet media, and font crossorigin output.
+	 *
+	 * @return array<string, mixed> Normalized asset policy.
+	 */
 	public static function asset_policy(): array {
 		self::ensure_initialized();
 		return self::$asset_policy;
 	}
 
+	/**
+	 * Replaces the asset rendering policy after normalization.
+	 *
+	 * Missing policy branches fall back to defaults through normalize_asset_policy().
+	 *
+	 * @param array{preload?:array<string,bool>|list<string>,scripts?:array<string,mixed>,styles?:array<string,mixed>,fonts?:array<string,mixed>} $asset_policy Asset preload/script/style/font policy overrides.
+	 * @return void
+	 */
 	public static function set_asset_policy(array $asset_policy): void {
 		self::ensure_initialized();
 		self::$asset_policy=self::normalize_asset_policy($asset_policy);
 	}
 
+	/**
+	 * Registers the expected data, slot, asset, and type contract for a template.
+	 *
+	 * Template names are normalized through resolve rules before storage. Contract
+	 * keys are normalized so validation and plan output share the same shape.
+	 *
+	 * @param string $template_name Template reference the contract belongs to.
+	 * @param array{data?:list<string>|array<string,mixed>,slots?:list<string>|array<string,mixed>,assets?:list<string>|array<string,mixed>,types?:array<string,string>,defaults?:array<string,mixed>,required?:list<string>} $contract Raw contract definition.
+	 * @return void
+	 */
 	public static function register_template_contract(string $template_name, array $contract): void {
 		self::ensure_initialized();
 		self::$template_contracts[self::normalize_template_reference($template_name)]=self::normalize_template_contract($contract);
 	}
 
+	/**
+	 * Returns the normalized contract registered for a template reference.
+	 *
+	 * Missing contracts return null rather than an empty contract so callers can tell
+	 * the difference between explicit and absent contract metadata.
+	 *
+	 * @param string $template_name Template reference to inspect.
+	 * @return array<string, mixed>|null Normalized contract or null when absent.
+	 */
 	public static function template_contract(string $template_name): ?array {
 		self::ensure_initialized();
 		$normalized=self::normalize_template_reference($template_name);
 		return self::$template_contracts[$normalized] ?? null;
 	}
 
+	/**
+	 * Clears one template contract or all registered template contracts.
+	 *
+	 * Passing null removes the entire contract registry. Passing a template name
+	 * normalizes that reference and removes only the matching contract.
+	 *
+	 * @param string|null $template_name Optional template reference to clear.
+	 * @return void
+	 */
 	public static function clear_template_contract(?string $template_name=null): void {
 		self::ensure_initialized();
 		if($template_name===null){
@@ -363,11 +501,30 @@ class templating {
 		unset(self::$template_contracts[self::normalize_template_reference($template_name)]);
 	}
 
+	/**
+	 * Resolves a component reference to a concrete template file when possible.
+	 *
+	 * The reference is routed through the component reference resolver used by the
+	 * planner and renderer, preserving the same fallback behavior for callers.
+	 *
+	 * @param string $reference Component reference from template source.
+	 * @return string|null Resolved component template path, or null when missing.
+	 */
 	public static function resolve_component_template(string $reference): ?string {
 		self::ensure_initialized();
 		return self::resolve_component_reference($reference);
 	}
 
+	/**
+	 * Registers a normalized render contract for a component reference.
+	 *
+	 * Component references are normalized separately from template paths so callers
+	 * can document reusable components even when the backing file is resolved later.
+	 *
+	 * @param string $reference Component reference used in templates.
+	 * @param array{data?:list<string>|array<string,mixed>,slots?:list<string>|array<string,mixed>,assets?:list<string>|array<string,mixed>,types?:array<string,string>,defaults?:array<string,mixed>,required?:list<string>} $contract Raw component contract definition.
+	 * @return void
+	 */
 	public static function register_component_contract(string $reference, array $contract): void {
 		self::ensure_initialized();
 		$template=self::resolve_component_reference($reference);
@@ -377,12 +534,29 @@ class templating {
 		self::register_template_contract($template, $contract);
 	}
 
+	/**
+	 * Returns the normalized contract registered for a component reference.
+	 *
+	 * Missing contracts return null. Resolved component templates may also contribute
+	 * summaries through component_contract_summary().
+	 *
+	 * @param string $reference Component reference to inspect.
+	 * @return array<string, mixed>|null Normalized component contract or null.
+	 */
 	public static function component_contract(string $reference): ?array {
 		self::ensure_initialized();
 		$template=self::resolve_component_reference($reference);
 		return $template!==null ? self::template_contract($template) : null;
 	}
 
+	/**
+	 * Removes the contract registered for a component reference.
+	 *
+	 * Unknown component references are ignored.
+	 *
+	 * @param string $reference Component reference whose contract should be removed.
+	 * @return void
+	 */
 	public static function clear_component_contract(string $reference): void {
 		self::ensure_initialized();
 		$template=self::resolve_component_reference($reference);
@@ -391,14 +565,44 @@ class templating {
 		}
 	}
 
+	/**
+	 * Adds a preprocessing hook that runs before template transformations.
+	 *
+	 * Hooks are appended in registration order and receive the current template and
+	 * render data when apply_preprocessing_hooks() is called.
+	 *
+	 * @param callable $hook Preprocessing hook callable.
+	 * @return void
+	 */
 	public static function register_preprocessing_hook(callable $hook): void {
 		self::$preprocessing_hooks[]=$hook;
 	}
 
+	/**
+	 * Adds a postprocessing hook that runs after template transformations.
+	 *
+	 * Hooks are appended in registration order and receive the current output and
+	 * render data when apply_postprocessing_hooks() is called.
+	 *
+	 * @param callable $hook Postprocessing hook callable.
+	 * @return void
+	 */
 	public static function register_postprocessing_hook(callable $hook): void {
 		self::$postprocessing_hooks[]=$hook;
 	}
-	
+
+	/**
+	 * Loads a readable template file into the render pipeline.
+	 *
+	 * Missing or unreadable files fail immediately because downstream parsers need
+	 * real template source to produce reliable manifests, dependency graphs, and
+	 * strict-mode diagnostics.
+	 *
+	 * @param string $filename Template file path selected by the caller.
+	 * @return string Raw template source.
+	 *
+	 * @throws \RuntimeException When the template file is missing or unreadable.
+	 */
 	private static function load_template_file(string $filename): string {
 		if(!is_file($filename) || !is_readable($filename)){
 			throw new \RuntimeException("Template file not found: $filename");
@@ -406,6 +610,17 @@ class templating {
 		return (string)file_get_contents($filename);
 	}
 
+	/**
+	 * Replaces dot-path placeholders with escaped render data.
+	 *
+	 * This is the core scalar binding pass for `{{ user.name }}` style variables.
+	 * Values missing from the local data payload render as `[Undefined]`; the
+	 * undefined-variable manifest pass records simpler top-level misses separately.
+	 *
+	 * @param string $template Template source or partially-rendered output.
+	 * @param array<string,mixed> $data Render data available for placeholder binding.
+	 * @return string Template with bound and HTML-escaped scalar values.
+	 */
 	private static function bind_data(string $template, array $data): string {
 		preg_match_all('/{{\s*(\w+(\.\w+)*)\s*}}/', $template, $matches);
 		foreach($matches[1] as $full_path){
@@ -418,7 +633,18 @@ class templating {
 		}
 		return $template;
 	}
-	
+
+	/**
+	 * Reads a nested value from arrays or public object properties.
+	 *
+	 * Dot paths are intentionally tolerant: missing segments return null instead
+	 * of throwing so render passes can decide whether to bind a fallback, record a
+	 * contract violation, or keep processing.
+	 *
+	 * @param array|object|null $data Root data payload or object.
+	 * @param string $path Dot-separated data path.
+	 * @return mixed Nested value, or null when any segment is absent.
+	 */
 	private static function get_value_by_path(array|object|null $data, string $path): mixed {
 		$segments=explode('.', $path);
 		foreach($segments as $segment){
@@ -436,6 +662,17 @@ class templating {
 		return $data;
 	}
 
+	/**
+	 * Checks whether a dot path exists in arrays or public object properties.
+	 *
+	 * Existence is distinct from value lookup because null is a valid contract
+	 * value. This helper therefore uses array_key_exists() and property_exists()
+	 * rather than truthiness.
+	 *
+	 * @param array|object|null $data Root data payload or object.
+	 * @param string $path Dot-separated data path.
+	 * @return bool True when every path segment exists.
+	 */
 	private static function data_path_exists(array|object|null $data, string $path): bool {
 		$segments=explode('.', $path);
 		foreach($segments as $segment){
@@ -451,29 +688,77 @@ class templating {
 		}
 		return true;
 	}
-	
+
+	/**
+	 * Adds a global context value only when a caller-supplied condition passes.
+	 *
+	 * This legacy helper lets template setup code expose optional values without
+	 * scattering conditional checks through the render pipeline.
+	 *
+	 * @param string $variable Global context key to set.
+	 * @param mixed $value Value to expose when the condition passes.
+	 * @param callable $condition Zero-argument predicate evaluated immediately.
+	 * @return void
+	 */
 	private static function bind_if(string $variable, mixed $value, callable $condition): void {
 		if($condition()){
 			self::$global_context[$variable]=$value;
 		}
 	}
-	
+
+	/**
+	 * Writes one value into the process-local render context.
+	 *
+	 * The value remains available until unset_local(), clear_global_context(), or a
+	 * scoped context restoration removes it.
+	 *
+	 * @param string $key Global context key.
+	 * @param mixed $value Value to expose to subsequent render helpers.
+	 * @return void
+	 */
 	private static function set_local(string $key, mixed $value): void {
 		self::$global_context[$key]=$value;
 	}
-	
+
+	/**
+	 * Removes one value from the process-local render context.
+	 *
+	 * @param string $key Global context key.
+	 * @return void
+	 */
 	private static function unset_local(string $key): void {
 		unset(self::$global_context[$key]);
 	}
-		
+
+	/**
+	 * Runs a rendering callback with a temporary context overlay.
+	 *
+	 * The previous global context is restored after the callback returns, keeping
+	 * loop and component scopes from leaking into later render passes.
+	 *
+	 * @param array<string,mixed> $data Context values to merge for the callback.
+	 * @param callable $block Callback that renders within the scoped context.
+	 * @return string Callback output.
+	 */
 	private static function with_context(array $data, callable $block): string {
-		$previousContext=self::$global_context;
+		$previous_context=self::$global_context;
 		self::$global_context=array_merge(self::$global_context, $data);
 		$output=$block();
-		self::$global_context=$previousContext;
+		self::$global_context=$previous_context;
 		return $output;
 	}
-	
+
+	/**
+	 * Iterates items with loop metadata exposed in a scoped context.
+	 *
+	 * Each callback receives the current item and a scope containing index, first,
+	 * last, and item. The concatenated callback output becomes the rendered loop
+	 * body.
+	 *
+	 * @param array<int|string,mixed> $items Items to render.
+	 * @param callable $callback Loop body renderer.
+	 * @return string Concatenated loop output.
+	 */
 	private static function for_each_scoped(array $items, callable $callback): string {
 		$output='';
 		$total=count($items);
@@ -488,17 +773,43 @@ class templating {
 		}
 		return $output;
 	}
-	
+
+	/**
+	 * Reads a value from current scoped context, then parent context.
+	 *
+	 * @param string $path Dot-separated context path.
+	 * @return mixed Scoped value, parent value, or null.
+	 */
 	private static function get_scoped_value(string $path): mixed {
 		return self::get_value_by_path(self::$global_context, $path) ?? self::get_value_by_path(self::$parent_context, $path);
 	}
 
+	/**
+	 * Removes whitespace-control markers from template tags.
+	 *
+	 * This pass normalizes `{%-` and `-%}` delimiters before parsing so later
+	 * regex-based transforms can treat whitespace-trimmed tags like ordinary tags.
+	 *
+	 * @param string $template Template source.
+	 * @return string Template with trim markers removed.
+	 */
 	private static function trim_whitespace(string $template): string {
-		$template=preg_replace('/{%\s*-\s*/', '', $template);  // Trim start
-		$template=preg_replace('/\s*-\s*%}/', '', $template);  // Trim end
+		$template=preg_replace('/{%\s*-\s*/', '', $template);
+		$template=preg_replace('/\s*-\s*%}/', '', $template);
 		return $template;
 	}
 
+	/**
+	 * Replaces unresolved top-level variables and records render diagnostics.
+	 *
+	 * Reserved control words are ignored so block delimiters do not become false
+	 * positives. Missing variables are recorded in the active manifest when
+	 * inspection is enabled and are rendered as `[Undefined]`.
+	 *
+	 * @param string $template Template source or partially-rendered output.
+	 * @param array<string,mixed> $data Local render data.
+	 * @return string Template with unresolved top-level variables replaced.
+	 */
 	private static function handle_undefined_variables(string $template, array $data): string {
 		preg_match_all('/{{(\w+)}}/', $template, $matches);
 		$reserved=['endslot', 'endblock', 'endif', 'else', 'endloop', 'break', 'continue'];
@@ -515,10 +826,31 @@ class templating {
 		return $template;
 	}
 
+	/**
+	 * Stores one key-value pair in the global render context.
+	 *
+	 * Later renders can resolve the value when local render data does not provide the
+	 * requested key or path.
+	 *
+	 * @param string $key Global context key.
+	 * @param mixed $value Value available to future renders.
+	 * @return void
+	 */
 	public static function add_to_global_context(string $key, mixed $value): void {
 		self::$global_context[$key]=$value;
 	}
 
+	/**
+	 * Recursively replaces nested placeholder paths with escaped values.
+	 *
+	 * This legacy helper expands an already-known prefix, allowing array-shaped
+	 * values to be flattened into placeholders such as `{{ product.price.amount }}`.
+	 *
+	 * @param string $template Template source or partially-rendered output.
+	 * @param string $prefix Current placeholder path prefix.
+	 * @param array<string,mixed> $data Nested data below the prefix.
+	 * @return string Template after nested placeholder replacement.
+	 */
     private static function replace_nested_placeholders(string $template, string $prefix, array $data): string {
         foreach($data as $key=>$value){
             $full_key=$prefix.'.'.$key;
@@ -536,11 +868,31 @@ class templating {
         }
         return $template;
     }
-	
+
+	/**
+	 * Registers a custom template tag callback.
+	 *
+	 * Registered tag names are also included in plan registry signatures so cached
+	 * plans are invalidated when tag availability changes.
+	 *
+	 * @param string $tag Tag name without delimiters.
+	 * @param callable $callback Callback that renders or transforms the tag payload.
+	 * @return void
+	 */
 	public static function register_tag(string $tag, callable $callback): void {
 		self::$tags[$tag]=$callback;
 	}
 
+	/**
+	 * Applies registered tag callbacks and records tag usage in the manifest.
+	 *
+	 * Tags match `{{ tag arg, arg }}` syntax. Callback return values are escaped
+	 * before insertion because tag callbacks may receive raw render data.
+	 *
+	 * @param string $template Template source or partially-rendered output.
+	 * @param array<string,mixed> $data Render data passed to tag callbacks.
+	 * @return string Template after tag callback substitutions.
+	 */
 	private static function apply_tags(string $template, array $data): string {
 		preg_match_all('/{{\s*(\w+)(.*?)\s*}}/', $template, $matches, PREG_SET_ORDER);
 		foreach($matches as $match){
@@ -554,11 +906,32 @@ class templating {
 		}
 		return $template;
 	}
-	
+
+	/**
+	 * Registers a custom template filter callback.
+	 *
+	 * Registered filter names are included in plan registry signatures and may be
+	 * detected in compiled plans.
+	 *
+	 * @param string $filter Filter name without pipe syntax.
+	 * @param callable $callback Filter callback.
+	 * @return void
+	 */
 	public static function register_filter(string $filter, callable $callback): void {
 		self::$filters[$filter]=$callback;
 	}
 
+	/**
+	 * Applies registered pipe filters to dot-path variable expressions.
+	 *
+	 * The filter invocation parser handles optional arguments, records the filter
+	 * name in active manifests, and HTML-escapes the filter result before replacing
+	 * the original expression.
+	 *
+	 * @param string $template Template source or partially-rendered output.
+	 * @param array<string,mixed> $data Render data used to resolve the filtered variable.
+	 * @return string Template after filter substitutions.
+	 */
 	private static function apply_filters(string $template, array $data): string {
 		preg_match_all('/{{\s*([\w\.]+)\s*\|\s*([A-Za-z_]\w*(?:\((.*?)\))?)\s*}}/', $template, $matches, PREG_SET_ORDER);
 		foreach($matches as $match){
@@ -575,14 +948,34 @@ class templating {
 		}
 		return $template;
 	}
-	
+
+	/**
+	 * Runs registered preprocessing hooks in registration order.
+	 *
+	 * Hooks receive template source and render data before the core transformation
+	 * pipeline mutates placeholders, components, dependencies, and slots.
+	 *
+	 * @param string $template Template source.
+	 * @param array<string,mixed> $data Render data passed to hooks.
+	 * @return string Template after preprocessing hooks.
+	 */
 	private static function apply_preprocessing_hooks(string $template, array $data): string {
 		foreach(self::$preprocessing_hooks as $hook){
 			$template=call_user_func($hook, $template, $data);
 		}
 		return $template;
 	}
-	
+
+	/**
+	 * Runs registered postprocessing hooks in registration order.
+	 *
+	 * Hooks receive rendered output and render data after the core transformation
+	 * pipeline has produced the response body.
+	 *
+	 * @param string $template Rendered output.
+	 * @param array<string,mixed> $data Render data passed to hooks.
+	 * @return string Output after postprocessing hooks.
+	 */
 	private static function apply_postprocessing_hooks(string $template, array $data): string {
 		foreach(self::$postprocessing_hooks as $hook){
 			$template=call_user_func($hook, $template, $data);
@@ -590,6 +983,16 @@ class templating {
 		return $template;
 	}
 
+    /**
+     * Applies custom function calls embedded in template expressions.
+     *
+     * The function registry is supplied per call. This helper preserves legacy
+     * transformation behavior for templates that invoke callable names directly.
+     *
+     * @param string $template Template source or partially-rendered output.
+     * @param array<string, callable> $custom_functions Function callbacks keyed by name.
+     * @return string Template after function substitutions.
+     */
     public static function apply_functions(string $template, array $custom_functions=[]): string {
         foreach($custom_functions as $func=>$callback){
             preg_match_all("/{{".$func."\((.*?)\)}}/", $template, $matches, PREG_SET_ORDER);
@@ -602,17 +1005,49 @@ class templating {
         }
         return $template;
     }
-	
+
+	/**
+	 * Delegates component composition to the component parsing trait.
+	 *
+	 * This helper preserves the legacy method name used by transformation paths
+	 * while keeping the actual component resolution and manifest recording in one
+	 * parser implementation.
+	 *
+	 * @param string $template Template source or partially-rendered output.
+	 * @param array<string,mixed> $data Render data passed to component parsing.
+	 * @return string Template after component composition.
+	 */
 	private static function compose_components(string $template, array $data): string {
 		return self::parse_components($template, $data);
 	}
-	
-    public static function apply_transformations(string $template, array $custom_functions=[], array $filters=[]): string {
+
+    /**
+     * Applies function and filter transformations to template output.
+     *
+     * This helper is the compact legacy pipeline used by render paths that supply
+     * per-render functions and filters rather than registered global callbacks.
+     *
+     * @param string $template Template source or partially-rendered output.
+     * @param array<string, callable> $custom_functions Function callbacks keyed by name.
+     * @param array<string, callable> $filters Filter callbacks keyed by name.
+     * @return string Transformed template output.
+     */
+	public static function apply_transformations(string $template, array $custom_functions=[], array $filters=[]): string {
         $template=self::apply_functions($template, $custom_functions);
         $template=self::apply_filters($template, $filters);
         return $template;
     }
 
+	/**
+	 * Converts explicit CSS and JS dependency directives into HTML tags.
+	 *
+	 * `{{ requireCSS "..." }}` and `{{ requireJS "..." }}` are resolved through
+	 * the asset descriptor policy so manifests contain normalized path, preload
+	 * type, and existence metadata.
+	 *
+	 * @param string $template Template source or partially-rendered output.
+	 * @return string Template with dependency directives replaced by asset tags.
+	 */
 	private static function resolve_dependencies(string $template): string {
 		preg_match_all('/{{ require(CSS|JS) "(.+?)" }}/', $template, $matches, PREG_SET_ORDER);
 		foreach($matches as $match){
@@ -633,6 +1068,17 @@ class templating {
 		return $template;
 	}
 
+	/**
+	 * Converts conditional CSS and JS load directives into HTML tags.
+	 *
+	 * Conditional imports only render when their data flag is truthy. All rendered
+	 * dependencies are recorded with condition metadata for inspection and plan
+	 * aggregation.
+	 *
+	 * @param string $template Template source or partially-rendered output.
+	 * @param array<string,mixed> $data Render data used to evaluate optional conditions.
+	 * @return string Template with eligible conditional asset directives replaced.
+	 */
     private static function conditional_asset_import(string $template, array$data): string {
         preg_match_all('/{{loadCSS "(.+?)"( if(\w+))?}}/', $template, $matches);
         foreach($matches[1] as $index=>$asset){
@@ -669,13 +1115,35 @@ class templating {
         return $template;
     }
 
+	/**
+	 * Runs environment-specific hooks against template output.
+	 *
+	 * The environment selects either the development or production hook list and
+	 * leaves unknown environments with no hooks. Hook callbacks receive the current
+	 * template and render data.
+	 *
+	 * @param string $template Template source or partially-rendered output.
+	 * @param array<string,mixed> $data Render data passed to hooks.
+	 * @param string $environment Hook environment, usually dev or prod.
+	 * @return string Template after conditional hooks.
+	 */
     private static function apply_conditional_hooks(string $template, array $data, string $environment='dev'): string {
         foreach(self::${$environment.'_hooks'} ?? [] as $hook){
             $template=call_user_func($hook, $template, $data);
         }
         return $template;
     }
-	
+
+	/**
+	 * Generates a plain-text variable inventory from template placeholders.
+	 *
+	 * This legacy documentation helper is intentionally lightweight; runtime PHPDoc
+	 * remains the richer API source while templates can still expose a quick variable list for
+	 * authoring tools.
+	 *
+	 * @param string $template Template source.
+	 * @return string Human-readable variable inventory.
+	 */
 	private static function generate_template_docs(string $template): string {
 		preg_match_all('/{{(\w+)(\|\w+)*}}/', $template, $matches);
 		$doc="Template Variables:\n";
@@ -685,7 +1153,17 @@ class templating {
 		return $doc;
 	}
 
-	private static function parseTranslations(string $template): string {
+	/**
+	 * Replaces translation directives through Dataphyre localization when present.
+	 *
+	 * Translation keys are recorded in the active manifest with both the requested
+	 * key and resolved text. Missing localization support falls back to the key
+	 * itself so rendering remains deterministic.
+	 *
+	 * @param string $template Template source or partially-rendered output.
+	 * @return string Template with translated and escaped text.
+	 */
+	private static function parse_translations(string $template): string {
 		preg_match_all('/{{\s*(?:trans|translate)\s*"(.+?)"\s*}}/', $template, $matches, PREG_SET_ORDER);
 		foreach($matches as $match){
 			$translated=$match[1];
@@ -701,19 +1179,43 @@ class templating {
 		return $template;
 	}
 
+	/**
+	 * Pushes a normalized template reference onto the render stack.
+	 *
+	 * The stack is used for relative partial, component, and layout resolution
+	 * during nested renders and plan expansion.
+	 *
+	 * @param string $template_name Template path or diagnostic name.
+	 * @return void
+	 */
 	private static function push_template_context(string $template_name): void {
 		self::$template_stack[]=self::normalize_template_reference($template_name);
 	}
 
+	/**
+	 * Removes the current template reference from the render stack.
+	 *
+	 * @return void
+	 */
 	private static function pop_template_context(): void {
 		array_pop(self::$template_stack);
 	}
 
+	/**
+	 * Returns the current normalized template reference.
+	 *
+	 * @return string|null Current template reference, or null when no render stack exists.
+	 */
 	private static function current_template_reference(): ?string {
 		$current=end(self::$template_stack);
 		return $current===false ? null : $current;
 	}
 
+	/**
+	 * Returns the directory used for relative template resolution.
+	 *
+	 * @return string|null Directory of the current template reference.
+	 */
 	private static function current_template_dir(): ?string {
 		$current=self::current_template_reference();
 		if($current===null){
@@ -722,6 +1224,15 @@ class templating {
 		return is_file($current) ? dirname($current) : dirname($current);
 	}
 
+	/**
+	 * Normalizes a template reference for cache keys, manifests, and comparisons.
+	 *
+	 * Existing filesystem paths are canonicalized with realpath(); unresolved
+	 * references keep their caller-provided form with platform separators.
+	 *
+	 * @param string $reference Template path or logical reference.
+	 * @return string Normalized template reference.
+	 */
 	private static function normalize_template_reference(string $reference): string {
 		$reference=trim($reference);
 		if($reference===''){
@@ -731,6 +1242,15 @@ class templating {
 		return $resolved===false ? str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $reference) : $resolved;
 	}
 
+	/**
+	 * Resolves a template reference against the current render context.
+	 *
+	 * Absolute paths are checked directly. Relative references are checked beside
+	 * the current template before falling back to the caller's working directory.
+	 *
+	 * @param string $reference Template path or relative reference.
+	 * @return string|null Readable template path, or null when unresolved.
+	 */
 	private static function resolve_template_reference(string $reference): ?string {
 		$reference=trim($reference);
 		if($reference===''){
@@ -757,6 +1277,16 @@ class templating {
 		return null;
 	}
 
+	/**
+	 * Resolves a component reference against local component directories.
+	 *
+	 * References without an extension also try `.tpl`. Relative component lookup
+	 * checks the current directory, a sibling components directory, the raw
+	 * reference, and a project-level components directory.
+	 *
+	 * @param string $reference Component reference from template source.
+	 * @return string|null Readable component template path, or null when unresolved.
+	 */
 	private static function resolve_component_reference(string $reference): ?string {
 		$reference=trim($reference);
 		if($reference===''){
@@ -793,10 +1323,32 @@ class templating {
 		return null;
 	}
 
+	/**
+	 * Detects platform absolute paths.
+	 *
+	 * Windows drive letters, Unix roots, and UNC paths are treated as absolute so
+	 * resolution does not accidentally prepend the current template directory.
+	 *
+	 * @param string $path Filesystem path.
+	 * @return bool True when the path is absolute for a supported platform.
+	 */
 	private static function is_absolute_path(string $path): bool {
 		return preg_match('/^(?:[A-Za-z]:[\/\\\\]|\/|\\\\\\\\)/', $path)===1;
 	}
 
+	/**
+	 * Runs a callback with manifest capture enabled.
+	 *
+	 * The active manifest and inspection depth are isolated from any outer render
+	 * capture. On success the rendered content and finalized manifest are returned;
+	 * on failure the manifest records the exception before the exception bubbles.
+	 *
+	 * @param callable $callback Render callback whose output should be captured.
+	 * @param array{template_name?:string,inline?:bool,data_keys?:list<string>,theme_value_keys?:list<string>,slot_names?:list<string>,cache_strategy?:string} $root Root manifest fields such as template name and data keys.
+	 * @return array{content:string,manifest:array<string,mixed>} Captured content and manifest payload.
+	 *
+	 * @throws \Throwable Re-throws any render failure after recording it.
+	 */
 	private static function with_manifest_capture(callable $callback, array $root): array {
 		$previous_enabled=self::$inspection_enabled;
 		$previous_depth=self::$inspection_depth;
@@ -828,6 +1380,16 @@ class templating {
 		}
 	}
 
+	/**
+	 * Creates the initial manifest envelope for a render capture.
+	 *
+	 * The schema is intentionally broad enough for rendering, contract validation,
+	 * dependency planning, accessibility tooling, and documentation inspection to share a
+	 * single payload.
+	 *
+	 * @param array{template_name?:string,inline?:bool,data_keys?:list<string>,theme_value_keys?:list<string>,slot_names?:list<string>,cache_strategy?:string} $root Root manifest fields supplied by inspect() or inspect_string().
+	 * @return array<string,mixed> Manifest envelope with normalized buckets and timing fields.
+	 */
 	private static function new_manifest(array $root): array {
 		return [
 			'template_name'=>(string)($root['template_name'] ?? 'template.tpl'),
@@ -868,6 +1430,11 @@ class templating {
 		];
 	}
 
+	/**
+	 * Finalizes timing information on the active manifest.
+	 *
+	 * @return array Active manifest with finished_at and duration_ms populated.
+	 */
 	private static function finalize_manifest(): array {
 		self::$active_manifest['finished_at']=microtime(true);
 		self::$active_manifest['duration_ms']=round(
@@ -877,6 +1444,16 @@ class templating {
 		return self::$active_manifest;
 	}
 
+	/**
+	 * Records a template render event in the active manifest.
+	 *
+	 * Render depth is captured so nested partials and components can be inspected
+	 * with their call hierarchy intact.
+	 *
+	 * @param string $template_name Template path or inline diagnostic name.
+	 * @param bool $inline Whether the rendered template came from inline source.
+	 * @return void
+	 */
 	private static function record_template_render(string $template_name, bool $inline=false): void {
 		if(self::$inspection_enabled!==true){
 			return;
@@ -889,6 +1466,16 @@ class templating {
 		]);
 	}
 
+	/**
+	 * Records a unique string value in a manifest bucket.
+	 *
+	 * Buckets are created on demand so render helpers can report diagnostics even
+	 * when older manifest schemas did not define the bucket explicitly.
+	 *
+	 * @param string $bucket Manifest bucket name.
+	 * @param string $value Value to append uniquely.
+	 * @return void
+	 */
 	private static function record_manifest_value(string $bucket, string $value): void {
 		if(self::$inspection_enabled!==true || $value===''){
 			return;
@@ -901,6 +1488,16 @@ class templating {
 		}
 	}
 
+	/**
+	 * Records a unique structured value in a manifest bucket.
+	 *
+	 * Entries are de-duplicated by JSON signature, which keeps nested arrays stable
+	 * while preserving the original shape for debugging consumers.
+	 *
+	 * @param string $bucket Manifest bucket name.
+	 * @param array<string,mixed> $value Structured manifest entry.
+	 * @return void
+	 */
 	private static function record_manifest_structured(string $bucket, array $value): void {
 		if(self::$inspection_enabled!==true){
 			return;
@@ -917,6 +1514,13 @@ class templating {
 		self::$active_manifest[$bucket][]=$value;
 	}
 
+	/**
+	 * Records an unresolved template, component, partial, or asset reference.
+	 *
+	 * @param string $type Reference category.
+	 * @param string $reference Original reference text from template source.
+	 * @return void
+	 */
 	private static function record_missing_reference(string $type, string $reference): void {
 		self::record_manifest_structured('missing_references', [
 			'type'=>$type,
@@ -924,6 +1528,16 @@ class templating {
 		]);
 	}
 
+	/**
+	 * Normalizes a template contract into the internal enforcement schema.
+	 *
+	 * Contract aliases such as slots/types are accepted, blank keys are discarded,
+	 * defaults and type maps are normalized, and additional data/slot allowances are
+	 * made explicit.
+	 *
+	 * @param array{required?:list<string>,optional?:list<string>,slots?:list<string>,required_slots?:list<string>,optional_slots?:list<string>,defaults?:array<string,mixed>,prop_types?:array<string,string>,types?:array<string,string>,allow_additional_data?:bool,allow_additional_slots?:bool} $contract User-supplied template or component contract.
+	 * @return array{required:list<string>,optional:list<string>,required_slots:list<string>,optional_slots:list<string>,defaults:array<string,mixed>,prop_types:array<string,string>,allow_additional_data:bool,allow_additional_slots:bool} Normalized contract.
+	 */
 	private static function normalize_template_contract(array $contract): array {
 		$normalize_keys=static function(array $keys): array {
 			$normalized=[];
@@ -959,6 +1573,18 @@ class templating {
 		];
 	}
 
+	/**
+	 * Applies defaults and records contract violations for a template render.
+	 *
+	 * Validation checks required data paths, required slots, typed properties, and
+	 * additional data/slot policy. Violations are recorded in the active manifest;
+	 * strict mode decides later whether recorded violations should abort rendering.
+	 *
+	 * @param string $template_name Template reference whose contract should apply.
+	 * @param array<string,mixed> $data Render data.
+	 * @param array<string,string> $slots Slot content keyed by slot name.
+	 * @return array<string,mixed> Render data after contract defaults are applied.
+	 */
 	private static function validate_template_contract(string $template_name, array $data, array $slots): array {
 		$contract=self::template_contract($template_name);
 		if($contract===null){
@@ -1035,6 +1661,18 @@ class templating {
 		return $data;
 	}
 
+	/**
+	 * Throws when strict mode captured render violations.
+	 *
+	 * Strict mode is evaluated after manifest buckets have been populated so the
+	 * exception message can summarize contract, reference, variable, and render
+	 * error categories without losing the detailed manifest entries.
+	 *
+	 * @param string $template_name Template reference being rendered.
+	 * @return void
+	 *
+	 * @throws \RuntimeException When strict mode is enabled and violations exist.
+	 */
 	private static function enforce_strict_mode(string $template_name): void {
 		if(self::$strict_mode!==true){
 			return;
@@ -1063,6 +1701,17 @@ class templating {
 		throw new \RuntimeException(self::$active_manifest['failure_message']);
 	}
 
+	/**
+	 * Checks whether a dot path exists in a render data payload.
+	 *
+	 * This duplicate of data_path_exists() remains near contract helpers because
+	 * contract enforcement historically called path_exists(); it preserves null as
+	 * an existing value.
+	 *
+	 * @param array|object|null $data Root data payload or object.
+	 * @param string $path Dot-separated data path.
+	 * @return bool True when every path segment exists.
+	 */
 	private static function path_exists(array|object|null $data, string $path): bool {
 		$segments=explode('.', $path);
 		foreach($segments as $segment){
@@ -1079,6 +1728,15 @@ class templating {
 		return true;
 	}
 
+	/**
+	 * Extracts top-level keys from dot-path contract entries.
+	 *
+	 * Additional-data enforcement operates at top-level granularity so nested
+	 * requirements such as `product.price` allow the `product` payload root.
+	 *
+	 * @param list<string> $keys Contract data paths.
+	 * @return list<string> Unique top-level keys.
+	 */
 	private static function top_level_contract_keys(array $keys): array {
 		$allowed=[];
 		foreach($keys as $key){
@@ -1093,6 +1751,12 @@ class templating {
 		return $allowed;
 	}
 
+	/**
+	 * Normalizes contract default values by valid string path.
+	 *
+	 * @param array<string,mixed> $defaults User-supplied default value map.
+	 * @return array<string,mixed> Defaults keyed by non-empty data path.
+	 */
 	private static function normalize_contract_defaults(array $defaults): array {
 		$normalized=[];
 		foreach($defaults as $key=>$value){
@@ -1108,6 +1772,15 @@ class templating {
 		return $normalized;
 	}
 
+	/**
+	 * Normalizes contract property type declarations.
+	 *
+	 * Type names are lowercased so enforcement can compare against a compact set
+	 * of scalar and structural aliases.
+	 *
+	 * @param array<string,string> $types User-supplied data path to type map.
+	 * @return array<string,string> Normalized type map.
+	 */
 	private static function normalize_contract_type_map(array $types): array {
 		$normalized=[];
 		foreach($types as $key=>$type){
@@ -1124,6 +1797,16 @@ class templating {
 		return $normalized;
 	}
 
+	/**
+	 * Applies missing contract defaults to render data.
+	 *
+	 * Existing keys, including keys with null values, are preserved. Missing dot
+	 * paths are created recursively so nested defaults match the contract shape.
+	 *
+	 * @param array<string,mixed> $data Render data.
+	 * @param array<string,mixed> $defaults Contract defaults keyed by data path.
+	 * @return array<string,mixed> Render data with defaults applied.
+	 */
 	private static function apply_contract_defaults(array $data, array $defaults): array {
 		foreach($defaults as $path=>$value){
 			if(!is_string($path) || $path===''){
@@ -1137,6 +1820,14 @@ class templating {
 		return $data;
 	}
 
+	/**
+	 * Writes a value to a dot path inside an array payload.
+	 *
+	 * @param array<string,mixed> $data Data payload updated by reference.
+	 * @param string $path Dot-separated target path.
+	 * @param mixed $value Value to assign.
+	 * @return void
+	 */
 	private static function set_data_path_value(array &$data, string $path, mixed $value): void {
 		$segments=array_values(array_filter(array_map('trim', explode('.', $path)), static fn(string $segment): bool => $segment!==''));
 		if($segments===[]){
@@ -1145,6 +1836,17 @@ class templating {
 		self::assign_data_path_value($data, $segments, $value);
 	}
 
+	/**
+	 * Recursively assigns a value into an array or object path.
+	 *
+	 * Intermediate nodes are created as arrays when missing or when an existing
+	 * value cannot contain nested data.
+	 *
+	 * @param array|object $current Current branch updated by reference.
+	 * @param array<int,string> $segments Remaining path segments.
+	 * @param mixed $value Value to assign at the final segment.
+	 * @return void
+	 */
 	private static function assign_data_path_value(array|object &$current, array $segments, mixed $value): void {
 		$segment=array_shift($segments);
 		if(!is_string($segment) || $segment===''){
@@ -1177,6 +1879,16 @@ class templating {
 		self::assign_data_path_value($current->$segment, $segments, $value);
 	}
 
+	/**
+	 * Checks a value against a supported contract type alias.
+	 *
+	 * Unknown type names are accepted so new project-specific aliases do not break
+	 * older runtimes before their validators are installed.
+	 *
+	 * @param mixed $value Value being checked.
+	 * @param string $type Contract type alias.
+	 * @return bool True when the value matches or the type is unknown.
+	 */
 	private static function contract_value_matches_type(mixed $value, string $type): bool {
 		$type=strtolower(trim($type));
 		return match($type){
@@ -1195,6 +1907,12 @@ class templating {
 		};
 	}
 
+	/**
+	 * Builds a compact contract summary for component plan entries.
+	 *
+	 * @param string|null $template_name Resolved component template path.
+	 * @return array|null Contract summary, or null when no contract is registered.
+	 */
 	private static function component_contract_summary(?string $template_name): ?array {
 		if(!is_string($template_name) || $template_name===''){
 			return null;
@@ -1212,6 +1930,17 @@ class templating {
 		] : null;
 	}
 
+	/**
+	 * Normalizes an asset reference into render and manifest metadata.
+	 *
+	 * The descriptor records original reference, inferred type, filesystem path,
+	 * public path, existence, extension, and preload type. Local relative assets
+	 * default under `assets/`; external URLs are trusted as existing.
+	 *
+	 * @param string $reference Asset reference from template source.
+	 * @param string $hint Expected asset family such as css, js, or asset.
+	 * @return array{reference:string,hint:string,path:string,filesystem_path:?string,exists:bool,type:string,extension:string,preload_as:?string} Asset descriptor.
+	 */
 	private static function resolve_asset_descriptor(string $reference, string $hint='asset'): array {
 		$reference=trim($reference);
 		$hint=strtolower(trim($hint));
@@ -1254,6 +1983,13 @@ class templating {
 		];
 	}
 
+	/**
+	 * Infers an asset family from extension and parser hint.
+	 *
+	 * @param string $extension Lowercase file extension without dot.
+	 * @param string $hint Parser hint used when no extension is available.
+	 * @return string Asset type used by tag and preload generation.
+	 */
 	private static function asset_type_from_extension(string $extension, string $hint='asset'): string {
 		return match($extension){
 			'css' => 'style',
@@ -1268,6 +2004,12 @@ class templating {
 		};
 	}
 
+	/**
+	 * Converts a normalized asset type into a preload `as` value.
+	 *
+	 * @param string $type Normalized asset type.
+	 * @return string|null Preload `as` value, or null when the type should not preload.
+	 */
 	private static function asset_preload_type(string $type): ?string {
 		return match($type){
 			'style' => 'style',
@@ -1278,6 +2020,16 @@ class templating {
 		};
 	}
 
+	/**
+	 * Builds the HTML tag for a normalized asset descriptor.
+	 *
+	 * Stylesheets and scripts produce tags with policy-derived attributes. Other
+	 * asset types return the normalized path for callers that need a URL.
+	 *
+	 * @param array{path?:string,type?:string,extension?:string,preload_as?:string|null,exists?:bool} $descriptor Asset descriptor returned by resolve_asset_descriptor().
+	 * @param string $fallback_hint Hint used if the descriptor does not include a type.
+	 * @return string HTML tag or asset path.
+	 */
 	private static function asset_tag_from_descriptor(array $descriptor, string $fallback_hint='asset'): string {
 		$type=$descriptor['type'] ?? self::asset_type_from_extension('', $fallback_hint);
 		$path=(string)($descriptor['path'] ?? '');
@@ -1288,6 +2040,21 @@ class templating {
 		};
 	}
 
+	/**
+	 * Compiles a template source string into a static render plan.
+	 *
+	 * Plans extract data paths, slots, partials, components, imports, layouts,
+	 * assets, dependencies, translations, filters, tags, helpers, extensions, and
+	 * contract metadata without executing the render. They are the basis for asset
+	 * manifests, dependency expansion, template inspection, and cache
+	 * signatures.
+	 *
+	 * @param string $template Template source.
+	 * @param string $template_name Template path or inline diagnostic name.
+	 * @param bool $inline Whether the source came from inline rendering.
+	 * @param string $cache_mode Cache strategy label recorded in the plan.
+	 * @return array<string,mixed> Static template plan with aggregate-ready fields.
+	 */
 	private static function compile_template_plan(string $template, string $template_name, bool $inline, string $cache_mode): array {
 		$normalized_name=self::normalize_template_reference($template_name);
 		$data_paths=[];
@@ -1453,6 +2220,18 @@ class templating {
 		];
 	}
 
+	/**
+	 * Expands a compiled plan into a recursive dependency graph.
+	 *
+	 * Partial, component, import, and layout references are followed when they
+	 * resolve to readable files. The visited map prevents cycles while aggregate
+	 * buckets collect every dependency needed for asset manifests and template diagrams.
+	 *
+	 * @param array<string,mixed> $plan Compiled template plan.
+	 * @param array<string,bool> $visited Template paths already expanded.
+	 * @param int $depth Current graph depth.
+	 * @return array<string,mixed> Expanded plan with graph, aggregate, unresolved references, contract suggestion, and asset manifest.
+	 */
 	private static function expand_template_plan(array $plan, array &$visited, int $depth): array {
 		$node=[
 			'template_name'=>$plan['template_name'],
@@ -1561,6 +2340,16 @@ class templating {
 		return $plan;
 	}
 
+	/**
+	 * Merges aggregate buckets from a child plan into a parent aggregate.
+	 *
+	 * Values are concatenated here and normalized in a later pass so structured
+	 * de-duplication can happen consistently across all bucket types.
+	 *
+	 * @param array<string,array<int,mixed>> $base Parent aggregate buckets.
+	 * @param array<string,array<int,mixed>> $addition Child aggregate buckets.
+	 * @return array<string,array<int,mixed>> Combined aggregate buckets.
+	 */
 	private static function merge_plan_aggregate(array $base, array $addition): array {
 		foreach($addition as $key=>$value){
 			if(!isset($base[$key])){
@@ -1574,6 +2363,12 @@ class templating {
 		return $base;
 	}
 
+	/**
+	 * Normalizes aggregate plan buckets into unique string and structured values.
+	 *
+	 * @param array<string,array<int,mixed>> $aggregate Aggregate buckets collected from a plan graph.
+	 * @return array<string,array<int,mixed>> Aggregate buckets with stable de-duplicated values.
+	 */
 	private static function normalize_plan_aggregate(array $aggregate): array {
 		foreach([
 			'data_paths',
@@ -1602,6 +2397,12 @@ class templating {
 		return $aggregate;
 	}
 
+	/**
+	 * Filters an array down to unique non-empty strings.
+	 *
+	 * @param array<int,mixed> $values Raw values.
+	 * @return list<string> Unique trimmed string values.
+	 */
 	private static function unique_string_values(array $values): array {
 		$unique=[];
 		foreach($values as $value){
@@ -1616,6 +2417,15 @@ class templating {
 		return $unique;
 	}
 
+	/**
+	 * Filters an array down to unique structured array entries.
+	 *
+	 * Entries are compared by JSON signature so field order and nested structure
+	 * are preserved in the resulting payload.
+	 *
+	 * @param array<int,mixed> $values Raw structured values.
+	 * @return list<array<string,mixed>> Unique array entries.
+	 */
 	private static function unique_structured_values(array $values): array {
 		$unique=[];
 		$seen=[];
@@ -1633,6 +2443,14 @@ class templating {
 		return $unique;
 	}
 
+	/**
+	 * Builds the cache signature for registered helpers, extensions, tags, and filters.
+	 *
+	 * Plan caches include this signature so changing available template callables
+	 * invalidates stale plans that may otherwise omit new registry-driven features.
+	 *
+	 * @return string SHA-1 registry signature.
+	 */
 	private static function plan_registry_signature(): string {
 		return sha1(json_encode([
 			'helpers'=>array_values(array_keys(self::$helpers)),
@@ -1642,6 +2460,14 @@ class templating {
 		]));
 	}
 
+	/**
+	 * Builds the cache signature for rendered template output.
+	 *
+	 * Render caches depend on both callable registry shape and asset policy because
+	 * either can change emitted HTML without changing template source.
+	 *
+	 * @return string SHA-1 render cache signature.
+	 */
 	private static function render_cache_signature(): string {
 		return sha1(json_encode([
 			'registry'=>self::plan_registry_signature(),
@@ -1649,6 +2475,16 @@ class templating {
 		]));
 	}
 
+	/**
+	 * Normalizes the asset policy used by descriptors, tags, and manifests.
+	 *
+	 * Missing policy sections fall back to safe defaults: preload enabled for known
+	 * asset families, blocking classic scripts unless extensions imply modules,
+	 * all-media stylesheets, and anonymous font crossorigin.
+	 *
+	 * @param array{preload?:array<string,bool>,scripts?:array<string,mixed>,styles?:array<string,mixed>,fonts?:array<string,mixed>} $policy User-supplied asset policy.
+	 * @return array{preload:array{styles:bool,scripts:bool,images:bool,fonts:bool},scripts:array{strategy:string,type:string},styles:array{media:string},fonts:array{crossorigin:string|null}} Normalized preload, scripts, styles, and fonts policy.
+	 */
 	private static function normalize_asset_policy(array $policy): array {
 		$preload_definition=is_array($policy['preload'] ?? null) ? $policy['preload'] : [];
 		$scripts_definition=is_array($policy['scripts'] ?? null) ? $policy['scripts'] : [];
@@ -1674,10 +2510,23 @@ class templating {
 		];
 	}
 
+	/**
+	 * Uses a boolean policy override only when it is actually boolean.
+	 *
+	 * @param mixed $value User-supplied policy value.
+	 * @param bool $default Default value when the override is not boolean.
+	 * @return bool Normalized boolean policy value.
+	 */
 	private static function bool_or_default(mixed $value, bool $default): bool {
 		return is_bool($value) ? $value : $default;
 	}
 
+	/**
+	 * Normalizes script loading strategy.
+	 *
+	 * @param string $strategy Requested script strategy.
+	 * @return string One of async, defer, or blocking.
+	 */
 	private static function normalize_script_strategy(string $strategy): string {
 		return match(strtolower(trim($strategy))){
 			'async' => 'async',
@@ -1686,6 +2535,12 @@ class templating {
 		};
 	}
 
+	/**
+	 * Normalizes script type policy.
+	 *
+	 * @param string $type Requested script type policy.
+	 * @return string One of classic, module, or auto.
+	 */
 	private static function normalize_script_type(string $type): string {
 		return match(strtolower(trim($type))){
 			'classic' => 'classic',
@@ -1694,6 +2549,12 @@ class templating {
 		};
 	}
 
+	/**
+	 * Normalizes font crossorigin policy.
+	 *
+	 * @param mixed $value Requested crossorigin value.
+	 * @return string|null Crossorigin attribute value, or null to omit it.
+	 */
 	private static function normalize_font_crossorigin(mixed $value): ?string {
 		$value=is_string($value) ? strtolower(trim($value)) : $value;
 		return match($value){
@@ -1703,6 +2564,12 @@ class templating {
 		};
 	}
 
+	/**
+	 * Decides whether an asset descriptor should emit a preload tag.
+	 *
+	 * @param array{type?:string,preload_as?:string|null} $descriptor Asset descriptor.
+	 * @return bool True when the descriptor type is enabled by preload policy.
+	 */
 	private static function descriptor_should_preload(array $descriptor): bool {
 		$type=(string)($descriptor['type'] ?? '');
 		$preload=self::$asset_policy['preload'] ?? [];
@@ -1715,6 +2582,14 @@ class templating {
 		};
 	}
 
+	/**
+	 * Determines a script tag type from asset policy and file extension.
+	 *
+	 * Auto mode treats `.mjs` as module and leaves other scripts classic.
+	 *
+	 * @param array{extension?:string,type?:string} $descriptor Script asset descriptor.
+	 * @return string|null Script type attribute value, or null for classic scripts.
+	 */
 	private static function descriptor_script_type(array $descriptor): ?string {
 		$mode=(string)(self::$asset_policy['scripts']['type'] ?? 'auto');
 		if($mode==='module'){
@@ -1726,6 +2601,14 @@ class templating {
 		return strtolower((string)($descriptor['extension'] ?? ''))==='mjs' ? 'module' : null;
 	}
 
+	/**
+	 * Builds policy-derived script attributes for an asset descriptor.
+	 *
+	 * Module scripts do not receive defer because modules defer by browser default.
+	 *
+	 * @param array{extension?:string,type?:string,path?:string} $descriptor Script asset descriptor.
+	 * @return string Attribute string prefixed with a space, or empty string.
+	 */
 	private static function script_attributes_from_descriptor(array $descriptor): string {
 		$attributes=[];
 		$script_type=self::descriptor_script_type($descriptor);
@@ -1742,6 +2625,12 @@ class templating {
 		return $attributes===[] ? '' : ' '.implode(' ', $attributes);
 	}
 
+	/**
+	 * Builds policy-derived stylesheet attributes for an asset descriptor.
+	 *
+	 * @param array{path?:string,type?:string} $descriptor Stylesheet asset descriptor.
+	 * @return string Attribute string prefixed with a space, or empty string.
+	 */
 	private static function stylesheet_attributes_from_descriptor(array $descriptor): string {
 		$media=trim((string)(self::$asset_policy['styles']['media'] ?? 'all'));
 		if($media==='' || strtolower($media)==='all'){
@@ -1750,6 +2639,11 @@ class templating {
 		return " media='{$media}'";
 	}
 
+	/**
+	 * Builds the configured font crossorigin attribute.
+	 *
+	 * @return string Attribute string prefixed with a space, or empty string.
+	 */
 	private static function font_crossorigin_attribute(): string {
 		$crossorigin=self::$asset_policy['fonts']['crossorigin'] ?? 'anonymous';
 		return is_string($crossorigin) && $crossorigin!==''
@@ -1757,6 +2651,12 @@ class templating {
 			: '';
 	}
 
+	/**
+	 * Builds a preload tag for a normalized descriptor.
+	 *
+	 * @param array{path?:string,type?:string,preload_as?:string|null} $descriptor Asset descriptor with path and preload_as values.
+	 * @return string HTML preload tag.
+	 */
 	private static function preload_tag_from_descriptor(array $descriptor): string {
 		$path=(string)($descriptor['path'] ?? '');
 		$as=(string)($descriptor['preload_as'] ?? '');
@@ -1764,6 +2664,16 @@ class templating {
 		return "<link rel='preload' as='{$as}' href='{$path}'{$crossorigin}>";
 	}
 
+	/**
+	 * Builds the full asset manifest for a compiled or expanded plan.
+	 *
+	 * Asset and dependency references are normalized into descriptors, grouped by
+	 * asset family, rendered into head/body/preload tag collections, and signed so
+	 * callers can compare manifest stability across renders.
+	 *
+	 * @param array<string,mixed> $plan Template plan with asset and dependency buckets.
+	 * @return array{items:list<array<string,mixed>>,stylesheets:list<array<string,mixed>>,scripts:list<array<string,mixed>>,images:list<array<string,mixed>>,fonts:list<array<string,mixed>>,preloads:list<array<string,mixed>>,head_items:list<array<string,mixed>>,body_items:list<array<string,mixed>>,stylesheet_tags:list<string>,script_tags:list<string>,preload_tags:list<string>,head_tags:list<string>,body_tags:list<string>,all_tags:list<string>,head_html:string,body_html:string,html:string,policy:array<string,mixed>,missing:list<array<string,mixed>>,signature:string} Asset manifest with descriptors, grouped tags, missing entries, policy, and signature.
+	 */
 	private static function build_asset_manifest_from_plan(array $plan): array {
 		$aggregate=is_array($plan['aggregate'] ?? null) ? $plan['aggregate'] : [];
 		$asset_references=is_array($aggregate['assets'] ?? null) ? $aggregate['assets'] : (is_array($plan['assets'] ?? null) ? $plan['assets'] : []);
@@ -1858,6 +2768,12 @@ class templating {
 		];
 	}
 
+	/**
+	 * De-duplicates asset descriptors by path, type, and preload target.
+	 *
+	 * @param array<int,mixed> $items Raw descriptor list.
+	 * @return list<array<string,mixed>> Unique asset descriptors.
+	 */
 	private static function unique_asset_descriptors(array $items): array {
 		$unique=[];
 		$seen=[];
@@ -1879,7 +2795,17 @@ class templating {
 		return $unique;
 	}
 
-	// TODO: REMOVE, move to shopiro theme functions
+    /**
+     * Selects a legacy theme-specific value for the current visitor theme mode.
+     *
+     * This compatibility helper reads VISITOR_CTX->theme_mode when available and
+     * returns the matching value from the map. When spacing is requested the value
+     * is padded with single spaces for legacy class-name composition.
+     *
+     * @param array<string, string> $values Theme-mode values keyed by mode.
+     * @param bool|null $spacing Whether to pad the selected value with spaces.
+     * @return string Selected theme value or an empty string.
+     */
     public static function adapt(array $values, ?bool $spacing=false): string {
         $user_theme_mode=defined('VISITOR_CTX') ? VISITOR_CTX->theme_mode : 'default';
         if(!empty($values[$user_theme_mode])){

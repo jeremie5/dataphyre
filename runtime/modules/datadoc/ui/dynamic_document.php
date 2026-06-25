@@ -42,6 +42,21 @@ $data_rows = sql_select(
 $dynadoc_record = is_array($data_rows) && !empty($data_rows)
 	? $data_rows[0]
 	: null;
+if(is_array($dynadoc_record) && !empty($dynadoc_record['file'])){
+	$refresh_result=\dataphyre\datadoc::sync_project_file_if_changed((string)$dynadoc_record['file'], (string)$project['name']);
+	if(($refresh_result['changed'] ?? false)===true || ($refresh_result['deleted'] ?? false)===true){
+		$data_rows=sql_select(
+			$S='*',
+			$L='dataphyre.datadoc_data',
+			$P='WHERE '.implode(' AND ', $conditions),
+			$V=$vars,
+			$F=true
+		);
+		$dynadoc_record=is_array($data_rows) && !empty($data_rows)
+			? $data_rows[0]
+			: null;
+	}
+}
 ?>
 <div class="row main-row">
 	<div class="col p-0 navigation-col">
@@ -90,20 +105,19 @@ $dynadoc_record = is_array($data_rows) && !empty($data_rows)
 			} elseif (str_contains($content_first_line, 'private') === true) {
 				$access_level = 'private';
 			}
-			$sync_button='<a href="'.dataphyre\core::url_self_updated_querystring(array('sync_file'=>base64_encode($dynadoc_record['file']))).'" title="Last sync: '.date('Y-m-d H:i:s', $dynadoc_record['time']).'"><i class="fas fa-sync"></i></a>';
 			$static_pill = $is_static ? '<span class="badge bg-info" style="color:white">static</span> ' : '';
 			$access_pill = "<span class='badge bg-success' style='color:white'>$access_level</span> ";
 			switch ($dynadoc_record['type']) {
 				case 'namespace':
-					echo "<h2><span class='badge bg-primary' style='color:white'>namespace</span> \\{$dynadoc_record['namespace']} {$sync_button}</h2>";
+					echo "<h2><span class='badge bg-primary' style='color:white'>namespace</span> \\{$dynadoc_record['namespace']}</h2>";
 					break;
 				case 'class':
 					if (!empty($dynadoc_record['namespace'])){
-						echo "<h2><span class='badge bg-primary' style='color:white'>Class</span> \\" . $dynadoc_record['namespace'] . "\\" . $dynadoc_record['class'] . " {$sync_button}</h2>";
+						echo "<h2><span class='badge bg-primary' style='color:white'>Class</span> \\" . $dynadoc_record['namespace'] . "\\" . $dynadoc_record['class'] . "</h2>";
 					}
 					else
 					{
-						echo "<h2><span class='badge bg-primary' style='color:white'>Class</span> \\" . $dynadoc_record['class'] . " {$sync_button}</h2>";
+						echo "<h2><span class='badge bg-primary' style='color:white'>Class</span> \\" . $dynadoc_record['class'] . "</h2>";
 					}
 					break;
 				case 'function':
@@ -115,10 +129,10 @@ $dynadoc_record = is_array($data_rows) && !empty($data_rows)
 					$func_display = "{$namespacePart}{$namespaceClassConnector}{$classPart}{$separator}{$functionPart}";
 					echo "<h2>{$access_pill}{$static_pill} "
 					   . "<span class='badge bg-primary' style='color:white'>function</span> "
-					   . "{$func_display}() {$version_string} {$sync_button}</h2>";
+					   . "{$func_display}() {$version_string}</h2>";
 					break;
 				case 'variable':
-					echo "<h2><b><span class='badge bg-primary' style='color:white'>variable</span> \${$dynadoc_record['content']} {$sync_button}</h2>";
+					echo "<h2><b><span class='badge bg-primary' style='color:white'>variable</span> \${$dynadoc_record['content']}</h2>";
 					$dynadoc_record['content']='$'.$dynadoc_record['content'].';'; // Lil hack
 					break;
 				default:

@@ -1,0 +1,14 @@
+[{
+    "max_millis":  10,
+    "name":  "set_http_headers_placeholder_has_safe_core_shape_coverage",
+    "function":  "dp_core_unit_misc_shapes",
+    "args":  [
+
+             ],
+    "expected":  [
+                     {
+                         "custom_script":  "return is_array($result) \u0026\u0026 ($result[\u0027font_contains_class\u0027] ?? null)===true;"
+                     }
+                 ],
+    "file":  "/common/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
+}]

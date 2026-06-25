@@ -1,0 +1,44 @@
+[
+  {
+    "name": "ControllerAction static factory returns controller action",
+    "file": "/common/dataphyre/runtime/modules/routing/Framework/ControllerAction.php",
+    "class": "Dataphyre\\Routing\\ControllerAction",
+    "static_method": true,
+    "function": "static",
+    "args": [
+      "App\\Http\\ProductController",
+      "show",
+      {
+        "bootstrap": "common/bootstrap.php"
+      }
+    ],
+    "expected": "Dataphyre\\Routing\\ControllerAction"
+  },
+  {
+    "name": "ControllerAction instance factory returns controller action",
+    "file": "/common/dataphyre/runtime/modules/routing/Framework/ControllerAction.php",
+    "class": "Dataphyre\\Routing\\ControllerAction",
+    "static_method": true,
+    "function": "instance",
+    "args": [
+      "\\App\\Http\\ProductController",
+      "store"
+    ],
+    "expected": "Dataphyre\\Routing\\ControllerAction"
+  },
+  {
+    "name": "ControllerAction from string applies namespace",
+    "file": "/common/dataphyre/runtime/modules/routing/Framework/ControllerAction.php",
+    "class": "Dataphyre\\Routing\\ControllerAction",
+    "static_method": true,
+    "function": "fromString",
+    "args": [
+      "ProductController@show",
+      "App\\Http\\Controllers",
+      {
+        "static": true
+      }
+    ],
+    "expected": "Dataphyre\\Routing\\ControllerAction"
+  }
+]

@@ -1,0 +1,90 @@
+[
+	{
+		"name": "panel_harness_asserts_result_data_notifications_and_accessibility",
+		"function": "dp_panel_test_harness_result_assertions",
+		"args": [],
+		"expected": true,
+		"file": "/common/dataphyre/runtime/modules/panel/unit_tests/panel_test_harness_helpers.php",
+		"max_millis": 20
+	},
+	{
+		"name": "panel_harness_asserts_redirect_target",
+		"function": "dp_panel_test_harness_redirect_assertion",
+		"args": [],
+		"expected": true,
+		"file": "/common/dataphyre/runtime/modules/panel/unit_tests/panel_test_harness_helpers.php",
+		"max_millis": 20
+	},
+	{
+		"name": "panel_integrates_optional_dataphyre_permission_bridge",
+		"function": "dp_panel_permission_bridge_summary_json",
+		"args": [],
+		"expected": "{\"index_status\":200,\"create_denied_status\":403,\"create_allowed_status\":200,\"relation_denied_status\":403,\"relation_allowed_status\":200,\"guest_page_status\":200,\"page_denied_status\":403,\"page_allowed_status\":200,\"navigation_has_login\":true,\"navigation_has_reports\":false,\"configured_status\":200,\"permission_for_index\":\"panel.orders.view_any\",\"catalog_has_view_any\":true,\"catalog_has_action_context\":true,\"manifest_permission_enabled\":true,\"manifest_permission_catalog_count\":13,\"manifest_permission_example\":\"panel.orders.update\",\"manifest_capability_permission_catalog\":13,\"manifest_decisions_included\":true,\"manifest_decisions_allowed\":1,\"manifest_decisions_denied\":12,\"manifest_decisions_context_tenant\":\"CA\",\"resource_permission_update\":\"panel.orders.update\",\"resource_permission_total\":13,\"action_permission\":\"panel.orders.action.review\",\"action_permission_authorized\":false,\"relation_permission_view\":\"panel.orders.relation.items.view\",\"page_permission_view\":\"panel.reports.view\",\"login_permission_guest\":true}",
+		"file": "/common/dataphyre/runtime/modules/panel/unit_tests/panel_test_harness_helpers.php",
+		"max_millis": 120
+	},
+	{
+		"name": "panel_harness_builds_navigation_and_filters_commands",
+		"function": "dp_panel_test_harness_navigation_summary",
+		"args": [],
+		"expected": "{\"entry_count\":1,\"group_count\":1,\"active_name\":\"orders\",\"orders_badge\":5,\"hidden_settings_absent\":true,\"command_query\":\"sales\",\"matched_count\":1,\"matched_command\":\"open_orders\"}",
+		"file": "/common/dataphyre/runtime/modules/panel/unit_tests/panel_test_harness_helpers.php",
+		"max_millis": 150
+	},
+	{
+		"name": "panel_page_result_builds_sanitized_download_and_json_responses",
+		"function": "dp_panel_page_result_download_summary_json",
+		"args": [],
+		"expected": "{\"csv_status\":200,\"csv_content_type\":\"text/csv; charset=utf-8\",\"csv_disposition\":\"attachment; filename=\\\"Orders-May-2026.csv\\\"\",\"csv_rows\":1,\"json_filename\":\"attachment; filename=\\\"Orders-Export-.json\\\"\",\"json_contains_pretty_items\":true,\"api_status\":202,\"api_header\":\"yes\",\"api_content\":\"{\\\"ok\\\":true}\"}",
+		"file": "/common/dataphyre/runtime/modules/panel/unit_tests/panel_test_harness_helpers.php",
+		"max_millis": 20
+	},
+	{
+		"name": "panel_harness_filters_lazy_visible_commands_and_preserves_sorted_state",
+		"function": "dp_panel_test_harness_command_visibility_summary_json",
+		"args": [],
+		"expected": "{\"command_count\":5,\"registered_commands\":3,\"group_count\":3,\"first_command\":\"quick_help\",\"first_new_tab\":true,\"match_count\":1,\"matched_command\":\"visible_report\",\"matched_url\":\"/admin/reports/sales\"}",
+		"file": "/common/dataphyre/runtime/modules/panel/unit_tests/panel_test_harness_helpers.php",
+		"max_millis": 20
+	},
+	{
+		"name": "panel_regression_suite_records_passed_skipped_and_detail_results",
+		"function": "dp_panel_regression_suite_summary_json",
+		"args": [],
+		"expected": "{\"name\":\"orders_smoke\",\"count_before_run\":3,\"pending_first_status\":\"pending\",\"ok\":true,\"total\":3,\"passed\":2,\"failed\":0,\"skipped\":1,\"first_message\":\"HTML response accepted.\",\"second_records\":2,\"third_status\":\"skipped\",\"manifest_last_report_type\":\"panel_regression_report\"}",
+		"file": "/common/dataphyre/runtime/modules/panel/unit_tests/panel_test_harness_helpers.php",
+		"max_millis": 20
+	},
+	{
+		"name": "panel_localization_catalogue_resolves_scopes_fallbacks_and_manifest",
+		"function": "dp_panel_localization_catalogue_summary_json",
+		"args": [],
+		"expected": "{\"locale\":\"fr-CA\",\"fallback\":\"en\",\"title\":\"Tableau Dataphyre\",\"scoped_save\":\"Enregistrer orders\",\"fallback_delete\":\"Delete orders\",\"default_copy\":\"Missing copy\",\"has_base_fallback\":true,\"manifest_type\":\"panel_localization\",\"manifest_locales\":3,\"manifest_keys\":4}",
+		"file": "/common/dataphyre/runtime/modules/panel/unit_tests/panel_test_harness_helpers.php",
+		"max_millis": 20
+	},
+	{
+		"name": "panel_notification_adapter_tracks_inbox_delivery_and_manifest_state",
+		"function": "dp_panel_notification_adapter_summary_json",
+		"args": [],
+		"expected": "{\"adapter\":\"memory\",\"durable\":false,\"visible_total\":1,\"all_total\":2,\"user_one_unread\":0,\"user_one_read\":1,\"dismissed\":1,\"delivery_count\":2,\"delivery_channel\":\"broadcast\",\"action_url\":\"/admin/orders/1001\",\"channels\":[\"database\",\"mail\"],\"read_at\":\"2026-05-12T11:00:00+00:00\",\"capability_delivery\":true,\"manifest_type\":\"notification_inbox_manifest\"}",
+		"file": "/common/dataphyre/runtime/modules/panel/unit_tests/panel_test_harness_helpers.php",
+		"max_millis": 20
+	},
+	{
+		"name": "panel_routes_compile_for_routing_and_mvc_and_round_trip_http_requests",
+		"function": "dp_panel_route_compatibility_summary_json",
+		"args": [],
+		"expected": "{\"url\":\"/admin/orders/42/action/review?tenant=CA\",\"duplicate_resource_url\":\"/admin/orders?per_page=12\",\"path_style_edit_url\":\"/admin/orders/42/edit?density=compact\",\"route_round_trips\":{\"index\":{\"url\":\"/admin/orders?tenant=CA\",\"resource\":\"orders\",\"operation\":\"index\",\"record\":null,\"action\":null,\"relation\":null},\"show\":{\"url\":\"/admin/orders/42?tenant=CA\",\"resource\":\"orders\",\"operation\":\"show\",\"record\":\"42\",\"action\":null,\"relation\":null},\"edit\":{\"url\":\"/admin/orders/42/edit?tenant=CA\",\"resource\":\"orders\",\"operation\":\"edit\",\"record\":\"42\",\"action\":null,\"relation\":null},\"board\":{\"url\":\"/admin/orders/board?tenant=CA\",\"resource\":\"orders\",\"operation\":\"board\",\"record\":null,\"action\":null,\"relation\":null},\"action\":{\"url\":\"/admin/orders/42/action/review?tenant=CA\",\"resource\":\"orders\",\"operation\":\"action\",\"record\":\"42\",\"action\":\"review\",\"relation\":null},\"relation\":{\"url\":\"/admin/orders/42/relation/items?tenant=CA\",\"resource\":\"orders\",\"operation\":\"relation\",\"record\":\"42\",\"action\":null,\"relation\":\"items\"}},\"resource\":\"orders\",\"record\":\"42\",\"operation\":\"action\",\"action\":\"review\",\"tenant\":\"CA\",\"routing_count\":2,\"routing_path\":\"/admin/{...panel_segments}\",\"routing_surface\":\"default\",\"routing_mount\":\"/admin\",\"route_manifest_type\":\"panel_route_manifest\",\"route_manifest_asset\":\"/admin/assets/{asset}\",\"route_manifest_upload_url\":\"/admin/upload\",\"mounted_count\":4,\"mounted_asset_path\":\"/admin/assets/{asset}\",\"mounted_asset_handler\":\"Dataphyre\\\\Panel\\\\PanelAssetController\",\"mounted_upload_path\":\"/admin/upload\",\"mounted_upload_method\":\"POST\",\"asset_url_path\":\"/admin/assets/panel.css\",\"upload_url\":\"/admin/upload\",\"asset_response_status\":200,\"asset_response_type\":\"text/css; charset=UTF-8\",\"upload_response_status\":405,\"panel_manifest_route_mounted\":true,\"panel_manifest_route_prefix\":\"/admin\",\"controller_response_status\":200,\"controller_asset_mounted\":true,\"controller_script_mounted\":true,\"trace_asset_events\":1,\"trace_upload_events\":1,\"trace_dispatch_end_events\":1,\"mvc_count\":2,\"mvc_mounted_count\":4,\"mvc_path\":\"/backoffice/{...panel_segments}\",\"mvc_handler\":\"Dataphyre\\\\Panel\\\\PanelRouteController\",\"response_class\":\"Dataphyre\\\\Http\\\\Response\",\"response_status\":202,\"response_header\":\"text/html; charset=utf-8\"}",
+		"file": "/common/dataphyre/runtime/modules/panel/unit_tests/panel_test_harness_helpers.php",
+		"max_millis": 120
+	},
+	{
+		"name": "panel_host_http_fragment_requests_return_json_payloads",
+		"function": "dp_panel_host_http_fragment_summary_json",
+		"args": [],
+		"expected": "{\"response_class\":\"Dataphyre\\\\Http\\\\Response\",\"status\":200,\"content_type\":\"application/json; charset=utf-8\",\"has_html\":true,\"has_main\":true,\"payload_status\":200}",
+		"file": "/common/dataphyre/runtime/modules/panel/unit_tests/panel_test_harness_helpers.php",
+		"max_millis": 120
+	}
+]

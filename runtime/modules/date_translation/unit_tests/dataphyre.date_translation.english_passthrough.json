@@ -1,0 +1,22 @@
+[
+  {
+    "name": "translate_date_returns_english_input_without_locale_files",
+    "file": "/common/dataphyre/runtime/modules/date_translation/kernel/date_translation.main.php",
+    "class": "dataphyre\\date_translation",
+    "static_method": true,
+    "function": "translate_date",
+    "args": ["January 2nd 2026", "en", "F jS Y"],
+    "expected": "January 2nd 2026",
+    "max_millis": 5
+  },
+  {
+    "name": "translate_date_returns_regional_english_input_without_locale_files",
+    "file": "/common/dataphyre/runtime/modules/date_translation/kernel/date_translation.main.php",
+    "class": "dataphyre\\date_translation",
+    "static_method": true,
+    "function": "translate_date",
+    "args": ["Tuesday March 3rd", "en_CA", "l F jS"],
+    "expected": "Tuesday March 3rd",
+    "max_millis": 5
+  }
+]

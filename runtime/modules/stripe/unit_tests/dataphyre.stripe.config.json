@@ -1,0 +1,37 @@
+[
+  {
+    "name": "Stripe returns configured live keys when test mode is off",
+    "file": "/common/dataphyre/runtime/modules/stripe/unit_tests/stripe_test_helpers.php",
+    "function": "dp_stripe_unit_key_selection_json",
+    "args": [],
+    "expected": "{\"publishable\":\"pk_live_unit\",\"secret\":\"unit_live_secret\",\"webhook\":\"unit_webhook_secret\"}"
+  },
+  {
+    "name": "Stripe exposes deterministic unit config state",
+    "file": "/common/dataphyre/runtime/modules/stripe/unit_tests/stripe_test_helpers.php",
+    "function": "dp_stripe_unit_config_state_json",
+    "args": [],
+    "expected": "{\"test_mode\":false,\"live_keys_selected\":true,\"minimum_amount_configured\":[]}"
+  },
+  {
+    "name": "Stripe live config contract is locally deterministic",
+    "file": "/common/dataphyre/runtime/modules/stripe/unit_tests/stripe_test_helpers.php",
+    "function": "dp_stripe_unit_config_contract_json",
+    "args": [],
+    "expected": "{\"webhook_falls_back_to_false\":true,\"live_secret_is_string\":true,\"publishable_secret_are_distinct\":true,\"minimum_amount_empty_array\":true}"
+  },
+  {
+    "name": "Stripe load_stripe honors local dialback short circuit",
+    "file": "/common/dataphyre/runtime/modules/stripe/unit_tests/stripe_test_helpers.php",
+    "function": "dp_stripe_unit_load_stripe_dialback_json",
+    "args": [],
+    "expected": "{\"blocked_load\":false,\"platform_account\":\"unit_dialback_existing\",\"api_key_unchanged\":true}"
+  },
+  {
+    "name": "Stripe public API contract remains reflection stable",
+    "file": "/common/dataphyre/runtime/modules/stripe/unit_tests/stripe_test_helpers.php",
+    "function": "dp_stripe_unit_public_api_contract_json",
+    "args": [],
+    "expected": "{\"load_stripe_returns_bool\":true,\"publishable_returns_string_or_bool\":true,\"secret_returns_string_or_bool\":true,\"test_mode_private\":true,\"handle_new_payment_method_params\":5}"
+  }
+]

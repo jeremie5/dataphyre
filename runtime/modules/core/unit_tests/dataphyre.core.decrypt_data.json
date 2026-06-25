@@ -1,0 +1,14 @@
+[{
+    "max_millis":  20,
+    "name":  "decrypt_data_returns_original_payload_for_matching_salt",
+    "function":  "dp_core_unit_crypto_round_trip",
+    "args":  [
+
+             ],
+    "expected":  [
+                     {
+                         "custom_script":  "return is_array($result) \u0026\u0026 ($result[\u0027decrypted\u0027] ?? null)===\u0027secret payload\u0027;"
+                     }
+                 ],
+    "file":  "/common/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
+}]

@@ -13,43 +13,18 @@ if(isset($_GET['logout'])){
 	exit();
 }
 
-if(isset($_GET['sync_file'])){
-	dataphyre\datadoc::sync_file(
-		base64_decode($_GET['sync_file']),
-		\dataphyre\routing::$bindings['project'] ?? ($_GET['project'] ?? '')
-	);
-}
+require_once(__DIR__.'/assets_support.php');
 ?>
-<style>
-@font-face {
-	font-family: Phyro-Bold; src: url('https://cdn.shopiro.ca/res/assets/genesis/fonts/Phyro-Bold.ttf'); 
-} 
-.phyro-bold {
-  font-family: 'Phyro-Bold', sans-serif;
-  font-weight: 700;
-  font-style: normal;
-  line-height: 1.15;
-  letter-spacing: -.02em;
-  -webkit-font-smoothing: antialiased;
-}
-</style>
 <html lang="zxx">
 <head>
     <meta charset="UTF-8">
 	<title>DataDoc</title>
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
 	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-	<link rel="icon" type="image/png" sizes="32x32" href="https://cdn.shopiro.ca/res/assets/genesis/img/favicon-32x32.png?v=1.5.8">
-	<link rel="icon" type="image/png" sizes="16x16" href="https://cdn.shopiro.ca/res/assets/genesis/img/favicon-16x16.png?v=1.5.8">
 	<meta http-equiv="Content-Type" charset="UTF-8" content="text/html; charset=UTF-8" />
 	<meta name="msapplication-TileColor" content="#343a40">
 	<meta name="theme-color" content="#343a40">
-	<script src="https://cdn.shopiro.ca/res/shopirocs/library/jquery.min.js"></script>
-	<link rel="stylesheet" href="https://cdn.shopiro.ca/res/assets/genesis/css/bootstrap.min.css?v=1.5.8">
-	<link rel="stylesheet" href="https://cdn.shopiro.ca/res/assets/genesis/css/style.css?v=1.5.8">
-	<link rel="stylesheet" href="https://cdn.shopiro.ca/res/assets/genesis/css/responsive.css?v=1.5.8">
-	<link rel="stylesheet" href="https://cdn.shopiro.ca/res/assets/genesis/css/font-awesome.min.css?v=1.5.8">
-	<link rel="stylesheet" href="https://cdn.shopiro.ca/res/assets/genesis/fontawesome-5.13/css/all.css?v=1.5.8">
+	<link rel="stylesheet" href="<?=htmlspecialchars(dataphyre_datadoc_ui_asset_url('datadoc-ui.css'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');?>">
 </head>
 <body class="<?=adapt(["dark"=>"dark-mode bg-dark"]);?>">
     <div id="wrapper">

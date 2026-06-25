@@ -1,0 +1,58 @@
+[
+  {
+    "name": "pending_task_reports_fulfilled_and_rejected_state",
+    "file": "/common/dataphyre/runtime/modules/async/unit_tests/async_test_helpers.php",
+    "function": "DataphyreUnitTests\\async_pending_task_state_summary_json",
+    "args": [],
+    "expected": "{\"fulfilled_state\":\"fulfilled\",\"fulfilled_value\":\"ready\",\"fulfilled_reason_default\":\"none\",\"fulfilled_settled\":true,\"fulfilled_pending\":false,\"rejected_state\":\"rejected\",\"rejected_value_default\":\"fallback\",\"rejected_reason\":\"nope\",\"rejected_settled\":true}",
+    "max_millis": 10
+  },
+  {
+    "name": "inline_dispatcher_executes_and_chains_synchronously",
+    "file": "/common/dataphyre/runtime/modules/async/unit_tests/async_test_helpers.php",
+    "function": "DataphyreUnitTests\\async_inline_dispatch_summary_json",
+    "args": [],
+    "expected": "{\"state\":\"fulfilled\",\"value\":42,\"chained_state\":\"fulfilled\",\"chained_value\":\"value:42\"}",
+    "max_millis": 10
+  },
+  {
+    "name": "batch_wraps_tasks_and_combines_inline_results",
+    "file": "/common/dataphyre/runtime/modules/async/unit_tests/async_test_helpers.php",
+    "function": "DataphyreUnitTests\\async_batch_summary_json",
+    "args": [],
+    "expected": "{\"count\":2,\"tasks_are_pending_tasks\":true,\"all\":[\"first\",\"SECOND\"],\"race\":\"first\"}",
+    "max_millis": 10
+  },
+  {
+    "name": "pool_map_preserves_input_order_and_each_returns_null",
+    "file": "/common/dataphyre/runtime/modules/async/unit_tests/async_test_helpers.php",
+    "function": "DataphyreUnitTests\\async_pool_summary_json",
+    "args": [],
+    "expected": "{\"mapped\":[\"0:6\",\"1:2\",\"2:4\"],\"each_value\":null,\"each_fulfilled\":true}",
+    "max_millis": 10
+  },
+  {
+    "name": "inline_dispatcher_rejection_can_be_recovered_and_finalized",
+    "file": "/common/dataphyre/runtime/modules/async/unit_tests/async_test_helpers.php",
+    "function": "DataphyreUnitTests\\async_rejection_recovery_summary_json",
+    "args": [],
+    "expected": "{\"original_state\":\"rejected\",\"original_reason_class\":\"RuntimeException\",\"recovered_state\":\"fulfilled\",\"recovered_value\":\"recovered:unit-failure\",\"finalized\":1}",
+    "max_millis": 10
+  },
+  {
+    "name": "manager_extends_and_caches_named_dispatchers",
+    "file": "/common/dataphyre/runtime/modules/async/unit_tests/async_test_helpers.php",
+    "function": "DataphyreUnitTests\\async_manager_extension_summary_json",
+    "args": [],
+    "expected": "{\"dispatcher_cached\":true,\"task_state\":\"fulfilled\",\"task_value\":\"job:21\",\"missing_driver_error\":\"Async dispatcher 'missing-driver' is not registered.\"}",
+    "max_millis": 10
+  },
+  {
+    "name": "empty_batch_and_pool_return_stable_empty_results",
+    "file": "/common/dataphyre/runtime/modules/async/unit_tests/async_test_helpers.php",
+    "function": "DataphyreUnitTests\\async_empty_batch_and_pool_summary_json",
+    "args": [],
+    "expected": "{\"batch_count\":0,\"all\":[],\"race\":null,\"settled\":[],\"pool_empty\":[]}",
+    "max_millis": 10
+  }
+]

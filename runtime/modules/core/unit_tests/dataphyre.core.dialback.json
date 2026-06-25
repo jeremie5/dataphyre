@@ -1,41 +1,60 @@
 [
     {
-        "name": "Basic Dialback Event",
-        "function": "dialback",
-        "class": "dataphyre\\core",
-        "args": ["sample_event", {"key1": "value1", "key2": 42}],
-        "expected": [
-            {
-                "custom_script": "return is_array($result) && count($result) > 0;"
-            },
-            "array"
-        ],
-       "file_dynamic": "return dp_module_present(\"core\")[0];",
-        "max_millis": 5
+        "name":  "Basic Dialback Event",
+        "function":  "dp_core_unit_dialback_basic",
+        "args":  [
+
+                 ],
+        "expected":  [
+                         {
+                             "custom_script":  "return is_array($result) \u0026\u0026 count($result) \u003e 0;"
+                         },
+                         "array"
+                     ],
+        "max_millis":  5,
+        "file":  "/common/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
     },
     {
-        "name": "Empty Dialback Event",
-        "function": "dialback",
-        "class": "dataphyre\\core",
-        "args": ["nonexistent_event"],
-        "expected": [
-            null
-        ],
-        "file_dynamic": "return dp_module_present(\"core\")[0];",
-        "max_millis": 5
+        "name":  "Empty Dialback Event",
+        "function":  "dialback",
+        "class":  "dataphyre\\core",
+        "args":  [
+                     "nonexistent_event"
+                 ],
+        "expected":  [
+                         null
+                     ],
+        "file_dynamic":  "return dp_module_present(\"core\")[0];",
+        "max_millis":  5
     },
     {
-        "name": "Dialback Event with Multiple Functions",
-        "function": "dialback",
-        "class": "dataphyre\\core",
-        "args": ["multi_func_event", {"data_key": "data_value"}],
-        "expected": [
-            {
-                "custom_script": "return is_array($result) && count($result) > 1;"
-            },
-            "array"
-        ],
-        "file_dynamic": "return dp_module_present(\"core\")[0];",
-        "max_millis": 5
+        "name":  "Dialback Event with Multiple Functions",
+        "function":  "dp_core_unit_dialback_multi",
+        "args":  [
+
+                 ],
+        "expected":  [
+                         {
+                             "custom_script":  "return is_array($result) \u0026\u0026 count($result) \u003e 1;"
+                         },
+                         "array"
+                     ],
+        "max_millis":  5,
+        "file":  "/common/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
+    },
+    {
+        "name":  "Dialback Catalog Has Contract",
+        "function":  "dp_core_unit_dialback_catalog_has_contract",
+        "args":  [
+
+                 ],
+        "expected":  [
+                         {
+                             "custom_script":  "return is_array($result) && !in_array(false, $result, true);"
+                         },
+                         "array"
+                     ],
+        "max_millis":  5,
+        "file":  "/common/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
     }
 ]

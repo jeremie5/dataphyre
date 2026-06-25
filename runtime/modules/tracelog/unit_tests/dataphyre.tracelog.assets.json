@@ -1,0 +1,50 @@
+[
+  {
+    "name": "asset_name_accepts_safe_basenames_only",
+    "file": "/common/dataphyre/runtime/modules/tracelog/unit_tests/tracelog_test_helpers.php",
+    "function": "DataphyreUnitTests\\tracelog_asset_name_summary_json",
+    "args": [],
+    "expected": "{\"plain\":\"viewer.css\",\"windows_path\":\"plotter.js\",\"traversal_basename\":\"plotter.css\",\"invalid_space\":\"\",\"invalid_extension_chars\":\"\"}",
+    "max_millis": 5
+  },
+  {
+    "name": "asset_content_returns_embedded_viewer_and_plotter_assets",
+    "file": "/common/dataphyre/runtime/modules/tracelog/unit_tests/tracelog_test_helpers.php",
+    "function": "DataphyreUnitTests\\tracelog_asset_content_summary_json",
+    "args": [],
+    "expected": "{\"viewer_type\":\"text/css; charset=UTF-8\",\"viewer_contains_body_rule\":true,\"plotter_type\":\"application/javascript; charset=UTF-8\",\"plotter_contains_force_simulation\":true,\"missing\":null}",
+    "max_millis": 5
+  },
+  {
+    "name": "asset_url_includes_safe_name_and_version",
+    "file": "/common/dataphyre/runtime/modules/tracelog/unit_tests/tracelog_test_helpers.php",
+    "function": "DataphyreUnitTests\\tracelog_asset_url_summary_json",
+    "args": [],
+    "expected": "{\"viewer_version_is_sha16\":true,\"missing_version\":\"missing\",\"viewer_url\":\"/dataphyre/tracelog/assets/viewer.css?v=d7bfe7d6e16a4de9\",\"missing_url\":\"/dataphyre/tracelog/assets/missing.css?v=missing\"}",
+    "max_millis": 5
+  },
+  {
+    "name": "plotter_css_asset_uses_embedded_content_and_cache_version",
+    "file": "/common/dataphyre/runtime/modules/tracelog/unit_tests/tracelog_test_helpers.php",
+    "function": "DataphyreUnitTests\\tracelog_asset_plotter_css_summary_json",
+    "args": [],
+    "expected": "{\"name_from_nested_path\":\"plotter.css\",\"content_type\":\"text/css; charset=UTF-8\",\"contains_tooltip_rule\":true,\"version_is_sha16\":true,\"url_uses_plotter_css\":true}",
+    "max_millis": 5
+  },
+  {
+    "name": "asset_helpers_normalize_invalid_and_case_variant_names",
+    "file": "/common/dataphyre/runtime/modules/tracelog/unit_tests/tracelog_test_helpers.php",
+    "function": "DataphyreUnitTests\\tracelog_asset_invalid_input_summary_json",
+    "args": [],
+    "expected": "{\"empty_name\":\"\",\"blank_name\":\"\",\"uppercase_kept\":\"Viewer.CSS\",\"directory_traversal_without_file\":\"..\",\"unsafe_url\":\"/dataphyre/tracelog/assets/?v=missing\"}",
+    "max_millis": 5
+  },
+  {
+    "name": "plotter_javascript_preserves_graph_interaction_contract",
+    "file": "/common/dataphyre/runtime/modules/tracelog/unit_tests/tracelog_test_helpers.php",
+    "function": "DataphyreUnitTests\\tracelog_plotter_javascript_contract_summary_json",
+    "args": [],
+    "expected": "{\"wraps_in_iife\":true,\"reads_window_data\":true,\"creates_links\":true,\"creates_nodes\":true,\"has_zoom_handler\":true,\"has_tooltip_events\":true,\"uses_force_link_ids\":true}",
+    "max_millis": 5
+  }
+]

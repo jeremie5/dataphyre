@@ -1,0 +1,30 @@
+[
+    {
+        "name": "optimize_rules_removes_shadowed_grants_but_keeps_denies",
+        "function": "optimizeRules",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            ["panel.orders.*", "panel.orders.view_any", "panel.orders.update", "-panel.orders.force_delete"]
+        ],
+        "expected": {
+            "custom_script": "return is_array($result) && in_array('panel.orders.*', $result, true) && in_array('-panel.orders.force_delete', $result, true) && !in_array('panel.orders.update', $result, true);"
+        },
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    },
+    {
+        "name": "analyze_rules_reports_conflicts_and_shadowed_rules",
+        "function": "analyzeRules",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            ["panel.orders.*", "panel.orders.update", "panel.orders.update", "-panel.orders.update"]
+        ],
+        "expected": {
+            "custom_script": "return is_array($result) && ($result['ok'] ?? null) === false && in_array('panel.orders.update', $result['removed'] ?? [], true) && count(array_filter($result['findings'] ?? [], fn($f) => ($f['type'] ?? '') === 'conflicting_rule')) >= 1;"
+        },
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    }
+]

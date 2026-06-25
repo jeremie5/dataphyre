@@ -7,6 +7,13 @@
  */
 namespace dataphyre\fulltext_engine\stemming;
 
+/**
+ * English Porter-style stemmer used by the fulltext engine.
+ *
+ * The stemmer is stateless aside from compiled vowel/consonant regex fragments
+ * and applies the classic suffix-reduction steps in order. Inputs are expected to
+ * already be tokenized/lowercased by the caller.
+ */
 class en{
     /**
      * Regex for matching a consonant
@@ -60,6 +67,16 @@ class en{
         return $word;
     }
 
+    /**
+     * Applies the Step 1b suffix reductions for English stemming.
+     *
+     * This step handles eed, ing, and ed endings, then applies the follow-up
+     * at/bl/iz, double-consonant, and CVC adjustments defined by the Porter
+     * algorithm. The input string is returned after any applicable reduction.
+     *
+     * @param string $word Word currently being stemmed.
+     * @return string Word after Step 1b processing.
+     */
     private static function doPartB($word){
         if(substr($word, -2, 1) != 'e' || !self::replace($word, 'eed', 'ee', 0)){
             // First rule

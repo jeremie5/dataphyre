@@ -7,6 +7,14 @@
  */
 namespace dataphyre\sql;
 
+/**
+ * Applies and generates SQL schema migration plans.
+ *
+ * Migration plans are YAML files scoped to common Dataphyre or project-specific
+ * roots. The runner serializes execution with a filesystem lock, records table
+ * versions in JSON, executes DBMS-specific SQL through the SQL module, and can
+ * generate snapshot-based migration diffs for columns, indexes, and grants.
+ */
 class migration {
 
     private static array $migration_roots=[
@@ -17,6 +25,18 @@ class migration {
     private static string $lock_file=ROOTPATH['common_dataphyre'].'sql_migration/migrating';
 	private static string $snapshot_dir = ROOTPATH['common_dataphyre'] . 'sql_migration/snapshots/';
 	
+    /**
+     * Runs every pending migration plan for every configured scope.
+     *
+     * The method creates a lock file before scanning plan roots, skips versions
+     * already recorded in `table_versions.json`, executes only SQL matching the
+     * active DBMS, and updates the version log after each successful migration.
+     * Failures are logged, the lock is removed, and Dataphyre is placed into an
+     * unavailable error state.
+     *
+     * @param bool $interactive Whether to echo progress lines for CLI-style invocations.
+     * @return void
+     */
     public static function run_all(bool $interactive=false): void {
         tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
         if(file_exists(self::$lock_file)){
@@ -69,6 +89,14 @@ class migration {
         unlink(self::$lock_file);
     }
 
+    /**
+     * Parses a migration YAML file.
+     *
+     * @param string $path Absolute or project-relative YAML plan path.
+     * @return array<string, mixed> Parsed migration plan, or an empty array for empty files.
+     *
+     * @throws \RuntimeException When the PHP YAML extension is unavailable.
+     */
     private static function parse_yaml(string $path): array {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
         if(!function_exists('yaml_parse_file')){
@@ -77,6 +105,13 @@ class migration {
         return yaml_parse_file($path) ?: [];
     }
 
+    /**
+     * Returns the last applied migration version for a table.
+     *
+     * @param string $table Table name from a migration plan.
+     * @param string $scope Migration scope such as `common_dataphyre` or `dataphyre`.
+     * @return int Applied version number, or zero when the table has no version record.
+     */
     public static function get_current_version(string $table, string $scope='common_dataphyre'): int {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
         $versions=file_exists(self::$version_file) ? json_decode(file_get_contents(self::$version_file), true) : [];
@@ -84,16 +119,43 @@ class migration {
         return $versions[$table_key]['current_version'] ?? 0;
     }
 
+    /**
+     * Returns the complete migration version registry.
+     *
+     * The returned array mirrors `table_versions.json` and is safe for status
+     * pages, diagnostics, and maintenance tooling. Missing registries are treated as
+     * an empty migration state.
+     *
+     * @return array<string, array{current_version?: int, log?: array<int, array<string, mixed>>}> Table version records keyed by `scope:table`.
+     */
     public static function status(): array {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
         return file_exists(self::$version_file) ? json_decode(file_get_contents(self::$version_file), true) : [];
     }
 
+    /**
+     * Reports whether a migration lock is currently present.
+     *
+     * @return bool True when run_all() has created the lock file and not yet removed it.
+     */
     public static function is_migrating(): bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
         return file_exists(self::$lock_file);
     }
 	
+    /**
+     * Generates a migration YAML file from the current database schema snapshot.
+     *
+     * The method reads columns, indexes, and DBMS-supported grants for a table,
+     * compares columns with the previous JSON snapshot, writes the new snapshot,
+     * and emits a timestamped migration plan when changes are detected. Generated
+     * column SQL is intentionally conservative: added columns are created as TEXT
+     * and dropped columns are renamed before a commented drop statement.
+     *
+     * @param string $table Table to inspect.
+     * @param string $scope Migration scope that owns the snapshot and generated plan.
+     * @return ?string Generated YAML filename, or null when no migration SQL was produced.
+     */
     public static function generate_migration_diff(string $table, string $scope='dataphyre'): ?string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
         $dbms=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][DP_SQL_CFG['default_cluster']]['dbms'];

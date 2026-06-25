@@ -1,0 +1,62 @@
+[
+    {
+        "name": "semantic_wildcard_allows_child",
+        "function": "can",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            {
+                "permissions": ["panel.orders.*"]
+            },
+            "panel.orders.update"
+        ],
+        "expected": true,
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    },
+    {
+        "name": "subtractive_permission_denies_exact",
+        "function": "can",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            {
+                "permissions": ["panel.orders.*", "-panel.orders.force_delete"]
+            },
+            "panel.orders.force_delete"
+        ],
+        "expected": false,
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    },
+    {
+        "name": "child_exists_matches_any_positive_child",
+        "function": "can",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            {
+                "permissions": ["inventory.products.view", "-inventory.products.delete"]
+            },
+            "inventory.products.%"
+        ],
+        "expected": true,
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    },
+    {
+        "name": "strict_check_ignores_parent_inference",
+        "function": "can",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            {
+                "permissions": ["inventory.products.view"]
+            },
+            "<inventory.products>"
+        ],
+        "expected": false,
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    }
+]

@@ -1,0 +1,108 @@
+[
+  {
+    "name": "locale_definition_from_array_normalizes_empty_optional_fields",
+    "file": "/common/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
+    "function": "DataphyreUnitTests\\localization_definition_json",
+    "args": [
+      {
+        "lang": "fr",
+        "theme": "",
+        "path": "",
+        "type": "global",
+        "name": "checkout.title",
+        "string": "Paiement",
+        "edit_time": ""
+      }
+    ],
+    "expected": "{\"id\":null,\"lang\":\"fr\",\"theme\":null,\"path\":null,\"type\":\"global\",\"name\":\"checkout.title\",\"string\":\"Paiement\",\"edit_time\":null}",
+    "max_millis": 5
+  },
+  {
+    "name": "locale_definition_preserves_source_branch_and_commit",
+    "file": "/common/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
+    "function": "DataphyreUnitTests\\localization_definition_source_json",
+    "args": [
+      {
+        "lang": "en",
+        "theme": "",
+        "path": "",
+        "type": "global",
+        "name": "welcome",
+        "string": "Welcome",
+        "edit_time": "",
+        "source_branch": "feature/locales",
+        "source_commit": "abc123"
+      }
+    ],
+    "expected": "{\"source_branch\":\"feature/locales\",\"source_commit\":\"abc123\",\"serialized\":{\"id\":null,\"lang\":\"en\",\"theme\":null,\"path\":null,\"type\":\"global\",\"name\":\"welcome\",\"string\":\"Welcome\",\"edit_time\":null,\"source_branch\":\"feature/locales\",\"source_commit\":\"abc123\"}}",
+    "max_millis": 5
+  },
+  {
+    "name": "locale_definition_catalog_keeps_filters_and_entries",
+    "file": "/common/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
+    "function": "DataphyreUnitTests\\localization_definition_catalog_json",
+    "args": [
+      [
+        {
+          "id": 7,
+          "lang": "en",
+          "theme": "admin",
+          "path": "/orders/index.php",
+          "type": "local",
+          "name": "orders.empty",
+          "string": "No orders yet",
+          "edit_time": "2026-01-02 03:04:05"
+        },
+        "ignored"
+      ],
+      {
+        "lang": "en"
+      },
+      10,
+      5
+    ],
+    "expected": "{\"filters\":{\"lang\":\"en\"},\"limit\":10,\"offset\":5,\"entries\":[{\"id\":7,\"lang\":\"en\",\"theme\":\"admin\",\"path\":\"/orders/index.php\",\"type\":\"local\",\"name\":\"orders.empty\",\"string\":\"No orders yet\",\"edit_time\":\"2026-01-02 03:04:05\"}]}",
+    "max_millis": 5
+  },
+  {
+    "name": "unknown_locale_entry_uppercases_name_and_serializes_context",
+    "file": "/common/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
+    "function": "DataphyreUnitTests\\localization_unknown_entry_json",
+    "args": [
+      " checkout.title ",
+      {
+        "theme": "shop",
+        "path": "/checkout/index.php",
+        "scope": "local",
+        "string": "Checkout",
+        "detection_lang": "en"
+      }
+    ],
+    "expected": "{\"name\":\"CHECKOUT.TITLE\",\"theme\":\"shop\",\"path\":\"/checkout/index.php\",\"scope\":\"local\",\"string\":\"Checkout\",\"detection_language\":\"en\"}",
+    "max_millis": 5
+  },
+  {
+    "name": "locale_definition_batch_result_marks_all_skipped_as_noop",
+    "file": "/common/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
+    "function": "DataphyreUnitTests\\localization_batch_result_json",
+    "args": ["save", true, 2, 0, 2, false, 0],
+    "expected": "{\"operation\":\"save\",\"ok\":true,\"requested\":2,\"processed\":0,\"skipped\":2,\"rebuilt\":false,\"rebuild_targets\":0,\"noop\":true}",
+    "max_millis": 5
+  },
+  {
+    "name": "localization_rebuild_selection_local_keeps_filters",
+    "file": "/common/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
+    "function": "DataphyreUnitTests\\localization_rebuild_selection_json",
+    "args": ["local"],
+    "expected": "{\"types\":[\"local\"],\"languages\":[\"en\"],\"themes\":[\"admin\"],\"paths\":[\"/orders/index.php\"]}",
+    "max_millis": 5
+  },
+  {
+    "name": "localization_maintenance_result_embeds_selection",
+    "file": "/common/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
+    "function": "DataphyreUnitTests\\localization_maintenance_result_json",
+    "args": [],
+    "expected": "{\"operation\":\"rebuild\",\"status\":\"ok\",\"ok\":true,\"noop\":false,\"count\":3,\"forced\":true,\"selection\":{\"types\":[\"local\"],\"languages\":[\"en\"],\"themes\":[\"admin\"],\"paths\":[\"/orders/index.php\"]}}",
+    "max_millis": 5
+  }
+]

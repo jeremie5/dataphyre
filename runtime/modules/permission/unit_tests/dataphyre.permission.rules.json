@@ -1,0 +1,56 @@
+[
+    {
+        "name": "from_shield_many_normalizes_duplicates_and_negative_rules",
+        "function": "fromShieldMany",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            ["view_order", "view_order", "-force_delete_order"]
+        ],
+        "expected": [
+            ["panel.orders.view", "-panel.orders.force_delete"]
+        ],
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    },
+    {
+        "name": "name_supports_custom_permission_and_resource_prefixes",
+        "function": "name",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            "invoice",
+            "store",
+            {
+                "permission_prefix": "admin",
+                "resource_prefix": "billing"
+            }
+        ],
+        "expected": "admin.billing.invoices.create",
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    },
+    {
+        "name": "audit_roles_reports_clean_known_role_set",
+        "function": "auditRoles",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            {
+                "manager": ["panel.orders.view"]
+            },
+            ["panel.orders.view"],
+            [],
+            {
+                "warn_uncovered_catalog": false
+            }
+        ],
+        "expected": [
+            {
+                "custom_script": "return is_array($result) && ($result['ok'] ?? null)===true && ($result['counts']['error'] ?? null)===0 && ($result['counts']['warning'] ?? null)===0 && ($result['counts']['info'] ?? null)===0 && ($result['findings'] ?? null)===[] && ($result['catalog_count'] ?? null)===1 && ($result['role_count'] ?? null)===1 && ($result['assignment_count'] ?? null)===0;"
+            }
+        ],
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    }
+]

@@ -1,0 +1,26 @@
+[
+  {
+    "name": "binding context resolves data, overrides, slots, and theme paths",
+    "file": "/common/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
+    "function": "DataphyreUnitTests\\templating_binding_context_json",
+    "args": [],
+    "expected": "{\"binding_trace_id\":null,\"has_title\":true,\"missing\":\"fallback\",\"override_price\":129,\"slot\":\"Hello\",\"theme\":\"red\"}"
+  },
+  {
+    "name": "asset manifest renders grouped tags and summary metadata",
+    "file": "/common/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
+    "function": "DataphyreUnitTests\\templating_asset_manifest_summary_json",
+    "args": [{
+      "stylesheets": ["/app.css"],
+      "scripts": ["/app.js"],
+      "head_items": ["/app.css"],
+      "body_items": ["/app.js"],
+      "head_html": "<link rel=\"stylesheet\" href=\"/app.css\">",
+      "body_html": "<script src=\"/app.js\" defer></script>",
+      "missing": ["hero.png"],
+      "policy": {"preload": {"styles": false, "scripts": true, "images": false, "fonts": true}, "scripts": {"strategy": "defer"}},
+      "signature": "12345678901234567890123456789012"
+    }],
+    "expected": "{\"body_html\":\"<script src=\\\"/app.js\\\" defer></script>\",\"has_missing\":true,\"head_html\":\"<link rel=\\\"stylesheet\\\" href=\\\"/app.css\\\">\",\"signature_length\":32,\"summary\":{\"item_count\":0,\"stylesheet_count\":1,\"script_count\":1,\"image_count\":0,\"font_count\":0,\"preload_count\":0,\"head_count\":1,\"body_count\":1,\"missing_count\":1,\"policy\":{\"preload\":{\"styles\":false,\"scripts\":true,\"images\":false,\"fonts\":true},\"script_strategy\":\"defer\",\"script_type\":\"auto\",\"style_media\":\"all\",\"font_crossorigin\":\"anonymous\"},\"signature\":\"12345678901234567890123456789012\"}}"
+  }
+]

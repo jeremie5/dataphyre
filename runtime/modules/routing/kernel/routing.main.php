@@ -24,46 +24,134 @@ if($routing_config_loaded!==true){
 
 routing::not_found();
 
+/**
+ * Legacy request router for Dataphyre view-file routing configuration.
+ *
+ * The routing kernel loads route config files during module initialization, tracks the first
+ * successful route match, publishes path bindings, and either maps a route to a view file or
+ * terminates with configured 404 behavior. It is intentionally stateful because legacy view
+ * bootstrap code reads the static page, realpage, binding, and debug properties after route
+ * checks run.
+ */
 class routing{
 	
+	/**
+	 * Matched page path exposed to legacy view bootstrap code.
+	 */
 	public static $page;
 	
+	/**
+	 * Matched page path before downstream code mutates `$page`.
+	 */
 	public static $realpage;
 	
+	/**
+	 * Route parameter bindings captured from the current request.
+	 *
+	 * @var array<string, mixed>
+	 */
 	public static $bindings=[];
 
+	/**
+	 * Normalized route pattern that matched the current request.
+	 */
+	public static ?string $matched_route=null;
+
+	/**
+	 * View file returned for the matched route.
+	 */
+	public static ?string $matched_file=null;
+
+	/**
+	 * Normalized request path compared during routing.
+	 */
+	public static ?string $matched_request=null;
+
+	/**
+	 * Verbose routing log lines for the match or latest parameter evaluation.
+	 *
+	 * @var array<int, string>
+	 */
+	public static array $matched_verbose=[];
+
+	/**
+	 * Unix timestamp with microseconds when the route matched.
+	 */
+	public static ?float $matched_at=null;
+
+	/**
+	 * @var array{not_found_errorpage:string}
+	 */
 	public static array $config=[
 		'not_found_errorpage'=>'',
 	];
 	
+	/**
+	 * Number of route checks performed before the current match.
+	 */
 	public static $route_non_match_count=0;
 	
+	/**
+	 * Whether failed route parameter matches should write verbose tracelog entries.
+	 */
 	private static $verbose_non_match=true;
 
+	/**
+	 * Merges routing runtime configuration.
+	 *
+	 * @param array<string, mixed> $config Configuration overrides such as `not_found_errorpage`.
+	 * @return void
+	 */
 	public static function configure(array $config): void {
 		self::$config=array_replace_recursive(self::$config, $config);
 	}
 
+	/**
+	 * Returns the configured legacy 404 redirect target.
+	 *
+	 * @return string Trimmed error page path, or an empty string for inline 404 output.
+	 */
 	private static function not_found_errorpage(): string {
 		return trim((string)(self::$config['not_found_errorpage'] ?? ''));
 	}
 	
+	/**
+	 * Checks one legacy route pattern against the current request path.
+	 *
+	 * Route checks normalize both route and request paths, capture `{parameter}` bindings, support
+	 * legacy formatted parameter rules, and update static match state on success. When `$file` is
+	 * supplied, success returns the normalized view file path; otherwise it returns `true`.
+	 *
+	 * @param string $route Legacy route pattern, optionally containing formatted placeholders.
+	 * @param string $file Optional view file path to expose through `set_page()`.
+	 * @return string|bool View file on file-backed match, `true` on route-only match, or `false` when the route does not match.
+	 */
 	public static function check_route(string $route, string $file=''): string|bool {
 		self::$route_non_match_count++;
 		$file=preg_replace('!([^:])(//)!', "$1/", $file);
 		$request="/";
-		if(!empty($_GET['uri'])){
-			$route=preg_replace("/(^\/)|(\/$)/", "", $route);
-			$request=preg_replace("/(^\/)|(\/$)/", "", $_GET['uri']);
+		$request_uri=(string)($_GET['uri'] ?? '');
+		if($request_uri===''){
+			$request_uri=(string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?: '/');
 		}
+		if($request_uri!=='' && $request_uri!=='/'){
+			$route=preg_replace("/(^\/)|(\/$)/", "", $route);
+			$request=preg_replace("/(^\/)|(\/$)/", "", rawurldecode($request_uri));
+		}
+		self::$matched_request="/".trim((string)$request, "/");
 		preg_match_all("/(?<={).+?(?=})/", $route, $param_matches);
-		$match=function($file) use($route){
+		$match=function($file) use($route, $request){
 			$log[]="Route match after " .(self::$route_non_match_count - 1)." non-matches.";
 			$log[]="Matched route: $route";
 			if(!empty($file))$log[]="Returning file: $file";
 			foreach($log as $line){
 				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $line);
 			}
+			self::$matched_route="/".trim((string)$route, "/");
+			self::$matched_file=!empty($file) ? $file : null;
+			self::$matched_request="/".trim((string)$request, "/");
+			self::$matched_verbose=$log;
+			self::$matched_at=microtime(true);
 			if(!empty($file))return self::set_page($file);
 			return true;
 		};
@@ -95,18 +183,60 @@ class routing{
 		return $match($file);
 	}
 	
+	/**
+	 * Terminates the request with configured legacy not-found behavior.
+	 *
+	 * A configured error page redirects to that path using the detected scheme and host. Without
+	 * an error page, the method emits a 404 status and a minimal legacy HTML message.
+	 *
+	 * @return never
+	 */
 	public static function not_found(): never {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		$not_found_errorpage=self::not_found_errorpage();
 		self::set_page("/".$not_found_errorpage);
 		if($not_found_errorpage!==''){
-			header('Location: https://'.$_SERVER['HTTP_HOST'].'/'.$not_found_errorpage);
+			$scheme=(string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '');
+			if($scheme!=='https'){
+				$scheme=((!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS'])!=='off') || (($_SERVER['REQUEST_SCHEME'] ?? '')==='https')) ? 'https' : 'http';
+			}
+			$host=(string)($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost');
+			header('Location: '.$scheme.'://'.$host.'/'.ltrim($not_found_errorpage, '/'));
 			exit();
 		}
 		http_response_code(404);
 		die("<br><br><center><h1>404</h1></center><center><h2>The page you were looking for doesn't exist.</h2></center>");
 	}
 
+	/**
+	 * Returns a diagnostic snapshot of the most recent routing decision.
+	 *
+	 * @return array{request_path:string, normalized_request:string, method:string, matched_route:?string, matched_file:?string, page:mixed, realpage:mixed, bindings:array<string, mixed>, non_match_count:int, not_found_errorpage:string, verbose:array<int, string>, matched_at:?float} Routing state for Flightdeck and diagnostics.
+	 */
+	public static function debug_snapshot(): array {
+		$request_path=(string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?: '/');
+		return [
+			'request_path'=>$request_path,
+			'normalized_request'=>self::$matched_request ?? $request_path,
+			'method'=>(string)($_SERVER['REQUEST_METHOD'] ?? 'GET'),
+			'matched_route'=>self::$matched_route,
+			'matched_file'=>self::$matched_file,
+			'page'=>self::$page,
+			'realpage'=>self::$realpage,
+			'bindings'=>self::$bindings,
+			'non_match_count'=>max(0, (int)self::$route_non_match_count - (self::$matched_route!==null ? 1 : 0)),
+			'not_found_errorpage'=>self::not_found_errorpage(),
+			'verbose'=>self::$matched_verbose,
+			'matched_at'=>self::$matched_at,
+		];
+	}
+
+	/**
+	 * Records the matched view file as legacy page state.
+	 *
+	 * @param string $file Matched view file path.
+	 * @return string The same file path so `check_route()` can return it directly.
+	 */
 	private static function set_page(string $file): string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		self::$realpage="/".str_replace(ROOTPATH['views'], '', substr($file, 0, strrpos($file, ".")));
@@ -114,6 +244,19 @@ class routing{
 		return $file;
 	}
 
+	/**
+	 * Evaluates legacy placeholder and formatted route parameters.
+	 *
+	 * Supported placeholder shapes include greedy captures (`{...name}`), discarded greedy
+	 * captures (`{...void}`), fixed alternatives, named captures, and formatted checks such as
+	 * integer, numeric, UUID, MD5, URL-encoded JSON, prefix/suffix, length, and explicit
+	 * `is_either` lists. Successful matches publish captured values to `self::$bindings`.
+	 *
+	 * @param array<int, array<int, string>> $param_matches Placeholder matches from the route pattern.
+	 * @param string $request Normalized request path without leading/trailing slash.
+	 * @param string $route Normalized route pattern without leading/trailing slash.
+	 * @return array{matched:bool, verbose?:array<int, string>} Parameter match result and optional verbose trace lines.
+	 */
 	private static function process_format_params(array $param_matches, string $request, string $route): array {
 		$temp_params=[];
 		$param_key=[];

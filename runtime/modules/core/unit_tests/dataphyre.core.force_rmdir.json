@@ -1,0 +1,14 @@
+[{
+    "max_millis":  20,
+    "name":  "force_rmdir_removes_nested_directory_tree",
+    "function":  "dp_core_unit_file_helpers",
+    "args":  [
+
+             ],
+    "expected":  [
+                     {
+                         "custom_script":  "return is_array($result) \u0026\u0026 ($result[\u0027removed\u0027] ?? null)===true \u0026\u0026 ($result[\u0027exists_after\u0027] ?? null)===false;"
+                     }
+                 ],
+    "file":  "/common/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
+}]

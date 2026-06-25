@@ -11,8 +11,23 @@ namespace dataphyre\sql;
 
 \dataphyre\sql\diagnostic::tests();
 
+/**
+ * Probes SQL cluster runtime consistency.
+ *
+ * The diagnostic checks whether SQL helpers are available and, when they are,
+ * compares database server time offsets against the PHP process for each
+ * configured DBMS cluster.
+ */
 class diagnostic{
 
+    /**
+     * Collects SQL cluster health findings for dpanel diagnostics.
+     *
+     * Time probes use DBMS-specific expressions and skip the whole check when
+     * module entrypoints are disabled for embedded documentation scans.
+     *
+     * @return void Findings are appended to dpanel verbose output.
+     */
     public static function tests(): void {
 		$verbose=[];
 		if(!\function_exists('sql_query')){

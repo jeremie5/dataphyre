@@ -113,7 +113,7 @@ Create shared groups or named profiles when multiple endpoints use the same pref
 use Dataphyre\Api\Api;
 use Dataphyre\Api\SecurityScheme;
 
-$dev=Api::profile('shopiro.dev.v1', [
+$dev=Api::profile('example.dev.v1', [
 	'prefix'=>'/api/dev/v1',
 	'tags'=>['Developer API'],
 	'trace'=>[
@@ -145,7 +145,7 @@ Choose the simplest construct that matches the endpoint:
 
 - Use a plain `Api::get(...)` or `Api::post(...)` endpoint when the route stands alone.
 - Use `Api::group(...)` when multiple endpoints share prefix, tags, trace, or lifecycle hooks but do not need a named profile.
-- Use `Api::profile(...)` when compatibility wrappers, aliases, or internal dispatch need a stable profile name like `shopiro.mobile` or `shopiro.dev.v1`.
+- Use `Api::profile(...)` when compatibility wrappers, aliases, or internal dispatch need a stable profile name like `example.mobile` or `example.dev.v1`.
 - Use `execute(...)` for the main runtime path. Keep controller-backed handlers for adoption or interop.
 - Use `withBinding(...)` for request-shaped runtime logic and `withQueryIdentity(...)` / `withSearchIdentity(...)` for static query snapshots that should participate in identity, cache, and trace.
 
@@ -194,7 +194,7 @@ Api::patch('/api/machines/{machine_id}')
 	])
 	->cookieParameter('currency', ['type'=>'string'])
 	->server('https://api.example.com', 'Production API')
-	->profile('shopiro.dev.v1')
+	->profile('example.dev.v1')
 	->dispatchDefaults([
 		'limit'=>32,
 	])
@@ -223,7 +223,7 @@ $endpoint=$mobile->post('/session/start')
 Named profile:
 
 ```php
-$dev=Api::profile('shopiro.dev.v1', [
+$dev=Api::profile('example.dev.v1', [
 	'prefix'=>'/api/dev/v1',
 	'tags'=>['Developer API'],
 	'dispatch'=>[
@@ -293,7 +293,7 @@ $ops->any('/hooks/testing')
 Compatibility wrapper pattern:
 
 ```php
-$mobile=Api::profile('shopiro.mobile', [
+$mobile=Api::profile('example.mobile', [
 	'prefix'=>'/api/mobile/v1',
 	'tags'=>['Mobile API'],
 	'dispatch'=>[
@@ -316,7 +316,7 @@ final class MobileCompatEndpoints {
 				'alias'=>$entry['endpoint'] ?? $entry['path'] ?? null,
 				'get'=>$entry['get'] ?? [],
 				'post'=>$entry['post'] ?? [],
-				'profile'=>'shopiro.mobile',
+				'profile'=>'example.mobile',
 			],
 			is_array($chain) ? $chain : []
 		);
@@ -529,7 +529,7 @@ Internal API dispatch from an execution target:
 ```php
 $profile=$context->dispatch([
 	'alias'=>'get/profile/show',
-	'profile'=>'shopiro.mobile',
+	'profile'=>'example.mobile',
 	'query'=>[
 		'include'=>'stats',
 	],
@@ -546,11 +546,11 @@ Batch or chained dispatch from an execution target:
 $batch=$context->dispatchBatch([
 	[
 		'key'=>'get/profile/show',
-		'profile'=>'shopiro.mobile',
+		'profile'=>'example.mobile',
 	],
 	[
 		'key'=>'post/orders/search',
-		'profile'=>'shopiro.mobile',
+		'profile'=>'example.mobile',
 		'body'=>[
 			'status'=>'open',
 		],
@@ -559,10 +559,10 @@ $batch=$context->dispatchBatch([
 
 $chain=$context->dispatchChain([
 	'get/profile/show'=>[
-		'profile'=>'shopiro.mobile',
+		'profile'=>'example.mobile',
 	],
 	'post/orders/search'=>[
-		'profile'=>'shopiro.mobile',
+		'profile'=>'example.mobile',
 		'post'=>[
 			'status'=>'open',
 		],
@@ -577,7 +577,7 @@ Alias-driven dispatch can target legacy endpoint keys directly:
 ```php
 $result=$context->dispatch([
 	'alias'=>'get/orders/show',
-	'profile'=>'shopiro.dev.v1',
+	'profile'=>'example.dev.v1',
 	'query'=>[
 		'order_id'=>$context->query('order_id'),
 	],
@@ -1160,7 +1160,7 @@ return array_merge([
 	'bootstrap'=>__DIR__.'/framework_bootstrap.php',
 	'docs_path'=>'/_framework/api/docs',
 	'spec_path'=>'/_framework/api/openapi.json',
-	'title'=>'Volumetrix API',
+	'title'=>'Example API',
 	'version'=>'1.0.0',
 ]));
 ```
@@ -1178,8 +1178,8 @@ $spec=Route::get(
 	])
 )->compile();
 $spec['api_docs']=[
-	'application'=>'volumetrix',
-	'title'=>'Volumetrix API',
+	'application'=>'example_app',
+	'title'=>'Example API',
 	'version'=>'1.0.0',
 ];
 
@@ -1191,7 +1191,7 @@ $docs=Route::get(
 )->compile();
 $docs['api_docs']=[
 	'spec_path'=>'/_framework/api/openapi.json',
-	'title'=>'Volumetrix API',
+	'title'=>'Example API',
 ];
 ```
 
@@ -1207,13 +1207,13 @@ $openapi=Api::openApiDocument();
 Target a specific application id when the current runtime has a project root:
 
 ```php
-$openapi=Api::openApiDocument('volumetrix');
+$openapi=Api::openApiDocument('example_app');
 ```
 
 Discover from a compiled manifest directly:
 
 ```php
-$manifest=require ROOTPATH['applications'].'volumetrix/cache/compiled_routes.php';
+$manifest=require ROOTPATH['applications'].'example_app/cache/compiled_routes.php';
 $endpoints=Api::discoverManifest($manifest);
 ```
 
@@ -1224,10 +1224,10 @@ use Dataphyre\Api\Api;
 use Dataphyre\Api\OpenApiGenerator;
 
 $manager=Api::manager();
-$endpoints=$manager->discoverApplication('volumetrix');
+$endpoints=$manager->discoverApplication('example_app');
 
 $document=(new OpenApiGenerator())->generate($endpoints, [
-	'title'=>'Volumetrix API',
+	'title'=>'Example API',
 	'version'=>'1.0.0',
 	'servers'=>[
 		['url'=>'https://api.example.com'],
@@ -1287,7 +1287,7 @@ Api::post('/api/machines')
 Compatibility wrapper endpoint:
 
 ```php
-$mobile=Api::profile('shopiro.mobile', [
+$mobile=Api::profile('example.mobile', [
 	'prefix'=>'/api/mobile/v1',
 	'dispatch'=>[
 		'limit'=>128,

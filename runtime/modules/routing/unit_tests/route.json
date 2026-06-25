@@ -1,0 +1,130 @@
+[
+  {
+    "name": "CompilableRoute interface is available for Route",
+    "file": "/common/dataphyre/runtime/modules/routing/Framework/CompilableRoute.php",
+    "function": "interface_exists",
+    "args": [
+      "Dataphyre\\Routing\\CompilableRoute"
+    ],
+    "expected": true
+  },
+  {
+    "name": "Route get factory returns route instance",
+    "file": "/common/dataphyre/runtime/modules/routing/Framework/Route.php",
+    "class": "Dataphyre\\Routing\\Route",
+    "static_method": true,
+    "function": "get",
+    "args": [
+      "/products/{slug}",
+      "product_show"
+    ],
+    "expected": "Dataphyre\\Routing\\Route"
+  },
+  {
+    "name": "Route normalizes missing leading and trailing slashes",
+    "file": "/common/dataphyre/runtime/modules/routing/Framework/Route.php",
+    "class": "Dataphyre\\Routing\\Route",
+    "static_method": true,
+    "function": "normalizePath",
+    "args": [
+      "products/{slug}/"
+    ],
+    "expected": "/products/{slug}"
+  },
+  {
+    "name": "Route normalizes root path",
+    "file": "/common/dataphyre/runtime/modules/routing/Framework/Route.php",
+    "class": "Dataphyre\\Routing\\Route",
+    "static_method": true,
+    "function": "normalizePath",
+    "args": [
+      "///"
+    ],
+    "expected": "/"
+  },
+  {
+    "name": "Route url fills named parameters and query",
+    "file": "/common/dataphyre/runtime/modules/routing/Framework/Route.php",
+    "class": "Dataphyre\\Routing\\Route",
+    "static_method": true,
+    "function": "url",
+    "args": [
+      "/products/{slug}",
+      {
+        "slug": "native routing"
+      },
+      {
+        "page": 2,
+        "filter": "in stock"
+      }
+    ],
+    "expected": "/products/native%20routing?page=2&filter=in%20stock"
+  },
+  {
+    "name": "Route url expands splat array segments",
+    "file": "/common/dataphyre/runtime/modules/routing/Framework/Route.php",
+    "class": "Dataphyre\\Routing\\Route",
+    "static_method": true,
+    "function": "url",
+    "args": [
+      "/docs/{...path}",
+      {
+        "path": [
+          "native routing",
+          "compile"
+        ]
+      },
+      {
+        "version": "1.0"
+      }
+    ],
+    "expected": "/docs/native%20routing/compile?version=1.0"
+  },
+  {
+    "name": "Route normalize methods uppercases and de-duplicates values",
+    "file": "/common/dataphyre/runtime/modules/routing/Framework/Route.php",
+    "class": "Dataphyre\\Routing\\Route",
+    "static_method": true,
+    "function": "normalizeMethods",
+    "args": [
+      [
+        "get",
+        "GET",
+        " post "
+      ],
+      []
+    ],
+    "expected": [
+      [
+        "array",
+        [
+          "string"
+        ]
+      ]
+    ]
+  },
+  {
+    "name": "Route normalize methods uses default when all methods are empty",
+    "file": "/common/dataphyre/runtime/modules/routing/Framework/Route.php",
+    "class": "Dataphyre\\Routing\\Route",
+    "static_method": true,
+    "function": "normalizeMethods",
+    "args": [
+      [
+        "",
+        " "
+      ],
+      [
+        "GET"
+      ]
+    ],
+    "expected": [
+      [
+        "array",
+        [
+          "string"
+        ]
+      ]
+    ]
+  }
+]

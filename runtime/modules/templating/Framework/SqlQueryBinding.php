@@ -7,11 +7,27 @@
  */
 namespace Dataphyre\Templating;
 
+/**
+ * Template binding that executes a Dataphyre SQL query on demand.
+ *
+ * The binding wraps repository and table query objects, clones them for
+ * template isolation, exposes metadata/cache identity without executing the
+ * query, and resolves into rows, records, pagination, scalar values, keyed
+ * collections, counts, or existence checks.
+ */
 final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIdentityProvider, BindingPersistentCacheProvider {
 
 	private const REPOSITORY_QUERY='Dataphyre\\Database\\RepositoryQuery';
 	private const TABLE_QUERY='Dataphyre\\Database\\TableQuery';
 
+	/**
+	 * Stores a supported SQL query and normalized binding mode.
+	 *
+	 * @param object $query Cloned repository/table query used during resolution.
+	 * @param string $mode Normalized output mode.
+	 * @param array<string, mixed> $options Binding options such as columns, hydrator, pagination, caching, or identity behavior.
+	 * @param string $name Stable binding name exposed to template metadata.
+	 */
 	public function __construct(
 		private readonly object $query,
 		private readonly string $mode,
@@ -19,6 +35,15 @@ final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIden
 		private readonly string $name='sql.query.records'
 	){}
 
+	/**
+	 * Creates a SQL query binding after validating the query type.
+	 *
+	 * @param object $query Dataphyre repository or table query instance.
+	 * @param string $mode Requested resolution mode.
+	 * @param array<string, mixed> $options Binding options.
+	 * @return self Immutable binding with a cloned query.
+	 * @throws \InvalidArgumentException When the object or mode is unsupported.
+	 */
 	public static function make(object $query, string $mode='records', array $options=[]): self {
 		if(!self::supports($query)){
 			throw new \InvalidArgumentException(
@@ -35,11 +60,23 @@ final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIden
 		);
 	}
 
+	/**
+	 * Checks whether an object is a supported SQL query type.
+	 *
+	 * @param object $query Candidate query object.
+	 * @return bool `true` for repository or table query instances.
+	 */
 	public static function supports(object $query): bool {
 		return self::matches($query, self::REPOSITORY_QUERY)
 			|| self::matches($query, self::TABLE_QUERY);
 	}
 
+	/**
+	 * Selects whether binding cache identity should prefer the query fingerprint.
+	 *
+	 * @param bool $inherit Whether to use `fingerprint()` when available.
+	 * @return self New binding with updated identity mode.
+	 */
 	public function inheritIdentity(bool $inherit=true): self {
 		return new self(
 			clone $this->query,
@@ -49,18 +86,33 @@ final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIden
 		);
 	}
 
+	/**
+	 * Forces cache identity to use execution state instead of query fingerprint.
+	 *
+	 * @return self New binding with query fingerprint inheritance disabled.
+	 */
 	public function useExecutionStateIdentity(): self {
 		return $this->inheritIdentity(false);
 	}
 
+	/**
+	 * Returns the stable template binding name.
+	 *
+	 * @return string Name such as `sql.query.records` or `sql.query.page`.
+	 */
 	public function name(): string {
 		return $this->name;
 	}
 
+	/**
+	 * Describes the SQL binding without executing the query.
+	 *
+	 * @return array<string, mixed> Metadata including mode, query target, fingerprint availability, identity source, options, cache names, and persistent cache details.
+	 */
 	public function metadata(): array {
-		$query_fingerprint=$this->queryFingerprint();
-		$query_identity_requested=$this->inheritsQueryIdentity();
-		$query_identity_source=$this->queryIdentitySource($query_fingerprint);
+		$queryFingerprint=$this->queryFingerprint();
+		$queryIdentityRequested=$this->inheritsQueryIdentity();
+		$queryIdentitySource=$this->queryIdentitySource($queryFingerprint);
 		return array_filter([
 			'type'=>'sql_query',
 			'driver'=>'sql',
@@ -68,17 +120,26 @@ final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIden
 			'query_class'=>$this->query::class,
 			'query_target_type'=>$this->targetType(),
 			'query_target'=>$this->target(),
-			'query_fingerprint'=>$query_fingerprint,
-			'query_identity_mode'=>$query_identity_requested ? 'inherit' : 'state',
-			'query_identity_requested'=>$query_identity_requested,
-			'query_identity_source'=>$query_identity_source,
-			'query_identity_available'=>$query_fingerprint!==null,
+			'query_fingerprint'=>$queryFingerprint,
+			'query_identity_mode'=>$queryIdentityRequested ? 'inherit' : 'state',
+			'query_identity_requested'=>$queryIdentityRequested,
+			'query_identity_source'=>$queryIdentitySource,
+			'query_identity_available'=>$queryFingerprint!==null,
 			'query_options'=>$this->metadataOptions(),
 			'query_cache_names'=>$this->defaultBindingCacheNames(),
 			'persistent_cache'=>$this->bindingCacheMetadata(),
 		], static fn(mixed $value): bool => $value!==null && $value!==[]);
 	}
 
+	/**
+	 * Executes the SQL query and returns the shape requested by the mode.
+	 *
+	 * Required scalar options are validated at execution time: `value` and
+	 * `pluck` require `column`, while `key_by` requires `key_column`.
+	 *
+	 * @param BindingContext $context Template binding context; currently not consumed by this binding.
+	 * @return mixed rows, first row, records, scalar value, plucked map, keyed rows, aggregate, or count for the selected mode.
+	 */
 	public function resolve(BindingContext $context): mixed {
 		return match($this->mode){
 			'rows'=>$this->query->get(
@@ -132,24 +193,36 @@ final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIden
 		};
 	}
 
+	/**
+	 * Builds the cache identity payload for this SQL binding.
+	 *
+	 * @param BindingContext $context Template binding context; currently not consumed by this binding.
+	 * @return array<string, mixed> Identity payload derived from query target, mode, fingerprint or state, and cache-safe options.
+	 */
 	public function cacheIdentity(BindingContext $context): mixed {
-		$query_fingerprint=$this->queryFingerprint();
-		$query_identity_requested=$this->inheritsQueryIdentity();
-		$query_identity_source=$this->queryIdentitySource($query_fingerprint);
+		$queryFingerprint=$this->queryFingerprint();
+		$queryIdentityRequested=$this->inheritsQueryIdentity();
+		$queryIdentitySource=$this->queryIdentitySource($queryFingerprint);
 		return array_filter([
 			'type'=>'sql_query',
 			'query_class'=>$this->query::class,
 			'mode'=>$this->mode,
 			'target_type'=>$this->targetType(),
 			'target'=>$this->target(),
-			'query_fingerprint'=>$query_identity_source==='fingerprint' ? $query_fingerprint : null,
-			'query_identity_mode'=>$query_identity_requested ? 'inherit' : 'state',
-			'query_identity_source'=>$query_identity_source,
-			'state'=>$query_identity_source==='fingerprint' ? null : $this->queryState(),
+			'query_fingerprint'=>$queryIdentitySource==='fingerprint' ? $queryFingerprint : null,
+			'query_identity_mode'=>$queryIdentityRequested ? 'inherit' : 'state',
+			'query_identity_source'=>$queryIdentitySource,
+			'state'=>$queryIdentitySource==='fingerprint' ? null : $this->queryState(),
 			'options'=>$this->cacheIdentityOptions(),
 		], static fn(mixed $value): bool => $value!==null && $value!==[]);
 	}
 
+	/**
+	 * Returns persistent binding-cache settings when enabled.
+	 *
+	 * @param BindingContext $context Template binding context; currently not consumed by this binding.
+	 * @return ?array{ttl:int, names:array<int, string>, identity:mixed} Cache configuration, or `null` when disabled.
+	 */
 	public function persistentCache(BindingContext $context): ?array {
 		$config=$this->bindingCacheConfig();
 		if($config===null){
@@ -162,6 +235,13 @@ final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIden
 		];
 	}
 
+	/**
+	 * Normalizes SQL binding mode aliases.
+	 *
+	 * @param string $mode Requested mode.
+	 * @return string Canonical mode.
+	 * @throws \InvalidArgumentException When the mode is not supported.
+	 */
 	private static function normalizeMode(string $mode): string {
 		$mode=strtolower(trim($mode));
 		return match($mode){
@@ -180,10 +260,20 @@ final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIden
 		};
 	}
 
+	/**
+	 * Tests a query object against an optional framework query class.
+	 *
+	 * @return bool `true` when the class exists and the query is an instance of it.
+	 */
 	private static function matches(object $query, string $class): bool {
 		return class_exists($class) && is_a($query, $class);
 	}
 
+	/**
+	 * Identifies whether the query targets a repository or table.
+	 *
+	 * @return ?string `repository`, `table`, or `null` when the query cannot describe its target.
+	 */
 	private function targetType(): ?string {
 		if(method_exists($this->query, 'repositoryClass')){
 			return 'repository';
@@ -194,6 +284,11 @@ final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIden
 		return null;
 	}
 
+	/**
+	 * Reads the repository class or table name from the query.
+	 *
+	 * @return ?string Trimmed target identifier, or `null`.
+	 */
 	private function target(): ?string {
 		if(method_exists($this->query, 'repositoryClass')){
 			$target=$this->query->repositoryClass();
@@ -206,6 +301,11 @@ final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIden
 		return null;
 	}
 
+	/**
+	 * Returns metadata-safe option details.
+	 *
+	 * @return array<string, mixed> Options relevant to output shape, pagination, hydration, and SQL caching.
+	 */
 	private function metadataOptions(): array {
 		$options=[];
 		if(array_key_exists('columns', $this->options)){
@@ -232,6 +332,11 @@ final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIden
 		return $options;
 	}
 
+	/**
+	 * Removes execution-only details from options used for cache identity.
+	 *
+	 * @return array<string, mixed> Cache-safe option payload.
+	 */
 	private function cacheIdentityOptions(): array {
 		$options=$this->metadataOptions();
 		unset($options['hydrator']);
@@ -239,24 +344,34 @@ final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIden
 		return $options;
 	}
 
+	/**
+	 * Describes persistent cache inheritance behavior for metadata.
+	 *
+	 * @return ?array<string, mixed> Cache metadata, or `null` when persistent binding cache is disabled.
+	 */
 	private function bindingCacheMetadata(): ?array {
 		$config=$this->bindingCacheConfig();
 		if($config===null){
 			return null;
 		}
-		$query_fingerprint=$this->queryFingerprint();
-		$query_identity_requested=$this->inheritsQueryIdentity();
-		$query_identity_source=$this->queryIdentitySource($query_fingerprint);
+		$queryFingerprint=$this->queryFingerprint();
+		$queryIdentityRequested=$this->inheritsQueryIdentity();
+		$queryIdentitySource=$this->queryIdentitySource($queryFingerprint);
 		return [
 			'ttl'=>$config['ttl'],
 			'names'=>$config['names'],
 			'explicit_identity'=>array_key_exists('identity', $config) && $config['identity']!==null,
-			'requested_query_fingerprint_identity'=>$query_identity_requested,
-			'inherits_query_fingerprint'=>$query_identity_source==='fingerprint'
+			'requested_query_fingerprint_identity'=>$queryIdentityRequested,
+			'inherits_query_fingerprint'=>$queryIdentitySource==='fingerprint'
 				&& (!array_key_exists('identity', $config) || $config['identity']===null),
 		];
 	}
 
+	/**
+	 * Normalizes the `binding_cache` option.
+	 *
+	 * @return ?array{ttl:int, names:array<int, string>, identity:mixed} Cache configuration, or `null` when disabled/invalid.
+	 */
 	private function bindingCacheConfig(): ?array {
 		$config=$this->options['binding_cache'] ?? null;
 		if($config===null || $config===false){
@@ -292,11 +407,22 @@ final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIden
 		];
 	}
 
+	/**
+	 * Uses query execution-state caching names as default persistent cache names.
+	 *
+	 * @return array<int, string> Default cache names.
+	 */
 	private function defaultBindingCacheNames(): array {
 		$state=$this->queryState();
 		return $this->normalizeNames($state['caching'] ?? []);
 	}
 
+	/**
+	 * Normalizes binding cache name lists.
+	 *
+	 * @param array<string|int, mixed>|string|bool|null $names Candidate cache names.
+	 * @return array<int, string> Unique non-empty cache names.
+	 */
 	private function normalizeNames(array|string|bool|null $names): array {
 		$names=is_array($names) ? $names : [$names];
 		$normalized=[];
@@ -313,6 +439,11 @@ final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIden
 		return array_keys($normalized);
 	}
 
+	/**
+	 * Reads query execution state when available.
+	 *
+	 * @return array<string, mixed> Execution-state payload, or an empty array.
+	 */
 	private function queryState(): array {
 		if(method_exists($this->query, 'executionState')){
 			$state=$this->query->executionState();
@@ -321,6 +452,11 @@ final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIden
 		return [];
 	}
 
+	/**
+	 * Reads the query fingerprint when available.
+	 *
+	 * @return ?string Non-empty fingerprint, or `null`.
+	 */
 	private function queryFingerprint(): ?string {
 		if(!method_exists($this->query, 'fingerprint')){
 			return null;
@@ -333,24 +469,51 @@ final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIden
 		return $fingerprint!=='' ? $fingerprint : null;
 	}
 
+	/**
+	 * Reports whether fingerprint identity inheritance was requested.
+	 *
+	 * @return bool `true` when `inherit_query_identity` is enabled.
+	 */
 	private function inheritsQueryIdentity(): bool {
 		return ($this->options['inherit_query_identity'] ?? false)===true;
 	}
 
-	private function queryIdentitySource(?string $query_fingerprint): string {
-		return $this->inheritsQueryIdentity() && $query_fingerprint!==null
+	/**
+	 * Selects the actual identity source for the current query.
+	 *
+	 * @param ?string $queryFingerprint Fingerprint discovered from the query.
+	 * @return string `fingerprint` when requested and available, otherwise `execution_state`.
+	 */
+	private function queryIdentitySource(?string $queryFingerprint): string {
+		return $this->inheritsQueryIdentity() && $queryFingerprint!==null
 			? 'fingerprint'
 			: 'execution_state';
 	}
 
+	/**
+	 * Returns the requested pagination page.
+	 *
+	 * @return int Current page number, clamped to at least 1.
+	 */
 	private function page(): int {
 		return max(1, (int)($this->options['page'] ?? 1));
 	}
 
+	/**
+	 * Returns the requested pagination page size.
+	 *
+	 * @return int Page size, clamped to at least 1.
+	 */
 	private function perPage(): int {
 		return max(1, (int)($this->options['per_page'] ?? 50));
 	}
 
+	/**
+	 * Returns a required string option or throws a mode-specific error.
+	 *
+	 * @param string $key Required option key.
+	 * @return string Non-empty option value.
+	 */
 	private function requiredOption(string $key): string {
 		$value=$this->optionalString($key);
 		if($value!==null){
@@ -359,6 +522,12 @@ final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIden
 		throw new \InvalidArgumentException("Templating SQL query binding mode '{$this->mode}' requires option '{$key}'.");
 	}
 
+	/**
+	 * Reads a non-empty string option.
+	 *
+	 * @param string $key Option key.
+	 * @return ?string Trimmed option value, or `null`.
+	 */
 	private function optionalString(string $key): ?string {
 		$value=$this->options[$key] ?? null;
 		if(!is_string($value)){
@@ -367,4 +536,5 @@ final class SqlQueryBinding implements BindingMetadataProvider, BindingCacheIden
 		$value=trim($value);
 		return $value!=='' ? $value : null;
 	}
+
 }

@@ -9,17 +9,30 @@ namespace dataphyre\currency;
 
 \dataphyre\currency\diagnostic::tests();
 
+/**
+ * Runs Currency module diagnostics and table bootstrapping checks.
+ *
+ * Diagnostics validate PHP/runtime prerequisites and create the exchange-rate
+ * persistence table when SQL helpers are available. Findings are reported to
+ * Dpanel as verbose entries instead of throwing during diagnostic scans.
+ */
 class diagnostic{
 
+	/**
+	 * Executes Currency module diagnostic checks.
+	 *
+	 * The check requires SQL module availability, validates minimum PHP version
+	 * and extensions, and conditionally issues portable table/index DDL for MySQL,
+	 * PostgreSQL, and SQLite.
+	 *
+	 * @return void
+	 */
 	public static function tests(): void {
 		$verbose=[];
-		// Runtime information
 		\dp_module_required('currency', 'sql');
-		// Check for PHP version
 		if(version_compare(PHP_VERSION, $ver='8.1.0') < 0){
 			$verbose[]=['module'=>'currency', 'error'=>'PHP version '.$ver.' or higher is required.', 'time'=>time()];
 		}
-		// Check each required extension for module
 		$required_extensions=[
 			'json',
 			'mbstring',

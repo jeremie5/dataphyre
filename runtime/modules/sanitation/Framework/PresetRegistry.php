@@ -7,29 +7,80 @@
  */
 namespace Dataphyre\Sanitation;
 
+/**
+ * Stores reusable sanitation schemas and option presets.
+ *
+ * Presets bundle field sanitation rules, default values, and resolver options for
+ * common request data such as addresses, login forms, registration forms, and
+ * search filters. Runtime callers can register project presets or resolve built
+ * in presets with targeted overrides.
+ */
 final class PresetRegistry {
 
 	/** @var array<string, array|callable> */
 	private array $definitions;
 
+	/**
+	 * Creates a registry seeded with built-in sanitation presets.
+	 *
+	 * @return void
+	 */
 	public function __construct() {
 		$this->definitions=$this->builtInDefinitions();
 	}
 
+	/**
+	 * Returns registered preset names.
+	 *
+	 * @return array<int, string> Sorted preset names.
+	 */
 	public function names(): array {
 		$names=array_keys($this->definitions);
 		sort($names);
 		return $names;
 	}
 
+	/**
+	 * Reports whether a preset is registered.
+	 *
+	 *
+	 * @param string $name Preset name to check.
+	 * @return bool True when the normalized preset name exists.
+	 */
 	public function has(string $name): bool {
 		return array_key_exists($this->normalizeName($name), $this->definitions);
 	}
 
+	/**
+	 * Registers or replaces a sanitation preset.
+	 *
+	 * Definitions may be arrays or callables. Callable definitions are resolved
+	 * with the override array when resolve() is called, which lets presets build
+	 * schema dynamically from project options. The registry stores definitions
+	 * verbatim and validates their final shape only during resolution.
+	 *
+	 * @param string $name Preset name.
+	 * @param array|callable $definition Preset definition or resolver.
+	 * @return void
+	 */
 	public function register(string $name, array|callable $definition): void {
 		$this->definitions[$this->normalizeName($name)]=$definition;
 	}
 
+	/**
+	 * Resolves a preset into schema, defaults, and options.
+	 *
+	 * Overrides recursively merge into `schema`, shallow-replace `defaults`, and
+	 * recursively merge `options`. Resolved definitions must contain a `schema`
+	 * array; otherwise the preset is rejected before schema validation receives a
+	 * malformed field map.
+	 *
+	 * @param string $name Preset name.
+	 * @param array<string, mixed> $overrides Optional schema, defaults, and options overrides.
+	 * @return array{name: string, schema: array<string, mixed>, defaults: array<string, mixed>, options: array<string, mixed>}
+	 *
+	 * @throws \InvalidArgumentException When the preset is unknown or resolves to an invalid definition.
+	 */
 	public function resolve(string $name, array $overrides=[]): array {
 		$name=$this->normalizeName($name);
 		if(!isset($this->definitions[$name])){
@@ -68,10 +119,21 @@ final class PresetRegistry {
 		];
 	}
 
+	/**
+	 * Normalizes preset names for registry keys.
+	 *
+	 * @param string $name Raw preset name.
+	 * @return string Lowercase trimmed preset name.
+	 */
 	private function normalizeName(string $name): string {
 		return strtolower(trim($name));
 	}
 
+	/**
+	 * Returns built-in sanitation preset definitions.
+	 *
+	 * @return array<string, array<string, mixed>> Built-in preset map.
+	 */
 	private function builtInDefinitions(): array {
 		return [
 			'address'=>[

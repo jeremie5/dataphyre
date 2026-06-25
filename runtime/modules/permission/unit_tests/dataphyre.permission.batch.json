@@ -1,0 +1,36 @@
+[
+    {
+        "name": "allows_many_returns_decision_map",
+        "function": "allowsMany",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            ["panel.orders.view", "panel.orders.force_delete"],
+            {
+                "permissions": ["panel.orders.*", "-panel.orders.force_delete"]
+            }
+        ],
+        "expected": {
+            "custom_script": "return is_array($result) && ($result['panel.orders.view'] ?? null) === true && ($result['panel.orders.force_delete'] ?? null) === false;"
+        },
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    },
+    {
+        "name": "filter_allowed_returns_only_allowed_permissions",
+        "function": "filterAllowed",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            ["panel.orders.view", "panel.orders.force_delete", "panel.products.view"],
+            {
+                "permissions": ["panel.orders.*", "-panel.orders.force_delete"]
+            }
+        ],
+        "expected": {
+            "custom_script": "return $result === ['panel.orders.view'];"
+        },
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    }
+]

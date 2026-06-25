@@ -657,7 +657,7 @@ Example:
 ```php
 $result=Dataphyre\Async\Support\TaskInvoker::invoke(function(string $name){
 	return strtoupper($name);
-}, ['shopiro']);
+}, ['example_app']);
 ```
 
 ## Common Workflows

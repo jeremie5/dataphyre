@@ -4,6 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Dataphyre Flightdeck - {{title}}</title>
+	<link rel="icon" href="data:,">
 	<style>{{slot "css"}}{{endslot}}</style>
 	{{slot "head"}}{{endslot}}
 </head>

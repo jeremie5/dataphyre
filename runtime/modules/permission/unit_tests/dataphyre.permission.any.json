@@ -1,0 +1,32 @@
+[
+    {
+        "name": "any_allows_one_matching_permission",
+        "function": "any",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            ["panel.orders.refund", "panel.orders.cancel"],
+            {
+                "permissions": ["panel.orders.cancel"]
+            }
+        ],
+        "expected": true,
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    },
+    {
+        "name": "any_denies_when_no_permissions_match",
+        "function": "any",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            ["panel.orders.refund", "panel.orders.cancel"],
+            {
+                "permissions": ["panel.orders.view"]
+            }
+        ],
+        "expected": false,
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    }
+]

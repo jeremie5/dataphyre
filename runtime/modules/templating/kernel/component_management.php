@@ -9,8 +9,25 @@ namespace dataphyre;
 
 tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Loaded");
 
+/**
+ * Defines Templating kernel trait responsibilities for component management.
+ *
+ * Templating kernel boundary: module configuration, runtime state, and Dataphyre service calls.
+ */
 trait component_management {
 
+    /**
+     * Renders component tags and records their planning metadata.
+     *
+     * Component references are resolved through the templating resolver, optional
+     * props paths are read from render data, object props are converted to arrays,
+     * missing components are recorded as unresolved references, and successful
+     * renders are passed through scoped-style parsing before replacement.
+     *
+     * @param string $template Template source containing component tags.
+     * @param array<string,mixed> $data Render data used for component props.
+     * @return string Template source with component tags replaced by rendered markup.
+     */
     private static function parse_components(string $template, array $data): string {
         preg_match_all('/{{\s*component\s+[\"\']([^\"\']+)[\"\'](?:\s+props=([\w\.]+))?\s*}}/', $template, $matches, PREG_SET_ORDER);
         foreach($matches as $match){
@@ -46,6 +63,17 @@ trait component_management {
         return $template;
     }
 
+    /**
+     * Replaces lazy component tags with inert client-side placeholders.
+     *
+     * The component reference is HTML-escaped into data-lazy so later JavaScript can
+     * hydrate it without executing component rendering during the current template
+     * pass. No props are resolved at this stage.
+     *
+     * @param string $template Template source containing lazyComponent tags.
+     * @param array<string,mixed> $data Render data reserved for signature compatibility.
+     * @return string Template source with lazy component placeholders.
+     */
     private static function lazy_load_components(string $template, array $data): string {
         preg_match_all('/{{\s*lazyComponent\s+"([^"]+)"\s*}}/', $template, $matches);
         foreach($matches[1] as $component){

@@ -1,0 +1,50 @@
+[
+  {
+    "name": "asset_policy_normalizes_aliases_and_invalid_values",
+    "file": "/common/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
+    "function": "DataphyreUnitTests\\templating_asset_policy_summary_json",
+    "args": [
+      {
+        "preload": {
+          "style": false,
+          "script": true,
+          "images": false,
+          "font": true
+        },
+        "scripts": {
+          "strategy": "ASYNC",
+          "type": "module"
+        },
+        "styles": {
+          "media": " screen "
+        },
+        "fonts": {
+          "crossorigin": "use-credentials"
+        }
+      }
+    ],
+    "expected": "{\"preload\":{\"styles\":false,\"scripts\":true,\"images\":false,\"fonts\":true},\"script_strategy\":\"async\",\"script_type\":\"module\",\"style_media\":\"screen\",\"font_crossorigin\":\"use-credentials\"}",
+    "max_millis": 5
+  },
+  {
+    "name": "asset_policy_chain_returns_modified_clone_summary",
+    "file": "/common/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
+    "function": "DataphyreUnitTests\\templating_asset_policy_chain_summary_json",
+    "args": [
+      {
+        "preload": {
+          "styles": true,
+          "scripts": true,
+          "images": true,
+          "fonts": false
+        },
+        "scripts": {
+          "strategy": "blocking",
+          "type": "classic"
+        }
+      }
+    ],
+    "expected": "{\"preload\":{\"styles\":false,\"scripts\":true,\"images\":false,\"fonts\":true},\"script_strategy\":\"defer\",\"script_type\":\"module\",\"style_media\":\"print\",\"font_crossorigin\":\"anonymous\"}",
+    "max_millis": 5
+  }
+]

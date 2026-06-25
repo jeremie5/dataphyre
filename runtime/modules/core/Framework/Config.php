@@ -57,13 +57,18 @@ final class Config {
 	}
 
 	public static function only(array $keys): array {
+		$config=static::all();
 		$selected=[];
 		foreach($keys as $key){
 			$key=(string)$key;
-			if(!static::has($key)){
+			if($key===''){
 				continue;
 			}
-			$selected[$key]=static::get($key);
+			$value=static::pathValueString($config, $key, $exists);
+			if(!$exists){
+				continue;
+			}
+			$selected[$key]=$value;
 		}
 		return $selected;
 	}
@@ -77,7 +82,11 @@ final class Config {
 	}
 
 	public static function keys(?string $path=null): array {
-		$value=$path!==null ? static::get($path, []) : static::all();
+		$config=static::all();
+		$value=$path!==null ? static::pathValueString($config, $path, $exists) : $config;
+		if($path!==null && !$exists){
+			return [];
+		}
 		return is_array($value) ? array_keys($value) : [];
 	}
 
@@ -119,6 +128,14 @@ final class Config {
 		}
 		$exists=true;
 		return $current;
+	}
+
+	private static function pathValueString(array $value, string $path, ?bool &$exists=false): mixed {
+		if(array_key_exists($path, $value)){
+			$exists=true;
+			return $value[$path];
+		}
+		return static::pathValue($value, static::segments($path), $exists);
 	}
 
 	private static function unsetPath(array &$value, array $path): void {

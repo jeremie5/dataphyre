@@ -1,0 +1,14 @@
+[{
+    "max_millis":  10,
+    "name":  "url_updated_querystring_adds_removes_and_clears_query_values",
+    "function":  "dp_core_unit_url_update",
+    "args":  [
+
+             ],
+    "expected":  [
+                     {
+                         "custom_script":  "return is_array($result) \u0026\u0026 ($result[\u0027add\u0027] ?? null)===\u0027https://example.test/path?a=1\u0026b=two+words\u0027 \u0026\u0026 ($result[\u0027remove\u0027] ?? null)===\u0027https://example.test/path?a=1\u0027 \u0026\u0026 ($result[\u0027clear\u0027] ?? null)===\u0027https://example.test/path?\u0027;"
+                     }
+                 ],
+    "file":  "/common/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
+}]

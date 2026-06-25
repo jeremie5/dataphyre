@@ -6,7 +6,17 @@
  * SPDX-License-Identifier: MIT
  */
 require_once(ROOTPATH['common_dataphyre_runtime']."modules/core/kernel/core.main.php");
+$tracelog_assets_support=__DIR__.'/assets_support.php';
+if(is_file($tracelog_assets_support)){
+	require_once($tracelog_assets_support);
+}
 
+/**
+ * Formats a byte count for the Tracelog viewer.
+ *
+ * @param mixed $size Numeric byte count or already-formatted value.
+ * @return mixed Human-readable storage size for numeric input, otherwise the original value.
+ */
 function convert_storage($size){
     if(is_numeric($size)){
         if($size==0){
@@ -19,16 +29,81 @@ function convert_storage($size){
     return $size;
 }
 
+/**
+ * Counts project PHP source lines for viewer diagnostics.
+ *
+ * The count excludes cache/log directories through `project_files()` and is cached in the
+ * session to avoid repeated filesystem walks during the same trace session.
+ *
+ * @return int Total PHP source lines.
+ */
 function lines_of_code(){
 	if(isset($_SESSION['tracelog_sloc'])) return $_SESSION['tracelog_sloc'];
-   $command="find ".ROOTPATH['common_root']." -type f -name '*.php' ! -path '*/logs/*' ! -path '*/cache/*' -print0 | xargs -0 cat | wc -l";
-    return $_SESSION['tracelog_sloc']=shell_exec($command);
+	$lines=0;
+	foreach(project_files(ROOTPATH['common_root'], 'php') as $file){
+		$handle=@fopen($file, 'rb');
+		if($handle===false){
+			continue;
+		}
+		while(!feof($handle)){
+			fgets($handle);
+			$lines++;
+		}
+		fclose($handle);
+	}
+	return $_SESSION['tracelog_sloc']=$lines;
 }
 
+/**
+ * Calculates total project file size for viewer diagnostics.
+ *
+ * The formatted result is cached in the session and excludes cache/log directories through
+ * `project_files()`.
+ *
+ * @return mixed cached formatted project size produced from the current project file set.
+ */
 function code_size(){
 	if(isset($_SESSION['tracelog_code_size'])) return $_SESSION['tracelog_code_size'];
-	$code_size=shell_exec("du -d 0 -h ".ROOTPATH['common_root']);
-	return $_SESSION['tracelog_code_size']=str_replace(ROOTPATH['common_root'],'',$code_size);
+	$bytes=0;
+	foreach(project_files(ROOTPATH['common_root']) as $file){
+		$size=@filesize($file);
+		if($size!==false){
+			$bytes+=$size;
+		}
+	}
+	return $_SESSION['tracelog_code_size']=convert_storage($bytes);
+}
+
+/**
+ * Iterates project files while excluding volatile cache and log directories.
+ *
+ *
+ * @param string $root Root directory to scan.
+ * @param ?string $extension Optional extension filter without a leading dot.
+ * @return iterable<string> File paths that match the filter.
+ */
+function project_files(string $root, ?string $extension=null): iterable {
+	$root=rtrim($root, '/\\');
+	if(!is_dir($root)){
+		return;
+	}
+	$iterator=new RecursiveIteratorIterator(
+		new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+		RecursiveIteratorIterator::SELF_FIRST
+	);
+	foreach($iterator as $item){
+		$path=$item->getPathname();
+		if(str_contains($path, DIRECTORY_SEPARATOR.'logs'.DIRECTORY_SEPARATOR) || str_contains($path, DIRECTORY_SEPARATOR.'cache'.DIRECTORY_SEPARATOR)){
+			continue;
+		}
+		if(!$item->isFile()){
+			continue;
+		}
+		if($extension!==null && strtolower($item->getExtension())!==strtolower($extension)){
+			continue;
+		}
+		yield $path;
+	}
 }
 
 $jit_info='';
@@ -42,14 +117,7 @@ if(function_exists('opcache_get_status')){
 $memory_overhead=strlen($_SESSION['tracelog'])+$_SESSION['runtime_memory_used'];
 
 ?>
-<style>
-body {
-	background-color: black;
-}
-b, i, body {
-	color: white;
-}
-</style>
+<link rel="stylesheet" href="<?=htmlspecialchars(dataphyre_tracelog_asset_url('viewer.css'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');?>">
 <h1>Dataphyre: Tracelog Viewer</h1>
 <span style="font-size: 15px;">CPU Usage: <?=round(sys_getloadavg()[0], 3); ?>%</span><br>
 <span style="font-size: 15px;">PHP: <?=phpversion(); ?></span><br>

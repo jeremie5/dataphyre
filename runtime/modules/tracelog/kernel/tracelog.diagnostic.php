@@ -9,17 +9,30 @@ namespace dataphyre\tracelog;
 
 \dataphyre\tracelog\diagnostic::tests();
 
+/**
+ * Verifies Tracelog runtime prerequisites and trace table availability.
+ *
+ * The diagnostic declares SQL as a required dependency, checks extensions used
+ * by request trace capture, and creates the tracelog persistence table when SQL
+ * helpers are available in the current entrypoint.
+ */
 class diagnostic{
 
+	/**
+	 * Collects Tracelog health findings and initializes SQL storage.
+	 *
+	 * Documentation tooling and embedded diagnostics may load this file without module
+	 * entrypoints; in that case SQL table checks are reported as a warning rather
+	 * than failing bootstrap.
+	 *
+	 * @return void Findings are appended to dpanel verbose output.
+	 */
 	public static function tests(): void {
 		$verbose=[];
-		// Runtime information
 		\dp_module_required('tracelog', 'sql');
-		// Check for PHP version
 		if(version_compare(PHP_VERSION, $ver='8.1.0') < 0){
 			$verbose[]=['module'=>'tracelog', 'error'=>'PHP version '.$ver.' or higher is required.', 'time'=>time()];
 		}
-		// Check each required extension for module
 		$required_extensions=[
 			'session',
 			'json',

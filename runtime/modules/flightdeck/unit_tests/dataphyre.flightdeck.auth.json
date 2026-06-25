@@ -1,0 +1,36 @@
+[
+	{
+		"name": "flightdeck csrf tokens survive client address changes",
+		"function": "dp_flightdeck_unit_csrf_survives_remote_addr_change",
+		"args": [],
+		"expected": [
+			{
+				"result": {
+					"token_length": 64,
+					"valid_after_ip_change": true,
+					"rejects_empty": true
+				}
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"max_millis": 10
+	},
+	{
+		"name": "flightdeck toolbar cookies survive app changes",
+		"function": "dp_flightdeck_unit_auth_accepts_cross_app_toolbar_cookies",
+		"args": [],
+		"expected": [
+			{
+				"result": {
+					"default_app": "shopiro",
+					"auth_project_differs_from_legacy": true,
+					"auth_accepts_legacy_default_app_cookie": true,
+					"debugbar_project_differs_from_legacy": true,
+					"debugbar_accepts_legacy_default_app_cookie": true
+				}
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"max_millis": 10
+	}
+]

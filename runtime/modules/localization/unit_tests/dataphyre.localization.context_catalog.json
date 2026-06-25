@@ -1,0 +1,19 @@
+[
+  {
+    "name": "unknown catalog normalizes names and exposes lookup helpers",
+    "file": "/common/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
+    "function": "DataphyreUnitTests\\localization_unknown_catalog_json",
+    "args": [{
+      " Checkout.Title ": {"language": "en", "count": 2, "string": "Checkout"},
+      "Footer.Copy": {"language": "fr", "count": 1, "string": "Footer"}
+    }],
+    "expected": "{\"count\":2,\"first\":{\"name\":\"CHECKOUT.TITLE\",\"theme\":null,\"path\":null,\"scope\":null,\"string\":\"Checkout\",\"detection_language\":null},\"has_checkout\":true,\"lookup\":{\"name\":\"FOOTER.COPY\",\"theme\":null,\"path\":null,\"scope\":null,\"string\":\"Footer\",\"detection_language\":null},\"names\":[\"CHECKOUT.TITLE\",\"FOOTER.COPY\"]}"
+  },
+  {
+    "name": "unknown catalog ignores malformed entries",
+    "file": "/common/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
+    "function": "DataphyreUnitTests\\localization_unknown_catalog_empty_json",
+    "args": [],
+    "expected": "{\"count\":0,\"first\":null,\"has_any\":false,\"names\":[]}"
+  }
+]

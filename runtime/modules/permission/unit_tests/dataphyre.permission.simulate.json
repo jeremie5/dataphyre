@@ -1,0 +1,23 @@
+[
+    {
+        "name": "simulate_reports_granted_and_denied_deltas",
+        "function": "simulate",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            {
+                "permissions": ["panel.orders.view_any"]
+            },
+            {
+                "grant": ["panel.orders.update"],
+                "deny": ["panel.orders.force_delete"]
+            },
+            ["panel.orders.view_any", "panel.orders.update", "panel.orders.force_delete"]
+        ],
+        "expected": {
+            "custom_script": "return is_array($result) && ($result['after']['panel.orders.update'] ?? null) === true && ($result['after']['panel.orders.force_delete'] ?? null) === false && in_array('panel.orders.update', $result['delta']['granted'] ?? [], true);"
+        },
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    }
+]

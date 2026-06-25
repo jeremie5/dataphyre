@@ -9,29 +9,39 @@ namespace Dataphyre;
 
 final class Env {
 
+	private static array $values=[];
+
 	public static function all(): array {
-		return \dataphyre\core::env_all();
+		return self::$values;
 	}
 
 	public static function get(string $key, mixed $default=null): mixed {
-		$env=static::all();
-		return array_key_exists($key, $env) ? $env[$key] : $default;
+		return array_key_exists($key, self::$values) ? self::$values[$key] : $default;
 	}
 
 	public static function has(string $key): bool {
-		return array_key_exists($key, static::all());
+		return array_key_exists($key, self::$values);
 	}
 
 	public static function set(string|array $key, mixed $value=null): void {
-		\dataphyre\core::set_env($key, $value);
+		if(is_array($key)){
+			static::merge($key);
+			return;
+		}
+		self::$values[$key]=$value;
 	}
 
 	public static function merge(array $values): void {
-		\dataphyre\core::set_env($values);
+		foreach($values as $key=>$value){
+			self::$values[(string)$key]=$value;
+		}
 	}
 
 	public static function forget(string|array $key): void {
-		\dataphyre\core::forget_env($key);
+		$keys=is_array($key) ? $key : [$key];
+		foreach($keys as $envKey){
+			unset(self::$values[(string)$envKey]);
+		}
 	}
 
 	public static function pull(string $key, mixed $default=null): mixed {
@@ -56,10 +66,10 @@ final class Env {
 		$selected=[];
 		foreach($keys as $key){
 			$key=(string)$key;
-			if(!static::has($key)){
+			if(!array_key_exists($key, self::$values)){
 				continue;
 			}
-			$selected[$key]=static::get($key);
+			$selected[$key]=self::$values[$key];
 		}
 		return $selected;
 	}
@@ -73,7 +83,7 @@ final class Env {
 	}
 
 	public static function keys(): array {
-		return array_keys(static::all());
+		return array_keys(self::$values);
 	}
 
 	private static function normalizePrefix(?string $prefix, string $separator): ?string {

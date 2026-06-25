@@ -1,13 +1,13 @@
 # Dataphyre Localization
 
 ## Overview
-The `localization` module provides database-backed localized strings with JSON file materialization for fast runtime reads. It supports three scopes:
+The `localization` module provides localized strings through JSON files, with an optional database-backed definition source for teams that want SQL authoring and materialization. It supports three scopes:
 
 - `global`: shared strings across the application
 - `theme`: theme-level strings
 - `local`: page-specific strings
 
-At runtime, applications usually read from generated JSON locale files. Database changes are synced back into those files through `sync_locales()` or `rebuild_locale()`.
+At runtime, applications read from JSON locale files. In the default database-backed mode, database changes are synced back into those files through `sync_locales()` or `rebuild_locale()`. In file-backed mode, those JSON files are the editable source of truth and the module does not require SQL.
 
 ## Module Shape
 The module loads its kernel entry from `localization.main.php` by module folder convention.
@@ -44,7 +44,10 @@ Preferred application bootstrap:
 	],
 	'enable_theme_locales'=>true,
 	'enable_global_locales'=>true,
-	'locales_table'=>'shopiro.locales',
+	'database_backed'=>true,
+	'locales_table'=>'app.locales',
+	'source_branch'=>null,
+	'source_commit'=>null,
 	'global_locale_path'=>ROOTPATH['backend'].'global_i18n_locales/%language%/static_locales/global.json',
 	'theme_locale_path'=>ROOTPATH['themes'].'%theme%/DYN_i18n_locales/%language%/static_locales/global.json',
 	'local_locale_path'=>ROOTPATH['themes'].'%theme%/DYN_i18n_locales/%language%/static_locales%active_page%.json',
@@ -56,7 +59,10 @@ Optional module config loaded from `config/localization.php` and exposed as `DP_
 ```php
 return [
 	'default_language'=>'en-CA',
-	'locales_table'=>'shopiro.locales',
+	'locales_table'=>'app.locales',
+	'database_backed'=>false,
+	'source_branch'=>getenv('APP_GIT_BRANCH') ?: null,
+	'source_commit'=>getenv('APP_GIT_COMMIT') ?: null,
 	'enable_theme_locales'=>true,
 	'enable_global_locales'=>true,
 ];
@@ -75,7 +81,12 @@ return [
 | `custom_parameters` | Additional locale token replacements |
 | `enable_theme_locales` | Enables `theme:` locale lookups |
 | `enable_global_locales` | Enables `global:` locale lookups |
+| `database_backed` | Uses SQL as the locale definition source when true; uses JSON files directly when false |
 | `locales_table` | Backing SQL table |
+| `source_branch` | Optional branch name stamped on file-backed locale metadata |
+| `source_commit` | Optional commit hash stamped on file-backed locale metadata |
+| `source_repository_path` | Optional repository path for automatic branch/commit detection |
+| `detect_source_from_git` | Enables read-only local `git` detection when source config/env values are absent |
 | `global_locale_path` | JSON output path template for global locales |
 | `theme_locale_path` | JSON output path template for theme locales |
 | `local_locale_path` | JSON output path template for local/page locales |
@@ -128,6 +139,12 @@ Reads and returns locale JSON data for a specific scope/path/language combinatio
 
 For `local` scope, page paths are normalized to the module's expected route form before file resolution.
 
+### `database_backed(): bool`
+Returns whether SQL is the locale definition source of truth. When false, lookup, definition reads, saves, deletes, and unknown-locale learning operate directly on the configured JSON files.
+
+### `source_snapshot(): array`
+Returns the branch, commit, repository path, and detection timestamp associated with localization edits. Explicit `source_branch`/`source_commit` config wins, then common CI environment variables, then read-only local git detection when enabled.
+
 ### `locale_parameters(string $string, ?array $parameters = []): string`
 Applies built-in and custom replacements such as:
 
@@ -140,7 +157,7 @@ plus any values supplied in `custom_parameters` or in the call-level `$parameter
 ## Learning Unknown Locales
 
 ### `learn_unknown_locales(): int|string`
-Processes the unknown locale cache, translates strings into the configured languages, upserts them into the locales table, and clears learned entries from the unknown-locales file.
+Processes the unknown locale cache, translates strings into the configured languages, and clears learned entries from the unknown-locales file. Database-backed mode upserts rows into the locales table; file-backed mode writes the configured JSON dictionaries directly.
 
 Possible return values include:
 
@@ -151,6 +168,7 @@ Possible return values include:
 - `no_translation_callback`
 - `invalid_unknown_locales`
 - `unknown_locales_unwritable`
+- `locale_file_unwritable`
 
 ## Sync and Rebuild
 
@@ -164,7 +182,7 @@ Checks for locale table changes after the last successful sync marker and rebuil
 This avoids advancing the rebuild watermark before rows are actually processed.
 
 ### `rebuild_locale(?array $type = [], ?array $lang = [], ?array $theme = [], ?array $paths = [])`
-Force-regenerates JSON locale files from the database.
+Force-regenerates JSON locale files from the database. In file-backed mode, JSON files are already the source and this is a successful no-op.
 
 Examples:
 
@@ -188,12 +206,19 @@ Wildcard behavior:
 
 ## Storage and Files
 
-The module uses:
+In database-backed mode, the module uses:
 
 - SQL table rows as the source of truth
 - generated JSON files for fast read performance
 - lock files to avoid overlapping rebuild/learning runs
 - cache files for unknown locales and sync progress
+
+In file-backed mode (`database_backed => false`), the module uses:
+
+- JSON files as the source of truth
+- `.meta.json` sidecars beside edited locale files to record branch/commit provenance
+- unknown-locale cache files for fallback capture and learning
+- no SQL table registration, sync scan, or rebuild query path
 
 Typical path templates:
 
@@ -205,7 +230,7 @@ Typical path templates:
 
 ## Database Contract
 
-Expected fields in `locales_table`:
+In database-backed mode, expected fields in `locales_table`:
 
 | Field | Purpose |
 |---|---|
@@ -303,7 +328,7 @@ $rebuild=Localization::rebuildSelection(
 
 Unknown locale inspection is exposed through `UnknownLocaleCatalog` and `UnknownLocaleEntry`, so applications can review the pending locale-learning queue without reading the raw cache file directly.
 
-Source locale definition inspection and authoring are exposed through `LocaleDefinitionCatalog` and `LocaleDefinition`, so framework code can work directly with the SQL source of truth:
+Source locale definition inspection and authoring are exposed through `LocaleDefinitionCatalog` and `LocaleDefinition`, so framework code can work with the configured definition source:
 
 ```php
 $definitions=Localization::definitions(

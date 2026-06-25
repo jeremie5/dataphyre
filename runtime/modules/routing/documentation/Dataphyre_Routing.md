@@ -158,23 +158,36 @@ Compiled route matching follows a few clear rules:
 - exact static paths compile to `exact_path`
 - parameterized paths compile to `path_regex`
 - `{id}` captures one path segment as a named parameter
+- `{filter?}` captures an optional trailing path segment
 - `{...segments}` captures the remainder of the path and is exposed as an array of segments
+- domains may be exact or parameterized, for example `{tenant}.example.com`
+- parameter constraints from `where()` are compiled directly into the path or domain regex
 
 Examples:
 
 ```php
 Route::get('/orders', __DIR__.'/views/orders.php');
-Route::get('/orders/{order_id}', __DIR__.'/views/order.php');
+Route::get('/orders/{order_id}', __DIR__.'/views/order.php')->whereNumber('order_id');
+Route::get('/reports/{filter?}', __DIR__.'/views/reports.php');
+Route::get('/{locale?}/products/{product}', __DIR__.'/views/product.php')
+	->defaults('locale', 'en');
 Route::any('/files/{...segments}', __DIR__.'/views/file_browser.php');
+Route::get('/dashboard', __DIR__.'/views/tenant.php')
+	->domain('{tenant}.example.com')
+	->where('tenant', '[a-z]+');
 ```
 
 At dispatch time:
 
 - `/orders` matches the first route exactly
 - `/orders/42` publishes `['order_id'=>'42']`
+- `/orders/pending` does not match the numeric order route
+- `/reports` matches without `filter`; `/reports/open` publishes `['filter'=>'open']`
+- defaults fill missing optional parameters, so `/products/desk` can publish `['locale'=>'en', 'product'=>'desk']`
 - `/files/a/b/c` publishes `['segments'=>['a', 'b', 'c']]`
+- host `acme.example.com` on the domain route publishes `['tenant'=>'acme']`
 
-Matched parameters are published into `\dataphyre\routing::$bindings`. Controller-backed and middleware-backed routes also receive a captured `Request` object with those path parameters.
+Matched parameters are published into `\dataphyre\routing::$bindings`. Controller-backed and middleware-backed routes also receive a captured `Request` object with those domain and path parameters.
 
 ## Handler Model
 
@@ -243,8 +256,22 @@ Built-in aliases are:
 
 - `auth`
 - `guest`
+- `can`
+- `permission`
+- `can_any`
+- `permission_any`
+- `can_when`
+- `permission_when`
+- `can_any_when`
+- `permission_any_when`
 
 At dispatch time, middleware is resolved into a pipeline of objects exposing a `handle(...)` method. For Dataphyre namespaced middleware and controllers, the dispatcher also infers framework modules from the class namespace where possible. You can also pass explicit `modules` when you need a different or additional module load.
+
+`compiled_route_dispatcher::resolve_middleware_for_route($definition, $aliases)`
+is available for higher-level modules that need Routing's middleware alias,
+module, and bootstrap resolution without using Routing's emitter-based dispatch.
+Custom aliases may point to middleware classes, class definition arrays, or
+callables.
 
 ## Compiled Manifest Shape
 
@@ -254,12 +281,14 @@ At dispatch time, middleware is resolved into a pipeline of objects exposing a `
 [
 	'version'=>1,
 	'metadata'=>[
-		'application'=>'shopiro',
+		'application'=>'example_app',
 	],
 	'routes'=>[
 		[
 			'methods'=>['GET'],
+			'path'=>'/orders',
 			'exact_path'=>'/orders',
+			'metadata'=>[],
 			'handler'=>__DIR__.'/views/orders.php',
 		],
 	],
@@ -269,7 +298,9 @@ At dispatch time, middleware is resolved into a pipeline of objects exposing a `
 Each compiled route includes:
 
 - `methods`
+- `path`
 - `handler`
+- `metadata` when present
 - `middleware` when present
 - `exact_path` for static routes
 - `path_regex` for parameterized routes
@@ -330,7 +361,7 @@ return [
 use Dataphyre\Routing\RouteCompiler;
 
 $manifest=RouteCompiler::compile_file(__DIR__.'/routes.php', [
-	'application'=>'shopiro',
+	'application'=>'example_app',
 	'compiled_at'=>gmdate('c'),
 ]);
 
@@ -349,6 +380,10 @@ $manifest_file=CompileApplicationRoutes::compile(
 	'example_app'
 );
 ```
+
+The CLI helper at `runtime/modules/routing/kernel/compile_app_routes.php` uses
+`DATAPHYRE_PROJECT_ROOT` when the application tree is outside the Dataphyre
+package root.
 
 ### Add Middleware With Parameters
 
@@ -460,13 +495,20 @@ Static builders include:
 - `methods(...)`
 - `get(...)`
 - `post(...)`
+- `head(...)`
 - `put(...)`
 - `patch(...)`
 - `delete(...)`
+- `options(...)`
 - `any(...)`
+- `normalizeMethods(...)`
+- `normalizeMiddleware(...)`
+- `normalizePath(...)`
 
 Instance methods include:
 
+- `name(...)`
+- `metadata(...)`
 - `middleware(...)`
 - `compile()`
 
@@ -489,6 +531,7 @@ Static builders include:
 
 - `static(...)`
 - `instance(...)`
+- `fromString(...)`
 
 Instance methods include:
 
@@ -513,17 +556,34 @@ $compiled=$action->compile();
 Methods include:
 
 - `compile_file(...)`
+- `route_files(...)`
+- `source_mtimes(...)`
+- `manifest_signature(...)`
+- `read_manifest_file(...)`
+- `manifest_exportable(...)`
+- `try_write_manifest_file(...)`
 - `write_manifest_file(...)`
 
 Example:
 
 ```php
 $manifest=RouteCompiler::compile_file(__DIR__.'/routes.php', [
-	'application'=>'volumetrix',
+	'application'=>'example_app',
 ]);
 
 RouteCompiler::write_manifest_file(__DIR__.'/compiled_routes.php', $manifest);
 ```
+
+`route_files(...)`, `source_mtimes(...)`, and `manifest_signature(...)` are
+small helpers for modules that need to load route directories or invalidate
+cached manifests from source file mtimes.
+
+`read_manifest_file(...)` loads a cached manifest and validates that it returns
+the expected manifest array shape.
+
+Use `try_write_manifest_file(...)` when the manifest may contain closures or
+other runtime-only values. It returns `false` instead of writing a PHP file that
+cannot be loaded back safely.
 
 ## `Dataphyre\Routing\RouteManifest`
 
@@ -532,6 +592,8 @@ RouteCompiler::write_manifest_file(__DIR__.'/compiled_routes.php', $manifest);
 Methods include:
 
 - `compile(...)`
+- `routeMetadata(...)`
+- `withRouteMetadata(...)`
 
 Example:
 
@@ -539,7 +601,7 @@ Example:
 $manifest=RouteManifest::compile([
 	Route::get('/ping', __DIR__.'/views/ping.php'),
 ], [
-	'application'=>'shopiro',
+	'application'=>'example_app',
 ]);
 ```
 

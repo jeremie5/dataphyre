@@ -71,13 +71,18 @@ final class ConfigRepository implements \JsonSerializable {
 	}
 
 	public function only(array $keys): array {
+		$config=Config::all();
 		$selected=[];
 		foreach($keys as $key){
 			$key=trim((string)$key);
-			if($key==='' || !$this->has($key)){
+			if($key===''){
 				continue;
 			}
-			$selected[$key]=$this->get($key);
+			$value=static::pathValue($config, $this->composePath($key), $exists);
+			if(!$exists){
+				continue;
+			}
+			$selected[$key]=$value;
 		}
 		return $selected;
 	}
@@ -91,11 +96,24 @@ final class ConfigRepository implements \JsonSerializable {
 	}
 
 	public function keys(): array {
-		return array_keys($this->all());
+		if($this->path===null){
+			return array_keys(Config::all());
+		}
+		$value=static::pathValue(Config::all(), $this->path, $exists);
+		return $exists && is_array($value) ? array_keys($value) : [];
 	}
 
 	public function isEmpty(): bool {
-		$value=$this->value(null);
+		if($this->path===null){
+			$value=Config::all();
+		}
+		else
+		{
+			$value=static::pathValue(Config::all(), $this->path, $exists);
+			if(!$exists){
+				return true;
+			}
+		}
 		if(is_array($value)){
 			return $value===[];
 		}
@@ -163,6 +181,28 @@ final class ConfigRepository implements \JsonSerializable {
 			explode('/', trim($path)),
 			static fn(string $segment): bool => $segment!==''
 		));
+	}
+
+	private static function pathValue(array $config, string $path, ?bool &$exists=false): mixed {
+		if(array_key_exists($path, $config)){
+			$exists=true;
+			return $config[$path];
+		}
+		$segments=static::segments($path);
+		if($segments===[]){
+			$exists=true;
+			return $config;
+		}
+		$current=$config;
+		foreach($segments as $segment){
+			if(!is_array($current) || !array_key_exists($segment, $current)){
+				$exists=false;
+				return null;
+			}
+			$current=$current[$segment];
+		}
+		$exists=true;
+		return $current;
 	}
 
 	private static function unsetPath(array &$value, array $path): void {

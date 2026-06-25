@@ -1,0 +1,12 @@
+[{
+    "max_millis":  10,
+    "name":  "url_self_is_used_by_self_querystring_update",
+    "function":  "dp_core_unit_url_self_update",
+    "args":  [
+
+             ],
+    "expected":  [
+                     "http://example.test/orders?a=1\u0026c=see"
+                 ],
+    "file":  "/common/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
+}]

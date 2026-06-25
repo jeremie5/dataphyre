@@ -1,0 +1,147 @@
+[
+	{
+		"name": "minor_units_defaults_to_two_for_standard_currency",
+		"function": "minor_units",
+		"class": "dataphyre\\currency",
+		"static_method": true,
+		"args": [
+			"usd"
+		],
+		"expected": [
+			2
+		],
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 5
+	},
+	{
+		"name": "minor_units_uses_zero_decimal_currency_metadata",
+		"function": "minor_units",
+		"class": "dataphyre\\currency",
+		"static_method": true,
+		"args": [
+			"JPY"
+		],
+		"expected": [
+			0
+		],
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 5
+	},
+	{
+		"name": "cash_rounding_increment_uses_default_chf_increment",
+		"function": "cash_rounding_increment",
+		"class": "dataphyre\\currency",
+		"static_method": true,
+		"args": [
+			"chf"
+		],
+		"expected": [
+			0.05
+		],
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 5
+	},
+	{
+		"name": "round_amount_respects_minor_units",
+		"function": "round_amount",
+		"class": "dataphyre\\currency",
+		"static_method": true,
+		"args": [
+			"12.345",
+			"USD",
+			false
+		],
+		"expected": [
+			12.35
+		],
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 5
+	},
+	{
+		"name": "round_amount_applies_cash_rounding_increment",
+		"function": "round_amount",
+		"class": "dataphyre\\currency",
+		"static_method": true,
+		"args": [
+			"10.03",
+			"CHF",
+			true
+		],
+		"expected": [
+			10.05
+		],
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 5
+	},
+	{
+		"name": "split_amount_distributes_remainder_without_losing_cents",
+		"function": "split_amount",
+		"class": "dataphyre\\currency",
+		"static_method": true,
+		"args": [
+			10,
+			"USD",
+			3,
+			false
+		],
+		"expected": [
+			[
+				3.34,
+				3.33,
+				3.33
+			]
+		],
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 5
+	},
+	{
+		"name": "allocate_amount_preserves_input_ratio_keys",
+		"function": "allocate_amount",
+		"class": "dataphyre\\currency",
+		"static_method": true,
+		"args": [
+			10,
+			"USD",
+			{
+				"platform": 1,
+				"seller": 3
+			},
+			false
+		],
+		"expected": [
+			{
+				"custom_script": "return is_array($result) && array_keys($result)===['platform','seller'] && $result['platform']===2.5 && $result['seller']===7.5;"
+			}
+		],
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 5
+	}
+]

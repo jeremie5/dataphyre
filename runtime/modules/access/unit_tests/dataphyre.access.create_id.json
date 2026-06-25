@@ -6,7 +6,7 @@
 		"static_method": true,
 		"args": [],
 		"expected": {
-			"custom_script": "return is_string($result) && strlen($result) === 64 && preg_match('/^[a-f0-9]{64}$/', $result);"
+			"custom_script": "return is_string($result) && preg_match('/^[A-Z0-9]{4}_[A-Za-z0-9_-]{43}_[a-f0-9]{8}$/', $result) === 1;"
 		},
 		"dependencies": {
 			"class": ["dataphyre\\access"],

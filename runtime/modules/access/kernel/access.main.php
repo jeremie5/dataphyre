@@ -17,6 +17,7 @@ dp_define_module_config('access', 'DP_ACCESS_CFG', [
 	'sessions_cookie_name'=>'DPID',
 	'auth_types'=>['session'],
 	'default_auth_type'=>'session',
+	'botlist'=>['Googlebot', 'bingbot', 'Bingbot', 'Slurp', 'DuckDuckBot', 'Baiduspider', 'YandexBot'],
 	'framework'=>[
 		'default_guard'=>'session',
 		'guards'=>[],
@@ -26,7 +27,40 @@ dp_define_module_config('access', 'DP_ACCESS_CFG', [
 			'providers'=>[],
 		],
 	],
+	'identity'=>[
+		'users_table'=>null,
+		'id_column'=>'id',
+		'email_column'=>'email',
+		'name_column'=>'name',
+		'password_column'=>'password',
+		'password_hash_column'=>null,
+		'email_verified_column'=>'email_verified',
+		'email_verified_at_column'=>'email_verified_at',
+		'created_at_column'=>'created_at',
+		'tokens_table'=>'dataphyre.access_tokens',
+		'callbacks'=>[],
+	],
+	'panel_auth'=>[
+		'enabled'=>false,
+		'allow_registration'=>true,
+		'require_email_verification'=>false,
+		'login_page'=>'login',
+		'register_page'=>'register',
+		'logout_page'=>'logout',
+		'verify_page'=>'email_verification',
+		'password_reset_page'=>'password_reset',
+		'password_change_page'=>'password_change',
+		'after_login'=>null,
+		'after_logout'=>null,
+		'queue_mail'=>true,
+		'verification_ttl'=>86400,
+		'password_reset_ttl'=>3600,
+	],
 ]);
+
+if(defined('DP_ACCESS_CFG') && !defined('Dataphyre\\Access\\DP_ACCESS_CFG')){
+	define('Dataphyre\\Access\\DP_ACCESS_CFG', DP_ACCESS_CFG);
+}
 
 $dp_access_sessions_table_name=(string)DP_ACCESS_CFG['sessions_table_name'];
 $configured_auth_types=DP_ACCESS_CFG['auth_types']
@@ -57,6 +91,11 @@ if(!defined('DP_ACCESS_DEFAULT_AUTH_TYPE')){
 if(!defined('DP_ACCESS_AUTH_TYPES')){
 	define('DP_ACCESS_AUTH_TYPES', $configured_auth_types);
 }
+if(function_exists('sql_define_table')){
+	sql_define_table(DP_ACCESS_SESSIONS_TABLE_NAME, __DIR__.'/access.tables.php', 'sessions');
+	$dp_access_tokens_table_name=(string)(DP_ACCESS_CFG['identity']['tokens_table'] ?? 'dataphyre.access_tokens');
+	sql_define_table($dp_access_tokens_table_name, __DIR__.'/access.tables.php', 'tokens');
+}
 
 \heisenconstant('DPID', fn()=>$_SESSION['dp_access']['dpid']);
 \heisenconstant('AUTH_TYPE', fn()=>\dataphyre\access::current_auth_type());
@@ -65,6 +104,15 @@ if(RUN_MODE==='diagnostic'){
 	require_once(__DIR__.'/access.diagnostic.php');
 }
 
+/**
+ * Coordinates Dataphyre's kernel authentication state and session security checks.
+ *
+ * Access owns the legacy session guard, optional delegated auth types, DPID
+ * identifier creation, TOTP utilities, request device heuristics, and page-level
+ * access gates. The class reads and mutates `$_SESSION['dp_access']`, secure
+ * cookies, the configured sessions table, and firewall escalation hooks when a
+ * session identifier or browser fingerprint appears forged or stale.
+ */
 class access{
 	
 	private static $session_cookie='__Secure-DPID';
@@ -77,6 +125,11 @@ class access{
 	];
 	static $useragent_mismatch=false;
 	
+	/**
+	 * Creates the Access kernel object and stores its initial state.
+	 *
+	 * Access kernel boundary: authentication, authorization, guard checks, sessions, tokens, and policy decisions.
+	 */
 	public  function __construct(){
 		if(isset(DP_ACCESS_CFG['sessions_cookie_name'])){
 			self::$session_cookie='__Secure-'.DP_ACCESS_CFG['sessions_cookie_name'];
@@ -123,11 +176,27 @@ class access{
 		DPID->reset();
 	}
 
+	/**
+	 * Resolves the configured default authentication guard.
+	 *
+	 * Blank configuration falls back to `session` so callers always receive a
+	 * usable guard name for session creation, validation, and delegated auth.
+	 *
+	 * @return string Lowercase default auth type.
+	 */
 	public static function default_auth_type(): string {
 		$auth_type=strtolower(trim((string)(DP_ACCESS_DEFAULT_AUTH_TYPE ?? 'session')));
 		return $auth_type!=='' ? $auth_type : 'session';
 	}
 
+	/**
+	 * Returns the normalized allow-list of configured authentication guards.
+	 *
+	 * Values are trimmed, lowercased, deduplicated, and never allowed to become
+	 * empty; an invalid configuration collapses to the default guard.
+	 *
+	 * @return array<int, string> Enabled auth type names in resolution order.
+	 */
 	public static function enabled_auth_types(): array {
 		$auth_types=DP_ACCESS_AUTH_TYPES ?? ['session'];
 		if(!is_array($auth_types) || $auth_types===[]){
@@ -143,10 +212,28 @@ class access{
 		return $normalized;
 	}
 
+	/**
+	 * Checks whether a requested auth type is currently enabled.
+	 *
+	 * The input is normalized before comparison, so callers may pass mixed case
+	 * or surrounding whitespace without bypassing the configured guard list.
+	 *
+	 * @param string $auth_type Candidate guard name.
+	 * @return bool True when the normalized guard appears in the enabled auth list.
+	 */
 	public static function auth_type_enabled(string $auth_type): bool {
 		return in_array(self::normalize_auth_type($auth_type), self::enabled_auth_types(), true);
 	}
 
+	/**
+	 * Returns the auth type selected for the current request.
+	 *
+	 * Detection is cached for the request and prefers bearer-token guards over
+	 * remembered session guards before falling back to cookie presence and then
+	 * the configured default.
+	 *
+	 * @return string Active request guard.
+	 */
 	public static function current_auth_type(): string {
 		if(self::$current_auth_type!==null){
 			return self::$current_auth_type;
@@ -154,6 +241,15 @@ class access{
 		return self::$current_auth_type=self::detect_request_auth_type();
 	}
 
+	/**
+	 * Builds a compact identity snapshot for the requested guard.
+	 *
+	 * The context resolves the guard, checks login state, exposes the current
+	 * user id when available, and names the cookie that backs session auth.
+	 *
+	 * @param ?string $auth_type Optional guard override; null resolves from the request.
+	 * @return array{auth_type: string, logged_in: bool, userid: int|string|null, id: string|null, cookie_name: ?string} Current auth context.
+	 */
 	public static function auth_context(?string $auth_type=null): array {
 		$resolved_auth_type=self::resolve_auth_type($auth_type);
 		$userid=self::userid($resolved_auth_type);
@@ -170,10 +266,27 @@ class access{
 		];
 	}
 	
+	/**
+	 * Returns the secure cookie name used by the session guard.
+	 *
+	 * The constructor applies the configured base name and always prefixes it as
+	 * a `__Secure-` cookie for browser delivery.
+	 *
+	 * @return string Session guard cookie name.
+	 */
 	public static function get_session_cookie_name(): string {
 		return self::$session_cookie;
 	}
 
+	/**
+	 * Returns the cookie backing a guard when that guard is cookie-based.
+	 *
+	 * Only the built-in `session` guard currently owns a cookie; delegated guards
+	 * such as bearer-token/JWT flows return null.
+	 *
+	 * @param ?string $auth_type Optional guard override.
+	 * @return ?string Cookie name for session auth, or null for non-cookie guards.
+	 */
 	public static function get_auth_cookie_name(?string $auth_type=null): ?string {
 		$auth_type=self::resolve_auth_type($auth_type);
 		if($auth_type==='session'){
@@ -182,11 +295,29 @@ class access{
 		return null;
 	}
 
+	/**
+	 * Normalizes a guard name for comparison and fallback handling.
+	 *
+	 * Empty values resolve to the configured default guard so public methods can
+	 * accept null overrides without duplicating fallback logic.
+	 *
+	 * @param ?string $auth_type Raw guard name.
+	 * @return string Lowercase guard name.
+	 */
 	private static function normalize_auth_type(?string $auth_type=null): string {
 		$auth_type=strtolower(trim((string)$auth_type));
 		return $auth_type!=='' ? $auth_type : self::default_auth_type();
 	}
 
+	/**
+	 * Resolves a guard name to an enabled auth type.
+	 *
+	 * Unknown guards collapse to the configured default to keep legacy callers on
+	 * the session path instead of raising runtime errors.
+	 *
+	 * @param ?string $auth_type Requested guard name.
+	 * @return string Enabled guard name.
+	 */
 	private static function resolve_auth_type(?string $auth_type=null): string {
 		$auth_type=self::normalize_auth_type($auth_type);
 		if(self::auth_type_enabled($auth_type)){
@@ -195,6 +326,15 @@ class access{
 		return self::default_auth_type();
 	}
 
+	/**
+	 * Detects which authentication guard should handle the current request.
+	 *
+	 * Bearer tokens win over remembered session state, remembered session state
+	 * wins over cookie presence, and all missing signals fall back to the default
+	 * guard.
+	 *
+	 * @return string Detected request guard.
+	 */
 	private static function detect_request_auth_type(): string {
 		if(self::auth_type_enabled('jwt') && self::bearer_token()!==null){
 			return 'jwt';
@@ -211,6 +351,15 @@ class access{
 		return self::default_auth_type();
 	}
 
+	/**
+	 * Stores the resolved guard for the current request and session.
+	 *
+	 * The in-memory cache prevents later checks from redetecting the request, and
+	 * the session field lets future requests remember which guard authenticated.
+	 *
+	 * @param string $auth_type Guard name to persist.
+	 * @return void
+	 */
 	private static function mark_auth_type(string $auth_type): void {
 		$auth_type=self::resolve_auth_type($auth_type);
 		self::$current_auth_type=$auth_type;
@@ -219,6 +368,14 @@ class access{
 		}
 	}
 
+	/**
+	 * Extracts a bearer token from server authorization headers.
+	 *
+	 * Both direct and redirected authorization headers are supported for common
+	 * web-server forwarding setups. Non-bearer or blank headers return null.
+	 *
+	 * @return ?string Bearer token without the scheme prefix.
+	 */
 	private static function bearer_token(): ?string {
 		$authorization=$_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
 		if(!is_string($authorization) || $authorization===''){
@@ -230,6 +387,15 @@ class access{
 		return trim($matches[1])!=='' ? trim($matches[1]) : null;
 	}
 
+	/**
+	 * Returns the four-character identifier prefix assigned to a guard.
+	 *
+	 * Built-in guards use stable prefixes. Custom guards derive a sanitized,
+	 * padded prefix from their name and cache it for reverse lookup.
+	 *
+	 * @param string $auth_type Guard name.
+	 * @return string Four-character DPID prefix.
+	 */
 	private static function auth_type_prefix(string $auth_type): string {
 		$auth_type=self::resolve_auth_type($auth_type);
 		if(isset(self::$auth_type_prefix_map[$auth_type])){
@@ -241,6 +407,15 @@ class access{
 		return $prefix;
 	}
 
+	/**
+	 * Resolves a DPID prefix back to its configured guard.
+	 *
+	 * Unknown prefixes are treated as the default guard so validation can still
+	 * perform signature checks before rejecting forged identifiers.
+	 *
+	 * @param string $prefix Four-character identifier prefix.
+	 * @return string Resolved guard name.
+	 */
 	private static function auth_type_from_prefix(string $prefix): string {
 		$prefix=strtoupper(trim($prefix));
 		$auth_type=array_search($prefix, self::$auth_type_prefix_map, true);
@@ -250,6 +425,17 @@ class access{
 		return self::default_auth_type();
 	}
 
+	/**
+	 * Offers auth operations to non-session guards through dialback hooks.
+	 *
+	 * The built-in session guard returns null so the local implementation keeps
+	 * running. Other guards can return a concrete result from `core::dialback()`.
+	 *
+	 * @param string $operation Access operation suffix.
+	 * @param string $auth_type Resolved guard name.
+	 * @param array<int, mixed> $arguments Operation arguments to forward.
+	 * @return mixed Delegated result, or null when the local session path should handle it.
+	 */
 	private static function delegate_auth_type(string $operation, string $auth_type, array $arguments): mixed {
 		if($auth_type==='session'){
 			return null;
@@ -257,11 +443,30 @@ class access{
 		return core::dialback('CALL_ACCESS_'.$operation.'_AUTH_TYPE', $auth_type, ...$arguments);
 	}
 
+	/**
+	 * Logs an unsupported guard operation and returns the caller's fallback.
+	 *
+	 * Boolean-returning guard helpers stay predictable when an enabled
+	 * guard has no delegate implementation for the requested operation.
+	 *
+	 * @param string $operation Access operation suffix.
+	 * @param string $auth_type Resolved guard name.
+	 * @param mixed $fallback Value to return to the caller.
+	 * @return mixed caller fallback returned after the unsupported guard operation is traced.
+	 */
 	private static function unsupported_auth_type(string $operation, string $auth_type, mixed $fallback=false): mixed {
 		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Unsupported auth type '$auth_type' for operation '$operation'");
 		return $fallback;
 	}
 	
+	/**
+	 * Enforces browser fingerprint drift policy for the active session.
+	 *
+	 * More than one changed fingerprint attribute marks the session as a security
+	 * alert, disables it, and escalates to the firewall CAPTCHA hook when present.
+	 *
+	 * @return void
+	 */
 	private static function enforce_fingerprint_drift() : void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(isset($_SESSION['dp_access']['fingerprint'])){
@@ -278,6 +483,16 @@ class access{
 		$_SESSION['dp_access']['fingerprint']=self::$fingerprint;
 	}
 	
+	/**
+	 * Reduces an IP address to the subnet used in session fingerprints.
+	 *
+	 * IPv4 addresses use the first three octets and IPv6 addresses use the first
+	 * four hextets, trading exact host identity for tolerance of normal address
+	 * churn.
+	 *
+	 * @param string $ip Client IP address.
+	 * @return string Fingerprint subnet or original value when parsing fails.
+	 */
 	private static function extract_subnet(string $ip): string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)){
@@ -289,6 +504,16 @@ class access{
 		return $ip;
 	}
 	
+	/**
+	 * Counts changed browser fingerprint attributes.
+	 *
+	 * The score is intentionally simple: each missing or changed key contributes
+	 * one point, and the enforcement threshold decides when to revoke a session.
+	 *
+	 * @param array<string, mixed> $stored Fingerprint captured previously.
+	 * @param array<string, mixed> $current Fingerprint captured for the request.
+	 * @return int Number of changed fingerprint fields.
+	 */
 	private static function fingerprint_drift_score(array $stored, array $current): int {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		$diffs=0;
@@ -310,7 +535,6 @@ class access{
 	  * Create an user session
 	  *
 	  * @version 	1.0.0
-	  * @author	JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	  *
 	  * @param int 			$userid
 	  * @param bool 		$keepalive
@@ -342,7 +566,11 @@ class access{
 			$V=null,
 			$CC=true
 		)){
-			$website_name=strtolower(parse_url($_SERVER['HTTP_HOST'], PHP_URL_HOST));
+			$website_name=parse_url($_SERVER['HTTP_HOST'], PHP_URL_HOST);
+			if(!is_string($website_name) || $website_name===''){
+				$website_name=explode(':', (string)$_SERVER['HTTP_HOST'], 2)[0] ?? '';
+			}
+			$website_name=strtolower($website_name);
 			setcookie(self::$session_cookie, $dpid, time()+(86400*7), '/', strtolower($website_name), true, true);
 			$_SESSION['dp_access']['userid']=$userid;
 			$_SESSION['dp_access']['dpid']=$dpid;
@@ -359,7 +587,6 @@ class access{
 	  * Create a cryptographically secure session identifier
 	  *
 	  * @version 	1.0.0
-	  * @author	JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	  *
 	  * @return string Session identifier
 	  */
@@ -372,6 +599,19 @@ class access{
 		return $prefix.'_'.$identifier.'_'.$signature;
 	}
 	
+	/**
+	 * Validates a Dataphyre session identifier signature and guard prefix.
+	 *
+	 * DPID values contain a four-character guard prefix, 32 bytes of random
+	 * entropy encoded URL-safely, and an HMAC suffix derived from `dpvk()`. A
+	 * forged or malformed identifier marks the session with a security alert,
+	 * disables the relevant session, and asks the firewall module for a CAPTCHA
+	 * challenge when available.
+	 *
+	 * @param string $dpid Candidate Dataphyre session identifier.
+	 * @param ?string $auth_type Optional guard that the identifier must belong to.
+	 * @return bool True when format, prefix, and HMAC signature all match.
+	 */
 	public static function validate_id(string $dpid, ?string $auth_type=null) : bool {
 		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
 		if(null!==$early_return=core::dialback("CALL_ACCESS_VALIDATE_ID", ...func_get_args())) return $early_return;
@@ -406,6 +646,15 @@ class access{
 		return false;
 	}
 
+	/**
+	 * Encodes binary data with the unpadded Base32 alphabet used by TOTP.
+	 *
+	 * Bits are grouped in five-bit chunks and padded only for the final symbol,
+	 * matching the format expected by authenticator applications.
+	 *
+	 * @param string $binary Raw bytes to encode.
+	 * @return string Unpadded Base32 text.
+	 */
 	private static function base32_encode(string $binary): string {
 		if($binary===''){
 			return '';
@@ -430,6 +679,15 @@ class access{
 		return $encoded;
 	}
 
+	/**
+	 * Decodes an unpadded Base32 TOTP secret to raw bytes.
+	 *
+	 * Spaces, hyphens, and padding are ignored for enrollment copy/paste
+	 * tolerance. Characters outside the TOTP alphabet fail validation.
+	 *
+	 * @param string $input Base32 secret text.
+	 * @return string|false Raw secret bytes, or false for invalid input.
+	 */
 	private static function base32_decode(string $input): string|false {
 		$normalized=strtoupper(trim($input));
 		$normalized=str_replace([' ', '-', '='], '', $normalized);
@@ -455,6 +713,15 @@ class access{
 		return $decoded!=='' ? $decoded : false;
 	}
 
+	/**
+	 * Converts a stored TOTP secret into raw bytes for HMAC operations.
+	 *
+	 * Even-length hexadecimal secrets are accepted for storage migrations;
+	 * otherwise the value is treated as Base32.
+	 *
+	 * @param string $secret Stored shared secret.
+	 * @return string|false Raw secret bytes, or false when decoding fails.
+	 */
 	private static function normalize_totp_secret(string $secret): string|false {
 		$secret=trim($secret);
 		if($secret===''){
@@ -467,6 +734,16 @@ class access{
 		return self::base32_decode($secret);
 	}
 
+	/**
+	 * Generates a Base32 TOTP shared secret.
+	 *
+	 * The entropy size is clamped to at least 10 bytes and produced with
+	 * `random_bytes()`. Runtime entropy failures are logged and reported as
+	 * false so enrollment flows can fail closed.
+	 *
+	 * @param int $bytes Requested random byte length before Base32 encoding.
+	 * @return string|false Base32 secret suitable for authenticator apps, or false on entropy failure.
+	 */
 	public static function create_totp_secret(int $bytes=20): string|false {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
 		if(null!==$early_return=core::dialback("CALL_ACCESS_CREATE_TOTP_SECRET",...func_get_args())) return $early_return;
@@ -481,6 +758,19 @@ class access{
 		}
 	}
 
+	/**
+	 * Computes an RFC 6238-style TOTP code from a shared secret.
+	 *
+	 * Secrets may be stored as Base32 or even-length hexadecimal. Period is
+	 * clamped to a positive interval, digits are clamped between 1 and 10, and
+	 * invalid secrets return false without producing a code.
+	 *
+	 * @param string $secret Base32 or hexadecimal shared secret.
+	 * @param ?int $timestamp Unix timestamp to evaluate; null uses current time.
+	 * @param int $period Step duration in seconds.
+	 * @param int $digits Number of output digits.
+	 * @return string|false Zero-padded numeric TOTP code, or false for invalid inputs.
+	 */
 	public static function totp_code(string $secret, ?int $timestamp=null, int $period=30, int $digits=6): string|false {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
 		if(null!==$early_return=core::dialback("CALL_ACCESS_TOTP_CODE",...func_get_args())) return $early_return;
@@ -505,6 +795,21 @@ class access{
 		return str_pad((string)($value % $modulus), $digits, '0', STR_PAD_LEFT);
 	}
 
+	/**
+	 * Verifies a numeric TOTP code across a configurable time window.
+	 *
+	 * Whitespace is ignored, non-numeric codes fail immediately, and matching is
+	 * performed with `hash_equals()` across the current step plus the requested
+	 * number of previous and future steps.
+	 *
+	 * @param string $secret Base32 or hexadecimal shared secret.
+	 * @param string $code User-supplied TOTP code.
+	 * @param int $window Number of periods to allow on either side of the timestamp.
+	 * @param ?int $timestamp Unix timestamp to evaluate; null uses current time.
+	 * @param int $period Step duration in seconds.
+	 * @param int $digits Expected number of output digits.
+	 * @return bool True when any code in the allowed window matches.
+	 */
 	public static function verify_totp(string $secret, string $code, int $window=1, ?int $timestamp=null, int $period=30, int $digits=6): bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
 		if(null!==$early_return=core::dialback("CALL_ACCESS_VERIFY_TOTP",...func_get_args())) return $early_return;
@@ -524,6 +829,17 @@ class access{
 		return false;
 	}
 
+	/**
+	 * Builds an `otpauth://` enrollment URI for authenticator applications.
+	 *
+	 * The secret is normalized for QR payloads, issuer defaults to the public app
+	 * name, and an empty account name or invalid secret returns false.
+	 *
+	 * @param string $secret Base32 or hexadecimal shared secret.
+	 * @param string $account_name Account label shown by authenticator apps.
+	 * @param ?string $issuer Optional issuer label; null uses application config.
+	 * @return string|false TOTP provisioning URI, or false when enrollment data is invalid.
+	 */
 	public static function totp_uri(string $secret, string $account_name, ?string $issuer=null): string|false {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
 		if(null!==$early_return=core::dialback("CALL_ACCESS_TOTP_URI",...func_get_args())) return $early_return;
@@ -547,6 +863,18 @@ class access{
 		return 'otpauth://totp/'.rawurlencode($label).'?'.http_build_query($query, '', '&', PHP_QUERY_RFC3986);
 	}
 
+	/**
+	 * Renders a QR-code data URI for TOTP pairing.
+	 *
+	 * The URI is generated through `totp_uri()` first, so invalid secrets or
+	 * account labels fail before the QR renderer is invoked.
+	 *
+	 * @param string $secret Base32 or hexadecimal shared secret.
+	 * @param string $account_name Account label shown by authenticator apps.
+	 * @param ?string $issuer Optional issuer label; null uses application config.
+	 * @param int $size Requested QR image size in pixels.
+	 * @return string|false SVG data URI for enrollment, or false when pairing data is invalid.
+	 */
 	public static function get_totp_pairing_image(string $secret, string $account_name, ?string $issuer=null, int $size=200): string|false {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
 		if(null!==$early_return=core::dialback("CALL_ACCESS_GET_TOTP_PAIRING_IMAGE",...func_get_args())) return $early_return;
@@ -561,7 +889,6 @@ class access{
 	  * Get the userid of a current user session
 	  *
 	  * @version 	1.0.0
-	  * @author	JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	  *
 	  * @return mixed		Userid if user is logged in otherwise false
 	  */
@@ -586,7 +913,6 @@ class access{
 	  * Search for clues identifying an user as a web crawler
 	  *
 	  * @version 	1.0.0
-	  * @author	JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	  *
 	  * @return bool		True if positive, false on negative
 	  */
@@ -595,8 +921,9 @@ class access{
 		static $cache=null;
 		if($cache!==null)return $cache;
 		if(null!==$early_return=core::dialback("CALL_ACCESS_IS_BOT",...func_get_args())) return $early_return;
+		$user_agent=(string)($_SERVER['HTTP_USER_AGENT'] ?? (defined('REQUEST_USER_AGENT') ? REQUEST_USER_AGENT : ''));
 		foreach((DP_ACCESS_CFG['botlist'] ?? []) as $bl){
-			if(stripos(strtolower(REQUEST_USER_AGENT), strtolower($bl))!==false){
+			if(stripos(strtolower($user_agent), strtolower($bl))!==false){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="User is a bot");
 				$cache=true;
 				return true;
@@ -611,7 +938,6 @@ class access{
 	  * Search for clues identifying an user as using a mobile device
 	  *
 	  * @version 	1.0.0
-	  * @author	JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	  *
 	  * @return bool		True on success, false on failure
 	  */
@@ -620,9 +946,10 @@ class access{
 		static $cache=null;
 		if($cache!==null)return $cache;
 		if(null!==$early_return=core::dialback("CALL_ACCESS_IS_MOBILE",...func_get_args())) return $early_return;
+		$user_agent=(string)($_SERVER['HTTP_USER_AGENT'] ?? (defined('REQUEST_USER_AGENT') ? REQUEST_USER_AGENT : ''));
 		$mobile_list=['Android', 'iOS', 'iPhone', 'iPad', 'Windows Phone', 'Opera Mini', 'IEMobile', 'Mobile'];
 		foreach($mobile_list as $mobile){
-			if(stripos(REQUEST_USER_AGENT, $mobile)!==false){
+			if(stripos($user_agent, $mobile)!==false){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="User is on a mobile device");
 				$cache=true;
 				return true;
@@ -637,7 +964,6 @@ class access{
 	  * Delete session variables and destroy user session in database
 	  *
 	  * @version 	1.0.0
-	  * @author	JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	  *
 	  * @return bool		True on success, false on failure
 	  */
@@ -682,7 +1008,6 @@ class access{
 	  * Delete session variables and destroy user session in database
 	  *
 	  * @version 	1.0.0
-	  * @author	JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	  *
 	  * @return bool		True on success, false on failure
 	  */
@@ -709,6 +1034,17 @@ class access{
 		return false;
 	}
 
+	/**
+	 * Revokes every session for a user except the supplied current session id.
+	 *
+	 * Session guards update the configured sessions table in place. Delegated
+	 * auth types may override the operation through the access dialback hook.
+	 *
+	 * @param int $userid User whose other sessions should be disabled.
+	 * @param string $current_session_id Session identifier that must remain active.
+	 * @param ?string $auth_type Optional guard override.
+	 * @return bool True when revocation succeeds; false for blank current ids or failed updates.
+	 */
 	public static function disable_other_sessions_of_user(int $userid, string $current_session_id, ?string $auth_type=null) : bool {
 		if(null!==$early_return=core::dialback("CALL_ACCESS_DISABLE_OTHER_SESSIONS_OF_USER",...func_get_args())) return $early_return;
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
@@ -735,6 +1071,18 @@ class access{
 		return false;
 	}
 	
+	/**
+	 * Validates the active session cookie against session memory and storage.
+	 *
+	 * A recent positive validation may be reused for 30 seconds. Otherwise the
+	 * DPID cookie must pass signature validation and match an active row for the
+	 * current user agent and IP address; moved IP addresses are written back when
+	 * the stored session still proves ownership.
+	 *
+	 * @param bool $cache Whether to trust the recent validation timestamp in session memory.
+	 * @param ?string $auth_type Optional guard override.
+	 * @return bool True when the request has a valid active session for the guard.
+	 */
 	public static function validate_session(bool $cache=true, ?string $auth_type=null) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_VALIDATE_SESSION",...func_get_args())) return $early_return;
@@ -803,7 +1151,6 @@ class access{
 	  * Search for an active user session using the dataphyre id, ipaddress and useragent
 	  *
 	  * @version 	1.0.0
-	  * @author	JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	  *
 	  * @return bool		 True on success, false on failure
 	  */
@@ -857,7 +1204,6 @@ class access{
 	  * Helper function to verify if an user is logged in or not
 	  *
 	  * @version 	1.0.0
-	  * @author	JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	  *
 	  * @return bool		True on positive, false on negative
 	  */
@@ -889,7 +1235,6 @@ class access{
 	  * Verify if content can be displayed to the user
 	  *
 	  * @version 	1.0.0
-	  * @author	JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	  *
 	  * @param bool $session_required		If user must be logged in to display the page
 	  * @param bool $must_no_session		If user must not be logged in to display the page
@@ -901,6 +1246,9 @@ class access{
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_ACCESS",...func_get_args()))return $early_return;
 		$error=function(string $error_string='Unknown error', int $response_code=403){
+			if(defined('RUN_MODE') && RUN_MODE==='diagnostic'){
+				return false;
+			}
 			ob_end_clean();
 			flush();
 			http_response_code($response_code);
@@ -922,31 +1270,31 @@ class access{
 			exit();
 		};
 		if($prevent_robot===true && self::is_bot()===true){
-			if(!empty(DP_ACCESS_CFG['requires_app_redirect'])){
+			if(!(defined('RUN_MODE') && RUN_MODE==='diagnostic') && !empty(DP_ACCESS_CFG['requires_app_redirect'])){
 				header('Location: '.(string)(DP_ACCESS_CFG['robot_redirect'] ?? ''));
 				exit();
 			}
-			$error('This page cannot be selfed by robots.', 403);
+			return $error('This page cannot be selfed by robots.', 403);
 		}
 		else
 		{
 			if($prevent_mobile===true && self::is_mobile()===true){
-				if(!empty(DP_ACCESS_CFG['requires_app_redirect'])){
+				if(!(defined('RUN_MODE') && RUN_MODE==='diagnostic') && !empty(DP_ACCESS_CFG['requires_app_redirect'])){
 					header('Location: '.(string)DP_ACCESS_CFG['requires_app_redirect']);
 					exit();
 				}
-				$error('This page cannot be selfed by mobile devices without an application.', 403);
+				return $error('This page cannot be selfed by mobile devices without an application.', 403);
 			}
 			else
 			{
 				if($must_no_session===true){
 					if(self::logged_in()===true){
 						tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="File ".basename($_SERVER["SCRIPT_FILENAME"])." can't be loaded as user is logged in, redirecting to homepage");
-						if(!empty(DP_ACCESS_CFG['must_no_session_redirect'])){
+						if(!(defined('RUN_MODE') && RUN_MODE==='diagnostic') && !empty(DP_ACCESS_CFG['must_no_session_redirect'])){
 							header('Location: '.(string)DP_ACCESS_CFG['must_no_session_redirect']);
 							exit();
 						}
-						$error('This page requires you to not have an active session.', 401);
+						return $error('This page requires you to not have an active session.', 401);
 					}
 					else
 					{
@@ -971,11 +1319,11 @@ class access{
 					{
 						if(self::logged_in()===false){
 							tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="User needs to be logged in, redirecting to login page");
-							if(!empty(DP_ACCESS_CFG['require_session_redirect'])){
+							if(!(defined('RUN_MODE') && RUN_MODE==='diagnostic') && !empty(DP_ACCESS_CFG['require_session_redirect'])){
 								header('Location: '.(string)DP_ACCESS_CFG['require_session_redirect'].'?redir='.rtrim(base64_encode(ltrim($_SERVER["REQUEST_URI"], "/")), '='));
 								exit();
 							}
-							$error('This page requires authentication.', 401);
+							return $error('This page requires authentication.', 401);
 						}
 						else
 						{

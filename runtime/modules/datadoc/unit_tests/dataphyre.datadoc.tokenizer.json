@@ -1,0 +1,72 @@
+[
+	{
+		"name": "tokenizer captures namespace class variable function and tracelog context",
+		"function": "dp_datadoc_unit_tokenize_sample",
+		"args": [],
+		"expected": [
+			{
+				"type": "namespace",
+				"namespace": "Example\\Docs",
+				"class": "",
+				"function": "",
+				"line": 2,
+				"phpdoc_description": "",
+				"phpdoc_param": ""
+			},
+			{
+				"type": "class",
+				"namespace": "Example\\Docs",
+				"class": "Greeter",
+				"function": "",
+				"line": 8,
+				"phpdoc_description": "Greets a person.",
+				"phpdoc_param": "string $name"
+			},
+			{
+				"type": "variable",
+				"namespace": "Example\\Docs",
+				"class": "Greeter",
+				"function": "",
+				"line": 9,
+				"phpdoc_description": "",
+				"phpdoc_param": ""
+			},
+			{
+				"type": "function",
+				"namespace": "Example\\Docs",
+				"class": "Greeter",
+				"function": "hello",
+				"line": 11,
+				"phpdoc_description": "",
+				"phpdoc_param": ""
+			},
+			{
+				"type": "tracelog",
+				"namespace": "Example\\Docs",
+				"class": "Greeter",
+				"function": "hello",
+				"line": 12,
+				"phpdoc_description": "",
+				"phpdoc_param": ""
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/datadoc/unit_tests/datadoc_test_helpers.php",
+		"max_millis": 100
+	},
+	{
+		"name": "tokenizer resets bracketed namespace and ignores script blocks",
+		"function": "dp_datadoc_unit_tokenize_bracketed_namespace_summary_json",
+		"args": [],
+		"expected": "[{\"type\":\"namespace\",\"namespace\":\"First\\\\Area\",\"class\":\"\",\"function\":\"\",\"line\":2,\"description\":\"\",\"return\":\"\"},{\"type\":\"class\",\"namespace\":\"First\\\\Area\",\"class\":\"Visible\",\"function\":\"\",\"line\":8,\"description\":\"Handles visible code.\",\"return\":\"void\\ncontinues here\"},{\"type\":\"function\",\"namespace\":\"First\\\\Area\",\"class\":\"Visible\",\"function\":\"run\",\"line\":9,\"description\":\"\",\"return\":\"\"},{\"type\":\"tracelog\",\"namespace\":\"First\\\\Area\",\"class\":\"Visible\",\"function\":\"run\",\"line\":10,\"description\":\"\",\"return\":\"\"},{\"type\":\"class\",\"namespace\":\"\",\"class\":\"GlobalThing\",\"function\":\"\",\"line\":21,\"description\":\"\",\"return\":\"\"},{\"type\":\"variable\",\"namespace\":\"\",\"class\":\"GlobalThing\",\"function\":\"\",\"line\":22,\"description\":\"\",\"return\":\"\"}]",
+		"file": "/common/dataphyre/runtime/modules/datadoc/unit_tests/datadoc_test_helpers.php",
+		"max_millis": 100
+	},
+	{
+		"name": "tokenizer preserves repeated phpdoc tags",
+		"function": "dp_datadoc_unit_repeated_phpdoc_tags_summary_json",
+		"args": [],
+		"expected": "{\"description\":\"Combines two values.\",\"param\":[\"string $left Left value.\",\"string $right Right value.\"],\"return\":\"string Combined value.\"}",
+		"file": "/common/dataphyre/runtime/modules/datadoc/unit_tests/datadoc_test_helpers.php",
+		"max_millis": 100
+	}
+]

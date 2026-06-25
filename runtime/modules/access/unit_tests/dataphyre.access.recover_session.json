@@ -1,11 +1,11 @@
 [
     {
-        "function": "recover_session",
+        "function": "dp_access_unit_recover_session",
         "name": "recover_existing_valid_session",
+        "file": "/common/dataphyre/runtime/modules/access/unit_tests/access_session_test_helpers.php",
         "dependencies": {
-            "function": [
-                "recover_session",
-                "sql_select"
+            "class": [
+                "dataphyre\\access"
             ],
             "global_variable": [
                 "_SESSION",
@@ -14,8 +14,6 @@
         },
         "args": [],
         "expected": true,
-        "class": "dataphyre\\access",
-        "static_method": true,
         "max_millis": 50
     }
 ]

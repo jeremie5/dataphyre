@@ -28,6 +28,14 @@ if(is_file($flightdeck_stack_snippets_file)){
 	require_once($flightdeck_stack_snippets_file);
 }
 
+/**
+ * Serves the authenticated Flightdeck operations console.
+ *
+ * Flightdeck is a kernel-era control plane for diagnostics, logs, module
+ * discovery, flight-sheet inspection, and the runtime toolbar. It emits HTTP
+ * responses directly, reads request globals, serves embedded assets, and guards
+ * every route through the Flightdeck auth helper before exposing runtime state.
+ */
 final class dataphyre_flightdeck {
 
 	private const LOG_ENTRY_DELIMITER='<!--ENDLOG-->';
@@ -36,6 +44,113 @@ final class dataphyre_flightdeck {
 	private const LOG_INITIAL_TAIL_BYTES=131072;
 	private const LOG_MAX_INITIAL_TAIL_BYTES=1048576;
 
+	/**
+	 * Builds a versioned URL for an embedded Flightdeck asset.
+	 *
+	 * Asset names are normalized before being placed into the route path, and
+	 * the version query parameter is derived from embedded content where
+	 * available.
+	 *
+	 * @param string $asset Raw asset path or name.
+	 * @return string Public Flightdeck asset URL.
+	 */
+	public static function asset_url(string $asset): string {
+		$name=self::asset_name($asset);
+		return '/dataphyre/flightdeck/assets/'.$name.'?v='.self::asset_version($name);
+	}
+
+	/**
+	 * Calculates the cache version for an embedded asset.
+	 *
+	 * Known assets return a short SHA-1 hash of their response body and are
+	 * cached per request. Missing assets return "missing" so broken references
+	 * remain obvious without leaking filesystem paths.
+	 *
+	 * @param string $asset Raw asset path or name.
+	 * @return string Short content hash or "missing".
+	 */
+	public static function asset_version(string $asset): string {
+		static $versions=[];
+		$name=self::asset_name($asset);
+		if(isset($versions[$name])){
+			return $versions[$name];
+		}
+		$content=self::asset_content($name);
+		if($content===null){
+			return 'missing';
+		}
+		$versions[$name]=substr(sha1((string)$content['body']), 0, 16);
+		return $versions[$name];
+	}
+
+	/**
+	 * Returns embedded asset content for the Flightdeck console.
+	 *
+	 * CSS and JavaScript are generated from private helpers and memoized by safe
+	 * asset name. Unknown assets return null for the route layer to handle as a
+	 * missing asset.
+	 *
+	 * @param string $asset Raw asset path or name.
+	 * @return ?array{content_type:string,body:string} Embedded asset response payload.
+	 */
+	public static function asset_content(string $asset): ?array {
+		static $assets=[];
+		$name=self::asset_name($asset);
+		if(isset($assets[$name])){
+			return $assets[$name];
+		}
+		$content=match($name){
+			'flightdeck-logs.css'=>[
+				'content_type'=>'text/css; charset=UTF-8',
+				'body'=>self::logs_css(),
+			],
+			'flightdeck-logs.js'=>[
+				'content_type'=>'application/javascript; charset=UTF-8',
+				'body'=>self::script_body(self::logs_script()),
+			],
+			default=>null,
+		};
+		if($content!==null){
+			$assets[$name]=$content;
+		}
+		return $content;
+	}
+
+	/**
+	 * Normalizes an embedded asset request to a safe basename.
+	 *
+	 * @param string $asset Raw asset path or request value.
+	 * @return string Safe basename, or an empty string when invalid.
+	 */
+	private static function asset_name(string $asset): string {
+		$name=basename(str_replace('\\', '/', trim($asset)));
+		return preg_match('/^[a-z0-9._-]+$/i', $name)===1 ? $name : '';
+	}
+
+	/**
+	 * Extracts JavaScript content from a generated script tag.
+	 *
+	 * @param string $script Full script tag or raw JavaScript.
+	 * @return string JavaScript body suitable for serving as an asset.
+	 */
+	private static function script_body(string $script): string {
+		$script=trim($script);
+		if(preg_match('/^<script\b[^>]*>(.*)<\/script>$/is', $script, $matches)===1){
+			return trim((string)$matches[1])."\n";
+		}
+		return $script;
+	}
+
+	/**
+	 * Dispatches the current Flightdeck HTTP request.
+	 *
+	 * Dispatch enforces installation, production, enabled, login, and CSRF-aware
+	 * route checks before rendering pages or JSON responses. The method writes
+	 * headers/body output directly because Flightdeck is loaded by legacy routes
+	 * rather than the Framework response layer.
+	 *
+	 * @return void
+	 */
 	public static function dispatch(): void {
 		if(class_exists('dataphyre_flightdeck_auth', false)!==true){
 			http_response_code(503);
@@ -59,6 +174,7 @@ final class dataphyre_flightdeck {
 		}
 		if($route==='logout'){
 			dataphyre_flightdeck_auth::logout();
+			http_response_code(302);
 			header('Location: /dataphyre/login');
 			return;
 		}
@@ -76,10 +192,28 @@ final class dataphyre_flightdeck {
 		self::render($route);
 	}
 
+	/**
+	 * Detects the live-log polling request shape.
+	 *
+	 * log polling is intentionally limited to POST requests carrying the
+	 * legacy ajax flag so ordinary GET page loads cannot trigger JSON log tailing.
+	 *
+	 * @return bool True when the current request is a Flightdeck log Ajax request.
+	 */
 	private static function is_log_ajax_request(): bool {
 		return ($_SERVER['REQUEST_METHOD'] ?? 'GET')==='POST' && (string)($_POST['ajax'] ?? '')==='1';
 	}
 
+	/**
+	 * Emits the JSON response for live Flightdeck log polling.
+	 *
+	 * this handler writes headers and JSON directly. It supports initial
+	 * tail reads, offset-based incremental polling, file-rotation resets, and a
+	 * delegated smart-snippet action. Missing log files return a successful empty
+	 * response so the browser can keep polling without surfacing server errors.
+	 *
+	 * @return void
+	 */
 	private static function render_log_poll_response(): void {
 		header('Content-Type: application/json; charset=utf-8');
 		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -143,6 +277,15 @@ final class dataphyre_flightdeck {
 		]);
 	}
 
+	/**
+	 * Emits the JSON response for one log entry's smart snippets.
+	 *
+	 * snippet rendering is CSRF-protected because it accepts a posted log
+	 * entry and may read local source context for diagnostics. The response always
+	 * uses a stable `{ok,message,html}` shape for the browser panel.
+	 *
+	 * @return void
+	 */
 	private static function render_log_snippet_response(): void {
 		if(dataphyre_flightdeck_auth::verify_csrf($_POST['csrf'] ?? null)!==true){
 			echo self::json_payload([
@@ -169,12 +312,31 @@ final class dataphyre_flightdeck {
 		]);
 	}
 
+	/**
+	 * Encodes a Flightdeck JSON response payload.
+	 *
+	 * JSON encoding uses unescaped slashes and UTF-8 substitution when
+	 * available so log payloads remain readable and malformed bytes do not break the
+	 * polling response. Encoding failure returns a small error object.
+	 *
+	 * @param array<string, mixed> $payload Response payload.
+	 * @return string JSON response body.
+	 */
 	private static function json_payload(array $payload): string {
 		$flags=JSON_UNESCAPED_SLASHES | (defined('JSON_INVALID_UTF8_SUBSTITUTE') ? JSON_INVALID_UTF8_SUBSTITUTE : 0);
 		$json=json_encode($payload, $flags);
 		return is_string($json) ? $json : '{"ok":false,"message":"Unable to encode Flightdeck log response."}';
 	}
 
+	/**
+	 * Serves the Flightdeck login form and password submission flow.
+	 *
+	 * The login route rechecks production and enabled gates, validates CSRF
+	 * on POST, delegates password checks to Flightdeck auth, and redirects only to a
+	 * safe local return URL after successful authentication.
+	 *
+	 * @return void
+	 */
 	private static function handle_login(): void {
 		if(dataphyre_flightdeck_auth::production_disabled()===true){
 			http_response_code(404);
@@ -187,6 +349,7 @@ final class dataphyre_flightdeck {
 			return;
 		}
 		if(dataphyre_flightdeck_auth::authenticated()===true && dataphyre_flightdeck_auth::auth_required()===true){
+			http_response_code(302);
 			header('Location: '.self::safe_return_url());
 			return;
 		}
@@ -196,6 +359,7 @@ final class dataphyre_flightdeck {
 				$error='Invalid form token.';
 			}
 			elseif(dataphyre_flightdeck_auth::login((string)($_POST['password'] ?? ''))===true){
+				http_response_code(302);
 				header('Location: '.self::safe_return_url());
 				return;
 			}
@@ -204,28 +368,86 @@ final class dataphyre_flightdeck {
 				$error=dataphyre_flightdeck_auth::login_error() ?? 'Invalid Flightdeck password.';
 			}
 		}
-		echo self::layout('Login', self::login_page($error), 'login');
+		echo self::layout('Login', self::login_page($error), 'login', ['logout'=>false]);
 	}
 
+	/**
+	 * Routes Flightdeck runtime-toolbar actions.
+	 *
+	 * Toolbar enable/disable/history actions mutate session-scoped
+	 * Debugbar state and redirect back to the control plane. Client event recording
+	 * uses a JSON subroute, while missing Debugbar support falls back to the
+	 * management page.
+	 *
+	 * @return void
+	 */
 	private static function handle_debugbar(): void {
 		if(class_exists('dataphyre_flightdeck_debugbar', false)!==true){
 			self::render('debugbar');
 			return;
 		}
 		$action=(string)($_GET['action'] ?? '');
+		if($action==='client_event'){
+			self::render_debugbar_client_event_response();
+			return;
+		}
 		if($action==='enable'){
 			dataphyre_flightdeck_debugbar::enable();
+			http_response_code(302);
 			header('Location: /dataphyre');
 			return;
 		}
 		if($action==='disable'){
 			dataphyre_flightdeck_debugbar::disable();
+			http_response_code(302);
 			header('Location: /dataphyre');
+			return;
+		}
+		if($action==='clear_history'){
+			dataphyre_flightdeck_debugbar::clear_history();
+			http_response_code(302);
+			header('Location: /dataphyre/debugbar');
 			return;
 		}
 		self::render('debugbar');
 	}
 
+	/**
+	 * Records browser-side Debugbar events from the client beacon endpoint.
+	 *
+	 * The endpoint accepts a JSON request body, validates that the decoded
+	 * payload is an object/array, normalizes the event list, and delegates token and
+	 * snapshot validation to the Debugbar recorder before emitting JSON.
+	 *
+	 * @return void
+	 */
+	private static function render_debugbar_client_event_response(): void {
+		header('Content-Type: application/json; charset=utf-8');
+		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+		$raw=(string)file_get_contents('php://input');
+		$payload=json_decode($raw, true);
+		if(!is_array($payload)){
+			echo self::json_payload(['ok'=>false, 'message'=>'Invalid client event payload.']);
+			return;
+		}
+		$events=is_array($payload['events'] ?? null) ? $payload['events'] : [];
+		echo self::json_payload(dataphyre_flightdeck_debugbar::record_client_events(
+			(string)($payload['snapshot_id'] ?? ''),
+			(string)($payload['token'] ?? ''),
+			$events
+		));
+	}
+
+	/**
+	 * Renders one authenticated Flightdeck page.
+	 *
+	 * route names are mapped to fixed titles and page renderers so request
+	 * paths cannot select arbitrary methods. Output is written through the shared
+	 * Flightdeck layout shell.
+	 *
+	 * @param string $route Normalized route key.
+	 * @return void
+	 */
 	private static function render(string $route): void {
 		$title=match($route){
 			'logs'=>'Logs',
@@ -244,6 +466,15 @@ final class dataphyre_flightdeck {
 		echo self::layout($title, $content, $route);
 	}
 
+	/**
+	 * Resolves the current request path to a known Flightdeck route.
+	 *
+	 * only the first path segment after `/dataphyre` is significant, and
+	 * unknown segments fall back to the dashboard. This keeps the control plane's
+	 * route surface closed even when the legacy router forwards wider paths.
+	 *
+	 * @return string Route key used by dispatch and render().
+	 */
 	private static function route(): string {
 		$path=(string)parse_url((string)($_SERVER['REQUEST_URI'] ?? '/dataphyre'), PHP_URL_PATH);
 		$path=trim($path, '/');
@@ -265,6 +496,15 @@ final class dataphyre_flightdeck {
 		};
 	}
 
+	/**
+	 * Renders the Flightdeck dashboard page.
+	 *
+	 * the dashboard summarizes application, environment, module count, and
+	 * toolbar state using runtime constants and discovered module rows. Debugbar
+	 * controls link to authenticated control-plane actions.
+	 *
+	 * @return string Dashboard HTML.
+	 */
 	private static function dashboard_page(): string {
 		$debugbar_enabled=self::debugbar_enabled();
 		$debugbar_action=$debugbar_enabled
@@ -282,6 +522,15 @@ final class dataphyre_flightdeck {
 		return '<section class="fd-hero"><div><p class="fd-kicker">Dataphyre Flightdeck</p><h1>Runtime operations console</h1><p>Secure diagnostics, module interfaces, logs, and flight-sheet visibility for Dataphyre runtimes.</p></div>'.$debugbar_action.'</section><section class="fd-metrics">'.$cards.'</section><section class="fd-card"><div class="fd-section-title"><h2>Control Pages</h2><a href="/dataphyre/modules">View modules</a></div><div class="fd-link-grid">'.$links.'</div></section>';
 	}
 
+	/**
+	 * Renders the live log viewer page shell.
+	 *
+	 * initial file metadata is read from known log directories, while the
+	 * browser script performs bounded polling after load. The shell embeds a CSRF
+	 * token for snippet rendering and escapes file paths before display.
+	 *
+	 * @return string Logs page HTML.
+	 */
 	private static function logs_page(): string {
 		$info=self::latest_log_file_info();
 		if($info===null){
@@ -293,9 +542,14 @@ final class dataphyre_flightdeck {
 			$file_label=(string)$info['path'];
 			$size_label=self::format_bytes((int)$info['size']);
 		}
-		return '<section class="fd-card fd-logs" id="fd-logs" data-csrf="'.self::e(dataphyre_flightdeck_auth::csrf_token()).'"><style>'.self::logs_css().'</style><div class="fd-section-title"><div><h1>Logs</h1><p class="fd-muted" id="fd-log-file">'.self::e($file_label).'</p></div><div class="fd-log-controls"><span class="fd-log-status" id="fd-log-status" data-tone="busy">Connecting...</span><span class="fd-pill" id="fd-log-size">'.self::e($size_label).'</span><button class="fd-log-button" id="fd-log-pause-toggle" type="button">Pause Logs</button></div></div><p class="fd-muted">Live tailing uses bounded batches and pauses while you select text. Eligible entries expose their own smart-snippet button, so source files are read only for the log you expand.</p><div class="fd-table-wrap"><table class="fd-log-table"><thead><tr><th>Time</th><th>Entry</th></tr></thead><tbody id="fd-log-content"><tr class="fd-log-placeholder"><td colspan="2">Waiting for log events...</td></tr></tbody></table></div>'.self::logs_script().'</section>';
+		return '<link rel="stylesheet" href="'.self::e(self::asset_url('flightdeck-logs.css')).'"><section class="fd-card fd-logs" id="fd-logs" data-csrf="'.self::e(dataphyre_flightdeck_auth::csrf_token()).'"><div class="fd-section-title"><div><h1>Logs</h1><p class="fd-muted" id="fd-log-file">'.self::e($file_label).'</p></div><div class="fd-log-controls"><span class="fd-log-status" id="fd-log-status" data-tone="busy">Connecting...</span><span class="fd-pill" id="fd-log-size">'.self::e($size_label).'</span><button class="fd-log-button" id="fd-log-pause-toggle" type="button">Pause Logs</button></div></div><p class="fd-muted">Live tailing uses bounded batches and pauses while you select text. Eligible entries expose their own smart-snippet button, so source files are read only for the log you expand.</p><div class="fd-table-wrap"><table class="fd-log-table"><thead><tr><th>Time</th><th>Entry</th></tr></thead><tbody id="fd-log-content"><tr class="fd-log-placeholder"><td colspan="2">Waiting for log events...</td></tr></tbody></table></div></section><script src="'.self::e(self::asset_url('flightdeck-logs.js')).'" defer></script>';
 	}
 
+	/**
+	 * Renders the module discovery page.
+	 *
+	 * @return string HTML table listing installed modules and their interfaces.
+	 */
 	private static function modules_page(): string {
 		$rows='';
 		foreach(self::module_rows() as $module){
@@ -305,6 +559,11 @@ final class dataphyre_flightdeck {
 		return '<section class="fd-card"><h1>Modules</h1><p class="fd-muted">Core is assumed available; every other module is discovered from installed module directories only when Flightdeck is opened.</p><div class="fd-table-wrap"><table><thead><tr><th>Module</th><th>Source</th><th>Version</th><th>Interface</th></tr></thead><tbody>'.$rows.'</tbody></table></div></section>';
 	}
 
+	/**
+	 * Renders the flight sheet inspection page with sensitive values redacted.
+	 *
+	 * @return string HTML for the flight-sheet page.
+	 */
 	private static function flight_sheet_page(): string {
 		$path=self::install_root().'flight_sheet.php';
 		if(!is_file($path)){
@@ -318,39 +577,120 @@ final class dataphyre_flightdeck {
 		return '<section class="fd-card"><div class="fd-section-title"><div><h1>Flight Sheet</h1><p class="fd-muted">'.self::e($path).'</p></div><span class="fd-pill">'.count($sanitized).' top-level keys</span></div><pre class="fd-code">'.self::e(var_export($sanitized, true)).'</pre></section>';
 	}
 
+	/**
+	 * Renders runtime toolbar controls, history, and selected request details.
+	 *
+	 * @return string HTML for the debugbar management page.
+	 */
 	private static function debugbar_page(): string {
 		$enabled=self::debugbar_enabled();
-		$state=self::debugbar_state();
-		$state_json=json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-		if(!is_string($state_json)){
-			$state_json='{}';
-		}
 		$action=$enabled
 			? '<a class="fd-danger" href="/dataphyre/debugbar?action=disable">Disable Toolbar</a>'
 			: '<a class="fd-primary" href="/dataphyre/debugbar?action=enable">Enable Toolbar</a>';
-		return '<section class="fd-card"><div class="fd-section-title"><div><h1>Runtime Toolbar</h1><p class="fd-muted">A session-scoped diagnostics overlay for authenticated Flightdeck users.</p></div>'.$action.'</div><pre class="fd-code">'.self::e($state_json).'</pre></section>';
+		$history=class_exists('dataphyre_flightdeck_debugbar', false) ? dataphyre_flightdeck_debugbar::history() : [];
+		$selected_id=(string)($_GET['request'] ?? '');
+		$selected=$selected_id!=='' && class_exists('dataphyre_flightdeck_debugbar', false)
+			? dataphyre_flightdeck_debugbar::history_snapshot($selected_id)
+			: null;
+		if($selected===null && $history!==[]){
+			$selected=$history[0];
+		}
+		$clear=$history!==[] ? '<a class="fd-danger" href="/dataphyre/debugbar?action=clear_history">Clear History</a>' : '';
+		$content='<section class="fd-card"><div class="fd-section-title"><div><h1>Runtime Toolbar</h1><p class="fd-muted">A session-scoped diagnostics overlay with retained request snapshots for authenticated Flightdeck users.</p></div><div class="fd-action-row">'.$action.$clear.'</div></div>';
+		if($history===[]){
+			$content.='<p class="fd-muted">No captured page requests yet. Enable the toolbar, open an application page, then return here.</p>';
+		}
+		else
+		{
+			$rows=[];
+			foreach($history as $snapshot){
+				$id=(string)($snapshot['id'] ?? '');
+				$status=(int)($snapshot['request']['status'] ?? 200);
+				$badge_level=$status>=500 ? 'error' : ($status>=400 ? 'warning' : 'success');
+				$finding_count=(int)($snapshot['diagnostics']['count'] ?? 0);
+				$finding_level=self::finding_badge_level((string)($snapshot['diagnostics']['worst_level'] ?? 'ok'));
+				$client_count=(int)($snapshot['client']['event_count'] ?? 0);
+				$comparison=is_array($snapshot['comparison'] ?? null) ? $snapshot['comparison'] : [];
+				$delta='new';
+				foreach((is_array($comparison['changes'] ?? null) ? $comparison['changes'] : []) as $change){
+					if(is_array($change) && (string)($change['key'] ?? '')==='duration_ms'){
+						$delta=(string)($change['delta_label'] ?? 'changed');
+						break;
+					}
+				}
+				if($delta==='new' && !empty($comparison['available'])){
+					$delta=(string)($comparison['summary'] ?? 'similar');
+				}
+				$rows[]=[
+					'<a href="/dataphyre/debugbar?request='.rawurlencode($id).'">'.self::e(date('H:i:s', (int)($snapshot['recorded_at'] ?? time()))).'</a>',
+					dataphyre_flightdeck_view::badge((string)$status, $badge_level),
+					self::e((string)($snapshot['label'] ?? 'request')),
+					self::e(self::format_duration((float)($snapshot['duration_ms'] ?? 0))),
+					self::e($delta),
+					dataphyre_flightdeck_view::badge((string)$finding_count, $finding_level),
+					self::e((string)$client_count),
+					self::e((string)($snapshot['sql']['query_events'] ?? 0)),
+					self::e((string)($snapshot['timeline']['event_count'] ?? count($snapshot['timeline']['events'] ?? []))),
+				];
+			}
+			$content.=dataphyre_flightdeck_view::table(['Time', 'Status', 'Request', 'Duration', 'Delta', 'Findings', 'Browser', 'SQL', 'Events'], $rows);
+		}
+		$content.='</section>';
+		if($selected!==null && class_exists('dataphyre_flightdeck_debugbar', false)){
+			$content.='<section class="fd-card fd-debugbar-card"><div class="fd-section-title"><div><h2>Captured Request</h2><p class="fd-muted">'.self::e((string)($selected['request_id'] ?? '')).'</p></div></div>'.dataphyre_flightdeck_debugbar::render_snapshot_html($selected).'</section>';
+		}
+		return $content;
 	}
 
+	/**
+	 * Renders the Flightdeck login form or no-auth configuration notice.
+	 *
+	 * @param ?string $error Optional login error message.
+	 * @return string HTML for the login route.
+	 */
 	private static function login_page(?string $error): string {
 		if(dataphyre_flightdeck_auth::auth_required()===false){
 			return '<section class="fd-card fd-login"><p class="fd-kicker">Dataphyre Flightdeck</p><h1>Console password required</h1><p class="fd-muted">Flightdeck is installed, so Dataphyre control pages require a configured console password.</p></section>';
 		}
 		$error_html=$error!==null ? '<div class="fd-alert">'.self::e($error).'</div>' : '';
-		return '<section class="fd-card fd-login"><p class="fd-kicker">Dataphyre Flightdeck</p><h1>Console Access</h1><p class="fd-muted">Enter the configured Flightdeck password to continue.</p>'.$error_html.'<form method="post"><input type="hidden" name="csrf" value="'.self::e(dataphyre_flightdeck_auth::csrf_token()).'"><input type="password" name="password" placeholder="Flightdeck password" autofocus><button type="submit">Open Flightdeck</button></form></section>';
+		$action='/dataphyre/login?'.http_build_query(['return'=>self::safe_return_url()]);
+		return '<section class="fd-card fd-login"><p class="fd-kicker">Dataphyre Flightdeck</p><h1>Console Access</h1><p class="fd-muted">Enter the configured Flightdeck password to continue.</p>'.$error_html.'<form method="post" action="'.self::e($action).'"><input type="hidden" name="csrf" value="'.self::e(dataphyre_flightdeck_auth::csrf_token()).'"><input type="password" name="password" placeholder="Flightdeck password" autofocus><button type="submit">Open Flightdeck</button></form></section>';
 	}
 
-	private static function layout(string $title, string $content, string $active): string {
+	/**
+	 * Wraps page content in the Flightdeck view layout.
+	 *
+	 * @param string $title Page title.
+	 * @param string $content Already-rendered page body.
+	 * @param string $active Active navigation route.
+	 * @param array{head?: string, logout?: bool, actions?: string} $options Optional layout fragments and switches.
+	 * @return string Complete HTML response body or service-unavailable text.
+	 */
+	private static function layout(string $title, string $content, string $active, array $options=[]): string {
 		if(class_exists('dataphyre_flightdeck_view', false)){
-			return dataphyre_flightdeck_view::layout($title, $content, $active);
+			return dataphyre_flightdeck_view::layout($title, $content, $active, $options);
 		}
 		http_response_code(503);
 		return 'Flightdeck view renderer is unavailable.';
 	}
 
+	/**
+	 * Renders one dashboard metric card.
+	 *
+	 * @param string $label Metric label.
+	 * @param string $value Display value.
+	 * @param string $hint Supporting description.
+	 * @return string HTML article for the metric grid.
+	 */
 	private static function metric_card(string $label, string $value, string $hint): string {
 		return '<article class="fd-metric"><span>'.$label.'</span><b>'.self::e($value).'</b><p>'.self::e($hint).'</p></article>';
 	}
 
+	/**
+	 * Lists Flightdeck control links for installed module interfaces.
+	 *
+	 * @return array<int, array{module:string,title:string,href:string,description:string}>
+	 */
 	private static function module_interface_links(): array {
 		$links=[
 			['module'=>'flightdeck', 'title'=>'Flightdeck Logs', 'href'=>'/dataphyre/logs', 'description'=>'Runtime log review in the Flightdeck visual system.'],
@@ -371,6 +711,11 @@ final class dataphyre_flightdeck {
 		return $links;
 	}
 
+	/**
+	 * Discovers installed runtime modules for the module table.
+	 *
+	 * @return array<int, array{name:string,source:string,version:string,link:?string}>
+	 */
 	private static function module_rows(): array {
 		$modules=[];
 		foreach([
@@ -400,6 +745,12 @@ final class dataphyre_flightdeck {
 		return array_values($modules);
 	}
 
+	/**
+	 * Returns the Flightdeck interface link for a module when one is known.
+	 *
+	 * @param string $module Module name.
+	 * @return ?string Module interface URL, or null when no interface exists.
+	 */
 	private static function module_link(string $module): ?string {
 		foreach(self::module_interface_links() as $link){
 			if($link['module']===$module){
@@ -409,16 +760,32 @@ final class dataphyre_flightdeck {
 		return null;
 	}
 
+	/**
+	 * Reports whether a module directory exists in common or app roots.
+	 *
+	 * @param string $module Module name.
+	 * @return bool True when the module directory is installed.
+	 */
 	private static function module_exists(string $module): bool {
 		return is_dir(self::runtime_root().'modules/'.$module.'/')
 			|| (defined('ROOTPATH') && !empty(ROOTPATH['dataphyre']) && is_dir(ROOTPATH['dataphyre'].'modules/'.$module.'/'));
 	}
 
+	/**
+	 * Reports whether the runtime toolbar is available and enabled.
+	 *
+	 * @return bool True when the debugbar class is loaded and enabled.
+	 */
 	private static function debugbar_enabled(): bool {
 		return class_exists('dataphyre_flightdeck_debugbar', false)
 			&& dataphyre_flightdeck_debugbar::enabled()===true;
 	}
 
+	/**
+	 * Returns runtime toolbar state for dashboard diagnostics.
+	 *
+	 * @return array<string, mixed> Debugbar state or unavailable fallback.
+	 */
 	private static function debugbar_state(): array {
 		if(class_exists('dataphyre_flightdeck_debugbar', false)){
 			return dataphyre_flightdeck_debugbar::state();
@@ -429,6 +796,11 @@ final class dataphyre_flightdeck {
 		];
 	}
 
+	/**
+	 * Locates the newest Flightdeck-readable log file.
+	 *
+	 * @return ?array{name:string,path:string,size:int,mtime:int,key:string} Latest log info, or null when none exist.
+	 */
 	private static function latest_log_file_info(): ?array {
 		$latest=null;
 		foreach(self::log_directories() as $directory){
@@ -454,23 +826,51 @@ final class dataphyre_flightdeck {
 		return $latest;
 	}
 
+	/**
+	 * Builds a client-stable key for a log file identity.
+	 *
+	 * @param array<string, mixed> $info Log file info payload.
+	 * @return string Key that changes when file identity or size changes.
+	 */
 	private static function log_file_key(array $info): string {
 		$inode=@fileinode((string)$info['path']);
 		return sha1((string)$info['path'].'|'.(is_int($inode) ? (string)$inode : 'unknown'));
 	}
 
+	/**
+	 * Reads incremental log entries after a client offset.
+	 *
+	 * @param array<string, mixed> $info Log file info payload.
+	 * @param int $offset Last byte offset acknowledged by the browser.
+	 * @param bool $render_stacks Whether to include smart stack panels.
+	 * @return array{offset:int,entries:array<int,string>,has_more:bool}
+	 */
 	private static function poll_log_entries(array $info, int $offset, bool $render_stacks): array {
 		return self::is_html_log($info)
 			? self::poll_html_log_entries($info, $offset, $render_stacks)
 			: self::poll_plain_log_entries($info, $offset, $render_stacks);
 	}
 
+	/**
+	 * Reads a bounded recent window from a log file.
+	 *
+	 * @param array<string, mixed> $info Log file info payload.
+	 * @param bool $render_stacks Whether to include smart stack panels.
+	 * @return array{offset:int,entries:array<int,string>}
+	 */
 	private static function recent_log_entries(array $info, bool $render_stacks): array {
 		return self::is_html_log($info)
 			? self::recent_html_log_entries($info, $render_stacks)
 			: self::recent_plain_log_entries($info, $render_stacks);
 	}
 
+	/**
+	 * Reads recent HTML log entries from the file tail.
+	 *
+	 * @param array<string, mixed> $info Log file info payload.
+	 * @param bool $render_stacks Whether to include smart stack panels.
+	 * @return array{offset:int,entries:array<int,string>}
+	 */
 	private static function recent_html_log_entries(array $info, bool $render_stacks): array {
 		if((int)$info['size']<=0){
 			return ['entries'=>[], 'offset'=>0];
@@ -486,6 +886,13 @@ final class dataphyre_flightdeck {
 		];
 	}
 
+	/**
+	 * Reads recent plain-text log lines from the file tail.
+	 *
+	 * @param array<string, mixed> $info Log file info payload.
+	 * @param bool $render_stacks Whether to include smart stack panels.
+	 * @return array{offset:int,entries:array<int,string>}
+	 */
 	private static function recent_plain_log_entries(array $info, bool $render_stacks): array {
 		if((int)$info['size']<=0){
 			return ['entries'=>[], 'offset'=>0];
@@ -501,6 +908,14 @@ final class dataphyre_flightdeck {
 		];
 	}
 
+	/**
+	 * Reads complete HTML log entries appended after an offset.
+	 *
+	 * @param array<string, mixed> $info Log file info payload.
+	 * @param int $offset Byte offset to start reading from.
+	 * @param bool $render_stacks Whether to include smart stack panels.
+	 * @return array{offset:int,entries:array<int,string>,has_more:bool}
+	 */
 	private static function poll_html_log_entries(array $info, int $offset, bool $render_stacks): array {
 		$offset=max(0, min($offset, (int)$info['size']));
 		$chunk=self::read_complete_log_chunk((string)$info['path'], $offset, self::LOG_ENTRY_DELIMITER);
@@ -515,6 +930,14 @@ final class dataphyre_flightdeck {
 		];
 	}
 
+	/**
+	 * Reads complete plain-text log lines appended after an offset.
+	 *
+	 * @param array<string, mixed> $info Log file info payload.
+	 * @param int $offset Byte offset to start reading from.
+	 * @param bool $render_stacks Whether to include smart stack panels.
+	 * @return array{offset:int,entries:array<int,string>,has_more:bool}
+	 */
 	private static function poll_plain_log_entries(array $info, int $offset, bool $render_stacks): array {
 		$offset=max(0, min($offset, (int)$info['size']));
 		$chunk=self::read_complete_log_chunk((string)$info['path'], $offset, "\n");
@@ -529,10 +952,25 @@ final class dataphyre_flightdeck {
 		];
 	}
 
+	/**
+	 * Reports whether a log file should be parsed as Flightdeck HTML entries.
+	 *
+	 * @param array<string, mixed> $info Log file info payload.
+	 * @return bool True for .html log files.
+	 */
 	private static function is_html_log(array $info): bool {
 		return (string)($info['extension'] ?? '')==='html';
 	}
 
+	/**
+	 * Reads a bounded tail window with enough entry breaks for initial display.
+	 *
+	 * @param string $path Log file path.
+	 * @param int $size Current file size.
+	 * @param int $minimum_breaks Desired number of entry delimiters.
+	 * @param string $break_marker Entry delimiter marker.
+	 * @return array{segment:string,start:int,size:int}
+	 */
 	private static function tail_log_window(string $path, int $size, int $minimum_breaks, string $break_marker): array {
 		$bytes=min($size, self::LOG_INITIAL_TAIL_BYTES);
 		$start=max(0, $size - $bytes);
@@ -553,6 +991,13 @@ final class dataphyre_flightdeck {
 		return ['segment'=>$segment, 'start'=>$start];
 	}
 
+	/**
+	 * Counts complete log-entry delimiters in a segment.
+	 *
+	 * @param string $segment Log segment text.
+	 * @param string $break_marker Entry delimiter marker.
+	 * @return int Number of entry breaks.
+	 */
 	private static function log_break_count(string $segment, string $break_marker): int {
 		if($segment===''){
 			return 0;
@@ -562,6 +1007,15 @@ final class dataphyre_flightdeck {
 			: substr_count($segment, "\n");
 	}
 
+	/**
+	 * Calculates the next safe byte offset after a tailed segment.
+	 *
+	 * @param string $segment Tail segment text.
+	 * @param int $start Byte offset where the segment begins.
+	 * @param int $size Full log file size.
+	 * @param string $break_marker Entry delimiter marker.
+	 * @return int Offset ending after the last complete entry.
+	 */
 	private static function complete_log_offset_from_tail(string $segment, int $start, int $size, string $break_marker): int {
 		if($segment===''){
 			return 0;
@@ -580,6 +1034,14 @@ final class dataphyre_flightdeck {
 		return $last_break===null ? $start : $start + $last_break + 1;
 	}
 
+	/**
+	 * Parses HTML log entries from a tailed segment.
+	 *
+	 * @param string $segment Log segment text.
+	 * @param bool $drop_leading_partial Whether to discard the first partial entry.
+	 * @param bool $render_stacks Whether to include smart stack panels.
+	 * @return array<int, string> Render-ready HTML log entries.
+	 */
 	private static function parse_tail_html_log_entries(string $segment, bool $drop_leading_partial, bool $render_stacks): array {
 		if($segment===''){
 			return [];
@@ -610,6 +1072,14 @@ final class dataphyre_flightdeck {
 		return $entries;
 	}
 
+	/**
+	 * Parses plain-text log lines from a tailed segment.
+	 *
+	 * @param string $segment Log segment text.
+	 * @param bool $drop_leading_partial Whether to discard the first partial line.
+	 * @param bool $render_stacks Whether to include smart stack panels.
+	 * @return array<int, string> Render-ready HTML table rows.
+	 */
 	private static function parse_tail_plain_log_entries(string $segment, bool $drop_leading_partial, bool $render_stacks): array {
 		if($segment===''){
 			return [];
@@ -640,6 +1110,14 @@ final class dataphyre_flightdeck {
 		return $entries;
 	}
 
+	/**
+	 * Reads bytes after an offset and trims trailing incomplete entries.
+	 *
+	 * @param string $path Log file path.
+	 * @param int $offset Byte offset to start reading from.
+	 * @param string $break_marker Entry delimiter marker.
+	 * @return string Complete chunk safe for parsing.
+	 */
 	private static function read_complete_log_chunk(string $path, int $offset, string $break_marker): string {
 		$chunk=self::read_log_bytes($path, $offset);
 		if($chunk===''){
@@ -659,6 +1137,14 @@ final class dataphyre_flightdeck {
 		return $last_break===null ? '' : substr($chunk, 0, $last_break + 1);
 	}
 
+	/**
+	 * Takes a bounded number of HTML entries from an appended chunk.
+	 *
+	 * @param string $chunk Complete log chunk.
+	 * @param int $limit Maximum number of entries to return.
+	 * @param bool $render_stacks Whether to include smart stack panels.
+	 * @return array{entries:array<int,string>,has_more:bool}
+	 */
 	private static function take_html_log_entries_from_chunk(string $chunk, int $limit, bool $render_stacks): array {
 		$pieces=explode(self::LOG_ENTRY_DELIMITER, $chunk);
 		$entries=[];
@@ -684,6 +1170,14 @@ final class dataphyre_flightdeck {
 		return ['entries'=>$entries, 'bytes'=>$consumed];
 	}
 
+	/**
+	 * Takes a bounded number of plain-text lines from an appended chunk.
+	 *
+	 * @param string $chunk Complete log chunk.
+	 * @param int $limit Maximum number of rows to return.
+	 * @param bool $render_stacks Whether to include smart stack panels.
+	 * @return array{entries:array<int,string>,has_more:bool}
+	 */
 	private static function take_plain_log_entries_from_chunk(string $chunk, int $limit, bool $render_stacks): array {
 		$entries=[];
 		$cursor=0;
@@ -706,6 +1200,13 @@ final class dataphyre_flightdeck {
 		return ['entries'=>$entries, 'bytes'=>$cursor];
 	}
 
+	/**
+	 * Finds the next newline boundary after a cursor.
+	 *
+	 * @param string $chunk Text chunk to scan.
+	 * @param int $cursor Starting byte offset.
+	 * @return ?array{position:int,length:int} Newline position and byte length.
+	 */
 	private static function next_newline_position(string $chunk, int $cursor): ?array {
 		$length=strlen($chunk);
 		for($index=$cursor; $index<$length; $index++){
@@ -723,6 +1224,12 @@ final class dataphyre_flightdeck {
 		return null;
 	}
 
+	/**
+	 * Finds the last newline boundary in a segment.
+	 *
+	 * @param string $segment Text segment to scan.
+	 * @return ?int Byte offset of the final newline marker.
+	 */
 	private static function last_newline_position(string $segment): ?int {
 		$linefeed=strrpos($segment, "\n");
 		$carriage_return=strrpos($segment, "\r");
@@ -738,6 +1245,12 @@ final class dataphyre_flightdeck {
 		return max($linefeed, $carriage_return);
 	}
 
+	/**
+	 * Reports whether a segment ends at a newline boundary.
+	 *
+	 * @param string $segment Text segment to inspect.
+	 * @return bool True when the segment ends with LF or CRLF.
+	 */
 	private static function ends_with_newline(string $segment): bool {
 		if($segment===''){
 			return false;
@@ -746,6 +1259,13 @@ final class dataphyre_flightdeck {
 		return $last_character==="\n" || $last_character==="\r";
 	}
 
+	/**
+	 * Reports whether a string ends with a suffix.
+	 *
+	 * @param string $subject String to inspect.
+	 * @param string $suffix Suffix to test.
+	 * @return bool True when the suffix is present at the end.
+	 */
 	private static function ends_with(string $subject, string $suffix): bool {
 		if($suffix===''){
 			return true;
@@ -753,6 +1273,14 @@ final class dataphyre_flightdeck {
 		return substr($subject, -strlen($suffix))===$suffix;
 	}
 
+	/**
+	 * Reads a byte range from a log file.
+	 *
+	 * @param string $path Log file path.
+	 * @param int $offset Byte offset to start reading from.
+	 * @param ?int $length Optional byte length.
+	 * @return string File bytes or an empty string when reading fails.
+	 */
 	private static function read_log_bytes(string $path, int $offset, ?int $length=null): string {
 		if(!is_file($path) || !is_readable($path)){
 			return '';
@@ -763,15 +1291,35 @@ final class dataphyre_flightdeck {
 		return is_string($contents) ? $contents : '';
 	}
 
+	/**
+	 * Renders one plain-text log line as a table row.
+	 *
+	 * @param string $line Raw log line.
+	 * @param bool $render_stacks Whether to include smart stack panels.
+	 * @return string HTML table row.
+	 */
 	private static function plain_log_line_row(string $line, bool $render_stacks): string {
 		$row='<tr><td colspan="2"><pre class="fd-log-line">'.self::e($line).'</pre></td></tr>';
 		return $render_stacks ? self::append_log_stack_panel($row) : self::append_log_snippet_trigger($row);
 	}
 
+	/**
+	 * Adds optional stack tooling to an already-rendered log entry.
+	 *
+	 * @param string $entry Log entry HTML.
+	 * @param bool $render_stacks Whether to include inline stack panels.
+	 * @return string Log entry HTML with optional diagnostics controls.
+	 */
 	private static function prepare_log_entry_html(string $entry, bool $render_stacks): string {
 		return $render_stacks ? self::append_log_stack_panel($entry) : self::append_log_snippet_trigger($entry);
 	}
 
+	/**
+	 * Appends an expanded smart stack panel to a log entry row.
+	 *
+	 * @param string $entry Log entry HTML.
+	 * @return string Entry HTML with an appended stack panel when available.
+	 */
 	private static function append_log_stack_panel(string $entry): string {
 		$panel=self::render_log_stack_panel($entry);
 		if($panel===''){
@@ -785,6 +1333,12 @@ final class dataphyre_flightdeck {
 		return $entry.$panel;
 	}
 
+	/**
+	 * Appends a lazy smart-snippet trigger to a log entry row.
+	 *
+	 * @param string $entry Log entry HTML.
+	 * @return string Entry HTML with a snippet button when diagnostics are available.
+	 */
 	private static function append_log_snippet_trigger(string $entry): string {
 		if(self::log_entry_has_smart_snippets($entry)!==true){
 			return $entry;
@@ -795,6 +1349,12 @@ final class dataphyre_flightdeck {
 		return is_string($updated) && $count>0 ? $updated : $entry;
 	}
 
+	/**
+	 * Reports whether a log entry contains frames eligible for smart snippets.
+	 *
+	 * @param string $entry Log entry HTML.
+	 * @return bool True when at least one readable frame can produce diagnostics.
+	 */
 	private static function log_entry_has_smart_snippets(string $entry): bool {
 		if(class_exists('dataphyre_flightdeck_stack_snippets', false) && dataphyre_flightdeck_stack_snippets::frames_from_log_entry($entry)!==[]){
 			return true;
@@ -806,6 +1366,12 @@ final class dataphyre_flightdeck {
 		return preg_match('/Failed opening (?:required|included)|(?:require|include)(?:_once)?\s*\(|Undefined (?:variable|constant|property)|Access to undeclared static property|Call to undefined (?:function|method)|Class [\'"][^\'"]+[\'"] not found/i', $text)===1;
 	}
 
+	/**
+	 * Renders smart diagnostics for stack frames found in a log entry.
+	 *
+	 * @param string $entry Log entry HTML submitted by the browser.
+	 * @return string HTML panel containing frame snippets and diagnostics.
+	 */
 	private static function render_log_stack_panel(string $entry): string {
 		if(class_exists('dataphyre_flightdeck_stack_snippets', false)){
 			$frames=dataphyre_flightdeck_stack_snippets::frames_from_log_entry($entry);
@@ -841,6 +1407,12 @@ final class dataphyre_flightdeck {
 		return $html;
 	}
 
+	/**
+	 * Extracts source frames from a log entry.
+	 *
+	 * @param string $entry Log entry HTML.
+	 * @return array<int, array{file:string,line:int}>
+	 */
 	private static function stack_frames_from_log_entry(string $entry): array {
 		$text=html_entity_decode(strip_tags($entry), ENT_QUOTES | ENT_HTML5, 'UTF-8');
 		if($text===''){
@@ -864,6 +1436,12 @@ final class dataphyre_flightdeck {
 		return $frames;
 	}
 
+	/**
+	 * Renders one source-frame diagnostic block.
+	 *
+	 * @param array{file:string,line:int} $frame Source frame descriptor.
+	 * @return string HTML for source diagnostics and highlighted snippet.
+	 */
 	private static function render_log_stack_frame(array $frame): string {
 		$file=(string)($frame['file'] ?? '');
 		$line=(int)($frame['line'] ?? 0);
@@ -887,6 +1465,12 @@ final class dataphyre_flightdeck {
 		return '<article class="fd-log-frame">'.$label.$code.'</article>';
 	}
 
+	/**
+	 * Normalizes source snippet lines into escaped display fragments.
+	 *
+	 * @param array<int, string> $lines Source lines around a stack frame.
+	 * @return array<int, string> HTML-safe snippet line fragments.
+	 */
 	private static function normalize_log_snippet_lines(array $lines): array {
 		$common_prefix=null;
 		foreach($lines as $line){
@@ -925,6 +1509,11 @@ final class dataphyre_flightdeck {
 		return $lines;
 	}
 
+	/**
+	 * Returns CSS for the live Flightdeck log viewer.
+	 *
+	 * @return string Stylesheet body for the embedded logs asset.
+	 */
 	private static function logs_css(): string {
 		return <<<'CSS'
 .fd-logs .fd-section-title{align-items:flex-start}
@@ -983,6 +1572,14 @@ final class dataphyre_flightdeck {
 CSS;
 	}
 
+	/**
+	 * Returns the live log polling script.
+	 *
+	 * The script manages polling, pause/selection behavior, snippet rendering,
+	 * and execution of Datadoc highlighter scripts returned in snippets.
+	 *
+	 * @return string Script tag used to derive the JavaScript asset body.
+	 */
 	private static function logs_script(): string {
 		return <<<'HTML'
 <script>
@@ -1007,12 +1604,24 @@ CSS;
 	const pauseButton=document.getElementById("fd-log-pause-toggle");
 	let selectionReleaseTimer=null;
 
-	function setStatus(message, tone){
+	/**
+	 * Updates the live-log status badge.
+	 *
+	 * Tone is stored as a data attribute so CSS can reflect busy, live, paused,
+	 * and error states without rebuilding the control strip.
+	 */
+	function set_status(message, tone){
 		statusBadge.textContent=message;
 		statusBadge.dataset.tone=tone || "busy";
 	}
 
-	function renderPlaceholder(message){
+	/**
+	 * Replaces the log table with a single placeholder row.
+	 *
+	 * Text is assigned through textContent so placeholder messages are not
+	 * treated as HTML.
+	 */
+	function render_placeholder(message){
 		logContent.innerHTML='<tr class="fd-log-placeholder"><td colspan="2"></td></tr>';
 		const cell=logContent.querySelector("td");
 		if(cell){
@@ -1020,13 +1629,25 @@ CSS;
 		}
 	}
 
-	function trimRows(){
+	/**
+	 * Keeps the live log table within the configured row budget.
+	 *
+	 * Older rows are removed from the bottom because newer entries are inserted
+	 * at the top.
+	 */
+	function trim_rows(){
 		while(logContent.children.length>state.maxRows){
 			logContent.removeChild(logContent.lastElementChild);
 		}
 	}
 
-	function renderEntries(entries, replace){
+	/**
+	 * Renders new log entry rows into the live table.
+	 *
+	 * Server-rendered rows are inserted newest-first, and Datadoc highlighter
+	 * scripts embedded in smart snippets are executed after insertion.
+	 */
+	function render_entries(entries, replace){
 		if(!Array.isArray(entries) || entries.length===0){
 			if(replace){
 				renderPlaceholder("Watching the current log file. Waiting for log events...");
@@ -1047,7 +1668,14 @@ CSS;
 		runEmbeddedScripts(logContent);
 	}
 
-	function runEmbeddedScripts(container){
+	/**
+	 * Executes Datadoc highlighter scripts embedded in newly inserted snippets.
+	 *
+	 * Scripts are copied into fresh script elements because browsers do not run
+	 * script tags inserted through innerHTML. Each source script is marked so it
+	 * runs once.
+	 */
+	function run_embedded_scripts(container){
 		const scripts=container.querySelectorAll("script[data-datadoc-highlighter=\"1\"]:not([data-fd-executed])");
 		scripts.forEach(function(script){
 			const executable=document.createElement("script");
@@ -1056,19 +1684,33 @@ CSS;
 					executable.setAttribute(attribute.name, attribute.value);
 				}
 			}
-			executable.text=script.textContent || "";
+			if(!script.src){
+				executable.text=script.textContent || "";
+			}
 			script.dataset.fdExecuted="1";
 			document.head.appendChild(executable);
-			executable.remove();
+			if(script.src){
+				executable.addEventListener("load", function(){ executable.remove(); }, {once:true});
+				executable.addEventListener("error", function(){ executable.remove(); }, {once:true});
+			}
+			else{
+				executable.remove();
+			}
 		});
 	}
 
-	function scheduleNextPoll(delay){
+	/**
+	 * Schedules the next live-log poll and replaces any pending poll timer.
+	 */
+	function schedule_next_poll(delay){
 		window.clearTimeout(state.timer);
 		state.timer=window.setTimeout(fetchLogs, delay);
 	}
 
-	function applyResponse(response){
+	/**
+	 * Applies a live-log AJAX response to the viewer state, labels, rows, and follow-up polling cadence.
+	 */
+	function apply_response(response){
 		if(!response || response.ok!==true){
 			setStatus("Unexpected log response", "error");
 			scheduleNextPoll(state.pollInterval);
@@ -1103,7 +1745,7 @@ CSS;
 		scheduleNextPoll(state.hasMore ? state.fastPollInterval : state.pollInterval);
 	}
 
-	async function fetchLogs(){
+	async function fetch_logs(){
 		if(state.requestInFlight){
 			return;
 		}
@@ -1158,7 +1800,10 @@ CSS;
 		fetchLogs();
 	});
 
-	function entryHtmlForSnippetButton(button){
+	/**
+	 * Extracts sanitized row HTML for the snippet dialog associated with a log-row button.
+	 */
+	function entry_html_for_snippet_button(button){
 		const row=button.closest("tr");
 		if(!row){
 			return "";
@@ -1170,7 +1815,7 @@ CSS;
 		return clone.outerHTML;
 	}
 
-	async function renderEntrySnippets(button){
+	async function render_entry_snippets(button){
 		const panel=button.closest("td") ? button.closest("td").querySelector(".fd-log-snippet-panel") : null;
 		if(!panel){
 			return;
@@ -1256,6 +1901,11 @@ CSS;
 HTML;
 	}
 
+	/**
+	 * Returns existing Dataphyre log directories visible to Flightdeck.
+	 *
+	 * @return array<int, string> Absolute log directory paths.
+	 */
 	private static function log_directories(): array {
 		return array_values(array_filter(array_unique([
 			defined('ROOTPATH') && !empty(ROOTPATH['dataphyre']) ? rtrim((string)ROOTPATH['dataphyre'], '/\\').'/logs/' : null,
@@ -1263,6 +1913,12 @@ HTML;
 		]), static fn($path)=>is_string($path) && is_dir($path)));
 	}
 
+	/**
+	 * Redacts sensitive keys from nested configuration arrays.
+	 *
+	 * @param array<string|int, mixed> $value Configuration array to display.
+	 * @return array<string|int, mixed> Redacted configuration suitable for Flightdeck UI.
+	 */
 	private static function sanitize_config(array $value): array {
 		$result=[];
 		foreach($value as $key=>$item){
@@ -1276,6 +1932,11 @@ HTML;
 		return $result;
 	}
 
+	/**
+	 * Resolves a safe local return URL after login.
+	 *
+	 * @return string Local URL path that cannot redirect to another origin.
+	 */
 	private static function safe_return_url(): string {
 		$return=(string)($_GET['return'] ?? '/dataphyre');
 		if($return==='' || str_starts_with($return, '//') || preg_match('/^[a-z][a-z0-9+.-]*:/i', $return)){
@@ -1284,6 +1945,11 @@ HTML;
 		return $return[0]==='/' ? $return : '/dataphyre';
 	}
 
+	/**
+	 * Returns the Dataphyre runtime root directory.
+	 *
+	 * @return string Runtime root path with trailing slash.
+	 */
 	private static function runtime_root(): string {
 		if(defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre_runtime'])){
 			return rtrim((string)ROOTPATH['common_dataphyre_runtime'], '/\\').'/';
@@ -1291,6 +1957,11 @@ HTML;
 		return rtrim(dirname(__DIR__, 3), '/\\').'/';
 	}
 
+	/**
+	 * Returns the Dataphyre install root directory.
+	 *
+	 * @return string Install root path with trailing slash.
+	 */
 	private static function install_root(): string {
 		if(defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre'])){
 			return rtrim((string)ROOTPATH['common_dataphyre'], '/\\').'/';
@@ -1298,6 +1969,12 @@ HTML;
 		return rtrim(dirname(__DIR__, 4), '/\\').'/';
 	}
 
+	/**
+	 * Formats bytes for compact Flightdeck display.
+	 *
+	 * @param int $bytes Byte count.
+	 * @return string Human-readable file size.
+	 */
 	private static function format_bytes(int $bytes): string {
 		if($bytes>=1073741824){
 			return round($bytes / 1073741824, 2).' GB';
@@ -1311,13 +1988,53 @@ HTML;
 		return $bytes.' B';
 	}
 
+	/**
+	 * Formats a millisecond duration for dashboard display.
+	 *
+	 * @param float $milliseconds Duration in milliseconds.
+	 * @return string Human-readable duration.
+	 */
+	private static function format_duration(float $milliseconds): string {
+		if($milliseconds>=1000){
+			return round($milliseconds / 1000, 2).' s';
+		}
+		return round($milliseconds, 2).' ms';
+	}
+
+	/**
+	 * Maps diagnostic severity to a Flightdeck badge tone.
+	 *
+	 * @param string $level Diagnostic severity label.
+	 * @return string Badge tone name.
+	 */
+	private static function finding_badge_level(string $level): string {
+		return match(strtolower(trim($level))){
+			'fatal', 'error'=>'error',
+			'warning'=>'warning',
+			default=>'success',
+		};
+	}
+
+	/**
+	 * Returns fallback Flightdeck shell CSS.
+	 *
+	 * @return string Stylesheet used when the view helper renders inline assets.
+	 */
 	private static function css(): string {
 		return ':root{--bg:#07111f;--panel:#f8fafc;--line:#dbe4ef;--text:#0f172a;--muted:#64748b;--accent:#0ea5e9;--accent2:#f97316;--danger:#dc2626}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top left,rgba(14,165,233,.18),transparent 28rem),linear-gradient(135deg,#07111f,#111827 55%,#172033);font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text)}a{color:inherit}.fd-sidebar{position:fixed;inset:0 auto 0 0;width:250px;background:rgba(7,17,31,.92);border-right:1px solid rgba(148,163,184,.18);color:#dbeafe;padding:22px;display:flex;flex-direction:column;gap:26px}.fd-logo{font-size:1.65rem;font-weight:900;line-height:1;letter-spacing:-.04em;color:#fff}.fd-logo span{color:#7dd3fc}.fd-sidebar nav{display:grid;gap:8px}.fd-sidebar nav a,.fd-sidebar-bottom a{padding:11px 12px;border-radius:14px;text-decoration:none;color:#b8c7df}.fd-sidebar nav a.active,.fd-sidebar nav a:hover{background:rgba(125,211,252,.12);color:#fff}.fd-sidebar-bottom{margin-top:auto}.fd-main{margin-left:250px;padding:30px;max-width:1680px}.fd-hero{display:flex;align-items:center;justify-content:space-between;gap:24px;color:#fff;margin-bottom:22px;padding:30px;border-radius:28px;background:linear-gradient(135deg,rgba(14,165,233,.2),rgba(249,115,22,.12));border:1px solid rgba(255,255,255,.12);box-shadow:0 20px 80px rgba(0,0,0,.22)}.fd-hero h1{font-size:3rem;margin:.1rem 0}.fd-hero p{max-width:760px;color:#dbeafe}.fd-kicker{text-transform:uppercase;letter-spacing:.16em;font-size:.75rem;font-weight:900;color:#7dd3fc;margin:0}.fd-card,.fd-metric{background:rgba(248,250,252,.97);border:1px solid rgba(219,228,239,.8);box-shadow:0 18px 70px rgba(0,0,0,.2);border-radius:24px;padding:22px;margin-bottom:20px}.fd-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}.fd-metric span{color:var(--muted);font-weight:700}.fd-metric b{display:block;font-size:1.8rem;margin:.4rem 0}.fd-metric p{color:var(--muted);margin:0}.fd-section-title{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px}.fd-section-title h1,.fd-section-title h2{margin:0}.fd-link-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.fd-link-card{display:block;padding:16px;border:1px solid var(--line);border-radius:18px;text-decoration:none;background:#fff}.fd-link-card b{display:block;margin-bottom:8px}.fd-link-card span,.fd-muted{color:var(--muted)}.fd-primary,.fd-danger{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:11px 16px;text-decoration:none;font-weight:900;border:0}.fd-primary{background:#7dd3fc;color:#082f49}.fd-danger{background:#fee2e2;color:#991b1b}.fd-warning,.fd-alert{border-radius:18px;padding:14px 16px;margin-bottom:18px;background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}.fd-alert{background:#fee2e2;color:#991b1b;border-color:#fecaca}.fd-pill{display:inline-flex;padding:8px 11px;border-radius:999px;background:#eef8ff;color:#075985;font-weight:800}.fd-table-wrap{overflow:auto;border-radius:18px;border:1px solid var(--line)}table{width:100%;border-collapse:collapse;background:#fff}th,td{padding:13px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{background:#eaf1f8;color:#334155}tr:last-child td{border-bottom:0}.fd-log-table th:first-child{width:190px}.fd-code,pre{background:#07111f;color:#dbeafe;border-radius:18px;padding:16px;overflow:auto;white-space:pre-wrap;line-height:1.55}.fd-login{max-width:560px;margin:10vh auto}.fd-login input{width:100%;border:1px solid var(--line);border-radius:14px;padding:13px 14px;margin:12px 0;font-size:1rem}.fd-login button{border:0;border-radius:14px;background:#0f172a;color:#fff;padding:13px 16px;font-weight:900;cursor:pointer;width:100%}@media(max-width:1040px){.fd-sidebar{position:static;width:auto;display:block}.fd-sidebar nav{grid-template-columns:repeat(3,1fr);margin-top:18px}.fd-main{margin-left:0;padding:16px}.fd-metrics,.fd-link-grid{grid-template-columns:1fr 1fr}.fd-hero{display:block}.fd-hero h1{font-size:2.2rem}}@media(max-width:680px){.fd-metrics,.fd-link-grid{grid-template-columns:1fr}.fd-sidebar nav{grid-template-columns:1fr}.fd-section-title{display:block}}';
 	}
 
+	/**
+	 * Escapes text for HTML output.
+	 *
+	 * @param string $value Raw text.
+	 * @return string HTML-escaped text.
+	 */
 	private static function e(string $value): string {
 		return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 	}
 }
 
-dataphyre_flightdeck::dispatch();
+if(defined('DATAPHYRE_FLIGHTDECK_NO_DISPATCH')!==true){
+	dataphyre_flightdeck::dispatch();
+}

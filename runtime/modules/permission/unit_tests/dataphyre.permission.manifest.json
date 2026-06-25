@@ -1,0 +1,41 @@
+[
+    {
+        "name": "manifest_without_panel_returns_module_metadata",
+        "function": "manifest",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            null,
+            {
+                "include_audit": false,
+                "include_roles": false
+            }
+        ],
+        "expected": {
+            "custom_script": "return is_array($result) && ($result['module'] ?? null) === 'dataphyre.permission' && ($result['version'] ?? null) === 1;"
+        },
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    },
+    {
+        "name": "diff_manifests_reports_added_role",
+        "function": "diffManifests",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            {
+                "roles": []
+            },
+            {
+                "roles": {
+                    "viewer": ["panel.orders.view"]
+                }
+            }
+        ],
+        "expected": {
+            "custom_script": "return is_array($result) && ($result['roles']['added'] ?? null) === ['viewer'];"
+        },
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    }
+]

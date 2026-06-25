@@ -25,7 +25,7 @@ $(document).ready(function(){
 				return true;
 			}
 			event.preventDefault();
-			const endpoint=caspowElement.attr('endpoint');
+			const endpoint=normalizeEndpoint(caspowElement.attr('endpoint'));
 			const stringOngoing=caspowElement.attr('string_ongoing') || 'Performing cryptographic challenge...';
 			const stringFailed=caspowElement.attr('string_failed') || 'Cryptographic challenge failed. Click to try again.';
 			const submitButtonSelector=caspowElement.attr('submit');
@@ -94,6 +94,17 @@ $(document).ready(function(){
 		const buttonScope=submitButtonSelector || '';
 		const action=form.getAttribute('action') || window.location.pathname;
 		return [window.location.pathname, action, formId, buttonScope].filter(Boolean).join('|');
+	}
+
+	function normalizeEndpoint(endpoint){
+		const fallback='/dataphyre/caspow/create';
+		const rawEndpoint=(endpoint || fallback).trim() || fallback;
+		const url=new URL(rawEndpoint, window.location.origin);
+		if(url.host===window.location.host){
+			url.protocol=window.location.protocol;
+		}
+		url.pathname=url.pathname.replace(/\/{2,}/g, '/');
+		return url.toString();
 	}
 
 	function appendHidden(form, name, value){

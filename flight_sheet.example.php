@@ -29,6 +29,7 @@ return [
 			],
 			'debugbar'=>[
 				'enabled'=>false,
+				'memory_limit'=>null,
 			],
 		],
 	],

@@ -11,8 +11,25 @@ namespace dataphyre\access;
 
 \dataphyre\access\diagnostic::tests();
 
+/**
+ * Audits Access module authentication configuration and runtime dependencies.
+ *
+ * The diagnostic checks required modules, PHP extensions, OAuth provider
+ * metadata, enabled auth types, session state shape, DPID format, SQL-backed
+ * session storage, and TOTP generation without requiring the full runtime to be
+ * present during embedded tooling scans.
+ */
 class diagnostic{
 
+	/**
+	 * Collects Access health findings and bootstraps session storage when possible.
+	 *
+	 * SQL and Access runtime checks degrade to warnings when diagnostic files are
+	 * loaded in isolation, preserving documentation and panel scans while still
+	 * surfacing missing production capabilities.
+	 *
+	 * @return void Findings are appended to dpanel verbose output.
+	 */
 	public static function tests(): void {
 		$verbose=[];
 		$framework_config=is_array(DP_ACCESS_CFG['framework'] ?? null) ? DP_ACCESS_CFG['framework'] : [];
@@ -21,14 +38,11 @@ class diagnostic{
 		$auth_types=DP_ACCESS_CFG['auth_types'] ?? DP_ACCESS_CFG['enabled_auth_types'] ?? [];
 		$sql_helpers_available=\function_exists('sql_query');
 		$access_runtime_available=\class_exists('\dataphyre\access', false);
-		// Runtime information
 		\dp_module_required('access', 'sql');
 		\dp_module_required('access', 'firewall');
-		// Check for PHP version
 		if(version_compare(PHP_VERSION, $ver='8.1.0') < 0){
 			$verbose[]=['module'=>'access', 'error'=>'PHP version '.$ver.' or higher is required.', 'time'=>time()];
 		}
-		// Check each required extension for module
 		$required_extensions=[
 			'session',
 			'filter',
@@ -43,7 +57,6 @@ class diagnostic{
 				$verbose[]=['module'=>'access', 'error'=>"PHP extension '{$extension}' is not loaded.", 'time'=>time()];
 			}
 		}
-		// Check if custom cookie name is respected
 		if($access_runtime_available!==true){
 			$verbose[]=[
 				'module'=>'access',
@@ -88,7 +101,6 @@ class diagnostic{
 				}
 			}
 		}
-		// Check if a session is active and has expected structure (only if active)
 		if(session_status() === PHP_SESSION_ACTIVE){
 			if(isset($_SESSION['dp_access'])){
 				if(!isset($_SESSION['dp_access']['dpid']) || !is_string($_SESSION['dp_access']['dpid'])){
@@ -102,17 +114,14 @@ class diagnostic{
 				}
 			}
 		}
-		// Check DPID constant structure if defined
 		if(defined('DPID') && is_string(DPID)){
 			if(!preg_match('/^DPID_[A-Za-z0-9\-_]{43}_[a-f0-9]{8}$/', DPID)){
 				$verbose[]=['module'=>'access', 'error'=>'DPID constant is defined but does not match expected format.', 'time'=>time()];
 			}
 		}
-		// Check if session table name is set
 		if(trim((string)(DP_ACCESS_CFG['sessions_table_name'] ?? ''))===''){
 			$verbose[]=['module'=>'access', 'error'=>'Missing session table name in configuration.', 'time'=>time()];
 		}
-		// Create table if session table name is set
 		if(!empty($table=(string)(DP_ACCESS_CFG['sessions_table_name'] ?? ''))){
 			if($sql_helpers_available!==true){
 				$verbose[]=[
@@ -164,9 +173,9 @@ class diagnostic{
 								active BOOLEAN NOT NULL DEFAULT 1,
 								date TEXT NOT NULL DEFAULT (datetime('now'))
 							);
-							CREATE INDEX IF NOT EXISTS idx_${table}_userid_active ON \"$table\" (userid, active);
-							CREATE INDEX IF NOT EXISTS idx_${table}_full_lookup ON \"$table\" (id, userid, useragent, ipaddress, active);
-							CREATE INDEX IF NOT EXISTS idx_${table}_date ON \"$table\" (date);
+							CREATE INDEX IF NOT EXISTS idx_{$table}_userid_active ON \"$table\" (userid, active);
+							CREATE INDEX IF NOT EXISTS idx_{$table}_full_lookup ON \"$table\" (id, userid, useragent, ipaddress, active);
+							CREATE INDEX IF NOT EXISTS idx_{$table}_date ON \"$table\" (date);
 						"
 					]
 				);

@@ -33,7 +33,7 @@ final class EnvRepository implements \JsonSerializable {
 	public function has(string $key=''): bool {
 		$key=trim($key);
 		if($key===''){
-			return $this->all()!==[];
+			return $this->containsValues();
 		}
 		return Env::has($this->composeKey($key));
 	}
@@ -102,13 +102,24 @@ final class EnvRepository implements \JsonSerializable {
 	}
 
 	public function only(array $keys): array {
-		$selected=[];
+		$mapped=[];
 		foreach($keys as $key){
 			$key=trim((string)$key);
-			if($key==='' || !$this->has($key)){
+			if($key===''){
 				continue;
 			}
-			$selected[$key]=$this->get($key);
+			$mapped[$this->composeKey($key)]=$key;
+		}
+		if($mapped===[]){
+			return [];
+		}
+		$values=Env::only(array_keys($mapped));
+		$selected=[];
+		foreach($mapped as $envKey=>$relativeKey){
+			if(!array_key_exists($envKey, $values)){
+				continue;
+			}
+			$selected[$relativeKey]=$values[$envKey];
 		}
 		return $selected;
 	}
@@ -122,11 +133,23 @@ final class EnvRepository implements \JsonSerializable {
 	}
 
 	public function keys(): array {
-		return array_keys($this->all());
+		$env=Env::all();
+		if($this->prefix===null){
+			return array_keys($env);
+		}
+		$prefix=$this->prefix.$this->separator;
+		$keys=[];
+		foreach($env as $key=>$_){
+			if(!is_string($key) || !str_starts_with($key, $prefix)){
+				continue;
+			}
+			$keys[]=substr($key, strlen($prefix));
+		}
+		return $keys;
 	}
 
 	public function isEmpty(): bool {
-		return $this->all()===[];
+		return !$this->containsValues();
 	}
 
 	public function scope(?string $prefix): self {
@@ -159,6 +182,20 @@ final class EnvRepository implements \JsonSerializable {
 			return $key;
 		}
 		return $this->prefix.$this->separator.$key;
+	}
+
+	private function containsValues(): bool {
+		$env=Env::all();
+		if($this->prefix===null){
+			return $env!==[];
+		}
+		$prefix=$this->prefix.$this->separator;
+		foreach($env as $key=>$_){
+			if(is_string($key) && str_starts_with($key, $prefix)){
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static function normalizePrefix(?string $prefix, string $separator): ?string {

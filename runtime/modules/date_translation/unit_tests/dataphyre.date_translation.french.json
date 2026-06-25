@@ -1,0 +1,9 @@
+[
+  {
+    "name": "French translation handles ordinals, month order, and abstracts",
+    "file": "/common/dataphyre/runtime/modules/date_translation/unit_tests/date_translation_test_helpers.php",
+    "function": "dp_date_translation_unit_french_json",
+    "args": [],
+    "expected": "{\"day_month_year\":\"le 1er janvier 2026\",\"month_day\":\"2e mars\",\"weekday\":\"lundi aujourd hui\"}"
+  }
+]

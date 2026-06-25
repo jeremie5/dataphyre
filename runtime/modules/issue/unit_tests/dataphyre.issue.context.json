@@ -1,0 +1,37 @@
+[
+  {
+    "name": "issue context helpers merge metadata and preserve JSON readability",
+    "file": "/common/dataphyre/runtime/modules/issue/unit_tests/issue_test_helpers.php",
+    "function": "dp_issue_unit_context_helpers_json",
+    "args": [],
+    "expected": "{\"context\":{\"app_version\":\"1.2.3\",\"request\":\"/orders/1\",\"tenant\":\"unit\",\"unicode\":\"cafe\",\"userid\":42},\"encoded\":\"{\\\"path\\\":\\\"/orders/1\\\",\\\"unicode\\\":\\\"cafe\\\"}\",\"timezone\":\"Europe/Paris\",\"userid\":42}"
+  },
+  {
+    "name": "issue create returns pending duplicate without insert or notification",
+    "file": "/common/dataphyre/runtime/modules/issue/unit_tests/issue_test_helpers.php",
+    "function": "dp_issue_unit_create_duplicate_json",
+    "args": [],
+    "expected": "{\"result\":7301,\"insert_called\":false,\"notifications\":0}"
+  },
+  {
+    "name": "issue create inserts encrypted pending issue and sends deterministic notification",
+    "file": "/common/dataphyre/runtime/modules/issue/unit_tests/issue_test_helpers.php",
+    "function": "dp_issue_unit_create_insert_json",
+    "args": [],
+    "expected": "{\"result\":8802,\"insert_table\":\"issues\",\"insert_has_userid\":true,\"insert_status\":\"pending\",\"insert_type\":\"insert_type\",\"insert_context_is_encrypted\":true,\"encrypt_context\":\"{\\\"userid\\\":77,\\\"request\\\":\\\"/checkout\\\",\\\"app_version\\\":\\\"3.1.4\\\",\\\"load_level\\\":0}\",\"encrypt_salt_uses_server\":true,\"notification\":{\"subject\":\"Issue (insert_type) on server (198.51.100.5)\",\"has_description\":true,\"has_context\":true,\"has_issueid\":true,\"has_timezone\":true}}"
+  },
+  {
+    "name": "issue create omits optional execution userid when context userid is null",
+    "file": "/common/dataphyre/runtime/modules/issue/unit_tests/issue_test_helpers.php",
+    "function": "dp_issue_unit_insert_without_userid_json",
+    "args": [],
+    "expected": "{\"result\":9904,\"insert_calls\":1,\"has_execution_userid\":false,\"insert_type\":\"anonymous_type\",\"insert_status\":\"pending\",\"notification_subject\":\"Issue (anonymous_type) on server (203.0.113.5)\",\"notification_unknown_issue\":false}"
+  },
+  {
+    "name": "issue create retries insert without optional execution userid after optional insert failure",
+    "file": "/common/dataphyre/runtime/modules/issue/unit_tests/issue_test_helpers.php",
+    "function": "dp_issue_unit_insert_retries_without_optional_userid_json",
+    "args": [],
+    "expected": "{\"result\":9910,\"insert_calls\":2,\"first_has_execution_userid\":true,\"second_has_execution_userid\":false,\"second_type\":\"retry_type\",\"second_status\":\"pending\"}"
+  }
+]

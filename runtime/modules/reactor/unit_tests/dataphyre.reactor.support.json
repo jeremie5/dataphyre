@@ -1,0 +1,18 @@
+[
+  {
+    "name": "reactor support objects normalize names and responses",
+    "function": "dp_reactor_support_contracts_summary",
+    "args": [],
+    "expected": "{\"error\":{\"status\":400,\"ok\":false,\"html\":\"\",\"state\":[],\"effects\":{\"focus\":\"name\"},\"message\":\"Missing field\"},\"name\":\"counter_box_primary\",\"ok\":{\"status\":200,\"ok\":true,\"html\":\"<b>Ready</b>\",\"state\":{\"count\":2},\"effects\":{\"toast\":[\"Saved\"]},\"message\":\"\"}}",
+    "file": "/common/dataphyre/runtime/modules/reactor/unit_tests/reactor_test_harness_helpers.php",
+    "max_millis": 20
+  },
+  {
+    "name": "reactor signer canonicalizes nested payload order",
+    "function": "dp_reactor_signer_contract_summary",
+    "args": [],
+    "expected": "{\"ordered_verify\":true,\"tampered_verify\":false,\"unsigned_allowed\":true}",
+    "file": "/common/dataphyre/runtime/modules/reactor/unit_tests/reactor_test_harness_helpers.php",
+    "max_millis": 20
+  }
+]

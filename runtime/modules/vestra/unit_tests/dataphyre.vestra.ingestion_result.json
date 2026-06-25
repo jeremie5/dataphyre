@@ -1,0 +1,94 @@
+[
+  {
+    "name": "vestra_ingestion_result_from_array_ignores_non_array_changes",
+    "file": "/common/dataphyre/runtime/modules/vestra/unit_tests/vestra_test_helpers.php",
+    "function": "DataphyreUnitTests\\vestra_ingestion_result_from_array_json",
+    "args": [
+      {
+        "new_html": "<img src=\"/vestra/a.png\">",
+        "changes": "ignored"
+      }
+    ],
+    "expected": "{\"new_html\":\"<img src=\\\"/vestra/a.png\\\">\",\"changes\":[]}",
+    "max_millis": 5
+  },
+  {
+    "name": "vestra_ingestion_result_reports_changed_status",
+    "file": "/common/dataphyre/runtime/modules/vestra/unit_tests/vestra_test_helpers.php",
+    "function": "DataphyreUnitTests\\vestra_ingestion_result_status_json",
+    "args": [
+      "<link href=\"/vestra/app.css\">",
+      [
+        {
+          "asset": "/assets/app.css",
+          "vestra": "/vestra/app.css"
+        }
+      ]
+    ],
+    "expected": "{\"html\":\"<link href=\\\"/vestra/app.css\\\">\",\"changes\":[{\"asset\":\"/assets/app.css\",\"vestra\":\"/vestra/app.css\"}],\"changed\":true}",
+    "max_millis": 5
+  },
+  {
+    "name": "vestra_asset_url_merges_query_parameters",
+    "file": "/common/dataphyre/runtime/modules/vestra/unit_tests/vestra_test_helpers.php",
+    "function": "DataphyreUnitTests\\vestra_asset_url_json",
+    "args": [
+      {
+        "driver": "vestra",
+        "object_id": 123456789,
+        "tenant": "example-store-content",
+        "fabric": {
+          "blockid": 123456789,
+          "tenant_url_template": "/v/{tenant}/{rate}/{blockid}",
+          "rate_source": "tenant_context"
+        },
+        "tokens": {
+          "passkey": "secret"
+        }
+      },
+      "webp",
+      {"w": 640, "fit": "cover"}
+    ],
+    "expected": "{\"asset\":\"https://vestra.example.com/v/example-store-content/s.p/123456789/t/g1.testgrant/__tr/w640/object-123456789.webp?passkey=secret&fit=cover\",\"object\":\"https://vestra.example.com/v/example-store-content/s.p/123456789/t/g1.testgrant/__tr/w640/object-123456789?passkey=secret&fit=cover\"}",
+    "max_millis": 5
+  },
+  {
+    "name": "vestra_client_facade_delegates_configuration_paths_and_asset_urls",
+    "file": "/common/dataphyre/runtime/modules/vestra/unit_tests/vestra_test_helpers.php",
+    "function": "DataphyreUnitTests\\vestra_client_facade_json",
+    "args": [
+      {
+        "driver": "vestra",
+        "object_id": 123456789,
+        "fabric": {
+          "blockid": 123456789,
+          "tenant_url_template": "/v/{tenant}/{rate}/{blockid}",
+          "rate_source": "tenant_context"
+        }
+      },
+      "avif"
+    ],
+    "expected": "{\"configured\":true,\"base_url\":\"https://vestra.example.com/\",\"object_url\":\"https://vestra.example.com/\",\"asset\":\"https://vestra.example.com/v/example-store-content/s.p/123456789/t/g1.testgrant/__tr/q80/object-123456789.avif\"}",
+    "max_millis": 5
+  },
+  {
+    "name": "vestra_asset_url_resolves_tenant_profile_alias",
+    "file": "/common/dataphyre/runtime/modules/vestra/unit_tests/vestra_test_helpers.php",
+    "function": "DataphyreUnitTests\\vestra_asset_url_json",
+    "args": [
+      {
+        "driver": "vestra",
+        "object_id": 123456789,
+        "fabric": {
+          "blockid": 123456789,
+          "tenant_url_template": "/v/{tenant}/{rate}/{blockid}",
+          "rate_source": "tenant_context"
+        }
+      },
+      "jpg",
+      {"tenant": "media"}
+    ],
+    "expected": "{\"asset\":\"https://vestra.example.com/v/example-store-content/s.p/123456789/t/g1.testgrant/object-123456789.jpg\",\"object\":\"https://vestra.example.com/v/example-store-content/s.p/123456789/t/g1.testgrant/object-123456789\"}",
+    "max_millis": 5
+  }
+]

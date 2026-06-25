@@ -36,6 +36,12 @@ Dpanel explicitly runs module diagnostic files during a Flightdeck scan, even wh
 
 Flightdeck Dpanel raises the request memory limit to `256M` for diagnostic scans when the active limit is lower. Unit-test execution also includes a memory guard that records a warning and skips remaining unit-test work before class instantiation if the process is too close to the active memory limit. Flightdeck scans disable unit-test execution by default and focus on module diagnostics, PHP validation, dependency checks, and trace capture; this keeps broad scans from turning a diagnostic result into a fatal memory error. Unit-test execution remains available to Dpanel internals and non-Flightdeck callers that explicitly leave `\dataphyre\dpanel::$run_unit_tests` enabled.
 
+Legacy JSON fields that evaluate PHP, such as `custom_script` and `file_dynamic`,
+are disabled by default. They are only for trusted local diagnostic suites. To
+enable them, set `\dataphyre\dpanel::$allow_eval_unit_tests=true`, define
+`DPANEL_ALLOW_EVAL_UNIT_TESTS` as `true`, or set
+`DATAPHYRE_DPANEL_ALLOW_EVAL_TESTS=1` in the local environment.
+
 Operating in `RUN_MODE` set to `dpanel`, the module dynamically adjusts its behavior based on the chosen parameters, offering precise, tailored diagnostics for each scenario. Whether used for a quick sanity check on individual modules or for a full-scale diagnostic sweep across an entire framework, `Dpanel` provides unmatched insights and control for Dataphyre-powered PHP projects, establishing it as a critical tool for ensuring project integrity and performance. 
 
 ---
@@ -100,14 +106,14 @@ Each test case in the JSON file should be structured with the following properti
 - **`name`** *(string)*: Descriptive name of the test case for identification.
 - **`function`** *(string)*: The function to test. This function should be defined within the specified file.
 - **`file`** *(string, optional)*: Path to the file containing the function.
-- **`file_dynamic`** *(string, optional)*: If specified, evaluates this string dynamically to generate the file path. Used if the file path is context-dependent.
+- **`file_dynamic`** *(string, optional, legacy opt-in)*: Evaluates this string dynamically to generate the file path only when eval-based unit-test fields have been explicitly enabled for a trusted local diagnostic suite.
 - **`args`** *(array)*: Arguments to pass to the function during the test.
 - **`expected`** *(mixed)*: Defines expected results, which can take several forms for flexible validation:
   - **Direct Value**: Exact match required (e.g., `12`).
   - **Range**: Specifies a `min` and `max` value (e.g., `{ "min": 10, "max": 15 }`).
   - **Regex**: Specifies a pattern using `regex:` (e.g., `"regex:^\\S+@\\S+\\.\\S+$"`).
   - **Type**: Ensures that the return type matches (e.g., `"int"`, `"string"`).
-  - **Custom Script**: `custom_script` enables evaluation using PHP code with `$result` as the return value.
+  - **Custom Script** *(legacy opt-in)*: `custom_script` enables evaluation using PHP code with `$result` as the return value only when eval-based unit-test fields have been explicitly enabled.
 
 ---
 
@@ -119,7 +125,7 @@ To handle diverse validation needs, `unit_test` includes various helper function
    This recursive function checks nested array structures against a defined template, ensuring the actual data structure aligns with expected types.
 
 2. **Expected Outcome Matching (`matches_expected`)**:
-   This function checks the test result against the `expected` value using a series of checks, including type verification, regex matching, and custom script evaluation.
+   This function checks the test result against the `expected` value using a series of checks, including type verification, regex matching, and custom script evaluation when legacy eval-based fields are explicitly enabled.
 
 ---
 
@@ -132,7 +138,7 @@ To handle diverse validation needs, `unit_test` includes various helper function
    For each test case:
    - **Locate Function File**:
      - If `file` is specified, the function attempts to include the file.
-     - If `file_dynamic` is specified, it dynamically evaluates the file path using `eval()`.
+     - If `file_dynamic` is specified and legacy eval-based fields are enabled, it dynamically evaluates the file path.
    - **Execute Function**:
      - Calls the function using `call_user_func_array`, passing in the arguments from `args`.
    - **Validate Output**:

@@ -7,8 +7,26 @@
  */
 namespace dataphyre\fulltext_engine;
 
+/**
+ * Computes edit-distance similarity using a Damerau-Levenshtein variant.
+ *
+ * The helper is stateless and multibyte-aware for character access. Despite the
+ * method name, the returned value is an edit distance rather than a normalized
+ * similarity ratio: lower is more similar and zero means an exact match.
+ */
 class damerau_levenshtein{
 
+	/**
+	 * Returns the edit distance between two strings.
+	 *
+	 * Insertions, deletions, substitutions, and adjacent transpositions are counted
+	 * with unit cost. Empty-string comparisons return the length of the non-empty
+	 * input, and identical strings return zero.
+	 *
+	 * @param string $str1 First string to compare.
+	 * @param string $str2 Second string to compare.
+	 * @return float Edit distance; lower values indicate closer strings.
+	 */
 	public static function similarity(string $str1, string $str2) : float {
 		if($str1===$str2)return 0;
 		$len1=mb_strlen($str1);

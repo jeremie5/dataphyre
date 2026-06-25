@@ -1,0 +1,169 @@
+<?php
+/*************************************************************************
+ * Dataphyre
+ *
+ * Copyright (c) 2026 Shopiro Ltd.
+ * SPDX-License-Identifier: MIT
+ */
+namespace Dataphyre\Reactor;
+
+/**
+ * Static facade for Dataphyre Reactor component runtime operations.
+ *
+ * Reactor keeps a process-local {@see ReactorManager} and delegates component
+ * registration, request dispatch, snapshot creation, mount markup, test harness
+ * construction, and configuration lookup through that manager. The facade gives
+ * application code a compact entrypoint while preserving manager injection for
+ * tests and isolated runtimes.
+ */
+final class Reactor {
+
+	/** @var ?ReactorManager Process-local manager used by facade calls. */
+	private static ?ReactorManager $manager=null;
+
+	/**
+	 * Returns the process-local Reactor manager, creating it on first use.
+	 *
+	 * The manager instance owns registered components and dispatch configuration
+	 * for the current PHP process. Use {@see reset()} when a test or worker needs
+	 * an isolated component registry.
+	 *
+	 * @return ReactorManager Active manager backing the static facade.
+	 */
+	public static function manager(): ReactorManager {
+		return self::$manager ??= new ReactorManager();
+	}
+
+	/**
+	 * Replaces the process-local Reactor manager.
+	 *
+	 * Passing null creates a fresh manager. Existing component registrations,
+	 * snapshots, and manager-local state become unreachable through the facade.
+	 *
+	 * @param ?ReactorManager $manager Manager to install, or null to create a fresh one.
+	 * @return ReactorManager Newly active manager.
+	 */
+	public static function reset(?ReactorManager $manager=null): ReactorManager {
+		return self::$manager=$manager ?? new ReactorManager();
+	}
+
+	/**
+	 * Creates or resolves a component definition through the active manager.
+	 *
+	 * Renderer values are passed through to the manager, which owns component
+	 * normalization and registration semantics.
+	 *
+	 * @param string $name Component name used by snapshots and mount points.
+	 * @param callable|string|null $renderer Optional renderer callback or template reference.
+	 * @return ReactorComponent Component definition returned by the active manager.
+	 */
+	public static function component(string $name, callable|string|null $renderer=null): ReactorComponent {
+		return self::manager()->component($name, $renderer);
+	}
+
+	/**
+	 * Registers a component definition with the active manager.
+	 *
+	 * Array definitions are normalized by the manager into component objects so
+	 * declarative boot files and fluent component builders share the same
+	 * registry path.
+	 *
+	 * @param ReactorComponent|array<string, mixed> $component Component object or declarative component definition.
+	 * @return ReactorComponent Registered component definition.
+	 */
+	public static function register(ReactorComponent|array $component): ReactorComponent {
+		return self::manager()->register($component);
+	}
+
+	/**
+	 * Dispatches a Reactor request through the active manager.
+	 *
+	 * Array requests are accepted for transport adapters and normalized by the
+	 * manager. Null requests let the manager derive the default request context.
+	 *
+	 * @param ReactorRequest|array<string, mixed>|null $request Request object, transport payload, or null for manager defaults.
+	 * @return ReactorResponse Response produced by the manager dispatcher.
+	 */
+	public static function dispatch(ReactorRequest|array|null $request=null): ReactorResponse {
+		return self::manager()->dispatch($request);
+	}
+
+	/**
+	 * Returns the active component manifest.
+	 *
+	 * The manifest is produced by the manager and is intended for client boot,
+	 * documentation rendering, and diagnostics that need to inspect registered
+	 * component metadata.
+	 *
+	 * @return array<string, mixed> Manager-generated component manifest.
+	 */
+	public static function manifest(): array {
+		return self::manager()->manifest();
+	}
+
+	/**
+	 * Creates a serializable snapshot for one component and initial state.
+	 *
+	 * Snapshots capture the server-side component identity and state payload that
+	 * client runtimes use to hydrate or resume a Reactor component.
+	 *
+	 * @param string $component Registered component name.
+	 * @param array<string, mixed> $state Initial component state.
+	 * @return ReactorSnapshot Snapshot produced by the active manager.
+	 */
+	public static function snapshot(string $component, array $state=[]): ReactorSnapshot {
+		return self::manager()->snapshot($component, $state);
+	}
+
+	/**
+	 * Renders mount markup for a component snapshot.
+	 *
+	 * Attributes are delegated to the manager so escaping, component identifiers,
+	 * state serialization, and client bootstrap conventions stay centralized.
+	 *
+	 * @param string $component Registered component name.
+	 * @param array<string, mixed> $state Initial component state.
+	 * @param array<string, mixed> $attributes HTML attributes for the mount element.
+	 * @return string Mount markup generated by the manager.
+	 */
+	public static function mount(string $component, array $state=[], array $attributes=[]): string {
+		return self::manager()->mount($component, $state, $attributes);
+	}
+
+	/**
+	 * Creates a test harness for a manager.
+	 *
+	 * Passing a manager lets tests isolate component registrations. Omitting it
+	 * binds the harness to the active facade manager.
+	 *
+	 * @param ?ReactorManager $manager Manager under test, or null for the active manager.
+	 * @return ReactorTestHarness Harness bound to the selected manager.
+	 */
+	public static function test(?ReactorManager $manager=null): ReactorTestHarness {
+		return ReactorTestHarness::make($manager ?? self::manager());
+	}
+
+	/**
+	 * Reads Reactor configuration with framework and constant fallbacks.
+	 *
+	 * The legacy kernel configuration class wins when loaded. If it is absent,
+	 * the facade checks the `DP_REACTOR_CFG` constant for an array value. Missing
+	 * keys return the supplied default without booting the kernel.
+	 *
+	 * @param string $key Configuration key to read.
+	 * @param mixed $default Value returned when the key is unavailable.
+	 * @return mixed Reactor configuration value from the kernel facade or DP_REACTOR_CFG, or the caller default.
+	 */
+	public static function config(string $key, mixed $default=null): mixed {
+		if(class_exists('\dataphyre\reactor', false)){
+			return \dataphyre\reactor::config($key, $default);
+		}
+		if(defined('\DP_REACTOR_CFG')){
+			$config=\constant('\DP_REACTOR_CFG');
+			if(is_array($config) && array_key_exists($key, $config)){
+				return $config[$key];
+			}
+		}
+		return $default;
+	}
+}

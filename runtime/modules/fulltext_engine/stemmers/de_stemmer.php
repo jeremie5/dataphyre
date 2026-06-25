@@ -7,6 +7,13 @@
  */
 namespace dataphyre\fulltext_engine\stemming;
 
+/**
+ * German Snowball-style stemmer used by the fulltext engine.
+ *
+ * The stemmer lowercases tokens, protects vowel-adjacent u/y markers, computes
+ * R1/R2 regions, applies German suffix-removal steps, and caches per-token
+ * results for repeated indexing/search calls in the same process.
+ */
 class de{
 	
 	private static $R1;
@@ -70,6 +77,16 @@ class de{
         return $word;
     }
 
+    /**
+     * Applies the first German suffix-removal step.
+     *
+     * This step normalizes sharp-s, computes R1/R2, removes common inflectional
+     * endings from R1, handles niss normalization, and strips final s only after
+     * allowed preceding consonants.
+     *
+     * @param string $word Token after initial marker protection.
+     * @return string Token after Step 1 reductions.
+     */
     private static function step1($word){
         $word=str_replace('ß', 'ss', $word);
         self::getR($word);
@@ -94,6 +111,16 @@ class de{
         return $word;
     }
 
+    /**
+     * Applies the second German suffix-removal step.
+     *
+     * The step removes comparative/superlative endings from R1 and strips final st
+     * only when the preceding consonant sequence is allowed by the German stemmer
+     * rules.
+     *
+     * @param string $word Token after Step 1.
+     * @return string Token after Step 2 reductions.
+     */
     private static function step2($word){
         self::getR($word);
         $replaceCount=0;
@@ -111,6 +138,15 @@ class de{
         return $word;
     }
 
+    /**
+     * Applies the third German derivational suffix-removal step.
+     *
+     * This step removes R2 derivational endings such as end, ung, isch, ik, ig,
+     * lich, heit, and keit, with R1 fallback handling for er/en before lich/heit.
+     *
+     * @param string $word Token after Step 2.
+     * @return string Token after Step 3 reductions.
+     */
     private static function step3($word){
         self::getR($word);
         $replaceCount=0;

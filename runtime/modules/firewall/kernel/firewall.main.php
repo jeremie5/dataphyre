@@ -16,6 +16,9 @@ dp_define_module_config('firewall', 'DP_FIREWALL_CFG', [
 		'throttle_time'=>'1 second',
 	],
 ]);
+if(function_exists('sql_define_table')){
+	sql_define_table('dataphyre.captcha_blocks', __DIR__.'/firewall.tables.php', 'captcha_blocks');
+}
 
 if(RUN_MODE!=='diagnostic'){
 	firewall::flooding_check();
@@ -26,8 +29,22 @@ else
 	require_once(__DIR__.'/firewall.diagnostic.php');
 }
 	
+/**
+ * Applies legacy Dataphyre firewall throttling and captcha blocks.
+ *
+ * The firewall kernel runs during module initialization for normal requests,
+ * reads request/session globals, and may sleep, redirect, mutate captcha block
+ * state in cache or SQL, and clear session throttle/captcha markers.
+ */
 class firewall{
 
+	/**
+	 * Processes captcha block state for the current visitor.
+	 *
+	 * A successful captcha sets captcha_unblock in the session, which removes
+	 * the current IP block from cache/SQL and clears firewall session markers.
+	 * Otherwise the request is checked for an existing captcha block.
+	 */
 	public static function captcha(){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_FIREWALL_CAPTCHA",...func_get_args())) return $early_return;
@@ -56,6 +73,14 @@ class firewall{
 		}
 	}
 	
+	/**
+	 * Calculates the request flooding threshold.
+	 *
+	 * The threshold is intentionally small for unauthenticated runtime traffic
+	 * and is increased when the access module is present.
+	 *
+	 * @return int Number of recent requests allowed before firewall action.
+	 */
 	public static function flooding_threshold(){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_FIREWALL_FLOODING_CHECK",...func_get_args())) return $early_return;
@@ -67,6 +92,13 @@ class firewall{
 		return $threshold;
 	}
 
+	/**
+	 * Checks recent request timings and applies throttling or captcha action.
+	 *
+	 * Request timestamps are stored in the session and capped to ten samples.
+	 * When the configured minimum request time is non-zero and the threshold is
+	 * reached, the firewall either sleeps or captcha-blocks the visitor.
+	 */
 	public static function flooding_check(){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_FIREWALL_FLOODING_CHECK",...func_get_args())) return $early_return;
@@ -109,6 +141,16 @@ class firewall{
 		}
 	}
 
+	/**
+	 * Legacy request-per-second limiter hook.
+	 *
+	 * The current implementation returns true immediately, leaving the older
+	 * dialback and timing path unreachable but retained for compatibility with
+	 * older firewall integrations.
+	 *
+	 * @param int $timing Minimum milliseconds between requests.
+	 * @return bool Always true in the current runtime.
+	 */
 	public static function rps_limiter(int $timing) : bool {
 		return true;
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
@@ -122,6 +164,15 @@ class firewall{
 		return true;
 	}
 
+	/**
+	 * Checks whether the current visitor has an active captcha block.
+	 *
+	 * Blocks are read from cache when available or from the captcha_blocks SQL
+	 * table otherwise. Active blocks set session state and redirect non-captcha
+	 * requests to the captcha route.
+	 *
+	 * @return bool True when the current visitor is captcha-blocked.
+	 */
 	public static function check_if_captcha_blocked() : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_FIREWALL_CHECK_IF_CAPTCHA_BLOCKED",...func_get_args())) return $early_return;
@@ -160,6 +211,16 @@ class firewall{
 		return false;
 	}
 	 
+	/**
+	 * Creates a captcha block for the current visitor IP.
+	 *
+	 * Blocks expire after six hours and are stored in cache when that module is
+	 * active, otherwise in the firewall SQL table. Existing SQL blocks are not
+	 * duplicated.
+	 *
+	 * @param string $reason Reason stored with the block.
+	 * @return bool True after the block has been recorded or already exists.
+	 */
 	public static function captcha_block_user(string $reason='unknown') : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_FIREWALL_CAPTCHA_BLOCK_USER",...func_get_args())) return $early_return;

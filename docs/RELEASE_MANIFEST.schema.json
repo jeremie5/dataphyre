@@ -1,0 +1,343 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dataphyre.com/schemas/public-export-manifest.v1.json",
+  "title": "Dataphyre Public Export Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "package",
+    "generated_by",
+    "generated_at_utc",
+    "copied_source_files",
+    "skipped_source_files",
+    "export_file_count",
+    "export_tree_sha256",
+    "release_boundary",
+    "excluded_categories",
+    "verification",
+    "verification_scope",
+    "modules",
+    "bundled_components",
+    "files"
+  ],
+  "properties": {
+    "schema": {
+      "const": "dataphyre.public_export_manifest.v1"
+    },
+    "package": {
+      "const": "dataphyre/dataphyre"
+    },
+    "generated_by": {
+      "const": "dev/tools/prepare_export"
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "copied_source_files": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "skipped_source_files": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "export_file_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "export_tree_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "release_boundary": {
+      "$ref": "#/$defs/release_boundary"
+    },
+    "excluded_categories": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "verification": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "verification_scope": {
+      "const": "maintainer_source_checkout_provenance_not_app_agent_requirement"
+    },
+    "modules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/module"
+      }
+    },
+    "bundled_components": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/bundled_component"
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/file"
+      }
+    }
+  },
+  "$defs": {
+    "release_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "default_audience",
+        "intended_use",
+        "ordinary_app_entrypoint",
+        "ordinary_app_payload_profile",
+        "ordinary_agent_verification",
+        "app_owned_extension_points",
+        "app_builder_handoff_fields",
+        "escalate_only_for",
+        "not_ordinary_app_ceremony",
+        "omitted_not_required_for_app_agents",
+        "maintainer_evidence_scope"
+      ],
+      "properties": {
+        "default_audience": {
+          "const": "application_agents_building_apps"
+        },
+        "intended_use": {
+          "const": "runtime_docs_examples_and_release_attestation"
+        },
+        "ordinary_app_entrypoint": {
+          "const": "dataphyre_app_builder_plan_generate"
+        },
+        "ordinary_app_payload_profile": {
+          "const": "compact"
+        },
+        "ordinary_agent_verification": {
+          "type": "string",
+          "minLength": 1
+        },
+        "app_owned_extension_points": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "app_builder_handoff_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "prewrite_checklist.implementation_obligations",
+              "verification_handoff",
+              "verification_execution_plan",
+              "acceptance_review_plan",
+              "local_convention_probe",
+              "write_handoff",
+              "implementation_matrix",
+              "implementation_recipe",
+              "app_contract_summary",
+              "tenant_identity_handoff",
+              "data_sensitivity_summary",
+              "policy_decision_register"
+            ]
+          },
+          "uniqueItems": true,
+          "minItems": 12,
+          "contains": {
+            "const": "prewrite_checklist.implementation_obligations"
+          },
+          "minContains": 1,
+          "allOf": [
+            {
+              "contains": {
+                "const": "verification_handoff"
+              }
+            },
+            {
+              "contains": {
+                "const": "verification_execution_plan"
+              }
+            },
+            {
+              "contains": {
+                "const": "acceptance_review_plan"
+              }
+            },
+            {
+              "contains": {
+                "const": "local_convention_probe"
+              }
+            },
+            {
+              "contains": {
+                "const": "write_handoff"
+              }
+            },
+            {
+              "contains": {
+                "const": "implementation_matrix"
+              }
+            },
+            {
+              "contains": {
+                "const": "implementation_recipe"
+              }
+            },
+            {
+              "contains": {
+                "const": "app_contract_summary"
+              }
+            },
+            {
+              "contains": {
+                "const": "tenant_identity_handoff"
+              }
+            },
+            {
+              "contains": {
+                "const": "data_sensitivity_summary"
+              }
+            },
+            {
+              "contains": {
+                "const": "policy_decision_register"
+              }
+            }
+          ]
+        },
+        "escalate_only_for": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "not_ordinary_app_ceremony": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "omitted_not_required_for_app_agents": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "maintainer_evidence_scope": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "status",
+        "runtime_critical",
+        "docs",
+        "purpose"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "status": {
+          "enum": [
+            "core",
+            "optional",
+            "adapter",
+            "legacy",
+            "experimental"
+          ]
+        },
+        "runtime_critical": {
+          "type": "boolean"
+        },
+        "docs": {
+          "type": "string",
+          "minLength": 1
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "bundled_component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "path",
+        "license",
+        "license_file"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+/$"
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1
+        },
+        "license_file": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+        }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    }
+  }
+}

@@ -7,6 +7,13 @@
  */
 namespace dataphyre\fulltext_engine\stemming;
 
+/**
+ * Arabic rough stemmer used by the fulltext engine.
+ *
+ * The stemmer removes candidate noun and verb prefixes/postfixes using bounded
+ * affix rules and returns the shorter rough stem. Static rule strings are
+ * initialized by construction for compatibility with the historical implementation.
+ */
 class ar{
 
 	private static $_verbPre ='وأسفلي';

@@ -9,10 +9,27 @@ namespace dataphyre;
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
+/**
+ * Stores multiple logical values inside one secure Dataphyre cookie.
+ *
+ * Supercookie maintains a JSON object in the `__Secure-DATA` cookie and mirrors
+ * changes into `$_COOKIE` for the current request. Dialbacks can override get,
+ * set, and delete behavior for projects that need a custom storage strategy.
+ */
 class supercookie{
 	
 	static $cookie_name='DATA';
 	
+	/**
+	 * Deletes one logical value from the aggregate cookie.
+	 *
+	 * The cookie is re-written with a 30 day expiry after the key is removed. A
+	 * false result means the cookie was missing or PHP could not send the updated
+	 * cookie header.
+	 *
+	 * @param string $name Logical value name inside the JSON cookie.
+	 * @return bool True when the aggregate cookie was rewritten.
+	 */
 	static function del(string $name): bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SUPERCOOKIE_DEL",...func_get_args())) return $early_return;
@@ -32,6 +49,12 @@ class supercookie{
 		return false;
 	}
 
+	/**
+	 * Reads one logical value from the aggregate cookie.
+	 *
+	 *
+	 * @return mixed Stored value, null when the cookie or key is absent, or a dialback return value.
+	 */
 	static function get(string $name){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SUPERCOOKIE_GET",...func_get_args())) return $early_return;
@@ -44,6 +67,17 @@ class supercookie{
 		return null;
 	}
 
+	/**
+	 * Stores one logical value in the aggregate cookie.
+	 *
+	 * Cookie names with characters forbidden by Set-Cookie are rejected. The
+	 * domain is derived from HTTP_HOST with port and invalid cookie characters
+	 * removed, and the cookie is written as secure and HTTP-only.
+	 *
+	 * @param string $name Logical value name inside the JSON cookie.
+	 * @param mixed $value JSON-encodable value to store.
+	 * @return bool True when the aggregate cookie was rewritten.
+	 */
 	static function set(string $name, mixed $value) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback('CALL_SUPERCOOKIE_SET',...func_get_args())) return $early_return;

@@ -9,17 +9,28 @@ namespace dataphyre\localization;
 
 \dataphyre\localization\diagnostic::tests();
 
+/**
+ * Verifies Localization prerequisites and locale table bootstrap readiness.
+ *
+ * The diagnostic checks SQL availability, runtime extensions, and the shared
+ * locales table used for global, theme, and local translation strings.
+ */
 class diagnostic{
 
+	/**
+	 * Collects Localization health findings and initializes locale storage.
+	 *
+	 * When SQL helpers are unavailable during embedded scans, table creation is
+	 * skipped with a warning so module discovery can still load this file.
+	 *
+	 * @return void Findings are appended to dpanel verbose output.
+	 */
 	public static function tests(): void {
 		$verbose=[];
-		// Runtime information
 		\dp_module_required('localization', 'sql');
-		// Check for PHP version
 		if(version_compare(PHP_VERSION, $ver='8.1.0') < 0){
 			$verbose[]=['module'=>'localization', 'error'=>'PHP version '.$ver.' or higher is required.', 'time'=>time()];
 		}
-		// Check each required extension for module
 		$required_extensions=[
 			'json',
 			'session',

@@ -1,0 +1,157 @@
+[
+	{
+		"name": "debugbar history normalizes comparable snapshot keys",
+		"function": "dp_flightdeck_unit_history_keys",
+		"args": [],
+		"expected": [
+			["shop|POST|/checkout/submit", "docs|GET|/dataphyre/docs"]
+		],
+		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"max_millis": 10
+	},
+	{
+		"name": "debugbar history extracts snapshot metrics",
+		"function": "dp_flightdeck_unit_snapshot_metrics",
+		"args": [],
+		"expected": [
+			{
+				"result": {
+					"status": 503,
+					"duration_ms": 123.5,
+					"sql_queries": 7,
+					"sql_time_ms": 45.25,
+					"findings": 2,
+					"browser_events": 4,
+					"browser_load_ms": 987.6,
+					"missing_assets": 4,
+					"api_failures": 1,
+					"memory_mb": 18.75,
+					"body_bytes": 2048
+				}
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"max_millis": 10
+	},
+	{
+		"name": "debugbar history normalizes accessibility client events",
+		"function": "dp_flightdeck_unit_accessibility_client_event",
+		"args": [],
+		"expected": [
+			{
+				"result": {
+					"type": "accessibility_policy",
+					"issues": 1,
+					"adjustments": 1,
+					"checked": 2,
+					"field": "sku",
+					"issue_token_count": 1,
+					"action_token_count": 1,
+					"worst": "warning",
+					"finding": "Panel accessibility policies need attention"
+				}
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"max_millis": 10
+	},
+	{
+		"name": "debugbar history accepts combined accessibility field rows",
+		"function": "dp_flightdeck_unit_accessibility_client_event_fields_fallback",
+		"args": [],
+		"expected": [
+			{
+				"result": {
+					"issues": 1,
+					"adjustments": 1,
+					"source": "combined_fields",
+					"issue_field": "email",
+					"adjustment_field": "sku",
+					"issue_token_count": 1,
+					"action_token_count": 1,
+					"preferred_issue": "country",
+					"preferred_adjustment": "reference",
+					"preferred_status": "needs_attention",
+					"preferred_source": "split_fields",
+					"plain_field": "phone",
+					"plain_token_count": 1,
+					"plain_checked": 3,
+					"plain_status": "needs_attention",
+					"adjusted_status": "adjusted",
+					"adjusted_field": "sku",
+					"pass_status": "pass",
+					"pass_checked": 2,
+					"unknown_source": "split_fields",
+					"unknown_combined_source": "combined_fields"
+				}
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"max_millis": 10
+	},
+	{
+		"name": "debugbar accessibility panel labels combined field rows",
+		"function": "dp_flightdeck_unit_accessibility_fields_fallback_render_note",
+		"args": [],
+		"expected": [
+			{
+				"result": {
+					"has_combined_note": true,
+					"has_issue_row": true
+				}
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"max_millis": 10
+	},
+	{
+		"name": "debugbar accessibility panel renders adjusted status",
+		"function": "dp_flightdeck_unit_accessibility_adjusted_status_render",
+		"args": [],
+		"expected": [
+			{
+				"result": {
+					"has_adjusted_status": true,
+					"has_adjustment_row": true,
+					"has_adjusted_metric": true
+				}
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"max_millis": 10
+	},
+	{
+		"name": "debugbar history preserves accessibility issue rows after pass events",
+		"function": "dp_flightdeck_unit_accessibility_preserves_issue_rows",
+		"args": [],
+		"expected": [
+			{
+				"result": {
+					"events": 2,
+					"issues": 1,
+					"field": "postal_code",
+					"token": 1,
+					"latest_status": "pass"
+				}
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"max_millis": 10
+	},
+	{
+		"name": "debugbar accessibility panel explains retained issue rows",
+		"function": "dp_flightdeck_unit_accessibility_retained_note",
+		"args": [],
+		"expected": [
+			{
+				"result": {
+					"has_retained_note": true,
+					"has_field_row": true,
+					"latest_message": true
+				}
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"max_millis": 10
+	}
+]

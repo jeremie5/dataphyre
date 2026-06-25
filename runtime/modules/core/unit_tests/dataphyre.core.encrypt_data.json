@@ -1,0 +1,14 @@
+[{
+    "max_millis":  20,
+    "name":  "encrypt_data_round_trips_with_matching_salt",
+    "function":  "dp_core_unit_crypto_round_trip",
+    "args":  [
+
+             ],
+    "expected":  [
+                     {
+                         "custom_script":  "return is_array($result) \u0026\u0026 ($result[\u0027encrypted_prefix\u0027] ?? null)===\u00270:\u0027 \u0026\u0026 ($result[\u0027decrypted\u0027] ?? null)===\u0027secret payload\u0027 \u0026\u0026 ($result[\u0027wrong_salt\u0027] ?? null)!==\u0027secret payload\u0027;"
+                     }
+                 ],
+    "file":  "/common/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
+}]

@@ -51,7 +51,7 @@ if(!defined('BS_VERSION')){
 }
 else
 {
-	if(version_compare(BS_VERSION, $min_bs='1.0.1', '<')){
+	if(version_compare(BS_VERSION, $min_bs='2.0', '<')){
 		pre_init_error("Dataphyre Core is incompatible with Dataphyre Bootstrap version ".BS_VERSION.". Please update to ".$min_bs);
 	}
 }
@@ -130,7 +130,12 @@ if(RUN_MODE==='request' || RUN_MODE==='diagnostic'){
 	$php_session_config=DP_CORE_CFG['core']['php_session'] ?? [];
 	$php_session_enabled=(($php_session_config['enabled'] ?? true)!==false);
 	if(session_status()!==PHP_SESSION_ACTIVE && $php_session_enabled){
-		$session_lifespan=(string)(int)($php_session_config['lifespan'] ?? 900);
+		$session_lifespan=(string)max(60, (int)(
+			$php_session_config['lifespan']
+			?? $php_session_config['cookie']['lifespan']
+			?? DP_CORE_CFG['php_session_lifespan']
+			?? 900
+		));
 		$session_name=(string)($php_session_config['cookie']['name'] ?? 'PHPSESSID');
 		$session_ini_ok=
 			false!==ini_set('session.cookie_lifetime', $session_lifespan)
@@ -161,7 +166,61 @@ if(RUN_MODE==='request' || RUN_MODE==='diagnostic'){
 }
 
 if(!defined('DP_MEMORY_LIMIT_INITIALIZED')){
-	if(false===ini_set('memory_limit', DP_CORE_CFG['max_execution_memory'] ?? '16M')) pre_init_error("Failed to ini_set() memory_limit");
+	$memory_limit_override=getenv('DATAPHYRE_MEMORY_LIMIT');
+	$memory_limit=$memory_limit_override!==false && trim((string)$memory_limit_override)!=='' ? (string)$memory_limit_override : (DP_CORE_CFG['max_execution_memory'] ?? '16M');
+	$memory_limit_to_bytes=static function(string $value): int {
+		$value=trim($value);
+		if($value==='' || $value==='-1'){
+			return -1;
+		}
+		if(!preg_match('/^(\d+(?:\.\d+)?)([gmk])?$/i', $value, $matches)){
+			return 0;
+		}
+		$number=(float)$matches[1];
+		return (int)match(strtolower($matches[2] ?? '')){
+			'g'=>$number * 1073741824,
+			'm'=>$number * 1048576,
+			'k'=>$number * 1024,
+			default=>$number,
+		};
+	};
+	if(class_exists('dataphyre_flightdeck_debugbar', false)){
+		try{
+			if(dataphyre_flightdeck_debugbar::enabled()===true){
+				dataphyre_flightdeck_debugbar::apply_configured_memory_limit();
+				$flightdeck_memory_limit=(string)ini_get('memory_limit');
+				$flightdeck_memory_limit_bytes=$memory_limit_to_bytes($flightdeck_memory_limit);
+				$memory_limit_bytes=$memory_limit_to_bytes((string)$memory_limit);
+				if($flightdeck_memory_limit!=='' && ($flightdeck_memory_limit_bytes<=0 || ($memory_limit_bytes>0 && $flightdeck_memory_limit_bytes>$memory_limit_bytes))){
+					$memory_limit=$flightdeck_memory_limit;
+				}
+			}
+		}catch(\Throwable){
+		}
+	}
+	$current_memory_limit=(string)ini_get('memory_limit');
+	$current_memory_limit_bytes=$memory_limit_to_bytes($current_memory_limit);
+	$target_memory_limit_bytes=$memory_limit_to_bytes((string)$memory_limit);
+	if($target_memory_limit_bytes>0 && $target_memory_limit_bytes<=memory_get_usage(true)){
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='DataphyreCore: Skipped lowering PHP memory_limit below current request usage.', $S='warning');
+	}
+	elseif(false===ini_set('memory_limit', $memory_limit)){
+		if($current_memory_limit_bytes<=0 || ($target_memory_limit_bytes>0 && $current_memory_limit_bytes>=$target_memory_limit_bytes)){
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='DataphyreCore: Unable to change PHP memory_limit; continuing with existing limit '.$current_memory_limit.'.', $S='warning');
+		}
+		else
+		{
+			pre_init_error("Failed to ini_set() memory_limit");
+		}
+	}
+	if(class_exists('dataphyre_flightdeck_debugbar', false)){
+		try{
+			if(dataphyre_flightdeck_debugbar::enabled()===true){
+				dataphyre_flightdeck_debugbar::apply_configured_memory_limit();
+			}
+		}catch(\Throwable){
+		}
+	}
 	if(!define('DP_MEMORY_LIMIT_INITIALIZED', true)) pre_init_error("Unable to assign DP_MEMORY_LIMIT_INITIALIZED constant");
 }
 if(!defined('DP_MAX_EXECUTION_TIME_INITIALIZED')){
@@ -175,6 +234,7 @@ if(RUN_MODE!=='diagnostic'){
 	if($mod=dp_module_present('tracelog')) require($mod[0]);
 	if($mod=dp_module_present('cache')) require($mod[0]);
 	if($mod=dp_module_present('sql')) require($mod[0]);
+	if($mod=dp_module_present('vestra')) require($mod[0]);
 	if(RUN_MODE==='request'){
 		if($mod=dp_module_present('async')) require($mod[0]);
 		if($mod=dp_module_present('google_authenticator')) require($mod[0]);
@@ -190,6 +250,7 @@ if(RUN_MODE!=='diagnostic'){
 	if($mod=dp_module_present('date_translation')) require($mod[0]);
 	if($mod=dp_module_present('currency')) require($mod[0]);
 	if($mod=dp_module_present('templating')) require($mod[0]);
+	if($mod=dp_module_present('mailer')) require($mod[0]);
 	if($mod=dp_module_present('geoposition')) require($mod[0]);
 	if($mod=dp_module_present('sanitation')) require($mod[0]);
 	if($mod=dp_module_present('stripe')) require($mod[0]);

@@ -9,18 +9,30 @@ namespace dataphyre\firewall;
 
 \dataphyre\firewall\diagnostic::tests();
 
+/**
+ * Verifies Firewall prerequisites and CAPTCHA block storage availability.
+ *
+ * The diagnostic declares SQL and cache dependencies, checks extensions used by
+ * request filtering, and creates the CAPTCHA block table when SQL helpers are
+ * available in the current entrypoint.
+ */
 class diagnostic{
 
+	/**
+	 * Collects Firewall health findings and initializes block persistence.
+	 *
+	 * Embedded documentation scans may load diagnostics without SQL entrypoints;
+	 * those scans receive a warning instead of a hard bootstrap failure.
+	 *
+	 * @return void Findings are appended to dpanel verbose output.
+	 */
 	public static function tests(): void {
 		$verbose=[];
-		// Runtime information
 		\dp_module_required('firewall', 'sql');
 		\dp_module_required('firewall', 'cache');
-		// Check for PHP version
 		if(version_compare(PHP_VERSION, $ver='8.1.0') < 0){
 			$verbose[]=['module'=>'firewall', 'error'=>'PHP version '.$ver.' or higher is required.', 'time'=>time()];
 		}
-		// Check each required extension for module
 		$required_extensions=[
 			'session',
 			'pcre',

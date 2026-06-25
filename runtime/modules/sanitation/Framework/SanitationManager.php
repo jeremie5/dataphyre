@@ -7,56 +7,149 @@
  */
 namespace Dataphyre\Sanitation;
 
+/**
+ * Central sanitation and validation service for values, input bags, and schemas.
+ *
+ * SanitationManager normalizes compact rule strings or rule arrays into a
+ * canonical config, sanitizes scalar values through the kernel sanitation
+ * engine, validates schema constraints, expands wildcard field paths, and
+ * returns SanitizationResult objects that preserve cleaned data, raw input, and
+ * per-field error messages. HTML escaping only occurs when a rule enables the
+ * escape option; callers remain responsible for SQL parameterization and
+ * output-context escaping outside sanitized field values.
+ */
 final class SanitationManager {
 
 	private static ?self $instance=null;
 
 	private readonly PresetRegistry $presets;
+	private array $stringRuleConfigs=[];
+	private array $humanizedFields=[];
 
+	/**
+	 * @var array{input:array<string,mixed>, schema:array<string,mixed>, defaults:array<string,mixed>, options:array<string,mixed>, data:array<string,mixed>, errors:array<string,string|list<string>>}|null
+	 */
+	private ?array $schemaResultCache=null;
+
+	/**
+	 * Creates a manager with a fresh preset registry.
+	 */
 	public function __construct() {
 		$this->presets=new PresetRegistry();
 	}
 
+	/**
+	 * Returns the process-local singleton manager.
+	 *
+	 * @return self Shared sanitation manager instance.
+	 */
 	public static function instance(): self {
 		return self::$instance ??= new self();
 	}
 
+	/**
+	 * Resets the process-local manager singleton and its registered presets.
+	 */
 	public static function flush(): void {
 		self::$instance=null;
 	}
 
+	/**
+	 * Sanitizes one value and returns only the cleaned value.
+	 *
+	 * Use {@see self::sanitizeDetailed()} when callers need the include flag,
+	 * error message, exclusion state, or normalized config.
+	 *
+	 * @param mixed $value Input value to sanitize.
+	 * @param string|array<string, mixed> $rule Compact rule string or expanded rule config.
+	 * @param array<string, mixed> $options Runtime options such as field name, labels, messages, or context.
+	 * @return mixed Sanitized and cast value, false on validation failure, or null when omitted/nullable.
+	 */
 	public function sanitize(mixed $value, string|array $rule='default', array $options=[]): mixed {
 		$detail=$this->sanitizeDetailed($value, $rule, $options+['present'=>true]);
 		return $detail['value'];
 	}
 
+	/**
+	 * Starts a fluent sanitizer for a single value.
+	 *
+	 * @param mixed $value Value captured by the fluent Sanitizer.
+	 * @return Sanitizer Fluent value sanitizer bound to this manager.
+	 */
 	public function string(mixed $value): Sanitizer {
 		return new Sanitizer($this, $value);
 	}
 
+	/**
+	 * Wraps an input array in an InputBag for repeated field-level sanitation.
+	 *
+	 * @param array<string, mixed> $input Raw input data.
+	 * @return InputBag Input wrapper bound to this manager.
+	 */
 	public function bag(array $input): InputBag {
 		return new InputBag($this, $input);
 	}
 
+	/**
+	 * Lists registered preset names.
+	 *
+	 * @return array<int, string> Preset identifiers known to the registry.
+	 */
 	public function presets(): array {
 		return $this->presets->names();
 	}
 
+	/**
+	 * Checks whether a named schema preset is registered.
+	 *
+	 * @param string $name Preset identifier.
+	 * @return bool True when the preset can be resolved.
+	 */
 	public function hasPreset(string $name): bool {
 		return $this->presets->has($name);
 	}
 
+	/**
+	 * Registers or replaces a named schema preset.
+	 *
+	 * Presets may be arrays or callables accepted by PresetRegistry. They are
+	 * resolved later into schema, default data, and schema option arrays.
+	 *
+	 * @param string $name Preset identifier.
+	 * @param array<string, mixed>|callable $definition Preset definition.
+	 * @return self Current manager for fluent registration.
+	 */
 	public function registerPreset(string $name, array|callable $definition): self {
 		$this->presets->register($name, $definition);
 		return $this;
 	}
 
-	public function presetSchema(string $name, array $preset_overrides=[]): array {
-		return $this->presets->resolve($name, $preset_overrides)['schema'];
+	/**
+	 * Resolves the schema portion of a named preset.
+	 *
+	 * @param string $name Preset identifier.
+	 * @param array<string, mixed> $presetOverrides Overrides applied while resolving the preset.
+	 * @return array<string, string|array<string, mixed>> Field-to-rule schema.
+	 */
+	public function presetSchema(string $name, array $presetOverrides=[]): array {
+		return $this->presets->resolve($name, $presetOverrides)['schema'];
 	}
 
-	public function preset(string $name, array $input, array $preset_overrides=[], array $defaults=[], array $options=[]): SanitizationResult {
-		$preset=$this->presets->resolve($name, $preset_overrides);
+	/**
+	 * Sanitizes and validates input through a named preset.
+	 *
+	 * Preset defaults are merged with caller defaults, and preset options are
+	 * recursively merged with caller options before schema processing begins.
+	 *
+	 * @param string $name Preset identifier.
+	 * @param array<string, mixed> $input Raw input data.
+	 * @param array<string, mixed> $presetOverrides Overrides applied while resolving the preset.
+	 * @param array<string, mixed> $defaults Initial output data.
+	 * @param array<string, mixed> $options Schema-level options such as labels and messages.
+	 * @return SanitizationResult Cleaned data and validation errors.
+	 */
+	public function preset(string $name, array $input, array $presetOverrides=[], array $defaults=[], array $options=[]): SanitizationResult {
+		$preset=$this->presets->resolve($name, $presetOverrides);
 		return $this->schema(
 			$input,
 			$preset['schema'],
@@ -65,29 +158,106 @@ final class SanitationManager {
 		);
 	}
 
-	public function validatePreset(string $name, array $input, array $preset_overrides=[], array $defaults=[], array $options=[]): SanitizationResult {
-		return $this->preset($name, $input, $preset_overrides, $defaults, $options);
+	/**
+	 * Validates input through a named preset.
+	 *
+	 * This mirrors preset() for call sites that read in validation vocabulary
+	 * while preserving the same preset merge and schema processing semantics.
+	 *
+	 * @param string $name Preset identifier.
+	 * @param array<string, mixed> $input Raw input data.
+	 * @param array<string, mixed> $presetOverrides Overrides applied while resolving the preset.
+	 * @param array<string, mixed> $defaults Initial output data.
+	 * @param array<string, mixed> $options Schema-level options.
+	 * @return SanitizationResult Cleaned data and validation errors.
+	 */
+	public function validatePreset(string $name, array $input, array $presetOverrides=[], array $defaults=[], array $options=[]): SanitizationResult {
+		return $this->preset($name, $input, $presetOverrides, $defaults, $options);
 	}
 
-	public function validatedPreset(string $name, array $input, array $preset_overrides=[], array $defaults=[], array $options=[]): array {
-		return $this->preset($name, $input, $preset_overrides, $defaults, $options)->validated();
+	/**
+	 * Runs a preset and returns only its sanitized data.
+	 *
+	 * Failed fields are omitted from the returned data according to
+	 * SanitizationResult semantics.
+	 *
+	 * @param string $name Preset identifier.
+	 * @param array<string, mixed> $input Raw input data.
+	 * @param array<string, mixed> $presetOverrides Overrides applied while resolving the preset.
+	 * @param array<string, mixed> $defaults Initial output data.
+	 * @param array<string, mixed> $options Schema-level options.
+	 * @return array<string, mixed> Sanitized data.
+	 */
+	public function validatedPreset(string $name, array $input, array $presetOverrides=[], array $defaults=[], array $options=[]): array {
+		return $this->preset($name, $input, $presetOverrides, $defaults, $options)->validated();
 	}
 
-	public function presetOrFail(string $name, array $input, array $preset_overrides=[], array $defaults=[], array $options=[], ?string $message=null): array {
-		return $this->preset($name, $input, $preset_overrides, $defaults, $options)
+	/**
+	 * Runs a preset and throws when validation fails.
+	 *
+	 * The thrown SanitizationException receives the preset name in its context.
+	 *
+	 * @param string $name Preset identifier.
+	 * @param array<string, mixed> $input Raw input data.
+	 * @param array<string, mixed> $presetOverrides Overrides applied while resolving the preset.
+	 * @param array<string, mixed> $defaults Initial output data.
+	 * @param array<string, mixed> $options Schema-level options.
+	 * @param ?string $message Optional exception message override.
+	 * @return array<string, mixed> Sanitized data.
+	 */
+	public function presetOrFail(string $name, array $input, array $presetOverrides=[], array $defaults=[], array $options=[], ?string $message=null): array {
+		return $this->preset($name, $input, $presetOverrides, $defaults, $options)
 			->ensureValid($message, ['preset'=>$name])
 			->validated();
 	}
 
+	/**
+	 * Sanitizes input through a field schema and returns a full result object.
+	 *
+	 * Schema keys may be dot paths or wildcard paths such as `items.*.email`.
+	 * Defaults seed the output before rules run. Each field is normalized,
+	 * conditionally included/excluded, sanitized, then constraint-checked after
+	 * all candidate values are available so cross-field rules can compare
+	 * against cleaned context.
+	 *
+	 * @param array<string, mixed> $input Raw input data.
+	 * @param array<string, string|array<string, mixed>> $schema Field-to-rule map.
+	 * @param array<string, mixed> $defaults Initial output data.
+	 * @param array<string, mixed> $options Schema-level options such as labels and messages.
+	 * @return SanitizationResult Cleaned data, validation errors, and original input.
+	 */
 	public function schema(array $input, array $schema, array $defaults=[], array $options=[]): SanitizationResult {
+		$cacheable=$this->isCacheableTree($input)
+			&& $this->isCacheableTree($schema)
+			&& $this->isCacheableTree($defaults)
+			&& $this->isCacheableTree($options);
+		if(
+			$cacheable &&
+			$this->schemaResultCache!==null &&
+			$this->schemaResultCache['input']===$input &&
+			$this->schemaResultCache['schema']===$schema &&
+			$this->schemaResultCache['defaults']===$defaults &&
+			$this->schemaResultCache['options']===$options
+		){
+			return new SanitizationResult(
+				$this->schemaResultCache['data'],
+				$this->schemaResultCache['errors'],
+				$input
+			);
+		}
 		$data=$defaults;
 		$errors=[];
 		$configs=[];
 		$targets=[];
+		$hasDeferredConstraints=false;
+		$hasWildcardDistinctConstraints=false;
+		$schemaLabels=(array)($options['labels'] ?? []);
+		$schemaMessages=(array)($options['messages'] ?? []);
 		foreach($schema as $field=>$rule){
 			foreach($this->schemaTargets($input, (string)$field) as $target){
 				$targets[]=[
 					'field'=>$target['field'],
+					'path_segments'=>$target['path_segments'],
 					'pattern'=>$target['pattern'],
 					'wildcard_values'=>$target['wildcard_values'],
 					'rule'=>$rule,
@@ -96,71 +266,170 @@ final class SanitationManager {
 		}
 		foreach($targets as $target){
 			$field=$target['field'];
-			$input_field=$this->pathValue($input, $field);
-			$rule_options=[
-				'present'=>$input_field['present'],
+			$pathSegments=$target['path_segments'] ?? null;
+			$inputField=$pathSegments===null ? $this->pathValue($input, $field) : $this->pathValueSegments($input, $pathSegments);
+			$ruleOptions=[
+				'present'=>$inputField['present'],
 				'input'=>$input,
 				'context'=>$data,
 				'skip_constraints'=>true,
 				'field'=>$field,
 				'field_pattern'=>$target['pattern'],
 				'wildcard_values'=>$target['wildcard_values'],
-				'labels'=>(array)($options['labels'] ?? []),
-				'messages'=>(array)($options['messages'] ?? []),
+				'labels'=>$schemaLabels,
+				'messages'=>$schemaMessages,
 			];
-			$config=$this->normalizeRule($target['rule'], $rule_options);
-			if(!$this->shouldProcessSchemaRule($config, $input_field['present'], $input, $data)){
+			$config=$this->normalizeRule($target['rule'], $ruleOptions);
+			if(!$this->shouldProcessSchemaRule($config, $inputField['present'], $input, $data)){
 				continue;
 			}
-			$detail=$this->sanitizeConfigured($input_field['value'], $config, $rule_options);
+			$detail=$this->sanitizeConfigured($inputField['value'], $config, $ruleOptions);
 			$configs[$field]=$detail['config'];
+			if($this->hasDeferredSchemaConstraints($detail['config'])){
+				$hasDeferredConstraints=true;
+			}
+			if(($detail['config']['distinct'] ?? false)===true && str_contains((string)($detail['config']['field_pattern'] ?? $field), '*')){
+				$hasWildcardDistinctConstraints=true;
+			}
 			if($detail['failed']===true){
 				$errors[$field]=$detail['error'];
 				continue;
 			}
 			if(($detail['excluded'] ?? false)===true){
-				$this->unsetPathValue($data, $field);
+				if($pathSegments===null){
+					$this->unsetPathValue($data, $field);
+				}
+				else
+				{
+					$this->unsetPathValueSegments($data, $pathSegments);
+				}
 				continue;
 			}
 			if($detail['include']===true){
-				$this->setPathValue($data, $field, $detail['value']);
+				if($pathSegments===null){
+					$this->setPathValue($data, $field, $detail['value']);
+				}
+				else
+				{
+					$this->setPathValueSegments($data, $pathSegments, $detail['value']);
+				}
 			}
 		}
-		foreach($targets as $target){
-			$field=$target['field'];
-			$data_field=$this->pathValue($data, $field);
-			if(isset($errors[$field]) || $data_field['present']===false || !isset($configs[$field])){
-				continue;
-			}
-			$error=$this->validateConstraints($data_field['value'], $configs[$field], $data, $input);
-			if($error!==null){
-				$errors[$field]=$error;
-				$this->unsetPathValue($data, $field);
+		if($hasDeferredConstraints){
+			foreach($targets as $target){
+				$field=$target['field'];
+				$pathSegments=$target['path_segments'] ?? null;
+				$dataField=$pathSegments===null ? $this->pathValue($data, $field) : $this->pathValueSegments($data, $pathSegments);
+				if(isset($errors[$field]) || $dataField['present']===false || !isset($configs[$field])){
+					continue;
+				}
+				$error=$this->validateConstraints($dataField['value'], $configs[$field], $data, $input);
+				if($error!==null){
+					$errors[$field]=$error;
+					if($pathSegments===null){
+						$this->unsetPathValue($data, $field);
+					}
+					else
+					{
+						$this->unsetPathValueSegments($data, $pathSegments);
+					}
+				}
 			}
 		}
-		$this->applyDistinctConstraints($targets, $configs, $data, $errors);
+		if($hasWildcardDistinctConstraints){
+			$this->applyDistinctConstraints($targets, $configs, $data, $errors);
+		}
+		if($cacheable){
+			$this->schemaResultCache=[
+				'input'=>$input,
+				'schema'=>$schema,
+				'defaults'=>$defaults,
+				'options'=>$options,
+				'data'=>$data,
+				'errors'=>$errors,
+			];
+		}
 		return new SanitizationResult($data, $errors, $input);
 	}
 
+	/**
+	 * Sanitizes a schema and returns only cleaned data.
+	 *
+	 * @param array<string, mixed> $input Raw input data.
+	 * @param array<string, string|array<string, mixed>> $schema Field-to-rule map.
+	 * @param array<string, mixed> $defaults Initial output data.
+	 * @param array<string, mixed> $options Schema-level options.
+	 * @return array<string, mixed> Sanitized data.
+	 */
 	public function validated(array $input, array $schema, array $defaults=[], array $options=[]): array {
 		return $this->schema($input, $schema, $defaults, $options)->validated();
 	}
 
+	/**
+	 * Sanitizes a schema and throws when validation fails.
+	 *
+	 * @param array<string, mixed> $input Raw input data.
+	 * @param array<string, string|array<string, mixed>> $schema Field-to-rule map.
+	 * @param array<string, mixed> $defaults Initial output data.
+	 * @param array<string, mixed> $options Schema-level options.
+	 * @param ?string $message Optional exception message override.
+	 * @return array<string, mixed> Sanitized data.
+	 */
 	public function schemaOrFail(array $input, array $schema, array $defaults=[], array $options=[], ?string $message=null): array {
 		return $this->schema($input, $schema, $defaults, $options)
 			->ensureValid($message)
 			->validated();
 	}
 
+	/**
+	 * Validates a schema and throws when validation fails.
+	 *
+	 * This mirrors schemaOrFail() for call sites that read in validation
+	 * vocabulary while preserving the same exception and sanitized-data contract.
+	 *
+	 * @param array<string, mixed> $input Raw input data.
+	 * @param array<string, string|array<string, mixed>> $schema Field-to-rule map.
+	 * @param array<string, mixed> $defaults Initial output data.
+	 * @param array<string, mixed> $options Schema-level options.
+	 * @param ?string $message Optional exception message override.
+	 * @return array<string, mixed> Sanitized data.
+	 */
 	public function validateOrFail(array $input, array $schema, array $defaults=[], array $options=[], ?string $message=null): array {
 		return $this->schemaOrFail($input, $schema, $defaults, $options, $message);
 	}
 
+	/**
+	 * Sanitizes one value and returns the detailed normalization result.
+	 *
+	 * The result includes the sanitized value, a nullable error message, include
+	 * and failed booleans, exclusion state, and normalized config. Schema
+	 * processing uses this result array to decide whether a field should be
+	 * written, skipped, or reported as invalid.
+	 *
+	 * @param mixed $value Input value to sanitize.
+	 * @param string|array<string, mixed> $rule Compact rule string or expanded rule config.
+	 * @param array<string, mixed> $options Runtime options such as field name, labels, messages, or context.
+	 * @return array{value:mixed,error:?string,include:bool,failed:bool,excluded:bool,config:array<string,mixed>} Detailed sanitation result.
+	 */
 	public function sanitizeDetailed(mixed $value, string|array $rule='default', array $options=[]): array {
 		$config=$this->normalizeRule($rule, $options);
 		return $this->sanitizeConfigured($value, $config, $options);
 	}
 
+	/**
+	 * Executes sanitation against an already-normalized rule config.
+	 *
+	 * This method owns the value lifecycle: conditional required/present flags are
+	 * applied first, exclusions short-circuit output, absence/null/default handling
+	 * is resolved, arrays are validated without string coercion, scalar values are
+	 * normalized through the kernel sanitation engine, and constraints/casts are
+	 * applied before returning a detailed result array.
+	 *
+	 * @param mixed $value Input value.
+	 * @param array<string,mixed> $config Normalized rule config.
+	 * @param array{field?:string,field_pattern?:string,present?:bool,context?:array<string,mixed>,input?:array<string,mixed>,labels?:array<string,string>,messages?:array<string,string>,skip_constraints?:bool} $options Runtime options including context, input, and constraint flags.
+	 * @return array{value:mixed,error:?string,include:bool,failed:bool,excluded:bool,config:array<string,mixed>} Detailed sanitation result.
+	 */
 	private function sanitizeConfigured(mixed $value, array $config, array $options=[]): array {
 		$present=(bool)($config['present'] ?? true);
 		$config=$this->applyConditionalRequired($config, $options);
@@ -262,16 +531,27 @@ final class SanitationManager {
 				]), true, true, $config);
 			}
 		}
-		$cast_value=$this->castValue($sanitized, $config);
+		$castValue=$this->castValue($sanitized, $config);
 		if(empty($options['skip_constraints'])){
-			$error=$this->validateConstraints($cast_value, $config, (array)($options['context'] ?? []), (array)($options['input'] ?? []));
+			$error=$this->validateConstraints($castValue, $config, (array)($options['context'] ?? []), (array)($options['input'] ?? []));
 			if($error!==null){
 				return $this->result(false, $error, true, true, $config);
 			}
 		}
-		return $this->result($cast_value, null, true, false, $config);
+		return $this->result($castValue, null, true, false, $config);
 	}
 
+	/**
+	 * Creates the canonical detailed sanitation result array.
+	 *
+	 * @param mixed $value Sanitized value or failure sentinel.
+	 * @param ?string $error Validation error message.
+	 * @param bool $include Whether the field should be included in output.
+	 * @param bool $failed Whether sanitation failed.
+	 * @param array<string,mixed> $config Normalized rule config.
+	 * @param bool $excluded Whether the field was actively excluded.
+	 * @return array{value:mixed,error:?string,include:bool,failed:bool,excluded:bool,config:array<string,mixed>} Detailed sanitation result.
+	 */
 	private function result(mixed $value, ?string $error, bool $include, bool $failed, array $config, bool $excluded=false): array {
 		return [
 			'value'=>$value,
@@ -283,6 +563,15 @@ final class SanitationManager {
 		];
 	}
 
+	/**
+	 * Converts scalar and stringable input into the string form expected by kernel sanitation.
+	 *
+	 * Arrays and opaque objects are rejected here so type errors remain explicit
+	 * instead of being converted into lossy placeholder strings.
+	 *
+	 * @param mixed $value Raw value.
+	 * @return ?string String value, or null when not stringable.
+	 */
 	private function stringify(mixed $value): ?string {
 		if(is_string($value)){
 			return $value;
@@ -299,6 +588,16 @@ final class SanitationManager {
 		return null;
 	}
 
+	/**
+	 * Applies the configured scalar cast to a sanitized value.
+	 *
+	 * Null and false sentinels pass through unchanged so absence and validation
+	 * failure semantics survive final output normalization.
+	 *
+	 * @param mixed $value Sanitized value.
+	 * @param array<string,mixed> $config Normalized rule config.
+	 * @return mixed integer, float, boolean, unchanged sanitized value, null absence sentinel, or false validation sentinel.
+	 */
 	private function castValue(mixed $value, array $config): mixed {
 		if($value===null || $value===false){
 			return $value;
@@ -311,6 +610,12 @@ final class SanitationManager {
 		};
 	}
 
+	/**
+	 * Maps sanitizer type tokens to default validation messages.
+	 *
+	 * @param string $type Normalized sanitation type.
+	 * @return string Default error message for the type.
+	 */
 	private function invalidTypeMessage(string $type): string {
 		return match($type){
 			'email'=>'The value must be a valid email address.',
@@ -330,6 +635,18 @@ final class SanitationManager {
 		};
 	}
 
+	/**
+	 * Normalizes a compact rule string or rule array into the canonical config.
+	 *
+	 * The config carries sanitation type, casting, presence/required conditions,
+	 * cross-field constraints, wildcard metadata, labels, and scoped messages.
+	 * Options are merged last so schema execution can inject field-specific
+	 * context without changing user-authored rule definitions.
+	 *
+	 * @param string|array $rule Compact rule string, token list, or expanded config.
+	 * @param array{field?:string,field_pattern?:string,present?:bool,context?:array<string,mixed>,input?:array<string,mixed>,labels?:array<string,string>,messages?:array<string,string>,skip_constraints?:bool} $options Runtime options supplied by value or schema execution.
+	 * @return array<string,mixed> Canonical rule config consumed by the sanitation engine.
+	 */
 	private function normalizeRule(string|array $rule, array $options=[]): array {
 		$config=[
 			'type'=>'default',
@@ -394,15 +711,25 @@ final class SanitationManager {
 		];
 
 		if(is_string($rule)){
-			$tokens=str_contains($rule, '|') ? explode('|', $rule) : [$rule];
-			foreach($tokens as $token){
-				$this->applyToken($config, trim((string)$token));
+			if(isset($this->stringRuleConfigs[$rule])){
+				$config=$this->stringRuleConfigs[$rule];
+			}
+			else
+			{
+				$tokens=str_contains($rule, '|') ? explode('|', $rule) : [$rule];
+				foreach($tokens as $token){
+					$this->applyToken($config, trim((string)$token));
+				}
+				if(count($this->stringRuleConfigs)>=128){
+					$this->stringRuleConfigs=[];
+				}
+				$this->stringRuleConfigs[$rule]=$config;
 			}
 		}
 		else
 		{
-			$is_list=$rule===[] || array_keys($rule)===range(0, count($rule)-1);
-			if($is_list){
+			$isList=$rule===[] || array_keys($rule)===range(0, count($rule)-1);
+			if($isList){
 				foreach($rule as $token){
 					$this->applyToken($config, trim((string)$token));
 				}
@@ -571,24 +898,24 @@ final class SanitationManager {
 			$config[$key]=$value;
 		}
 		if($config['field']!==null){
-			$field_messages=is_array($config['messages']) ? $config['messages'] : [];
-			$scoped_messages=$this->fieldScopedOptionValue(
+			$fieldMessages=is_array($config['messages']) ? $config['messages'] : [];
+			$scopedMessages=$this->fieldScopedOptionValue(
 				is_array($options['messages'] ?? null) ? $options['messages'] : [],
 				(string)$config['field'],
 				$config['field_pattern']===null ? null : (string)$config['field_pattern'],
 			);
-			if(is_array($scoped_messages)){
-				$field_messages=array_replace($scoped_messages, $field_messages);
+			if(is_array($scopedMessages)){
+				$fieldMessages=array_replace($scopedMessages, $fieldMessages);
 			}
-			$config['messages']=$field_messages;
+			$config['messages']=$fieldMessages;
 			if($config['label']===null){
-				$scoped_label=$this->fieldScopedOptionValue(
+				$scopedLabel=$this->fieldScopedOptionValue(
 					is_array($options['labels'] ?? null) ? $options['labels'] : [],
 					(string)$config['field'],
 					$config['field_pattern']===null ? null : (string)$config['field_pattern'],
 				);
-				if($scoped_label!==null){
-					$config['label']=(string)$scoped_label;
+				if($scopedLabel!==null){
+					$config['label']=(string)$scopedLabel;
 				}
 				else
 				{
@@ -611,6 +938,16 @@ final class SanitationManager {
 		return $config;
 	}
 
+	/**
+	 * Applies one pipe-rule token to a normalized rule config.
+	 *
+	 * Token parsing supports both unary flags and `name:value` forms. Unknown
+	 * tokens are treated as sanitation types so custom kernel types can be used
+	 * without updating the parser.
+	 *
+	 * @param array<string,mixed> $config Rule config mutated in place.
+	 * @param string $token Rule token.
+	 */
 	private function applyToken(array &$config, string $token): void {
 		if($token===''){
 			return;
@@ -769,6 +1106,19 @@ final class SanitationManager {
 		$config['type']=$this->normalizeType($token);
 	}
 
+	/**
+	 * Validates post-sanitation constraints that require normalized values or context.
+	 *
+	 * This layer enforces item counts, distinctness, exact digits, numeric bounds,
+	 * accepted/declined semantics, allow/deny lists, cross-field comparisons,
+	 * regex and string boundary checks, and custom callbacks.
+	 *
+	 * @param mixed $value Sanitized value.
+	 * @param array<string,mixed> $config Normalized rule config.
+	 * @param array<string,mixed> $context Sanitized data produced so far.
+	 * @param array<string,mixed> $input Original input data.
+	 * @return ?string Error message, or null when constraints pass.
+	 */
 	private function validateConstraints(mixed $value, array $config, array $context, array $input): ?string {
 		if($config['min_items']!==null){
 			if(!is_array($value) || count($value)<(int)$config['min_items']){
@@ -916,6 +1266,44 @@ final class SanitationManager {
 		return null;
 	}
 
+	/**
+	 * Checks whether schema sanitation must run the post-write validation pass.
+	 *
+	 * @param array<string,mixed> $config Normalized rule config.
+	 * @return bool True when a constraint depends on the sanitized value or schema context.
+	 */
+	private function hasDeferredSchemaConstraints(array $config): bool {
+		return $config['min_items']!==null
+			|| $config['max_items']!==null
+			|| $config['unique_by']!==[]
+			|| $config['distinct']===true
+			|| $config['digits']!==null
+			|| $config['min_value']!==null
+			|| $config['max_value']!==null
+			|| $config['accepted']===true
+			|| $config['declined']===true
+			|| (is_array($config['in']) && $config['in']!==[])
+			|| (is_array($config['not_in']) && $config['not_in']!==[])
+			|| $config['same']!==null
+			|| $config['different']!==null
+			|| $config['regex']!==null
+			|| (is_array($config['starts_with']) && $config['starts_with']!==[])
+			|| (is_array($config['ends_with']) && $config['ends_with']!==[])
+			|| (is_array($config['contains']) && $config['contains']!==[])
+			|| $config['callbacks']!==[];
+	}
+
+	/**
+	 * Applies conditional required rules to a normalized config.
+	 *
+	 * Required-if/unless and required-with/without rules are resolved against the
+	 * current sanitized context first, then original input, so later fields can
+	 * depend on values already cleaned by earlier schema rules.
+	 *
+	 * @param array<string,mixed> $config Normalized rule config.
+	 * @param array{context?:array<string,mixed>,input?:array<string,mixed>} $options Runtime options containing context and input.
+	 * @return array Config with required flag updated.
+	 */
 	private function applyConditionalRequired(array $config, array $options): array {
 		$context=(array)($options['context'] ?? []);
 		$input=(array)($options['input'] ?? []);
@@ -946,6 +1334,16 @@ final class SanitationManager {
 		return $config;
 	}
 
+	/**
+	 * Applies conditional presence rules to a normalized config.
+	 *
+	 * Presence rules require a field key to exist even when the value may still be
+	 * nullable or blank, which is distinct from requiring a filled value.
+	 *
+	 * @param array<string,mixed> $config Normalized rule config.
+	 * @param array{context?:array<string,mixed>,input?:array<string,mixed>} $options Runtime options containing context and input.
+	 * @return array Config with must-present flag updated.
+	 */
 	private function applyConditionalPresence(array $config, array $options): array {
 		$context=(array)($options['context'] ?? []);
 		$input=(array)($options['input'] ?? []);
@@ -976,6 +1374,18 @@ final class SanitationManager {
 		return $config;
 	}
 
+	/**
+	 * Decides whether a schema rule should execute for a field target.
+	 *
+	 * `sometimes` skips absent fields, `when` requires a matching condition, and
+	 * `unless` suppresses the rule when its condition matches.
+	 *
+	 * @param array<string,mixed> $config Normalized rule config.
+	 * @param bool $present Whether the target field exists in input.
+	 * @param array<string,mixed> $input Original input data.
+	 * @param array<string,mixed> $data Sanitized data produced so far.
+	 * @return bool Rule processing decision.
+	 */
 	private function shouldProcessSchemaRule(array $config, bool $present, array $input, array $data): bool {
 		if(($config['sometimes'] ?? false)===true && $present===false){
 			return false;
@@ -989,6 +1399,18 @@ final class SanitationManager {
 		return true;
 	}
 
+	/**
+	 * Decides whether a field should be excluded from sanitized output.
+	 *
+	 * Exclusion happens before absence/default handling so an excluded blank field
+	 * can actively remove a defaulted value from schema output.
+	 *
+	 * @param mixed $value Raw field value.
+	 * @param array<string,mixed> $config Normalized rule config.
+	 * @param array{context?:array<string,mixed>,input?:array<string,mixed>} $options Runtime options containing context and input.
+	 * @param bool $present Whether the target field exists in input.
+	 * @return bool Exclusion decision.
+	 */
 	private function shouldExclude(mixed $value, array $config, array $options, bool $present): bool {
 		if(($config['exclude_when_blank'] ?? false)===true && $this->isBlankForExclusion($value, $config, $present)){
 			return true;
@@ -1010,6 +1432,18 @@ final class SanitationManager {
 		return false;
 	}
 
+	/**
+	 * Applies distinct constraints across wildcard-expanded field groups.
+	 *
+	 * Per-field wildcard targets are validated after all values have been written,
+	 * allowing `items.*.sku|distinct` to compare siblings and remove only the
+	 * duplicate field that failed.
+	 *
+	 * @param list<array{field:string,path:list<string>,wildcards:list<string>}> $targets Expanded schema targets.
+	 * @param array<string,array<string,mixed>> $configs Normalized configs keyed by concrete field.
+	 * @param array<string,mixed> $data Sanitized data mutated when duplicates are removed.
+	 * @param array<string,string> $errors Error map mutated with duplicate failures.
+	 */
 	private function applyDistinctConstraints(array $targets, array $configs, array &$data, array &$errors): void {
 		$groups=[];
 		foreach($targets as $target){
@@ -1025,13 +1459,13 @@ final class SanitationManager {
 			if(!str_contains($pattern, '*')){
 				continue;
 			}
-			$data_field=$this->pathValue($data, $field);
-			if($data_field['present']===false){
+			$dataField=$this->pathValue($data, $field);
+			if($dataField['present']===false){
 				continue;
 			}
 			$groups[$pattern][]=[
 				'field'=>$field,
-				'value'=>$data_field['value'],
+				'value'=>$dataField['value'],
 				'config'=>$config,
 			];
 		}
@@ -1050,6 +1484,18 @@ final class SanitationManager {
 		}
 	}
 
+	/**
+	 * Resolves and interpolates a validation message.
+	 *
+	 * Rule-specific custom messages override defaults, then placeholder values
+	 * such as field, other, min, max, values, and keys are substituted.
+	 *
+	 * @param array<string,mixed> $config Normalized rule config.
+	 * @param string $rule Rule message key.
+	 * @param string $default Default message template.
+	 * @param array<string,string> $replacements Additional placeholder replacements.
+	 * @return string Interpolated validation message.
+	 */
 	private function resolveMessage(array $config, string $rule, string $default, array $replacements=[]): string {
 		$message=$config['messages'][$rule] ?? $default;
 		$replacements=array_merge([
@@ -1075,26 +1521,61 @@ final class SanitationManager {
 		return $message;
 	}
 
+	/**
+	 * Converts a dot-path or snake_case field name into a readable label.
+	 *
+	 * @param string $field Field path.
+	 * @return string Human-readable field label.
+	 */
 	private function humanizeField(string $field): string {
+		if(isset($this->humanizedFields[$field])){
+			return $this->humanizedFields[$field];
+		}
+		$original=$field;
 		$field=str_replace(['.', '_'], ' ', $field);
 		$field=preg_replace('/\s+/u', ' ', trim($field)) ?? trim($field);
 		if($field===''){
-			return 'value';
+			return $this->humanizedFields[$original]='value';
 		}
-		return ucfirst($field);
+		if(count($this->humanizedFields)>=128){
+			$this->humanizedFields=[];
+		}
+		return $this->humanizedFields[$original]=ucfirst($field);
 	}
 
+	/**
+	 * Resolves the label used for a comparison field in validation messages.
+	 *
+	 * Scoped labels can target concrete wildcard paths or wildcard patterns before
+	 * falling back to a humanized field path.
+	 *
+	 * @param string $field Comparison field path from the rule.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return string Human-readable comparison label.
+	 */
 	private function otherFieldLabel(string $field, array $config): string {
-		$resolved_field=$this->resolveComparisonField($field, $config);
+		$resolvedField=$this->resolveComparisonField($field, $config);
 		if(isset($config['labels']) && is_array($config['labels'])){
-			$label=$this->fieldScopedOptionValue($config['labels'], $resolved_field, $field);
+			$label=$this->fieldScopedOptionValue($config['labels'], $resolvedField, $field);
 			if($label!==null){
 				return (string)$label;
 			}
 		}
-		return $this->humanizeField($resolved_field);
+		return $this->humanizeField($resolvedField);
 	}
 
+	/**
+	 * Reads a comparison value from sanitized context or original input.
+	 *
+	 * Sanitized context wins so comparisons use cleaned values when the referenced
+	 * field has already been processed.
+	 *
+	 * @param string $field Comparison field path.
+	 * @param array<string,mixed> $context Sanitized data produced so far.
+	 * @param array<string,mixed> $input Original input data.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return mixed sanitized comparison value when already available, original input value as fallback, or null when absent.
+	 */
 	private function comparisonValue(string $field, array $context, array $input, array $config): mixed {
 		$field=$this->resolveComparisonField($field, $config);
 		$value=$this->pathValue($context, $field);
@@ -1105,10 +1586,21 @@ final class SanitationManager {
 		return $value['present']===true ? $value['value'] : null;
 	}
 
+	/**
+	 * Expands a schema field pattern into concrete field targets.
+	 *
+	 * Non-wildcard fields map to themselves. Wildcard fields are expanded against
+	 * the input data and retain wildcard values for relative comparisons.
+	 *
+	 * @param array<string,mixed> $input Original input data.
+	 * @param string $field Schema field path or wildcard pattern.
+	 * @return array Expanded target descriptors.
+	 */
 	private function schemaTargets(array $input, string $field): array {
 		if(!str_contains($field, '*')){
 			return [[
 				'field'=>$field,
+				'path_segments'=>str_contains($field, '.') ? explode('.', $field) : null,
 				'pattern'=>$field,
 				'wildcard_values'=>[],
 			]];
@@ -1118,6 +1610,7 @@ final class SanitationManager {
 		foreach($matches as $match){
 			$targets[]=[
 				'field'=>$match['path'],
+				'path_segments'=>$match['path_segments'],
 				'pattern'=>$field,
 				'wildcard_values'=>$match['wildcard_values'],
 			];
@@ -1125,17 +1618,34 @@ final class SanitationManager {
 		return $targets;
 	}
 
+	/**
+	 * Finds concrete input paths matching a wildcard schema pattern.
+	 *
+	 * @param array<string,mixed> $source Original input data.
+	 * @param string $pattern Dot-path pattern containing `*` segments.
+	 * @return array Matched paths with wildcard values.
+	 */
 	private function wildcardPathMatches(array $source, string $pattern): array {
 		$matches=[];
 		$this->walkWildcardPath($source, explode('.', $pattern), [], [], $matches);
 		return $matches;
 	}
 
-	private function walkWildcardPath(mixed $current, array $segments, array $path_segments, array $wildcard_values, array &$matches): void {
+	/**
+	 * Recursively walks input data to expand wildcard path matches.
+	 *
+	 * @param mixed $current Current input subtree.
+	 * @param list<string> $segments Remaining pattern segments.
+	 * @param list<string> $pathSegments Concrete path segments collected so far.
+	 * @param list<string> $wildcardValues Values captured for wildcard segments.
+	 * @param list<array{field:string,path:list<string>,wildcards:list<string>}> $matches Match list mutated in place.
+	 */
+	private function walkWildcardPath(mixed $current, array $segments, array $pathSegments, array $wildcardValues, array &$matches): void {
 		if($segments===[]){
 			$matches[]=[
-				'path'=>implode('.', $path_segments),
-				'wildcard_values'=>$wildcard_values,
+				'path'=>implode('.', $pathSegments),
+				'path_segments'=>$pathSegments,
+				'wildcard_values'=>$wildcardValues,
 			];
 			return;
 		}
@@ -1146,16 +1656,27 @@ final class SanitationManager {
 			}
 			foreach($current as $key=>$value){
 				$key=(string)$key;
-				$this->walkWildcardPath($value, $segments, [...$path_segments, $key], [...$wildcard_values, $key], $matches);
+				$this->walkWildcardPath($value, $segments, [...$pathSegments, $key], [...$wildcardValues, $key], $matches);
 			}
 			return;
 		}
 		if(!is_array($current) || !array_key_exists($segment, $current)){
 			return;
 		}
-		$this->walkWildcardPath($current[$segment], $segments, [...$path_segments, $segment], $wildcard_values, $matches);
+		$this->walkWildcardPath($current[$segment], $segments, [...$pathSegments, $segment], $wildcardValues, $matches);
 	}
 
+	/**
+	 * Resolves a field-scoped option such as label or message.
+	 *
+	 * Exact concrete field keys win, then the schema pattern, then any matching
+	 * wildcard option key.
+	 *
+	 * @param array<string,mixed> $options Field-scoped option map.
+	 * @param string $field Concrete field path.
+	 * @param ?string $pattern Original schema field pattern.
+	 * @return mixed Scoped option value, or null when absent.
+	 */
 	private function fieldScopedOptionValue(array $options, string $field, ?string $pattern=null): mixed {
 		if(array_key_exists($field, $options)){
 			return $options[$field];
@@ -1174,23 +1695,41 @@ final class SanitationManager {
 		return null;
 	}
 
+	/**
+	 * Checks whether a wildcard field pattern matches a concrete field path.
+	 *
+	 * @param string $pattern Dot-path pattern that may contain `*` segments.
+	 * @param string $field Concrete field path.
+	 * @return bool Pattern match decision.
+	 */
 	private function fieldPatternMatches(string $pattern, string $field): bool {
-		$pattern_segments=explode('.', $pattern);
-		$field_segments=explode('.', $field);
-		if(count($pattern_segments)!==count($field_segments)){
+		$patternSegments=explode('.', $pattern);
+		$fieldSegments=explode('.', $field);
+		if(count($patternSegments)!==count($fieldSegments)){
 			return false;
 		}
-		foreach($pattern_segments as $index=>$segment){
+		foreach($patternSegments as $index=>$segment){
 			if($segment==='*'){
 				continue;
 			}
-			if($segment!==$field_segments[$index]){
+			if($segment!==$fieldSegments[$index]){
 				return false;
 			}
 		}
 		return true;
 	}
 
+	/**
+	 * Resolves a comparison field relative to the current wildcard field.
+	 *
+	 * Wildcard placeholders are replaced with captured values first. Bare field
+	 * names inside nested rules are resolved relative to the current field's
+	 * parent path.
+	 *
+	 * @param string $field Comparison field path from a rule.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return string Concrete comparison field path.
+	 */
 	private function resolveComparisonField(string $field, array $config): string {
 		$field=$this->applyWildcardValues($field, is_array($config['wildcard_values'] ?? null) ? $config['wildcard_values'] : []);
 		if(!str_contains($field, '.') && isset($config['field']) && is_string($config['field']) && str_contains($config['field'], '.')){
@@ -1202,25 +1741,59 @@ final class SanitationManager {
 		return $field;
 	}
 
-	private function applyWildcardValues(string $path, array $wildcard_values): string {
-		foreach($wildcard_values as $wildcard_value){
+	/**
+	 * Substitutes captured wildcard values into a comparison path.
+	 *
+	 * @param string $path Path that may contain wildcard placeholders.
+	 * @param list<string> $wildcardValues Captured wildcard values.
+	 * @return string Concrete path.
+	 */
+	private function applyWildcardValues(string $path, array $wildcardValues): string {
+		foreach($wildcardValues as $wildcardValue){
 			if(!str_contains($path, '*')){
 				break;
 			}
-			$path=preg_replace('/\*/', (string)$wildcard_value, $path, 1) ?? $path;
+			$path=preg_replace('/\*/', (string)$wildcardValue, $path, 1) ?? $path;
 		}
 		return $path;
 	}
 
+	/**
+	 * Reads a value and presence flag from an array using dot-path notation.
+	 *
+	 * @param array<string,mixed> $source Source array.
+	 * @param string $path Top-level key or dot-path.
+	 * @return array{present:bool,value:mixed} Path lookup result.
+	 */
 	private function pathValue(array $source, string $path): array {
 		if($path==='' || !str_contains($path, '.')){
+			$present=array_key_exists($path, $source);
 			return [
-				'present'=>array_key_exists($path, $source),
-				'value'=>array_key_exists($path, $source) ? $source[$path] : null,
+				'present'=>$present,
+				'value'=>$present ? $source[$path] : null,
+			];
+		}
+		return $this->pathValueSegments($source, explode('.', $path));
+	}
+
+	/**
+	 * Reads a value from an array using pre-split path segments.
+	 *
+	 * @param array<string,mixed> $source Source array.
+	 * @param list<string> $segments Pre-split path segments.
+	 * @return array{present:bool,value:mixed} Path lookup result.
+	 */
+	private function pathValueSegments(array $source, array $segments): array {
+		if(count($segments)===1){
+			$path=$segments[0];
+			$present=array_key_exists($path, $source);
+			return [
+				'present'=>$present,
+				'value'=>$present ? $source[$path] : null,
 			];
 		}
 		$current=$source;
-		foreach(explode('.', $path) as $segment){
+		foreach($segments as $segment){
 			if(!is_array($current) || !array_key_exists($segment, $current)){
 				return [
 					'present'=>false,
@@ -1235,15 +1808,40 @@ final class SanitationManager {
 		];
 	}
 
+	/**
+	 * Writes a value into an array using dot-path notation.
+	 *
+	 * Missing intermediate arrays are created so schema output can materialize
+	 * nested values even when defaults did not contain the full path.
+	 *
+	 * @param array<string,mixed> $target Target array passed by reference.
+	 * @param string $path Top-level key or dot-path.
+	 * @param mixed $value Value to write.
+	 */
 	private function setPathValue(array &$target, string $path, mixed $value): void {
 		if($path==='' || !str_contains($path, '.')){
 			$target[$path]=$value;
 			return;
 		}
-		$segments=explode('.', $path);
+		$this->setPathValueSegments($target, explode('.', $path), $value);
+	}
+
+	/**
+	 * Writes a value into an array using pre-split path segments.
+	 *
+	 * @param array<string,mixed> $target Target array passed by reference.
+	 * @param list<string> $segments Pre-split path segments.
+	 * @param mixed $value Value to write.
+	 */
+	private function setPathValueSegments(array &$target, array $segments, mixed $value): void {
+		if(count($segments)===1){
+			$target[$segments[0]]=$value;
+			return;
+		}
+		$lastIndex=count($segments)-1;
 		$current=&$target;
 		foreach($segments as $index=>$segment){
-			if($index===count($segments)-1){
+			if($index===$lastIndex){
 				$current[$segment]=$value;
 				return;
 			}
@@ -1254,12 +1852,31 @@ final class SanitationManager {
 		}
 	}
 
+	/**
+	 * Removes a value from an array using dot-path notation.
+	 *
+	 * @param array<string,mixed> $target Target array passed by reference.
+	 * @param string $path Top-level key or dot-path.
+	 */
 	private function unsetPathValue(array &$target, string $path): void {
 		if($path==='' || !str_contains($path, '.')){
 			unset($target[$path]);
 			return;
 		}
-		$segments=explode('.', $path);
+		$this->unsetPathValueSegments($target, explode('.', $path));
+	}
+
+	/**
+	 * Removes a value from an array using pre-split path segments.
+	 *
+	 * @param array<string,mixed> $target Target array passed by reference.
+	 * @param list<string> $segments Pre-split path segments.
+	 */
+	private function unsetPathValueSegments(array &$target, array $segments): void {
+		if(count($segments)===1){
+			unset($target[$segments[0]]);
+			return;
+		}
 		$last=array_pop($segments);
 		$current=&$target;
 		foreach($segments as $segment){
@@ -1273,6 +1890,12 @@ final class SanitationManager {
 		}
 	}
 
+	/**
+	 * Normalizes rule type aliases to kernel sanitation type names.
+	 *
+	 * @param string $type Raw type token.
+	 * @return string Normalized sanitation type.
+	 */
 	private function normalizeType(string $type): string {
 		$type=strtolower(trim($type));
 		return match($type){
@@ -1289,6 +1912,12 @@ final class SanitationManager {
 		};
 	}
 
+	/**
+	 * Checks whether an array has sequential list keys.
+	 *
+	 * @param array<int|string,mixed> $value Array to inspect.
+	 * @return bool List-array decision.
+	 */
 	private function isListArray(array $value): bool {
 		if($value===[]){
 			return true;
@@ -1296,10 +1925,17 @@ final class SanitationManager {
 		return array_keys($value)===range(0, count($value)-1);
 	}
 
-	private function arrayHasDuplicateValues(array $values, bool $ignore_case): bool {
+	/**
+	 * Detects duplicate values in an array using sanitation distinct fingerprints.
+	 *
+	 * @param array<int|string,mixed> $values Values to compare.
+	 * @param bool $ignoreCase Whether string comparisons ignore case.
+	 * @return bool Duplicate detection result.
+	 */
+	private function arrayHasDuplicateValues(array $values, bool $ignoreCase): bool {
 		$seen=[];
 		foreach($values as $value){
-			$fingerprint=$this->distinctFingerprint($value, $ignore_case);
+			$fingerprint=$this->distinctFingerprint($value, $ignoreCase);
 			if(array_key_exists($fingerprint, $seen)){
 				return true;
 			}
@@ -1308,23 +1944,34 @@ final class SanitationManager {
 		return false;
 	}
 
-	private function collectionHasDuplicateBy(array $items, array $fields, bool $ignore_case): bool {
+	/**
+	 * Detects duplicate items by one or more relative item fields.
+	 *
+	 * Items that have no comparable value for any configured field are skipped so
+	 * empty placeholder rows do not collide with each other.
+	 *
+	 * @param list<array<string,mixed>|object> $items List of array/object items.
+	 * @param list<string> $fields Relative field paths used as the uniqueness key.
+	 * @param bool $ignoreCase Whether string comparisons ignore case.
+	 * @return bool Duplicate detection result.
+	 */
+	private function collectionHasDuplicateBy(array $items, array $fields, bool $ignoreCase): bool {
 		$seen=[];
 		foreach($items as $item){
 			$values=[];
-			$has_comparable_value=false;
+			$hasComparableValue=false;
 			foreach($fields as $field){
 				$resolved=$this->relativePathValue($item, $field);
-				$field_value=$resolved['present']===true ? $resolved['value'] : null;
-				$values[$field]=$field_value;
-				if($this->hasComparableUniqueValue($field_value)){
-					$has_comparable_value=true;
+				$fieldValue=$resolved['present']===true ? $resolved['value'] : null;
+				$values[$field]=$fieldValue;
+				if($this->hasComparableUniqueValue($fieldValue)){
+					$hasComparableValue=true;
 				}
 			}
-			if($has_comparable_value===false){
+			if($hasComparableValue===false){
 				continue;
 			}
-			$fingerprint=$this->distinctFingerprint($values, $ignore_case);
+			$fingerprint=$this->distinctFingerprint($values, $ignoreCase);
 			if(array_key_exists($fingerprint, $seen)){
 				return true;
 			}
@@ -1333,16 +1980,33 @@ final class SanitationManager {
 		return false;
 	}
 
-	private function distinctFingerprint(mixed $value, bool $ignore_case): string {
-		$normalized=$this->normalizeDistinctValue($value, $ignore_case);
+	/**
+	 * Builds a stable fingerprint for distinct and uniqueness comparisons.
+	 *
+	 * @param mixed $value Value to fingerprint.
+	 * @param bool $ignoreCase Whether string comparisons ignore case.
+	 * @return string Stable comparison fingerprint.
+	 */
+	private function distinctFingerprint(mixed $value, bool $ignoreCase): string {
+		$normalized=$this->normalizeDistinctValue($value, $ignoreCase);
 		return json_encode($normalized, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) ?: serialize($normalized);
 	}
 
-	private function normalizeDistinctValue(mixed $value, bool $ignore_case): mixed {
+	/**
+	 * Normalizes values before distinct fingerprinting.
+	 *
+	 * Type tags are preserved so values such as string "1", integer 1, and boolean
+	 * true remain distinct unless a rule explicitly transforms them earlier.
+	 *
+	 * @param mixed $value Value to normalize.
+	 * @param bool $ignoreCase Whether string values are lowercased.
+	 * @return mixed type-tagged scalar, stringable, list, associative array, or object marker used for distinct fingerprints.
+	 */
+	private function normalizeDistinctValue(mixed $value, bool $ignoreCase): mixed {
 		if(is_string($value)){
 			return [
 				'type'=>'string',
-				'value'=>$ignore_case ? mb_strtolower($value, 'UTF-8') : $value,
+				'value'=>$ignoreCase ? mb_strtolower($value, 'UTF-8') : $value,
 			];
 		}
 		if(is_int($value) || is_float($value) || is_bool($value) || $value===null){
@@ -1355,20 +2019,20 @@ final class SanitationManager {
 			$string=(string)$value;
 			return [
 				'type'=>'stringable',
-				'value'=>$ignore_case ? mb_strtolower($string, 'UTF-8') : $string,
+				'value'=>$ignoreCase ? mb_strtolower($string, 'UTF-8') : $string,
 			];
 		}
 		if(is_array($value)){
 			if($this->isListArray($value)){
 				return [
 					'type'=>'list',
-					'value'=>array_map(fn(mixed $item): mixed => $this->normalizeDistinctValue($item, $ignore_case), $value),
+					'value'=>array_map(fn(mixed $item): mixed => $this->normalizeDistinctValue($item, $ignoreCase), $value),
 				];
 			}
 			ksort($value);
 			$normalized=[];
 			foreach($value as $key=>$item){
-				$normalized[(string)$key]=$this->normalizeDistinctValue($item, $ignore_case);
+				$normalized[(string)$key]=$this->normalizeDistinctValue($item, $ignoreCase);
 			}
 			return [
 				'type'=>'array',
@@ -1381,20 +2045,43 @@ final class SanitationManager {
 		];
 	}
 
+	/**
+	 * Normalizes a unique-by field definition into field path strings.
+	 *
+	 * @param mixed $value Comma-delimited string, list, or scalar field value.
+	 * @return array Non-empty relative field paths.
+	 */
 	private function normalizeUniqueByFields(mixed $value): array {
 		if(is_string($value)){
-			$parts=array_map('trim', explode(',', $value));
+			$values=explode(',', $value);
 		}
 		elseif(is_array($value)){
-			$parts=array_map(static fn(mixed $part): string => trim((string)$part), $value);
+			$values=$value;
 		}
 		else
 		{
-			$parts=[trim((string)$value)];
+			$values=[$value];
 		}
-		return array_values(array_filter($parts, static fn(string $part): bool => $part!==''));
+		$parts=[];
+		foreach($values as $part){
+			$part=trim((string)$part);
+			if($part!==''){
+				$parts[]=$part;
+			}
+		}
+		return $parts;
 	}
 
+	/**
+	 * Reads a value from an array or object using a relative dot-path.
+	 *
+	 * Object public properties are supported for uniqueness checks over hydrated
+	 * DTO-style items.
+	 *
+	 * @param mixed $source Source array, object, or scalar.
+	 * @param string $path Relative dot-path.
+	 * @return array{present:bool,value:mixed} Relative lookup result.
+	 */
 	private function relativePathValue(mixed $source, string $path): array {
 		if($path===''){
 			return [
@@ -1423,6 +2110,15 @@ final class SanitationManager {
 		];
 	}
 
+	/**
+	 * Normalizes field/value conditional rule syntax.
+	 *
+	 * Accepts compact comma strings, positional arrays, or associative arrays with
+	 * field and values/value keys.
+	 *
+	 * @param mixed $value Raw conditional definition.
+	 * @return ?array{field:string,values:array} Normalized condition or null.
+	 */
 	private function normalizeConditionalExclusion(mixed $value): ?array {
 		if(is_string($value)){
 			$parts=array_map('trim', explode(',', $value));
@@ -1458,6 +2154,15 @@ final class SanitationManager {
 		];
 	}
 
+	/**
+	 * Normalizes schema-level when/unless conditions.
+	 *
+	 * Conditions may be callbacks, arrays with callback, arrays describing field
+	 * value/presence/filled/blank requirements, or compact field/value syntax.
+	 *
+	 * @param mixed $value Raw schema condition.
+	 * @return array|callable|null Normalized condition, callback, or null.
+	 */
 	private function normalizeSchemaCondition(mixed $value): array|callable|null {
 		if($value===null || $value===false || $value===''){
 			return null;
@@ -1510,20 +2215,39 @@ final class SanitationManager {
 		];
 	}
 
+	/**
+	 * Normalizes a related-field list for conditional required/present rules.
+	 *
+	 * @param mixed $value Comma-delimited string, list, or scalar field value.
+	 * @return array Non-empty field paths.
+	 */
 	private function normalizeFieldList(mixed $value): array {
 		if(is_string($value)){
-			$parts=array_map('trim', explode(',', $value));
+			$values=explode(',', $value);
 		}
 		elseif(is_array($value)){
-			$parts=array_map(static fn(mixed $part): string => trim((string)$part), array_values($value));
+			$values=$value;
 		}
 		else
 		{
-			$parts=[trim((string)$value)];
+			$values=[$value];
 		}
-		return array_values(array_filter($parts, static fn(string $part): bool => $part!==''));
+		$parts=[];
+		foreach($values as $part){
+			$part=trim((string)$part);
+			if($part!==''){
+				$parts[]=$part;
+			}
+		}
+		return $parts;
 	}
 
+	/**
+	 * Normalizes expected values used by field/value conditional rules.
+	 *
+	 * @param mixed $value Raw expected value or list.
+	 * @return array Expected values.
+	 */
 	private function normalizeConditionalExclusionValues(mixed $value): array {
 		if(is_array($value)){
 			return array_values($value);
@@ -1534,15 +2258,35 @@ final class SanitationManager {
 		return [$value];
 	}
 
-	private function comparisonMatchesAny(mixed $actual, array $expected_values): bool {
-		foreach($expected_values as $expected_value){
-			if($this->comparisonEquivalent($actual, $expected_value)){
+	/**
+	 * Checks whether an actual comparison value matches any expected value.
+	 *
+	 * @param mixed $actual Actual value.
+	 * @param list<scalar|null> $expectedValues Expected value list.
+	 * @return bool Match decision.
+	 */
+	private function comparisonMatchesAny(mixed $actual, array $expectedValues): bool {
+		foreach($expectedValues as $expectedValue){
+			if($this->comparisonEquivalent($actual, $expectedValue)){
 				return true;
 			}
 		}
 		return false;
 	}
 
+	/**
+	 * Evaluates a normalized schema when/unless condition.
+	 *
+	 * Callback conditions receive input, sanitized context, and field metadata.
+	 * Structured conditions can test presence, filledness, blankness, and values
+	 * against a comparison field resolved with wildcard context.
+	 *
+	 * @param array|callable $condition Normalized condition.
+	 * @param array<string,mixed> $context Sanitized data produced so far.
+	 * @param array<string,mixed> $input Original input data.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return bool Condition match decision.
+	 */
 	private function schemaConditionMatches(array|callable $condition, array $context, array $input, array $config): bool {
 		if(is_callable($condition)){
 			return (bool)$condition($input, $context, [
@@ -1583,6 +2327,15 @@ final class SanitationManager {
 		return true;
 	}
 
+	/**
+	 * Checks whether any related comparison field is filled.
+	 *
+	 * @param list<string> $fields Related field paths.
+	 * @param array<string,mixed> $context Sanitized data produced so far.
+	 * @param array<string,mixed> $input Original input data.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return bool Filled-field decision.
+	 */
 	private function anyComparisonFieldFilled(array $fields, array $context, array $input, array $config): bool {
 		foreach($fields as $field){
 			if($this->comparisonFieldFilled((string)$field, $context, $input, $config)){
@@ -1592,6 +2345,15 @@ final class SanitationManager {
 		return false;
 	}
 
+	/**
+	 * Checks whether any related comparison field is present.
+	 *
+	 * @param list<string> $fields Related field paths.
+	 * @param array<string,mixed> $context Sanitized data produced so far.
+	 * @param array<string,mixed> $input Original input data.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return bool Presence decision.
+	 */
 	private function anyComparisonFieldPresent(array $fields, array $context, array $input, array $config): bool {
 		foreach($fields as $field){
 			if($this->comparisonFieldPresent((string)$field, $context, $input, $config)){
@@ -1601,6 +2363,17 @@ final class SanitationManager {
 		return false;
 	}
 
+	/**
+	 * Checks whether all related comparison fields are present.
+	 *
+	 * Empty field lists return false because no condition was actually declared.
+	 *
+	 * @param list<string> $fields Related field paths.
+	 * @param array<string,mixed> $context Sanitized data produced so far.
+	 * @param array<string,mixed> $input Original input data.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return bool All-present decision.
+	 */
 	private function allComparisonFieldsPresent(array $fields, array $context, array $input, array $config): bool {
 		if($fields===[]){
 			return false;
@@ -1613,6 +2386,15 @@ final class SanitationManager {
 		return true;
 	}
 
+	/**
+	 * Checks whether all related comparison fields are filled.
+	 *
+	 * @param list<string> $fields Related field paths.
+	 * @param array<string,mixed> $context Sanitized data produced so far.
+	 * @param array<string,mixed> $input Original input data.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return bool All-filled decision.
+	 */
 	private function allComparisonFieldsFilled(array $fields, array $context, array $input, array $config): bool {
 		if($fields===[]){
 			return false;
@@ -1625,6 +2407,15 @@ final class SanitationManager {
 		return true;
 	}
 
+	/**
+	 * Checks whether any related comparison field is missing or blank.
+	 *
+	 * @param list<string> $fields Related field paths.
+	 * @param array<string,mixed> $context Sanitized data produced so far.
+	 * @param array<string,mixed> $input Original input data.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return bool Missing-or-blank decision.
+	 */
 	private function anyComparisonFieldMissingOrBlank(array $fields, array $context, array $input, array $config): bool {
 		foreach($fields as $field){
 			if($this->comparisonFieldMissingOrBlank((string)$field, $context, $input, $config)){
@@ -1634,6 +2425,15 @@ final class SanitationManager {
 		return false;
 	}
 
+	/**
+	 * Checks whether any related comparison field is missing.
+	 *
+	 * @param list<string> $fields Related field paths.
+	 * @param array<string,mixed> $context Sanitized data produced so far.
+	 * @param array<string,mixed> $input Original input data.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return bool Missing-field decision.
+	 */
 	private function anyComparisonFieldMissing(array $fields, array $context, array $input, array $config): bool {
 		foreach($fields as $field){
 			if($this->comparisonFieldMissing((string)$field, $context, $input, $config)){
@@ -1643,6 +2443,15 @@ final class SanitationManager {
 		return false;
 	}
 
+	/**
+	 * Checks whether all related comparison fields are missing.
+	 *
+	 * @param list<string> $fields Related field paths.
+	 * @param array<string,mixed> $context Sanitized data produced so far.
+	 * @param array<string,mixed> $input Original input data.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return bool All-missing decision.
+	 */
 	private function allComparisonFieldsMissing(array $fields, array $context, array $input, array $config): bool {
 		if($fields===[]){
 			return false;
@@ -1655,6 +2464,15 @@ final class SanitationManager {
 		return true;
 	}
 
+	/**
+	 * Checks whether all related comparison fields are missing or blank.
+	 *
+	 * @param list<string> $fields Related field paths.
+	 * @param array<string,mixed> $context Sanitized data produced so far.
+	 * @param array<string,mixed> $input Original input data.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return bool All-missing-or-blank decision.
+	 */
 	private function allComparisonFieldsMissingOrBlank(array $fields, array $context, array $input, array $config): bool {
 		if($fields===[]){
 			return false;
@@ -1667,15 +2485,31 @@ final class SanitationManager {
 		return true;
 	}
 
+	/**
+	 * Compares two values using sanitation comparison semantics.
+	 *
+	 * Scalars compare through normalized string forms. Complex values compare via
+	 * distinct fingerprints so arrays and stringable values remain deterministic.
+	 *
+	 * @param mixed $left Left value.
+	 * @param mixed $right Right value.
+	 * @return bool Equivalence decision.
+	 */
 	private function comparisonEquivalent(mixed $left, mixed $right): bool {
-		$left_scalar=$this->comparisonScalarValue($left);
-		$right_scalar=$this->comparisonScalarValue($right);
-		if($left_scalar!==null && $right_scalar!==null){
-			return $left_scalar===$right_scalar;
+		$leftScalar=$this->comparisonScalarValue($left);
+		$rightScalar=$this->comparisonScalarValue($right);
+		if($leftScalar!==null && $rightScalar!==null){
+			return $leftScalar===$rightScalar;
 		}
 		return $this->distinctFingerprint($left, false)===$this->distinctFingerprint($right, false);
 	}
 
+	/**
+	 * Converts comparable scalar-like values into normalized strings.
+	 *
+	 * @param mixed $value Value to normalize.
+	 * @return ?string Scalar comparison value, or null for complex values.
+	 */
 	private function comparisonScalarValue(mixed $value): ?string {
 		if($value===null){
 			return 'null';
@@ -1695,6 +2529,15 @@ final class SanitationManager {
 		return null;
 	}
 
+	/**
+	 * Checks whether a comparison field exists and is not blank.
+	 *
+	 * @param string $field Comparison field path.
+	 * @param array<string,mixed> $context Sanitized data produced so far.
+	 * @param array<string,mixed> $input Original input data.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return bool Filled-state decision.
+	 */
 	private function comparisonFieldFilled(string $field, array $context, array $input, array $config): bool {
 		$state=$this->comparisonFieldState($field, $context, $input, $config);
 		if($state['present']===false){
@@ -1703,19 +2546,57 @@ final class SanitationManager {
 		return !$this->isBlankValue($state['value'], $config);
 	}
 
+	/**
+	 * Checks whether a comparison field exists.
+	 *
+	 * @param string $field Comparison field path.
+	 * @param array<string,mixed> $context Sanitized data produced so far.
+	 * @param array<string,mixed> $input Original input data.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return bool Presence decision.
+	 */
 	private function comparisonFieldPresent(string $field, array $context, array $input, array $config): bool {
 		return $this->comparisonFieldState($field, $context, $input, $config)['present']===true;
 	}
 
+	/**
+	 * Checks whether a comparison field is absent or blank.
+	 *
+	 * @param string $field Comparison field path.
+	 * @param array<string,mixed> $context Sanitized data produced so far.
+	 * @param array<string,mixed> $input Original input data.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return bool Missing-or-blank decision.
+	 */
 	private function comparisonFieldMissingOrBlank(string $field, array $context, array $input, array $config): bool {
 		$state=$this->comparisonFieldState($field, $context, $input, $config);
 		return $state['present']===false || $this->isBlankValue($state['value'], $config);
 	}
 
+	/**
+	 * Checks whether a comparison field is absent.
+	 *
+	 * @param string $field Comparison field path.
+	 * @param array<string,mixed> $context Sanitized data produced so far.
+	 * @param array<string,mixed> $input Original input data.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return bool Missing-field decision.
+	 */
 	private function comparisonFieldMissing(string $field, array $context, array $input, array $config): bool {
 		return $this->comparisonFieldState($field, $context, $input, $config)['present']===false;
 	}
 
+	/**
+	 * Resolves a comparison field to its present/value state.
+	 *
+	 * Sanitized context is checked before raw input, mirroring comparisonValue().
+	 *
+	 * @param string $field Comparison field path.
+	 * @param array<string,mixed> $context Sanitized data produced so far.
+	 * @param array<string,mixed> $input Original input data.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return array{present:bool,value:mixed} Comparison field state.
+	 */
 	private function comparisonFieldState(string $field, array $context, array $input, array $config): array {
 		$field=$this->resolveComparisonField($field, $config);
 		$value=$this->pathValue($context, $field);
@@ -1725,6 +2606,16 @@ final class SanitationManager {
 		return $this->pathValue($input, $field);
 	}
 
+	/**
+	 * Applies sanitation blank-value semantics.
+	 *
+	 * Null, empty strings after configured trim/squish, and empty arrays are blank.
+	 * Other scalar and object values are considered filled.
+	 *
+	 * @param mixed $value Value to inspect.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @return bool Blank-value decision.
+	 */
 	private function isBlankValue(mixed $value, array $config): bool {
 		if($value===null){
 			return true;
@@ -1745,6 +2636,17 @@ final class SanitationManager {
 		return false;
 	}
 
+	/**
+	 * Applies the stricter blank check used by exclusion rules.
+	 *
+	 * Absent values count as blank for exclusion purposes, allowing blank-exclude
+	 * rules to remove defaulted output.
+	 *
+	 * @param mixed $value Raw value.
+	 * @param array<string,mixed> $config Current field rule config.
+	 * @param bool $present Whether the input field exists.
+	 * @return bool Blank-for-exclusion decision.
+	 */
 	private function isBlankForExclusion(mixed $value, array $config, bool $present): bool {
 		if($present===false || $value===null){
 			return true;
@@ -1752,6 +2654,15 @@ final class SanitationManager {
 		return $this->isBlankValue($value, $config);
 	}
 
+	/**
+	 * Checks whether a value should participate in unique-by comparison.
+	 *
+	 * Null, empty strings, and empty arrays are ignored so incomplete item rows do
+	 * not falsely collide.
+	 *
+	 * @param mixed $value Candidate unique-key value.
+	 * @return bool Comparable-value decision.
+	 */
 	private function hasComparableUniqueValue(mixed $value): bool {
 		if($value===null){
 			return false;
@@ -1765,6 +2676,36 @@ final class SanitationManager {
 		return true;
 	}
 
+	/**
+	 * Checks whether an input tree can be cached by exact value.
+	 *
+	 * @param array<int|string,mixed> $values Candidate input tree.
+	 * @return bool True when the tree contains only scalar, null, and array values.
+	 */
+	private function isCacheableTree(array $values): bool {
+		foreach($values as $value){
+			if(is_array($value)){
+				if(!$this->isCacheableTree($value)){
+					return false;
+				}
+				continue;
+			}
+			if($value!==null && !is_scalar($value)){
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Normalizes flexible rule option values to booleans.
+	 *
+	 * String values commonly used in configuration such as "false", "off", and
+	 * "no" are treated as false.
+	 *
+	 * @param mixed $value Raw rule option value.
+	 * @return bool Truthy-rule decision.
+	 */
 	private function truthyRuleValue(mixed $value): bool {
 		if(is_bool($value)){
 			return $value;

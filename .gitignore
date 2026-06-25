@@ -9,6 +9,7 @@
 /index.php
 /direct_access_key
 /app_override_key
+/modcache.php
 !/flight_sheet.example.php
 !/index.example.php
 
@@ -23,21 +24,27 @@
 # Local plugin hooks
 /plugins/pre_init/*.php
 /plugins/post_init/*.php
+/plugins/mcp/*
 !/plugins/README.md
 !/plugins/pre_init/.gitkeep
 !/plugins/post_init/.gitkeep
 
 # Generated runtime state
+/cache/
 /cache/*
 !/cache/.gitkeep
+/logs/
 /logs/*
 !/logs/.gitkeep
 /runtime/cache/
 /runtime/logs/
+/runtime/modcache.php
 /runtime/sql_migration/plans/
 /runtime/sql_migration/snapshots/
 
 # Local bootstrap keys and generated install artifacts
+/sql_migration/plans/
+/sql_migration/snapshots/
 /sql_migration/table_versions.json
 
 # Local release cleanup helpers

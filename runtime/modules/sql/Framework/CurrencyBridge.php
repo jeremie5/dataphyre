@@ -7,6 +7,15 @@
  */
 namespace Dataphyre\Database;
 
+/**
+ * Bridges SQL rows and Dataphyre Currency value objects.
+ *
+ * The bridge normalizes money column mappings, hydrates `Money` and
+ * `StoredMoney` objects from SQL result rows, expands those objects back into
+ * scalar write fields, and validates money-aware comparison values. It loads the
+ * currency framework lazily and raises SQL-specific errors when mappings or row
+ * data are incomplete.
+ */
 final class CurrencyBridge {
 
 	private const CURRENCY_FACADE='Dataphyre\\Currency\\Currency';
@@ -14,61 +23,89 @@ final class CurrencyBridge {
 	private const STORED_MONEY_CLASS='Dataphyre\\Currency\\StoredMoney';
 	private const EXCHANGE_RATES_CLASS='Dataphyre\\Currency\\ExchangeRates';
 	private const EXCHANGE_QUOTE_CLASS='Dataphyre\\Currency\\ExchangeQuote';
+	private static ?array $lastStoredMoneyMappingInput=null;
+	private static ?array $lastStoredMoneyMappingOutput=null;
 
+	/**
+	 * Normalizes a simple money mapping definition.
+	 *
+	 * A mapping needs an amount column and either a currency column or fixed
+	 * currency. The target column is where hydrated `Money` objects appear in
+	 * result rows and where write expansion looks for incoming money objects.
+	 *
+	 * @param string $amountColumn SQL column containing the numeric amount.
+	 * @param ?string $currencyColumn SQL column containing the row currency.
+	 * @param ?string $currency Fixed currency used when no currency column exists.
+	 * @param ?string $targetColumn Hydrated object/write input column; defaults to amount column.
+	 * @param string $owner Query/table owner used in validation errors.
+	 * @return array{amount_column: string, currency_column: ?string, currency: ?string, target_column: string} Normalized mapping.
+	 */
 	public static function normalizeMoneyMapping(
-		string $amount_column,
-		?string $currency_column,
+		string $amountColumn,
+		?string $currencyColumn,
 		?string $currency,
-		?string $target_column,
+		?string $targetColumn,
 		string $owner
 	): array {
-		$amount_column=self::normalizeColumn($amount_column, 'money amount', $owner);
-		$target_column=$target_column===null
-			? $amount_column
-			: self::normalizeColumn($target_column, 'money target', $owner);
+		$amountColumn=self::normalizeColumn($amountColumn, 'money amount', $owner);
+		$targetColumn=$targetColumn===null
+			? $amountColumn
+			: self::normalizeColumn($targetColumn, 'money target', $owner);
 		if($currency!==null){
 			return [
-				'amount_column'=>$amount_column,
+				'amount_column'=>$amountColumn,
 				'currency_column'=>null,
 				'currency'=>self::normalizeCurrency($currency, $owner),
-				'target_column'=>$target_column,
+				'target_column'=>$targetColumn,
 			];
 		}
-		if($currency_column===null){
+		if($currencyColumn===null){
 			throw SqlError::invalidMoneyDefinition(
 				$owner,
 				'Money mappings require either a currency column or a fixed currency.'
 			);
 		}
 		return [
-			'amount_column'=>$amount_column,
-			'currency_column'=>self::normalizeColumn($currency_column, 'money currency', $owner),
+			'amount_column'=>$amountColumn,
+			'currency_column'=>self::normalizeColumn($currencyColumn, 'money currency', $owner),
 			'currency'=>null,
-			'target_column'=>$target_column,
+			'target_column'=>$targetColumn,
 		];
 	}
 
+	/**
+	 * Hydrates one SQL result row with a `Money` object.
+	 *
+	 * Null or blank amounts hydrate to null. Existing `Money` values are preserved.
+	 * Missing amount/currency columns or blank currency values raise SQL mapping
+	 * errors instead of silently producing incorrect money values.
+	 *
+	 * @param array<string, mixed> $row SQL result row.
+	 * @param array{amount_column: string, currency_column: ?string, currency: ?string, target_column: string} $mapping Normalized money mapping.
+	 * @param string $owner Query/table owner used in validation errors.
+	 * @return array<string, mixed> Row with the target column hydrated.
+	 */
 	public static function applyMoneyMapping(array $row, array $mapping, string $owner): array {
 		if(!array_key_exists($mapping['amount_column'], $row)){
 			throw SqlError::missingMoneyColumn($owner, $mapping['amount_column'], 'amount', array_keys($row));
 		}
-		$target_column=$mapping['target_column'];
+		$targetColumn=$mapping['target_column'];
 		$amount=$row[$mapping['amount_column']];
 		if(self::isMoney($amount)){
-			$row[$target_column]=$amount;
+			$row[$targetColumn]=$amount;
 			return $row;
 		}
 		if($amount===null || (is_string($amount) && trim($amount)==='')){
-			$row[$target_column]=null;
+			$row[$targetColumn]=null;
 			return $row;
 		}
 		$currency=$mapping['currency'];
 		if($currency===null){
-			$currency_column=$mapping['currency_column'];
-			if(!array_key_exists($currency_column, $row)){
-				throw SqlError::missingMoneyColumn($owner, $currency_column, 'currency', array_keys($row));
+			$currencyColumn=$mapping['currency_column'];
+			if(!array_key_exists($currencyColumn, $row)){
+				throw SqlError::missingMoneyColumn($owner, $currencyColumn, 'currency', array_keys($row));
 			}
-			$currency=$row[$currency_column];
+			$currency=$row[$currencyColumn];
 		}
 		if(!is_scalar($currency) || trim((string)$currency)===''){
 			throw SqlError::invalidMoneyDefinition(
@@ -76,17 +113,38 @@ final class CurrencyBridge {
 				"Money hydration requires a non-empty currency value for '{$mapping['amount_column']}'."
 			);
 		}
-		$row[$target_column]=self::money((float)$amount, (string)$currency);
+		$row[$targetColumn]=self::money((float)$amount, (string)$currency);
 		return $row;
 	}
 
-	public static function normalizeStoredMoneyMapping(array $definition, ?string $target_column, string $owner): array {
+	/**
+	 * Normalizes a stored-money mapping definition.
+	 *
+	 * Stored-money mappings describe the original amount/currency, normalized
+	 * base amount/currency, exchange rate/source/time/base-currency snapshot, and
+	 * hydrated target column. Prefix aliases are expanded before validation.
+	 *
+	 * @param array<string, mixed> $definition Stored-money mapping definition.
+	 * @param ?string $targetColumn Optional target override.
+	 * @param string $owner Query/table owner used in validation errors.
+	 * @return array<string, string|null> Normalized stored-money mapping.
+	 */
+	public static function normalizeStoredMoneyMapping(array $definition, ?string $targetColumn, string $owner): array {
+		$input=[
+			'definition'=>$definition,
+			'target_column'=>$targetColumn,
+			'owner'=>$owner,
+		];
+		if(self::$lastStoredMoneyMappingInput===$input && self::$lastStoredMoneyMappingOutput!==null){
+			return self::$lastStoredMoneyMappingOutput;
+		}
 		$definition=self::expandStoredMoneyPrefixes($definition);
-		$target_column=$target_column
+		$targetColumn=$targetColumn
 			?? (isset($definition['target_column']) ? (string)$definition['target_column'] : null)
 			?? (isset($definition['target']) ? (string)$definition['target'] : null)
 			?? 'stored_money';
-		return [
+		self::$lastStoredMoneyMappingInput=$input;
+		return self::$lastStoredMoneyMappingOutput=[
 			'original_amount_column'=>self::normalizeColumn(
 				isset($definition['original_amount_column']) ? (string)$definition['original_amount_column'] : 'original_amount',
 				'stored money original amount',
@@ -130,16 +188,28 @@ final class CurrencyBridge {
 			'base_currency'=>isset($definition['base_currency']) && trim((string)$definition['base_currency'])!==''
 				? self::normalizeCurrency((string)$definition['base_currency'], $owner)
 				: null,
-			'target_column'=>self::normalizeColumn($target_column, 'stored money target', $owner),
+			'target_column'=>self::normalizeColumn($targetColumn, 'stored money target', $owner),
 		];
 	}
 
+	/**
+	 * Hydrates one SQL result row with a `StoredMoney` object.
+	 *
+	 * The row must contain all stored-money columns. Blank original or base
+	 * amounts hydrate to null. Existing `StoredMoney` values in the target column
+	 * are preserved.
+	 *
+	 * @param array<string, mixed> $row SQL result row.
+	 * @param array<string, string|null> $mapping Normalized stored-money mapping.
+	 * @param string $owner Query/table owner used in validation errors.
+	 * @return array<string, mixed> Row with the target column hydrated.
+	 */
 	public static function applyStoredMoneyMapping(array $row, array $mapping, string $owner): array {
-		$target_column=$mapping['target_column'];
-		if(array_key_exists($target_column, $row) && self::isStoredMoney($row[$target_column])){
+		$targetColumn=$mapping['target_column'];
+		if(array_key_exists($targetColumn, $row) && self::isStoredMoney($row[$targetColumn])){
 			return $row;
 		}
-		$required_columns=[
+		$requiredColumns=[
 			'original amount'=>$mapping['original_amount_column'],
 			'original currency'=>$mapping['original_currency_column'],
 			'base amount'=>$mapping['base_amount_column'],
@@ -149,19 +219,19 @@ final class CurrencyBridge {
 			'exchange time'=>$mapping['exchange_time_column'],
 			'exchange base currency'=>$mapping['exchange_base_currency_column'],
 		];
-		foreach($required_columns as $role=>$column){
+		foreach($requiredColumns as $role=>$column){
 			if(!array_key_exists($column, $row)){
 				throw SqlError::missingMoneyColumn($owner, $column, $role, array_keys($row));
 			}
 		}
-		$original_amount=$row[$mapping['original_amount_column']];
-		$base_amount=$row[$mapping['base_amount_column']];
-		if(self::isBlankAmount($original_amount) || self::isBlankAmount($base_amount)){
-			$row[$target_column]=null;
+		$originalAmount=$row[$mapping['original_amount_column']];
+		$baseAmount=$row[$mapping['base_amount_column']];
+		if(self::isBlankAmount($originalAmount) || self::isBlankAmount($baseAmount)){
+			$row[$targetColumn]=null;
 			return $row;
 		}
 		$original=self::moneyFromValue(
-			$original_amount,
+			$originalAmount,
 			$row[$mapping['original_currency_column']],
 			$owner,
 			$mapping['original_amount_column'],
@@ -169,14 +239,14 @@ final class CurrencyBridge {
 			'original'
 		);
 		$base=self::moneyFromValue(
-			$base_amount,
+			$baseAmount,
 			$row[$mapping['base_currency_column']],
 			$owner,
 			$mapping['base_amount_column'],
 			$mapping['base_currency_column'],
 			'base'
 		);
-		$row[$target_column]=self::storedMoney(
+		$row[$targetColumn]=self::storedMoney(
 			$original,
 			$base,
 			self::normalizeStoredRate($row[$mapping['exchange_rate_column']], $owner, $mapping['exchange_rate_column']),
@@ -191,17 +261,31 @@ final class CurrencyBridge {
 		return $row;
 	}
 
+	/**
+	 * Expands money objects in write fields into scalar SQL columns.
+	 *
+	 * Stored-money mappings expand before simple money mappings. In strict mode,
+	 * any remaining `Money` or `StoredMoney` object without a matching mapping is
+	 * rejected so object values are not written into scalar SQL columns.
+	 *
+	 * @param array<string, mixed> $fields Candidate SQL write fields.
+	 * @param array<int, array<string, mixed>> $moneyMappings Simple money mappings.
+	 * @param array<int, array<string, mixed>> $storedMoneyMappings Stored-money mappings.
+	 * @param string $owner Query/table owner used in validation errors.
+	 * @param bool $strict Whether unmapped money objects should raise an error.
+	 * @return array<string, mixed> Scalar SQL write fields.
+	 */
 	public static function expandWriteFields(
 		array $fields,
-		array $money_mappings,
-		array $stored_money_mappings,
+		array $moneyMappings,
+		array $storedMoneyMappings,
 		string $owner,
 		bool $strict=true
 	): array {
-		foreach($stored_money_mappings as $mapping){
+		foreach($storedMoneyMappings as $mapping){
 			$fields=self::expandStoredMoneyWriteField($fields, $mapping, $owner);
 		}
-		foreach($money_mappings as $mapping){
+		foreach($moneyMappings as $mapping){
 			$fields=self::expandMoneyWriteField($fields, $mapping, $owner);
 		}
 		if($strict===false){
@@ -219,60 +303,97 @@ final class CurrencyBridge {
 		return $fields;
 	}
 
+	/**
+	 * Normalizes a money comparison value for SQL filtering.
+	 *
+	 * `Money` values are converted to the fixed currency when provided. Scalar
+	 * amounts are only accepted with a fixed currency, since otherwise the stored
+	 * amount column has no currency context.
+	 *
+	 * @param mixed $value Money object or scalar amount.
+	 * @param ?string $fixedCurrency Fixed storage currency for scalar comparisons.
+	 * @param string $owner Query/table owner used in validation errors.
+	 * @param string $amountColumn Amount column being compared.
+	 * @return array{amount: float, currency: string} Comparable amount and currency.
+	 */
 	public static function normalizeComparableValue(
 		mixed $value,
-		?string $fixed_currency,
+		?string $fixedCurrency,
 		string $owner,
-		string $amount_column
+		string $amountColumn
 	): array {
-		if($fixed_currency!==null){
-			$fixed_currency=self::normalizeCurrency($fixed_currency, $owner);
+		if($fixedCurrency!==null){
+			$fixedCurrency=self::normalizeCurrency($fixedCurrency, $owner);
 		}
 		if(self::isMoney($value)){
-			if($fixed_currency!==null){
-				$value=self::currencyFacade()::convertMoney($value, $fixed_currency);
+			if($fixedCurrency!==null){
+				$value=self::currencyFacade()::convertMoney($value, $fixedCurrency);
 			}
 			return [
 				'amount'=>(float)$value->amount(),
-				'currency'=>$fixed_currency ?? (string)$value->currency(),
+				'currency'=>$fixedCurrency ?? (string)$value->currency(),
 			];
 		}
 		if(is_int($value) || is_float($value) || (is_string($value) && is_numeric(trim($value)))){
-			if($fixed_currency===null){
+			if($fixedCurrency===null){
 				throw SqlError::invalidMoneyComparison(
 					$owner,
-					$amount_column,
+					$amountColumn,
 					'Scalar comparisons need a fixed storage currency.',
 					'Pass a Money object for same-currency row filtering, or use whereMoney...In(..., $currency) when the stored amount column is already normalized to one currency.'
 				);
 			}
 			return [
 				'amount'=>(float)$value,
-				'currency'=>$fixed_currency,
+				'currency'=>$fixedCurrency,
 			];
 		}
 		throw SqlError::invalidMoneyComparison(
 			$owner,
-			$amount_column,
+			$amountColumn,
 			'Unsupported money comparison value.',
 			'Pass a Dataphyre\\Currency\\Money object, or a scalar amount together with a fixed storage currency.'
 		);
 	}
 
+	/**
+	 * Creates a Currency framework `Money` object.
+	 *
+	 * @param float|int $amount Numeric amount.
+	 * @param string $currency Currency code.
+	 * @return object Currency framework Money instance.
+	 */
 	public static function money(float|int $amount, string $currency): object {
 		return self::currencyFacade()::money((float)$amount, self::normalizeCurrency($currency, 'sql-currency-bridge'));
 	}
 
+	/**
+	 * Checks whether a value is a Currency framework `Money` instance.
+	 *
+	 * @param mixed $value Candidate value.
+	 * @return bool True when the value is a Money object.
+	 */
 	public static function isMoney(mixed $value): bool {
 		$class=self::MONEY_CLASS;
 		return is_object($value) && $value instanceof $class;
 	}
 
+	/**
+	 * Checks whether a value is a Currency framework `StoredMoney` instance.
+	 *
+	 * @param mixed $value Candidate value.
+	 * @return bool True when the value is a StoredMoney object.
+	 */
 	public static function isStoredMoney(mixed $value): bool {
 		$class=self::STORED_MONEY_CLASS;
 		return is_object($value) && $value instanceof $class;
 	}
 
+	/**
+	 * Resolves the Currency facade class, loading the currency framework if needed.
+	 *
+	 * @return string Fully qualified Currency facade class name.
+	 */
 	private static function currencyFacade(): string {
 		if(!class_exists(self::CURRENCY_FACADE, false)){
 			if(class_exists(\dataphyre\core::class, false)){
@@ -289,6 +410,14 @@ final class CurrencyBridge {
 		return self::CURRENCY_FACADE;
 	}
 
+	/**
+	 * Validates and normalizes a SQL column identifier used by money mappings.
+	 *
+	 * @param string $column Raw column name.
+	 * @param string $scope Human-readable mapping role.
+	 * @param string $owner Query/table owner used in validation errors.
+	 * @return string Valid column name.
+	 */
 	private static function normalizeColumn(string $column, string $scope, string $owner): string {
 		$column=trim($column);
 		if($column==='' || preg_match('/^[A-Za-z_][A-Za-z0-9_\.]*$/', $column)!==1){
@@ -297,6 +426,13 @@ final class CurrencyBridge {
 		return $column;
 	}
 
+	/**
+	 * Normalizes a currency code to uppercase and rejects blanks.
+	 *
+	 * @param string $currency Raw currency code.
+	 * @param string $owner Query/table owner used in validation errors.
+	 * @return string Uppercase currency code.
+	 */
 	private static function normalizeCurrency(string $currency, string $owner): string {
 		$currency=mb_strtoupper(trim($currency));
 		if($currency===''){
@@ -305,6 +441,12 @@ final class CurrencyBridge {
 		return $currency;
 	}
 
+	/**
+	 * Expands stored-money prefix aliases into explicit column names.
+	 *
+	 * @param array<string, mixed> $definition Raw stored-money mapping definition.
+	 * @return array<string, mixed> Definition with derived column names.
+	 */
 	private static function expandStoredMoneyPrefixes(array $definition): array {
 		if(isset($definition['original_prefix']) && !isset($definition['original_amount_column'])){
 			$prefix=(string)$definition['original_prefix'];
@@ -326,16 +468,24 @@ final class CurrencyBridge {
 		return $definition;
 	}
 
+	/**
+	 * Expands one `Money` write input into amount and currency SQL fields.
+	 *
+	 * @param array<string, mixed> $fields Candidate SQL write fields.
+	 * @param array<string, mixed> $mapping Normalized money mapping.
+	 * @param string $owner Query/table owner used in validation errors.
+	 * @return array<string, mixed> Updated write fields.
+	 */
 	private static function expandMoneyWriteField(array $fields, array $mapping, string $owner): array {
-		foreach(self::writeCandidateColumns($mapping['target_column'], $mapping['amount_column']) as $candidate_column){
-			if(!array_key_exists($candidate_column, $fields) || !self::isMoney($fields[$candidate_column])){
+		foreach(self::writeCandidateColumns($mapping['target_column'], $mapping['amount_column']) as $candidateColumn){
+			if(!array_key_exists($candidateColumn, $fields) || !self::isMoney($fields[$candidateColumn])){
 				continue;
 			}
-			$money=$fields[$candidate_column];
-			unset($fields[$candidate_column]);
-			$fixed_currency=$mapping['currency'];
-			if($fixed_currency!==null && (string)$money->currency()!==$fixed_currency){
-				$money=self::currencyFacade()::convertMoney($money, $fixed_currency);
+			$money=$fields[$candidateColumn];
+			unset($fields[$candidateColumn]);
+			$fixedCurrency=$mapping['currency'];
+			if($fixedCurrency!==null && (string)$money->currency()!==$fixedCurrency){
+				$money=self::currencyFacade()::convertMoney($money, $fixedCurrency);
 			}
 			$fields[$mapping['amount_column']]=$money->amount();
 			if($mapping['currency_column']!==null){
@@ -346,48 +496,86 @@ final class CurrencyBridge {
 		return $fields;
 	}
 
+	/**
+	 * Expands one `StoredMoney` or `Money` write input into stored-money columns.
+	 *
+	 * Plain Money values are first stored through the currency facade using the
+	 * mapping's base currency policy.
+	 *
+	 * @param array<string, mixed> $fields Candidate SQL write fields.
+	 * @param array<string, mixed> $mapping Normalized stored-money mapping.
+	 * @param string $owner Query/table owner used in validation errors.
+	 * @return array<string, mixed> Updated write fields.
+	 */
 	private static function expandStoredMoneyWriteField(array $fields, array $mapping, string $owner): array {
-		$candidate_column=$mapping['target_column'];
-		if(!array_key_exists($candidate_column, $fields)){
+		$candidateColumn=$mapping['target_column'];
+		if(!array_key_exists($candidateColumn, $fields)){
 			return $fields;
 		}
-		$value=$fields[$candidate_column];
+		$value=$fields[$candidateColumn];
 		if(!self::isStoredMoney($value) && !self::isMoney($value)){
 			return $fields;
 		}
-		unset($fields[$candidate_column]);
-		$stored_money=$value;
-		if(self::isMoney($stored_money)){
-			$stored_money=self::currencyFacade()::storeMoney(
-				$stored_money,
+		unset($fields[$candidateColumn]);
+		$storedMoney=$value;
+		if(self::isMoney($storedMoney)){
+			$storedMoney=self::currencyFacade()::storeMoney(
+				$storedMoney,
 				$mapping['base_currency']
 			);
 		}
-		$fields[$mapping['original_amount_column']]=$stored_money->originalAmount();
-		$fields[$mapping['original_currency_column']]=$stored_money->originalCurrency();
-		$fields[$mapping['base_amount_column']]=$stored_money->baseAmount();
-		$fields[$mapping['base_currency_column']]=$stored_money->baseCurrency();
-		$fields[$mapping['exchange_rate_column']]=$stored_money->exchangeRate();
-		$fields[$mapping['exchange_source_column']]=$stored_money->exchangeSource();
-		$fields[$mapping['exchange_time_column']]=$stored_money->exchangeTime();
-		$fields[$mapping['exchange_base_currency_column']]=$stored_money->exchangeSnapshotBaseCurrency();
+		$fields[$mapping['original_amount_column']]=$storedMoney->originalAmount();
+		$fields[$mapping['original_currency_column']]=$storedMoney->originalCurrency();
+		$fields[$mapping['base_amount_column']]=$storedMoney->baseAmount();
+		$fields[$mapping['base_currency_column']]=$storedMoney->baseCurrency();
+		$fields[$mapping['exchange_rate_column']]=$storedMoney->exchangeRate();
+		$fields[$mapping['exchange_source_column']]=$storedMoney->exchangeSource();
+		$fields[$mapping['exchange_time_column']]=$storedMoney->exchangeTime();
+		$fields[$mapping['exchange_base_currency_column']]=$storedMoney->exchangeSnapshotBaseCurrency();
 		return $fields;
 	}
 
+	/**
+	 * Checks whether a SQL amount should hydrate as null.
+	 *
+	 * @param mixed $amount Raw amount value.
+	 * @return bool True for null or blank-string amounts.
+	 */
 	private static function isBlankAmount(mixed $amount): bool {
 		return $amount===null || (is_string($amount) && trim($amount)==='');
 	}
 
-	private static function writeCandidateColumns(string $target_column, string $amount_column): array {
-		return array_values(array_unique([$target_column, $amount_column]));
+	/**
+	 * Returns write-field columns that may contain a simple Money object.
+	 *
+	 * @param string $targetColumn Hydrated target column.
+	 * @param string $amountColumn Raw amount column.
+	 * @return array<int, string> Unique candidate input columns.
+	 */
+	private static function writeCandidateColumns(string $targetColumn, string $amountColumn): array {
+		return array_values(array_unique([$targetColumn, $amountColumn]));
 	}
 
+	/**
+	 * Creates a Money object from stored amount/currency row values.
+	 *
+	 * Existing Money objects are returned unchanged. Numeric amounts and non-empty
+	 * currency codes are required for scalar hydration.
+	 *
+	 * @param mixed $amount Raw amount or Money object.
+	 * @param mixed $currency Raw currency code.
+	 * @param string $owner Query/table owner used in validation errors.
+	 * @param string $amountColumn Source amount column.
+	 * @param string $currencyColumn Source currency column.
+	 * @param string $scope Original/base value role.
+	 * @return object Currency framework Money instance.
+	 */
 	private static function moneyFromValue(
 		mixed $amount,
 		mixed $currency,
 		string $owner,
-		string $amount_column,
-		string $currency_column,
+		string $amountColumn,
+		string $currencyColumn,
 		string $scope
 	): object {
 		if(self::isMoney($amount)){
@@ -396,87 +584,119 @@ final class CurrencyBridge {
 		if(!is_numeric($amount)){
 			throw SqlError::invalidMoneyDefinition(
 				$owner,
-				"Stored money {$scope} amount '{$amount_column}' must be numeric or an existing Money object."
+				"Stored money {$scope} amount '{$amountColumn}' must be numeric or an existing Money object."
 			);
 		}
 		if(!is_scalar($currency) || trim((string)$currency)===''){
 			throw SqlError::invalidMoneyDefinition(
 				$owner,
-				"Stored money {$scope} currency '{$currency_column}' must be a non-empty currency code."
+				"Stored money {$scope} currency '{$currencyColumn}' must be a non-empty currency code."
 			);
 		}
 		return self::money((float)$amount, (string)$currency);
 	}
 
+	/**
+	 * Reconstructs a StoredMoney object from persisted original/base values.
+	 *
+	 * A synthetic exchange-rates snapshot and quote are recreated from the stored
+	 * rate/source/time/base currency columns so the resulting object behaves like
+	 * one produced by the currency framework at write time.
+	 *
+	 * @param object $original Original-currency Money object.
+	 * @param object $base Base-currency Money object.
+	 * @param float $rate Stored exchange rate.
+	 * @param string $source Stored exchange source.
+	 * @param int $time Stored exchange timestamp.
+	 * @param string $exchangeBaseCurrency Exchange snapshot base currency.
+	 * @return object Currency framework StoredMoney instance.
+	 */
 	private static function storedMoney(
 		object $original,
 		object $base,
 		float $rate,
 		string $source,
 		int $time,
-		string $exchange_base_currency
+		string $exchangeBaseCurrency
 	): object {
-		$currency_facade=self::currencyFacade();
-		$manager=$currency_facade::manager();
-		$original_currency=(string)$original->currency();
-		$base_currency=(string)$base->currency();
-		$quote_rate=$original_currency===$base_currency ? 1.0 : $rate;
-		$minor_units=[
-			$exchange_base_currency=>$manager->minorUnits($exchange_base_currency),
-			$original_currency=>$manager->minorUnits($original_currency),
-			$base_currency=>$manager->minorUnits($base_currency),
+		$currencyFacade=self::currencyFacade();
+		$manager=$currencyFacade::manager();
+		$originalCurrency=(string)$original->currency();
+		$baseCurrency=(string)$base->currency();
+		$quoteRate=$originalCurrency===$baseCurrency ? 1.0 : $rate;
+		$minorUnits=[
+			$exchangeBaseCurrency=>$manager->minorUnits($exchangeBaseCurrency),
+			$originalCurrency=>$manager->minorUnits($originalCurrency),
+			$baseCurrency=>$manager->minorUnits($baseCurrency),
 		];
-		$exchange_rates_class=self::EXCHANGE_RATES_CLASS;
-		$snapshot=(new $exchange_rates_class(
-			$exchange_base_currency,
+		$exchangeRatesClass=self::EXCHANGE_RATES_CLASS;
+		$snapshot=(new $exchangeRatesClass(
+			$exchangeBaseCurrency,
 			$source,
 			$time,
-			self::storedMoneyRateMap($exchange_base_currency, $original_currency, $base_currency, $quote_rate),
-			$minor_units
+			self::storedMoneyRateMap($exchangeBaseCurrency, $originalCurrency, $baseCurrency, $quoteRate),
+			$minorUnits
 		))->snapshot($manager);
-		$exchange_quote_class=self::EXCHANGE_QUOTE_CLASS;
-		$quote=new $exchange_quote_class(
-			$exchange_base_currency,
-			$original_currency,
-			$base_currency,
-			$manager->minorUnits($original_currency),
-			$manager->minorUnits($base_currency),
-			$quote_rate,
+		$exchangeQuoteClass=self::EXCHANGE_QUOTE_CLASS;
+		$quote=new $exchangeQuoteClass(
+			$exchangeBaseCurrency,
+			$originalCurrency,
+			$baseCurrency,
+			$manager->minorUnits($originalCurrency),
+			$manager->minorUnits($baseCurrency),
+			$quoteRate,
 			$source,
 			$time
 		);
-		$stored_money_class=self::STORED_MONEY_CLASS;
-		return new $stored_money_class($original, $base, $snapshot, $quote);
+		$storedMoneyClass=self::STORED_MONEY_CLASS;
+		return new $storedMoneyClass($original, $base, $snapshot, $quote);
 	}
 
+	/**
+	 * Builds the rate map needed to recreate a stored exchange snapshot.
+	 *
+	 * @param string $exchangeBaseCurrency Snapshot base currency.
+	 * @param string $originalCurrency Original money currency.
+	 * @param string $baseCurrency Stored base money currency.
+	 * @param float $rate Original-to-base exchange rate.
+	 * @return array<string, float> Exchange rates keyed by currency.
+	 */
 	private static function storedMoneyRateMap(
-		string $exchange_base_currency,
-		string $original_currency,
-		string $base_currency,
+		string $exchangeBaseCurrency,
+		string $originalCurrency,
+		string $baseCurrency,
 		float $rate
 	): array {
 		$rates=[
-			$exchange_base_currency=>1.0,
+			$exchangeBaseCurrency=>1.0,
 		];
-		if($original_currency===$base_currency){
-			$rates[$original_currency]=$original_currency===$exchange_base_currency ? 1.0 : 1.0;
+		if($originalCurrency===$baseCurrency){
+			$rates[$originalCurrency]=$originalCurrency===$exchangeBaseCurrency ? 1.0 : 1.0;
 			return $rates;
 		}
-		if($exchange_base_currency===$base_currency){
-			$rates[$base_currency]=1.0;
-			$rates[$original_currency]=1/$rate;
+		if($exchangeBaseCurrency===$baseCurrency){
+			$rates[$baseCurrency]=1.0;
+			$rates[$originalCurrency]=1/$rate;
 			return $rates;
 		}
-		if($exchange_base_currency===$original_currency){
-			$rates[$original_currency]=1.0;
-			$rates[$base_currency]=$rate;
+		if($exchangeBaseCurrency===$originalCurrency){
+			$rates[$originalCurrency]=1.0;
+			$rates[$baseCurrency]=$rate;
 			return $rates;
 		}
-		$rates[$original_currency]=1/$rate;
-		$rates[$base_currency]=1.0;
+		$rates[$originalCurrency]=1/$rate;
+		$rates[$baseCurrency]=1.0;
 		return $rates;
 	}
 
+	/**
+	 * Normalizes a stored exchange rate.
+	 *
+	 * @param mixed $rate Raw rate value.
+	 * @param string $owner Query/table owner used in validation errors.
+	 * @param string $column Source column name.
+	 * @return float Positive exchange rate.
+	 */
 	private static function normalizeStoredRate(mixed $rate, string $owner, string $column): float {
 		if(!is_numeric($rate) || (float)$rate<=0.0){
 			throw SqlError::invalidMoneyDefinition(
@@ -487,6 +707,14 @@ final class CurrencyBridge {
 		return (float)$rate;
 	}
 
+	/**
+	 * Normalizes a stored exchange source label.
+	 *
+	 * @param mixed $source Raw source value.
+	 * @param string $owner Query/table owner used in validation errors.
+	 * @param string $column Source column name.
+	 * @return string Non-empty source label.
+	 */
 	private static function normalizeStoredSource(mixed $source, string $owner, string $column): string {
 		if(!is_scalar($source) || trim((string)$source)===''){
 			throw SqlError::invalidMoneyDefinition(
@@ -497,6 +725,18 @@ final class CurrencyBridge {
 		return trim((string)$source);
 	}
 
+	/**
+	 * Normalizes a stored exchange timestamp.
+	 *
+	 * Positive numeric timestamps are used directly. Parseable datetime strings
+	 * are converted with `strtotime()`; non-positive numeric values fall back to
+	 * current time to preserve legacy stored-money behavior.
+	 *
+	 * @param mixed $time Raw timestamp or datetime value.
+	 * @param string $owner Query/table owner used in validation errors.
+	 * @param string $column Source column name.
+	 * @return int Unix timestamp.
+	 */
 	private static function normalizeStoredTimestamp(mixed $time, string $owner, string $column): int {
 		if(is_int($time)){
 			return $time>0 ? $time : time();
@@ -517,6 +757,14 @@ final class CurrencyBridge {
 		);
 	}
 
+	/**
+	 * Normalizes a stored exchange base currency.
+	 *
+	 * @param mixed $currency Raw currency value.
+	 * @param string $owner Query/table owner used in validation errors.
+	 * @param string $column Source column name.
+	 * @return string Uppercase currency code.
+	 */
 	private static function normalizeStoredCurrency(mixed $currency, string $owner, string $column): string {
 		if(!is_scalar($currency) || trim((string)$currency)===''){
 			throw SqlError::invalidMoneyDefinition(

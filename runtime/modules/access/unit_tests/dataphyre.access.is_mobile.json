@@ -1,65 +1,77 @@
 [
     {
-        "name": "DetectAndroidDevice",
-        "function": "is_mobile",
-        "args": [],
-        "expected": true,
-        "file": "/dataphyre/access.php",
-        "class": "dataphyre\\access",
-        "static_method": true,
-        "dependencies": {
-            "function": [
-                "is_mobile"
-            ],
-            "class": [
-                "dataphyre\\access"
-            ],
-            "global_variable": [
-                "_SESSION"
-            ]
-        },
-        "max_millis": 100
+        "name":  "DetectAndroidDevice",
+        "function":  "is_mobile",
+        "args":  [
+
+                 ],
+        "expected":  true,
+        "class":  "dataphyre\\access",
+        "static_method":  true,
+        "dependencies":  {
+                             "function":  [
+                                              "is_mobile"
+                                          ],
+                             "class":  [
+                                           "dataphyre\\access"
+                                       ],
+                             "global_variable":  [
+                                                     "_SESSION"
+                                                 ]
+                         },
+        "max_millis":  100,
+        "server":  {
+                       "HTTP_USER_AGENT":  "Mozilla/5.0 (Linux; Android 14; Pixel 8) Mobile"
+                   }
     },
     {
-        "name": "DetectDesktopDevice",
-        "function": "is_mobile",
-        "args": [],
-        "expected": false,
-        "file": "/dataphyre/access.php",
-        "class": "dataphyre\\access",
-        "static_method": true,
-        "dependencies": {
-            "function": [
-                "is_mobile"
-            ],
-            "class": [
-                "dataphyre\\access"
-            ],
-            "global_variable": [
-                "_SESSION"
-            ]
-        },
-        "max_millis": 100
+        "name":  "DetectDesktopDevice",
+        "function":  "is_mobile",
+        "args":  [
+
+                 ],
+        "expected":  false,
+        "class":  "dataphyre\\access",
+        "static_method":  true,
+        "dependencies":  {
+                             "function":  [
+                                              "is_mobile"
+                                          ],
+                             "class":  [
+                                           "dataphyre\\access"
+                                       ],
+                             "global_variable":  [
+                                                     "_SESSION"
+                                                 ]
+                         },
+        "max_millis":  100,
+        "server":  {
+                       "HTTP_USER_AGENT":  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                   }
     },
     {
-        "name": "DetectiPhoneDevice",
-        "function": "is_mobile",
-        "args": [],
-        "expected": true,
-        "file_dynamic": "return $roothpath['dataphyre'].'access.php';",
-        "class": "dataphyre\\access",
-        "static_method": true,
-        "dependencies": {
-            "function": [
-                "is_mobile"
-            ],
-            "class": [
-                "dataphyre\\access"
-            ],
-            "global_variable": [
-                "_SESSION"
-            ]
-        },
-        "max_millis": 100
+        "name":  "DetectiPhoneDevice",
+        "function":  "is_mobile",
+        "args":  [
+
+                 ],
+        "expected":  true,
+        "class":  "dataphyre\\access",
+        "static_method":  true,
+        "dependencies":  {
+                             "function":  [
+                                              "is_mobile"
+                                          ],
+                             "class":  [
+                                           "dataphyre\\access"
+                                       ],
+                             "global_variable":  [
+                                                     "_SESSION"
+                                                 ]
+                         },
+        "max_millis":  100,
+        "server":  {
+                       "HTTP_USER_AGENT":  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148"
+                   }
     }
 ]

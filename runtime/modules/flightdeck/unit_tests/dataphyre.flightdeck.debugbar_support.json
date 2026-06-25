@@ -1,0 +1,73 @@
+[
+	{
+		"name": "debugbar support formats compact labels",
+		"function": "dp_flightdeck_unit_format_samples",
+		"args": [],
+		"expected": [
+			{
+				"result": {
+					"ms": "42.25ms",
+					"seconds": "1.5s",
+					"bytes": "512b",
+					"kilobytes": "2kb",
+					"megabytes": "1.5mb",
+					"short": "alpha beta gamma",
+					"truncated": "abcdefg..."
+				}
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"max_millis": 10
+	},
+	{
+		"name": "debugbar support redacts sensitive values recursively",
+		"function": "dp_flightdeck_unit_sanitize_samples",
+		"args": [],
+		"expected": [
+			{
+				"result": {
+					"username": "ada",
+					"api_key": "[redacted]",
+					"nested": {
+						"csrf_token": "[redacted]",
+						"count": 3
+					},
+					"object": "[object stdClass]"
+				}
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"max_millis": 10
+	},
+	{
+		"name": "debugbar response state summarizes json batches and failures",
+		"function": "dp_flightdeck_unit_response_json_summary",
+		"args": [],
+		"expected": "{\"body_kind\":\"json\",\"is_json\":true,\"json_valid\":true,\"top_level\":\"object\",\"key_count\":3,\"item_count\":3,\"batch_route_count\":2,\"first_route\":\"/api/orders\",\"first_status\":\"failed\",\"first_failed\":1,\"second_route\":\"/api/customers\",\"second_status\":\"failed\",\"failure_count\":4,\"preview_api_key\":\"[redacted]\"}",
+		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"max_millis": 10
+	},
+	{
+		"name": "debugbar client probe flushes accessibility reports promptly",
+		"function": "dp_flightdeck_unit_accessibility_probe_script",
+		"args": [],
+		"expected": [
+			{
+				"result": {
+					"has_flush_timer": true,
+					"flushes_accessibility_policy": true,
+					"listens_document": true,
+					"listens_window": true,
+					"accepts_fields_fallback": true,
+					"marks_combined_fields": true,
+					"renders_combined_note": true,
+					"summarizes_computed_counts": true,
+					"infers_adjusted_status": true,
+					"renders_status_pill": true
+				}
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"max_millis": 10
+	}
+]

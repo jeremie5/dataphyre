@@ -1,0 +1,9 @@
+[
+  {
+    "name": "Dpanel resolves module roots for kernel and legacy entrypoints",
+    "file": "/common/dataphyre/runtime/modules/dpanel/unit_tests/dpanel_resolution_test_helpers.php",
+    "function": "dp_dpanel_unit_resolution_json",
+    "args": [],
+    "expected": "{\"legacy_root\":\"common/dataphyre/runtime/modules/aceit_engine\",\"resolved_path\":\"common/dataphyre/runtime/modules/aceit_engine/aceit_engine.main.php\",\"standard_root\":\"common/dataphyre/runtime/modules/core\"}"
+  }
+]

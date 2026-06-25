@@ -1,0 +1,113 @@
+[
+  {
+    "name": "fulltext_search_results_from_kernel_response_serializes_hits",
+    "file": "/common/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
+    "function": "DataphyreUnitTests\\fulltext_search_results_json",
+    "args": [
+      {
+        "results": [
+          {
+            "sku-1": 0.75,
+            "ignored": 0.1
+          },
+          "ignored",
+          {
+            "sku-2": 0.5
+          }
+        ],
+        "count": 9,
+        "certainty": 0.82,
+        "time": 0.015
+      }
+    ],
+    "expected": "{\"index\":\"products\",\"results\":[{\"sku-1\":0.75},{\"sku-2\":0.5}],\"count\":9,\"certainty\":0.82,\"time\":0.015}",
+    "max_millis": 5
+  },
+  {
+    "name": "fulltext_search_results_exposes_counts_ids_scores_and_first_hit",
+    "file": "/common/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
+    "function": "DataphyreUnitTests\\fulltext_search_results_summary_json",
+    "args": [
+      {
+        "results": [
+          {
+            "sku-1": 0.75
+          },
+          {
+            "sku-2": 0.5
+          }
+        ],
+        "count": 7,
+        "certainty": 0.66,
+        "time": 0.01
+      }
+    ],
+    "expected": "{\"index\":\"products\",\"total\":7,\"hit_count\":2,\"ids\":[\"sku-1\",\"sku-2\"],\"scores\":[0.75,0.5],\"first\":{\"id\":\"sku-1\",\"score\":0.75},\"is_empty\":false,\"is_not_empty\":true}",
+    "max_millis": 5
+  },
+  {
+    "name": "fulltext_index_definition_from_array_preserves_attributes",
+    "file": "/common/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
+    "function": "DataphyreUnitTests\\fulltext_index_definition_json",
+    "args": [
+      {
+        "name": " products ",
+        "type": " SQL ",
+        "primary_key": " sku ",
+        "language": " en ",
+        "table": "catalog_products",
+        "columns": [
+          "title",
+          "description"
+        ]
+      }
+    ],
+    "expected": "{\"name\":\"products\",\"type\":\"sql\",\"primary_key_column_name\":\"sku\",\"language\":\"en\",\"table\":\"catalog_products\",\"columns\":[\"title\",\"description\"]}",
+    "max_millis": 5
+  },
+  {
+    "name": "fulltext_index_sync_report_summarizes_all_buckets",
+    "file": "/common/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
+    "function": "DataphyreUnitTests\\fulltext_index_sync_report_json",
+    "args": [],
+    "expected": "{\"summary\":{\"created\":1,\"unchanged\":1,\"mismatched\":1,\"pruned\":1,\"failed\":1},\"created\":[{\"name\":\"products\",\"type\":\"json\",\"primary_key_column_name\":\"sku\",\"language\":null}],\"unchanged\":[{\"name\":\"products\",\"type\":\"json\",\"primary_key_column_name\":\"sku\",\"language\":null}],\"mismatched\":[{\"current\":{\"name\":\"orders\",\"type\":\"sql\",\"primary_key_column_name\":\"legacy_id\",\"language\":null},\"desired\":{\"name\":\"orders\",\"type\":\"sql\",\"primary_key_column_name\":\"id\",\"language\":null}}],\"pruned\":[{\"name\":\"orders\",\"type\":\"sql\",\"primary_key_column_name\":\"legacy_id\",\"language\":null}],\"failed\":{\"archive\":\"missing primary key\"}}",
+    "max_millis": 5
+  },
+  {
+    "name": "fulltext_hydrated_results_tracks_documents_and_missing_ids",
+    "file": "/common/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
+    "function": "DataphyreUnitTests\\fulltext_hydrated_results_json",
+    "args": [],
+    "expected": "{\"payload\":{\"index\":\"products\",\"results\":[{\"id\":\"sku-1\",\"score\":0.75,\"resolved\":true,\"document\":{\"sku\":\"sku-1\"}},{\"id\":\"sku-2\",\"score\":0.5,\"resolved\":false,\"document\":null}],\"count\":5,\"certainty\":0.61,\"time\":0.02},\"documents\":[{\"sku\":\"sku-1\"},null],\"missing_ids\":[\"sku-2\"]}",
+    "max_millis": 5
+  },
+  {
+    "name": "fulltext_query_execution_state_preserves_criteria_and_fingerprint",
+    "file": "/common/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
+    "function": "DataphyreUnitTests\\fulltext_query_execution_state_json",
+    "args": [],
+    "expected": "{\"index\":\"products\",\"criteria\":{\"title\":\"red shoes\",\"description\":\"leather\",\"price\":\"120\"},\"language\":\"fr\",\"max_results\":12,\"boolean_mode\":false,\"threshold\":0.42,\"forced_algorithms\":\"levenshtein\",\"fingerprint_payload\":{\"type\":\"search_query\",\"index\":\"products\",\"criteria\":{\"title\":\"red shoes\",\"description\":\"leather\",\"price\":\"120\"},\"language\":\"fr\",\"max_results\":12,\"boolean_mode\":false,\"threshold\":0.42,\"forced_algorithms\":\"levenshtein\"},\"fingerprint\":\"5fdbd613be8c513a0a8578147e398940c6c25a6a\"}",
+    "max_millis": 5
+  },
+  {
+    "name": "fulltext_query_from_execution_state_normalizes_optional_fields",
+    "file": "/common/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
+    "function": "DataphyreUnitTests\\fulltext_query_from_execution_state_json",
+    "args": [
+      {
+        "index": " products ",
+        "criteria": {
+          "title": "boots",
+          "stock": 5
+        },
+        "language": " en ",
+        "max_results": 3,
+        "boolean_mode": true,
+        "threshold": "0.55",
+        "forced_algorithms": " bm25 "
+      }
+    ],
+    "expected": "{\"index\":\"products\",\"criteria\":{\"title\":\"boots\",\"stock\":5},\"fingerprint_payload\":{\"type\":\"search_query\",\"index\":\"products\",\"criteria\":{\"title\":\"boots\",\"stock\":5},\"language\":\"en\",\"max_results\":3,\"boolean_mode\":true,\"threshold\":0.55,\"forced_algorithms\":\"bm25\"},\"fingerprint\":\"df986eff9c2f185f8eab7e523683e61d207408e4\"}",
+    "max_millis": 5
+  }
+]

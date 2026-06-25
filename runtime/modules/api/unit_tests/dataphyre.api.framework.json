@@ -1,0 +1,50 @@
+[
+  {
+    "name": "api_security_scheme_normalizes_api_key_runtime_and_openapi",
+    "file": "/common/dataphyre/runtime/modules/api/unit_tests/api_test_helpers.php",
+    "function": "DataphyreUnitTests\\api_security_scheme_json",
+    "args": [],
+    "expected": "{\"scopes\":[\"read:orders\"],\"runtime\":{\"type\":\"api_key\",\"location\":\"query\",\"parameter\":\"X-Shop-Key\",\"resolver\":[\"App\\\\Security\\\\ApiKeys\",\"resolve\"],\"failure_status\":403,\"failure_message\":\"Forbidden\"},\"openapi\":{\"type\":\"apiKey\",\"in\":\"query\",\"name\":\"X-Shop-Key\",\"description\":\"Shop API key\"},\"name\":\"shopKey\"}",
+    "max_millis": 5
+  },
+  {
+    "name": "api_endpoint_compile_keeps_documentation_security_and_cache_metadata",
+    "file": "/common/dataphyre/runtime/modules/api/unit_tests/api_test_helpers.php",
+    "function": "DataphyreUnitTests\\api_endpoint_compile_json",
+    "args": [],
+    "expected": "{\"path\":\"/v1/orders/{orderId}\",\"methods\":[\"GET\",\"POST\"],\"tags\":[\"orders\",\"checkout\"],\"aliases\":[\"orders.show\",\"orders.detail\"],\"summary\":\"Order detail\",\"deprecated\":false,\"parameters\":[{\"name\":\"include\",\"in\":\"query\",\"schema\":{\"type\":\"string\"},\"required\":false,\"description\":\"Extra data\"},{\"name\":\"orderId\",\"in\":\"path\",\"schema\":{\"type\":\"string\"},\"required\":true}],\"responses\":{\"200\":{\"description\":\"Fetched\",\"content\":{\"application/json\":{\"schema\":{\"type\":\"object\"}}}}},\"security_schemes\":{\"bearerAuth\":{\"scopes\":[\"orders:read\"],\"runtime\":{\"type\":\"bearer\",\"resolver\":null,\"failure_status\":401,\"failure_message\":\"A valid bearer token is required for this endpoint.\"},\"openapi\":{\"type\":\"http\",\"scheme\":\"bearer\"},\"name\":\"bearerAuth\"}},\"security\":[{\"bearerAuth\":[\"orders:read\"]}],\"servers\":[{\"url\":\"https://api.example.test\",\"description\":\"Primary\"}],\"cache\":{\"ttl\":1,\"names\":[\"orders\"]},\"profile\":{\"name\":\"public\",\"tier\":\"gold\"}}",
+    "max_millis": 5
+  },
+  {
+    "name": "api_group_apply_merges_prefix_security_trace_cache_and_dispatch",
+    "file": "/common/dataphyre/runtime/modules/api/unit_tests/api_test_helpers.php",
+    "function": "DataphyreUnitTests\\api_group_compile_json",
+    "args": [],
+    "expected": "{\"path\":\"/v2/shops/{shopId}\",\"methods\":[\"GET\"],\"tags\":[\"shops\",\"partners\"],\"operation_id\":\"partnerShopShow\",\"deprecated\":false,\"parameters\":[{\"name\":\"shopId\",\"in\":\"path\",\"schema\":{\"type\":\"string\"},\"required\":true}],\"request_body\":{\"required\":true,\"description\":\"Filters\",\"content\":{\"application/json\":{\"schema\":{\"type\":\"object\"}}}},\"responses\":{\"202\":{\"description\":\"Accepted\",\"content\":{\"application/json\":{\"schema\":{\"type\":\"object\"}}}}},\"security_schemes\":{\"basicAuth\":{\"scopes\":[\"shops:read\"],\"runtime\":{\"type\":\"basic\",\"resolver\":null,\"failure_status\":401,\"failure_message\":\"Valid basic authentication credentials are required for this endpoint.\"},\"openapi\":{\"type\":\"http\",\"scheme\":\"basic\"},\"name\":\"basicAuth\"},\"partnerKey\":{\"scopes\":[],\"runtime\":{\"type\":\"api_key\",\"location\":\"header\",\"parameter\":\"X-Partner-Key\",\"resolver\":null,\"failure_status\":401,\"failure_message\":\"A valid API key is required for this endpoint.\"},\"openapi\":{\"type\":\"apiKey\",\"in\":\"header\",\"name\":\"X-Partner-Key\"},\"name\":\"partnerKey\"}},\"security\":[{\"basicAuth\":[\"shops:read\"],\"partnerKey\":[]}],\"servers\":[{\"url\":\"https://partner.example.test/\",\"description\":\"Partner\"}],\"trace\":{\"sample\":\"unit\",\"enabled\":false},\"cache\":{\"ttl\":25,\"names\":[\"shops\",\"partner\"],\"vary\":[\"language\"]},\"profile\":{\"name\":\"partner\",\"prefix\":\"/v2/shops\"},\"dispatch\":{\"source\":\"group\"}}",
+    "max_millis": 5
+  },
+  {
+    "name": "api_openapi_generator_normalizes_operations_components_and_servers",
+    "file": "/common/dataphyre/runtime/modules/api/unit_tests/api_test_helpers.php",
+    "function": "DataphyreUnitTests\\api_openapi_generator_json",
+    "args": [],
+    "expected": "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Storefront API\",\"version\":\"2026.05\",\"description\":\"Public cart API\"},\"paths\":{\"/v1/carts/{cartId}\":{\"post\":{\"responses\":{\"201\":{\"description\":\"Created\",\"content\":{\"application/json\":{\"schema\":{\"type\":\"object\"}}}}},\"summary\":\"Update cart\",\"description\":\"Updates a cart from API payload.\",\"operationId\":\"updateCart\",\"tags\":[\"carts\"],\"deprecated\":true,\"parameters\":[{\"name\":\"cartId\",\"in\":\"path\",\"schema\":{\"type\":\"string\"},\"required\":true}],\"requestBody\":{\"required\":true,\"content\":{\"application/json\":{\"schema\":{\"type\":\"object\",\"required\":[\"sku\"]}}}},\"security\":[{\"oauth\":[\"cart:write\"]}],\"servers\":[{\"url\":\"https://edge.example.test\"}],\"x-dataphyre-method\":\"POST\"}}},\"servers\":[{\"url\":\" https://api.example.test/root \"}],\"components\":{\"securitySchemes\":{\"oauth\":{\"type\":\"oauth2\",\"flows\":{\"clientCredentials\":{\"tokenUrl\":\"https://auth.example.test/token\",\"scopes\":{\"cart:write\":\"Write carts\"}}}}}}}",
+    "max_millis": 5
+  },
+  {
+    "name": "api_context_merges_sources_and_exposes_auth_binding_data",
+    "file": "/common/dataphyre/runtime/modules/api/unit_tests/api_test_helpers.php",
+    "function": "DataphyreUnitTests\\api_context_sources_and_auth_json",
+    "args": [],
+    "expected": "{\"method\":\"POST\",\"path\":\"/v1/orders/42\",\"parameter\":\"42\",\"all\":{\"include\":\"lines\",\"nested\":{\"query\":\"q\",\"body\":\"b\",\"route\":\"r\"},\"sku\":\"sku-1\",\"orderId\":\"42\"},\"input_sku\":\"sku-1\",\"cookie\":\"cart-1\",\"header\":\"abc\",\"has_auth\":true,\"auth_scheme\":\"bearer\",\"auth_identity\":{\"user_id\":7},\"auth_context\":\"shop-1\",\"auth_meta\":\"tok-1\",\"binding\":\"sku-1\",\"binding_trace\":[{\"name\":\"product\"}],\"binding_data\":{\"request\":{\"method\":\"POST\",\"path\":\"/v1/orders/42\"},\"route\":{\"orderId\":\"42\",\"nested\":{\"route\":\"r\"}},\"query\":{\"include\":\"lines\",\"nested\":{\"query\":\"q\"}},\"body\":{\"nested\":{\"body\":\"b\"},\"sku\":\"sku-1\"},\"input\":{\"include\":\"lines\",\"nested\":{\"query\":\"q\",\"body\":\"b\",\"route\":\"r\"},\"sku\":\"sku-1\",\"orderId\":\"42\"},\"validated\":[],\"auth\":{\"authorized\":true,\"scheme\":\" bearer \",\"identity\":{\"user_id\":7},\"scopes\":[\"orders:read\"],\"context\":{\"tenant\":{\"id\":\"shop-1\"}},\"meta\":{\"token_id\":\"tok-1\"}},\"bindings\":{\"product\":{\"sku\":\"sku-1\"}}}}",
+    "max_millis": 5
+  },
+  {
+    "name": "api_callable_binding_limits_resolver_arity_and_normalizes_identity",
+    "file": "/common/dataphyre/runtime/modules/api/unit_tests/api_test_helpers.php",
+    "function": "DataphyreUnitTests\\api_callable_binding_json",
+    "args": [],
+    "expected": "{\"name\":\"api.unit\",\"metadata\":{\"type\":\"api_callable\",\"driver\":\"api\",\"target_type\":\"callable\",\"target\":\"orders.show\",\"cache_identity_mode\":\"callable\"},\"identity\":{\"key\":\"tenant:shop-1\"},\"resolved\":{\"method\":\"GET\",\"path\":\"/v1/ping\",\"route_id\":\"123\",\"query\":\"search\"}}",
+    "max_millis": 5
+  }
+]

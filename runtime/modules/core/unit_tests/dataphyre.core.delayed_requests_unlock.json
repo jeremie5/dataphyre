@@ -1,0 +1,12 @@
+[{
+    "max_millis":  20,
+    "name":  "delayed_requests_unlock_removes_lock_file",
+    "function":  "dp_core_unit_lock_lifecycle",
+    "args":  [
+
+             ],
+    "expected":  [
+                     true
+                 ],
+    "file":  "/common/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
+}]

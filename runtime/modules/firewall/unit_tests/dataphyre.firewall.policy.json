@@ -1,0 +1,37 @@
+[
+  {
+    "name": "flooding threshold includes access module allowance",
+    "file": "/common/dataphyre/runtime/modules/firewall/unit_tests/firewall_test_helpers.php",
+    "function": "dp_firewall_unit_threshold_json",
+    "args": [],
+    "expected": "{\"threshold\":4,\"rps_limiter\":true}"
+  },
+  {
+    "name": "captcha unblock clears block state and removes persisted block",
+    "file": "/common/dataphyre/runtime/modules/firewall/unit_tests/firewall_test_helpers.php",
+    "function": "dp_firewall_unit_captcha_unblock_json",
+    "args": [],
+    "expected": "{\"delete_table\":\"dataphyre.captcha_blocks\",\"delete_where\":\"WHERE ip_address=?\",\"delete_values\":[\"203.0.113.10\"],\"captcha_unblock\":false,\"captcha_blocked\":false,\"last_requests\":false,\"kept\":\"yes\"}"
+  },
+  {
+    "name": "captcha lookup leaves request unblocked when no active block exists",
+    "file": "/common/dataphyre/runtime/modules/firewall/unit_tests/firewall_test_helpers.php",
+    "function": "dp_firewall_unit_check_not_blocked_json",
+    "args": [],
+    "expected": "{\"result\":false,\"captcha_blocked\":false,\"select_table\":\"dataphyre.captcha_blocks\",\"select_values\":[\"203.0.113.20\"]}"
+  },
+  {
+    "name": "captcha block creates a persisted block and marks captcha session on captcha route",
+    "file": "/common/dataphyre/runtime/modules/firewall/unit_tests/firewall_test_helpers.php",
+    "function": "dp_firewall_unit_captcha_block_insert_json",
+    "args": [],
+    "expected": "{\"result\":true,\"insert_table\":\"dataphyre.captcha_blocks\",\"insert_ip\":\"203.0.113.30\",\"insert_reason\":\"manual_review\",\"expiry_format\":true,\"select_calls\":2,\"captcha_blocked\":true}"
+  },
+  {
+    "name": "captcha block does not insert duplicate active block",
+    "file": "/common/dataphyre/runtime/modules/firewall/unit_tests/firewall_test_helpers.php",
+    "function": "dp_firewall_unit_captcha_block_existing_json",
+    "args": [],
+    "expected": "{\"result\":true,\"select_calls\":2,\"insert_called\":false,\"first_select_table\":\"dataphyre.captcha_blocks\",\"first_select_values\":[\"203.0.113.31\"],\"captcha_blocked\":true}"
+  }
+]

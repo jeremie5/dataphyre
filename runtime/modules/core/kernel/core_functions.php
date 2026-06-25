@@ -10,20 +10,37 @@ namespace dataphyre;
 use \Datetime;
 use \DateTimeZone;
 
+/**
+ * Core runtime utilities for bootstrapping, configuration, security, and requests.
+ *
+ * The core kernel owns dialback callbacks, framework module loading, shared
+ * request tokens, default HTTP headers, server load checks, date conversion,
+ * configuration access, filesystem helpers,
+ * encryption, CSRF tokens, URL helpers, delayed-request locks, and client IP
+ * resolution.
+ */
 class core {
 	
-	public static $server_load_level=null; // null or 1 to 5, 5 representing highest server load. Dynamic value. JÃ©rÃ©mie FrÃ©reault - Prior to 2024-07-22 
+	public static $server_load_level=null; // null or 1 to 5, 5 representing highest server load.
 	
-	public static $server_load_bottleneck=null; // String cause of resource bottlenecking. JÃ©rÃ©mie FrÃ©reault - Prior to 2024-07-22
+	public static $server_load_bottleneck=null; // String cause of resource bottlenecking.
 	
 	public static $used_packaged_config=false;
 	
-	private static $env=[];
-	
 	public static $dialbacks=[];
+	public static array $dialback_calls=[];
 	
 	public static $display_language="en";
 
+	/**
+	 * Returns the mutable raw configuration store by reference.
+	 *
+	 * The helper normalizes non-array CFG payloads to an empty array before
+	 * returning the reference, so callers can merge or assign nested config
+	 * without re-reading the global configuration wrapper.
+	 *
+	 * @return array<string,mixed> Reference to the process-local CFG raw store.
+	 */
 	private static function &config_store(): array {
 		$cfg=&CFG->raw();
 		if(!is_array($cfg)){
@@ -32,14 +49,36 @@ class core {
 		return $cfg;
 	}
 
+	/**
+	 * Normalizes a dotted configuration path before lookup or mutation.
+	 *
+	 * @param string $path Raw configuration path.
+	 * @return string Trimmed configuration path.
+	 */
 	private static function normalize_config_path(string $path): string {
 		return trim($path);
 	}
 
+	/**
+	 * Normalizes configuration payloads before merging them into the store.
+	 *
+	 * @param array<string,mixed> $config Raw configuration payload.
+	 * @return array<string,mixed> Normalized configuration payload.
+	 */
 	private static function normalize_config_payload(array $config): array {
 		return $config;
 	}
 	
+	/**
+	 * Loads plugin PHP files for a plugin type from common and app roots.
+	 *
+	 * Files under ROOTPATH common_dataphyre/plugins/{type} and dataphyre/plugins/{type}
+	 * are required in glob order. Loading is immediate and may execute plugin side
+	 * effects such as registrations or configuration changes.
+	 *
+	 * @param string $type Plugin category directory name.
+	 * @return void
+	 */
 	public static function load_plugins(string $type): void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Looking for $type plugins");
@@ -53,11 +92,24 @@ class core {
 
 	private static array $framework_modules_loaded=[];
 
+	/**
+	 * Loads the autoloader and module registry required by framework module loading.
+	 */
 	private static function ensure_framework_loader_dependencies(): void {
 		require_once(__DIR__.'/autoloader.php');
 		require_once(__DIR__.'/module_registry.php');
 	}
 
+	/**
+	 * Registers framework autoload paths and loads one framework module entrypoint.
+	 *
+	 * Module names are lowercased and cached after the first attempt. A true result
+	 * means either autoload registration found framework classes or the module
+	 * registry located and required a framework entry file.
+	 *
+	 * @param string $module Runtime module name.
+	 * @return bool True when framework support for the module was found.
+	 */
 	public static function load_framework_module(string $module): bool {
 		$module=strtolower(trim($module));
 		if($module===''){
@@ -68,7 +120,7 @@ class core {
 		}
 		self::ensure_framework_loader_dependencies();
 		if(defined('ROOTPATH')){
-			foreach(['common_dataphyre', 'dataphyre'] as $root_key){
+			foreach(['common_dataphyre_runtime', 'common_dataphyre', 'dataphyre'] as $root_key){
 				if(empty(ROOTPATH[$root_key])){
 					continue;
 				}
@@ -88,6 +140,15 @@ class core {
 		return $loaded;
 	}
 
+	/**
+	 * Loads multiple framework modules and returns the successful names.
+	 *
+	 * Input may be one module name or a list. Returned names are lowercased,
+	 * deduplicated, and include only modules where load_framework_module() succeeded.
+	 *
+	 * @param array<int, string>|string $modules Module name or names.
+	 * @return array<int, string> Successfully loaded module names.
+	 */
 	public static function load_framework_modules(array|string $modules): array {
 		$modules=is_array($modules) ? $modules : [$modules];
 		$loaded=[];
@@ -99,6 +160,19 @@ class core {
 		return array_values(array_unique($loaded));
 	}
 
+	/**
+	 * Creates a time-windowed shared request token for a purpose and context.
+	 *
+	 * Token generation is delegated to the bootstrap helper when available. Missing
+	 * helper support returns false instead of throwing.
+	 *
+	 * @param string $secret_file Secret identifier used by the helper.
+	 * @param string $purpose Purpose namespace for the token.
+	 * @param string $context Context string bound into the token.
+	 * @param int|null $timestamp Optional timestamp used for deterministic generation.
+	 * @param int|null $period Optional validity period override.
+	 * @return string|false Generated token or false when helper support is unavailable.
+	 */
 	public static function shared_request_key(
 		string $secret_file,
 		string $purpose,
@@ -112,6 +186,21 @@ class core {
 		return dp_shared_request_key($secret_file, $purpose, $context, $timestamp, $period);
 	}
 
+	/**
+	 * Verifies a shared request token against purpose, context, and time window.
+	 *
+	 * Verification is delegated to the bootstrap helper when available. Missing helper
+	 * support returns false.
+	 *
+	 * @param string $token Token to verify.
+	 * @param string $secret_file Secret identifier used by the helper.
+	 * @param string $purpose Purpose namespace expected in the token.
+	 * @param string $context Context string expected in the token.
+	 * @param int $window Number of adjacent periods accepted by verification.
+	 * @param int|null $timestamp Optional timestamp used as verification anchor.
+	 * @param int|null $period Optional validity period override.
+	 * @return bool True when the token verifies.
+	 */
 	public static function verify_shared_request_key(
 		string $token,
 		string $secret_file,
@@ -127,6 +216,17 @@ class core {
 		return dp_verify_shared_request_key($token, $secret_file, $purpose, $context, $window, $timestamp, $period);
 	}
 
+	/**
+	 * Creates an application override token for one application name.
+	 *
+	 * Blank application names are rejected. The token is a shared request key bound to
+	 * the app_override purpose and application context.
+	 *
+	 * @param string $application Application identifier.
+	 * @param int|null $timestamp Optional timestamp used for deterministic generation.
+	 * @param int|null $period Optional validity period override.
+	 * @return string|false Override token or false when unavailable.
+	 */
 	public static function app_override_key_token(string $application, ?int $timestamp=null, ?int $period=null): string|false {
 		$application=trim($application);
 		if($application===''){
@@ -135,6 +235,17 @@ class core {
 		return self::shared_request_key('app_override_key', 'app_override', $application, $timestamp, $period);
 	}
 
+	/**
+	 * Builds the request value used to submit an application override.
+	 *
+	 * The value is application,token. Blank applications or failed token generation
+	 * return false.
+	 *
+	 * @param string $application Application identifier.
+	 * @param int|null $timestamp Optional timestamp used for deterministic generation.
+	 * @param int|null $period Optional validity period override.
+	 * @return string|false Comma-delimited request value or false.
+	 */
 	public static function app_override_request_value(string $application, ?int $timestamp=null, ?int $period=null): string|false {
 		$application=trim($application);
 		if($application===''){
@@ -147,6 +258,19 @@ class core {
 		return $application.','.$key;
 	}
 
+	/**
+	 * Verifies an application override token.
+	 *
+	 * Tokens are checked with app_override purpose and application context. Blank
+	 * application names are rejected.
+	 *
+	 * @param string $application Application identifier.
+	 * @param string $token Submitted override token.
+	 * @param int $window Number of adjacent periods accepted by verification.
+	 * @param int|null $timestamp Optional timestamp used as verification anchor.
+	 * @param int|null $period Optional validity period override.
+	 * @return bool True when the override token verifies.
+	 */
 	public static function verify_app_override_key_token(
 		string $application,
 		string $token,
@@ -161,10 +285,31 @@ class core {
 		return self::verify_shared_request_key($token, 'app_override_key', 'app_override', $application, $window, $timestamp, $period);
 	}
 
+	/**
+	 * Creates a direct-access token bound to an optional scope.
+	 *
+	 * The token uses the direct_access purpose and the provided scope string as
+	 * context.
+	 *
+	 * @param string|null $scope Optional direct-access scope.
+	 * @param int|null $timestamp Optional timestamp used for deterministic generation.
+	 * @param int|null $period Optional validity period override.
+	 * @return string|false Direct-access token or false when unavailable.
+	 */
 	public static function direct_access_key_token(?string $scope=null, ?int $timestamp=null, ?int $period=null): string|false {
 		return self::shared_request_key('direct_access_key', 'direct_access', (string)($scope ?? ''), $timestamp, $period);
 	}
 
+	/**
+	 * Verifies a direct-access token against an optional scope.
+	 *
+	 * @param string $token Submitted direct-access token.
+	 * @param string|null $scope Optional expected direct-access scope.
+	 * @param int $window Number of adjacent periods accepted by verification.
+	 * @param int|null $timestamp Optional timestamp used as verification anchor.
+	 * @param int|null $period Optional validity period override.
+	 * @return bool True when the token verifies.
+	 */
 	public static function verify_direct_access_key_token(
 		string $token,
 		?string $scope=null,
@@ -175,6 +320,15 @@ class core {
 		return self::verify_shared_request_key($token, 'direct_access_key', 'direct_access', (string)($scope ?? ''), $window, $timestamp, $period);
 	}
 
+	/**
+	 * Flushes the HTTP response to the client while allowing PHP work to continue.
+	 *
+	 * The method closes output buffers, sends Content-Length and Connection: close,
+	 * flushes FastCGI when available, and closes the active session to release locks.
+	 *
+	 * @param string|null $output Explicit response body, or current buffer when null.
+	 * @return void
+	 */
 	public static function end_client_connection(?string $output=null): void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		ignore_user_abort(true);
@@ -194,7 +348,6 @@ class core {
 	/**
 	 * Triggers a dialback function associated with a given event name, passing any provided data as arguments.
 	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 * 
 	 * @param string $event_name The name of the event to trigger.
@@ -215,6 +368,10 @@ class core {
 	 * 3. This method does not throw errors or exceptions if the event name does not exist. It simply returns `null`.
 	 */
 	public static function dialback(string $event_name, ...$data) : mixed {
+		self::$dialback_calls[]=[
+			'hook'=>$event_name,
+			'args'=>$data,
+		];
 		$result=null;
 		if(isset(core::$dialbacks[$event_name])){
 			foreach(core::$dialbacks[$event_name] as $function){
@@ -227,7 +384,6 @@ class core {
 	/**
 	 * Registers a dialback function to be executed when a specific event occurs.
 	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 * 
 	 * @param string $event_name The name of the event to associate with the dialback function.
@@ -259,33 +415,45 @@ class core {
 		core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D="Dialback function does not exist.", $T="safemode");
 	}
 	
+	/**
+	 * Sends Dataphyre default security and platform HTTP headers when possible.
+	 *
+	 * Headers include server identity, browser hardening, referrer policy, conditional
+	 * HSTS for non-local HTTPS requests, permissions policy, and CSP.
+	 *
+	 * @return void
+	 */
 	public static function set_http_headers(): void {
 		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
 		}
 		if(!headers_sent()){
 			header_remove("X-Powered-By");
-			header("server: Dataphyre");
 			header("X-XSS-Protection: 1; mode=block");
 			header("X-Frame-Options: deny");
 			header("X-Content-Type-Options: nosniff");
 			header("X-Permitted-Cross-Domain-Policies: none");
 			header("Referrer-Policy: strict-origin-when-cross-origin");
-			header("Strict-Transport-Security: max-age=31536000");
-			header("Permissions-Policy: autoplay=*");
-			header("Upgrade-Insecure-Requests: 1");
-			header("Content-Security-Policy: script-src 'self' 'unsafe-inline' 'unsafe-eval' https: blob: data:;");
-			$nonce=self::get_env('nonce');
-			if(is_string($nonce) && $nonce!==''){
-				header("Nonce: ".$nonce);
+			$request_https=(!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS'])!=='off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')==='https') || (($_SERVER['REQUEST_SCHEME'] ?? '')==='https');
+			$host=strtolower(trim((string)($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '')));
+			if(str_starts_with($host, '[') && preg_match('/^\[([^\]]+)\]/', $host, $host_matches)===1){
+				$host_without_port=$host_matches[1];
+			}else{
+				$host_without_port=explode(':', $host, 2)[0];
 			}
+			$is_local_host=in_array($host_without_port, ['127.0.0.1', 'localhost', '::1'], true) || str_ends_with($host_without_port, '.localhost');
+			if($request_https && !$is_local_host){
+				header("Strict-Transport-Security: max-age=31536000");
+				header("Upgrade-Insecure-Requests: 1");
+			}
+			header("Permissions-Policy: autoplay=*");
+			header("Content-Security-Policy: script-src 'self' 'unsafe-inline' 'unsafe-eval' https: blob: data:;");
 		}
 	}
 	
 	/**
 	 * Retrieves the server's current load level based on CPU and memory usage.
 	 * 
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 * @static
 	 * 
@@ -322,7 +490,7 @@ class core {
 			}
 		}
 		$meminfo=[];
-		$fh=fopen('/proc/meminfo', 'r');
+		$fh=is_readable('/proc/meminfo') ? fopen('/proc/meminfo', 'r') : false;
 		if($fh){
 			while(($line=fgets($fh))!==false){
 				if(preg_match('/^(\w+):\s+(\d+)/', $line, $matches)){
@@ -360,6 +528,13 @@ class core {
 		return $level;
 	}
 
+	/**
+	 * Creates the filesystem lock that signals delayed request handling.
+	 *
+	 * Failure to create the lock enters Dataphyre unavailable/safemode handling.
+	 *
+	 * @return void
+	 */
 	public static function delayed_requests_lock() : void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		if(fopen(ROOTPATH['dataphyre']."delaying_lock", 'w+')===false){
@@ -367,6 +542,13 @@ class core {
 		}
 	}
 	
+	/**
+	 * Removes the delayed request filesystem lock.
+	 *
+	 * Failure to remove the lock enters Dataphyre unavailable/safemode handling.
+	 *
+	 * @return void
+	 */
 	public static function delayed_requests_unlock() : void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		if(!unlink(ROOTPATH['dataphyre']."delaying_lock")){
@@ -374,6 +556,14 @@ class core {
 		}
 	}
 
+	/**
+	 * Blocks while the delayed request lock exists.
+	 *
+	 * The caller waits until another process removes the lock file, allowing coarse
+	 * request serialization during maintenance or throttled sections.
+	 *
+	 * @return void
+	 */
 	public static function check_delayed_requests_lock() : void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
 		$timer=0;
@@ -390,16 +580,20 @@ class core {
 		}
 	}
 	
+	/**
+	 * Returns the inline minified font stylesheet used by core fallback UI.
+	 *
+	 * @return string inline CSS declaring the compact system-font class used by core fallback UI.
+	 */
 	public static function minified_font() : string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
-		return "@font-face{font-family:Phyro-Bold;src:url('https://cdn.shopiro.ca/assets/universal/fonts/Phyro-Bold.ttf')}.phyro-bold{font-family:'Phyro-Bold', sans-serif;font-weight:700;font-style:normal;line-height:1.15;letter-spacing:-.02em;-webkit-font-smoothing:antialiased}";
+		return ".phyro-bold{font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-weight:700;font-style:normal;line-height:1.15;-webkit-font-smoothing:antialiased}";
 	}
 	
 	/**
 	 * Generates an encrypted password from a given string.
-	 * This method is part of the Datahyre project.
+	 * This method is part of the Dataphyre project.
 	 * 
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @static
 	 * 
 	 * @param string $string The string to be encrypted.
@@ -420,18 +614,6 @@ class core {
 	 */
 	public static function get_password(#[\SensitiveParameter] string $string) : string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
-		$salting_data = [dpvk()];
-		$shuffle1 = '';
-		if (!empty($salting_data[0])) {
-			$shuffle1 = str_replace(array(1, 'a', 4, 6, 9, 7, 5), array(5, 1, 9, 7, 6, 4, 'a'), base64_encode($salting_data[0]));
-		}
-		$shuffle2 = '';
-		$key = substr(hash('sha256', $shuffle1 . $shuffle2), 0, 16);
-		$password = openssl_encrypt($string, "AES-256-CBC", $key, 0, $key);
-		$password = str_replace('=', '', base64_encode($password));
-		return $password;
-		
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CORE_GET_PASSWORD",...func_get_args())) return $early_return;
 		$salting_data=[dpvk()];
 		$key=substr(hash('sha256', base64_encode($salting_data[0])), 0, 16);
@@ -445,7 +627,6 @@ class core {
 	 * This function leverages PHP's DateTime object to generate a date-time string based on the server's
 	 * configured time zone. 
 	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 *
 	 * @param string $format The format string that the date-time should adhere to.
@@ -497,7 +678,6 @@ class core {
 	 * Formats a given date according to a specified format string, with optional translation.
 	 * This function takes a date (either as a string or Unix timestamp) and returns a formatted date-time string.
 	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 *
 	 * @param mixed  $date        The date to be formatted. Can be a date string or a Unix timestamp.
@@ -548,7 +728,6 @@ class core {
 	 * This function takes a date (either as a string or a Unix timestamp) and a user-specified time zone.
 	 * It then returns a date-time string formatted according to a provided format string and the user's time zone.
 	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 *
 	 * @param string|int $date          The date to be converted and formatted. Can be a date string or a Unix timestamp.
@@ -617,7 +796,6 @@ class core {
 	 * It allows multiple types for the $date parameter (string or integer) and has defaults for timezone and format.
 	 * The function also performs logging and allows for dialback functionality.
 	 * 
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 *
 	 * @param string|int $date          The date to be converted. Can be either UNIX timestamp or date string.
@@ -670,11 +848,10 @@ class core {
 	
 	/**
 	 * Adds or updates configuration settings in the CFG store.
-	 * This function provides a way to dynamically set or update configuration settings for the Datahyre project.
+	 * This function provides a way to dynamically set or update configuration settings for the Dataphyre project.
 	 * You can either provide a key-value pair to add a single configuration or provide an associative array
 	 * to add or update multiple configurations at once.
 	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 *
 	 * @param string|array $config The configuration key as a string or multiple keys as an associative array.
@@ -684,12 +861,12 @@ class core {
 	 *
 	 * @example
 	 * // Adding a single configuration:
-	 * dataphyre\core::add_config('app_name', 'Datahyre');
-	 * // The CFG store will now have 'app_name' => 'Datahyre'
+	 * dataphyre\core::add_config('app_name', 'Dataphyre');
+	 * // The CFG store will now have 'app_name' => 'Dataphyre'
 	 *
 	 * // Adding multiple configurations:
-	 * dataphyre\core::add_config(['app_name' => 'Datahyre', 'version' => '1.0']);
-	 * // The CFG store will now have 'app_name' => 'Datahyre' and 'version' => '1.0'
+	 * dataphyre\core::add_config(['app_name' => 'Dataphyre', 'version' => '1.0']);
+	 * // The CFG store will now have 'app_name' => 'Dataphyre' and 'version' => '1.0'
 	 *
 	 * @commonpitfalls
 	 * - Ensure that the CFG store has been initialized before using this function.
@@ -736,6 +913,14 @@ class core {
 		}
 	}
 
+	/**
+	 * Returns the mutable root configuration store by reference.
+	 *
+	 * Mutating the returned array mutates CFG->raw(), so callers should use this
+	 * only for low-level configuration tooling and bootstrap integration.
+	 *
+	 * @return array<string, mixed> Reference to the complete configuration store.
+	 */
 	public static function &config_all(): array {
 		$cfg=&self::config_store();
 		return $cfg;
@@ -746,7 +931,6 @@ class core {
 	 * This function allows you to fetch a specific configuration setting based on its key index.
 	 * If the configuration is nested, you can specify the path using the '/' delimiter.
 	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 *
 	 * @param string $index The configuration key or a path to a nested configuration.
@@ -793,7 +977,6 @@ class core {
 	 * This function is primarily used by the public `get_config()` method to retrieve nested configurations.
 	 * It performs recursive lookups to extract the configuration value for the provided key path.
 	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 *
 	 * @param array|string $index  The key or array of keys to look for in the configuration array.
@@ -828,88 +1011,32 @@ class core {
 	}
 	
 	/**
-	 * Set an environment variable within the dataphyre\core class.
+	 * Checks whether an event has any registered dialback callbacks.
 	 *
-	 * This function allows you to set a value in the static $env array.
-	 * It accepts either a string as an index and a value, or an associative array to set multiple values at once.
-	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
-	 * @package dataphyre\core
-	 *
-	 * @param string|array $index The key (or keys if array) in the $env array to set.
-	 * @param mixed        $value The value to set for the given $index. Ignored if $index is an array.
-	 * 
-	 * @example
-	 * // Example 1: Set a single environment variable
-	 * dataphyre\core::set_env('key', 'value');
-	 * 
-	 * // Example 2: Set multiple environment variables at once
-	 * dataphyre\core::set_env(['key1' => 'value1', 'key2' => 'value2']);
-	 *
-	 * @common_pitfalls
-	 * 1. If an array is passed as $index, the $value parameter will be ignored.
-	 * 2. Providing a non-string key when $index is a string could lead to unexpected behavior.
+	 * @param string $event_name Dialback event name.
+	 * @return bool True when at least one callback is registered.
 	 */
-    public static function set_env(string|array $index, mixed $value=null) : void {
-		if(is_array($index)){
-			foreach($index as $env_index=>$env_value){
-				self::$env[$env_index]=$env_value;
-			}
-			return;
-		}
-        self::$env[$index]=$value;
-    }
-	
-	/**
-	 * Retrieve an environment variable from the dataphyre\core class.
-	 *
-	 * This function allows you to get a value from the static $env array using the given index.
-	 * If the index does not exist in the $env array, it returns false.
-	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
-	 * @package dataphyre\core
-	 *
-	 * @param mixed $index The key in the $env array to retrieve.
-	 *
-	 * @return mixed|false Returns the value if the $index exists, otherwise returns false.
-	 * 
-	 * @example
-	 * // Example 1: Retrieve a single environment variable
-	 * $value = dataphyre\core::get_env('key');
-	 * 
-	 * // Example 2: Attempt to retrieve a non-existing key
-	 * $value = dataphyre\core::get_env('non_existing_key');  // Will return false
-	 *
-	 * @common_pitfalls
-	 * 1. Querying a non-existing index will return false, which might be confusing if the actual stored value is also false.
-	 * 2. Not explicitly checking for the boolean false could lead to incorrect logic in conditionals.
-	 */
-    public static function get_env(mixed $index) : mixed {
-        if(isset(self::$env[$index])){
-            return self::$env[$index];
-        }
-        return false;
-    }
-
-	public static function env_all(): array {
-		return self::$env;
-	}
-
-	public static function forget_env(string|array $index): void {
-		$indexes=is_array($index) ? $index : [$index];
-		foreach($indexes as $env_index){
-			unset(self::$env[$env_index]);
-		}
-	}
-
 	public static function has_dialback(string $event_name): bool {
 		return isset(self::$dialbacks[$event_name]) && self::$dialbacks[$event_name]!==[];
 	}
 
+	/**
+	 * Returns callbacks registered for one dialback event.
+	 *
+	 * The returned array is a copy of the event callback list.
+	 *
+	 * @param string $event_name Dialback event name.
+	 * @return array<int, callable> Registered callbacks for the event.
+	 */
 	public static function dialback_callbacks(string $event_name): array {
 		return array_values(self::$dialbacks[$event_name] ?? []);
 	}
 
+	/**
+	 * Returns the complete dialback registry.
+	 *
+	 * @return array<string, array<int, callable>> Dialbacks keyed by event name.
+	 */
 	public static function dialback_all(): array {
 		$events=[];
 		foreach(self::$dialbacks as $event_name=>$callbacks){
@@ -922,6 +1049,11 @@ class core {
 		return $events;
 	}
 
+	/**
+	 * Returns all event names present in the dialback registry.
+	 *
+	 * @return array<int, string> Registered dialback event names.
+	 */
 	public static function dialback_event_names(): array {
 		return array_keys(self::dialback_all());
 	}
@@ -933,12 +1065,11 @@ class core {
 	 * The function also has an option to add a dash at the beginning, generally used for CSS styling.
 	 * Dialback functionality is also incorporated in the function.
 	 * 
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 *
-	 * @param array $red_range   An array containing the minimum and maximum values for the red component. Defaults to [20, 150].
-	 * @param array $green_range An array containing the minimum and maximum values for the green component. Defaults to [50, 175].
-	 * @param array $blue_range  An array containing the minimum and maximum values for the blue component. Defaults to [50, 255].
+	 * @param array{0:int,1:int} $red_range   Inclusive minimum and maximum values for the red component. Defaults to [20, 150].
+	 * @param array{0:int,1:int} $green_range Inclusive minimum and maximum values for the green component. Defaults to [50, 175].
+	 * @param array{0:int,1:int} $blue_range  Inclusive minimum and maximum values for the blue component. Defaults to [50, 255].
 	 * @param bool  $add_dash    Whether to add a dash ('#') at the beginning of the color code. Defaults to true.
 	 *
 	 * @return string|mixed Returns the randomly generated hexadecimal color code. Could also return early
@@ -968,6 +1099,21 @@ class core {
 		return $hex;
 	}
 	
+	/**
+	 * Terminates execution through Dataphyre unavailable handling.
+	 *
+	 * The method logs context, optional exception details, and error classification,
+	 * then exits through the configured safemode/unavailable response path.
+	 *
+	 * @param string $file Source file reporting the unavailable condition.
+	 * @param string $line Source line reporting the unavailable condition.
+	 * @param string $class Source class reporting the unavailable condition.
+	 * @param string $function Source function reporting the unavailable condition.
+	 * @param string $error_description Human-readable failure description.
+	 * @param string $error_type Failure category.
+	 * @param object|null $exception Optional exception object for diagnostics.
+	 * @return never
+	 */
 	public static function unavailable(string $file, string $line, string $class, string $function, string $error_description='unknown', string $error_type='unknown', ?object $exception=null) : never {
 		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
@@ -1023,7 +1169,7 @@ class core {
 			$unavailable_redirection=(bool)($unavailable_config['redirection'] ?? false);
 			$err_string=json_encode(array(
 				'err'=>$error_code, 
-				'Âµtime'=>microtime(true), 
+				'utime'=>microtime(true),
 				'srv'=>$_COOKIE['__Secure-SRV'], 
 				'@url'=>core::url_self(true)
 			), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -1059,7 +1205,6 @@ class core {
 		 * The function prioritizes `HTTP_X_FORWARDED_PROTO` for detecting the protocol, then falls back to `HTTPS` or `http`.
 		 * Additionally, it removes the `uri` parameter from the query string to prevent unintended parameter leakage.
 		 *
-		 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 		 * @package dataphyre\core
 		 *
 		 * @param bool $full Whether to include the full URL path and query string. Defaults to false.
@@ -1111,7 +1256,6 @@ class core {
 	 * Optionally, it can also remove certain query string parameters.
 	 * Dialback functionality is integrated into the function.
 	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 *
 	 * @param string       $url    The URL whose query string needs to be updated.
@@ -1175,7 +1319,6 @@ class core {
 	 * Optionally, it can also remove certain query string parameters.
 	 * Dialback functionality is integrated into the function.
 	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 *
 	 * @param array|null   $value  The key-value pairs to be added or updated in the query string.
@@ -1295,10 +1438,9 @@ class core {
 	
 	/**
 	 * Encrypts a given string using various encryption methods.
-	 * This function is part of the Datahyre project and is responsible for encrypting data.
+	 * This function is part of the Dataphyre project and is responsible for encrypting data.
 	 * The encryption method version to use is determined by the project configuration.
 	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 *
 	 * @param string|null $string The string to encrypt. If the string is empty or null, an empty string will be returned.
@@ -1332,11 +1474,10 @@ class core {
 
 	/**
 	 * Decrypts a given encrypted string using various decryption methods.
-	 * This function is part of the Datahyre project and is responsible for decrypting data.
+	 * This function is part of the Dataphyre project and is responsible for decrypting data.
 	 * The decryption method to be used is inferred from the format of the input string.
 	 * It also includes a deprecation callback for automatic re-encryption using the latest method.
 	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 *
 	 * @param string|null $string The encrypted string to decrypt. If the string is empty or null, an empty string will be returned.
@@ -1394,10 +1535,9 @@ class core {
 	
 	/**
 	 * Manages CSRF tokens for form protection.
-	 * This function is part of the Datahyre project and is designed to handle the creation and validation
+	 * This function is part of the Dataphyre project and is designed to handle the creation and validation
 	 * of CSRF tokens associated with different forms to prevent Cross-Site Request Forgery attacks.
 	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 *
 	 * @param string $form_name The name of the form for which the CSRF token will be generated or validated.
@@ -1434,10 +1574,9 @@ class core {
 	/**
 	 * Writes data to a file, creating any necessary directories.
 	 *
-	 * This function is part of the Datahyre project and provides a robust way to write data to a file. 
+	 * This function is part of the Dataphyre project and provides a robust way to write data to a file. 
 	 * If the specified directory does not exist, it will be created.
 	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 *
 	 * @param string $path The directory path along with the filename where the data should be written.
@@ -1455,52 +1594,78 @@ class core {
 	 */
 	public static function file_put_contents_forced(string $dir, string $contents=''): int|bool {
 		if(null!==$early_return=core::dialback("CALL_CORE_FILE_PUT_CONTENTS_FORCED",...func_get_args())) return $early_return;
-		$parts=explode('/', $dir);
-		$file=array_pop($parts);
-		$dir='';
-		foreach($parts as $part){
-			if(!is_dir($dir.="/$part")){
-				mkdir($dir);
+		$directory=dirname($dir);
+		if($directory!=='' && $directory!=='.' && !is_dir($directory)){
+			if(!mkdir($directory, 0777, true) && !is_dir($directory)){
+				return false;
 			}
 		}
-		if(false!==$bytes=file_put_contents("$dir/$file", $contents, LOCK_EX)){
+		if(false!==$bytes=file_put_contents($dir, $contents, LOCK_EX)){
 			return $bytes;
 		}
 		return false;
 	}
 
 	/**
-	 * Recursively removes a directory and its contents.
+	 * Recursively removes a file or directory and its contents.
 	 *
-	 * This function is part of the Datahyre project and utilizes the `rm -rf` shell command to forcefully remove a directory and its contents.
+	 * This function uses native PHP filesystem operations so it works across
+	 * platforms and does not invoke a shell.
 	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 *
-	 * @param string $path The directory path to be removed.
-	 * @return void
+	 * @param string $path The file or directory path to be removed.
+	 * @return bool True when the path was removed or did not exist.
 	 *
 	 * @example
-	 * // Remove a directory and its contents
+	 * // Remove a directory and its contents.
 	 * dataphyre\core::force_rmdir('/path/to/directory');
 	 *
 	 * @commonpitfalls
-	 * 1. Permission Issues: The function may fail if PHP doesn't have enough permissions to execute shell commands or remove directories.
-	 * 2. Security Risks: Using `exec` for file operations can expose the system to risks if not handled carefully.
-	 * 3. Data Loss: The function will remove all files and directories under the given path. Use it carefully.
+	 * 1. Permission Issues: The function may fail if PHP does not have enough permissions to remove files.
+	 * 2. Data Loss: The function will remove all files and directories under the given path. Use it carefully.
 	 */
-	public static function force_rmdir(string $path): void {
-		if(!empty($path)){
-			exec('rm -rf "'.$path.'"');
+	public static function force_rmdir(string $path): bool {
+		$path=rtrim(trim($path), '/\\');
+		if($path===''){
+			return false;
 		}
+		if($path==='/' || $path==='\\' || preg_match('/^[A-Za-z]:$/', $path)===1){
+			return false;
+		}
+		if(!file_exists($path) && !is_link($path)){
+			return true;
+		}
+		if(is_file($path) || is_link($path)){
+			return @unlink($path);
+		}
+		if(!is_dir($path)){
+			return false;
+		}
+		$iterator=new \RecursiveIteratorIterator(
+			new \RecursiveDirectoryIterator($path, \FilesystemIterator::SKIP_DOTS),
+			\RecursiveIteratorIterator::CHILD_FIRST
+		);
+		foreach($iterator as $item){
+			$item_path=$item->getPathname();
+			if($item->isDir() && !$item->isLink()){
+				if(!@rmdir($item_path)){
+					return false;
+				}
+				continue;
+			}
+			if(!@unlink($item_path)){
+				return false;
+			}
+		}
+		return @rmdir($path);
 	}
 	
 	/**
 	 * Converts a file size to a human-readable storage unit.
 	 *
-	 * This function is part of the Datahyre project and converts a given size in bytes to the most appropriate unit (b, kb, mb, gb, tb, pb) for easier readability.
+	 * This function is part of the Dataphyre project and converts a given size in bytes to the most appropriate unit (b, kb, mb, gb, tb, pb) for easier readability.
 	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
 	 * @package dataphyre\core
 	 *
 	 * @param int|float $size The file size in bytes.
@@ -1527,42 +1692,20 @@ class core {
 	}
 	
 	/**
-	 * Outputs an ASCII art splash screen for the Datahyre project.
-	 *
-	 * This function is part of the Datahyre project and returns an ASCII art representation of the project name to be used as a splash screen or initialization header.
-	 *
-	 * @author JÃ©rÃ©mie FrÃ©reault <jeremie@phyro.ca>
-	 * @package dataphyre\core
-	 *
-	 * @return string Returns an ASCII art representation of the Datahyre project name.
-	 *
-	 * @example
-	 * // Display the splash screen
-	 * echo dataphyre\core::splash();
-	 *
-	 * @commonpitfalls
-	 * 1. Encoding Issues: The ASCII art may not render properly in all text editors or consoles.
-	 * 2. Output Control: Since this function only returns the ASCII art string, it's up to the calling code to manage how it's displayed or stored.
-	 */
-	public static function splash(int $padding=1): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
-		if(null!==$early_return=core::dialback("CALL_CORE_SPLASH",...func_get_args())) return $early_return;
-		$splash=str_repeat("\t", $padding).'â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•—   â–ˆâ–ˆâ–ˆâ•— â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•— â–ˆâ–ˆâ–ˆâ•—  â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•— â–ˆâ–ˆâ•—  â–ˆâ–ˆâ•—â–ˆâ–ˆâ•—   â–ˆâ–ˆâ•—â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•— â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•—'.PHP_EOL;
-		$splash.=str_repeat("\t", $padding).'â–ˆâ–ˆâ•”â•â•â–ˆâ–ˆâ•— â–ˆâ–ˆâ•‘â–ˆâ–ˆâ•—â•šâ•â•â–ˆâ–ˆâ•”â•â•â•â–ˆâ–ˆâ•‘â–ˆâ–ˆâ•— â–ˆâ–ˆâ•”â•â•â–ˆâ–ˆâ•‘â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘â•šâ–ˆâ–ˆâ•— â–ˆâ–ˆâ•”â•â–ˆâ–ˆâ•”â•â•â–ˆâ–ˆâ•—â–ˆâ–ˆâ•”â•â•â•â•â•'.PHP_EOL;
-		$splash.=str_repeat("\t", $padding).'â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘â–ˆâ–ˆâ•‘â–ˆâ–ˆâ–ˆâ–ˆâ•‘â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘  â•šâ•â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•—'.PHP_EOL;
-		$splash.=str_repeat("\t", $padding).'â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘â–ˆâ–ˆâ•‘â•â•â•â• â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•‘   â–ˆâ–ˆâ•”â•  â–ˆâ–ˆâ•‘â–ˆâ–ˆâ–ˆâ–ˆâ•‘â–ˆâ–ˆâ•”â•â•â•â•â•'.PHP_EOL;
-		$splash.=str_repeat("\t", $padding).'â–ˆâ–ˆâ•‘â–ˆâ–ˆâ–ˆâ•”â•â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘â–ˆâ–ˆâ•‘     â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘   â–ˆâ–ˆâ•‘   â–ˆâ–ˆâ•‘  â–ˆâ–ˆâ•‘â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ•—'.PHP_EOL;
-		$splash.=str_repeat("\t", $padding).'â•šâ•â•â•šâ•â•â• â•šâ•â•  â•šâ•â•  â•šâ•â•  â•šâ•â•  â•šâ•â•â•šâ•â•     â•šâ•â•  â•šâ•â•   â•šâ•â•   â•šâ•â•  â•šâ•â•â•šâ•â•â•â•â•â•â•'.PHP_EOL;
-		return $splash;
-	}
-
-	/**
 	 * Returns the client's IP address, trusting forwarded headers only if the source IP is in a trusted list.
 	 */
 	public static function get_client_ip() : string {
 		return self::get_client_ip_details()['ip'];
 	}
 
+	/**
+	 * Resolves the client IP and explains which source was trusted.
+	 *
+	 * Forwarded headers are honored only when REMOTE_ADDR matches a configured trusted
+	 * proxy or CIDR range. Otherwise REMOTE_ADDR is returned as the client IP.
+	 *
+	 * @return array{ip:string, remote_addr:string, source:string, source_header:?string, trusted_proxy:bool, trusted_headers:array, trusted_proxies:array} Client IP decision payload.
+	 */
 	public static function get_client_ip_details(): array {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
 		$core_config=DP_CORE_CFG['core']['client_ip_identification'] ?? [];

@@ -8,13 +8,32 @@
 
 require_once(dirname(__DIR__).'/view.php');
 
-if(class_exists('dataphyre_flightdeck_tracelog_surface', false)){
-	dataphyre_flightdeck_tracelog_surface::dispatch();
+if(defined('DATAPHYRE_FLIGHTDECK_TRACELOG_SURFACE_LOADED')){
+	if(defined('DATAPHYRE_FLIGHTDECK_ASSET_REQUEST')!==true){
+		dataphyre_flightdeck_tracelog_surface::dispatch();
+	}
 	return;
 }
+define('DATAPHYRE_FLIGHTDECK_TRACELOG_SURFACE_LOADED', true);
 
+/**
+ * Renders Flightdeck's Tracelog viewer, retained trace buffer, and plotter.
+ *
+ * The surface reads trace handoffs from the tracelog module, session-retained
+ * buffers, and temporary plotting files. It exposes cache-versioned CSS and JS
+ * assets for the Flightdeck asset router while keeping trace data local to the
+ * current runtime session and cache directory.
+ */
 final class dataphyre_flightdeck_tracelog_surface {
 
+	/**
+	 * Dispatches the Tracelog surface route.
+	 *
+	 * The default route renders runtime metrics and the trace buffer; the
+	 * /plotter route consumes pending plotting frames and renders the D3 graph.
+	 *
+	 * @return void Emits the complete Flightdeck page.
+	 */
 	public static function dispatch(): void {
 		$segments=self::segments();
 		if(($segments[0] ?? '')==='plotter'){
@@ -24,6 +43,11 @@ final class dataphyre_flightdeck_tracelog_surface {
 		self::render_viewer();
 	}
 
+	/**
+	 * Splits the current Tracelog route into decoded path segments.
+	 *
+	 * @return array<int,string> Route segments after /dataphyre/tracelog.
+	 */
 	private static function segments(): array {
 		$path=(string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? '/dataphyre/tracelog'), PHP_URL_PATH) ?: '');
 		$base='/dataphyre/tracelog';
@@ -33,6 +57,15 @@ final class dataphyre_flightdeck_tracelog_surface {
 		return array_values(array_filter(explode('/', trim($path, '/')), static fn($segment)=>$segment!==''));
 	}
 
+	/**
+	 * Renders runtime metrics and the latest available trace buffer.
+	 *
+	 * Trace data is selected from explicit handoff token, session buffer, then
+	 * retained session copy. Fresh buffers are cleared after rendering to avoid
+	 * repeatedly showing stale request-local trace state.
+	 *
+	 * @return void Emits the Tracelog viewer page.
+	 */
 	private static function render_viewer(): void {
 		$jit_info=[];
 		if(function_exists('opcache_get_status')){
@@ -52,8 +85,8 @@ final class dataphyre_flightdeck_tracelog_surface {
 		}
 		$session_trace=(string)($_SESSION['tracelog'] ?? '');
 		$retained_trace=(string)($_SESSION['flightdeck_last_tracelog'] ?? '');
-		$tracelog=$session_trace!=='' ? $session_trace : ($retained_trace!=='' ? $retained_trace : $handoff_trace);
-		$trace_is_fresh=$session_trace!=='';
+		$tracelog=$handoff_trace!=='' ? $handoff_trace : ($session_trace!=='' ? $session_trace : $retained_trace);
+		$trace_is_fresh=$handoff_trace!=='' || $session_trace!=='';
 		$runtime_memory=(int)($_SESSION['runtime_memory_used'] ?? 0);
 		$memory_overhead=strlen($tracelog) + $runtime_memory;
 		$project_memory=((int)($_SESSION['memory_used'] ?? 0)) - $memory_overhead;
@@ -91,12 +124,20 @@ final class dataphyre_flightdeck_tracelog_surface {
 			'Session trace metrics, buffers, and graph plotting embedded inside Flightdeck.',
 			$content,
 			'tracelog',
-			['head'=>self::style()]
+			['head'=>'<link rel="stylesheet" href="'.self::e(self::asset_url('tracelog-surface.css')).'">']
 		);
 		echo $page;
 		unset($_SESSION['tracelog'], $_SESSION['tracelog_plotting']);
 	}
 
+	/**
+	 * Renders the metrics header shown above the trace buffer.
+	 *
+	 * @param array<int,array{0:string,1:string}> $primary_metrics Prominent metric labels and values.
+	 * @param array<int,array{0:string,1:string}> $detail_metrics Secondary runtime details.
+	 * @param bool $plotter_available Whether a plotting action should be shown.
+	 * @return string HTML metrics section.
+	 */
 	private static function render_runtime_metrics(array $primary_metrics, array $detail_metrics, bool $plotter_available): string {
 		$items='';
 		foreach($primary_metrics as $metric){
@@ -110,6 +151,16 @@ final class dataphyre_flightdeck_tracelog_surface {
 		return '<section class="fd-card fd-runtime-metrics"><div class="fd-runtime-head"><div><h2>Runtime Metrics</h2><p>Last instrumented request.</p></div>'.$actions.'</div><div class="fd-runtime-grid">'.$items.'</div><details class="fd-runtime-details"><summary>More runtime details</summary><div>'.$details.'</div></details></section>';
 	}
 
+	/**
+	 * Reads a trace handoff file from the Dataphyre cache.
+	 *
+	 * A signed handoff token resolves to its SHA-1 named file. When no valid
+	 * token is supplied, the newest handoff file is used as a fallback so the
+	 * viewer can still recover traces after redirects.
+	 *
+	 * @param string $handoff_token Signed handoff token from query string or session.
+	 * @return string Trace HTML/text buffer, or an empty string when unavailable.
+	 */
 	private static function read_handoff_trace(string $handoff_token): string {
 		$directory=self::handoff_directory();
 		if($directory==='' || !is_dir($directory)){
@@ -131,6 +182,11 @@ final class dataphyre_flightdeck_tracelog_surface {
 		return '';
 	}
 
+	/**
+	 * Locates the cache directory used for tracelog handoff files.
+	 *
+	 * @return string Absolute cache directory, or an empty string when roots are unavailable.
+	 */
 	private static function handoff_directory(): string {
 		if(defined('ROOTPATH') && !empty(ROOTPATH['dataphyre'])){
 			return rtrim((string)ROOTPATH['dataphyre'], '/\\').'/cache/tracelog_handoff';
@@ -141,6 +197,14 @@ final class dataphyre_flightdeck_tracelog_surface {
 		return '';
 	}
 
+	/**
+	 * Renders and consumes pending tracelog plotting data.
+	 *
+	 * Plotter frames are read from a newline-delimited JSON cache file, capped to
+	 * a large but bounded set, then the file is removed so graph data is single-use.
+	 *
+	 * @return void Emits the plotter page.
+	 */
 	private static function render_plotter(): void {
 		$plotter_file=self::plotter_file();
 		$traces=[];
@@ -169,7 +233,7 @@ final class dataphyre_flightdeck_tracelog_surface {
 			$json=json_encode($traces, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?: '[]';
 			$content=dataphyre_flightdeck_view::card(
 				'Trace Plotter',
-				'<div class="fd-plotter" id="fd-tracelog-plotter"><div class="fd-plotter-tooltip"></div><svg role="img" aria-label="Tracelog call graph"></svg></div><script>window.dataphyreTracelogData='.$json.';</script>'.self::plotter_script(),
+				'<div class="fd-plotter" id="fd-tracelog-plotter"><div class="fd-plotter-tooltip"></div><svg role="img" aria-label="Tracelog call graph"></svg></div><script>window.dataphyreTracelogData='.$json.';</script><script src="'.self::e(self::asset_url('tracelog-plotter.js')).'" defer></script>',
 				[
 					'subtitle'=>number_format(count($traces)).' trace frames consumed from '.$plotter_file.'.',
 					'actions'=>'<a class="fd-primary" href="/dataphyre/tracelog">Back to Tracelog</a>',
@@ -184,11 +248,77 @@ final class dataphyre_flightdeck_tracelog_surface {
 			$content,
 			'tracelog',
 			[
-				'head'=>'<script src="https://d3js.org/d3.v6.min.js"></script>'.self::style(),
+				'head'=>'<link rel="stylesheet" href="'.self::e(self::asset_url('tracelog-surface.css')).'"><script src="https://d3js.org/d3.v6.min.js"></script>',
 			]
 		);
 	}
 
+	/**
+	 * Builds a cache-versioned Flightdeck asset URL for this surface.
+	 *
+	 * @param string $asset Requested asset filename.
+	 * @return string Public Flightdeck asset URL with a content hash query value.
+	 */
+	public static function asset_url(string $asset): string {
+		$name=self::asset_name($asset);
+		return '/dataphyre/flightdeck/assets/'.$name.'?v='.self::asset_version($name);
+	}
+
+	/**
+	 * Returns the short content hash used to version a Tracelog asset.
+	 *
+	 * @param string $asset Requested asset filename.
+	 * @return string Sixteen-character SHA-1 prefix, or "missing" when the asset is unknown.
+	 */
+	public static function asset_version(string $asset): string {
+		$content=self::asset_content($asset);
+		return $content!==null ? substr(sha1((string)$content['body']), 0, 16) : 'missing';
+	}
+
+	/**
+	 * Returns the inline asset body and content type for this surface.
+	 *
+	 *
+	 * @return ?array{content_type:string,body:string} Asset payload, or null for unknown assets.
+	 */
+	public static function asset_content(string $asset): ?array {
+		return match(self::asset_name($asset)){
+			'tracelog-surface.css'=>['content_type'=>'text/css; charset=UTF-8', 'body'=>self::style()],
+			'tracelog-plotter.js'=>['content_type'=>'application/javascript; charset=UTF-8', 'body'=>self::script_body(self::plotter_script())],
+			default=>null,
+		};
+	}
+
+	/**
+	 * Sanitizes a Tracelog asset request to a safe basename.
+	 *
+	 * @param string $asset Raw asset path from the asset router.
+	 * @return string Safe filename, or an empty string for invalid names.
+	 */
+	private static function asset_name(string $asset): string {
+		$name=basename(str_replace('\\', '/', trim($asset)));
+		return preg_match('/^[a-z0-9._-]+$/i', $name)===1 ? $name : '';
+	}
+
+	/**
+	 * Extracts JavaScript body content from an inline script fragment.
+	 *
+	 * @param string $script Full script tag or raw JavaScript.
+	 * @return string JavaScript body suitable for asset responses.
+	 */
+	private static function script_body(string $script): string {
+		$script=trim($script);
+		if(preg_match('/^<script\b[^>]*>(.*)<\/script>$/is', $script, $matches)===1){
+			return trim((string)$matches[1])."\n";
+		}
+		return $script;
+	}
+
+	/**
+	 * Returns the browser script that renders D3 trace graphs.
+	 *
+	 * @return string Inline script tag containing the plotter implementation.
+	 */
 	private static function plotter_script(): string {
 		return <<<'HTML'
 <script>
@@ -293,10 +423,20 @@ final class dataphyre_flightdeck_tracelog_surface {
 HTML;
 	}
 
+	/**
+	 * Reports whether graph plotting data is available or pending.
+	 *
+	 * @return bool True when a plotter cache file or session plotting flag exists.
+	 */
 	private static function plotter_available(): bool {
 		return is_file(self::plotter_file()) || !empty($_SESSION['tracelog_plotting']);
 	}
 
+	/**
+	 * Locates the newline-delimited JSON file used by trace plotting.
+	 *
+	 * @return string Absolute plotter cache path, or an empty string when roots are unavailable.
+	 */
 	private static function plotter_file(): string {
 		if(defined('ROOTPATH') && !empty(ROOTPATH['dataphyre'])){
 			return rtrim((string)ROOTPATH['dataphyre'], '/\\').'/cache/tracelog_plotting.dat';
@@ -307,6 +447,12 @@ HTML;
 		return '';
 	}
 
+	/**
+	 * Formats byte counts and preformatted values for compact display.
+	 *
+	 * @param mixed $size Numeric byte count or already formatted value.
+	 * @return string Human-readable storage label.
+	 */
 	private static function storage(mixed $size): string {
 		if(is_numeric($size)){
 			$size=(float)$size;
@@ -321,8 +467,13 @@ HTML;
 		return (string)$size;
 	}
 
+	/**
+	 * Returns the Tracelog surface CSS.
+	 *
+	 * @return string Stylesheet body for tracelog-surface.css.
+	 */
 	private static function style(): string {
-		return '<style>
+		return '
 .fd-runtime-metrics{padding:12px 14px;margin-bottom:12px;border-radius:18px}
 .fd-runtime-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
 .fd-runtime-head h2{font-size:1rem;margin:0}
@@ -343,12 +494,20 @@ HTML;
 .fd-plotter-tooltip{position:absolute;visibility:hidden;z-index:5;max-width:420px;background:#f8fafc;color:#0f172a;border:1px solid #dbe4ef;border-radius:14px;padding:10px 12px;box-shadow:0 18px 50px rgba(0,0,0,.28);font-size:.86rem}
 @media(max-width:1100px){.fd-runtime-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:680px){.fd-runtime-head{display:block}.fd-runtime-head .fd-primary{margin-top:8px}.fd-runtime-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-</style>';
+';
 	}
 
+	/**
+	 * Escapes text through the shared Flightdeck view helper.
+	 *
+	 * @param string $value Raw text.
+	 * @return string HTML-safe text.
+	 */
 	private static function e(string $value): string {
 		return dataphyre_flightdeck_view::e($value);
 	}
 }
 
-dataphyre_flightdeck_tracelog_surface::dispatch();
+if(defined('DATAPHYRE_FLIGHTDECK_ASSET_REQUEST')!==true){
+	dataphyre_flightdeck_tracelog_surface::dispatch();
+}

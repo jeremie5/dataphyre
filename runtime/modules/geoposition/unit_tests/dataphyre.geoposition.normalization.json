@@ -1,0 +1,9 @@
+[
+  {
+    "name": "internal normalization helpers canonicalize geography inputs",
+    "file": "/common/dataphyre/runtime/modules/geoposition/unit_tests/geoposition_test_helpers.php",
+    "function": "DataphyreUnitTests\\geoposition_internal_normalization_json",
+    "args": [],
+    "expected": "{\"country\":\"CA\",\"default_subdivision\":\"*\",\"point\":{\"latitude\":45.5,\"longitude\":-73.6,\"lat\":45.5,\"long\":-73.6,\"subdivision\":\"QC\"},\"rules\":{\"digits_only\":true,\"force_uppercase\":true,\"letters_only\":true},\"subdivision\":\"QC\"}"
+  }
+]

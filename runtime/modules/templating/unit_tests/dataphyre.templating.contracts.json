@@ -1,0 +1,51 @@
+[
+  {
+    "name": "template_contract_from_array_normalizes_fields",
+    "file": "/common/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
+    "function": "DataphyreUnitTests\\templating_template_contract_json",
+    "args": [
+      {
+        "required": [" title ", "title", "", 12],
+        "optional": ["subtitle", " subtitle "],
+        "slots": [" main ", "main", ""],
+        "optional_slots": ["aside"],
+        "defaults": {
+          " title ": "Untitled",
+          "": "ignored"
+        },
+        "types": {
+          " title ": " STRING ",
+          "count": "int",
+          "ignored": ""
+        },
+        "allow_additional_data": false
+      }
+    ],
+    "expected": "{\"required\":[\"title\"],\"optional\":[\"subtitle\"],\"required_slots\":[\"main\"],\"optional_slots\":[\"aside\"],\"defaults\":{\"title\":\"Untitled\"},\"prop_types\":{\"title\":\"string\",\"count\":\"int\"},\"allow_additional_data\":false,\"allow_additional_slots\":true}",
+    "max_millis": 5
+  },
+  {
+    "name": "template_contract_fluent_builders_preserve_expected_payload",
+    "file": "/common/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
+    "function": "DataphyreUnitTests\\templating_template_contract_chain_json",
+    "args": [],
+    "expected": "{\"required\":[\"title\",\"count\"],\"optional\":[\"subtitle\",\"cta\"],\"required_slots\":[\"main\"],\"optional_slots\":[\"aside\"],\"defaults\":{\"count\":0,\"cta\":\"Buy\"},\"prop_types\":{\"count\":\"integer\",\"cta\":\"string\"},\"allow_additional_data\":false,\"allow_additional_slots\":true}",
+    "max_millis": 5
+  },
+  {
+    "name": "binding_resolution_reports_skipped_result",
+    "file": "/common/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
+    "function": "DataphyreUnitTests\\templating_binding_resolution_marker",
+    "args": [true, "fallback"],
+    "expected": "skipped:\"fallback\"",
+    "max_millis": 5
+  },
+  {
+    "name": "binding_resolution_reports_value_result",
+    "file": "/common/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
+    "function": "DataphyreUnitTests\\templating_binding_resolution_marker",
+    "args": [false, 42],
+    "expected": "value:42",
+    "max_millis": 5
+  }
+]

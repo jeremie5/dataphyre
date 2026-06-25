@@ -1,0 +1,12 @@
+[{
+    "max_millis":  50,
+    "name":  "check_delayed_requests_lock_allows_absent_lock",
+    "function":  "dp_core_unit_lock_lifecycle",
+    "args":  [
+
+             ],
+    "expected":  [
+                     true
+                 ],
+    "file":  "/common/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
+}]

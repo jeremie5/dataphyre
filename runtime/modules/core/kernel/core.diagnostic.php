@@ -11,11 +11,25 @@ if(class_exists(__NAMESPACE__.'\\diagnostic', false)){
 	return;
 }
 
+/**
+ * Runs early and late runtime diagnostics for the core module.
+ *
+ * Diagnostics collect environment, constant, extension, configuration, and
+ * session warnings into dpanel verbose entries when the debug panel is loaded.
+ * The checks are observational and do not mutate runtime configuration.
+ */
 class diagnostic{
 
+	/**
+	 * Checks environment prerequisites before full core boot completes.
+	 *
+	 * This pass records connection scheme information, rootpath availability,
+	 * minimum PHP version, and required PHP extensions.
+	 *
+	 * @return void
+	 */
 	public static function pre_tests(): void {
 		$verbose=[];
-		// Runtime information
 		if(isset($_SERVER['HTTP_X_FORWARDED_PROTO'])){
 			$verbose[]=['module'=>'core', 'info'=>'You are connected to a load balancer or proxy using https.', 'time'=>time()];
 			if($_SERVER['HTTP_X_FORWARDED_PROTO']==='https'){
@@ -36,15 +50,12 @@ class diagnostic{
 				$verbose[]=['module'=>'core', 'info'=>'You are connected directly to the server without https.', 'time'=>time()];
 			}
 		}
-		// Check for rootpath definition
 		if(!defined('ROOTPATH') || empty(ROOTPATH) || !is_array(ROOTPATH)){
 			$verbose[]=['module'=>'core', 'error'=>'Rootpaths are not defined.', 'time'=>time()];
 		}
-		// Check for PHP version
 		if(version_compare(PHP_VERSION, $ver='8.1.0') < 0){
 			$verbose[]=['module'=>'core', 'error'=>'PHP version '.$ver.' or higher is required.', 'time'=>time()];
 		}
-		// Check each required extension for core module
 		$required_extensions=[
 			'date',
 			'mbstring',
@@ -65,10 +76,18 @@ class diagnostic{
 		}
 	}
 	
+    /**
+     * Checks runtime constants and PHP settings after core boot.
+     *
+     * This pass verifies request constants, optional DP_CORE_CFG availability,
+     * diagnostic-mode session state, timezone, memory limit, and max execution
+     * time against core configuration.
+     *
+     * @return void
+     */
     public static function post_tests(): void {
 		$verbose=[];
 		$config=\defined('DP_CORE_CFG') && \is_array(\DP_CORE_CFG) ? \DP_CORE_CFG : null;
-        // Verify essential constants are defined and correctly assigned
         if(!defined('RUN_MODE')){
             $verbose[]=['module'=>'core', 'error'=>'Constant RUN_MODE constant is not defined.', 'time'=>time()];
         }
@@ -78,7 +97,6 @@ class diagnostic{
 		if(!defined('REQUEST_USER_AGENT') || empty(REQUEST_USER_AGENT)){
             $verbose[]=['module'=>'core', 'error'=>'Constant REQUEST_USER_AGENT is undefined or empty.', 'time'=>time()];
         }
-		// Validate dataphyre core configurations were loaded
 		if(!is_array($config)){
             $verbose[]=[
 				'module'=>'core',
@@ -87,16 +105,13 @@ class diagnostic{
 				'time'=>time()
 			];
 		}
-        // Validate session settings
         if(defined('RUN_MODE') && RUN_MODE==='diagnostic' && session_status()===PHP_SESSION_ACTIVE){
             $verbose[]=['module'=>'core', 'error'=>'Session was started in diagnostic run mode.', 'time'=>time()];
         }
         if(is_array($config)){
-            // Check timezone setting
             if(isset($config['timezone']) && date_default_timezone_get() !== $config['timezone']){
                 $verbose[]=['module'=>'core', 'error'=>'Timezone is not set according to dataphyre configuration.', 'time'=>time()];
             }
-            // Validate memory and execution time limits
             if(isset($config['max_execution_memory']) && ini_get('memory_limit') !== $config['max_execution_memory']){
                 $verbose[]=['module'=>'core', 'error'=>'Memory limit is not set according to configuration.', 'time'=>time()];
             }

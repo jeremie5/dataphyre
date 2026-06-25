@@ -1,0 +1,37 @@
+[
+  {
+    "name": "AceIt reads assigned group and records scoped events",
+    "file": "/common/dataphyre/runtime/modules/aceit_engine/unit_tests/aceit_engine_test_helpers.php",
+    "function": "dp_aceit_engine_unit_session_flow_json",
+    "args": [],
+    "expected": "{\"event_name\":\"click\",\"event_value\":{\"button\":\"checkout\"},\"fallback\":\"control\",\"group\":\"variant\",\"has_time\":true}"
+  },
+  {
+    "name": "AceIt import keeps existing experiment definitions ahead of later imports",
+    "file": "/common/dataphyre/runtime/modules/aceit_engine/unit_tests/aceit_engine_test_helpers.php",
+    "function": "dp_aceit_engine_unit_import_precedence_json",
+    "args": [],
+    "expected": "{\"exp_existing\":{\"group\":\"first\",\"count\":1},\"exp_new\":{\"group\":\"new\",\"count\":3}}"
+  },
+  {
+    "name": "AceIt chart fills requested date range and applies optional filters",
+    "file": "/common/dataphyre/runtime/modules/aceit_engine/unit_tests/aceit_engine_test_helpers.php",
+    "function": "dp_aceit_engine_unit_chart_json",
+    "args": [],
+    "expected": "{\"query\":{\"has_group_filter\":true,\"has_date_filter\":true,\"params\":[\"checkout_copy\",\"control\",\"2026-01-01\",\"2026-01-03\"]},\"chart\":{\"control\":{\"2026-01-01\":5,\"2026-01-02\":0,\"2026-01-03\":7}}}"
+  },
+  {
+    "name": "AceIt leading group query marks experiment finished and persists through callback",
+    "file": "/common/dataphyre/runtime/modules/aceit_engine/unit_tests/aceit_engine_test_helpers.php",
+    "function": "dp_aceit_engine_unit_leading_group_json",
+    "args": [],
+    "expected": "{\"leading_group\":\"variant_b\",\"query\":{\"has_sum\":true,\"has_order\":true,\"params\":[\"checkout_banner\"]},\"is_finished\":true,\"saved_finished\":true,\"saved_count\":8}"
+  },
+  {
+    "name": "AceIt daily aggregation rolls groups into aggregate rows and persists aggregated flag",
+    "file": "/common/dataphyre/runtime/modules/aceit_engine/unit_tests/aceit_engine_test_helpers.php",
+    "function": "dp_aceit_engine_unit_aggregate_daily_json",
+    "args": [],
+    "expected": "{\"query_count\":7,\"distinct_params\":[\"pricing_copy\"],\"uses_daily_granulation\":true,\"control_insert_params\":[\"control\",8,\"pricing_copy\",true],\"control_delete_params\":[\"pricing_copy\",\"control\"],\"variant_insert_params\":[\"variant\",13,\"pricing_copy\",true],\"variant_delete_params\":[\"pricing_copy\",\"variant\"],\"is_aggregated\":true,\"saved_aggregated\":true}"
+  }
+]

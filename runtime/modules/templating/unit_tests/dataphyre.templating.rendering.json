@@ -1,0 +1,10 @@
+[
+  {
+    "name": "legacy_extend_render_replaces_block_without_document_wrapper",
+    "file": "/common/dataphyre/runtime/modules/templating/unit_tests/templating_render_test_helpers.php",
+    "function": "DataphyreUnitTests\\templating_legacy_extend_render_json",
+    "args": [],
+    "expected": "{\"html\":\"<main>Hello Ada</main>\",\"has_wrapper\":false}",
+    "max_millis": 20
+  }
+]

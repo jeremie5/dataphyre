@@ -1,0 +1,16 @@
+[
+  {
+    "name": "sanitize_many preserves invalid fields when requested and masks emails",
+    "file": "/common/dataphyre/runtime/modules/sanitation/unit_tests/sanitation_test_helpers.php",
+    "function": "dp_sanitation_unit_many_and_masks_json",
+    "args": [],
+    "expected": "{\"anonymized\":\"bil****@example.com\",\"invalid_mask\":\"\",\"many\":{\"age\":\"42\",\"bad_email\":false,\"email\":\"USER@example.com\",\"slug\":\"hello-world\"}}"
+  },
+  {
+    "name": "sanitize handles scalar type presets consistently",
+    "file": "/common/dataphyre/runtime/modules/sanitation/unit_tests/sanitation_test_helpers.php",
+    "function": "dp_sanitation_unit_scalar_types_json",
+    "args": [],
+    "expected": "{\"alphanumeric\":\"abc123\",\"boolean_false\":\"0\",\"float\":\"-10.25\",\"postal\":\"H2X 1Y4\",\"url_bad\":false}"
+  }
+]

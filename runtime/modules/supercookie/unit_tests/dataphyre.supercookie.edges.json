@@ -1,0 +1,23 @@
+[
+  {
+    "name": "missing supercookie delete returns false",
+    "file": "/common/dataphyre/runtime/modules/supercookie/unit_tests/supercookie_test_helpers.php",
+    "function": "dp_supercookie_unit_test_del_missing",
+    "args": ["missing"],
+    "expected": false
+  },
+  {
+    "name": "supercookie get returns structured values",
+    "file": "/common/dataphyre/runtime/modules/supercookie/unit_tests/supercookie_test_helpers.php",
+    "function": "dp_supercookie_unit_test_get_json",
+    "args": [{"prefs": {"theme": "dark", "density": "compact"}}, "prefs"],
+    "expected": "{\"theme\":\"dark\",\"density\":\"compact\"}"
+  },
+  {
+    "name": "supercookie get handles invalid JSON and falsey values",
+    "file": "/common/dataphyre/runtime/modules/supercookie/unit_tests/supercookie_test_helpers.php",
+    "function": "dp_supercookie_unit_test_read_edges_json",
+    "args": [],
+    "expected": "{\"bad_json_is_null\":true,\"zero\":0,\"false\":false,\"empty\":\"\",\"missing_is_null\":true}"
+  }
+]

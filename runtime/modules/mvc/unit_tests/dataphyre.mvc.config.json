@@ -1,0 +1,32 @@
+[
+  {
+    "name": "config_returns_default_routes_array_type",
+    "function": "config",
+    "class": "dataphyre\\mvc",
+    "static_method": true,
+    "args": ["routes"],
+    "expected": "array",
+    "file": "/common/dataphyre/runtime/modules/mvc/kernel/mvc.main.php",
+    "max_millis": 5
+  },
+  {
+    "name": "config_returns_missing_key_fallback",
+    "function": "config",
+    "class": "dataphyre\\mvc",
+    "static_method": true,
+    "args": ["missing_key", "fallback-value"],
+    "expected": "fallback-value",
+    "file": "/common/dataphyre/runtime/modules/mvc/kernel/mvc.main.php",
+    "max_millis": 5
+  },
+  {
+    "name": "config_returns_response_headers_array_type",
+    "function": "config",
+    "class": "dataphyre\\mvc",
+    "static_method": true,
+    "args": ["response_headers"],
+    "expected": "array",
+    "file": "/common/dataphyre/runtime/modules/mvc/kernel/mvc.main.php",
+    "max_millis": 5
+  }
+]

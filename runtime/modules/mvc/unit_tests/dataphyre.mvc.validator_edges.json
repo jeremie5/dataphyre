@@ -1,0 +1,16 @@
+[
+  {
+    "name": "validator reports custom messages and omits invalid fields",
+    "file": "/common/dataphyre/runtime/modules/mvc/unit_tests/mvc_test_helpers.php",
+    "function": "DataphyreUnitTests\\mvc_validator_failure_json",
+    "args": [],
+    "expected": "{\"errors\":{\"email\":[\"Use a real email.\"],\"quantity\":[\"Quantity too small.\"]},\"fails\":true,\"safe_missing\":\"missing\",\"validated\":{\"note\":\"\"}}"
+  },
+  {
+    "name": "validator accepts callable and boolean-like rules",
+    "file": "/common/dataphyre/runtime/modules/mvc/unit_tests/mvc_test_helpers.php",
+    "function": "DataphyreUnitTests\\mvc_validator_callable_json",
+    "args": [],
+    "expected": "{\"passes\":true,\"safe_slug\":\"valid-slug\",\"to_array\":{\"valid\":true,\"validated\":{\"slug\":\"valid-slug\",\"flag\":\"1\"},\"errors\":[]}}"
+  }
+]

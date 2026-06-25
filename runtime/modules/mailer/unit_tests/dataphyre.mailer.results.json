@@ -1,0 +1,16 @@
+[
+  {
+    "name": "send result exposes success and failure payloads",
+    "file": "/common/dataphyre/runtime/modules/mailer/unit_tests/mailer_test_helpers.php",
+    "function": "DataphyreUnitTests\\mailer_send_result_json",
+    "args": [],
+    "expected": "{\"failure\":{\"ok\":false,\"provider\":\"unit\",\"status\":500,\"message\":\"Nope\",\"message_id\":null,\"response\":{\"error\":\"bad\"},\"meta\":{\"retry\":false}},\"failure_ok\":false,\"success\":{\"ok\":true,\"provider\":\"unit\",\"status\":202,\"message\":\"Queued\",\"message_id\":\"msg_1\",\"response\":{\"id\":\"remote\"},\"meta\":{\"attempt\":1}},\"success_id\":\"msg_1\"}"
+  },
+  {
+    "name": "log provider writes normalized message to configured path",
+    "file": "/common/dataphyre/runtime/modules/mailer/unit_tests/mailer_test_helpers.php",
+    "function": "DataphyreUnitTests\\mailer_log_provider_json",
+    "args": [],
+    "expected": "{\"logged_subject\":\"Receipt\",\"logged_to\":\"buyer@example.com\",\"provider\":\"log\",\"result_ok\":true,\"status\":202}"
+  }
+]

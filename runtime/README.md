@@ -1,5 +1,3 @@
-![Dataphyre Logo](logo.png)
-
 # Dataphyre Runtime Engine for PHP
 
 Dataphyre is a modular PHP runtime engine designed for applications that need a
@@ -12,7 +10,6 @@ but the runtime is not tied to Shopiro.
 
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.1-blue)](https://php.net)
 ![GitHub License](https://img.shields.io/github/license/jeremie5/dataphyre)
-[![Documentation](https://img.shields.io/badge/docs-runtime-brightgreen)](documentation/README.md)
 [![GitHub issues](https://img.shields.io/github/issues/jeremie5/dataphyre)](https://github.com/jeremie5/dataphyre/issues)
 
 ## Highlights
@@ -22,7 +19,10 @@ but the runtime is not tied to Shopiro.
   diagnostics, localization, and operational tooling.
 - Compatibility with legacy application bootstraps and newer framework-style
   application definitions.
+- Server-driven component lifecycles through Reactor and native application
+  structure through MVC.
 - Diagnostics through Tracelog, Flightdeck, Datadoc, and Dpanel.
+- AI development tooling through the Dataphyre MCP server.
 - Extensibility through plugins and core dialbacks.
 
 ## Requirements
@@ -30,22 +30,22 @@ but the runtime is not tied to Shopiro.
 - PHP 8.1 or newer
 - Composer for dependency metadata and package workflows
 
-## Installation Shape
+## Runtime Directory
 
-The public repository mirrors a Dataphyre installation:
+This directory contains the reusable runtime engine inside a Dataphyre
+installation:
 
 ```text
-dataphyre/
-  runtime/          reusable runtime engine
-  config/           install-level module config
-  plugins/          install-level hooks
-  cache/            generated runtime state
-  logs/             generated runtime logs
-  flight_sheet.php  install bootstrap sheet
+runtime/
+  bootstrap.php      runtime entrypoint
+  modules/           first-party runtime modules
+  cache/             generated runtime state
+  logs/              generated runtime logs
 ```
 
-The runtime itself starts at `runtime/bootstrap.php`. The parent directory is an
-installation shell that can be different for each application.
+The project root around this directory holds install-level config, plugins,
+generated state, examples, package metadata, and release documentation. See the
+repository-level [README](../docs/README.md) for that public project shape.
 
 Minimal entrypoint:
 
@@ -59,38 +59,40 @@ For embedded installs, `flight_sheet.php` provides bootstrap settings such as th
 default app name, application roots, direct-access controls, and Flightdeck
 settings.
 
+## Application-Agent Boundary
+
+Application agents should treat `runtime/` as the reusable Dataphyre engine boundary.
+Put application-specific behavior in application code, app definitions, install config,
+dialbacks, callbacks, plugins, MCP metadata, application-owned adapters, or
+reusable modules before proposing runtime-internal edits.
+
 For a copyable first-run layout, see the repository-level
-[getting-started guide](../GETTING_STARTED.md) and
-[minimal embedded example](../examples/minimal/README.md). The install-local
-export split is documented in [Public export boundary](../PUBLIC_EXPORT.md).
+[getting-started guide](../docs/GETTING_STARTED.md) and
+[minimal embedded example](../examples/minimal/README.md).
 
 ## Documentation
 
-- [Documentation index](documentation/README.md)
-- [Getting started](../GETTING_STARTED.md)
-- [Architecture](../ARCHITECTURE.md)
-- [Configuration reference](../CONFIGURATION.md)
-- [Package contract](../PACKAGE.md)
-- [Stability policy](../STABILITY.md)
-- [Public export boundary](../PUBLIC_EXPORT.md)
+- [Getting started](../docs/GETTING_STARTED.md)
+- [Architecture](../docs/ARCHITECTURE.md)
+- [Configuration reference](../docs/CONFIGURATION.md)
+- [Package contract](../docs/PACKAGE.md)
+- [Stability policy](../docs/STABILITY.md)
 - [Minimal embedded example](../examples/minimal/README.md)
-- [Module index](../MODULES.md)
-- [Release checklist](../RELEASE_CHECKLIST.md)
-- [Support](../SUPPORT.md)
-- [Extensibility](documentation/Dataphyre%20Extensibility.md)
-- [Failure modes](documentation/Dataphyre%20Failure%20Modes.md)
-- [MVC architecture](documentation/Dataphyre%20MVC%20Architecture.md)
-- [Private keys and security](documentation/Dataphyre%20Private%20Keys%20And%20Security.md)
+- [Module index](../docs/MODULES.md)
+- [Support](../docs/SUPPORT.md)
 
 ## Documented Modules
 
 ### Core & Execution
 
 - [Core](modules/core/documentation/Dataphyre_Core.md) - foundational runtime hooks.
+- [HTTP](modules/http/documentation/Dataphyre_HTTP.md) - HTTP request and response primitives.
 - [Routing](modules/routing/documentation/Dataphyre_Routing.md) - dynamic route handling.
+- [MVC](modules/mvc/documentation/Dataphyre_MVC.md) - native controllers, route groups, view results, middleware, and lightweight models.
 - [Templating](modules/templating/documentation/Dataphyre_Templating.md) - rendering, layouts, and data bindings.
 - [API](modules/api/documentation/Dataphyre_Api.md) - API routing, OpenAPI metadata, and request handling.
-- [HTTP](modules/http/documentation/Dataphyre_HTTP.md) - HTTP request and response primitives.
+- [Panel](modules/panel/documentation/Dataphyre_Panel.md) - resource definitions for generated internal control surfaces.
+- [Reactor](modules/reactor/documentation/Dataphyre_Reactor.md) - server-driven component lifecycle and UI island transport.
 
 ### Performance & Async
 
@@ -102,6 +104,7 @@ export split is documented in [Public export boundary](../PUBLIC_EXPORT.md).
 ### Security
 
 - [Access](modules/access/documentation/Dataphyre_Access.md) - auth and role/permission management.
+- [Permission](modules/permission/documentation/Dataphyre_Permission.md) - semantic authorization rules, roles, audits, and Panel permission catalogs.
 - [CASPOW](modules/caspow/documentation/Dataphyre_CASPOW.md) - proof-of-work anti-spam controls.
 - [Firewall](modules/firewall/documentation/Dataphyre_Firewall.md) - request filtering and abuse protection.
 - [Sanitation](modules/sanitation/documentation/Dataphyre_Sanitation.md) - input filtering and validation helpers.
@@ -110,41 +113,37 @@ export split is documented in [Public export boundary](../PUBLIC_EXPORT.md).
 ### Data, Search & Localization
 
 - [SQL](modules/sql/documentation/Dataphyre_SQL.md) - database access, repositories, and migration helpers.
+- [Storage](modules/storage/documentation/Dataphyre_Storage.md) - file storage disks for local, Vestra, and S3-compatible providers.
 - [Fulltext Engine](modules/fulltext_engine/documentation/Dataphyre_Fulltext_Engine.md) - search indexing and tokenization.
 - [Currency](modules/currency/documentation/Dataphyre_Currency.md) - currency conversion and formatting.
 - [Date Translation](modules/date_translation/documentation/Dataphyre_Date_Translation.md) - localized date strings.
 - [Localization](modules/localization/documentation/Dataphyre%20Localization.md) - translation helpers.
 - [Geoposition](modules/geoposition/documentation/Dataphyre_Geoposition.md) - geographic lookup utilities.
+- [Mailer](modules/mailer/documentation/Dataphyre_Mailer.md) - email delivery, provider failover, queues, templates, webhooks, and suppressions.
 
 ### Dev & Operations
 
 - [Datadoc](modules/datadoc/documentation/Dataphyre_Datadoc.md) - function and module documentation tools.
 - [Dpanel](modules/dpanel/documentation/Dataphyre_Dpanel.md) - diagnostics and dynamic testing.
 - [Flightdeck](modules/flightdeck/documentation/Dataphyre_Flightdeck.md) - developer control surface.
+- [MCP](modules/mcp/documentation/Dataphyre_MCP.md) - Dataphyre-aware MCP tools, resources, prompts, and guarded local diagnostics.
 - [Issue](modules/issue/documentation/Dataphyre_Issue.md) - issue/report helpers.
-- [Log Viewer](modules/log_viewer/documentation/Dataphyre_Log_Viewer.md) - legacy standalone log tail.
-- [InternalModule](***REMOVED***/documentation/Dataphyre_InternalModule.md) - experimental event reporting.
 - [Tracelog](modules/tracelog/documentation/Dataphyre_Tracelog.md) - execution tracing.
 
 ### Service Adapters
 
-- [CJ Dropshipping adapter](modules/private_adapter/documentation/Dataphyre_PrivateAdapter.md)
-- [PrivateAdapter adapter](modules/private_adapter/documentation/Dataphyre_PrivateAdapter.md)
-- [PolicyModule](modules/policy_module/documentation/Dataphyre_PolicyModule.md)
 - [Stripe](modules/stripe/documentation/Dataphyre_Stripe.md)
 
 ## Legacy And Experimental Modules
 
 Some modules are present for compatibility or operational experimentation. They
-have compact release notes but should stay clearly marked until their public API,
+have compact release notes and stay clearly marked until their public API,
 schemas, and configuration contracts are stable:
 
 - [AceIt Engine](modules/aceit_engine/documentation/Dataphyre_AceIt_Engine.md)
-- [InternalModule](***REMOVED***/documentation/Dataphyre_InternalModule.md)
-
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for local workflow notes and pull request
+See [CONTRIBUTING.md](../docs/CONTRIBUTING.md) for local workflow notes and pull request
 guidance.
 
 ## Third-Party Libraries
@@ -155,4 +154,4 @@ bundled code.
 
 ## License
 
-Dataphyre is released under the MIT License. See [LICENSE](LICENSE).
+Dataphyre is released under the MIT License. See [LICENSE](../LICENSE).

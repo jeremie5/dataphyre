@@ -1,0 +1,32 @@
+[
+  {
+    "name": "config_returns_default_disk",
+    "function": "config",
+    "class": "dataphyre\\storage",
+    "static_method": true,
+    "args": ["default_disk"],
+    "expected": "local",
+    "file": "/common/dataphyre/runtime/modules/storage/kernel/storage.main.php",
+    "max_millis": 5
+  },
+  {
+    "name": "config_reads_nested_local_driver",
+    "function": "config",
+    "class": "dataphyre\\storage",
+    "static_method": true,
+    "args": ["disks.local.driver"],
+    "expected": "local",
+    "file": "/common/dataphyre/runtime/modules/storage/kernel/storage.main.php",
+    "max_millis": 5
+  },
+  {
+    "name": "config_returns_fallback_for_missing_key",
+    "function": "config",
+    "class": "dataphyre\\storage",
+    "static_method": true,
+    "args": ["disks.archive.driver", "fallback-driver"],
+    "expected": "fallback-driver",
+    "file": "/common/dataphyre/runtime/modules/storage/kernel/storage.main.php",
+    "max_millis": 5
+  }
+]

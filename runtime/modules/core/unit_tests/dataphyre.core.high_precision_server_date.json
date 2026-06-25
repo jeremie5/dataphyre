@@ -1,0 +1,12 @@
+[{
+    "max_millis":  10,
+    "name":  "high_precision_server_date_respects_format_shape",
+    "function":  "dp_core_unit_high_precision_shape",
+    "args":  [
+
+             ],
+    "expected":  [
+                     true
+                 ],
+    "file":  "/common/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
+}]

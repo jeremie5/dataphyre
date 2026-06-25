@@ -1,0 +1,54 @@
+[
+  {
+    "name": "Request create normalizes method and path into request instance",
+    "file": "/common/dataphyre/runtime/modules/http/Framework/Request.php",
+    "class": "Dataphyre\\Http\\Request",
+    "static_method": true,
+    "function": "create",
+    "args": [
+      " post ",
+      "api/products/",
+      {
+        "page": 2
+      },
+      {
+        "name": "Dataphyre"
+      },
+      {
+        "session": "abc"
+      },
+      {
+        "REQUEST_METHOD": "POST"
+      },
+      {
+        "X-Trace-Id": "trace-1"
+      },
+      {
+        "product": "native"
+      },
+      {
+        "tenant": "shopiro"
+      }
+    ],
+    "expected": "Dataphyre\\Http\\Request"
+  },
+  {
+    "name": "Request create falls back to GET for empty method",
+    "file": "/common/dataphyre/runtime/modules/http/Framework/Request.php",
+    "class": "Dataphyre\\Http\\Request",
+    "static_method": true,
+    "function": "create",
+    "args": [
+      "",
+      "/",
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      []
+    ],
+    "expected": "Dataphyre\\Http\\Request"
+  }
+]

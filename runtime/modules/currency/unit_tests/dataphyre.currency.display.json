@@ -1,0 +1,96 @@
+[
+    {
+        "name":  "formatter_uses_configured_currency_symbol_and_decimals",
+        "function":  "formatter",
+        "class":  "dataphyre\\currency",
+        "static_method":  true,
+        "args":  [
+                     1234.5,
+                     false,
+                     "USD"
+                 ],
+        "expected":  [
+                         "$1,234.50"
+                     ],
+        "dependencies":  {
+                             "class":  [
+                                           "dataphyre\\currency"
+                                       ],
+                             "function":  [
+                                              "locale"
+                                          ]
+                         },
+        "max_millis":  50
+    },
+    {
+        "name":  "formatter_can_render_zero_as_free",
+        "function":  "formatter",
+        "class":  "dataphyre\\currency",
+        "static_method":  true,
+        "args":  [
+                     0,
+                     true,
+                     "USD"
+                 ],
+        "expected":  [
+                         "Free"
+                     ],
+        "dependencies":  {
+                             "class":  [
+                                           "dataphyre\\currency"
+                                       ],
+                             "function":  [
+                                              "locale"
+                                          ]
+                         },
+        "max_millis":  50
+    },
+    {
+        "name":  "convert_uses_cached_session_exchange_rates",
+        "function":  "dp_currency_unit_test_with_rates",
+        "args":  [
+                     10,
+                     "USD",
+                     "CAD",
+                     false,
+                     false
+                 ],
+        "expected":  [
+                         "13.50"
+                     ],
+        "file":  "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+        "dependencies":  {
+                             "class":  [
+                                           "dataphyre\\currency"
+                                       ],
+                             "global_variable":  [
+                                                     "_SESSION"
+                                                 ]
+                         },
+        "max_millis":  50
+    },
+    {
+        "name":  "convert_zero_can_bypass_free_label",
+        "function":  "dp_currency_unit_test_with_rates",
+        "args":  [
+                     0,
+                     "USD",
+                     "CAD",
+                     false,
+                     false
+                 ],
+        "expected":  [
+                         "0.00"
+                     ],
+        "file":  "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+        "dependencies":  {
+                             "class":  [
+                                           "dataphyre\\currency"
+                                       ],
+                             "global_variable":  [
+                                                     "_SESSION"
+                                                 ]
+                         },
+        "max_millis":  50
+    }
+]

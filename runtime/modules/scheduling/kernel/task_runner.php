@@ -97,6 +97,6 @@ register_shutdown_function(function()use($scheduler_path, $scheduler_name){
 		}
 		dataphyre\scheduling::end_task_runner();
 	}catch(\Throwable $exception){
-		pre_init_error('Fatal error on Dataphyre Scheduling (task runner) shutdown callback', $exception);
+		\dataphyre_shutdown_log('Fatal error on Dataphyre Scheduling (task runner) shutdown callback', $exception);
 	}
 });

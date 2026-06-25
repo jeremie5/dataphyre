@@ -7,11 +7,32 @@
  */
 namespace dataphyre;
 
+/**
+ * Applies the Dataphyre flight sheet that bootstraps required runtime files.
+ *
+ * The installer reads the shared flight_sheet.php plan, creates missing
+ * directories and files, copies shared key material when available, and writes a
+ * verified marker in the application cache. Operations are idempotent: existing
+ * files are left untouched so application-local secrets and generated markers
+ * are never overwritten by a later install pass.
+ */
 final class flight_sheet {
 
 	private static ?array $cached_sheet=null;
 	private static ?string $last_error=null;
 
+	/**
+	 * Installs shared and application-specific runtime artifacts.
+	 *
+	 * Shared targets are applied under the common Dataphyre root; app targets are
+	 * applied under ROOTPATH['dataphyre']. When an app name has a dedicated plan,
+	 * it is recursively merged over the generic app target before files are
+	 * created. The method records only the last thrown message and returns false
+	 * for missing roots, missing plans, or failed verification.
+	 *
+	 * @param ?string $app_name Optional application key used to select per-app install overrides.
+	 * @return bool True once the verified marker exists in the application cache.
+	 */
 	public static function install(?string $app_name=null): bool {
 		self::$last_error=null;
 		try{
@@ -39,14 +60,32 @@ final class flight_sheet {
 		}
 	}
 
+	/**
+	 * Returns the last installation exception message captured by install().
+	 *
+	 * A null value means either no install attempt failed during this process or
+	 * the last failure path returned false without throwing.
+	 *
+	 * @return ?string Last thrown installer message, or null when none is available.
+	 */
 	public static function last_error(): ?string {
 		return self::$last_error;
 	}
 
+	/**
+	 * Returns the application-local verification marker path.
+	 *
+	 * @return string Absolute path to ROOTPATH['dataphyre']/cache/verified.
+	 */
 	private static function verified_path(): string {
 		return rtrim((string)ROOTPATH['dataphyre'], '/\\').'/cache/verified';
 	}
 
+	/**
+	 * Locates the common Dataphyre root used for shared installer targets.
+	 *
+	 * @return string Common Dataphyre root with a trailing directory separator.
+	 */
 	private static function install_root(): string {
 		if(defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre'])){
 			return rtrim((string)ROOTPATH['common_dataphyre'], '/\\').'/';
@@ -54,10 +93,23 @@ final class flight_sheet {
 		return rtrim(dirname(__DIR__, 4), '/\\').'/';
 	}
 
+	/**
+	 * Returns the flight sheet plan file loaded by this installer.
+	 *
+	 * @return string Absolute path to the shared flight_sheet.php plan.
+	 */
 	private static function path(): string {
 		return self::install_root().'flight_sheet.php';
 	}
 
+	/**
+	 * Loads and memoizes the flight sheet plan.
+	 *
+	 * Non-array plan files are treated as empty plans. The returned array always
+	 * includes @path so generated markers can record the plan that produced them.
+	 *
+	 * @return array<string,mixed> Flight sheet plan and metadata.
+	 */
 	private static function load(): array {
 		if(self::$cached_sheet!==null){
 			return self::$cached_sheet;
@@ -71,6 +123,20 @@ final class flight_sheet {
 		return self::$cached_sheet;
 	}
 
+	/**
+	 * Applies one install target beneath the supplied root.
+	 *
+	 * Directory entries are created first. File entries support literal content,
+	 * generated dpvk keys, generated verification markers, and copy-if-missing
+	 * sources. Unknown or malformed file entries are skipped so older plan files
+	 * remain readable by newer runtimes.
+	 *
+	 * @param array{directories?:list<string>,files?:list<array{path?:string,type?:'literal'|'generated_dpvk'|'generated_verified'|'copy_if_missing',contents?:string,source?:string}>} $target Target definition containing directories and files lists.
+	 * @param string $base_root Absolute root receiving the target artifacts.
+	 * @param ?string $app_name Optional application key stored in generated verification payloads.
+	 * @return void
+	 * @throws \RuntimeException When a required directory or file write cannot be completed.
+	 */
 	private static function apply_target(array $target, string $base_root, ?string $app_name=null): void {
 		$base_root=rtrim($base_root, '/\\').'/';
 		foreach((array)($target['directories'] ?? []) as $directory){
@@ -110,6 +176,13 @@ final class flight_sheet {
 		}
 	}
 
+	/**
+	 * Creates a directory tree when it is not already present.
+	 *
+	 * @param string $directory Absolute directory path to create.
+	 * @return void
+	 * @throws \RuntimeException When mkdir fails and the path is still not a directory.
+	 */
 	private static function create_directory(string $directory): void {
 		if(is_dir($directory)){
 			return;
@@ -119,6 +192,14 @@ final class flight_sheet {
 		}
 	}
 
+	/**
+	 * Writes a file only when no file already exists at the destination.
+	 *
+	 * @param string $path Absolute destination path.
+	 * @param string $contents File contents to write for first install.
+	 * @return void
+	 * @throws \RuntimeException When the parent directory or file write fails.
+	 */
 	private static function write_file_if_missing(string $path, string $contents): void {
 		if(is_file($path)){
 			return;
@@ -129,6 +210,17 @@ final class flight_sheet {
 		}
 	}
 
+	/**
+	 * Creates an application dpvk key file without replacing existing keys.
+	 *
+	 * A shared static key is copied when present; otherwise a 64-byte random key
+	 * is generated and hex encoded for filesystem-safe storage.
+	 *
+	 * @param string $path Absolute destination path for the key.
+	 * @return void
+	 * @throws \Exception When secure random bytes cannot be generated.
+	 * @throws \RuntimeException When the key file cannot be written.
+	 */
 	private static function generate_dpvk(string $path): void {
 		if(is_file($path)){
 			return;
@@ -143,6 +235,14 @@ final class flight_sheet {
 		self::write_file_if_missing($path, bin2hex(random_bytes(64)));
 	}
 
+	/**
+	 * Writes the application verification marker payload.
+	 *
+	 * @param string $path Absolute verified marker path.
+	 * @param ?string $app_name Optional application key recorded in the marker.
+	 * @return void
+	 * @throws \RuntimeException When the marker cannot be written.
+	 */
 	private static function generate_verified_marker(string $path, ?string $app_name=null): void {
 		if(is_file($path)){
 			return;

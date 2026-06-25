@@ -1,7 +1,7 @@
 [
     {
         "name": "DisableAllSessionsOfUser - Valid User",
-        "function": "disable_all_sessions_of_user",
+        "function": "dp_access_unit_disable_all_sessions_of_user",
         "args": [
             12345
         ],
@@ -10,8 +10,7 @@
         ],
         "dependencies": {
             "function": [
-                "disable_all_sessions_of_user",
-                "sql::db_update"
+                "dp_access_unit_disable_all_sessions_of_user"
             ],
             "class": [
                 "dataphyre\\access"
@@ -20,13 +19,12 @@
                 "_SESSION"
             ]
         },
-        "class": "dataphyre\\access",
-        "static_method": true,
+        "file": "/common/dataphyre/runtime/modules/access/unit_tests/access_session_test_helpers.php",
         "max_millis": 100
     },
     {
         "name": "DisableAllSessionsOfUser - SQL Fail",
-        "function": "disable_all_sessions_of_user",
+        "function": "dp_access_unit_disable_all_sessions_of_user",
         "args": [
             67890
         ],
@@ -35,8 +33,7 @@
         ],
         "dependencies": {
             "function": [
-                "disable_all_sessions_of_user",
-                "sql::db_update"
+                "dp_access_unit_disable_all_sessions_of_user"
             ],
             "class": [
                 "dataphyre\\access"
@@ -45,8 +42,7 @@
                 "_SESSION"
             ]
         },
-        "class": "dataphyre\\access",
-        "static_method": true,
+        "file": "/common/dataphyre/runtime/modules/access/unit_tests/access_session_test_helpers.php",
         "max_millis": 100
     }
 ]

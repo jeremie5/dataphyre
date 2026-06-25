@@ -7,10 +7,25 @@
  */
 namespace dataphyre\fulltext_engine;
 
+/**
+ * Bridges Dataphyre fulltext operations to an Elasticsearch-compatible HTTP API.
+ *
+ * This adapter is a thin external-engine boundary. It normalizes index
+ * names, maps Dataphyre language codes to Elasticsearch analyzers, sends JSON
+ * requests through cURL, and returns Dataphyre's primary-key-to-score result
+ * shape without owning persistence or retry policy.
+ */
 class elasticsearch {
 
 	private const DEFAULT_URL='http://127.0.0.1:9200';
 
+	/**
+	 * Resolves the configured Elasticsearch base URL.
+	 *
+	 * Configuration supports both elastic and elasticsearch keys under the
+	 * fulltext external engine config, trims empty values, and falls back to the
+	 * local Elasticsearch default when no usable URL is configured.
+	 */
 	private static function base_url(): string {
 		$url=(string)(DP_FULLTEXT_ENGINE_CFG['external_engines']['elastic']['url']
 			?? DP_FULLTEXT_ENGINE_CFG['elastic']['url']
@@ -21,14 +36,28 @@ class elasticsearch {
 		return rtrim($url!=='' ? $url : self::DEFAULT_URL, '/');
 	}
 
+	/**
+	 * Builds an Elasticsearch endpoint URL for an index and optional suffix.
+	 *
+	 * Index names are lowercased to match engine storage conventions, and
+	 * suffixes are slash-normalized so callers can request _search, _doc, or nested
+	 * document endpoints without duplicating base URL logic.
+	 */
 	private static function index_url(string $index_name, string $suffix=''): string {
 		$index_name=strtolower($index_name);
 		$suffix=ltrim($suffix, '/');
 		return self::base_url().'/'.$index_name.($suffix!=='' ? '/'.$suffix : '');
 	}
 
+	/**
+	 * Searches an Elasticsearch index and returns Dataphyre score matches.
+	 *
+	 * Search data is converted into a bool/match query, submitted to the
+	 * index _search endpoint, and decoded results are reduced to
+	 * [primary-key => score] entries that meet the caller's score threshold.
+	 */
     public static function find(string $index_name, array $search_data, string $primary_column_name, bool|string $boolean_mode, string $language, int $max_results, float $threshold){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
 		$language=explode('-', $language)[0];
 		$index_name=strtolower($index_name);
         $query=self::buildElasticsearchQuery($search_data, $boolean_mode, $language, $max_results);
@@ -42,13 +71,19 @@ class elasticsearch {
         $response=curl_exec($ch);
         curl_close($ch);
         if($response===false){
-            // Handle error
             return [];
         }
         $response_data=json_decode($response, true);
         return self::processElasticsearchResults(is_array($response_data) ? $response_data : [], $primary_column_name, $threshold);
     }
-	
+
+	/**
+	 * Creates an Elasticsearch index with Dataphyre's text-field mapping defaults.
+	 *
+	 * The primary key is mapped as keyword, string fields are mapped as
+	 * analyzed text, and the language-specific analyzer is selected from the first
+	 * language segment before the PUT request is sent.
+	 */
 	public static function create_index(string $index_name, string $primary_key, string $language): bool {
 		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = null, $S = 'function_call', $A = func_get_args());
 		$language=explode('-', $language)[0];
@@ -103,9 +138,16 @@ class elasticsearch {
 		return false;
 	}
 
-	
+
+	/**
+	 * Deletes an Elasticsearch index by normalized name.
+	 *
+	 * The adapter issues a DELETE request to the index endpoint and treats
+	 * cURL transport failure as false. HTTP response semantics are left to the
+	 * external engine because this legacy adapter only inspects transport success.
+	 */
     public static function delete_index(string $index_name): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
 		$index_name=strtolower($index_name);
         $url=self::index_url($index_name);
         $ch=curl_init($url);
@@ -114,17 +156,22 @@ class elasticsearch {
         $response=curl_exec($ch);
         curl_close($ch);
         if($response===false){
-            // Handle error
             return false;
         }
         return true;
 	}
-	
+
+	/**
+	 * Updates an indexed document identified by the configured primary key field.
+	 *
+	 * Elasticsearch internal document ids are discovered through a term
+	 * search on the primary key, then the matching document is patched through
+	 * _update. Missing documents and cURL failures return false.
+	 */
     public static function update(string $index_name, array $values, string $primary_column_name, string $primary_key_value, string $language): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
 		$language=explode('-', $language)[0];
 		$index_name=strtolower($index_name);
-        // First, search for the document with the given primary_key_value
         $url=self::index_url($index_name, '_search');
         $query=array(
             'query'=>array(
@@ -142,12 +189,10 @@ class elasticsearch {
         $response=curl_exec($ch);
         curl_close($ch);
         if($response===false){
-            // Handle error
             return false;
         }
         $response_data=json_decode($response, true);
         if(isset($response_data['hits']['hits']) && count($response_data['hits']['hits'])>0){
-            // If the document is found, update it using its ID
             $document_id=$response_data['hits']['hits'][0]['_id'];
             $url=self::index_url($index_name, '_doc/'.$document_id.'/_update');
             $update_data=array(
@@ -162,18 +207,23 @@ class elasticsearch {
             $response=curl_exec($ch);
             curl_close($ch);
             if($response===false){
-                // Handle error
                 return false;
             }
         }
 		else
 		{
-            // Document not found, return false
             return false;
         }
         return true;
     }
-	
+
+	/**
+	 * Adds a document to an Elasticsearch index.
+	 *
+	 * The primary key value is merged into the indexed document, empty
+	 * field names are filtered out, the document is sent to _doc, and HTTP status
+	 * outside the 2xx range is reported as failure with tracelog context.
+	 */
 	public static function add(string $index_name, array $values, string $primary_column_name, string $primary_key_value, string $language): bool {
 		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = null, $S = 'function_call', $A = func_get_args());
 		$language=explode('-', $language)[0];
@@ -206,11 +256,17 @@ class elasticsearch {
 		}
 		return true;
 	}
-	
+
+	/**
+	 * Removes an indexed document identified by primary key.
+	 *
+	 * Removal mirrors update lookup behavior by first searching for the
+	 * external document id, then deleting that _doc endpoint. A missing hit is
+	 * treated as a successful no-op by the current adapter contract.
+	 */
 	public static function remove(string $index_name, string $primary_column_name, string $primary_key_value) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
 		$index_name=strtolower($index_name);
-        // First, search for the document with the given primary_key_value
         $url=self::index_url($index_name, '_search');
         $query=array(
             'query'=>array(
@@ -228,12 +284,10 @@ class elasticsearch {
         $response=curl_exec($ch);
         curl_close($ch);
         if($response===false){
-            // Handle error
             return false;
         }
         $response_data=json_decode($response, true);
         if(isset($response_data['hits']['hits']) && count($response_data['hits']['hits'])>0){
-            // If the document is found, delete it using its ID
             $document_id=$response_data['hits']['hits'][0]['_id'];
             $url=self::index_url($index_name, '_doc/'.$document_id);
             $ch=curl_init($url);
@@ -242,13 +296,19 @@ class elasticsearch {
             $response=curl_exec($ch);
             curl_close($ch);
             if($response===false){
-                // Handle error
                 return false;
             }
         }
         return true;
     }
 
+	/**
+	 * Maps Dataphyre language codes to Elasticsearch analyzer names.
+	 *
+	 * Only the currently supported language set receives specialized
+	 * analyzers; all other language tags fall back to the standard analyzer so
+	 * indexing and search continue predictably.
+	 */
 	private static function mapLanguageToAnalyzer(string $lang): string {
 		return match (strtolower($lang)) {
 			'en' => 'english',
@@ -259,8 +319,15 @@ class elasticsearch {
 		};
 	}
 
+	/**
+	 * Builds the bool/match Elasticsearch query used by fulltext search.
+	 *
+	 * Boolean mode selects must versus should clauses and match operator,
+	 * each provided field becomes a fuzzy match clause, and short terms disable
+	 * fuzzy expansion to avoid noisy matches.
+	 */
     private static function buildElasticsearchQuery(array $search_data, bool|string $boolean_mode, string $language, int $max_results){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
 		$language=explode('-', $language)[0];
 		$operator=match(true){
 			is_bool($boolean_mode)=>($boolean_mode ? 'and' : 'or'),
@@ -290,8 +357,15 @@ class elasticsearch {
         return $query;
     }
 
+	/**
+	 * Converts Elasticsearch hits into Dataphyre fulltext match results.
+	 *
+	 * Only hits at or above the score threshold are returned, and each
+	 * entry is shaped as [primary-key-value => score] so upstream fulltext code can
+	 * remain engine-agnostic.
+	 */
     private static function processElasticsearchResults(array $response_data, string $primary_column_name, float $threshold){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
         $results=array();
         if(isset($response_data['hits']['hits'])){
             foreach($response_data['hits']['hits'] as $hit){
@@ -302,5 +376,5 @@ class elasticsearch {
         }
         return $results;
     }
-	
+
 }

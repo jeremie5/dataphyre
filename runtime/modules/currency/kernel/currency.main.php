@@ -15,11 +15,23 @@ dp_define_module_config('currency', 'DP_CURRENCY_CFG', [
 	'minor_units'=>[],
 	'cash_rounding_increments'=>[],
 ]);
+if(function_exists('sql_define_table')){
+	sql_define_table('dataphyre.exchange_rates', __DIR__.'/currency.tables.php', 'exchange_rates');
+}
 
 if(RUN_MODE==='diagnostic'){
 	require_once(__DIR__.'/currency.diagnostic.php');
 }
 
+/**
+ * Process-wide currency kernel for formatting, rounding, allocation, and rates.
+ *
+ * The currency module keeps base/display currency context in static state,
+ * normalizes ISO minor units and cash-rounding increments, splits and allocates
+ * rounded amounts without losing minor units, loads exchange rates from session,
+ * SQL cache, or registered provider callbacks, and formats converted amounts for
+ * the active display language, country, and symbol map.
+ */
 class currency{
 
 	public static $base_currency='USD';
@@ -90,6 +102,19 @@ class currency{
 	protected static $exchange_rate_callbacks=[];
 	protected static $exchange_rate_callbacks_loaded=false;
 
+	/**
+	 * Initializes process-wide currency display and conversion context.
+	 *
+	 * The currency kernel stores these values in static state. Constructing this
+	 * class is therefore a legacy configuration shortcut rather than per-instance
+	 * state management.
+	 *
+	 * @param string $base Base currency used by exchange-rate data.
+	 * @param string $currency Display currency used for user-facing formatting.
+	 * @param array<string, string> $available Currency symbols keyed by ISO code.
+	 * @param string $language Display language key used by formatter separators.
+	 * @param string $country Display country key used by formatter separators.
+	 */
 	function __construct(string $base, string $currency, array $available, string $language, string $country){
 		currency::$base_currency=$base;
 		currency::$display_currency=$currency;
@@ -98,6 +123,15 @@ class currency{
 		currency::$display_country=$country;
 	}
 
+	/**
+	 * Returns the current process-wide currency context.
+	 *
+	 * The snapshot includes base/display currency, display locale selectors, and the
+	 * symbol map used by formatter(). Exchange-rate session cache is intentionally
+	 * exposed through session_exchange_rate_data() instead.
+	 *
+	 * @return array{base_currency:string, display_currency:string, display_language:string, display_country:string, available_currencies:array<string,string>} Currency context snapshot.
+	 */
 	public static function state(): array {
 		return [
 			'base_currency'=>self::$base_currency,
@@ -108,6 +142,15 @@ class currency{
 		];
 	}
 
+	/**
+	 * Applies selected currency context values from a state snapshot.
+	 *
+	 * Unknown keys are ignored. String checks prevent accidental replacement of the
+	 * configured currency and locale selectors with non-scalar values.
+	 *
+	 * @param array{base_currency?:mixed, display_currency?:mixed, display_language?:mixed, display_country?:mixed, available_currencies?:mixed} $state Partial state payload from state() or a framework context.
+	 * @return void
+	 */
 	public static function apply_state(array $state): void {
 		if(array_key_exists('base_currency', $state) && is_string($state['base_currency'])){
 			self::$base_currency=$state['base_currency'];
@@ -126,6 +169,16 @@ class currency{
 		}
 	}
 
+	/**
+	 * Registers one exchange-rate provider callback.
+	 *
+	 * Source names are trimmed, lowercased, and ignored when empty. The callback is
+	 * invoked with source name, base currency, and current session cache data.
+	 *
+	 * @param string $source Provider identifier.
+	 * @param callable $callback Callback returning rates or a normalized rate payload.
+	 * @return void
+	 */
 	public static function register_exchange_rate_source(string $source, callable $callback): void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
 		$source=self::normalize_source_name($source);
@@ -135,6 +188,15 @@ class currency{
 		self::$exchange_rate_callbacks[$source]=$callback;
 	}
 
+	/**
+	 * Registers multiple exchange-rate provider callbacks.
+	 *
+	 * Non-callable entries are skipped so configuration arrays can contain disabled
+	 * or placeholder providers safely.
+	 *
+	 * @param array<string, callable> $callbacks Provider callbacks keyed by source.
+	 * @return void
+	 */
 	public static function register_exchange_rate_sources(array $callbacks): void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
 		foreach($callbacks as $source=>$callback){
@@ -144,6 +206,14 @@ class currency{
 		}
 	}
 
+	/**
+	 * Lazily imports configured exchange-rate callbacks once per process.
+	 *
+	 * Configured callbacks are read from DP_CURRENCY_CFG['exchange_rate_callbacks']
+	 * and normalized through register_exchange_rate_sources().
+	 *
+	 * @return void
+	 */
 	protected static function ensure_exchange_rate_callbacks_loaded(): void {
 		if(self::$exchange_rate_callbacks_loaded){
 			return;
@@ -155,15 +225,41 @@ class currency{
 		}
 	}
 
+	/**
+	 * Normalizes an exchange-rate source identifier.
+	 *
+	 * Source names are lowercase and trimmed to make config, cache, and callback
+	 * lookup comparisons stable.
+	 *
+	 * @param string $source Raw provider identifier.
+	 * @return string Normalized provider identifier.
+	 */
 	protected static function normalize_source_name(string $source): string {
 		return mb_strtolower(trim($source));
 	}
 
+	/**
+	 * Returns a configured currency metadata table by key.
+	 *
+	 * Non-array configuration values are ignored and treated as an empty metadata map.
+	 *
+	 * @param string $key DP_CURRENCY_CFG key to read.
+	 * @return array Configured metadata table.
+	 */
 	protected static function configured_currency_metadata(string $key): array {
 		$metadata=DP_CURRENCY_CFG[$key] ?? [];
 		return is_array($metadata) ? $metadata : [];
 	}
 
+	/**
+	 * Returns the decimal precision used by a currency.
+	 *
+	 * Configured minor units override built-in ISO-style defaults. Unknown or blank
+	 * currencies fall back to two decimal places.
+	 *
+	 * @param string $currency ISO currency code.
+	 * @return int Non-negative number of minor-unit decimal places.
+	 */
 	public static function minor_units(string $currency): int {
 		$currency=mb_strtoupper(trim($currency));
 		if($currency===''){
@@ -176,6 +272,15 @@ class currency{
 		return self::$default_currency_minor_units[$currency] ?? 2;
 	}
 
+	/**
+	 * Returns the cash-rounding increment configured for a currency.
+	 *
+	 * Configured positive increments override built-in defaults such as CHF 0.05.
+	 * Currencies without cash rounding return null.
+	 *
+	 * @param string $currency ISO currency code.
+	 * @return float|null Cash rounding increment, or null when none applies.
+	 */
 	public static function cash_rounding_increment(string $currency): ?float {
 		$currency=mb_strtoupper(trim($currency));
 		if($currency===''){
@@ -189,10 +294,29 @@ class currency{
 		return self::$default_currency_cash_rounding_increments[$currency] ?? null;
 	}
 
+	/**
+	 * Returns the integer multiplier between major and minor currency units.
+	 *
+	 * For two-decimal currencies this returns 100; for zero-decimal currencies it
+	 * returns 1; for three-decimal currencies it returns 1000.
+	 *
+	 * @param string $currency ISO currency code.
+	 * @return int Positive major-to-minor unit factor.
+	 */
 	protected static function minor_factor(string $currency): int {
 		return (int)round(pow(10, self::minor_units($currency)));
 	}
 
+	/**
+	 * Returns the allocation step measured in minor units.
+	 *
+	 * Normal allocations use one minor unit. Cash allocations use the configured cash
+	 * rounding increment converted into minor units when available.
+	 *
+	 * @param string $currency ISO currency code.
+	 * @param bool $cash Whether cash-rounding rules should apply.
+	 * @return int Positive allocation step in minor units.
+	 */
 	protected static function allocation_minor_step(string $currency, bool $cash=false): int {
 		if($cash!==true){
 			return 1;
@@ -205,6 +329,16 @@ class currency{
 		return $step>0 ? $step : 1;
 	}
 
+	/**
+	 * Rounds an amount to the nearest configured increment.
+	 *
+	 * Non-positive increments fall back to ordinary decimal rounding.
+	 *
+	 * @param float $amount Amount in major currency units.
+	 * @param float $increment Rounding increment in major units.
+	 * @param int $precision Decimal precision used for the final result.
+	 * @return float Rounded amount.
+	 */
 	protected static function round_to_increment(float $amount, float $increment, int $precision): float {
 		if($increment<=0){
 			return round($amount, $precision);
@@ -212,6 +346,17 @@ class currency{
 		return round(round($amount/$increment)*$increment, $precision);
 	}
 
+	/**
+	 * Rounds an amount according to currency precision and optional cash rules.
+	 *
+	 * Null amounts are treated as zero. Cash rounding applies only when the currency
+	 * has a configured positive cash increment.
+	 *
+	 * @param float|int|null $amount Amount in major currency units.
+	 * @param string $currency ISO currency code.
+	 * @param bool $cash Whether cash-rounding rules should apply.
+	 * @return float Rounded amount in major currency units.
+	 */
 	public static function round_amount(float|int|null $amount, string $currency, bool $cash=false): float {
 		$currency=mb_strtoupper(trim($currency));
 		$precision=self::minor_units($currency);
@@ -225,6 +370,17 @@ class currency{
 		return round($amount, $precision);
 	}
 
+	/**
+	 * Converts an amount into allocation units for splitting and ratio allocation.
+	 *
+	 * The amount is rounded first, converted to minor units, then divided by the
+	 * allocation step. Negative amounts preserve their sign in the resulting units.
+	 *
+	 * @param float|int|null $amount Amount in major currency units.
+	 * @param string $currency ISO currency code.
+	 * @param bool $cash Whether cash-rounding rules should apply.
+	 * @return int Signed allocation-unit count.
+	 */
 	protected static function amount_to_allocation_units(float|int|null $amount, string $currency, bool $cash=false): int {
 		$rounded=self::round_amount($amount, $currency, $cash);
 		$minor=(int)round($rounded*self::minor_factor($currency));
@@ -232,11 +388,31 @@ class currency{
 		return (int)round($minor/$step);
 	}
 
+	/**
+	 * Converts allocation units back into a rounded currency amount.
+	 *
+	 * @param int $units Signed allocation-unit count.
+	 * @param string $currency ISO currency code.
+	 * @param bool $cash Whether cash-rounding rules should apply.
+	 * @return float Rounded amount in major currency units.
+	 */
 	protected static function allocation_units_to_amount(int $units, string $currency, bool $cash=false): float {
 		$minor=$units*self::allocation_minor_step($currency, $cash);
 		return round($minor/self::minor_factor($currency), self::minor_units($currency));
 	}
 
+	/**
+	 * Splits an amount into equal rounded parts without losing remainders.
+	 *
+	 * Remainder allocation units are distributed to earlier parts. Non-positive part
+	 * counts return an empty array.
+	 *
+	 * @param float|int|null $amount Amount in major currency units.
+	 * @param string $currency ISO currency code.
+	 * @param int $parts Number of parts to produce.
+	 * @param bool $cash Whether cash-rounding rules should apply.
+	 * @return array<int, float> Rounded split amounts whose sum matches the rounded total.
+	 */
 	public static function split_amount(float|int|null $amount, string $currency, int $parts, bool $cash=false): array {
 		if($parts<=0){
 			return [];
@@ -246,15 +422,29 @@ class currency{
 		$total_units=abs($total_units);
 		$base_units=intdiv($total_units, $parts);
 		$remainder=$total_units % $parts;
+		$precision=self::minor_units($currency);
+		$factor=(int)round(pow(10, $precision));
+		$step=self::allocation_minor_step($currency, $cash);
 		$allocations=[];
 		for($index=0;$index<$parts;$index++){
 			$units=$base_units+($index<$remainder ? 1 : 0);
-			$allocations[]=
-				self::allocation_units_to_amount($units*$sign, $currency, $cash);
+			$allocations[]=round(($units*$sign*$step)/$factor, $precision);
 		}
 		return $allocations;
 	}
 
+	/**
+	 * Allocates an amount proportionally across positive ratios.
+	 *
+	 * Invalid or non-positive ratios are ignored. Remaining allocation units are
+	 * assigned by largest fractional remainder, preserving input order for ties.
+	 *
+	 * @param float|int|null $amount Amount in major currency units.
+	 * @param string $currency ISO currency code.
+	 * @param array<int|string, float|int|string> $ratios Positive allocation ratios keyed by bucket.
+	 * @param bool $cash Whether cash-rounding rules should apply.
+	 * @return array<int|string, float> Rounded allocated amounts keyed like valid ratios.
+	 */
 	public static function allocate_amount(float|int|null $amount, string $currency, array $ratios, bool $cash=false): array {
 		$prepared=[];
 		foreach($ratios as $key=>$ratio){
@@ -308,6 +498,14 @@ class currency{
 		return $allocations;
 	}
 
+	/**
+	 * Returns the ordered exchange-rate source list to attempt.
+	 *
+	 * Configured source names take precedence and are normalized/deduplicated. When no
+	 * source list is configured, registered callback names become the source list.
+	 *
+	 * @return array<int, string> Normalized provider identifiers.
+	 */
 	public static function exchange_rate_sources(): array {
 		self::ensure_exchange_rate_callbacks_loaded();
 		$sources=DP_CURRENCY_CFG['exchange_rate_sources'] ?? [];
@@ -329,10 +527,27 @@ class currency{
 		return array_keys(self::$exchange_rate_callbacks);
 	}
 
+	/**
+	 * Returns exchange-rate data currently cached in the PHP session.
+	 *
+	 * Expected payload shape is data, time, and source. Malformed or missing session
+	 * data is normalized to an empty array.
+	 *
+	 * @return array<string,mixed> session exchange-rate cache with rates, timestamp, and source fields when present.
+	 */
 	protected static function session_exchange_rate_data(): array {
 		return is_array($_SESSION['exchange_rate_data'] ?? null) ? $_SESSION['exchange_rate_data'] : [];
 	}
 
+	/**
+	 * Checks whether the session exchange-rate cache can be used.
+	 *
+	 * A valid cache has a rates data array, an allowed source when restrictions are
+	 * provided, and a timestamp no older than one hour.
+	 *
+	 * @param array<int, string> $allowed_sources Optional normalized source allow-list.
+	 * @return bool True when session rates are present, fresh, and source-approved.
+	 */
 	protected static function has_valid_session_exchange_rates(array $allowed_sources=[]): bool {
 		$data=self::session_exchange_rate_data();
 		if(empty($data['data']) || !is_array($data['data'])){
@@ -349,6 +564,17 @@ class currency{
 		return true;
 	}
 
+	/**
+	 * Normalizes provider timestamps into Unix epoch seconds.
+	 *
+	 * Positive integers and numeric strings are accepted directly. Parseable date
+	 * strings are converted with strtotime(), while plain YYYY-MM-DD values and
+	 * invalid inputs fall back to the supplied fallback or current time.
+	 *
+	 * @param mixed $timestamp Provider timestamp value.
+	 * @param int|null $fallback Fallback epoch seconds; defaults to time().
+	 * @return int Positive Unix timestamp.
+	 */
 	protected static function normalize_timestamp(mixed $timestamp, ?int $fallback=null): int {
 		if($fallback===null){
 			$fallback=time();
@@ -372,6 +598,15 @@ class currency{
 		return $fallback;
 	}
 
+	/**
+	 * Normalizes raw currency-rate pairs into a usable rates table.
+	 *
+	 * Currency keys are uppercased, non-numeric and non-positive rates are discarded,
+	 * and the current base currency is forced to 1.0.
+	 *
+	 * @param array<string, mixed> $rates Raw rates keyed by currency code.
+	 * @return array<string, float> Positive rates keyed by uppercase currency code.
+	 */
 	protected static function normalize_rates_array(array $rates): array {
 		$normalized_rates=[];
 		foreach($rates as $currency=>$rate){
@@ -395,6 +630,15 @@ class currency{
 		return $normalized_rates;
 	}
 
+	/**
+	 * Extracts a rates table from JSON, provider payloads, or direct arrays.
+	 *
+	 * Payloads with a top-level rates key use that nested array. Invalid JSON,
+	 * non-array payloads, or arrays without any valid rates return false.
+	 *
+	 * @param mixed $payload Provider or storage payload.
+	 * @return array<string, float>|false Normalized rates or false when unusable.
+	 */
 	protected static function extract_rates_from_payload(mixed $payload): array|false {
 		if(is_string($payload)){
 			$payload=json_decode($payload, true);
@@ -412,6 +656,16 @@ class currency{
 		return $rates;
 	}
 
+	/**
+	 * Normalizes an exchange-rate provider response for session and SQL cache storage.
+	 *
+	 * Providers may return a direct rates array or an array with rates, time/date, and
+	 * optional source keys. Empty rates return false.
+	 *
+	 * @param string $source Source being fetched.
+	 * @param mixed $payload Provider response payload.
+	 * @return array{data:array<string,float>, time:int, source:string}|false Normalized cache payload or false.
+	 */
 	protected static function normalize_exchange_rate_payload(string $source, mixed $payload): array|false {
 		$timestamp=time();
 		if(is_array($payload) && isset($payload['rates']) && is_array($payload['rates'])){
@@ -438,6 +692,15 @@ class currency{
 		];
 	}
 
+	/**
+	 * Persists normalized exchange-rate data to the SQL cache table when SQL is loaded.
+	 *
+	 * If the SQL module class is not loaded the method returns without side effects.
+	 * Stored rows include JSON rates, normalized timestamp, and provider source.
+	 *
+	 * @param array{data:array, time?:mixed, source:string} $exchange_rate_data Normalized rate payload.
+	 * @return void
+	 */
 	protected static function persist_exchange_rate_data(array $exchange_rate_data): void {
 		if(!class_exists(__NAMESPACE__.'\\sql', false)){
 			return;
@@ -454,6 +717,15 @@ class currency{
 		);
 	}
 
+	/**
+	 * Loads the freshest SQL-cached exchange rates from the last sixty minutes.
+	 *
+	 * The SQL module must already be loaded. Source restrictions are enforced before
+	 * decoded rates are written back into the session cache.
+	 *
+	 * @param array<int, string> $allowed_sources Optional normalized source allow-list.
+	 * @return array{data:array<string,float>, time:int, source:string}|false Cached payload or false when unavailable.
+	 */
 	protected static function load_cached_exchange_rates_from_storage(array $allowed_sources=[]): array|false {
 		if(!class_exists(__NAMESPACE__.'\\sql', false)){
 			return false;
@@ -488,6 +760,15 @@ class currency{
 		return $_SESSION['exchange_rate_data'];
 	}
 
+	/**
+	 * Ensures exchange-rate data is available in session cache.
+	 *
+	 * Resolution order is dialback override, fresh session cache, SQL cache, task-mode
+	 * stale session fallback, registered provider callbacks, then safemode unavailable
+	 * handling outside diagnostic mode.
+	 *
+	 * @return array Exchange-rate cache payload currently available to conversion.
+	 */
 	public static function get_exchange_rates(){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
 		if(null!==$early_return=core::dialback("CALL_CURRENCY_GET_EXCHANGE_RATES",...func_get_args())) return $early_return;
@@ -515,6 +796,16 @@ class currency{
 		return self::session_exchange_rate_data();
 	}
 	
+	/**
+	 * Fetches exchange-rate data from one registered provider source.
+	 *
+	 * The callback result is normalized, stored in the session, persisted to SQL cache
+	 * when available, and reported as true. Missing callbacks, thrown exceptions, or
+	 * invalid payloads return false.
+	 *
+	 * @param string $source Provider source to invoke.
+	 * @return bool True when usable rates were fetched and cached; false otherwise.
+	 */
 	public static function get_rates_data(string $source){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
 		if(null!==$early_return=core::dialback("CALL_CURRENCY_GET_RATES_DATA",...func_get_args())) return $early_return;
@@ -542,6 +833,18 @@ class currency{
 		return true;
 	}
 
+	/**
+	 * Formats an amount for the current display locale and currency symbol map.
+	 *
+	 * Zero can be rendered as the localized Free label. Locale-specific separators
+	 * come from special_formatting when available, otherwise comma decimal and space
+	 * thousands separators are used.
+	 *
+	 * @param float|null $amount Amount in major currency units.
+	 * @param bool|null $show_free Render zero as localized Free when true.
+	 * @param string|null $currency Currency to format; defaults to display currency.
+	 * @return string User-facing formatted money string.
+	 */
 	public static function formatter(float|null $amount, bool|null $show_free=false, string|null $currency=null) : string {
 		if(null!==$early_return=core::dialback("CALL_CURRENCY_FORMATTER",...func_get_args())) return $early_return;
 		if($currency===null)$currency=currency::$display_currency;
@@ -566,6 +869,20 @@ class currency{
 		return $currency_symbol.number_format($amount, $decimals, $decimal_separator, $thousands_separator);
 	}
 	
+	/**
+	 * Converts an amount between currencies using cached exchange-rate multipliers.
+	 *
+	 * Rates are loaded on demand. Unformatted conversion returns a fixed-decimal
+	 * numeric string; formatted conversion delegates to formatter(). Zero amounts may
+	 * return the localized Free label when show_free is true.
+	 *
+	 * @param float|null $amount Amount in source currency major units.
+	 * @param string $source_currency Source ISO currency code.
+	 * @param string $target_currency Target ISO currency code.
+	 * @param bool|null $formatted Whether to return formatted display output.
+	 * @param bool|null $show_free Whether zero should display as Free.
+	 * @return string|float Formatted string or fixed-decimal numeric string.
+	 */
 	public static function convert(float|null $amount, string $source_currency, string $target_currency, bool|null $formatted=false, bool|null $show_free=true): string|float {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
 		if(null!==$early_return=core::dialback("CALL_CONVERT_TO_USER_CURRENCY",...func_get_args())) return $early_return;
@@ -591,12 +908,35 @@ class currency{
 		return self::formatter($value, $show_free, $target_currency);
 	}
 
+	/**
+	 * Converts a base-currency amount into the current or supplied display currency.
+	 *
+	 * This is the user-facing convenience wrapper around convert().
+	 *
+	 * @param float|null $amount Amount in base currency major units.
+	 * @param bool|null $formatted Whether to return formatted display output.
+	 * @param bool|null $show_free Whether zero should display as Free.
+	 * @param string|null $currency Target currency; defaults to display currency.
+	 * @return string|float Formatted string or fixed-decimal numeric string.
+	 */
 	public static function convert_to_user_currency(float|null $amount, bool|null $formatted=false, bool|null $show_free=true, string|null $currency=null) : string|float {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
 		if($currency===null)$currency=currency::$display_currency;
 		return self::convert($amount, currency::$base_currency, $currency, $formatted, $show_free);
 	}
 
+	/**
+	 * Converts an amount from its original currency into the website base currency.
+	 *
+	 * This wrapper is useful when persisted values arrive in vendor or user currency
+	 * and must be normalized back to the site's base currency.
+	 *
+	 * @param float|null $amount Amount in original currency major units.
+	 * @param string $original_currency Source ISO currency code.
+	 * @param bool|null $formatted Whether to return formatted display output.
+	 * @param bool|null $show_free Whether zero should display as Free.
+	 * @return string|float Formatted string or fixed-decimal numeric string.
+	 */
 	public static function convert_to_website_currency(float|null $amount, string $original_currency, bool|null $formatted=false, bool|null $show_free=true) : string|float {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
 		return self::convert($amount, $original_currency, currency::$base_currency, $formatted, $show_free);

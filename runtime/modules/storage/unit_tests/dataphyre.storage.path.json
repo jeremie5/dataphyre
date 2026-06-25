@@ -1,0 +1,32 @@
+[
+  {
+    "name": "normalize_removes_dot_segments_and_duplicate_slashes",
+    "function": "normalize",
+    "class": "Dataphyre\\Storage\\Support\\Path",
+    "static_method": true,
+    "args": ["//uploads/./orders//2026/../invoice.pdf"],
+    "expected": "uploads/orders/invoice.pdf",
+    "file": "/common/dataphyre/runtime/modules/storage/Framework/Support/Path.php",
+    "max_millis": 5
+  },
+  {
+    "name": "normalize_converts_windows_separators",
+    "function": "normalize",
+    "class": "Dataphyre\\Storage\\Support\\Path",
+    "static_method": true,
+    "args": ["tenant\\assets\\.\\logo.png"],
+    "expected": "tenant/assets/logo.png",
+    "file": "/common/dataphyre/runtime/modules/storage/Framework/Support/Path.php",
+    "max_millis": 5
+  },
+  {
+    "name": "join_keeps_root_and_normalizes_child_path",
+    "function": "join",
+    "class": "Dataphyre\\Storage\\Support\\Path",
+    "static_method": true,
+    "args": ["/var/dataphyre/storage/", "../public//catalog/item.json"],
+    "expected": "/var/dataphyre/storage/public/catalog/item.json",
+    "file": "/common/dataphyre/runtime/modules/storage/Framework/Support/Path.php",
+    "max_millis": 5
+  }
+]

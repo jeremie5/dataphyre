@@ -1,0 +1,56 @@
+[
+    {
+        "name": "test_matrix_reports_permission_expectations",
+        "function": "testMatrix",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            {
+                "manager": {
+                    "permissions": ["panel.orders.*", "-panel.orders.force_delete"]
+                },
+                "viewer": {
+                    "permissions": ["panel.orders.view_any"]
+                }
+            },
+            {
+                "manager": {
+                    "allow": ["panel.orders.view_any", "panel.orders.update"],
+                    "deny": ["panel.orders.force_delete"]
+                },
+                "viewer": {
+                    "panel.orders.view_any": true,
+                    "panel.orders.update": false
+                }
+            }
+        ],
+        "expected": {
+            "custom_script": "return is_array($result) && ($result['ok'] ?? null) === true && ($result['total'] ?? null) === 5 && ($result['failed'] ?? null) === 0;"
+        },
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    },
+    {
+        "name": "test_matrix_returns_failure_explanations",
+        "function": "testMatrix",
+        "class": "dataphyre\\permission",
+        "static_method": true,
+        "args": [
+            {
+                "viewer": {
+                    "permissions": ["panel.orders.view_any"]
+                }
+            },
+            {
+                "viewer": {
+                    "allow": ["panel.orders.update"]
+                }
+            }
+        ],
+        "expected": {
+            "custom_script": "return is_array($result) && ($result['ok'] ?? null) === false && ($result['failed'] ?? null) === 1 && isset($result['failures'][0]['explain']);"
+        },
+        "file_dynamic": "return dp_module_present(\"permission\")[0];",
+        "max_millis": 50
+    }
+]

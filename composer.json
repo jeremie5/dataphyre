@@ -20,7 +20,7 @@
     "php": ">=8.1"
   },
   "support": {
-    "docs": "https://github.com/jeremie5/dataphyre#readme",
+    "docs": "https://github.com/jeremie5/dataphyre/blob/main/docs/README.md",
     "issues": "https://github.com/jeremie5/dataphyre/issues",
     "security": "https://github.com/jeremie5/dataphyre/security/policy",
     "source": "https://github.com/jeremie5/dataphyre"
@@ -28,7 +28,61 @@
   "extra": {
     "dataphyre": {
       "runtime-bootstrap": "runtime/bootstrap.php",
-      "package-contract": "PACKAGE.md"
+      "package-contract": "docs/PACKAGE.md",
+      "release-manifest": "RELEASE_MANIFEST.json",
+      "agent-boundary": {
+        "default-audience": "application_agents_building_apps",
+        "mcp-default-work": "build_applications_with_dataphyre",
+        "ordinary-app-entrypoint": "dataphyre_app_builder_plan_generate",
+        "ordinary-app-payload-profile": "compact",
+        "agentic-enterprise-contract": "docs/AGENTIC_ENTERPRISE.md",
+        "framework-maintenance": "explicit_maintainer_work_only",
+        "escalate-only-for": [
+          "release_facing_or_public_framework_claims",
+          "corporate_ready_or_enterprise_readiness_claims",
+          "security_identity_access_session_credential_governance_tenant_privacy_compliance_billing_data_residency_retention_or_legal_hold_work",
+          "dataphyre_framework_internals_or_reusable_framework_contributions",
+          "dataphyre_shared_production_hot_path_changes"
+        ],
+        "extension-points": [
+          "config",
+          "dialbacks",
+          "callbacks",
+          "plugins",
+          "mcp_metadata",
+          "application_adapters",
+          "reusable_modules"
+        ],
+        "app-owned-extension-points": [
+          "config",
+          "dialbacks",
+          "callbacks",
+          "plugins",
+          "MCP metadata",
+          "application-owned adapters",
+          "reusable runtime modules"
+        ],
+        "app-builder-handoff-fields": [
+          "prewrite_checklist.implementation_obligations",
+          "verification_handoff",
+          "verification_execution_plan",
+          "acceptance_review_plan",
+          "local_convention_probe",
+          "write_handoff",
+          "implementation_matrix",
+          "implementation_recipe",
+          "app_contract_summary",
+          "tenant_identity_handoff",
+          "data_sensitivity_summary",
+          "policy_decision_register"
+        ],
+        "not-default-requirements": [
+          "dev_tools",
+          "dataphyre_mcp_verify_all",
+          "hot_path_benchmarks",
+          "runtime_internal_edits"
+        ]
+      }
     }
   }
 }

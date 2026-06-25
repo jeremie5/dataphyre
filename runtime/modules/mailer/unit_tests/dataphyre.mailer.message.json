@@ -1,0 +1,60 @@
+[
+    {
+        "name": "message_normalize_cleans_addresses_and_metadata",
+        "function": "normalize",
+        "class": "Dataphyre\\Mailer\\Message",
+        "static_method": true,
+        "args": [
+            {
+                "from": "Support Team <support@example.com>",
+                "replyTo": "Replies <reply@example.com>",
+                "to": ["Ada Lovelace <ada@example.com>", "invalid"],
+                "cc": {
+                    "ops@example.com": "Ops"
+                },
+                "bcc": false,
+                "subject": "  Welcome  ",
+                "html": "<p>Hello</p>",
+                "text": "Hello",
+                "headers": {
+                    "X-Campaign": 123,
+                    "": "ignored"
+                },
+                "categories": ["onboarding", ""],
+                "metadata": {
+                    "campaign": "welcome"
+                }
+            }
+        ],
+        "expected": [
+            {
+                "custom_script": "return is_array($result) && ($result['from']['email'] ?? null)==='support@example.com' && ($result['from']['name'] ?? null)==='Support Team' && ($result['reply_to']['email'] ?? null)==='reply@example.com' && ($result['reply_to']['name'] ?? null)==='Replies' && ($result['to'] ?? null)===[['email'=>'ada@example.com','name'=>'Ada Lovelace']] && ($result['cc'] ?? null)===[['email'=>'ops@example.com','name'=>'Ops']] && ($result['bcc'] ?? null)===[] && ($result['subject'] ?? null)==='Welcome' && ($result['html'] ?? null)==='<p>Hello</p>' && ($result['text'] ?? null)==='Hello' && ($result['headers'] ?? null)===['X-Campaign'=>'123'] && ($result['attachments'] ?? null)===[] && ($result['tags'] ?? null)===['onboarding'] && ($result['metadata'] ?? null)===['campaign'=>'welcome'];"
+            }
+        ],
+        "file_dynamic": "return ROOTPATH['common_dataphyre_runtime'].'modules/mailer/Framework/Message.php';",
+        "max_millis": 5
+    },
+    {
+        "name": "message_normalize_builds_one_click_unsubscribe_headers",
+        "function": "normalize",
+        "class": "Dataphyre\\Mailer\\Message",
+        "static_method": true,
+        "args": [
+            {
+                "to": "subscriber@example.com",
+                "unsubscribe": {
+                    "url": "https://example.com/unsubscribe/abc",
+                    "email": "unsubscribe@example.com",
+                    "one_click": true
+                }
+            }
+        ],
+        "expected": [
+            {
+                "custom_script": "return is_array($result) && ($result['from']['email'] ?? null)==='no-reply@example.invalid' && ($result['from']['name'] ?? null)==='Dataphyre' && array_key_exists('reply_to', $result) && $result['reply_to']===null && ($result['to'] ?? null)===[['email'=>'subscriber@example.com','name'=>'']] && ($result['cc'] ?? null)===[] && ($result['bcc'] ?? null)===[] && ($result['subject'] ?? null)==='' && ($result['html'] ?? null)==='' && ($result['text'] ?? null)==='' && ($result['headers'] ?? null)===['List-Unsubscribe'=>'<https://example.com/unsubscribe/abc>, <mailto:unsubscribe@example.com>','List-Unsubscribe-Post'=>'List-Unsubscribe=One-Click'] && ($result['attachments'] ?? null)===[] && ($result['tags'] ?? null)===[] && ($result['metadata'] ?? null)===[];"
+            }
+        ],
+        "file_dynamic": "return ROOTPATH['common_dataphyre_runtime'].'modules/mailer/Framework/Message.php';",
+        "max_millis": 5
+    }
+]

@@ -1,0 +1,14 @@
+[{
+    "max_millis":  10,
+    "name":  "csrf_generates_and_validates_form_token",
+    "function":  "dp_core_unit_csrf_lifecycle",
+    "args":  [
+
+             ],
+    "expected":  [
+                     {
+                         "custom_script":  "return is_array($result) \u0026\u0026 ($result[\u0027token_is_string\u0027] ?? null)===true \u0026\u0026 ($result[\u0027valid\u0027] ?? null)===true \u0026\u0026 ($result[\u0027invalid\u0027] ?? null)===false;"
+                     }
+                 ],
+    "file":  "/common/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
+}]

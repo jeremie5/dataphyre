@@ -1,0 +1,295 @@
+[
+	{
+		"name": "queryspec_compiles_nested_filters_grouping_having_order_and_paging",
+		"file": "/common/dataphyre/runtime/modules/sql/unit_tests/sql_framework_test_helpers.php",
+		"function": "dp_sql_unit_queryspec_compile_complex",
+		"args": [],
+		"expected": [
+			{
+				"params": "WHERE shop_id = ? AND status IN (?, ?) AND (deleted_at IS NULL OR updated_at > ?) GROUP BY shop_id, status HAVING COUNT(*) > ? ORDER BY updated_at DESC LIMIT 25 OFFSET 50",
+				"vars": [
+					42,
+					"paid",
+					"open",
+					"2026-01-01 00:00:00",
+					1
+				]
+			}
+		],
+		"max_millis": 10
+	},
+	{
+		"name": "queryspec_empty_in_and_for_update_are_dbms_aware",
+		"file": "/common/dataphyre/runtime/modules/sql/unit_tests/sql_framework_test_helpers.php",
+		"function": "dp_sql_unit_queryspec_empty_in_and_locking",
+		"args": [],
+		"expected": [
+			{
+				"params": {
+					"mysql": "WHERE 1 = 0 FOR UPDATE",
+					"postgresql": "WHERE 1 = 0 FOR UPDATE",
+					"sqlite": "WHERE 1 = 0"
+				},
+				"vars": []
+			}
+		],
+		"max_millis": 10
+	},
+	{
+		"name": "queryspec_tracks_write_scope_policy_independently_from_filters",
+		"file": "/common/dataphyre/runtime/modules/sql/unit_tests/sql_framework_test_helpers.php",
+		"function": "dp_sql_unit_queryspec_write_scope_flags",
+		"args": [],
+		"expected": [
+			{
+				"unscoped_requires_where": true,
+				"unscoped_has_where": false,
+				"scoped_requires_where": true,
+				"scoped_has_where": true,
+				"allowed_requires_where": false
+			}
+		],
+		"max_millis": 10
+	},
+	{
+		"name": "table_definition_exposes_schema_columns_primary_key_casts_and_projection",
+		"file": "/common/dataphyre/runtime/modules/sql/unit_tests/sql_framework_test_helpers.php",
+		"function": "dp_sql_unit_table_definition_schema_shape",
+		"args": [],
+		"expected": [
+			{
+				"table": "tenant.orders",
+				"columns": [
+					"id",
+					"public_id",
+					"status",
+					"metadata",
+					"created_at"
+				],
+				"primary_columns": [],
+				"casts": {
+					"id": "int",
+					"metadata": "json",
+					"created_at": "datetime"
+				},
+				"projection": [
+					"id",
+					"public_id",
+					"status"
+				],
+				"schema_primary_key": null
+			}
+		],
+		"max_millis": 10
+	},
+	{
+		"name": "table_definition_create_queries_quote_each_dbms_and_create_indexes",
+		"file": "/common/dataphyre/runtime/modules/sql/unit_tests/sql_framework_test_helpers.php",
+		"function": "dp_sql_unit_table_definition_create_queries",
+		"args": [],
+		"expected": [
+			[
+				{
+					"mysql": "SELECT 1",
+					"postgresql": "CREATE SCHEMA IF NOT EXISTS \"tenant\"",
+					"sqlite": "SELECT 1",
+					"required": true
+				},
+				{
+					"mysql": "CREATE TABLE IF NOT EXISTS `tenant`.`orders` ( `id` INT AUTO_INCREMENT PRIMARY KEY, `email` VARCHAR(191) NOT NULL, `active` BOOLEAN DEFAULT 1 )",
+					"postgresql": "CREATE TABLE IF NOT EXISTS \"tenant\".\"orders\" ( \"id\" SERIAL PRIMARY KEY, \"email\" VARCHAR(191) NOT NULL, \"active\" BOOLEAN DEFAULT TRUE )",
+					"sqlite": "CREATE TABLE IF NOT EXISTS \"tenant.orders\" ( \"id\" INTEGER PRIMARY KEY AUTOINCREMENT, \"email\" TEXT NOT NULL, \"active\" INTEGER DEFAULT 1 )",
+					"required": true
+				},
+				{
+					"mysql": "CREATE INDEX `idx_tenant_orders_email_32_` ON `tenant`.`orders` (`email`(32))",
+					"postgresql": "CREATE INDEX IF NOT EXISTS \"idx_tenant_orders_email_32_\" ON \"tenant\".\"orders\" (\"email\")",
+					"sqlite": "CREATE INDEX IF NOT EXISTS \"idx_tenant_orders_email_32_\" ON \"tenant.orders\" (\"email\")",
+					"required": null
+				}
+			]
+		],
+		"max_millis": 10
+	},
+	{
+		"name": "table_schema_normalizes_columns_and_casts_read_write_values",
+		"file": "/common/dataphyre/runtime/modules/sql/unit_tests/sql_framework_test_helpers.php",
+		"function": "dp_sql_unit_table_schema_casts_and_projection",
+		"args": [],
+		"expected": [
+			{
+				"columns": [
+					"total",
+					"id"
+				],
+				"projection": [
+					"id",
+					"total",
+					"active"
+				],
+				"written": {
+					"id": 15,
+					"total": 19.95,
+					"active": true,
+					"metadata": "{\"tags\":[\"vip\"]}"
+				},
+				"read_types": {
+					"id": "integer",
+					"total": "double",
+					"active": "boolean",
+					"metadata": "array",
+					"created_at": true
+				},
+				"read_values": {
+					"id": 15,
+					"total": 19.95,
+					"active": false,
+					"metadata": {
+						"tags": [
+							"vip"
+						]
+					}
+				}
+			}
+		],
+		"max_millis": 10
+	},
+	{
+		"name": "mutation_result_reports_insert_stale_and_failure_shapes",
+		"file": "/common/dataphyre/runtime/modules/sql/unit_tests/sql_framework_test_helpers.php",
+		"function": "dp_sql_unit_mutation_result_shapes",
+		"args": [],
+		"expected": [
+			{
+				"insert": {
+					"operation": "insert",
+					"ok": true,
+					"affected_rows": null,
+					"inserted_id": "ord_123",
+					"context": {
+						"table": "orders"
+					},
+					"error_message": null,
+					"raw_result": "ord_123"
+				},
+				"stale": {
+					"ok": true,
+					"failed": false,
+					"affected_rows": 0,
+					"stale": true
+				},
+				"failed": {
+					"ok": false,
+					"failed": true,
+					"error": "delete failed"
+				}
+			}
+		],
+		"max_millis": 10
+	},
+	{
+		"name": "mutation_batch_result_summarizes_success_failure_and_ignored_entries",
+		"file": "/common/dataphyre/runtime/modules/sql/unit_tests/sql_framework_test_helpers.php",
+		"function": "dp_sql_unit_mutation_batch_summary",
+		"args": [],
+		"expected": [
+			{
+				"operation": "update",
+				"ok": false,
+				"requested": 3,
+				"processed": 2,
+				"successful": 1,
+				"failed": 1,
+				"noop": false,
+				"error_messages": [
+					"second row failed"
+				],
+				"results": [
+					{
+						"operation": "update",
+						"ok": true,
+						"affected_rows": 1,
+						"inserted_id": null,
+						"context": [],
+						"error_message": null,
+						"raw_result": 1
+					},
+					{
+						"operation": "update",
+						"ok": false,
+						"affected_rows": null,
+						"inserted_id": null,
+						"context": [],
+						"error_message": "second row failed",
+						"raw_result": false
+					}
+				]
+			}
+		],
+		"max_millis": 10
+	},
+	{
+		"name": "record_behaves_as_immutable_array_access_value_object",
+		"file": "/common/dataphyre/runtime/modules/sql/unit_tests/sql_framework_test_helpers.php",
+		"function": "dp_sql_unit_record_value_object_behaviour",
+		"args": [],
+		"expected": [
+			{
+				"id": 9,
+				"primary_key": "id",
+				"count": 3,
+				"has_status": true,
+				"get_missing": "fallback",
+				"only": {
+					"id": 9,
+					"status": "paid"
+				},
+				"except": {
+					"id": 9,
+					"status": "paid"
+				},
+				"changed": {
+					"id": 9,
+					"status": "refunded",
+					"total": "12.50"
+				},
+				"original": {
+					"id": 9,
+					"status": "paid",
+					"total": "12.50"
+				},
+				"array_access": "paid"
+			}
+		],
+		"max_millis": 10
+	},
+	{
+		"name": "page_result_reports_pagination_indexes_and_collection_helpers",
+		"file": "/common/dataphyre/runtime/modules/sql/unit_tests/sql_framework_test_helpers.php",
+		"function": "dp_sql_unit_page_result_helpers",
+		"args": [],
+		"expected": [
+			{
+				"count": 2,
+				"first": {
+					"id": 10,
+					"status": "paid"
+				},
+				"last_page": 3,
+				"has_more": true,
+				"has_previous": true,
+				"first_item_index": 3,
+				"last_item_index": 4,
+				"pluck": {
+					"10": "paid",
+					"11": "draft"
+				},
+				"key_by": [
+					10,
+					11
+				]
+			}
+		],
+		"max_millis": 10
+	}
+]

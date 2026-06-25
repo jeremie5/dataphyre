@@ -19,6 +19,7 @@ return [
 			'enabled'=>false,
 			'debugbar'=>[
 				'enabled'=>false,
+				'memory_limit'=>null,
 			],
 		],
 	],

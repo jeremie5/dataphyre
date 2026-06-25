@@ -1,0 +1,14 @@
+[{
+    "max_millis":  10,
+    "name":  "register_dialback_existing_dialback_fixture_is_valid_json",
+    "function":  "dp_core_unit_config_round_trip",
+    "args":  [
+
+             ],
+    "expected":  [
+                     {
+                         "custom_script":  "return is_array($result) \u0026\u0026 ($result[\u0027nested\u0027] ?? null)===\u0027ok\u0027;"
+                     }
+                 ],
+    "file":  "/common/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
+}]

@@ -8,7 +8,7 @@
 return [
 	'dataphyre'=>[
 		'tracelog'=>[
-			'enable_tracelog'=>true,
+			'enable_tracelog'=>false,
 			'save_to_file'=>false,
 			'file_lifespan'=>6,
 			'password'=>getenv('DATAPHYRE_TRACELOG_PASSWORD') ?: null,

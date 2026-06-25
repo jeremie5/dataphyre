@@ -1,0 +1,46 @@
+[
+	{
+		"name": "supercookie_get_reads_named_value_from_secure_cookie_payload",
+		"function": "dp_supercookie_unit_test_get",
+		"args": [
+			{
+				"tenant": "shopiro",
+				"locale": "en-CA"
+			},
+			"tenant"
+		],
+		"expected": [
+			"shopiro"
+		],
+		"file": "/common/dataphyre/runtime/modules/supercookie/unit_tests/supercookie_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\supercookie"
+			],
+			"global_variable": [
+				"_COOKIE"
+			]
+		},
+		"max_millis": 5
+	},
+	{
+		"name": "supercookie_get_returns_null_for_missing_payload",
+		"function": "dp_supercookie_unit_test_missing",
+		"args": [
+			"tenant"
+		],
+		"expected": [
+			true
+		],
+		"file": "/common/dataphyre/runtime/modules/supercookie/unit_tests/supercookie_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\supercookie"
+			],
+			"global_variable": [
+				"_COOKIE"
+			]
+		},
+		"max_millis": 5
+	}
+]

@@ -7,9 +7,9 @@
  */
 namespace Dataphyre\Api;
 
-$kernel_entry=dirname(__DIR__).'/kernel/api.main.php';
-if(is_file($kernel_entry)){
-	require_once($kernel_entry);
+$kernelEntry=dirname(__DIR__).'/kernel/api.main.php';
+if(is_file($kernelEntry)){
+	require_once($kernelEntry);
 }
 
 if(class_exists('\dataphyre\core', false)){

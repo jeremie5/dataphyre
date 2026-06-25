@@ -1,6 +1,6 @@
 # Dataphyre SQL Module
 
-The SQL module is Dataphyre's kernel database engine. It provides DBMS-aware query execution, caching, migration coordination, queue-aware query handling, and the optional `Dataphyre\Database` framework layer.
+The SQL module is Dataphyre's kernel database engine. It provides DBMS-aware query execution, caching, migration coordination, queue-aware query handling, registry-driven table hydration, and the optional `Dataphyre\Database` framework layer.
 
 The framework layer is built around `execution-aware queries`. A query describes both data intent and execution policy in one explicit place: filters, caching, named cache indexes, invalidation, deferred execution, and observability all live on the same surface instead of being bolted on later.
 
@@ -11,7 +11,7 @@ It also composes with other Dataphyre framework modules explicitly. SQL can hydr
 In Dataphyre SQL, the happy path stays simple:
 
 ```php
-UserRepository::query()->where_eq('email', $email)->first();
+UserRepository::query()->whereEq('email', $email)->first();
 ```
 
 But when a read or write needs more, the same query can stay explicit about how it should execute:
@@ -39,13 +39,13 @@ DB::observe(static function(ExecutionTrace $trace): void{
 
 $summary=OrderRepository::query()
 	->cacheNames('reports.orders.summary', 'tenant.'.$tenant_id)
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->in_last_days('created_at', 30)
 	->countBy('status');
 
 OrderRepository::query()
-	->where_eq('tenant_id', $tenant_id)
-	->where_eq('status', 'queued')
+	->whereEq('tenant_id', $tenant_id)
+	->whereEq('status', 'queued')
 	->invalidateCacheNames('reports.orders.summary', 'tenant.'.$tenant_id)
 	->queueUpdate(['status'=>'processing'], static function(MutationResult $result): void{
 		if($result->failed()){
@@ -78,7 +78,7 @@ That means the normal onboarding path is:
 
 ```php
 DB::table('users', 'user_id')
-	->where_eq('email', $email)
+	->whereEq('email', $email)
 	->first();
 ```
 
@@ -86,7 +86,7 @@ Then, when the code deserves structure:
 
 ```php
 UserRepository::query()
-	->where_eq('email', $email)
+	->whereEq('email', $email)
 	->firstRecordOrFail();
 ```
 
@@ -113,7 +113,7 @@ If you are evaluating Dataphyre SQL against Laravel or another framework, this i
 use Dataphyre\Database\DB;
 
 $user=DB::table('users', 'user_id')
-	->where_eq('email', $email)
+	->whereEq('email', $email)
 	->first();
 
 $created=DB::table('users', 'user_id')->create([
@@ -122,7 +122,7 @@ $created=DB::table('users', 'user_id')->create([
 ]);
 
 $recent=DB::table('users', 'user_id')
-	->where_eq('status', 'active')
+	->whereEq('status', 'active')
 	->in_last_days('created_at', 7)
 	->latest('created_at')
 	->get();
@@ -137,6 +137,7 @@ The kernel SQL module is responsible for:
 - DBMS-aware query execution for MySQL, PostgreSQL, and SQLite
 - query caching
 - migration coordination
+- table-definition registration and lazy missing-table hydration
 - server availability tracking
 - query queue and batching support
 - the `sql_*` helper functions exposed through `sql.global.php`
@@ -150,6 +151,7 @@ Core helpers include:
 - `sql_delete(...)`
 - `sql_query(...)`
 - `sql_upsert(...)`
+- `sql_define_table(...)`
 
 These are the lowest-overhead path and fit hot paths or specialized queries.
 
@@ -167,7 +169,9 @@ The framework namespace is:
 use Dataphyre\Database\QuerySpec;
 use Dataphyre\Database\RepositoryQuery;
 use Dataphyre\Database\Record;
+use Dataphyre\Database\Relation;
 use Dataphyre\Database\ExecutionTrace;
+use Dataphyre\Database\TableDefinition;
 use Dataphyre\Database\TableSchema;
 use Dataphyre\Database\TableRepository;
 use Dataphyre\Database\TableQuery;
@@ -181,6 +185,7 @@ use Dataphyre\Database\TransactionResult;
 use Dataphyre\Database\TransactionException;
 use Dataphyre\Database\RecordNotFoundException;
 use Dataphyre\Database\MultipleRecordsFoundException;
+use Dataphyre\Database\OptimisticLockException;
 use Dataphyre\Database\Tools\ScaffoldTableArtifacts;
 use Dataphyre\Database\Contracts\RecordHydrator;
 ```
@@ -192,7 +197,7 @@ The framework is explicit on the failure path too. When setup or usage is wrong,
 - the relevant identifier or projection name
 - a concrete hint for how to fix it
 
-Mutation results also expose `errorMessage()` and `context()` so non-throwing flows can report useful failures. Batch results expose `errorMessages()` and `firstErrorMessage()` for the same reason.
+Mutation results also expose `errorMessage()` and `context()` so non-throwing flows can report useful failures. Batch results expose `errorMessages()` and `firstErrorMessage()` for the same reason. Optimistic write helpers throw `OptimisticLockException` from their `...OrFail(...)` variants when the expected row version is stale.
 
 Framework read helpers follow the kernel read path by default:
 
@@ -207,13 +212,135 @@ The framework also exposes the kernel cache and queue model directly:
 - named write invalidation indexes can be attached with `invalidateCacheName(...)` / `invalidateCacheNames(...)`
 - raw helpers expose `DB::cacheNames(...)`, `DB::mergeCacheNames(...)`, `DB::invalidationNames(...)`, `DB::mergeInvalidationNames(...)`, and `DB::invalidateCache(...)`
 - queued operations are available on raw DB access and on query builders through explicit `queue...(...)` methods
-- queued callbacks receive framework-shaped results for scalar helpers like `queueValue(...)` and `queueAggregate(...)`
+- queued callbacks receive framework-shaped results for reads, counts, aggregates, and writes
+- queued execution uses the same registered-definition missing-structure retry path as immediate execution
 - query builders can carry a default write invalidation target through `invalidateOnWrite(...)`
 - repositories can opt into a default write invalidation policy through `defaultWriteInvalidation()`
+- named invalidation arrays clear the named cache indexes directly when no table cache policy is provided
+- named invalidation indexes remove the concrete cached location/hash entries recorded when `cacheNames(...)` stores a read result
 - observability is opt-in through `DB::observe(...)`, `DB::lastTrace()`, `DB::recentTraces(...)`, and `DB::recentTracesByContext(...)`
 - when `IS_PRODUCTION === true`, Dataphyre disables public SQL trace buffering and retrieval
 - guardrail warnings can be enabled with `DB::enableGuardrails()` and are on by default in `RUN_MODE==='diagnostic'`
 - when the templating framework is also loaded, named SQL cache invalidations automatically clear matching templating binding cache names
+
+## Table Definitions And Hydration
+
+Dataphyre tables are defined explicitly. A table definition is the source of truth for creating a missing module-owned table; runtime queries do not infer columns from raw SQL, field payloads, or WHERE clauses.
+
+Register a table definition with:
+
+```php
+sql_define_table('dataphyre.sessions', __DIR__.'/access.tables.php', 'sessions');
+```
+
+The first argument is the table name used by SQL calls. It is normalized through the same table-location rules as `sql_select(...)`, `sql_insert(...)`, and the other helpers. The second argument is a PHP definition file. The third argument is an optional definition id used when a file contains more than one table definition.
+
+Definition files are lazy. SQL records the table-to-file mapping during module initialization, but it does not load the definition file until the table is needed for hydration. That keeps boot light and lets modules register every table they own without loading every schema into memory.
+
+A definition file can return one of these shapes:
+
+- a `TableDefinition`
+- a callable that receives `string $table` and `?string $definition_id`
+- an array of ids to `TableDefinition` instances or callables
+
+Example:
+
+```php
+<?php
+
+use Dataphyre\Database\TableDefinition;
+
+return [
+	'sessions'=>static fn(string $table): TableDefinition => TableDefinition::for($table)
+		->string('id', 64)->notNull()->primary()
+		->unsignedBigInt('userid')->notNull()
+		->text('useragent')->notNull()
+		->text('ipaddress')->notNull()
+		->boolean('keepalive')->notNull()->default(false)
+		->boolean('active')->notNull()->default(true)
+		->timestamp('date')->notNull()->defaultCurrent()
+		->index(['userid', 'active'], 'idx_access_sessions_userid_active')
+		->index('date', 'idx_access_sessions_date'),
+];
+```
+
+When a registered table is missing, the SQL helper retry path is:
+
+1. Run the requested query normally.
+2. If the driver reports a missing table, look up the registered table definition.
+3. Load the SQL framework module if the table-definition builder is not already loaded.
+4. Run the definition's DBMS-specific `CREATE TABLE IF NOT EXISTS` and index statements.
+5. Clear the table cache target and retry the original query once.
+
+This applies to the kernel helper path:
+
+- `sql_select(...)`
+- `sql_count(...)`
+- `sql_insert(...)`
+- `sql_update(...)`
+- `sql_delete(...)`
+- `sql_upsert(...)`
+- `sql_query(...)`
+
+For raw `sql_query(...)`, hydration is available when the failed query text names a registered table. SQL still never guesses columns from the raw query; the registered definition remains authoritative.
+
+Hydration creates missing tables and expected indexes from registered definitions. It also handles the common additive release path: if a registered query fails because a registered column is missing, SQL can add that exact column from the table definition and retry once. Existing tables are not reshaped by guessing or by scanning query payloads. If an existing table needs a changed type, renamed column, removed column, foreign-key rewrite, or data transform, use the migration layer or an explicit maintenance query.
+
+`TableSchema` participates in the same contract. Repositories and `DB::table(...)->usingSchema(...)` use `TableSchema` for validating columns, projections, and primary-key metadata, but `TableSchema::hydrateTable()` delegates creation to the registered table definition. This keeps validation and DDL aligned around module-owned definitions instead of allowing ad hoc table creation.
+
+`DB::table('registered_table')` automatically uses the registered definition's generated `TableSchema` when one exists. This means ad hoc table queries can get the same field validation, primary-key metadata, projections, and casts as repositories without manually passing `usingSchema(...)`.
+
+`TableDefinition` supports the core portable DDL surface:
+
+- `string(...)`, `text(...)`, `longText(...)`, `json(...)`
+- `integer(...)`, `bigInt(...)`, `unsignedBigInt(...)`, `float(...)`
+- `boolean(...)`
+- `timestamp(...)`, `datetime(...)`
+- `uuid(...)`
+- `enum(...)`
+- `autoIncrement(...)`
+- `nullable()`, `notNull()`
+- `default(...)`, `defaultSql(...)`, `defaultCurrent()`, `onUpdateCurrent()`
+- `primary(...)`, `unique(...)`, `index(...)`
+- `projection(...)`
+- `cast(...)`, `casts(...)`
+- `schema()`
+
+Use DBMS-specific column types with `column(...)` when portability needs an explicit override:
+
+```php
+TableDefinition::for('reports.daily_totals')
+	->string('report_id', 64)->notNull()->primary()
+	->column('payload', [
+		'mysql'=>'JSON',
+		'postgresql'=>'JSONB',
+		'sqlite'=>'TEXT',
+	])
+	->datetime('created_at')->notNull()->defaultCurrent();
+```
+
+Typed definition helpers add their natural casts automatically: integer-like columns cast as `int`, `float(...)` casts as `float`, `boolean(...)` casts as `bool`, `json(...)` casts as `json`, and `timestamp(...)` / `datetime(...)` cast as `datetime`. Explicit casts are still available for custom `column(...)` definitions and legacy storage shapes, and are shared by generated schemas, repositories, and `DB::table(...)` queries:
+
+```php
+TableDefinition::for('orders')
+	->autoIncrement('order_id')
+	->string('status', 32)->notNull()
+	->json('metadata')
+	->boolean('is_paid')
+	->datetime('created_at')
+	->projection('summary', ['order_id', 'status', 'is_paid']);
+```
+
+Supported casts are:
+
+- `string`
+- `int`
+- `float`
+- `bool`
+- `json`
+- `datetime`
+
+On reads, schema casts convert registered columns into PHP values. On writes, schema casts serialize supported values into storage-safe values. JSON casts encode arrays and objects before writes and decode valid JSON strings after reads. Datetime casts write `DateTimeInterface` values as `Y-m-d H:i:s` and read non-empty database values as `DateTimeImmutable`.
 
 ## Observability
 
@@ -245,7 +372,7 @@ DB::enableGuardrails();
 
 $rows=MachineRepository::query()
 	->cacheNames('machines.summary', 'tenant.'.$tenant_id)
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->get();
 
 $last_trace=DB::lastTrace();
@@ -297,8 +424,19 @@ When a missing row should be treated as an actual failure, the framework also su
 
 - `firstOrFail(...)`
 - `findOrFail(...)`
+- `findOneByOrFail(...)`
+- `findOneHydratedByOrFail(...)`
+- `findOneRecordByOrFail(...)`
+- `findHydratedOrFail(...)`
 - `firstRecordOrFail(...)`
 - `findRecordOrFail(...)`
+- `queueFirstOrFail(...)`
+- `queueFindOrFail(...)`
+- `queueFindOneByOrFail(...)`
+- `queueFindOneHydratedByOrFail(...)`
+- `queueFindOneRecordByOrFail(...)`
+- `queueFirstRecordOrFail(...)`
+- `queueFindRecordOrFail(...)`
 
 Those throw `RecordNotFoundException` with the table or repository, active filters, selected columns, and a concrete hint.
 
@@ -315,11 +453,11 @@ Example:
 ```php
 try{
 	$machine=MachineRepository::query()
-		->where_eq('machine_id', $machine_id)
+		->whereEq('machine_id', $machine_id)
 		->firstRecordOrFail();
 
 	$status=MachineRepository::query()
-		->where_eq('tenant_id', $tenant_id)
+		->whereEq('tenant_id', $tenant_id)
 		->soleValue('status');
 }catch(RecordNotFoundException $exception){
 	error_log($exception->getMessage());
@@ -336,25 +474,25 @@ Table-first:
 
 ```php
 $user=DB::table('users', 'user_id')
-	->where_eq('email', $email)
+	->whereEq('email', $email)
 	->first();
 
 $active=DB::table('users', 'user_id')
-	->where_eq('status', 'active')
+	->whereEq('status', 'active')
 	->count();
 
 $updated=DB::table('users', 'user_id')
-	->where_eq('status', 'queued')
+	->whereEq('status', 'queued')
 	->update(['status'=>'active']);
 
 $users_by_email=DB::table('users', 'user_id')
 	->cacheName('users.by_email')
-	->where_eq('status', 'active')
+	->whereEq('status', 'active')
 	->keyBy('email');
 
 DB::table('users', 'user_id')
 	->invalidateCacheNames('users.by_email', 'users.summary')
-	->where_eq('status', 'queued')
+	->whereEq('status', 'queued')
 	->update(['status'=>'active']);
 ```
 
@@ -362,74 +500,74 @@ Repository-first:
 
 ```php
 $machine=MachineRepository::query()
-	->where_eq('machine_id', $machine_id)
+	->whereEq('machine_id', $machine_id)
 	->first();
 
 $machines=MachineRepository::query()
-	->where_eq('tenant_id', $tenant_id)
-	->order_by('created_at', 'DESC')
+	->whereEq('tenant_id', $tenant_id)
+	->orderBy('created_at', 'DESC')
 	->paginate(1, 25);
 
 $record=MachineRepository::query()
-	->where_eq('machine_id', $machine_id)
+	->whereEq('machine_id', $machine_id)
 	->firstRecord();
 
 $required=MachineRepository::query()
-	->where_eq('machine_id', $machine_id)
+	->whereEq('machine_id', $machine_id)
 	->firstRecordOrFail();
 
 $status=MachineRepository::query()
-	->where_eq('machine_id', $machine_id)
+	->whereEq('machine_id', $machine_id)
 	->soleValue('status');
 
 $names=MachineRepository::query()
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->pluck('name');
 
 $machines_by_id=MachineRepository::query()
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->keyBy('machine_id');
 
 $queued_name_count=MachineRepository::query()
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->countColumn('name');
 
 $unique_statuses=MachineRepository::query()
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->countDistinct('status');
 
 $avg_fill=MachineRepository::query()
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->avg('fill_ml');
 
 $jobs_by_status=MachineRepository::query()
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->countBy('status');
 
 $fill_by_status=MachineRepository::query()
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->sumBy('status', 'fill_ml');
 
 $status_rows=MachineRepository::query()
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->aggregateRowsBy(['tenant_id', 'status'], 'COUNT');
 
 $updated=MachineRepository::query()
-	->where_eq('tenant_id', $tenant_id)
-	->where_eq('status', 'queued')
+	->whereEq('tenant_id', $tenant_id)
+	->whereEq('status', 'queued')
 	->update(['status'=>'active']);
 
 MachineRepository::query()
 	->cacheNames('machines.summary', 'tenant.'.$tenant_id)
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->queueGet(static function(array $rows): void{
 		// handle queued rows later
 	}, 'reporting');
 
 MachineRepository::query()
 	->invalidateCacheNames('machines.summary', 'tenant.'.$tenant_id)
-	->where_eq('tenant_id', $tenant_id)
-	->where_eq('status', 'queued')
+	->whereEq('tenant_id', $tenant_id)
+	->whereEq('status', 'queued')
 	->queueUpdate(
 		['status'=>'active'],
 		static function(int|bool|null $result): void{
@@ -438,6 +576,8 @@ MachineRepository::query()
 		'reporting'
 	);
 ```
+
+Queued reads return the same row shapes as their immediate equivalents, including row transforms and repository eager-loaded relations. Collection helpers such as `queuePluck(...)`, `queueKeyBy(...)`, and `queueExists(...)` are derived from the normalized queued read callbacks. Static repository finder helpers also have queued forms, including `queueFindOneBy(...)`, `queueFindOneByOrFail(...)`, `queueFindManyByIds(...)`, and hydrated/keyed variants. `queueFirstOrFail(...)`, `queueFindOrFail(...)`, `queueFindOneRecordByOrFail(...)`, `queueFindRecordOrFail(...)`, `queueValueOrFail(...)`, and `queueSole(...)` raise the same structured SQL exceptions as their immediate equivalents when the queued callback is processed. `queuePaginate(...)` queues the count and page-item reads together, then calls back once with a `PageResult` when both results are available. Queued writes pass the affected-row style result to the callback, so code can handle `0`, a positive row count, or `false` without reaching into the raw driver response. Repository write conveniences also have queued forms, including `queueUpdateById(...)`, `queueIncrementById(...)`, and `queueDeleteById(...)`. Queued optimistic writes such as `queueUpdateWithVersion(...)` and `queueUpdateByIdWithVersion(...)` call back with a `MutationResult` so `stale()` and `throwIfStale()` stay available. Queued batch writes such as `queueCreateMany(...)` and `queueUpsertMany(...)` call back once with a `MutationBatchResult` after every queued row callback has resolved. If a queued statement fails because a registered table or column is missing, Dataphyre hydrates the registered definition once and retries the queue.
 
 ## Currency Integration
 
@@ -450,7 +590,7 @@ use Dataphyre\Currency\Currency;
 
 $order=OrderRepository::query()
 	->asMoney('total_amount', 'currency')
-	->where_key($order_id)
+	->whereKey($order_id)
 	->firstRecordOrFail();
 
 $total=$order->total_amount;
@@ -497,7 +637,7 @@ SQL can also hydrate the canonical persisted `StoredMoney` shape when rows keep 
 ```php
 $order=OrderRepository::query()
 	->asStoredMoney('priced_total')
-	->where_key($order_id)
+	->whereKey($order_id)
 	->firstRecordOrFail();
 
 $stored=$order->priced_total;
@@ -587,7 +727,7 @@ For ad hoc table/repository writes, query-level mappings work too:
 ```php
 DB::table('orders', 'order_id')
 	->asStoredMoney('priced_total')
-	->where_key($order_id)
+	->whereKey($order_id)
 	->update([
 		'priced_total'=>$stored_total,
 	]);
@@ -608,14 +748,17 @@ The SQL framework includes a small scaffold tool for the common repository path.
 CLI:
 
 ```bash
-php runtime/modules/sql/kernel/scaffold_table_artifacts.php volumetrix Machine machines machine_id machine_id,tenant_id,name,status
+php runtime/modules/sql/kernel/scaffold_table_artifacts.php example_app Machine machines machine_id machine_id,tenant_id,name,status
 ```
 
 Named options:
 
 ```bash
-php runtime/modules/sql/kernel/scaffold_table_artifacts.php --application=volumetrix --entity=Machine --table=machines --primary-key=machine_id --columns=machine_id,tenant_id,name,status
+php runtime/modules/sql/kernel/scaffold_table_artifacts.php --application=example_app --entity=Machine --table=machines --primary-key=machine_id --columns=machine_id,tenant_id,name,status
 ```
+
+When the application tree is outside the Dataphyre package root, set
+`DATAPHYRE_PROJECT_ROOT` to the project directory that contains `applications/`.
 
 Programmatic use:
 
@@ -624,7 +767,7 @@ use Dataphyre\Database\Tools\ScaffoldTableArtifacts;
 
 $result=ScaffoldTableArtifacts::scaffold(
 	$project_root,
-	'volumetrix',
+	'example_app',
 	'Machine',
 	'machines',
 	'machine_id',
@@ -644,7 +787,7 @@ Execution helpers include:
 
 - `usingSchema(...)`
 - `usingPrimaryKey(...)`
-- `where_key(...)`
+- `whereKey(...)`
 - `select(...)`
 - `projection(...)`
 - `cache(...)`
@@ -655,6 +798,27 @@ Execution helpers include:
 - `invalidateCacheName(...)`
 - `invalidateCacheNames(...)`
 - `withoutInvalidation()`
+- `requireWhereForWrite(...)`
+- `allowUnscopedWrite()`
+- `with(...)`
+- `withRecords(...)`
+- `withRelation(...)`
+- `withRelationRecords(...)`
+- `withCount(...)`
+- `withRelationCount(...)`
+- `withAggregate(...)`
+- `withRelationAggregate(...)`
+- `withSum(...)`
+- `withAvg(...)`
+- `withMin(...)`
+- `withMax(...)`
+- `withWhereHas(...)`
+- `whereHas(...)`
+- `whereDoesntHave(...)`
+- `forUpdate()`
+- `sharedLock()`
+- `lockRaw(...)`
+- `withoutLocking()`
 - `usingHydrator(...)`
 - `asRecords()`
 - `usingRecordClass(...)`
@@ -697,8 +861,18 @@ Execution helpers include:
 - `firstRecord(...)`
 - `firstRecordOrFail(...)`
 - `paginateRecords(...)`
+- `chunk(...)`
+- `each(...)`
+- `chunkRecords(...)`
+- `eachRecord(...)`
+- `chunkById(...)`
+- `eachById(...)`
+- `chunkRecordsById(...)`
+- `eachRecordById(...)`
 - `find(...)`
 - `findOrFail(...)`
+- `findHydrated(...)`
+- `findHydratedOrFail(...)`
 - `findRecord(...)`
 - `findRecordOrFail(...)`
 - `whereMoneyEq(...)`
@@ -713,18 +887,66 @@ Execution helpers include:
 - `whereMoneyLteIn(...)`
 - `create(...)`
 - `createMany(...)`
+- `firstOrCreate(...)`
+- `updateOrCreate(...)`
 - `update(...)`
+- `updateWithVersion(...)`
+- `updateWithVersionOrFail(...)`
+- `increment(...)`
+- `decrement(...)`
 - `delete(...)`
 - `upsert(...)`
+- `upsertMany(...)`
 - `queueGet(...)`
 - `queueFirst(...)`
+- `queueFirstOrFail(...)`
+- `queueGetHydrated(...)`
+- `queueGetRecords(...)`
+- `queueFirstHydrated(...)`
+- `queueFirstRecord(...)`
+- `queueFirstRecordOrFail(...)`
+- `queueFind(...)`
+- `queueFindOrFail(...)`
+- `queueFindHydrated(...)`
+- `queueFindHydratedOrFail(...)`
+- `queueFindRecord(...)`
+- `queueFindRecordOrFail(...)`
+- `queuePluck(...)`
+- `queueKeyBy(...)`
 - `queueValue(...)`
+- `queueValueOrFail(...)`
+- `queueSole(...)`
+- `queueSoleRecord(...)`
+- `queueSoleValue(...)`
+- `queueExists(...)`
 - `queueCount(...)`
 - `queueAggregate(...)`
+- `queueSum(...)`
+- `queueAvg(...)`
+- `queueMin(...)`
+- `queueMax(...)`
+- `queueCountColumn(...)`
+- `queueCountDistinct(...)`
+- `queueAggregateRowsBy(...)`
+- `queueCountBy(...)`
+- `queueCountDistinctBy(...)`
+- `queueSumBy(...)`
+- `queueAvgBy(...)`
+- `queueMinBy(...)`
+- `queueMaxBy(...)`
+- `queuePaginate(...)`
+- `queuePaginateHydrated(...)`
+- `queuePaginateRecords(...)`
 - `queueCreate(...)`
+- `queueCreateMany(...)`
 - `queueUpdate(...)`
+- `queueUpdateWithVersion(...)`
+- `queueUpdateWithVersionOrFail(...)`
+- `queueIncrement(...)`
+- `queueDecrement(...)`
 - `queueDelete(...)`
 - `queueUpsert(...)`
+- `queueUpsertMany(...)`
 
 Example:
 
@@ -733,20 +955,65 @@ $machines=DB::table('machines', 'machine_id')
 	->usingSchema(MachineTableSchema::schema())
 	->projection('summary')
 	->cacheNames('machines.summary', 'tenant.'.$tenant_id)
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->latest('created_at')
 	->paginate(1, 25);
 
 $machine_record=DB::table('machines', 'machine_id')
 	->usingSchema(MachineTableSchema::schema())
-	->where_key($machine_id)
+	->whereKey($machine_id)
 	->asRecords()
 	->firstRecordOrFail();
 
 $report_rows=DB::table('machines', 'machine_id')
 	->usingHydrator(static fn(array $row): object => (object)$row)
-	->where_eq('status', 'active')
+	->whereEq('status', 'active')
 	->getHydrated();
+
+$machine=DB::table('machines', 'machine_id')
+	->usingSchema(MachineTableSchema::schema())
+	->invalidateCacheName('machines.summary')
+	->firstOrCreate(
+		['machine_id'=>'MACHINE_123'],
+		['tenant_id'=>$tenant_id, 'name'=>'Mixer A', 'status'=>'active']
+	);
+
+DB::table('machines', 'machine_id')
+	->usingSchema(MachineTableSchema::schema())
+	->whereKey('MACHINE_123')
+	->increment('view_count');
+
+$saved=DB::table('machines', 'machine_id')
+	->usingSchema(MachineTableSchema::schema())
+	->whereKey('MACHINE_123')
+	->updateWithVersion(['status'=>'queued'], $expected_version);
+
+if($saved->affectedRows()===0){
+	// stale version or no matching row
+}
+
+$locked_machine=DB::transaction(static function(): array{
+	return DB::table('machines', 'machine_id')
+		->usingSchema(MachineTableSchema::schema())
+		->whereKey('MACHINE_123')
+		->forUpdate()
+		->firstOrFail();
+});
+
+DB::table('machines', 'machine_id')
+	->usingSchema(MachineTableSchema::schema())
+	->whereEq('tenant_id', $tenant_id)
+	->orderBy('machine_id')
+	->chunk(250, static function(array $rows): void{
+		// process one page of rows
+	});
+
+DB::table('machines', 'machine_id')
+	->usingSchema(MachineTableSchema::schema())
+	->whereEq('tenant_id', $tenant_id)
+	->eachById(static function(array $row): void{
+		// process one stable row
+	}, 250);
 ```
 
 ## `RepositoryQuery`
@@ -757,7 +1024,7 @@ It extends `QuerySpec`, so all `where_*`, `order_by`, and paging helpers work, a
 
 Execution helpers include:
 
-- `where_key(...)`
+- `whereKey(...)`
 - `select(...)`
 - `projection(...)`
 - `cache(...)`
@@ -768,6 +1035,12 @@ Execution helpers include:
 - `invalidateCacheName(...)`
 - `invalidateCacheNames(...)`
 - `withoutInvalidation()`
+- `requireWhereForWrite(...)`
+- `allowUnscopedWrite()`
+- `forUpdate()`
+- `sharedLock()`
+- `lockRaw(...)`
+- `withoutLocking()`
 - `usingHydrator(...)`
 - `asRecords()`
 - `usingRecordClass(...)`
@@ -810,8 +1083,18 @@ Execution helpers include:
 - `firstRecord(...)`
 - `firstRecordOrFail(...)`
 - `paginateRecords(...)`
+- `chunk(...)`
+- `each(...)`
+- `chunkRecords(...)`
+- `eachRecord(...)`
+- `chunkById(...)`
+- `eachById(...)`
+- `chunkRecordsById(...)`
+- `eachRecordById(...)`
 - `find(...)`
 - `findOrFail(...)`
+- `findHydrated(...)`
+- `findHydratedOrFail(...)`
 - `findRecord(...)`
 - `findRecordOrFail(...)`
 - `whereMoneyEq(...)`
@@ -824,15 +1107,68 @@ Execution helpers include:
 - `whereMoneyGteIn(...)`
 - `whereMoneyLtIn(...)`
 - `whereMoneyLteIn(...)`
+- `create(...)`
+- `createMany(...)`
+- `firstOrCreate(...)`
+- `updateOrCreate(...)`
+- `upsert(...)`
+- `upsertMany(...)`
 - `update(...)`
+- `updateWithVersion(...)`
+- `updateWithVersionOrFail(...)`
+- `increment(...)`
+- `decrement(...)`
 - `delete(...)`
 - `queueGet(...)`
 - `queueFirst(...)`
+- `queueFirstOrFail(...)`
+- `queueGetHydrated(...)`
+- `queueGetRecords(...)`
+- `queueFirstHydrated(...)`
+- `queueFirstRecord(...)`
+- `queueFirstRecordOrFail(...)`
+- `queueFind(...)`
+- `queueFindOrFail(...)`
+- `queueFindHydrated(...)`
+- `queueFindHydratedOrFail(...)`
+- `queueFindRecord(...)`
+- `queueFindRecordOrFail(...)`
+- `queuePluck(...)`
+- `queueKeyBy(...)`
 - `queueValue(...)`
+- `queueValueOrFail(...)`
+- `queueSole(...)`
+- `queueSoleRecord(...)`
+- `queueSoleValue(...)`
+- `queueExists(...)`
 - `queueCount(...)`
 - `queueAggregate(...)`
+- `queueSum(...)`
+- `queueAvg(...)`
+- `queueMin(...)`
+- `queueMax(...)`
+- `queueCountColumn(...)`
+- `queueCountDistinct(...)`
+- `queueAggregateRowsBy(...)`
+- `queueCountBy(...)`
+- `queueCountDistinctBy(...)`
+- `queueSumBy(...)`
+- `queueAvgBy(...)`
+- `queueMinBy(...)`
+- `queueMaxBy(...)`
+- `queuePaginate(...)`
+- `queuePaginateHydrated(...)`
+- `queuePaginateRecords(...)`
+- `queueCreate(...)`
+- `queueCreateMany(...)`
 - `queueUpdate(...)`
+- `queueUpdateWithVersion(...)`
+- `queueUpdateWithVersionOrFail(...)`
+- `queueIncrement(...)`
+- `queueDecrement(...)`
 - `queueDelete(...)`
+- `queueUpsert(...)`
+- `queueUpsertMany(...)`
 
 Example:
 
@@ -840,19 +1176,74 @@ Example:
 $query=MachineRepository::query()
 	->projection('summary')
 	->cacheNames('machines.summary', 'tenant.'.$tenant_id)
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->latest('created_at');
 
 $fingerprint=$query->fingerprint();
 $rows=$query->get();
 $records=$query->getRecords();
 
+// Batch-load named repository relations into each returned parent row.
+$orders=OrderRepository::query()
+	->with('customer')
+	->withRecords('lines')
+	->withCount('lines')
+	->whereHas('lines', static fn(RepositoryQuery $line): RepositoryQuery => $line->whereEq('status', 'open'))
+	->whereEq('tenant_id', $tenant_id)
+	->latest('created_at')
+	->getRecords();
+
 MachineRepository::query()
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->queueCount(static function(int $count): void{
 		error_log('Queued machine count: '.$count);
 	}, 'reporting');
+
+MachineRepository::query()
+	->whereEq('tenant_id', $tenant_id)
+	->queuePluck('name', static function(array $names_by_id): void{
+		cache_machine_names($names_by_id);
+	}, 'machine_id', 'reporting');
+
+MachineRepository::query()
+	->whereKey('MACHINE_123')
+	->decrement('available_units', 2);
+
+MachineRepository::query()
+	->whereKey('MACHINE_123')
+	->updateWithVersionOrFail(['status'=>'queued'], $expected_version);
+
+MachineRepository::query()
+	->invalidateCacheNames('machines.summary', 'tenant.'.$tenant_id)
+	->queueCreateMany(
+		$machine_rows,
+		static function(MutationBatchResult $batch): void{
+			if($batch->failed()){
+				error_log($batch->firstErrorMessage() ?? 'Queued machine create batch failed.');
+			}
+		},
+		'imports'
+	);
+
+$locked=MachineRepository::query()
+	->whereKey('MACHINE_123')
+	->forUpdate()
+	->firstOrFail();
 ```
+
+`firstOrCreate(...)` and `updateOrCreate(...)` use explicit lookup attributes. Those attributes should identify a unique row; if a create is needed, lookup attributes win over values with the same key so the inserted row still matches the lookup. After a write, the helper reloads the row without read caching.
+
+`increment(...)` and `decrement(...)` are SQL-side atomic counter writes. They validate the target column through the schema when one is available, require a finite non-negative amount, generate a database-specific `SET column = column +/- ?` expression, and return `MutationResult`. The queued variants use the same counter expression and queue semantics as `queueUpdate(...)`.
+
+`updateWithVersion(...)` performs an atomic optimistic write by appending `WHERE version = ?` and bumping the version column in the same SQL update. `queueUpdateWithVersion(...)` performs the same guarded update on a queue and passes a `MutationResult` to its callback. `affectedRows() === 0` means the expected version did not match or the row was not found; on a single-row update, `affectedRows() === 1` means the write matched and the next version was stored.
+
+Use `stale()` on the returned or queued `MutationResult` when stale writes are a normal branch. Use `throwIfStale()`, `updateWithVersionOrFail(...)`, or `queueUpdateWithVersionOrFail(...)` when a stale write should raise `OptimisticLockException`.
+
+`requireWhereForWrite(...)` makes `update(...)`, `delete(...)`, `increment(...)`, `decrement(...)`, `updateWithVersion(...)`, and their queued variants refuse to run unless the query has at least one `WHERE` fragment. Use `allowUnscopedWrite()` when a table-wide mutation is intentional.
+
+`forUpdate()` and `sharedLock()` add row-locking clauses to read queries. MySQL and PostgreSQL receive database-native locking clauses; SQLite receives no locking suffix because it does not support row-level `SELECT ... FOR UPDATE`. Lock clauses are intentionally ignored for write helpers, count queries, and aggregate queries.
+
+Use `chunk(...)` / `each(...)` for large array result sets and `chunkRecords(...)` / `eachRecord(...)` for hydrated records. Offset chunks are useful for read-only scans. Use `chunkById(...)`, `eachById(...)`, `chunkRecordsById(...)`, or `eachRecordById(...)` for long-running jobs that may update rows while scanning. Keyset chunks use the primary key by default, or an explicit key column, and process rows with `WHERE key > cursor ORDER BY key ASC` unless `DESC` is requested.
 
 ## `QuerySpec`
 
@@ -860,15 +1251,16 @@ MachineRepository::query()
 
 Supported filters include:
 
-- `where_eq(...)`
+- `whereEq(...)`
 - `where_not_eq(...)`
 - `where_gt(...)`
 - `where_gte(...)`
 - `where_lt(...)`
 - `where_lte(...)`
-- `where_in(...)`
-- `where_like(...)`
-- `where_not_like(...)`
+- `whereIn(...)`
+- `whereNotIn(...)`
+- `whereLike(...)`
+- `whereNotLike(...)`
 - `where_between(...)`
 - `where_since(...)`
 - `where_until(...)`
@@ -878,9 +1270,9 @@ Supported filters include:
 - `in_last_minutes(...)`
 - `in_last_hours(...)`
 - `in_last_days(...)`
-- `where_null(...)`
-- `where_not_null(...)`
-- `where_raw(...)`
+- `whereNull(...)`
+- `whereNotNull(...)`
+- `whereRaw(...)`
 - `where_all(fn(QuerySpec $group) => ...)`
 - `where_any(fn(QuerySpec $group) => ...)`
 - `when(...)`
@@ -888,43 +1280,73 @@ Supported filters include:
 - `when_not_null(...)`
 - `when_filled(...)`
 - `tap(...)`
+- `has_where()`
+- `require_where_for_write(...)`
+- `allow_unscoped_write()`
 
 Ordering and paging helpers include:
 
-- `order_by(...)`
-- `order_by_asc(...)`
-- `order_by_desc(...)`
+- `orderBy(...)`
+- `order_by_raw(...)`
+- `orderByAsc(...)`
+- `orderByDesc(...)`
 - `latest(...)`
 - `oldest(...)`
+- `groupBy(...)`
+- `group_by_raw(...)`
+- `having_raw(...)`
 - `limit(...)`
 - `offset(...)`
-- `for_page(...)`
+- `forPage(...)`
 - `clear_ordering()`
+- `clear_grouping()`
 - `clear_limit()`
 - `clear_offset()`
 - `clear_paging()`
 - `without_ordering()`
+- `without_grouping()`
 - `without_paging()`
+- `for_update()`
+- `shared_lock()`
+- `lock_raw(...)`
+- `clear_locking()`
+- `without_locking()`
 
 Example:
 
 ```php
 $spec=(new QuerySpec())
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->in_last_days('created_at', 30)
 	->when_filled($status, static function(QuerySpec $query, string $status): void{
-		$query->where_eq('status', $status);
+		$query->whereEq('status', $status);
 	})
 	->when_not_null($machine_id, static function(QuerySpec $query, string $machine_id): void{
-		$query->where_eq('machine_id', $machine_id);
+		$query->whereEq('machine_id', $machine_id);
 	})
 	->where_any(static function(QuerySpec $group): void{
-		$group->where_eq('status', 'active')
-			->where_eq('status', 'queued');
+		$group->whereEq('status', 'active')
+			->whereEq('status', 'queued');
 	})
 	->latest('created_at')
-	->for_page(2, 25);
+	->forPage(2, 25);
 ```
+
+Grouped reads can stay fluent when you need a compact aggregate query:
+
+```php
+$spec=(new QuerySpec())
+	->whereEq('tenant_id', $tenant_id)
+	->groupBy('status')
+	->having_raw('COUNT(*) >= ?', [5])
+	->order_by_raw('COUNT(*) DESC');
+```
+
+`having_raw(...)` keeps its bindings separate from `where_*` bindings internally, so parameters are passed to the SQL driver in compiled SQL order.
+
+Write-scope helpers are carried inside the query spec. `require_where_for_write()` marks a spec so repository/table mutations that receive it must have a `WHERE` clause; `allow_unscoped_write()` explicitly opts out. Repository classes can make this the default for every write by overriding `requireWriteWhere()`.
+
+Locking helpers are also carried inside the query spec and are included in query fingerprints and execution state. Use `for_update()` for exclusive row locks, `shared_lock()` for shared row locks, and `lock_raw(...)` for database-specific suffixes such as skip-locked reads. When a locked spec is reused for a write, count, or aggregate query, the lock suffix is left out of the compiled SQL.
 
 Temporal helpers accept:
 
@@ -951,6 +1373,8 @@ Conditional helpers are deliberately lightweight:
 - named projections
 - optional primary key metadata
 - field-payload validation for repository writes
+- a bridge to registered table-definition hydration
+- explicit read/write casts when created from a `TableDefinition`
 
 Example:
 
@@ -968,60 +1392,102 @@ $summary_columns=$schema->projection('summary');
 $primary_key=$schema->primaryKey();
 ```
 
+`TableSchema` does not create tables from its column list. Missing-table and missing-column hydration are resolved through the SQL table-definition registry, so the same module-owned definition is used for kernel helpers, repositories, and ad hoc `DB::table(...)` queries.
+
 ## `TableRepository`
 
 `TableRepository` is an opt-in repository base over the kernel SQL helpers.
 
 Protected low-level helpers:
 
-- `select_many(...)`
-- `select_one(...)`
-- `count_where(...)`
-- `insert_one(...)`
-- `update_where(...)`
-- `delete_where(...)`
+- `selectMany(...)`
+- `selectOne(...)`
+- `countWhere(...)`
+- `insertOne(...)`
+- `updateWhere(...)`
+- `update_counter_where(...)`
+- `update_version_where(...)`
+- `deleteWhere(...)`
 
 Public convenience helpers:
 
 - `query()`
+- `tableName()`
 - `projectionNamed(...)`
+- `relationNamed(...)`
 - `primaryKey()`
+- `requiresWriteWhere()`
 - `all(...)`
 - `queueAll(...)`
+- `queueAllHydrated(...)`
+- `queueAllRecords(...)`
 - `first(...)`
 - `queueFirst(...)`
+- `queueFirstOrFail(...)`
+- `queueFirstHydrated(...)`
+- `queueFirstRecord(...)`
+- `queueFirstRecordOrFail(...)`
 - `firstOrFail(...)`
 - `value(...)`
 - `valueOrFail(...)`
+- `queueValueOrFail(...)`
 - `pluck(...)`
+- `queuePluck(...)`
 - `keyBy(...)`
+- `queueKeyBy(...)`
 - `sole(...)`
+- `queueSole(...)`
 - `soleRecord(...)`
+- `queueSoleRecord(...)`
 - `soleValue(...)`
+- `queueSoleValue(...)`
 - `exists(...)`
+- `queueExists(...)`
 - `count(...)`
 - `queueCount(...)`
 - `aggregate(...)`
 - `queueAggregate(...)`
 - `sum(...)`
+- `queueSum(...)`
 - `avg(...)`
+- `queueAvg(...)`
 - `min(...)`
+- `queueMin(...)`
 - `max(...)`
+- `queueMax(...)`
 - `countColumn(...)`
+- `queueCountColumn(...)`
 - `countDistinct(...)`
+- `queueCountDistinct(...)`
 - `aggregateRowsBy(...)`
+- `queueAggregateRowsBy(...)`
 - `countBy(...)`
+- `queueCountBy(...)`
 - `countDistinctBy(...)`
+- `queueCountDistinctBy(...)`
 - `sumBy(...)`
+- `queueSumBy(...)`
 - `avgBy(...)`
+- `queueAvgBy(...)`
 - `minBy(...)`
+- `queueMinBy(...)`
 - `maxBy(...)`
+- `queueMaxBy(...)`
 - `paginate(...)`
+- `queuePaginate(...)`
 - `find(...)`
+- `queueFind(...)`
+- `queueFindOrFail(...)`
 - `findOneBy(...)`
+- `findOneByOrFail(...)`
+- `queueFindOneBy(...)`
+- `queueFindOneByOrFail(...)`
 - `findManyBy(...)`
+- `queueFindManyBy(...)`
 - `findManyByIds(...)`
+- `queueFindManyByIds(...)`
 - `findKeyedByIds(...)`
+- `queueFindKeyedByIds(...)`
 - `hydrateRow(...)`
 - `hydrateRows(...)`
 - `allHydrated(...)`
@@ -1030,29 +1496,86 @@ Public convenience helpers:
 - `firstRecord(...)`
 - `firstRecordOrFail(...)`
 - `findOneHydratedBy(...)`
+- `findOneHydratedByOrFail(...)`
+- `queueFindOneHydratedBy(...)`
+- `queueFindOneHydratedByOrFail(...)`
+- `findOneRecordBy(...)`
+- `findOneRecordByOrFail(...)`
+- `queueFindOneRecordBy(...)`
+- `queueFindOneRecordByOrFail(...)`
 - `findManyHydratedBy(...)`
+- `queueFindManyHydratedBy(...)`
 - `findManyHydratedByIds(...)`
+- `queueFindManyHydratedByIds(...)`
 - `findKeyedHydratedByIds(...)`
+- `queueFindKeyedHydratedByIds(...)`
 - `findHydrated(...)`
+- `findHydratedOrFail(...)`
+- `queueFindHydrated(...)`
+- `queueFindHydratedOrFail(...)`
 - `findOrFail(...)`
 - `findRecord(...)`
+- `queueFindRecord(...)`
 - `findRecordOrFail(...)`
+- `queueFindRecordOrFail(...)`
 - `paginateHydrated(...)`
+- `queuePaginateHydrated(...)`
 - `paginateRecords(...)`
+- `queuePaginateRecords(...)`
+- `chunk(...)`
+- `each(...)`
+- `chunkRecords(...)`
+- `eachRecord(...)`
+- `chunkById(...)`
+- `eachById(...)`
+- `chunkRecordsById(...)`
+- `eachRecordById(...)`
 - `create(...)`
 - `queueCreate(...)`
 - `createMany(...)`
+- `queueCreateMany(...)`
+- `firstOrCreate(...)`
+- `updateOrCreate(...)`
 - `update(...)`
+- `updateWithVersion(...)`
+- `updateWithVersionOrFail(...)`
 - `queueUpdate(...)`
+- `queueUpdateWithVersion(...)`
+- `queueUpdateWithVersionOrFail(...)`
+- `increment(...)`
+- `decrement(...)`
+- `queueIncrement(...)`
+- `queueDecrement(...)`
 - `updateBy(...)`
+- `queueUpdateBy(...)`
 - `updateById(...)`
+- `queueUpdateById(...)`
+- `updateByWithVersion(...)`
+- `queueUpdateByWithVersion(...)`
+- `updateByIdWithVersion(...)`
+- `queueUpdateByIdWithVersion(...)`
+- `updateByWithVersionOrFail(...)`
+- `queueUpdateByWithVersionOrFail(...)`
+- `updateByIdWithVersionOrFail(...)`
+- `queueUpdateByIdWithVersionOrFail(...)`
+- `incrementBy(...)`
+- `queueIncrementBy(...)`
+- `incrementById(...)`
+- `queueIncrementById(...)`
+- `decrementBy(...)`
+- `queueDecrementBy(...)`
+- `decrementById(...)`
+- `queueDecrementById(...)`
 - `delete(...)`
 - `queueDelete(...)`
 - `deleteBy(...)`
+- `queueDeleteBy(...)`
 - `deleteById(...)`
+- `queueDeleteById(...)`
 - `upsert(...)`
 - `queueUpsert(...)`
 - `upsertMany(...)`
+- `queueUpsertMany(...)`
 
 Example repository:
 
@@ -1069,6 +1592,10 @@ final class MachineRepository extends TableRepository {
 
 	protected static function defaultWriteInvalidation(): bool|array|null {
 		return DB::invalidationNames('machines.summary', 'tenant.machines');
+	}
+
+	protected static function requireWriteWhere(): bool {
+		return true;
 	}
 
 	protected static function moneyColumns(): array {
@@ -1096,52 +1623,113 @@ Example usage:
 
 ```php
 $spec=(new QuerySpec())
-	->where_eq('tenant_id', $tenant_id)
-	->order_by('created_at', 'DESC');
+	->whereEq('tenant_id', $tenant_id)
+	->orderBy('created_at', 'DESC');
 
 $rows=MachineRepository::all(MachineTableSchema::schema()->projection('summary'), $spec);
 $first=MachineRepository::first('*', $spec);
 $exists=MachineRepository::exists($spec);
 $page=MachineRepository::paginate('*', $spec, 1, 50);
 $machine=MachineRepository::find('MACHINE_123');
+$machine_by_name=MachineRepository::findOneByOrFail('name', 'Mixer A');
+$machine_record=MachineRepository::findOneRecordByOrFail('machine_id', 'MACHINE_123');
 $created=MachineRepository::create([
 	'machine_id'=>'MACHINE_123',
 	'tenant_id'=>'TENANT_1',
 	'name'=>'Mixer A',
 	'status'=>'active',
 ]);
+$ensured=MachineRepository::firstOrCreate(
+	['machine_id'=>'MACHINE_124'],
+	['tenant_id'=>'TENANT_1', 'name'=>'Mixer B', 'status'=>'active']
+);
+$synced=MachineRepository::updateOrCreate(
+	['machine_id'=>'MACHINE_125'],
+	['tenant_id'=>'TENANT_1', 'name'=>'Mixer C', 'status'=>'maintenance']
+);
 $updated=MachineRepository::updateById('MACHINE_123', [
 	'status'=>'maintenance',
 ]);
+$claimed=MachineRepository::updateByIdWithVersion('MACHINE_123', [
+	'status'=>'queued',
+], $expected_version);
+$claimed=MachineRepository::updateByIdWithVersionOrFail('MACHINE_124', [
+	'status'=>'queued',
+], $expected_version);
+$viewed=MachineRepository::incrementById('MACHINE_123', 'view_count');
 $deleted=MachineRepository::deleteById('MACHINE_123');
+
+MachineRepository::queueUpdateById('MACHINE_126', [
+	'status'=>'processing',
+], static function(mixed $result): void{
+	// handle queued update result later
+});
+MachineRepository::queueUpdateByIdWithVersion('MACHINE_127', [
+	'status'=>'processing',
+], $expected_version, static function(MutationResult $result): void{
+	if($result->stale()){
+		return;
+	}
+});
+MachineRepository::queueIncrementById('MACHINE_128', 'view_count', static function(mixed $result): void{
+	// handle queued counter result later
+});
+MachineRepository::queueDeleteById('MACHINE_129', static function(mixed $result): void{
+	// handle queued delete result later
+});
+MachineRepository::queueFindOneByOrFail('machine_id', 'MACHINE_130', static function(array $row): void{
+	// handle queued lookup later
+});
 
 $queued=MachineRepository::query()
 	->projection('summary')
-	->where_eq('tenant_id', $tenant_id)
-	->where_eq('status', 'queued')
+	->whereEq('tenant_id', $tenant_id)
+	->whereEq('status', 'queued')
 	->get();
 
 $queued_records=MachineRepository::query()
 	->projection('summary')
-	->where_eq('tenant_id', $tenant_id)
-	->where_eq('status', 'queued')
+	->whereEq('tenant_id', $tenant_id)
+	->whereEq('status', 'queued')
 	->getRecords();
 
+MachineRepository::queueAllRecords(
+	['machine_id', 'status'],
+	MachineRepository::query()->whereEq('status', 'queued')->spec(),
+	static function(array $records): void{
+		// handle queued records later
+	},
+	'reporting'
+);
+
 $active=MachineRepository::query()
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->count();
 
 $average_fill=MachineRepository::query()
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->avg('fill_ml');
 
 $jobs_by_status=MachineRepository::query()
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->countBy('status');
 
 $fill_by_status=MachineRepository::query()
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->sumBy('status', 'fill_ml');
+
+MachineRepository::query()
+	->whereEq('tenant_id', $tenant_id)
+	->orderBy('machine_id')
+	->eachRecord(static function(Record $machine): void{
+		// process one record
+	}, 250);
+
+MachineRepository::query()
+	->whereEq('tenant_id', $tenant_id)
+	->eachRecordById(static function(Record $machine): void{
+		// process one stable record
+	}, 250);
 ```
 
 ## `Record`
@@ -1154,10 +1742,27 @@ If you use the built-in record path, the framework returns `Dataphyre\Database\R
 - `schema()`
 - `primaryKeyName()`
 - `id()`
+- `currentVersion(...)`
 - `has(...)`
 - `get(...)`
 - `money(...)`
 - `storedMoney(...)`
+- `relation(...)`
+- `relationRecords(...)`
+- `related(...)`
+- `relatedRecords(...)`
+- `with(...)`
+- `withRelation(...)`
+- `refresh(...)`
+- `update(...)`
+- `updateAndRefresh(...)`
+- `updateWithVersion(...)`
+- `updateWithVersionOrFail(...)`
+- `updateWithCurrentVersion(...)`
+- `updateWithCurrentVersionOrFail(...)`
+- `updateWithVersionAndRefresh(...)`
+- `updateWithCurrentVersionAndRefresh(...)`
+- `delete(...)`
 - `only(...)`
 - `except(...)`
 - `toArray()`
@@ -1177,7 +1782,42 @@ $machine_id=$machine?->id();
 $name=$machine?->name;
 $status=$machine?['status'];
 $subset=$machine?->only(['machine_id', 'name']);
+
+$updated=$machine?->updateWithCurrentVersionAndRefresh([
+	'status'=>'queued',
+]);
 ```
+
+Records returned by a repository can also load explicit repository relations by method name or by passing a `Relation` object:
+
+```php
+$order=OrderRepository::findRecord($order_id);
+
+$customer=$order?->relation('customer');
+$line_records=$order?->relationRecords('lines');
+```
+
+Named record relations are resolved through the record's repository class. The repository method must be public, static, take no required parameters, and return a `Relation`.
+
+Records are immutable. `with(...)` and `withRelation(...)` return a new record with extra presentation data attached:
+
+```php
+$order_with_customer=$order?->withRelation('customer', $customer);
+```
+
+Repository-backed records can delegate explicit write operations back to their repository:
+
+```php
+$machine=MachineRepository::findRecord('MACHINE_123');
+
+$updated=$machine?->updateAndRefresh([
+	'status'=>'maintenance',
+]);
+
+$deleted=$updated?->delete();
+```
+
+`update(...)` and `delete(...)` return `MutationResult`. `updateAndRefresh(...)` returns a newly hydrated record after a successful write. `refresh(...)` reloads the current record by primary key without mutating the existing object.
 
 ## Convention-First Record Classes
 
@@ -1248,17 +1888,193 @@ $machine=MachineRepository::findHydrated(
 
 $page=MachineRepository::paginateHydrated(
 	'*',
-	MachineRepository::query()->where_eq('tenant_id', $tenant_id),
+	MachineRepository::query()->whereEq('tenant_id', $tenant_id),
 	1,
 	25,
 	MachineSummaryHydrator::class
 );
 
 $record=MachineRepository::query()
-	->where_eq('machine_id', 'MACHINE_123')
+	->whereEq('machine_id', 'MACHINE_123')
 	->asRecords()
 	->firstRecord();
+
+MachineRepository::query()
+	->whereEq('tenant_id', $tenant_id)
+	->with('location')
+	->queueGetRecords(static function(array $records): void{
+		// handle hydrated records with eager-loaded relations later
+	}, 'reporting');
 ```
+
+## Relationships
+
+Repository relationships are explicit query objects, not hidden record magic. A repository defines relation factories and application code chooses whether to load one parent, many parents, arrays, or hydrated records.
+
+Example:
+
+```php
+final class OrderRepository extends TableRepository {
+
+	public static function customer(): Relation {
+		return static::belongsTo(CustomerRepository::class, 'customer_id');
+	}
+
+	public static function lines(): Relation {
+		return static::hasMany(OrderLineRepository::class, 'order_id');
+	}
+}
+
+$order=OrderRepository::findOrFail($order_id);
+$customer=OrderRepository::customer()->get($order);
+$lines=OrderRepository::lines()->get($order);
+```
+
+When the parent is a repository-backed `Record`, the same relations can be loaded from the record:
+
+```php
+$order=OrderRepository::findRecord($order_id);
+$customer=$order?->relation('customer');
+$line_records=$order?->relationRecords('lines');
+```
+
+Relationship types:
+
+- `belongsTo(RelatedRepository::class, foreign_key, owner_key: related primary key)`
+- `hasOne(RelatedRepository::class, foreign_key, local_key: current repository primary key)`
+- `hasMany(RelatedRepository::class, foreign_key, local_key: current repository primary key)`
+
+For lists, use query eager loading to batch relation queries and attach the result to each parent:
+
+```php
+$orders=OrderRepository::query()
+	->with('customer')
+	->withRecords('lines')
+	->withCount('lines')
+	->withSum('lines', 'line_total', 'lines_total')
+	->whereEq('tenant_id', $tenant_id)
+	->latest('created_at')
+	->getRecords();
+```
+
+`with(...)` attaches related rows as arrays. `withRecords(...)` attaches related rows through the related repository hydrator. The query automatically includes the parent key and related lookup key needed for attachment, even when the selected columns are otherwise narrow. Eager loading is applied to `get(...)`, `first(...)`, pagination, chunking, and hydrated record helpers.
+
+Relation eager loading can be constrained with a related repository query callback:
+
+```php
+$orders=OrderRepository::query()
+	->with('lines', ['line_id', 'status'], null, static function(RepositoryQuery $line): RepositoryQuery{
+		return $line->whereEq('status', 'open')->oldest('created_at');
+	})
+	->get();
+```
+
+Array relation options can also provide `constraint`:
+
+```php
+$orders=OrderRepository::query()
+	->with([
+		'lines'=>[
+			'columns'=>['line_id', 'status'],
+			'constraint'=>static fn(RepositoryQuery $line): RepositoryQuery => $line->whereEq('status', 'open'),
+		],
+	])
+	->get();
+```
+
+`withCount(...)` attaches a grouped relation count without loading the related rows:
+
+```php
+$orders=OrderRepository::query()
+	->withCount('lines')
+	->withCount(['notes'=>'note_count'])
+	->withCount('lines', 'open_line_count', null, static fn(RepositoryQuery $line): RepositoryQuery => $line->whereEq('status', 'open'))
+	->whereEq('tenant_id', $tenant_id)
+	->get();
+
+$line_count=$orders[0]['lines_count'] ?? 0;
+```
+
+Named counts default to `<relation>_count`. Pass an alias for presentation fields that need a different name. Counts are attached to arrays, objects, and immutable `Record` instances the same way eager relations are.
+
+Use relation aggregates when the screen needs totals or summary values without loading the children:
+
+```php
+$orders=OrderRepository::query()
+	->withSum('lines', 'line_total', 'lines_total')
+	->withSum('lines', 'line_total', 'paid_lines_total', null, static fn(RepositoryQuery $line): RepositoryQuery => $line->whereEq('paid', true))
+	->withAvg('reviews', 'rating', 'average_rating')
+	->withMax('shipments', 'created_at', 'latest_shipment_at')
+	->get();
+
+$total=$orders[0]['lines_total'] ?? null;
+```
+
+`withAggregate(...)` is the lower-level form for `COUNT`, `SUM`, `AVG`, `MIN`, and `MAX`. Convenience helpers are available as `withSum(...)`, `withAvg(...)`, `withMin(...)`, and `withMax(...)`. Aggregate aliases default to `<relation>_<function>_<column>`; missing related rows attach `null` for non-count aggregates.
+
+Use `whereHas(...)` and `whereDoesntHave(...)` to filter parents by related rows before pagination or eager loading:
+
+```php
+$orders=OrderRepository::query()
+	->whereHas('lines')
+	->whereDoesntHave('refunds')
+	->get();
+
+$orders_with_open_lines=OrderRepository::query()
+	->whereHas('lines', static function(RepositoryQuery $line): RepositoryQuery{
+		return $line->whereEq('status', 'open');
+	})
+	->get();
+```
+
+Relation filters compile to `EXISTS` / `NOT EXISTS` subqueries. The optional callback receives a query for the related repository, so child-side filters can use the normal query helpers.
+
+Use `withWhereHas(...)` when the same child constraint should both filter parents and eager-load the matching children:
+
+```php
+$orders=OrderRepository::query()
+	->withWhereHas('lines', static fn(RepositoryQuery $line): RepositoryQuery => $line->whereEq('status', 'open'))
+	->get();
+```
+
+For lower-level control, use relation eager loading directly:
+
+```php
+$orders=OrderRepository::query()
+	->whereEq('tenant_id', $tenant_id)
+	->latest('created_at')
+	->get();
+
+$customers_by_order=OrderRepository::customer()->eager($orders);
+$lines_by_order=OrderRepository::lines()->eager($orders, '*', null, static fn(RepositoryQuery $line): RepositoryQuery => $line->whereEq('status', 'open'));
+$line_counts_by_order=OrderRepository::lines()->eagerCount($orders, null, static fn(RepositoryQuery $line): RepositoryQuery => $line->whereEq('status', 'open'));
+$line_totals_by_order=OrderRepository::lines()->eagerAggregate($orders, 'SUM', 'line_total', null, false, static fn(RepositoryQuery $line): RepositoryQuery => $line->whereEq('paid', true));
+```
+
+The returned eager map preserves the original parent array keys. `belongsTo(...)` and `hasOne(...)` map each parent key to one related row or `null`; `hasMany(...)` maps each parent key to a list of related rows.
+
+Use `getRecords(...)` and `eagerRecords(...)` when the relation should use the related repository hydrator:
+
+```php
+$customer_record=OrderRepository::customer()->getRecords($order);
+$line_records_by_order=OrderRepository::lines()->eagerRecords($orders);
+```
+
+Use `attach(...)` and `attachRecords(...)` when you want a parent list back with the eager-loaded relation added under a field name:
+
+```php
+$orders=OrderRepository::query()
+	->whereEq('tenant_id', $tenant_id)
+	->latest('created_at')
+	->getRecords();
+
+$orders=OrderRepository::customer()->attachRecords($orders, 'customer');
+$orders=OrderRepository::lines()->attachRecords($orders, 'lines');
+$orders=OrderRepository::lines()->attachCount($orders, 'lines_count');
+$orders=OrderRepository::lines()->attachAggregate($orders, 'lines_total', 'SUM', 'line_total');
+```
+
+For arrays, the relation is added as an array key. For `Record` objects, a new immutable record is returned with the relation available through property access, array access, and JSON serialization.
 
 ## `PageResult`
 
@@ -1285,7 +2101,7 @@ Example:
 
 ```php
 $page=MachineRepository::query()
-	->where_eq('tenant_id', $tenant_id)
+	->whereEq('tenant_id', $tenant_id)
 	->latest('created_at')
 	->paginate(2, 25);
 
@@ -1299,6 +2115,10 @@ $summaries=$page->map(static fn(array $row): string => $row['name'].' ('.$row['s
 
 Write-side repository helpers return typed results instead of raw kernel return values.
 
+Counter writes use the same result type. `increment(...)` and `decrement(...)` include the target `column` and `amount` in the mutation context.
+
+For `update(...)`, `delete(...)`, counter writes, `updateWithVersion(...)`, and queued optimistic updates, `affectedRows()` reports the database engine's affected-row count when the driver provides one. Zero affected rows is still a successful execution; it means the statement matched no rows or made no change.
+
 `MutationResult` exposes:
 
 - `operation()`
@@ -1306,6 +2126,10 @@ Write-side repository helpers return typed results instead of raw kernel return 
 - `failed()`
 - `rawResult()`
 - `affectedRows()`
+- `stale()`
+- `throwIfFailed(...)`
+- `throwIfStale(...)`
+- `throwIfFailedOrStale(...)`
 - `insertedId()`
 - `errorMessage()`
 - `context()`
@@ -1369,7 +2193,11 @@ $batch_errors=$batch->errorMessages();
 
 The framework also provides a low-magic transaction layer over the kernel transaction primitives.
 
-`DB::transaction(...)` throws on transaction begin/commit/rollback failures and rethrows callback exceptions. `DB::attemptTransaction(...)` gives the same orchestration path without forcing exception-based control flow.
+`DB::transaction(...)` throws on transaction begin/commit/rollback failures and rethrows callback exceptions. `DB::attemptTransaction(...)` gives the same orchestration path without forcing exception-based control flow. `transactionWithRetries(...)` and `attemptTransactionWithRetries(...)` retry transient SQL failures such as deadlocks, lock timeouts, serialization failures, and SQLite busy/locked errors.
+
+Transaction callbacks can be zero-argument callbacks, or they can ask for a `Transaction` and/or `ConnectionContext` parameter. Typed callback parameters are matched by type. Untyped callbacks receive the transaction first from `DB::transaction(...)` / `Transaction::run(...)`, and the connection first from `ConnectionContext::transaction(...)`.
+
+Nested framework transactions use database savepoints. The outermost transaction calls `BEGIN` / `COMMIT` / `ROLLBACK`; inner transactions on the same cluster call `SAVEPOINT`, `RELEASE SAVEPOINT`, and `ROLLBACK TO SAVEPOINT`. This allows repository methods to wrap their own write flows without accidentally committing or rolling back an outer unit of work.
 
 `DB` exposes:
 
@@ -1388,6 +2216,8 @@ The framework also provides a low-magic transaction layer over the kernel transa
 - `begin(...)`
 - `transaction(...)`
 - `attemptTransaction(...)`
+- `transactionWithRetries(...)`
+- `attemptTransactionWithRetries(...)`
 - `commit(...)`
 - `rollback(...)`
 - `query(...)`
@@ -1417,6 +2247,8 @@ The framework also provides a low-magic transaction layer over the kernel transa
 - `begin()`
 - `transaction(...)`
 - `attemptTransaction(...)`
+- `transactionWithRetries(...)`
+- `attemptTransactionWithRetries(...)`
 - `query(...)`
 - `value(...)`
 - `row(...)`
@@ -1429,6 +2261,10 @@ The framework also provides a low-magic transaction layer over the kernel transa
 `Transaction` exposes:
 
 - `cluster()`
+- `connection()`
+- `isNested()`
+- `savepointName()`
+- `activeDepth(...)`
 - `isActive()`
 - `begun()`
 - `committed()`
@@ -1438,6 +2274,8 @@ The framework also provides a low-magic transaction layer over the kernel transa
 - `rollback()`
 - `run(...)`
 - `attempt(...)`
+- `runWithRetries(...)`
+- `attemptWithRetries(...)`
 
 `TransactionResult` exposes:
 
@@ -1447,6 +2285,7 @@ The framework also provides a low-magic transaction layer over the kernel transa
 - `begun()`
 - `committed()`
 - `rolledBack()`
+- `attempts()`
 - `value()`
 - `exception()`
 - `errorMessage()`
@@ -1456,12 +2295,12 @@ Examples:
 
 ```php
 $users=DB::table('users', 'user_id')
-	->where_eq('tenant_id', $tenant_id)
-	->order_by('created_at', 'DESC')
+	->whereEq('tenant_id', $tenant_id)
+	->orderBy('created_at', 'DESC')
 	->paginate(1, 25);
 
 $user_record=DB::table('users', 'user_id')
-	->where_key($user_id)
+	->whereKey($user_id)
 	->firstRecord();
 
 $analytics=DB::connection('analytics');
@@ -1484,9 +2323,29 @@ $result=DB::transaction(static function(){
 	]);
 });
 
+$nested=DB::transaction(static function(Transaction $outer){
+	return DB::transaction(static function(Transaction $inner){
+		MachineRepository::incrementById('MACHINE_123', 'view_count');
+		return $inner->isNested();
+	});
+});
+
 $attempt=DB::attemptTransaction(static function(){
 	return MachineRepository::deleteById('MACHINE_404');
 });
+
+$retry_result=DB::attemptTransactionWithRetries(
+	static function(): MutationResult{
+		return MachineRepository::query()
+			->whereKey('MACHINE_123')
+			->forUpdate()
+			->increment('view_count');
+	},
+	null,
+	3,
+	null,
+	25
+);
 
 $connection_attempt=$analytics->attemptTransaction(static function(ConnectionContext $connection){
 	return $connection->value('SELECT COUNT(*) FROM events');
@@ -1502,6 +2361,7 @@ $analytics_result=$analytics->transaction(static function(ConnectionContext $con
 $attempt_ok=$attempt->ok();
 $attempt_value=$attempt->value();
 $attempt_error=$attempt->errorMessage();
+$retry_attempts=$retry_result->attempts();
 
 $tx=DB::begin();
 try{
@@ -1546,25 +2406,25 @@ $manual_cluster=$manual->cluster();
 - The default typed record path is the built-in `Record` object, so apps can move beyond arrays without custom hydrator boilerplate.
 - Repo-specific record classes can be discovered by convention, so common typed-record setups do not require explicit repository wiring.
 - Guardrail warnings are meant to catch suspicious data-access patterns like named cached reads followed by writes with no invalidation policy.
-- `QuerySpec` validates identifiers and allows explicit `where_raw(...)` escapes when needed.
+- `QuerySpec` validates identifiers and allows explicit `whereRaw(...)` escapes when needed.
 
 ## Laravel Mapping
 
 | Laravel | Dataphyre SQL Framework |
 | --- | --- |
 | `User::find($id)` | `UserRepository::find($id)` |
-| `DB::table('users')->where('email', $email)->first()` | `DB::table('users', 'user_id')->where_eq('email', $email)->first()` |
-| `User::where('email', $email)->first()` | `UserRepository::query()->where_eq('email', $email)->first()` |
-| `User::where('tenant_id', $tenant_id)->get()` | `UserRepository::query()->where_eq('tenant_id', $tenant_id)->get()` |
-| `User::where('tenant_id', $tenant_id)->paginate(25)` | `UserRepository::query()->where_eq('tenant_id', $tenant_id)->paginate(1, 25)` |
-| `User::where('tenant_id', $tenant_id)->sum('balance')` | `UserRepository::query()->where_eq('tenant_id', $tenant_id)->sum('balance')` |
-| `User::where('tenant_id', $tenant_id)->count('email')` | `UserRepository::query()->where_eq('tenant_id', $tenant_id)->countColumn('email')` |
-| `User::where('tenant_id', $tenant_id)->distinct()->count('status')` | `UserRepository::query()->where_eq('tenant_id', $tenant_id)->countDistinct('status')` |
+| `DB::table('users')->where('email', $email)->first()` | `DB::table('users', 'user_id')->whereEq('email', $email)->first()` |
+| `User::where('email', $email)->first()` | `UserRepository::query()->whereEq('email', $email)->first()` |
+| `User::where('tenant_id', $tenant_id)->get()` | `UserRepository::query()->whereEq('tenant_id', $tenant_id)->get()` |
+| `User::where('tenant_id', $tenant_id)->paginate(25)` | `UserRepository::query()->whereEq('tenant_id', $tenant_id)->paginate(1, 25)` |
+| `User::where('tenant_id', $tenant_id)->sum('balance')` | `UserRepository::query()->whereEq('tenant_id', $tenant_id)->sum('balance')` |
+| `User::where('tenant_id', $tenant_id)->count('email')` | `UserRepository::query()->whereEq('tenant_id', $tenant_id)->countColumn('email')` |
+| `User::where('tenant_id', $tenant_id)->distinct()->count('status')` | `UserRepository::query()->whereEq('tenant_id', $tenant_id)->countDistinct('status')` |
 | `User::where('created_at', '>=', $cutoff)->latest()->get()` | `UserRepository::query()->in_last_days('created_at', 30)->latest()->get()` |
-| `User::when($status, fn($query)=>$query->where('status', $status))->get()` | `UserRepository::query()->when_filled($status, fn(QuerySpec $query, string $status)=>$query->where_eq('status', $status))->get()` |
-| `User::where('tenant_id', $tenant_id)->groupBy('status')->selectRaw('status, count(*) as aggregate_value')->pluck('aggregate_value', 'status')` | `UserRepository::query()->where_eq('tenant_id', $tenant_id)->countBy('status')` |
-| `User::where('status', 'queued')->update([...])` | `UserRepository::query()->where_eq('status', 'queued')->update([...])` |
-| `User::where('status', 'queued')->delete()` | `UserRepository::query()->where_eq('status', 'queued')->delete()` |
+| `User::when($status, fn($query)=>$query->where('status', $status))->get()` | `UserRepository::query()->when_filled($status, fn(QuerySpec $query, string $status)=>$query->whereEq('status', $status))->get()` |
+| `User::where('tenant_id', $tenant_id)->groupBy('status')->selectRaw('status, count(*) as aggregate_value')->pluck('aggregate_value', 'status')` | `UserRepository::query()->whereEq('tenant_id', $tenant_id)->countBy('status')` |
+| `User::where('status', 'queued')->update([...])` | `UserRepository::query()->whereEq('status', 'queued')->update([...])` |
+| `User::where('status', 'queued')->delete()` | `UserRepository::query()->whereEq('status', 'queued')->delete()` |
 | `DB::transaction(fn()=>...)` | `DB::transaction(fn()=>...)` |
 
 This gives Dataphyre SQL a stronger application layer without turning the kernel into an ORM. The framework remains a low-magic repository/query system over the existing high-performance execution engine.

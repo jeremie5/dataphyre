@@ -1,0 +1,23 @@
+[
+  {
+    "name": "change_id creates distinct UUIDv4-style identifiers",
+    "file": "/common/dataphyre/runtime/modules/time_machine/unit_tests/time_machine_test_helpers.php",
+    "function": "dp_time_machine_unit_change_id_shape",
+    "args": [],
+    "expected": true
+  },
+  {
+    "name": "time_machine dialbacks short-circuit SQL work",
+    "file": "/common/dataphyre/runtime/modules/time_machine/unit_tests/time_machine_test_helpers.php",
+    "function": "dp_time_machine_unit_dialback_short_circuit_json",
+    "args": [],
+    "expected": "{\"create\":true,\"purge\":false,\"rollback\":false,\"hooks\":[\"CALL_TIME_MACHINE_CREATE\",\"CALL_TIME_MACHINE_ROLLBACK\",\"CALL_TIME_MACHINE_ROLLBACK\"],\"sql_calls\":0}"
+  },
+  {
+    "name": "rollback rejects unknown rollback types without mutations",
+    "file": "/common/dataphyre/runtime/modules/time_machine/unit_tests/time_machine_test_helpers.php",
+    "function": "dp_time_machine_unit_rollback_unknown_type_json",
+    "args": [],
+    "expected": "{\"result\":false,\"selects\":1,\"mutations\":0,\"hooks\":[\"CALL_TIME_MACHINE_ROLLBACK\",\"CALL_CORE_DECRYPT_DATA\"]}"
+  }
+]

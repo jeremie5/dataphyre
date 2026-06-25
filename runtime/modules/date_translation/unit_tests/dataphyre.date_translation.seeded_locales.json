@@ -1,0 +1,16 @@
+[
+  {
+    "name": "Non-French locales strip English ordinals and translate seeded terms",
+    "file": "/common/dataphyre/runtime/modules/date_translation/unit_tests/date_translation_test_helpers.php",
+    "function": "dp_date_translation_unit_non_french_json",
+    "args": [],
+    "expected": "{\"ordinal_removed\":\"septiembre 3 manana\",\"weekday_abbrev\":\"mar marzo 2\"}"
+  },
+  {
+    "name": "French locale handles abbreviated month and weekday forms",
+    "file": "/common/dataphyre/runtime/modules/date_translation/unit_tests/date_translation_test_helpers.php",
+    "function": "dp_date_translation_unit_french_abbrev_json",
+    "args": [],
+    "expected": "{\"abbrev_month\":\"2e janv\",\"abbrev_weekday\":\"mar mars 3\"}"
+  }
+]

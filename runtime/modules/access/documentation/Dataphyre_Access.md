@@ -144,10 +144,12 @@ Supporting framework components include:
 - auth middleware
 - JWT codec / payload support
 - OAuth 2.0 / OpenID Connect provider client support
+- identity repository helpers
+- Panel auth page integration
 
 ### Framework Guard Layer
 
-The framework layer adds a Laravel-style auth abstraction on top of the kernel access module.
+The framework layer adds an application-facing auth abstraction on top of the kernel access module.
 
 Key facade methods:
 
@@ -190,6 +192,79 @@ if(Auth::guard('jwt')->check()===true){
 	$claims=Auth::claims('jwt');
 }
 ```
+
+### Identity Repository
+
+Access includes a small native identity repository for flows that need account
+creation, email verification, and password resets without tying Dataphyre to one
+application's user model.
+
+The repository can read and write a configured SQL users table:
+
+```php
+return [
+	'dataphyre'=>[
+		'access'=>[
+			'identity'=>[
+				'users_table'=>'app.users',
+				'id_column'=>'id',
+				'email_column'=>'email',
+				'name_column'=>'name',
+				'password_hash_column'=>'password_hash',
+				'email_verified_at_column'=>'email_verified_at',
+				'tokens_table'=>'dataphyre.access_tokens',
+			],
+		],
+	],
+];
+```
+
+For existing applications, callbacks can provide the same contract without
+requiring column names to match:
+
+```php
+'identity'=>[
+	'callbacks'=>[
+		'find_by_email'=>fn(string $email) => AppUser::findByEmail($email),
+		'find_by_id'=>fn(int|string $id) => AppUser::find($id),
+		'create'=>fn(array $attributes) => AppUser::create($attributes),
+		'verify_password'=>fn($user, string $password) => password_verify($password, $user['password_hash']),
+		'set_password'=>fn($user, string $password) => AppUser::setPassword($user['id'], $password),
+		'mark_email_verified'=>fn($user) => AppUser::verifyEmail($user['id']),
+		'identifier'=>fn($user) => $user['id'],
+		'email_verified'=>fn($user) => !empty($user['email_verified_at']),
+	],
+],
+```
+
+`dataphyre.access_tokens` stores hashed one-time tokens for email verification
+and password reset. The SQL module hydrates this table from Access table
+definitions when it is missing.
+
+### Panel Auth
+
+Dataphyre Panel can register native auth pages through Access:
+
+```php
+use Dataphyre\Panel\Panel;
+
+Panel::make('ops')->auth([
+	'allow_registration'=>true,
+	'require_email_verification'=>true,
+	'login_page'=>'login',
+	'register_page'=>'register',
+	'logout_page'=>'logout',
+	'verify_page'=>'email_verification',
+	'password_reset_page'=>'password_reset',
+	'password_change_page'=>'password_change',
+	'queue_mail'=>true,
+]);
+```
+
+The auth flow provides login, logout, registration, email verification, password
+reset, and password change. Verification and reset links are delivered through
+Dataphyre Mailer when Mailer is loaded. If `require_email_verification` is true,
+Panel refuses a successful credential match until the identity is verified.
 
 ### Guard Drivers
 

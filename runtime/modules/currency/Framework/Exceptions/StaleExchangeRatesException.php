@@ -7,31 +7,62 @@
  */
 namespace Dataphyre\Currency\Exceptions;
 
+/**
+ * Reports exchange-rate snapshots or quotes that exceed freshness limits.
+ *
+ * The exception message preserves source, age, maximum age, and capture time so
+ * callers can surface stale-cache failures without carrying a separate diagnostic
+ * array.
+ */
 final class StaleExchangeRatesException extends \RuntimeException {
 
-	public static function forSnapshot(?string $provider_source, int $time, int $age_seconds, int $max_age_seconds): self {
+	/**
+	 * Creates an exception for a stale provider snapshot.
+	 *
+	 * Provider source text is included only when non-empty. The capture timestamp is
+	 * rendered in UTC ISO-8601 form so logs and HTTP errors can be compared across
+	 * hosts without timezone ambiguity.
+	 *
+	 * @param ?string $providerSource Provider or upstream source label.
+	 * @param int $time Unix timestamp when the snapshot was captured.
+	 * @param int $ageSeconds Current snapshot age.
+	 * @param int $maxAgeSeconds Maximum allowed age.
+	 * @return self Exception with a formatted stale-snapshot message.
+	 */
+	public static function forSnapshot(?string $providerSource, int $time, int $ageSeconds, int $maxAgeSeconds): self {
 		$message='Exchange snapshot is stale';
-		if($provider_source!==null && trim($provider_source)!==''){
-			$message.=' for source '.$provider_source;
+		if($providerSource!==null && trim($providerSource)!==''){
+			$message.=' for source '.$providerSource;
 		}
-		$message.='. Age '.$age_seconds.'s exceeds max age '.$max_age_seconds.'s';
+		$message.='. Age '.$ageSeconds.'s exceeds max age '.$maxAgeSeconds.'s';
 		$message.=' (captured at '.gmdate('c', $time).')';
 		return new self($message);
 	}
 
+	/**
+	 * Creates an exception for a stale exchange quote.
+	 *
+	 * @param string $sourceCurrency Source ISO currency code.
+	 * @param string $targetCurrency Target ISO currency code.
+	 * @param ?string $providerSource Provider or upstream source label.
+	 * @param int $time Unix timestamp when the quote was captured.
+	 * @param int $ageSeconds Current quote age.
+	 * @param int $maxAgeSeconds Maximum allowed age.
+	 * @return self Exception with a formatted stale-quote message.
+	 */
 	public static function forQuote(
-		string $source_currency,
-		string $target_currency,
-		?string $provider_source,
+		string $sourceCurrency,
+		string $targetCurrency,
+		?string $providerSource,
 		int $time,
-		int $age_seconds,
-		int $max_age_seconds
+		int $ageSeconds,
+		int $maxAgeSeconds
 	): self {
-		$message='Exchange quote '.$source_currency.' -> '.$target_currency.' is stale';
-		if($provider_source!==null && trim($provider_source)!==''){
-			$message.=' for source '.$provider_source;
+		$message='Exchange quote '.$sourceCurrency.' -> '.$targetCurrency.' is stale';
+		if($providerSource!==null && trim($providerSource)!==''){
+			$message.=' for source '.$providerSource;
 		}
-		$message.='. Age '.$age_seconds.'s exceeds max age '.$max_age_seconds.'s';
+		$message.='. Age '.$ageSeconds.'s exceeds max age '.$maxAgeSeconds.'s';
 		$message.=' (captured at '.gmdate('c', $time).')';
 		return new self($message);
 	}

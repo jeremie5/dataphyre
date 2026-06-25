@@ -7,66 +7,125 @@
  */
 namespace dataphyre\fulltext_engine\stemming;
 
+/**
+ * French Snowball-style stemmer used by the fulltext engine.
+ *
+ * The stemmer lowercases a token, protects vowel-adjacent marker characters,
+ * computes RV/R1/R2 regions, applies the French suffix-removal steps, and then
+ * restores protected characters. Instances carry per-token region state while the
+ * public static entry point remains stateless for callers.
+ */
 class fr{
 	
     /**
-     * All french vowels
+     * Vowel set used by the French region and protected-character rules.
+     *
+     * Accented lowercase vowels are included because analyze() lowercases tokens
+     * before region calculation. The algorithm treats marker characters I, U, and
+     * Y as protected consonant-like placeholders only after step0().
+     *
+     * @var array<int, string>
      */
     protected static $vowels=['a', 'e', 'i', 'o', 'u', 'y', 'â', 'à', 'ë', 'é', 'ê', 'è', 'ï', 'î', 'ô', 'û', 'ù'];
+    /**
+     * Token currently being reduced.
+     *
+     * @var string
+     */
     protected $word;
 
     /**
-     * helper, contains stringified list of vowels
+     * Regex character-class fragment containing the vowel set.
+     *
+     * Rebuilt for each analyze() call so subclasses that override $vowels can
+     * adjust matching without sharing stale state between tokens.
+     *
      * @var string
      */
     protected $plainVowels;
 
     /**
-     * The original word, use to check if word has been modified
+     * Snapshot after region setup and before suffix-removal steps.
+     *
+     * The French algorithm uses this to decide whether residual cleanup should
+     * run after step 1/2 processing changed the token.
+     *
      * @var string
      */
     protected $originalWord;
 
     /**
-     * RV value
+     * RV substring for the current token.
+     *
+     * RV constrains verb and residual suffix removal; an empty value means no RV
+     * suffix can match for the current token.
+     *
      * @var string
      */
     protected $rv;
 
     /**
-     * RV index (based on the beginning of the word)
-     * @var int
+     * Start index of RV relative to the beginning of the current token.
+     *
+     * @var string
      */
     protected $rvIndex;
 
     /**
-     * R1 value
-     * @var int
+     * R1 substring for the current token.
+     *
+     * R1 constrains several nominal suffix reductions and is derived before R2.
+     *
+     * @var string
      */
     protected $r1;
 
     /**
-     * R1 index (based on the beginning of the word)
+     * Start index of R1 relative to the beginning of the current token.
+     *
      * @var int
      */
     protected $r1Index;
 
     /**
-     * R2 value
+     * R2 substring for the current token.
+     *
+     * R2 is the strictest suffix-removal region and is derived from R1.
+     *
      * @var int
      */
     protected $r2;
 
     /**
-     * R2 index (based on the beginning of the word)
+     * Start index of R2 relative to the beginning of the current token.
+     *
      * @var int
      */
     protected $r2Index;
 
+    /**
+     * Stems one French token.
+     *
+     * The method creates a fresh analyzer instance so region indexes and original
+     * word tracking cannot leak between tokens.
+     *
+     * @param string $word Token to stem.
+     * @return string Stemmed token.
+     */
     public static function stem($word){
         return (new static)->analyze($word);
     }
 
+    /**
+     * Runs the full French stemming pipeline for one token.
+     *
+     * The pipeline initializes protected characters and RV/R1/R2 regions, applies
+     * suffix steps in the order required by the French algorithm, and finishes by
+     * normalizing residual accents/protected markers.
+     *
+     * @param string $word Token to analyze.
+     * @return string Stemmed token after all applicable reductions.
+     */
     public function analyze($word){
         $this->word=mb_strtolower($word);
         $this->plainVowels=implode('', static::$vowels);
@@ -99,13 +158,14 @@ class fr{
 
 
     /**
-     *  Assume the word is in lower case.
-     *  Then put into upper case u or i preceded and followed by a vowel, and y preceded or followed by a vowel.
-     *  u after q is also put into upper case. For example,
-     *      jouer 		-> 		joUer
-     *      ennuie 		-> 		ennuIe
-     *      yeux 		-> 		Yeux
-     *      quand 		-> 		qUand
+     * Protects vowel-adjacent marker characters before region calculation.
+     *
+     * Input is expected to be lowercase. The pass marks u after q, u/i between
+     * vowels, and y adjacent to vowels with uppercase placeholders so later suffix
+     * and vowel tests do not treat those letters as ordinary vowels. finish()
+     * restores the placeholders after all suffix steps have run.
+     *
+     * @return void
      */
     private function step0(){
         $this->word=preg_replace('#([q])u#u', '$1U', $this->word);
@@ -486,10 +546,15 @@ class fr{
     }
 
     /**
-     *  If the word begins with two vowels, RV is the region after the third letter,
-     *  otherwise the region after the first vowel not at the beginning of the word,
-     *  or the end of the word if these positions cannot be found.
-     *  (Exceptionally, par, col or tap, at the begining of a word is also taken to define RV as the region to their right.)
+     * Calculates the RV region for the current token.
+     *
+     * Tokens shorter than three characters receive an empty RV at the end of the
+     * word. Words beginning with two vowels, or with the French exceptions par,
+     * col, and tap, place RV after the third character; otherwise RV starts after
+     * the first vowel that does not begin the token. The stored index is used by
+     * suffix searches to fail closed when no RV region exists.
+     *
+     * @return bool True when an RV boundary was found before the end of the token.
      */
     protected function rv(){
         $length=mb_strlen($this->word);
@@ -526,26 +591,67 @@ class fr{
         return false;
     }
 
+    /**
+     * Reports whether a suffix position falls inside the RV region.
+     *
+     * @param int $position Candidate suffix start index.
+     * @return bool True when the position is at or after RV.
+     */
     protected function inRv($position){
         return ($position >= $this->rvIndex);
     }
 
+    /**
+     * Reports whether a suffix position falls inside the R1 region.
+     *
+     * @param int $position Candidate suffix start index.
+     * @return bool True when the position is at or after R1.
+     */
     protected function inR1($position){
         return ($position >= $this->r1Index);
     }
 
+    /**
+     * Reports whether a suffix position falls inside the R2 region.
+     *
+     * @param int $position Candidate suffix start index.
+     * @return bool True when the position is at or after R2.
+     */
     protected function inR2($position){
         return ($position >= $this->r2Index);
     }
 
+    /**
+     * Searches for any suffix constrained to RV.
+     *
+     * @param array<int, string> $suffixes Candidate suffixes in priority order.
+     * @return int|false Suffix start position, or false when none matches.
+     */
     protected function searchIfInRv($suffixes){
         return $this->search($suffixes, $this->rvIndex);
     }
 
+    /**
+     * Searches for any suffix constrained to R2.
+     *
+     * @param array<int, string> $suffixes Candidate suffixes in priority order.
+     * @return int|false Suffix start position, or false when none matches.
+     */
     protected function searchIfInR2($suffixes){
         return $this->search($suffixes, $this->r2Index);
     }
 
+    /**
+     * Finds a suffix at the end of the current token.
+     *
+     * Search starts at the supplied region offset and returns the start position of
+     * the first candidate that reaches the end of the word. False means no
+     * candidate suffix matched the current token.
+     *
+     * @param array<int, string> $suffixes Candidate suffixes in priority order.
+     * @param int $offset Minimum index at which suffix matching may start.
+     * @return int|false Suffix start position, or false when none matches.
+     */
     protected function search($suffixes, $offset=0){
         $length=mb_strlen($this->word);
         if($offset > $length){
@@ -561,14 +667,24 @@ class fr{
     }
 
     /**
-     * R1 is the region after the first non-vowel following a vowel, or the end of the word if there is no such non-vowel.
+     * Calculates the R1 region from the current token.
+     *
+     * R1 starts after the first non-vowel following a vowel. If no such boundary
+     * exists, R1 is empty and its index points to the end of the token.
+     *
+     * @return void
      */
     protected function r1(){
         list($this->r1Index, $this->r1)=$this->rx($this->word);
     }
 
     /**
-     * R2 is the region after the first non-vowel following a vowel in R1, or the end of the word if there is no such non-vowel.
+     * Calculates the R2 region from the current R1 substring.
+     *
+     * R2 uses the same vowel/non-vowel boundary rule as R1, offset by the R1
+     * start index so suffix tests can compare against positions in the full token.
+     *
+     * @return void
      */
     protected function r2(){
         list($index, $value)=$this->rx($this->r1);
@@ -577,10 +693,14 @@ class fr{
     }
 
     /**
-     * Common function for R1 and R2
-     * Search the region after the first non-vowel following a vowel in $word, or the end of the word if there is no such non-vowel.
-     * R1 : $in=$this->word
-     * R2 : $in=R1
+     * Finds the Snowball-style region boundary for a token fragment.
+     *
+     * The returned index is relative to the supplied fragment, not the full word.
+     * Callers that derive R2 add the R1 offset after this helper returns. Missing
+     * vowel/non-vowel boundaries return an empty region at the fragment end.
+     *
+     * @param string $in Token fragment to inspect.
+     * @return array{0:int,1:string} Region start index and substring.
      */
     protected function rx($in){
         $length=mb_strlen($in);

@@ -1,0 +1,34 @@
+[
+	{
+		"name": "reactor_harness_mounts_component_snapshot_and_manifest",
+		"function": "dp_reactor_test_harness_mount_summary",
+		"args": [],
+		"expected": "{\"component\":\"counter box\",\"html_has_root\":true,\"snapshot_component\":\"counter_box\",\"snapshot_count\":2,\"snapshot_double\":4,\"manifest_actions\":0}",
+		"file": "/common/dataphyre/runtime/modules/reactor/unit_tests/reactor_test_harness_helpers.php",
+		"max_millis": 20
+	},
+	{
+		"name": "reactor_harness_dispatches_action_state_and_effects",
+		"function": "dp_reactor_test_harness_dispatch_summary",
+		"args": [],
+		"expected": "{\"status\":200,\"state_keys\":[\"count\"],\"effect_keys\":[\"snapshot\",\"component\",\"action\",\"events\"],\"event_name\":\"counter:changed\",\"event_self\":true}",
+		"file": "/common/dataphyre/runtime/modules/reactor/unit_tests/reactor_test_harness_helpers.php",
+		"max_millis": 20
+	},
+	{
+		"name": "reactor_harness_preserves_locked_state_from_snapshot",
+		"function": "dp_reactor_test_harness_locked_state_summary",
+		"args": [],
+		"expected": "{\"count\":9,\"account_id\":\"acct_1\"}",
+		"file": "/common/dataphyre/runtime/modules/reactor/unit_tests/reactor_test_harness_helpers.php",
+		"max_millis": 20
+	},
+	{
+		"name": "reactor_harness_mounts_child_slot_without_browser",
+		"function": "dp_reactor_test_harness_child_slot_summary",
+		"args": [],
+		"expected": "{\"has_parent\":true,\"has_child_html\":true,\"child_parent_attribute\":true,\"manifest_children\":[\"body\"]}",
+		"file": "/common/dataphyre/runtime/modules/reactor/unit_tests/reactor_test_harness_helpers.php",
+		"max_millis": 20
+	}
+]

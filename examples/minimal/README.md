@@ -33,4 +33,12 @@ The example intentionally sets `is_production` to `false` and disables
 direct-access protection. Treat it as a local bootstrap template, not as a
 production security profile.
 
-For the broader install flow, see [Getting started](../../GETTING_STARTED.md).
+## Application Boundary
+
+Application agents should treat this example as app-owned code around the
+Dataphyre runtime. Put application-specific behavior in the application
+bootstrap, install config, dialbacks, callbacks, plugins, MCP metadata,
+application-owned adapters, or reusable modules before proposing Dataphyre
+runtime-internal edits.
+
+For the broader install flow, see [Getting started](../../docs/GETTING_STARTED.md).

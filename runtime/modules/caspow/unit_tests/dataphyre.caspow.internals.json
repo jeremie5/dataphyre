@@ -1,0 +1,16 @@
+[
+  {
+    "name": "CASPOW internal helpers normalize proof payload fields",
+    "file": "/common/dataphyre/runtime/modules/caspow/unit_tests/caspow_test_helpers.php",
+    "function": "dp_caspow_unit_internal_helpers_json",
+    "args": [],
+    "expected": "{\"bits_a\":4,\"bits_b\":8,\"counter_bad\":null,\"counter_string\":42,\"decoded\":{\"ok\":true},\"scope\":\"checkout_scope__\"}"
+  },
+  {
+    "name": "CASPOW profile and network helpers are deterministic",
+    "file": "/common/dataphyre/runtime/modules/caspow/unit_tests/caspow_test_helpers.php",
+    "function": "dp_caspow_unit_profile_and_network_helpers_json",
+    "args": [],
+    "expected": "{\"strong\":{\"profile\":\"strong\",\"difficulty_bits\":18,\"chunk_size\":384,\"max_duration_ms\":2500,\"max_iterations\":16777216},\"constrained\":{\"profile\":\"constrained\",\"difficulty_bits\":15,\"chunk_size\":192,\"max_duration_ms\":1800,\"max_iterations\":16777216},\"ipv4_subnet\":\"203.0.113\",\"ipv6_subnet\":\"2001:db8:abcd:0012\",\"invalid_subnet\":\"\",\"digest\":\"82ad5b79042e9965ac6a6b94787fc12413d5bcf078dc859dd027c6081d46d84d\"}"
+  }
+]
