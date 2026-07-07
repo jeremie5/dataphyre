@@ -2,11 +2,11 @@
     "schema":  "dataphyre.public_export_manifest.v1",
     "package":  "dataphyre/dataphyre",
     "generated_by":  "dataphyre_public_export_builder",
-    "generated_at_utc":  "2026-07-07T10:43:21Z",
+    "generated_at_utc":  "2026-07-07T10:51:27Z",
     "copied_source_files":  1530,
     "skipped_source_files":  0,
     "export_file_count":  1530,
-    "export_tree_sha256":  "32b539695b6012c5098ee6e5fb6527fea4decef24b3a17434a26f38da257b83f",
+    "export_tree_sha256":  "0c2e0abdec1a2abd64a47b814ea989fbb6ad5d89de85177aaa8d98c638d84119",
     "release_boundary":  {
                              "default_audience":  "application_agents_building_apps",
                              "intended_use":  "runtime_docs_examples_and_release_attestation",
