@@ -1,4 +1,4 @@
-﻿# Stability Policy
+# Stability Policy
 
 This policy defines what public users can rely on in Dataphyre releases. It is
 intentionally conservative for the MIT re-release because Dataphyre is moving
@@ -106,6 +106,3 @@ status must remain visible in `MODULES.md` and release notes.
 Security fixes can change behavior in patch releases when preserving old
 behavior would keep users exposed. When that happens, the release notes call out
 the behavior change directly.
-
-
-

@@ -29,6 +29,7 @@
     "dataphyre": {
       "runtime-bootstrap": "runtime/bootstrap.php",
       "installer": "installer/install.php",
+      "consumer-init": "installer/init_consumer.php",
       "package-contract": "docs/PACKAGE.md",
       "release-manifest": "RELEASE_MANIFEST.json",
       "agent-boundary": {

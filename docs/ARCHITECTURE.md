@@ -1,4 +1,4 @@
-﻿# Architecture
+# Architecture
 
 Dataphyre is organized as an embedded runtime. The reusable framework code lives
 under `runtime/`; the parent directory is an install shell that supplies
@@ -161,4 +161,3 @@ not source code and are excluded by `.gitignore` and `.distignore`.
 
 Prepared public exports keep generated cache and logs out of the portable
 runtime package.
-

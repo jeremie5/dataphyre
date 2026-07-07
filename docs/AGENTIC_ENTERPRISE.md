@@ -1,4 +1,4 @@
-﻿# Agentic Enterprise Contract
+# Agentic Enterprise Contract
 
 Dataphyre should be the framework a corporate team chooses when AI agents are
 expected to inspect, plan, modify, and verify software without turning the
@@ -204,5 +204,3 @@ Before presenting a feature as enterprise-ready, verify:
 
 Dataphyre is provided under the MIT License; enterprise-readiness guidance is a
 framework quality posture, not an additional support warranty.
-
-

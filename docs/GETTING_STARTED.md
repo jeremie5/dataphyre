@@ -52,6 +52,12 @@ keep live install files in your project root. The public entrypoint template
 detects that Composer layout and sets `$_SERVER['DATAPHYRE_PROJECT_ROOT']`
 before including `vendor/dataphyre/dataphyre/runtime/bootstrap.php`.
 
+You can prepare the minimal consumer files with:
+
+```powershell
+php vendor/dataphyre/dataphyre/installer/init_consumer.php --root=.
+```
+
 ## Minimal Files
 
 A minimal install needs these files:
@@ -77,6 +83,9 @@ The public example provides templates for those files:
 - [Entrypoint template](../examples/minimal/index.example.php)
 - [Example app definition](../examples/minimal/applications/example_app/app.php)
 - [Example app bootstrap](../examples/minimal/applications/example_app/framework_bootstrap.php)
+
+The Composer initializer copies those same templates into the consumer project
+root and refuses to replace existing files unless `--force` is passed.
 
 ## Flight Sheet
 

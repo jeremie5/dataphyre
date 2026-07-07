@@ -1,10 +1,16 @@
-﻿# Changelog
+# Changelog
 
 All notable public-release preparation changes are tracked here.
 
 ## Unreleased
 
-No unreleased public changes yet.
+### Added
+
+- Added `installer/init_consumer.php`, a small Composer consumer initializer
+  that prepares `flight_sheet.php`, `index.php`, and the minimal application
+  outside `vendor/`.
+- Updated Composer consumer validation to exercise the shipped initializer
+  before booting the minimal app.
 
 ## 2.0.3 - 2026-07-07
 
@@ -135,7 +141,3 @@ No unreleased public changes yet.
   application-owned tooling without making them public runtime modules.
 - Legacy and experimental modules remain labeled in `MODULES.md` until their
   public APIs, schemas, and configuration contracts are fully stable.
-
-
-
-

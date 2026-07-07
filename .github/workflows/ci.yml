@@ -35,6 +35,10 @@ jobs:
         shell: pwsh
         run: ./dev/tools/check_export -WarnOnly -WarningLimit 200
 
+      - name: Run git archive release surface check
+        shell: pwsh
+        run: ./dev/tools/check_release_archive.ps1
+
       - name: Build sanitized public export
         shell: pwsh
         run: |

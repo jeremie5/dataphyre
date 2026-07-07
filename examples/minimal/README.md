@@ -25,6 +25,13 @@ From a Dataphyre install root:
 3. Run `php -S 127.0.0.1:8080 -t . index.php`.
 4. Open `http://127.0.0.1:8080/`.
 
+From a Composer consumer project after `composer require dataphyre/dataphyre`:
+
+```powershell
+php vendor/dataphyre/dataphyre/installer/init_consumer.php --root=.
+php -S 127.0.0.1:8080 -t . index.php
+```
+
 The example flight sheet points directly at
 `examples/minimal/applications/example_app` when run from a Dataphyre source
 tree, or at `applications/example_app` when copied into a Composer consumer

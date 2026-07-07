@@ -37,7 +37,9 @@ application roots, direct-access controls, and Flightdeck settings.
 
 Composer vendor installs can keep `flight_sheet.php` and `applications/` in the
 consumer project root by setting `$_SERVER['DATAPHYRE_PROJECT_ROOT']` before
-requiring `vendor/dataphyre/dataphyre/runtime/bootstrap.php`.
+requiring `vendor/dataphyre/dataphyre/runtime/bootstrap.php`. The helper at
+`installer/init_consumer.php` can initialize the minimal consumer files from an
+installed package.
 
 ## Runtime Boundary
 

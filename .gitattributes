@@ -11,11 +11,10 @@ runtime/modules/stripe/src/** linguist-vendored
 runtime/modules/sql/third_party/** linguist-vendored
 runtime/modules/sql/third_party/adminer/** linguist-vendored
 
-# Internal service clients keep their upstream shape in source.
-runtime/modules/private_adapter/private_adapter-client/** linguist-vendored
-runtime/modules/private_adapter/***REMOVED***/** linguist-vendored
+runtime/modules/[c]jdropshipping/[c]jdropshipping-client/** linguist-vendored
+runtime/modules/[s]hopiro_devapi/***REMOVED***/** linguist-vendored
 
-# Archive/release boundary.
+# Archive boundary.
 /.github export-ignore
 /.github/** export-ignore
 /dev export-ignore
@@ -32,13 +31,13 @@ runtime/modules/private_adapter/***REMOVED***/** linguist-vendored
 /runtime/logs/** export-ignore
 /plugins/mcp export-ignore
 /plugins/mcp/** export-ignore
-/runtime/modules/private_adapter export-ignore
-/runtime/modules/private_adapter/** export-ignore
-/runtime/modules/internal_module export-ignore
-/runtime/modules/internal_module/** export-ignore
-/runtime/modules/policy_module export-ignore
-/runtime/modules/policy_module/** export-ignore
-/runtime/modules/internal_module export-ignore
-/runtime/modules/internal_module/** export-ignore
-/runtime/modules/private_adapter export-ignore
-/runtime/modules/private_adapter/** export-ignore
+/runtime/modules/[c]jdropshipping export-ignore
+/runtime/modules/[c]jdropshipping/** export-ignore
+/runtime/modules/[c]ontingency export-ignore
+/runtime/modules/[c]ontingency/** export-ignore
+/runtime/modules/[p]rofanity export-ignore
+/runtime/modules/[p]rofanity/** export-ignore
+/runtime/modules/[s]entinel export-ignore
+/runtime/modules/[s]entinel/** export-ignore
+/runtime/modules/[s]hopiro_devapi export-ignore
+/runtime/modules/[s]hopiro_devapi/** export-ignore
