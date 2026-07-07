@@ -32,8 +32,8 @@ All notable Dataphyre changes are tracked here.
 
 ### Added
 
-- Added source CI coverage for Composer consumer installs from prepared public
-  exports and release tags.
+- Added source CI coverage for Composer consumer installs from package artifacts
+  and release tags.
 - Documented the GitHub VCS Composer install path for projects whose default
   Composer repositories do not yet resolve `dataphyre/dataphyre`.
 
@@ -114,8 +114,7 @@ All notable Dataphyre changes are tracked here.
   `dataphyre_mcp_verify_all`, release gates, and Dataphyre hot-path benchmarks
   remain project evidence for framework, MCP publication, release-surface, or
   shared production hot-path work.
-- Added standalone release manifest verification tooling for prepared public
-  exports.
+- Added standalone release manifest verification tooling for package artifacts.
 - Added machine-readable release-boundary fields for ordinary app-agent
   entrypoints, verification, extension ownership, escalation, non-ceremony,
   release content, and project evidence, plus matching Composer app-agent
