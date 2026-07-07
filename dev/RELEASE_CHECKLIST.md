@@ -1,4 +1,4 @@
-﻿# Public Release Checklist
+# Public Release Checklist
 
 Use this checklist before publishing a Dataphyre release. It intentionally avoids
 repository setup commands so it can be used whether Dataphyre is embedded in a
@@ -17,8 +17,7 @@ larger project or prepared as a standalone export.
   contract.
 - [ ] `docs/STABILITY.md` defines the public compatibility policy for the release.
 - [ ] `dev/PUBLIC_EXPORT.md`, `.gitignore`, and `.distignore` agree on local
-  install files that stay out of source control and the public release;
-  `release_check` validates the required ignore rules.
+  install files that stay out of source control and the public release.
 - [ ] `runtime/README.md` reflects the released module tree.
 - [ ] `docs/MODULES.md` lists every released module and clearly marks adapters,
   legacy modules, and experimental modules. Internal-only modules stay out of
@@ -50,42 +49,30 @@ larger project or prepared as a standalone export.
   benchmark scope.
 - [ ] MCP public docs and guidelines name the live coverage, readiness, safety,
   enterprise-audit, and aggregate verification surfaces.
-- [ ] Product-specific modules are clearly marked as adapters, embedded-install
-  integrations, or redacted internal modules.
+- [ ] Product-specific public modules are clearly marked as adapters or
+  embedded-install integrations.
 - [ ] Legacy and experimental modules remain clearly marked in `docs/MODULES.md`.
-- [ ] Locally present redacted modules have matching `plugins/mcp/*.json`
-  declarations with `release: redacted` for internal MCP tooling.
 - [ ] Any changed module status matches `docs/STABILITY.md` and release notes.
 - [ ] Generated fixtures use accurate file extensions.
 
 ## Verification
 
-- [ ] `./dev/tools/release_check` passes.
 - [ ] Added or changed production hot-path code follows `dev/PERFORMANCE.md`:
   shared framework behavior, lean implementation, benchmark evidence when
   performance-sensitive, and targeted behavior verification.
-- [ ] `./dev/tools/prepare_export -Output <prepared-export>` builds a
-  sanitized public tree.
-- [ ] `./dev/tools/check_export -Root <prepared-export>` passes against
-  the sanitized public tree.
+- [ ] Release validation passes against the prepared public tree.
 - [ ] Prepared public export contains `RELEASE_MANIFEST.json` with non-sensitive
   export counts, public module inventory, bundled component inventory, per-file
   hashes, deterministic tree hash, omitted artifact categories, and verification
   entries.
-- [ ] `./dev/tools/verify_manifest -Root <prepared-export>` passes
-  when manifest-only attestation verification is needed.
-- [ ] `./dev/tools/check_source` passes for a maintainer
-  source-checkout CI-equivalent pass. If local `php` is not on `PATH`, pass
-  `-Php <path-to-php>` or set `DATAPHYRE_PHP`.
-- [ ] `./dev/tools/lint_php.ps1` passes for real PHP files when running a
+- [ ] `./dev/tools/public/lint_php.ps1` passes for real PHP files when running a
   narrower PHP-only check.
 - [ ] Composer metadata validates.
 - [ ] Composer metadata does not advertise unsupported autoload behavior.
 - [ ] Markdown local links pass.
 - [ ] JSON fixtures parse successfully.
-- [ ] Source-checkout CI workflow validates Composer metadata, release checks,
-  public export checks, sanitized export preparation, PHP linting, and MCP
-  validation.
+- [ ] Public CI validates Composer metadata, PHP linting, and MCP validation.
+- [ ] Release validation completes before publication.
 
 ## Embedded Install Review
 

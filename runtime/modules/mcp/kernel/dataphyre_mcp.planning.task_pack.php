@@ -722,7 +722,7 @@ trait dataphyre_mcp_planning_task_pack_surfaces {
 			$path=(string)($file['scope_path'] ?? $file['path'] ?? '');
 			if(
 				$this->apply_audit_path_is_in_scope($path, 'runtime/modules/mcp')
-				|| str_starts_with($path, 'dev/tools/mcp_')
+				|| str_starts_with($path, 'dev/tools/public/mcp_')
 			){
 				$publication_validation[]='dataphyre_mcp_doctor';
 				$publication_validation[]='Dataphyre MCP publication evidence';

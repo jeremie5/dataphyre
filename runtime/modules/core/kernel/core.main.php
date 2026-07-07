@@ -255,12 +255,10 @@ if(RUN_MODE!=='diagnostic'){
 	if($mod=dp_module_present('sanitation')) require($mod[0]);
 	if($mod=dp_module_present('stripe')) require($mod[0]);
 	if($mod=dp_module_present('fulltext_engine')) require($mod[0]);
-	if($mod=dp_module_present('policy_module')) require($mod[0]);
 	if($mod=dp_module_present('access')) require($mod[0]);
 	if($mod=dp_module_present('time_machine')) require($mod[0]);
 	if($mod=dp_module_present('supercookie')) require($mod[0]);
 	if($mod=dp_module_present('fraudar')) require($mod[0]);
-	if($mod=dp_module_present('sentinel')) require($mod[0]);
 }
 
 \dataphyre\core::load_plugins('post_init');

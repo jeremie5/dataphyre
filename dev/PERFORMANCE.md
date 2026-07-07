@@ -24,9 +24,9 @@ proof when performance is part of the reason for the shape of the implementation
 If performance-sensitive production code is added or reshaped, record evidence
 for the affected hot path:
 
-- Add or reuse a focused scenario in `dev/tools/benchmark_hot_paths.php`.
+- Add or reuse a focused scenario in `dev/tools/public/benchmark_hot_paths.php`.
 - Record baseline, candidate, restore/control when practical, and final
-  confirmation in `dev/benchmarks/BENCHMARKS.md`.
+  confirmation in local maintainer benchmark notes.
 - Include `opcache` and `opcache-jit` matrix runs for accepted hot-path changes
   when the scenario is CPU-bound or class-loading-sensitive.
 - Run targeted tests or release checks that prove behavior did not change.

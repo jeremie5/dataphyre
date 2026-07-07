@@ -10,8 +10,8 @@ on:
       - "v*"
 
 jobs:
-  release:
-    name: Release checks
+  public:
+    name: Public checks
     runs-on: ubuntu-latest
 
     steps:
@@ -27,34 +27,12 @@ jobs:
       - name: Validate Composer metadata
         run: composer validate --strict --no-check-lock
 
-      - name: Run release surface checks
-        shell: pwsh
-        run: ./dev/tools/release_check
-
-      - name: Run public export source audit
-        shell: pwsh
-        run: ./dev/tools/check_export -WarnOnly -WarningLimit 200
-
-      - name: Run git archive release surface check
-        shell: pwsh
-        run: ./dev/tools/check_release_archive.ps1
-
-      - name: Build sanitized public export
-        shell: pwsh
-        run: |
-          $export = Join-Path $env:RUNNER_TEMP 'dataphyre-export'
-          ./dev/tools/prepare_export -Output $export
-          ./dev/tools/check_consumer -PackagePath $export -Version '*@dev'
-          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -match '^v(.+)$') {
-            ./dev/tools/check_consumer -RepositoryType vcs -RepositoryUrl 'https://github.com/jeremie5/dataphyre.git' -Version $Matches[1]
-          }
-
       - name: Lint PHP files
         shell: pwsh
-        run: ./dev/tools/lint_php.ps1
+        run: ./dev/tools/public/lint_php.ps1
 
       - name: Run MCP self-test
-        run: php dev/tools/mcp_self_test.php
+        run: php dev/tools/public/mcp_self_test.php
 
       - name: Run MCP live validation
-        run: php dev/tools/mcp_live_validate.php
+        run: php dev/tools/public/mcp_live_validate.php

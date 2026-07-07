@@ -18,15 +18,12 @@
 
 ## Verification
 
-- [ ] `./dev/tools/release_check`
-- [ ] `./dev/tools/check_export -WarnOnly -WarningLimit 200`
-- [ ] `./dev/tools/prepare_export -Output <prepared-export>` when release/export files changed
-- [ ] `./dev/tools/check_export -Root <prepared-export>` when release/export files changed
-- [ ] `./dev/tools/check_source` (`-Php <path-to-php>` or `DATAPHYRE_PHP` is OK) for a local CI-equivalent source-checkout pass
-- [ ] `./dev/tools/lint_php.ps1` (`-Php <path-to-php>` or `DATAPHYRE_PHP` is OK for local runs)
-- [ ] MCP self-test/live validation covered by `check_source` when MCP or release tooling changed
+- [ ] `./dev/tools/public/lint_php.ps1` (`-Php <path-to-php>` or `DATAPHYRE_PHP` is OK for local runs)
+- [ ] `php dev/tools/public/mcp_self_test.php` when MCP tooling changed
+- [ ] `php dev/tools/public/mcp_live_validate.php` when MCP tooling changed
 - [ ] Relevant module tests or reproduction notes
 - [ ] Documentation links checked
+- [ ] Release sanitation evidence provided separately when the change is release-facing
 
 ## Notes
 

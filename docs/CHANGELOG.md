@@ -89,16 +89,10 @@ All notable public-release preparation changes are tracked here.
 - Added public export verification for local install files, high-confidence
   secret markers, local filesystem/deployment path markers, and app-owned
   runtime or asset ownership markers.
-- Redacted bundled lexical moderation datasets from prepared public exports and
-  added public export checks for obvious policy_module markers.
-- Redacted legacy asset distribution and fallback/replay modules from prepared
-  public exports.
-- Redacted InternalModule and PolicyModule from prepared public exports.
-- Added private `plugins/mcp/*.json` declarations so internal MCP tooling can
-  describe redacted modules in local worktrees without adding them to the public
-  release index or prepared export.
-- Added release checks that require locally present redacted modules to have
-  internal MCP declarations with `release: redacted` and `visibility`.
+- Removed product-specific, policy-specific, and internal adapter modules from
+  public package artifacts.
+- Kept local MCP declarations out of public release packages when internal
+  integrations are present in a private worktree.
 - Added release checks for required `.gitignore` and `.distignore` rules
   covering install-local config, plugin declarations, generated state, modcache
   files, vendor state, and Composer lock state.

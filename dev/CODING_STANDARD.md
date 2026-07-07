@@ -1,4 +1,4 @@
-﻿# Dataphyre Coding Standard 1
+# Dataphyre Coding Standard 1
 
 DCS-1 defines the source and documentation style for Dataphyre-owned PHP code.
 It is intentionally small: Dataphyre favors stable runtime contracts, readable
@@ -189,17 +189,15 @@ callers.
 For touched PHP files, run:
 
 ```powershell
-./dev/tools/lint_php.ps1
+./dev/tools/public/lint_php.ps1
 ```
 
 When `php` is not on `PATH` in a source checkout, pass `-Php <path-to-php>`
 or set `DATAPHYRE_PHP` for the current shell.
 
-For a source-checkout pass that mirrors the maintainer CI sequence, run:
-
-```powershell
-./dev/tools/check_source -Php <path-to-php>
-```
+Release-impacting changes should also pass the local release validation process
+used by the publisher. Public checkout verification uses the tracked tools under
+`dev/tools/public/`.
 
 For documentation-only changes, review Markdown links and keep
 `README.md`, `runtime/README.md`, `runtime/documentation/README.md`, and

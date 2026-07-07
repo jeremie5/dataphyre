@@ -15,9 +15,9 @@ New Framework-owned dialbacks use `CALL_<MODULE>_FRAMEWORK_<SURFACE_OR_CONCEPT>_
 ## Inventory Command
 
 ```powershell
-.\dev\tools\report_trace_dialback_coverage.ps1 -Root . -CandidatesOnly
-.\dev\tools\report_trace_dialback_coverage.ps1 -Root . -CandidatesOnly -Format Json -Output .\dev\trace_dialback_inventory.generated.json
-.\dev\tools\check_trace_dialback_usage.ps1 -Root .
+.\dev\tools\public\report_trace_dialback_coverage.ps1 -Root . -CandidatesOnly
+.\dev\tools\public\report_trace_dialback_coverage.ps1 -Root . -CandidatesOnly -Format Json -Output .\dev\trace_dialback_inventory.generated.json
+.\dev\tools\public\check_trace_dialback_usage.ps1 -Root .
 ```
 
 The generated JSON is a review artifact. Do not treat every candidate row as a required runtime edit.

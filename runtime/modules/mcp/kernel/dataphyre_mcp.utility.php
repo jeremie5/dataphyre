@@ -228,7 +228,6 @@ trait dataphyre_mcp_utility_methods {
 			'dataphyre.postal_codes'=>['file'=>'geoposition/kernel/geoposition.tables.php', 'definition_id'=>'postal_codes'],
 			'issues'=>['file'=>'issue/kernel/issue.tables.php', 'definition_id'=>'issues'],
 			'locales'=>['file'=>'localization/kernel/localization.tables.php', 'definition_id'=>'locales'],
-			'dataphyre.internal_events'=>['file'=>'sentinel/kernel/sentinel.tables.php', 'definition_id'=>'events'],
 			'stripe_payment_methods'=>['file'=>'stripe/kernel/stripe.tables.php', 'definition_id'=>'payment_methods'],
 			'dataphyre.user_changes'=>['file'=>'time_machine/kernel/time_machine.tables.php', 'definition_id'=>'user_changes'],
 			'dataphyre.tracelogs'=>['file'=>'tracelog/kernel/tracelog.tables.php', 'definition_id'=>'tracelogs'],

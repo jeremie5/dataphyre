@@ -1151,9 +1151,9 @@ function flightdeck_render_pre_init_error(?string $error_message=null, ?object $
  * Terminates bootstrap with the safest available pre-init error response.
  *
  * the routine panic-logs first, prevents recursive rendering loops,
- * delegates to core unavailable when the runtime is loaded, triggers InternalModule when
- * possible, clears buffers, tries the Flightdeck renderer in development, and
- * finally emits a minimal 503 HTML fallback.
+ * delegates to core unavailable when the runtime is loaded, clears buffers,
+ * tries the Flightdeck renderer in development, and finally emits a minimal
+ * 503 HTML fallback.
  */
 function pre_init_error(?string $error_message=null, ?object $exception=null, ?bool $is_from_unavailable=false) : never {
 	$panic_message='Pre-init error: '.($error_message ?? 'Unknown bootstrap failure');
@@ -1193,14 +1193,6 @@ function pre_init_error(?string $error_message=null, ?object $exception=null, ?b
 			}
 		}
 		\dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='Pre init error: '.$error_message, 'safemode', $exception);
-	}
-	if(!defined('RUN_MODE') || RUN_MODE!=='diagnostic'){
-		if(class_exists('dataphyre\internal_module', false)){
-			dataphyre\internal_module::trigger('pre_init_error', [
-				'exception'=>$exception,
-				'collect_tracelog'=>true
-			], 5);
-		}
 	}
 	while(ob_get_level()!==0){
 		ob_end_clean();

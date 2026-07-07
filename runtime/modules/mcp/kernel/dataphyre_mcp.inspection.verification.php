@@ -340,10 +340,9 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 		}
 		if($module_filter===[]){
 			foreach([
-				'common/dataphyre/dev/tools/mcp_self_test.php',
-				'common/dataphyre/dev/tools/mcp_live_validate.php',
-				'common/dataphyre/dev/tools/mcp_config.php',
-				'common/dataphyre/dev/tools/release_check',
+				'common/dataphyre/dev/tools/public/mcp_self_test.php',
+				'common/dataphyre/dev/tools/public/mcp_live_validate.php',
+				'common/dataphyre/dev/tools/public/mcp_config.php',
 			] as $tool_path){
 				$absolute=$this->safe_repo_path($tool_path);
 				if(!is_file($absolute)){
@@ -639,10 +638,9 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 		$extension=strtolower(pathinfo($normalized, PATHINFO_EXTENSION));
 		$text=$extension==='php' ? $this->read_repo_text($normalized, 40000) : '';
 		$category=match($scope_path){
-			'dev/tools/mcp_self_test.php'=>'mcp_self_test',
-			'dev/tools/mcp_live_validate.php'=>'mcp_live_validate',
-			'dev/tools/mcp_config.php'=>'mcp_config',
-			'dev/tools/release_check'=>'release_check',
+			'dev/tools/public/mcp_self_test.php'=>'mcp_self_test',
+			'dev/tools/public/mcp_live_validate.php'=>'mcp_live_validate',
+			'dev/tools/public/mcp_config.php'=>'mcp_config',
 			default=>'tool_script',
 		};
 		return [
@@ -651,7 +649,7 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 			'path'=>$normalized,
 			'execution'=>'not_executed',
 			'route_free_candidate'=>$extension==='php' ? str_contains($text, 'PHP_SAPI') : true,
-			'known_mcp_wrapper'=>$scope_path==='dev/tools/release_check' ? 'dataphyre_release_check' : null,
+			'known_mcp_wrapper'=>null,
 			'modified_at'=>$this->file_modified_iso($path),
 		];
 	}

@@ -11,9 +11,6 @@ runtime/modules/stripe/src/** linguist-vendored
 runtime/modules/sql/third_party/** linguist-vendored
 runtime/modules/sql/third_party/adminer/** linguist-vendored
 
-runtime/modules/[c]jdropshipping/[c]jdropshipping-client/** linguist-vendored
-runtime/modules/[s]hopiro_devapi/***REMOVED***/** linguist-vendored
-
 # Archive boundary.
 /.github export-ignore
 /.github/** export-ignore
@@ -31,13 +28,3 @@ runtime/modules/[s]hopiro_devapi/***REMOVED***/** linguist-vendored
 /runtime/logs/** export-ignore
 /plugins/mcp export-ignore
 /plugins/mcp/** export-ignore
-/runtime/modules/[c]jdropshipping export-ignore
-/runtime/modules/[c]jdropshipping/** export-ignore
-/runtime/modules/[c]ontingency export-ignore
-/runtime/modules/[c]ontingency/** export-ignore
-/runtime/modules/[p]rofanity export-ignore
-/runtime/modules/[p]rofanity/** export-ignore
-/runtime/modules/[s]entinel export-ignore
-/runtime/modules/[s]entinel/** export-ignore
-/runtime/modules/[s]hopiro_devapi export-ignore
-/runtime/modules/[s]hopiro_devapi/** export-ignore

@@ -21,7 +21,7 @@ use Dataphyre\Http\ResponseEmitter;
 final class compiled_route_dispatcher {
 
 	/**
-	 * InternalModule object used by middleware pipelines when a handler already emitted output.
+	 * Marker object used by middleware pipelines when a handler already emitted output.
 	 */
 	private static ?object $no_emit_sentinel=null;
 

@@ -68,15 +68,15 @@ trait dataphyre_mcp_inspection_inventory_surfaces {
 	}
 
 	/**
-	 * Returns source-checkout MCP support files that are maintainer-only evidence.
+	 * Returns tracked source-checkout MCP support files for public validation.
 	 *
 	 * @return array<string,string> Stable diagnostic names mapped to repo-relative PHP paths.
 	 */
 	private function mcp_source_checkout_support_files(): array {
 		return [
-			'self_test'=>'common/dataphyre/dev/tools/mcp_self_test.php',
-			'live_validator'=>'common/dataphyre/dev/tools/mcp_live_validate.php',
-			'config_generator'=>'common/dataphyre/dev/tools/mcp_config.php',
+			'self_test'=>'common/dataphyre/dev/tools/public/mcp_self_test.php',
+			'live_validator'=>'common/dataphyre/dev/tools/public/mcp_live_validate.php',
+			'config_generator'=>'common/dataphyre/dev/tools/public/mcp_config.php',
 		];
 	}
 

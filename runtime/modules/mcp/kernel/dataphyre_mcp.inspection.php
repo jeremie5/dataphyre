@@ -20,21 +20,19 @@ trait dataphyre_mcp_inspection_surfaces {
 	use dataphyre_mcp_inspection_verification_surfaces;
 
 	/**
-	 * Runs the shared Dataphyre release check script through a fixed command boundary.
-	 *
-	 * the script path is first-party and fixed, the Dataphyre root is passed explicitly, and no caller
-	 * shell fragments are accepted. The command may inspect release hygiene but remains bounded by run_command.
+	 * Reports the release-check boundary for public MCP clients.
 	 *
 	 * @return array<string, mixed> Release check command result.
-	 *
-	 * @throws RuntimeException When the release check script is missing.
 	 */
 	private function run_release_check(): array {
-		$script=$this->common_root.'/dataphyre/dev/tools/release_check';
-		if(!is_file($script)){
-			throw new RuntimeException('Release check script not found at '.$script.'.');
-		}
-		$result=$this->run_command(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script, '-Root', $this->common_root.'/dataphyre'], 180000, true);
+		$result=[
+			'check_type'=>'dataphyre_release_check',
+			'write_policy'=>'read_only',
+			'execution'=>'not_exposed',
+			'available'=>false,
+			'passed'=>false,
+			'message'=>'Local release sanitation commands are outside the public MCP execution surface.',
+		];
 		$result['application_agent_operating_contract']=$this->mcp_application_agent_operating_contract('release_check');
 		$result['ordinary_app_work']=$this->mcp_ordinary_app_work_contract('release_check');
 		$result['maintainer_tool_boundary']=[
@@ -56,7 +54,7 @@ trait dataphyre_mcp_inspection_surfaces {
 	 * @throws RuntimeException When the validator script is missing.
 	 */
 	private function mcp_live_validate(): array {
-		$script=$this->common_root.'/dataphyre/dev/tools/mcp_live_validate.php';
+		$script=$this->common_root.'/dataphyre/dev/tools/public/mcp_live_validate.php';
 		if(!is_file($script)){
 			throw new RuntimeException('MCP live validator not found at '.$script.'.');
 		}
@@ -120,7 +118,7 @@ trait dataphyre_mcp_inspection_surfaces {
 			'passed'=>($live['passed'] ?? false)===true,
 			'result'=>$live,
 		];
-		$self_test_script=$this->common_root.'/dataphyre/dev/tools/mcp_self_test.php';
+		$self_test_script=$this->common_root.'/dataphyre/dev/tools/public/mcp_self_test.php';
 		$self_test=$this->run_command([$this->php_binary(), $self_test_script], 180000, true);
 		$steps[]=[
 			'name'=>'full_self_test',
@@ -488,7 +486,7 @@ trait dataphyre_mcp_inspection_surfaces {
 				$leaks[]=$this->relative_path($path);
 			}
 		}
-		foreach(['common/dataphyre/dev/tools/mcp_self_test.php', 'common/dataphyre/dev/tools/mcp_config.php', 'common/dataphyre/dev/tools/mcp_live_validate.php'] as $path){
+		foreach(['common/dataphyre/dev/tools/public/mcp_self_test.php', 'common/dataphyre/dev/tools/public/mcp_config.php', 'common/dataphyre/dev/tools/public/mcp_live_validate.php'] as $path){
 			$text=$this->read_repo_text($path, 120000);
 			if(preg_match($app_pattern, $text)===1){
 				$leaks[]=$path;

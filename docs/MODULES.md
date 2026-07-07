@@ -66,9 +66,6 @@ For compatibility guarantees attached to these status labels, see
   Dataphyre release packages and are not baseline dependencies.
 - `stripe` and similar modules are adapters. They are documented as opt-in
   integrations with their own configuration.
-- Bundled lexical moderation datasets are not part of the public runtime
-  package; applications provide moderation rulesets or classifier callbacks for
-  their own deployment.
 - Legacy and experimental modules stay clearly marked until their public API,
   schemas, and configuration contracts are stable.
 

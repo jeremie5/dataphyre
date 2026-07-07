@@ -21,8 +21,6 @@
 /logs/*
 /runtime/cache/
 /runtime/logs/
-/runtime/modules/policy_module/
-/runtime/modules/internal_module/
 /runtime/modcache.php
 /runtime/sql_migration/plans/
 /runtime/sql_migration/snapshots/

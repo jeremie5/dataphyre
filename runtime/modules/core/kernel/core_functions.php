@@ -1118,14 +1118,6 @@ class core {
 		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		}
-		if(RUN_MODE!=='diagnostic'){
-			if(class_exists('dataphyre\internal_module')){
-				\dataphyre\internal_module::trigger('unavailable', [
-					'error'=>func_get_args(),
-					'collect_tracelog'=>true
-				], 5);
-			}
-		}
 		log_error("Service unavailability: ".$error_description, $exception ?? new \Exception(json_encode(func_get_args())));
 		$error_code=substr(strtoupper(md5($error_description.$error_type.$file.$class.$function)), 0, 8);
 		$known_error_conditions=json_decode(file_get_contents($known_error_conditions_file=ROOTPATH['dataphyre']."cache/known_error_conditions.json"),true);
