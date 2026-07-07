@@ -2,6 +2,15 @@
 
 All notable public-release preparation changes are tracked here.
 
+## Unreleased
+
+### Added
+
+- Added source CI coverage for Composer consumer installs from prepared public
+  exports and release tags.
+- Documented the GitHub VCS Composer install path for projects whose default
+  Composer repositories do not yet resolve `dataphyre/dataphyre`.
+
 ## 2.0.1 - 2026-07-07
 
 ### Fixed

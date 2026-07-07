@@ -18,6 +18,29 @@ The bootstrap file resolves `flight_sheet.php`, locates the configured
 application, registers Dataphyre's runtime autoloader, and then hands control to
 the selected application.
 
+## Composer Repository Resolution
+
+Tagged public releases are installable through Composer when the consumer
+project has a repository that can resolve `dataphyre/dataphyre`. If default
+Composer repositories do not resolve the package, add the GitHub VCS repository:
+
+```json
+{
+  "repositories": [
+    {
+      "type": "vcs",
+      "url": "https://github.com/jeremie5/dataphyre.git"
+    }
+  ],
+  "require": {
+    "dataphyre/dataphyre": "^2.0"
+  }
+}
+```
+
+Composer installs the package under `vendor/dataphyre/dataphyre/`. Boot it by
+including the explicit runtime bootstrap from that installed directory.
+
 ## Composer Autoload
 
 `composer.json` intentionally avoids a PSR-4 `autoload` section for now.

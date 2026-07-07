@@ -6,6 +6,8 @@ on:
     branches:
       - main
       - master
+    tags:
+      - "v*"
 
 jobs:
   release:
@@ -38,6 +40,10 @@ jobs:
         run: |
           $export = Join-Path $env:RUNNER_TEMP 'dataphyre-export'
           ./dev/tools/prepare_export -Output $export
+          ./dev/tools/check_consumer -PackagePath $export -Version '*@dev'
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -match '^v(.+)$') {
+            ./dev/tools/check_consumer -RepositoryType vcs -RepositoryUrl 'https://github.com/jeremie5/dataphyre.git' -Version $Matches[1]
+          }
 
       - name: Lint PHP files
         shell: pwsh

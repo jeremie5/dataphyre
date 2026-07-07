@@ -26,6 +26,24 @@ project/applications/
 
 You can also provide explicit application roots in `flight_sheet.php`.
 
+## Composer Install
+
+Dataphyre releases are Composer packages, but the stable boot contract is still
+the explicit runtime entrypoint, not `vendor/autoload.php`.
+
+If your Composer repositories already resolve `dataphyre/dataphyre`, require the
+current 2.x package normally. Otherwise add the GitHub VCS repository first:
+
+```powershell
+composer config repositories.dataphyre vcs https://github.com/jeremie5/dataphyre.git
+composer require dataphyre/dataphyre:^2.0
+```
+
+In a Composer vendor install, Dataphyre lives under
+`vendor/dataphyre/dataphyre/`. Copy the public templates from that directory and
+include `vendor/dataphyre/dataphyre/runtime/bootstrap.php` from your entrypoint,
+or embed the package under your chosen framework path.
+
 ## Minimal Files
 
 A minimal install needs these files:
