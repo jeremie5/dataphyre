@@ -3694,7 +3694,9 @@ namespace {
 				'X-Dataphyre-MVC'=>'1',
 			],
 			'routes'=>function(RouteCollection $routes): void {
-				$routes->get('/abort', static fn(): never => \Dataphyre\Mvc\Mvc::abort(418, 'Teapot', ['X-Abort'=>'static']));
+				$routes->get('/abort', static function(): void {
+					\Dataphyre\Mvc\Mvc::abort(418, 'Teapot', ['X-Abort'=>'static']);
+				});
 				$routes->get('/abort-if', static function(): array {
 					\Dataphyre\Mvc\Mvc::abortIf(false, 500);
 					\Dataphyre\Mvc\Mvc::abortUnless(true, 500);
@@ -3876,13 +3878,13 @@ namespace {
 		if(($list[0]['domain'] ?? null)!=='admin.example.test' || ($list[1]['domain'] ?? null)!=='{tenant}.example.test'){
 			$failures[]='MVC route list should expose route domains.';
 		}
-		$route=Route::get('/routing-domain/{id}', static fn(): null => null)->domain('{tenant}.routing.test')->compile();
+		$route=Route::get('/routing-domain/{id}', static fn() => null)->domain('{tenant}.routing.test')->compile();
 		$matched=\dataphyre\routing\compiled_route_dispatcher::match_routes_for_request([$route], 'GET', '/routing-domain/9', 'blue.routing.test');
 		if(($matched['parameters']['tenant'] ?? null)!=='blue' || ($matched['parameters']['id'] ?? null)!=='9'){
 			$failures[]='Routing domain matcher should share host parameter extraction with MVC.';
 		}
 		$parameters=[];
-		$definition=\Dataphyre\Mvc\RouteDefinition::make('GET', '/match-domain', static fn(): null => null, ['domain'=>'match.example.test']);
+		$definition=\Dataphyre\Mvc\RouteDefinition::make('GET', '/match-domain', static fn() => null, ['domain'=>'match.example.test']);
 		if(!$definition->matches('GET', '/match-domain', $parameters, 'match.example.test') || $parameters!==[]){
 			$failures[]='MVC route definitions should expose host-aware matching.';
 		}
@@ -3974,7 +3976,7 @@ namespace {
 		if($global_resource->status!==200 || $global_resource_reject->status!==404){
 			$failures[]='MVC app route_patterns should apply to resource route parameters.';
 		}
-		$route=Route::get('/routing-constraints/{id}', static fn(): null => null)->whereNumber('id')->compile();
+		$route=Route::get('/routing-constraints/{id}', static fn() => null)->whereNumber('id')->compile();
 		if(\dataphyre\routing\compiled_route_dispatcher::match_routes_for_request([$route], 'GET', '/routing-constraints/9')===null){
 			$failures[]='Routing matcher should allow constrained parameters.';
 		}
@@ -4021,7 +4023,7 @@ namespace {
 		if($app->routes()->url('archive.month', ['year'=>'2026'])!=='/archive/2026' || $app->routes()->url('archive.month', ['year'=>'2026', 'month'=>'05'])!=='/archive/2026/05'){
 			$failures[]='MVC named URLs should compose required and optional route parameters.';
 		}
-		$route=Route::get('/routing-optional/{name?}', static fn(): null => null)->whereAlpha('name')->compile();
+		$route=Route::get('/routing-optional/{name?}', static fn() => null)->whereAlpha('name')->compile();
 		$missing=\dataphyre\routing\compiled_route_dispatcher::match_routes_for_request([$route], 'GET', '/routing-optional');
 		$present=\dataphyre\routing\compiled_route_dispatcher::match_routes_for_request([$route], 'GET', '/routing-optional/native');
 		$rejected=\dataphyre\routing\compiled_route_dispatcher::match_routes_for_request([$route], 'GET', '/routing-optional/123');
@@ -4115,7 +4117,7 @@ namespace {
 		if(($global_list[0]['defaults']['locale'] ?? null)!=='en' || ($global_list[0]['defaults']['format'] ?? null)!=='json'){
 			$failures[]='MVC route list should expose app route_defaults on routes.';
 		}
-		$route=Route::get('/routing-default/{name?}', static fn(): null => null)->defaults('name', 'native')->compile();
+		$route=Route::get('/routing-default/{name?}', static fn() => null)->defaults('name', 'native')->compile();
 		$matched=\dataphyre\routing\compiled_route_dispatcher::match_routes_for_request([$route], 'GET', '/routing-default');
 		if(($matched['parameters']['name'] ?? null)!=='native'){
 			$failures[]='Routing matcher should merge defaults into missing optional parameters.';
@@ -7620,7 +7622,9 @@ PHP);
 	function dp_mvc_regression_assert_error_handler(array &$failures): void {
 		$app=new MvcApplication('error-handler', [
 			'routes'=>[
-				['path'=>'/explode', 'handler'=>static fn(): never => throw new \RuntimeException('boom')],
+				['path'=>'/explode', 'handler'=>static function(): void {
+					throw new \RuntimeException('boom');
+				}],
 			],
 			'error_handler'=>static fn(\Exception $throwable, Request $request): Response => Response::json([
 				'error'=>$throwable->getMessage(),

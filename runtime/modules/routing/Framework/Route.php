@@ -301,7 +301,7 @@ final class Route implements CompilableRoute {
 	 * @throws \RuntimeException When the declaration cannot be converted into a dispatcher descriptor.
 	 */
 	public static function normalizeMiddleware(mixed $definition): array {
-		return (new self(['GET'], '/', static fn(): null => null))->normalizeMiddlewareDefinition($definition);
+		return (new self(['GET'], '/', static fn() => null))->normalizeMiddlewareDefinition($definition);
 	}
 
 	/**

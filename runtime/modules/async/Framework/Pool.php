@@ -115,7 +115,7 @@ final class Pool {
 	 * @return PendingTask Pending task resolving to null after all items complete.
 	 */
 	public function each(array $items, mixed $task): PendingTask {
-		return $this->map($items, $task)->then(static function(array $results): null {
+		return $this->map($items, $task)->then(static function(array $results) {
 			return null;
 		});
 	}
