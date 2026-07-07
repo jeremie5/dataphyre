@@ -1,4 +1,4 @@
-﻿# Contributing to Dataphyre
+# Contributing to Dataphyre
 
 This package contains runtime docs, examples, package metadata, and release
 attestation for Dataphyre.
