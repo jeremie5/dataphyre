@@ -729,7 +729,7 @@ trait dataphyre_mcp_client_enterprise_audit_surfaces {
 				'id'=>'mcp_metadata',
 				'label'=>'Local MCP metadata',
 				'status'=>($counts['mcp_files'] ?? 0)>0 ? 'framework_mcp_surface' : 'available',
-				'use_when'=>'Agents need local visibility into redacted or install-specific modules without public release exposure.',
+				'use_when'=>'Agents need local visibility into redacted or install-specific modules without adding them to package module metadata.',
 				'agent_action'=>'Use plugins/mcp declarations for install-local tool visibility; keep them out of package module metadata.',
 			],
 			[
