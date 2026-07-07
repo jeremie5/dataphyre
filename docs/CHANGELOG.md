@@ -2,6 +2,21 @@
 
 All notable public-release preparation changes are tracked here.
 
+## 2.0.1 - 2026-07-07
+
+### Fixed
+
+- Fixed standalone package installs so `DATAPHYRE_PROJECT_ROOT` resolves to the
+  Dataphyre install root instead of its parent directory. Embedded
+  `common/dataphyre` installs continue to resolve to the directory above
+  `common`.
+- Added code-defined regression coverage for standalone and embedded bootstrap
+  root resolution.
+- Sanitized prepared public export metadata when `.gitattributes` contains
+  directory-level private-module export rules.
+- Corrected getting-started and runtime documentation for standalone and
+  embedded root resolution.
+
 ## 2.0 - 2026-06-25
 
 ### Changed

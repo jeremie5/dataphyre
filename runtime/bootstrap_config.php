@@ -25,7 +25,7 @@ final class bootstrap_config {
 	public static function resolve(string $runtime_root): array {
 		$runtime_root=rtrim($runtime_root, '/\\').'/';
 		$install_root=rtrim(dirname($runtime_root), '/\\').'/';
-		$project_root=rtrim(dirname(rtrim($install_root, '/\\')), '/\\').'/';
+		$project_root=self::project_root($install_root);
 		$flight_sheet=self::load_flight_sheet($install_root);
 		$bootstrap=array_key_exists('bootstrap', $flight_sheet) && is_array($flight_sheet['bootstrap']) ? $flight_sheet['bootstrap'] : [];
 		$config=array_replace(self::defaults($runtime_root), $bootstrap);
@@ -75,6 +75,25 @@ final class bootstrap_config {
 				],
 			],
 		], $legacy_defaults);
+	}
+
+	/**
+	 * Resolves the application project root for standalone and embedded installs.
+	 *
+	 * Embedded layouts keep Dataphyre under `common/dataphyre`; standalone package
+	 * installs keep `runtime/`, `flight_sheet.php`, and app roots beside each
+	 * other in the install root.
+	 *
+	 * @param string $install_root Dataphyre install root.
+	 * @return string Project root with trailing slash.
+	 */
+	private static function project_root(string $install_root): string {
+		$install_root=rtrim($install_root, '/\\');
+		$parent=dirname($install_root);
+		if(strtolower(basename($install_root))==='dataphyre' && strtolower(basename($parent))==='common'){
+			return rtrim(dirname($parent), '/\\').'/';
+		}
+		return $install_root.'/';
 	}
 
 	/**

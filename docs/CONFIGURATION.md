@@ -50,7 +50,7 @@ defaults.
 | `allow_app_override` | `true` | Allows app switching with a generated `app_override_key`. Public templates set this to `false`. |
 | `is_production` | `true` | Controls production behavior such as whether bootstrap exceptions are shown directly. |
 | `max_execution_time` | `30` | Passed to PHP's `set_time_limit()` during bootstrap. |
-| `application_roots` | `[]` | Extra application root directories. Relative paths are resolved from Dataphyre's project root. |
+| `application_roots` | `[]` | Extra application root directories. Relative paths are resolved from Dataphyre's project root: the install root for standalone installs, or the directory above `common` for embedded `common/dataphyre` installs. |
 | `public_ip_address` | `null` | Optional server address override for proxy or tunnel deployments. |
 | `web_server_port` | `null` | Optional port paired with `public_ip_address`. |
 | `license` | `false` | Install-provided license metadata. Dataphyre itself is MIT; this is install metadata. |

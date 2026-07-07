@@ -16,12 +16,12 @@ project/
       runtime/
 ```
 
-then Dataphyre treats `project/common/` as the project root. By default, it will
+then Dataphyre treats `project/` as the project root. By default, it will
 look for applications in:
 
 ```text
-project/common/applications/
 project/applications/
+<parent-of-project>/applications/
 ```
 
 You can also provide explicit application roots in `flight_sheet.php`.

@@ -31,9 +31,9 @@ Minimal entrypoint:
 require __DIR__.'/runtime/bootstrap.php';
 ```
 
-Most installations provide `flight_sheet.php` at the project root for bootstrap
-settings such as the default application, application roots, direct-access
-controls, and Flightdeck settings.
+Most installations provide `flight_sheet.php` beside `runtime/` in the
+Dataphyre install root for bootstrap settings such as the default application,
+application roots, direct-access controls, and Flightdeck settings.
 
 ## Runtime Boundary
 

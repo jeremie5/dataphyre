@@ -70,9 +70,11 @@ Applications are searched under:
 <configured application roots>
 ```
 
-Relative roots in `flight_sheet.php` are resolved from the project root. The
-environment variable `DATAPHYRE_APPLICATION_ROOTS` can append more roots using
-the platform path separator.
+Relative roots in `flight_sheet.php` are resolved from the Dataphyre project
+root. Standalone installs use the install root as the project root; embedded
+`common/dataphyre` installs use the directory above `common`. The environment
+variable `DATAPHYRE_APPLICATION_ROOTS` can append more roots using the platform
+path separator.
 
 ## Application Definition
 
