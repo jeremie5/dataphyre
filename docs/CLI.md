@@ -41,6 +41,19 @@ consumer project root.
 | `php runtime/modules/panel/kernel/panel_field_catalog_check.php` | Check Panel field, renderer, theme, and asset catalog behavior. |
 | `php runtime/modules/mvc/kernel/mvc_regression.php` | Run the route-free MVC, Routing, controller, middleware, and module integration regression harness. |
 
+## MCP Server Command
+
+The MCP server is a stdio process started by an MCP client, not a normal
+interactive command:
+
+| Command | Purpose |
+| --- | --- |
+| `php runtime/modules/mcp/kernel/dataphyre_mcp.php` | Start the Dataphyre MCP stdio server. |
+| `php runtime/modules/mcp/kernel/dataphyre_mcp.php --allow-unsafe` | Start the server with unsafe-gated tools explicitly enabled. |
+
+For client JSON examples and safety boundaries, see
+[MCP server](../runtime/modules/mcp/documentation/Dataphyre_MCP.md).
+
 ## Contributor Source-Checkout Tools
 
 These tools live under `dev/tools/public/` and support contributors working on
