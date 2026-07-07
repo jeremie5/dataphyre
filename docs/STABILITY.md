@@ -14,7 +14,7 @@ Dataphyre follows semantic versioning for public releases:
 - Patch releases are compatible bug fixes, docs fixes, or release tooling
   improvements.
 
-The current public release is tracked as `2.0.1` in [CHANGELOG.md](CHANGELOG.md).
+The current public release is tracked as `2.0.2` in [CHANGELOG.md](CHANGELOG.md).
 Treat documented stable runtime contracts as the supported 2.x compatibility
 surface.
 

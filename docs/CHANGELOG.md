@@ -4,12 +4,28 @@ All notable public-release preparation changes are tracked here.
 
 ## Unreleased
 
+No public-release changes yet.
+
+## 2.0.2 - 2026-07-07
+
 ### Added
 
 - Added source CI coverage for Composer consumer installs from prepared public
   exports and release tags.
 - Documented the GitHub VCS Composer install path for projects whose default
   Composer repositories do not yet resolve `dataphyre/dataphyre`.
+
+### Fixed
+
+- Fixed PHP 8.1 compatibility in package lint checks by avoiding newer return
+  type syntax in shipped PHP files.
+- Fixed release validation portability across Windows PowerShell and PowerShell
+  7 on Ubuntu.
+- Fixed release manifest verification for portable JSON integer types.
+- Fixed MCP command validation on PHP 8.1 by preserving child-process exit
+  codes when command output is collected.
+- Fixed MCP source-checkout path handling so symlinked `common/dataphyre`
+  layouts continue to return portable package-relative paths.
 
 ## 2.0.1 - 2026-07-07
 
