@@ -1,6 +1,6 @@
 # Changelog
 
-All notable public-release preparation changes are tracked here.
+All notable Dataphyre changes are tracked here.
 
 ## Unreleased
 
@@ -69,8 +69,8 @@ All notable public-release preparation changes are tracked here.
 ### Changed
 
 - Added [Dataphyre 2.0 migration notes](changelog/v2.0.md) summarizing the
-  `457e55322e606d962355f315f6b3e66acd7f17f3` to
-  `e962dbbb9dbdeff3a895945ec4fcf27fb38d66ad` release jump.
+  `a682534470207a31460a5c6626b760d792647e3b` to
+  `6adbcbc56000c24be4c94199a9beaa2a4d24ecb3` release jump.
 - Prepared Dataphyre for a public MIT re-release.
 - Normalized Dataphyre-owned PHP headers to MIT/SPDX.
 - Clarified the repository layout as an embedded Dataphyre installation with
@@ -129,8 +129,8 @@ All notable public-release preparation changes are tracked here.
 ### Notes
 
 - Dataphyre is now released under the MIT License.
-- Product-specific embedded adapters are redacted from public release packages
-  and are not core runtime dependencies.
+- Product-specific embedded adapters are application-owned and are not core
+  runtime dependencies.
 - Local MCP plugin declarations can still describe private integrations for
   application-owned tooling without making them public runtime modules.
 - Legacy and experimental modules remain labeled in `MODULES.md` until their

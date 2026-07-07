@@ -4,8 +4,11 @@ Dataphyre commands are explicit maintenance and development tools. They do not
 run on web requests.
 
 Use `php <script> --help` for PHP scripts and `-Help` for PowerShell scripts.
-Set `DATAPHYRE_PROJECT_ROOT` when a runtime command is executed from a Composer
-vendor install and needs to find the consumer project root.
+Command examples are relative to the Dataphyre package root. In an embedded
+install that is usually `common/dataphyre`; in a Composer install it is usually
+`vendor/dataphyre/dataphyre`. Set `DATAPHYRE_PROJECT_ROOT` when a runtime
+command is executed from a Composer vendor install and needs to find the
+consumer project root.
 
 ## Install And Package Commands
 
@@ -16,7 +19,7 @@ vendor install and needs to find the consumer project root.
 | `php common/dataphyre/installer/install.php install --root=<project> [--source=<path>]` | Copy the configured Dataphyre source into `common/dataphyre` and refresh the lock. |
 | `php common/dataphyre/installer/install.php update --root=<project> [--source=<path>]` | Update the managed Dataphyre tree and refresh the lock. |
 | `php common/dataphyre/installer/install.php lock --root=<project>` | Recompute `dataphyre.lock` after intentional installer-managed changes. |
-| `php common/dataphyre/installer/install.php verify --root=<project>` | Verify the managed tree against `dataphyre.lock`. |
+| `php common/dataphyre/installer/install.php verify --root=<project>` | Verify the managed tree against `dataphyre.lock`; `check` is an alias. |
 | `php common/dataphyre/installer/install.php doctor --root=<project>` | Print installer state for diagnostics. |
 
 ## Runtime Maintenance Commands
@@ -41,7 +44,8 @@ vendor install and needs to find the consumer project root.
 ## Contributor Source-Checkout Tools
 
 These tools live under `dev/tools/public/` and support contributors working on
-Dataphyre itself. They are not framework runtime API.
+Dataphyre itself from the Git source tree. They are not framework runtime API,
+and application/package users do not need them for normal app work.
 
 | Command | Purpose |
 | --- | --- |

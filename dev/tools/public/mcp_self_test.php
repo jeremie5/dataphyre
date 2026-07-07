@@ -21,7 +21,7 @@ Options:
   -h, --help  Show this help text.
 
 Runs the Dataphyre MCP self-test suite for contributors. The tool can run from
-an embedded common/dataphyre checkout or a standalone source checkout.
+an embedded common/dataphyre tree or a standalone source tree.
 
 HELP;
 	exit(0);
@@ -29,7 +29,7 @@ HELP;
 
 $root=dataphyre_mcp_self_test_workspace_root(__DIR__);
 if(!is_string($root)){
-	fwrite(STDERR, "Unable to resolve embedded Dataphyre source checkout root. Expected common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php below the workspace root.\n");
+	fwrite(STDERR, "Unable to resolve embedded Dataphyre source tree root. Expected common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php below the workspace root.\n");
 	exit(2);
 }
 
@@ -13536,12 +13536,12 @@ $checks=[
 				|| (($data['manual_config']['mcpServers']['dataphyre']['command'] ?? null)!=='php')
 				|| !in_array('common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php', $data['manual_config']['mcpServers']['dataphyre']['args'] ?? [], true)
 				|| !in_array('--allow-unsafe', $data['unsafe_config_example']['mcpServers']['dataphyre']['args'] ?? [], true)
-				|| (($data['config_generator']['scope'] ?? null)!=='maintainer/source-checkout helper only')
-				|| !str_contains((string)($data['config_generator']['release_guidance'] ?? ''), 'dev helpers are not release artifacts')
+				|| (($data['config_generator']['scope'] ?? null)!=='contributor helper only')
+				|| !str_contains((string)($data['config_generator']['release_guidance'] ?? ''), 'contributor helpers are optional')
 				|| !str_contains((string)($data['config_generator']['app_agent_boundary'] ?? ''), 'Metadata only')
 				|| !str_contains((string)($data['config_generator']['app_agent_boundary'] ?? ''), 'not an app-agent checklist')
 				|| !str_contains((string)($data['config_generator']['ordinary_app_action'] ?? ''), 'Use manual_config')
-				|| !str_contains((string)($data['config_generator']['ordinary_app_action'] ?? ''), 'do not run source-checkout helper scripts for ordinary app work')
+				|| !str_contains((string)($data['config_generator']['ordinary_app_action'] ?? ''), 'do not require contributor helper scripts for ordinary app work')
 				|| str_contains(json_encode($data['config_generator'] ?? [], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 'dev/tools')
 				|| !array_key_exists('DATAPHYRE_MCP_PHP_BINARY', $data['environment'] ?? [])
 				|| !in_array('SQL query execution', $data['safety']['intentionally_not_exposed'] ?? [], true)
@@ -19069,7 +19069,7 @@ $checks=[
 				|| !str_contains((string)($data['change_classification']['proof_contract'] ?? ''), 'Source-checkout maintainer benchmark evidence')
 				|| !str_contains((string)($data['change_classification']['proof_contract'] ?? ''), 'opcache-JIT')
 				|| !in_array('maintainer/source-checkout benchmark evidence required before keeping Dataphyre shared hot-path changes', $data['recommended_verification'] ?? [], true)
-				|| !in_array('do not ask application agents or released installs to run dev benchmark tooling', $data['recommended_verification'] ?? [], true)
+				|| !in_array('do not ask application agents to run contributor benchmark tooling', $data['recommended_verification'] ?? [], true)
 				|| count(array_filter($data['recommended_verification'] ?? [], static fn(string $item): bool => str_contains($item, 'dev/tools/public/benchmark_hot_paths')))!==0
 				|| !str_contains((string)($data['change_classification']['benchmark_scope'] ?? ''), 'application changes using Dataphyre')
 				|| !str_contains((string)($data['change_classification']['application_boundary'] ?? ''), 'Application behavior should stay')
@@ -19112,7 +19112,7 @@ $checks=[
 				|| (($data['change_classification']['benchmark_required'] ?? null)!==true)
 				|| !str_contains((string)($data['change_classification']['benchmark_scope'] ?? ''), 'application changes using Dataphyre')
 				|| !in_array('maintainer/source-checkout benchmark evidence required before keeping Dataphyre shared hot-path changes', $data['recommended_verification'] ?? [], true)
-				|| !in_array('do not ask application agents or released installs to run dev benchmark tooling', $data['recommended_verification'] ?? [], true)
+				|| !in_array('do not ask application agents to run contributor benchmark tooling', $data['recommended_verification'] ?? [], true)
 				|| str_contains($text, 'common/dataphyre/runtime/modules/core/kernel/runtime.php')
 			){
 				throw new RuntimeException('mcp enterprise adoption audit did not normalize Dataphyre package-prefixed paths before classifying hot-path files: '.json_encode([

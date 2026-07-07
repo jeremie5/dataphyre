@@ -138,7 +138,7 @@ return [
 ```
 
 Public config examples live as `config/*.example.php`. Local `config/*.php`
-files are install state and stay out of the public export.
+files are install state and should stay outside shared package artifacts.
 
 For the concrete bootstrap, application, and module config keys, see
 [Configuration reference](CONFIGURATION.md).
@@ -148,10 +148,9 @@ For the concrete bootstrap, application, and module config keys, see
 Install plugins are loaded from `plugins/pre_init/*.php` and
 `plugins/post_init/*.php`. Install-local MCP declarations live under
 `plugins/mcp/*.json` for internal developer metadata. These files are local
-integration metadata, not portable runtime features. Package artifacts should
-not include install-local declarations. Application-specific behavior should use config,
-dialbacks, callbacks, plugins, MCP metadata, or reusable runtime modules rather
-than patching Dataphyre core.
+integration metadata, not portable runtime features. Application-specific
+behavior should use config, dialbacks, callbacks, plugins, MCP metadata, or
+reusable runtime modules rather than patching Dataphyre core.
 
 ## Generated State
 
@@ -159,5 +158,5 @@ Dataphyre creates and reads generated state during boot, including verification
 markers, cache overlays, load-level files, local keys, and logs. Those files are
 not source code and are excluded by `.gitignore` and `.distignore`.
 
-Prepared public exports keep generated cache and logs out of the portable
-runtime package.
+Portable package artifacts keep generated cache and logs out of the runtime
+source tree.

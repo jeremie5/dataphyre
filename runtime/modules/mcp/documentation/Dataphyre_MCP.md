@@ -147,16 +147,16 @@ Workflow playbooks make the same distinction: client playbooks may use `dataphyr
 
 ## Internal Module Declarations
 
-Public module release coverage comes from `docs/MODULES.md` and the release/export
-scripts. Internal worktrees can still expose redacted modules to MCP through
-private plugin declarations in `plugins/mcp/*.json`.
+Public module coverage comes from `docs/MODULES.md`. Install-local worktrees can
+expose application-owned modules to MCP through plugin declarations in
+`plugins/mcp/*.json`.
 
-Those JSON files are install-level plugin metadata and are omitted from prepared
-public exports. MCP reads them without booting Dataphyre or executing plugin PHP,
-then annotates `dataphyre_list_modules`, `dataphyre_module_describe`, and
+Those JSON files are install-level plugin metadata, not Dataphyre module docs.
+MCP reads them without booting Dataphyre or executing plugin PHP, then annotates
+`dataphyre_list_modules`, `dataphyre_module_describe`, and
 `dataphyre_runtime_version_summary` with `visibility`, `release`, `declared_by`,
-and declaration notes. This keeps private adapters available for internal
-diagnostics and planning while leaving the public docs and package index clean.
+and declaration notes. This keeps app-local adapters available for diagnostics
+and planning while leaving the Dataphyre module index clean.
 
 The `dataphyre://ai-guidelines` resource and `dataphyre_runtime_guidelines` prompt provide baseline framework rules for agents before they edit Dataphyre runtime or application code. Additional workflow prompts include `dataphyre_feature_plan`, `dataphyre_debug_triage`, `dataphyre_panel_workflow`, `dataphyre_release_triage`, `dataphyre_sql_schema_workflow`, `dataphyre_route_manifest_workflow`, and `dataphyre_diagnostics_workflow` for app planning, diagnostics, Panel work, release triage, SQL schema inspection, route manifest inspection, and diagnostic handoffs.
 
@@ -443,7 +443,7 @@ Use `dataphyre_mcp_enterprise_adoption_audit` before describing a Dataphyre fram
 
 The audit returns contract checklist status, runtime quality gate status, governance baseline checks, change classification, extension strategy, module evidence, portability signals, missing evidence, and next actions. `evidence_next_action` and `governance_next_action` narrow the next proof item so agents do not turn the whole audit into default app-work ceremony.
 
-Governance checks cover tenant/application boundaries, access policy, audit evidence, redaction/data classification, and framework-versus-application verification ownership. Benchmarks are required only for Dataphyre shared production hot-path candidates; application changes and MCP/docs control-plane changes use focused verification instead, and released MCP guidance must not ask application agents or released installs to run benchmark tooling.
+Governance checks cover tenant/application boundaries, access policy, audit evidence, redaction/data classification, and framework-versus-application verification ownership. Benchmarks are required only for Dataphyre shared production hot-path candidates; application changes and MCP/docs control-plane changes use focused verification instead, and default MCP guidance must not ask application agents to run contributor benchmark tooling.
 
 Use `dataphyre_mcp_capability_matrix` when preparing release notes, client
 capability summaries, or public documentation that should be derived from live
@@ -645,7 +645,7 @@ Point MCP clients at the stdio command from the project root. Example manual JSO
 }
 ```
 
-Use `dataphyre_mcp_client_config_summary` to export the same portable JSON shape for a target client. Source-checkout helper scripts are maintainer conveniences only; they are not release artifacts and should not be required of application agents.
+Use `dataphyre_mcp_client_config_summary` to export the same portable JSON shape for a target client. Source-tree helper scripts are contributor conveniences; application agents should use the MCP config summary or direct server entrypoint instead of requiring helper scripts.
 
 For tools that may start local services or write smoke reports, add `--allow-unsafe`:
 

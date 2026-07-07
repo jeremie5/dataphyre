@@ -221,7 +221,7 @@ function dp_panel_regression_options(array $argv): array {
  * @return void
  */
 function dp_panel_regression_usage(): void {
-	echo "Usage: php panel_regression.php [--example|--suite=<path>] [--json=<path>] [--manifest=<path>] [--manifest-only] [--fail-on-skip]\n";
+	echo "Usage: php runtime/modules/panel/kernel/panel_regression.php [--example|--suite=<path>] [--json=<path>] [--manifest=<path>] [--manifest-only] [--fail-on-skip]\n";
 }
 
 /**

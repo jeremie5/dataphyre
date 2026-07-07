@@ -59,8 +59,7 @@ says otherwise:
 - compiled route/cache artifacts;
 - local plugin hook contents;
 - install-local MCP plugin declarations under `plugins/mcp/*.json`;
-- redacted runtime modules and private adapter modules outside the public
-  module index;
+- application-owned adapters and modules outside the Dataphyre module index;
 - private helper functions not documented in module guides;
 - module internals under `kernel/` that are only loaded as part of boot;
 - third-party client internals bundled under vendored paths.

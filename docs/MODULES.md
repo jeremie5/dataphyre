@@ -1,9 +1,9 @@
 ﻿# Dataphyre Modules
 
-This file maps the current module surface for the public release. Dataphyre can
-run embedded in a larger application, so not every module is part of the core
-boot path. Most modules are optional and are loaded only when present and enabled
-by the installation.
+This file maps the current module surface. Dataphyre can run embedded in a
+larger application, so not every module is part of the core boot path. Most
+modules are optional and are loaded only when present and enabled by the
+installation.
 
 For compatibility guarantees attached to these status labels, see
 [STABILITY.md](STABILITY.md).
@@ -62,8 +62,8 @@ For compatibility guarantees attached to these status labels, see
 - Most optional modules are discovered by convention from `runtime/modules/<module>/`.
 - Application-level modules can override or disable common modules in an embedded
   install.
-- Product-specific install/plugin integrations are redacted from public
-  Dataphyre release packages and are not baseline dependencies.
+- Product-specific install/plugin integrations are application-owned and are
+  not baseline Dataphyre dependencies.
 - `stripe` and similar modules are adapters. They are documented as opt-in
   integrations with their own configuration.
 - Legacy and experimental modules stay clearly marked until their public API,

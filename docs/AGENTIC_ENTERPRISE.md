@@ -17,7 +17,7 @@ for agents and operators to understand safely:
 - MCP tools provide bounded, read-only discovery before an agent edits code;
 - application behavior extends through config, dialbacks, callbacks, plugin
   hooks, and reusable modules;
-- release exports include non-sensitive manifest provenance;
+- package metadata can include non-sensitive manifest provenance;
 - Dataphyre shared-runtime hot-path changes are benchmarked before they are
   kept.
 
@@ -98,9 +98,8 @@ Use these layers first:
 5. Reusable runtime modules when behavior belongs in Dataphyre.
 
 Private `plugins/mcp/*.json` declarations are local application or internal
-tooling metadata. They can help agents see app-local modules, but public
-Dataphyre releases omit them and must not rely on private metadata as framework
-behavior.
+tooling metadata. They can help agents see app-local modules, but they are not
+Dataphyre framework behavior.
 
 Core runtime edits are appropriate when the change is truly framework work:
 bug fixes, public APIs, reusable contracts, diagnostics, safety, module
@@ -142,7 +141,7 @@ maintainers should be able to identify:
 - audit and trace evidence for decisions that affect billing, security, storage,
   messaging, or data movement;
 - redaction and data classification rules for diagnostics, MCP payloads, logs,
-  and release artifacts;
+  and package artifacts;
 - verification evidence that separates framework claims from application-owned
   behavior and keeps the proof scope explicit.
 
@@ -187,7 +186,7 @@ Before presenting a feature as enterprise-ready, verify:
 - configuration shape avoids leaking secrets and app-local values;
 - tests or manifests cover the intended public contract;
 - package validation and manifest checks pass where relevant;
-- release manifest provenance is present for public packages;
+- package manifest provenance is present where the package includes it;
 - agent guidance explains how to extend the feature without patching core for an
   application.
 

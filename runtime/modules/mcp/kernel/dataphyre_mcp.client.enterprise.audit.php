@@ -206,7 +206,7 @@ trait dataphyre_mcp_client_enterprise_audit_surfaces {
 			$mcp_files!==[] ? 'php -l runtime/modules/mcp/kernel/dataphyre_mcp.php runtime/modules/mcp/kernel/dataphyre_mcp.registry.php runtime/modules/mcp/kernel/dataphyre_mcp.client.php runtime/modules/mcp/kernel/dataphyre_mcp.client.workflow.state.php runtime/modules/mcp/kernel/dataphyre_mcp.client.workflow.start_pack.php runtime/modules/mcp/kernel/dataphyre_mcp.client.workflow.php runtime/modules/mcp/kernel/dataphyre_mcp.client.enterprise.php runtime/modules/mcp/kernel/dataphyre_mcp.client.skills.php runtime/modules/mcp/kernel/dataphyre_mcp.client.setup.php runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.php runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.contract.php runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.response.php runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.schema.php runtime/modules/mcp/kernel/dataphyre_mcp.planning.docs.php runtime/modules/mcp/kernel/dataphyre_mcp.planning.task_pack.php runtime/modules/mcp/kernel/dataphyre_mcp.inspection.data.php runtime/modules/mcp/kernel/dataphyre_mcp.inspection.routing.php runtime/modules/mcp/kernel/dataphyre_mcp.inspection.mvc.php runtime/modules/mcp/kernel/dataphyre_mcp.inspection.verification.php' : null,
 			$mcp_files!==[] ? 'Dataphyre MCP publication evidence for MCP surface changes' : null,
 			$hot_path_files!==[] ? 'maintainer/source-checkout benchmark evidence required before keeping Dataphyre shared hot-path changes' : null,
-			$hot_path_files!==[] ? 'do not ask application agents or released installs to run dev benchmark tooling' : null,
+			$hot_path_files!==[] ? 'do not ask application agents to run contributor benchmark tooling' : null,
 			$public_claim ? 'maintainer/source-checkout release check evidence before public claims' : null,
 		])));
 		$evidence_next_action=$this->mcp_enterprise_evidence_next_action($checklist, $runtime_quality_gates, $governance_baseline, $change_classification, $recommended_verification);
@@ -532,10 +532,10 @@ trait dataphyre_mcp_client_enterprise_audit_surfaces {
 				'evidence'=>[
 					'portability_signal_count'=>$counts['portability_signal_count'] ?? 0,
 				],
-				'action'=>'Redact paths, tenant names, credentials, signed URLs, auth material, and product identifiers before sharing diagnostics or release artifacts.',
+				'action'=>'Redact paths, tenant names, credentials, signed URLs, auth material, and product identifiers before sharing diagnostics or package artifacts.',
 				'required_evidence'=>[
 					'data categories handled by the feature',
-					'redaction policy for diagnostics, logs, MCP payloads, and release artifacts',
+					'redaction policy for diagnostics, logs, MCP payloads, and package artifacts',
 					'copy-safe evidence shape that excludes secrets, tenant/customer identifiers, signed URLs, and local paths',
 				],
 				'suggested_tools'=>['dataphyre_mcp_safety_boundary_report', 'dataphyre_tracelog_read', 'dataphyre_diagnostics_last_error'],

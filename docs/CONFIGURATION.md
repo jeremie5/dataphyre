@@ -6,7 +6,7 @@ Dataphyre has three main configuration layers:
 - application definitions in each application's `app.php`;
 - module configuration overlays under `config/`.
 
-Keep local configuration out of public exports. Public examples use
+Keep local configuration outside shared package artifacts. Public examples use
 `*.example.php` filenames so they can be copied into place without exposing
 embedded-install state.
 

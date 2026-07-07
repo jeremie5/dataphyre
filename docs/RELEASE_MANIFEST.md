@@ -1,10 +1,10 @@
 ﻿# Release Manifest
 
-Prepared public exports include `RELEASE_MANIFEST.json` at the export root. The
-manifest is a non-sensitive attestation for release consumers, CI systems, and
-agent tooling. It describes what was exported without exposing local source
-paths, host names, user names, credentials, tenant identifiers, or private
-adapter names.
+Dataphyre package artifacts can include `RELEASE_MANIFEST.json` at the package
+root. The manifest is a non-sensitive attestation for package consumers, CI
+systems, and agent tooling. It describes package contents without exposing local
+source paths, host names, user names, credentials, tenant identifiers, or
+application-owned adapter names.
 
 A machine-readable JSON Schema is published beside this document:
 [RELEASE_MANIFEST.schema.json](RELEASE_MANIFEST.schema.json).
@@ -25,16 +25,16 @@ new version.
 | Field | Type | Description |
 |---|---|---|
 | `schema` | string | Manifest schema identifier. |
-| `package` | string | Composer package name for the export. |
+| `package` | string | Composer package name. |
 | `generated_by` | string | Stable identifier for the release preparation process. |
 | `generated_at_utc` | string | UTC timestamp when the manifest was written. |
-| `copied_source_files` | integer | Number of source files copied into the export before the manifest was written. |
-| `skipped_source_files` | integer | Number of source files omitted by export rules or redaction rules. |
-| `export_file_count` | integer | Total file count in the prepared export, including `RELEASE_MANIFEST.json`. |
-| `export_tree_sha256` | string | Deterministic SHA-256 of the exported file list, excluding `RELEASE_MANIFEST.json`. |
-| `release_boundary` | object | Machine-readable app-agent and project evidence boundary for the prepared export. |
-| `excluded_categories` | string array | Non-sensitive categories of artifacts intentionally left out of the export. |
-| `verification` | string array | Release attestation checks represented by the export process. These are provenance, not framework-user or application-agent commands. |
+| `copied_source_files` | integer | Number of source files represented before the manifest was written. |
+| `skipped_source_files` | integer | Number of source files outside the package boundary. |
+| `export_file_count` | integer | Total file count represented by the manifest, including `RELEASE_MANIFEST.json`. |
+| `export_tree_sha256` | string | Deterministic SHA-256 of the represented file list, excluding `RELEASE_MANIFEST.json`. |
+| `release_boundary` | object | Machine-readable app-agent and project evidence boundary for the package artifact. |
+| `excluded_categories` | string array | Non-sensitive package boundary categories. |
+| `verification` | string array | Package attestation checks represented by the manifest process. These are provenance, not framework-user or application-agent commands. |
 | `verification_scope` | string | Constant scope marker: `release_attestation_not_app_runtime_requirement`. |
 | `modules` | object array | Public module inventory generated from `docs/MODULES.md`. |
 | `bundled_components` | object array | Bundled third-party component inventory. |
@@ -42,8 +42,8 @@ new version.
 
 ## Release Boundary
 
-`release_boundary` tells agents and CI consumers how to interpret the prepared
-export. Its `default_audience` is `application_agents_building_apps`. Ordinary
+`release_boundary` tells agents and CI consumers how to interpret the package
+artifact. Its `default_audience` is `application_agents_building_apps`. Ordinary
 application behavior should use focused application or module checks owned by
 the consuming application. Its `ordinary_app_entrypoint` is
 `dataphyre_app_builder_plan_generate` with `ordinary_app_payload_profile` set to
@@ -91,7 +91,7 @@ hot-path changes.
 
 ## Module Entries
 
-Each `modules` entry describes one exported runtime module:
+Each `modules` entry describes one packaged runtime module:
 
 | Field | Type | Description |
 |---|---|---|
@@ -101,13 +101,13 @@ Each `modules` entry describes one exported runtime module:
 | `docs` | string | Documentation link target from `docs/MODULES.md`. |
 | `purpose` | string | Short public purpose summary. |
 
-The release preparation process validates this inventory against both
-`runtime/modules/` and `docs/MODULES.md`.
+Package validation can check this inventory against both `runtime/modules/` and
+`docs/MODULES.md`.
 
 ## Bundled Component Entries
 
-Each `bundled_components` entry describes one third-party component that ships in
-the prepared export:
+Each `bundled_components` entry describes one third-party component represented
+by the package artifact:
 
 | Field | Type | Description |
 |---|---|---|
@@ -116,8 +116,8 @@ the prepared export:
 | `license` | string | SPDX-style license label used by the public notice inventory. |
 | `license_file` | string | Public relative path to the component license file. |
 
-The release preparation process validates this inventory against
-`docs/THIRD_PARTY_NOTICES.md` and the exported license files.
+Package validation can check this inventory against
+`docs/THIRD_PARTY_NOTICES.md` and the represented license files.
 
 ## File Entries
 
@@ -125,12 +125,12 @@ Each `files` entry describes one exported file:
 
 | Field | Type | Description |
 |---|---|---|
-| `path` | string | Public relative path inside the prepared export. |
+| `path` | string | Public relative path inside the package artifact. |
 | `bytes` | integer | File length in bytes. |
 | `sha256` | string | Lowercase SHA-256 hash of the file contents. |
 
-The release preparation process validates file paths, duplicate entries, byte
-counts, and SHA-256 hashes against the prepared export tree.
+Package validation can check file paths, duplicate entries, byte counts, and
+SHA-256 hashes against the represented package tree.
 
 ## Tree Hash
 
@@ -142,7 +142,7 @@ path<TAB>bytes<TAB>sha256<LF>
 ```
 
 This makes the tree hash stable across machines and useful for comparing two
-prepared exports with the same public contents.
+package artifacts with the same public contents.
 
 
 

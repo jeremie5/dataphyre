@@ -118,7 +118,7 @@ function dp_permission_check_options(array $argv): array {
  * @return void
  */
 function dp_permission_check_usage(): void {
-	echo "Usage: php permission_check.php (--manifest=<path>|--roles=<path>) [--known=<path>] [--assignments=<path>] [--against=<old-manifest>] [--json=<path>] [--fail-on-warning] [--fail-on-info] [--fail-on-diff] [--quiet]\n";
+	echo "Usage: php runtime/modules/permission/kernel/permission_check.php (--manifest=<path>|--roles=<path>) [--known=<path>] [--assignments=<path>] [--against=<old-manifest>] [--json=<path>] [--fail-on-warning] [--fail-on-info] [--fail-on-diff] [--quiet]\n";
 }
 
 /**

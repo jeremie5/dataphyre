@@ -199,10 +199,10 @@ trait dataphyre_mcp_client_surfaces {
 			'app_after_setup_next_action'=>$this->mcp_client_app_after_setup_next_action('client_config_summary'),
 			'transport_and_filesystem_boundary'=>$this->mcp_transport_filesystem_boundary_contract(),
 			'config_generator'=>[
-				'scope'=>'maintainer/source-checkout helper only',
-				'release_guidance'=>'Use manual_config in released installs; dev helpers are not release artifacts.',
+				'scope'=>'contributor helper only',
+				'release_guidance'=>'Use manual_config when helper scripts are unavailable; contributor helpers are optional and not ordinary app setup.',
 				'app_agent_boundary'=>'Metadata only, not an app-agent checklist or ordinary application setup requirement.',
-				'ordinary_app_action'=>'Use manual_config, client_setup_next_action, and app_after_setup_next_action; do not run source-checkout helper scripts for ordinary app work.',
+				'ordinary_app_action'=>'Use manual_config, client_setup_next_action, and app_after_setup_next_action; do not require contributor helper scripts for ordinary app work.',
 				'default_tool'=>'dataphyre_mcp_client_config_summary',
 				'unsafe_mode'=>'Use allow_unsafe=true only for a deliberate unsafe profile.',
 			],

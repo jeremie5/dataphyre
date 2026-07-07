@@ -1,4 +1,4 @@
-# Dataphyre Development Artifacts
+# Dataphyre Contributor Workspace
 
 This directory is for Dataphyre contributors working from a source checkout.
 Files here support validation and review; they are not framework runtime API and
