@@ -1382,7 +1382,11 @@ trait dataphyre_mcp_utility_methods {
 			$real=$parent.'/'.basename($candidate);
 		}
 		$normalized=$this->normalize_path($real);
-		if(!$this->path_is_within_root($normalized, $this->root) && !$this->path_is_within_root($normalized, $this->common_root)){
+		if(
+			!$this->path_is_within_root($normalized, $this->root)
+			&& !$this->path_is_within_root($normalized, $this->common_root)
+			&& !$this->path_is_within_dataphyre_real_root($normalized)
+		){
 			throw new InvalidArgumentException('Path escapes the Dataphyre workspace: '.$this->path_error_label($path));
 		}
 		return $normalized;
@@ -1415,6 +1419,14 @@ trait dataphyre_mcp_utility_methods {
 	}
 
 	/**
+	 * Accepts files reached through the source-checkout common/dataphyre symlink.
+	 */
+	private function path_is_within_dataphyre_real_root(string $path): bool {
+		$real=realpath($this->common_root.'/dataphyre');
+		return is_string($real) && $this->path_is_within_root($path, $this->normalize_path($real));
+	}
+
+	/**
 	 * Converts an absolute workspace path to a repository-relative path when possible.
 	 *
 	 * MCP responses prefer relative paths for portability while preserving
@@ -1431,6 +1443,16 @@ trait dataphyre_mcp_utility_methods {
 				return 'common/dataphyre';
 			}
 			return 'common/dataphyre/'.substr($path, strlen($dataphyre_root)+1);
+		}
+		$dataphyre_real_root=realpath($dataphyre_root);
+		if(is_string($dataphyre_real_root)){
+			$dataphyre_real_root=$this->normalize_path($dataphyre_real_root);
+			if($this->path_is_within_root($path, $dataphyre_real_root)){
+				if($path===$dataphyre_real_root){
+					return 'common/dataphyre';
+				}
+				return 'common/dataphyre/'.substr($path, strlen($dataphyre_real_root)+1);
+			}
 		}
 		return $path;
 	}
@@ -1476,6 +1498,7 @@ trait dataphyre_mcp_utility_methods {
 		$started=microtime(true);
 		$stdout='';
 		$stderr='';
+		$exit=null;
 		foreach($pipes as $pipe){
 			stream_set_blocking($pipe, false);
 		}
@@ -1484,6 +1507,10 @@ trait dataphyre_mcp_utility_methods {
 			$stdout.=stream_get_contents($pipes[1]);
 			$stderr.=stream_get_contents($pipes[2]);
 			if(!$status['running']){
+				$status_exit=$status['exitcode'] ?? null;
+				if(is_int($status_exit) && $status_exit!==-1){
+					$exit=$status_exit;
+				}
 				break;
 			}
 			if((microtime(true)-$started) * 1000>$timeout_ms){
@@ -1492,7 +1519,10 @@ trait dataphyre_mcp_utility_methods {
 			}
 			usleep(10000);
 		}
-		$exit=proc_close($process);
+		$closed_exit=proc_close($process);
+		if($exit===null || $exit===-1){
+			$exit=$closed_exit;
+		}
 		$stdout=$this->redact_sensitive_text(trim($stdout));
 		$stderr=$include_stderr ? $this->redact_sensitive_text(trim($stderr)) : '';
 		return [
