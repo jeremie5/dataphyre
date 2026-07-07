@@ -5728,24 +5728,10 @@ Regression suites are not a browser replacement. They sit between unit tests and
 browser checks: fast enough to run from generated package tests, rich enough for
 Flightdeck or docs tooling to show exactly which framework contract failed.
 
-For browser-backed editor coverage, the live debug panel includes a Puppeteer
-stress runner for the rich text and Markdown editor surfaces:
-
-```powershell
-node tools\panel-browser\rich-editor-stress.js
-node tools\panel-browser\rich-editor-stress.js --json --report .tmp\rich-editor-stress-report.json
-node tools\panel-browser\rich-editor-stress.js --headed --base-url http://127.0.0.1:8088/debug
-powershell -ExecutionPolicy Bypass -File tools\panel-browser\run-rich-editor-stress.ps1 -Json -Report .tmp\rich-editor-stress-report.json
-```
-
-The runner defaults to `http://127.0.0.1:8088/debug`, reuses the local
-`.tmp\puppeteer-check` install, and writes its final screenshot under `.tmp`.
-Use `--base-url`, `--browser`, `--screenshot-dir`, `--report`, `--headed`, or
-`--json` for ad hoc runs. On failure, the runner emits a structured failure
-payload and attempts to save `.tmp\rich-editor-stress-failure.png`. The matching
-environment variables `DP_PANEL_BASE_URL`, `CHROME_PATH`,
-`DP_PANEL_SCREENSHOT_DIR`, `DP_PANEL_STRESS_JSON=1`, and
-`DP_PANEL_STRESS_REPORT` are also supported for CI wrappers.
+For browser-backed editor coverage, run the consuming application's browser
+automation harness against the live debug or Panel URL. Keep those browser
+scripts application-owned so they can use the application's routes, auth setup,
+seed data, and CI artifact paths without becoming Dataphyre runtime API.
 
 ## Scaffolding
 

@@ -31,6 +31,7 @@
       "installer": "installer/install.php",
       "consumer-init": "installer/init_consumer.php",
       "package-contract": "docs/PACKAGE.md",
+      "cli-reference": "docs/CLI.md",
       "release-manifest": "RELEASE_MANIFEST.json",
       "agent-boundary": {
         "default-audience": "application_agents_building_apps",

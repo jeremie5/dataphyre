@@ -58,6 +58,9 @@ You can prepare the minimal consumer files with:
 php vendor/dataphyre/dataphyre/installer/init_consumer.php --root=.
 ```
 
+See [CLI reference](CLI.md) for installer, runtime maintenance, route-free
+verification, and contributor commands.
+
 ## Minimal Files
 
 A minimal install needs these files:
@@ -191,6 +194,6 @@ needed. Keep writes in app-owned files, use focused app or module checks for
 proof, and open readiness, enterprise, release, governance, or hot-path audit
 surfaces only when the task actually escalates.
 
-Prepared public releases include `RELEASE_MANIFEST.json` with non-sensitive
-release provenance.
+Prepared package artifacts include `RELEASE_MANIFEST.json` with non-sensitive
+release provenance when a manifest is generated.
 

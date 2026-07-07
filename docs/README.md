@@ -51,6 +51,7 @@ flight_sheet.example.php  Public bootstrap template
 - [Runtime README](../runtime/README.md)
 - [Module index](MODULES.md)
 - [Configuration reference](CONFIGURATION.md)
+- [CLI reference](CLI.md)
 - [Extension points](EXTENSION_POINTS.md)
 - [Testing](TESTING.md)
 - [Minimal embedded example](../examples/minimal/README.md)
@@ -59,6 +60,7 @@ flight_sheet.example.php  Public bootstrap template
 
 - [Architecture](ARCHITECTURE.md)
 - [Package contract](PACKAGE.md)
+- [CLI reference](CLI.md)
 - [Stability policy](STABILITY.md)
 - [Testing](TESTING.md)
 - [MCP server](../runtime/modules/mcp/documentation/Dataphyre_MCP.md)

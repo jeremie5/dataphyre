@@ -21,6 +21,10 @@ $module_root=dirname(__DIR__);
 $runtime_modules=dirname($module_root);
 dp_mvc_route_list_require_framework($runtime_modules);
 $options=dp_mvc_route_list_options($argv);
+if(isset($options['help'])){
+	echo "Usage: php runtime/modules/mvc/kernel/cache_routes.php [app] [--app=<name>] [--config=<path>]\n";
+	exit(0);
+}
 $app_name=$options['app'] ?? 'default';
 $config_file=$options['config'] ?? null;
 

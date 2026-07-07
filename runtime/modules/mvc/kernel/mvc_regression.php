@@ -2910,6 +2910,11 @@ namespace {
 		echo "MVC regression runner is only available from CLI.\n";
 		exit(2);
 	}
+	if(in_array('--help', $argv ?? [], true) || in_array('-h', $argv ?? [], true) || in_array('help', $argv ?? [], true)){
+		echo "Usage: php runtime/modules/mvc/kernel/mvc_regression.php\n";
+		echo "Runs the route-free MVC, Routing, controller, middleware, and module-integration regression harness.\n";
+		exit(0);
+	}
 
 	$failures=[];
 	dp_mvc_regression_assert_json_route($failures);

@@ -6,6 +6,17 @@
  * SPDX-License-Identifier: MIT
  */
 
+if(PHP_SAPI!=='cli'){
+	http_response_code(404);
+	echo "SQL table artifact scaffold is only available from CLI.\n";
+	exit(2);
+}
+
+if(in_array('--help', $argv ?? [], true) || in_array('-h', $argv ?? [], true) || in_array('help', $argv ?? [], true)){
+	print_scaffold_table_artifacts_usage(STDOUT);
+	exit(0);
+}
+
 $runtime_root=dirname(__DIR__, 3);
 $package_root=dirname($runtime_root);
 $project_root=resolve_project_root($package_root);
@@ -25,8 +36,7 @@ $columns=parse_columns($options['columns'] ?? array_slice($positionals, 4));
 $force=array_key_exists('force', $options);
 
 if(empty($application_name) || empty($entity_name) || empty($table_name) || empty($primary_key)){
-	fwrite(STDERR, "Usage: php runtime/modules/sql/kernel/scaffold_table_artifacts.php <application> <entity> <table> <primary_key> [columns]\n");
-	fwrite(STDERR, "   or: php runtime/modules/sql/kernel/scaffold_table_artifacts.php --application=example_app --entity=Machine --table=machines --primary-key=machine_id --columns=machine_id,tenant_id,name,status [--force]\n");
+	print_scaffold_table_artifacts_usage(STDERR);
 	exit(1);
 }
 
@@ -43,6 +53,18 @@ $result=\Dataphyre\Database\Tools\ScaffoldTableArtifacts::scaffold(
 fwrite(STDOUT, "Scaffolded {$result['entity']} for {$result['application']} in {$result['framework_directory']}\n");
 foreach($result['generated'] as $artifact=>$status){
 	fwrite(STDOUT, sprintf("[%s] %s (%s)\n", $artifact, $status['path'], $status['status']));
+}
+
+/**
+ * Prints SQL table artifact scaffold usage.
+ *
+ * @param resource $stream Output stream.
+ * @return void
+ */
+function print_scaffold_table_artifacts_usage($stream): void {
+	fwrite($stream, "Usage: php runtime/modules/sql/kernel/scaffold_table_artifacts.php <application> <entity> <table> <primary_key> [columns]\n");
+	fwrite($stream, "   or: php runtime/modules/sql/kernel/scaffold_table_artifacts.php --application=example_app --entity=Machine --table=machines --primary-key=machine_id --columns=machine_id,tenant_id,name,status [--force]\n");
+	fwrite($stream, "Set DATAPHYRE_PROJECT_ROOT when scaffolding from a Composer vendor install.\n");
 }
 
 /**

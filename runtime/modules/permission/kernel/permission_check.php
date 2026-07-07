@@ -100,6 +100,9 @@ function dp_permission_check_options(array $argv): array {
 		}
 		throw new InvalidArgumentException('Unknown option: '.$argument);
 	}
+	if(isset($options['help'])){
+		return $options;
+	}
 	if(($options['manifest'] ?? null)===null && ($options['roles'] ?? null)===null){
 		throw new InvalidArgumentException('Provide --manifest=<path> or --roles=<path>.');
 	}

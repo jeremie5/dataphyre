@@ -148,8 +148,8 @@ For the concrete bootstrap, application, and module config keys, see
 Install plugins are loaded from `plugins/pre_init/*.php` and
 `plugins/post_init/*.php`. Install-local MCP declarations live under
 `plugins/mcp/*.json` for internal developer metadata. These files are local
-integration metadata, not portable runtime features, and public exports omit
-private declarations. Application-specific behavior should use config,
+integration metadata, not portable runtime features. Package artifacts should
+not include install-local declarations. Application-specific behavior should use config,
 dialbacks, callbacks, plugins, MCP metadata, or reusable runtime modules rather
 than patching Dataphyre core.
 

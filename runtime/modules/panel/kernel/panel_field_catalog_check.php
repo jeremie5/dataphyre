@@ -8,6 +8,18 @@
 
 declare(strict_types=1);
 
+if(PHP_SAPI!=='cli'){
+	http_response_code(404);
+	echo "Panel field catalog check is only available from CLI.\n";
+	exit(2);
+}
+
+if(in_array('--help', $argv ?? [], true) || in_array('-h', $argv ?? [], true) || in_array('help', $argv ?? [], true)){
+	echo "Usage: php runtime/modules/panel/kernel/panel_field_catalog_check.php\n";
+	echo "Runs the route-free Panel field builder, renderer, theme, and asset catalog check.\n";
+	exit(0);
+}
+
 require_once dirname(__DIR__).'/Framework/Support/PanelExtensible.php';
 require_once dirname(__DIR__).'/Framework/Support/PanelUtilityResolver.php';
 require_once dirname(__DIR__).'/Framework/Support/PanelComponentRegistry.php';

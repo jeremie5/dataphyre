@@ -6,6 +6,18 @@
  * SPDX-License-Identifier: MIT
  */
 
+if(PHP_SAPI!=='cli'){
+	http_response_code(404);
+	echo "Route compiler is only available from CLI.\n";
+	exit(2);
+}
+
+if(in_array('--help', $argv ?? [], true) || in_array('-h', $argv ?? [], true) || in_array('help', $argv ?? [], true)){
+	echo "Usage: php runtime/modules/routing/kernel/compile_app_routes.php <application>\n";
+	echo "Set DATAPHYRE_PROJECT_ROOT when compiling routes from a Composer vendor install.\n";
+	exit(0);
+}
+
 $runtime_root=dirname(__DIR__, 3);
 $package_root=dirname($runtime_root);
 $project_root=resolve_project_root($package_root);
@@ -19,6 +31,7 @@ $application_name=$argv[1] ?? ($_SERVER['HTTP_X_DATAPHYRE_APPLICATION'] ?? null)
 
 if(empty($application_name)){
 	fwrite(STDERR, "Usage: php runtime/modules/routing/kernel/compile_app_routes.php <application>\n");
+	fwrite(STDERR, "Run with --help for details.\n");
 	exit(1);
 }
 

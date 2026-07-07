@@ -540,8 +540,9 @@ function dataphyre_installer_help(): void {
 Dataphyre installer
 
 Usage:
+  php common/dataphyre/installer/install.php init [--root=PATH] [--force]
   php common/dataphyre/installer/install.php lock [--root=PATH]
-  php common/dataphyre/installer/install.php verify [--root=PATH]
+  php common/dataphyre/installer/install.php verify|check [--root=PATH]
   php common/dataphyre/installer/install.php install [--root=PATH] [--source=PATH]
   php common/dataphyre/installer/install.php update [--root=PATH] [--source=PATH]
   php common/dataphyre/installer/install.php doctor [--root=PATH]

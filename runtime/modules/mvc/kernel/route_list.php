@@ -21,6 +21,10 @@ if(realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? ''))===__FILE__){
 	dp_mvc_route_list_require_framework($runtime_modules);
 
 	$options=dp_mvc_route_list_options($argv);
+	if(isset($options['help'])){
+		dp_mvc_route_list_usage();
+		exit(0);
+	}
 	$app_name=$options['app'] ?? 'default';
 	$config_file=$options['config'] ?? null;
 	$format=$options['format'] ?? 'table';
@@ -109,11 +113,15 @@ function dp_mvc_route_list_require_framework(string $runtime_modules): void {
  * without breaking the command.
  *
  * @param array<int, string> $argv CLI argument vector.
- * @return array{app?:string, config?:string, format?:string} Parsed command options.
+ * @return array{app?:string, config?:string, format?:string, help?:bool} Parsed command options.
  */
 function dp_mvc_route_list_options(array $argv): array {
 	$options=[];
 	foreach(array_slice($argv, 1) as $argument){
+		if($argument==='--help' || $argument==='-h' || $argument==='help'){
+			$options['help']=true;
+			continue;
+		}
 		if(str_starts_with($argument, '--app=')){
 			$options['app']=substr($argument, 6);
 			continue;
@@ -135,6 +143,15 @@ function dp_mvc_route_list_options(array $argv): array {
 		}
 	}
 	return $options;
+}
+
+/**
+ * Prints usage for the standalone MVC route-list CLI.
+ *
+ * @return void
+ */
+function dp_mvc_route_list_usage(): void {
+	echo "Usage: php runtime/modules/mvc/kernel/route_list.php [app] [--app=<name>] [--config=<path>] [--format=table|json] [--json]\n";
 }
 
 /**
