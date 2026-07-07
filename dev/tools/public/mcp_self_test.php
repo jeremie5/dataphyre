@@ -19066,7 +19066,7 @@ $checks=[
 				|| !str_contains((string)($data['evidence_next_action']['verification_hint'] ?? ''), 'benchmark evidence')
 				|| !in_array('Dataphyre hot-path benchmark evidence unless Dataphyre shared production hot paths are changed', $data['evidence_next_action']['not_required'] ?? [], true)
 				|| !str_contains((string)($data['claim_summary']['verification_boundary'] ?? ''), 'shared hot-path claims require Dataphyre maintainer evidence')
-				|| !str_contains((string)($data['change_classification']['proof_contract'] ?? ''), 'Source-checkout maintainer benchmark evidence')
+				|| !str_contains((string)($data['change_classification']['proof_contract'] ?? ''), 'Dataphyre maintainer benchmark evidence')
 				|| !str_contains((string)($data['change_classification']['proof_contract'] ?? ''), 'opcache-JIT')
 				|| !in_array('Dataphyre maintainer benchmark evidence required before keeping Dataphyre shared hot-path changes', $data['recommended_verification'] ?? [], true)
 				|| !in_array('do not ask application agents to run contributor benchmark tooling', $data['recommended_verification'] ?? [], true)

@@ -1,7 +1,7 @@
 # Install Plugins
 
 Dataphyre loads install-level plugin hooks from this directory. The hook files
-are application-specific and are ignored for public export:
+are application-specific and stay install-local:
 
 - `plugins/pre_init/*.php`
 - `plugins/post_init/*.php`
@@ -18,8 +18,8 @@ or reusable module contracts before runtime-internal edits.
 MCP plugin JSON files can declare app-local or internal-only module metadata for
 local developer tooling. Applications may create their own private
 `plugins/mcp/*.json` declarations for local agents, but shared Dataphyre releases
-must not ship those private declarations as framework behavior. Public exports
-omit them, so redacted or private modules can remain discoverable to internal
-agents without becoming part of the public module index. Release checks require
+must not turn those private declarations into framework behavior. Keep them
+install-local so redacted or private modules can remain discoverable to internal
+agents without becoming part of the package module index. Release checks require
 locally present redacted modules to have declarations with `release: redacted`
 and a non-empty `visibility`.

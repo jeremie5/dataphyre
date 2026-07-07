@@ -121,8 +121,8 @@ All notable Dataphyre changes are tracked here.
   release content, and project evidence, plus matching Composer app-agent
   entrypoint/profile metadata.
 - Renamed Dpanel JSON fixtures from `.php` to `.json` and fixed malformed JSON.
-- Normalized Stripe unit-test fixture keys so public export secret scanning does
-  not flag fake test credentials as live secrets.
+- Normalized Stripe unit-test fixture keys so package-boundary secret scanning
+  does not flag fake test credentials as live secrets.
 - Fixed PHP lint blockers in Access diagnostics and Localization mutation
   helpers.
 

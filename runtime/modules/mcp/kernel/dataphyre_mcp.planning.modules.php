@@ -117,7 +117,7 @@ trait dataphyre_mcp_planning_module_surfaces {
 			'module_inventory_safety'=>$this->module_inventory_safety_contract('module_list'),
 			'modules'=>$modules,
 			'plugin_declarations'=>array_values($declarations),
-			'declaration_policy'=>'plugins/mcp/*.json can declare internal-only modules for local MCP tooling; public exports omit those plugin declarations.',
+			'declaration_policy'=>'plugins/mcp/*.json can declare internal-only modules for local MCP tooling; package module metadata is built from framework-owned modules and app-owned declarations separately.',
 		];
 	}
 

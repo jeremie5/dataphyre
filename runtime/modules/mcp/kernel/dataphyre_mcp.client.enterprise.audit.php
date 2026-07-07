@@ -613,7 +613,7 @@ trait dataphyre_mcp_client_enterprise_audit_surfaces {
 			'primary'=>$primary,
 			'benchmark_required'=>$benchmark_required,
 			'benchmark_scope'=>'Dataphyre shared production hot paths only; application changes using Dataphyre and MCP/dev/docs control-plane changes do not need MCP-imposed microbenchmarks by default.',
-			'proof_contract'=>$benchmark_required ? 'Source-checkout maintainer benchmark evidence, including CLI/opcache/opcache-JIT profiles, is required before keeping Dataphyre shared hot-path changes.' : 'Focused verification appropriate to the changed surface.',
+			'proof_contract'=>$benchmark_required ? 'Dataphyre maintainer benchmark evidence, including CLI/opcache/opcache-JIT profiles, is required before keeping Dataphyre shared hot-path changes.' : 'Focused verification appropriate to the changed surface.',
 			'application_boundary'=>$has_app ? 'Application behavior should stay in application code, config, callbacks, dialbacks, plugins, or an application-owned adapter unless the behavior is reusable Dataphyre framework work.' : 'No application file inputs were provided.',
 			'framework_edit_rule'=>'Edit Dataphyre runtime internals only for reusable framework behavior, diagnostics, safety, public APIs, or performance work with proof.',
 			'evidence'=>[
@@ -730,7 +730,7 @@ trait dataphyre_mcp_client_enterprise_audit_surfaces {
 				'label'=>'Local MCP metadata',
 				'status'=>($counts['mcp_files'] ?? 0)>0 ? 'framework_mcp_surface' : 'available',
 				'use_when'=>'Agents need local visibility into redacted or install-specific modules without public release exposure.',
-				'agent_action'=>'Use plugins/mcp declarations for install-local tool visibility; keep them out of public exports.',
+				'agent_action'=>'Use plugins/mcp declarations for install-local tool visibility; keep them out of package module metadata.',
 			],
 			[
 				'id'=>'reusable_module_contract',

@@ -37,7 +37,7 @@ Use these gates for framework-level changes:
 - Behavior changes need targeted tests, release checks, diagnostics, or a
   reproducible manual check.
 - Production hot-path code follows `dev/PERFORMANCE.md`.
-- Release-impacting changes must pass the public export and release hygiene
+- Release-impacting changes must pass the package-boundary and release hygiene
   checks before publication.
 
 ## Small Surface

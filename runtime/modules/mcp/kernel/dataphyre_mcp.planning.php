@@ -116,7 +116,7 @@ trait dataphyre_mcp_planning_surfaces {
 					'id'=>'plugins',
 					'choose_when'=>'The behavior is install-local integration, boot wiring, or optional extension that should be packaged outside the runtime.',
 					'examples'=>['plugins/pre_init', 'plugins/post_init', 'plugins/mcp declarations'],
-					'agent_action'=>'Put install-local behavior in plugins and keep private declarations out of public exports.',
+					'agent_action'=>'Put install-local behavior in plugins and keep private declarations out of package module metadata.',
 				],
 				[
 					'id'=>'application_adapter',
