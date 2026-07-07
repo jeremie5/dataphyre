@@ -127,7 +127,7 @@ trait dataphyre_mcp_client_safety_surfaces {
 				'transport_hardening'=>'MCP self-test sends malformed line JSON, malformed framed JSON, non-object JSON, methodless objects, missing/invalid/non-decimal/oversized Content-Length, and then a valid request to confirm recovery.',
 				'path_boundary'=>'MCP self-test creates a sibling directory named like the repo root plus a suffix and verifies safe_repo_path rejects slash, backslash, and missing-leaf sibling paths.',
 			],
-			'ordinary_app_policy'=>'This hardening is server/client safety metadata; ordinary application agents do not need dev artifacts, aggregate MCP verification, or Dataphyre hot-path benchmarks for app scaffolds.',
+			'ordinary_app_policy'=>'This hardening is server/client safety metadata; ordinary application agents use focused app verification and do not run aggregate MCP verification or Dataphyre hot-path benchmarks for app scaffolds.',
 		];
 	}
 

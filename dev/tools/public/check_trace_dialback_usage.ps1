@@ -1,10 +1,30 @@
 [CmdletBinding()]
 param(
-	[string]$Root
+	[string]$Root,
+	[switch]$Help
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+function Show-Usage {
+	@'
+Usage:
+  ./dev/tools/public/check_trace_dialback_usage.ps1 [-Root <repo>]
+
+Options:
+  -Root  Dataphyre source checkout root. Defaults to the repository root.
+  -Help  Show this help text.
+
+Checks public source files for trace/dialback naming, documentation coverage,
+and hot-path logging patterns that should stay out of tight runtime loops.
+'@ | Write-Host
+}
+
+if ($Help) {
+	Show-Usage
+	exit 0
+}
 
 if ([string]::IsNullOrWhiteSpace($Root)) {
 	$scriptDirectory = if ([string]::IsNullOrWhiteSpace($PSScriptRoot)) {

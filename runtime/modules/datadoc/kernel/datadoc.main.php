@@ -1793,12 +1793,21 @@ class datadoc{
 	 * @return list<string> Path fragments wrapped for SQL LIKE matching.
 	 */
 	private static function excluded_index_path_patterns(): array {
-		return [
+		$patterns=[
 			'%/unit_tests/%',
 			'%/common/dataphyre/runtime/modules/stripe/src/lib/%',
-			'%/common/dataphyre/runtime/modules/'.'shopiro'.'_devapi/***REMOVED***/%',
-			'%/common/dataphyre/runtime/modules/'.'cj'.'dropshipping/cj'.'dropshipping-client/%',
 		];
+		$configured=defined('DATAPHYRE_DATADOC_EXCLUDED_INDEX_PATH_PATTERNS')
+			? constant('DATAPHYRE_DATADOC_EXCLUDED_INDEX_PATH_PATTERNS')
+			: [];
+		if(is_array($configured)){
+			foreach($configured as $pattern){
+				if(is_string($pattern) && $pattern!==''){
+					$patterns[]=$pattern;
+				}
+			}
+		}
+		return array_values(array_unique($patterns));
 	}
 
 	/**

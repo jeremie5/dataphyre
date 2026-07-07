@@ -7,11 +7,36 @@ param(
 	[switch]$CandidatesOnly,
 	[ValidateSet('Text', 'Json')]
 	[string]$Format = 'Text',
-	[string]$Output
+	[string]$Output,
+	[string]$Php,
+	[switch]$Help
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+function Show-Usage {
+	@'
+Usage:
+  ./dev/tools/public/report_trace_dialback_coverage.ps1 [-Root <repo>] [-ModuleName <module>] [-AllRuntime] [-CandidatesOnly] [-Limit <n>] [-Format Text|Json] [-Output <path>] [-Php <path-or-command>]
+
+Options:
+  -Root            Dataphyre source checkout root. Defaults to the repository root.
+  -ModuleName      Limit the report to one runtime module.
+  -AllRuntime      Include kernel and framework code. Defaults to framework-oriented coverage.
+  -CandidatesOnly  Show only methods that look like semantic trace/dialback candidates.
+  -Limit           Maximum findings per section. Default: 40.
+  -Format          Text or Json. Default: Text.
+  -Output          Optional report path.
+  -Php             PHP executable path or command name. Defaults to DATAPHYRE_PHP, then php on PATH.
+  -Help            Show this help text.
+'@ | Write-Host
+}
+
+if ($Help) {
+	Show-Usage
+	exit 0
+}
 
 if ([string]::IsNullOrWhiteSpace($Root)) {
 	$scriptDirectory = if ([string]::IsNullOrWhiteSpace($PSScriptRoot)) {
@@ -29,10 +54,30 @@ if (-not (Test-Path $scanRoot -PathType Container)) {
 	throw "Dataphyre runtime module directory was not found: $scanRoot"
 }
 
-$php = 'php'
-$localPhp = Join-Path (Split-Path -Parent $Root) '..\.local\shopiro\php\php.exe'
-if (Test-Path $localPhp -PathType Leaf) {
-	$php = (Resolve-Path $localPhp).Path
+function Resolve-PhpPath([string]$RequestedPhp) {
+	if ([string]::IsNullOrWhiteSpace($RequestedPhp) -and -not [string]::IsNullOrWhiteSpace($env:DATAPHYRE_PHP)) {
+		$RequestedPhp = $env:DATAPHYRE_PHP
+	}
+	if (-not [string]::IsNullOrWhiteSpace($RequestedPhp)) {
+		if (Test-Path $RequestedPhp -PathType Leaf) {
+			return (Resolve-Path $RequestedPhp).Path
+		}
+		$requestedCommand = Get-Command $RequestedPhp -ErrorAction SilentlyContinue
+		if ($null -ne $requestedCommand) {
+			return $requestedCommand.Source
+		}
+		return $null
+	}
+	$phpCommand = Get-Command php -ErrorAction SilentlyContinue
+	if ($null -ne $phpCommand) {
+		return $phpCommand.Source
+	}
+	return $null
+}
+
+$php = Resolve-PhpPath $Php
+if ([string]::IsNullOrWhiteSpace($php)) {
+	throw "PHP executable was not found. Put php on PATH, pass -Php <path>, or set DATAPHYRE_PHP."
 }
 
 $reporter = @'

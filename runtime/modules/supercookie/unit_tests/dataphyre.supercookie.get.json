@@ -4,13 +4,13 @@
 		"function": "dp_supercookie_unit_test_get",
 		"args": [
 			{
-				"tenant": "shopiro",
+				"tenant": "demo_tenant",
 				"locale": "en-CA"
 			},
 			"tenant"
 		],
 		"expected": [
-			"shopiro"
+			"demo_tenant"
 		],
 		"file": "/common/dataphyre/runtime/modules/supercookie/unit_tests/supercookie_test_helpers.php",
 		"dependencies": {

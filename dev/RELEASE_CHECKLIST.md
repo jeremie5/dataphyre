@@ -16,18 +16,19 @@ larger project or prepared as a standalone export.
 - [ ] `docs/PACKAGE.md` and `composer.json` describe the same Composer/runtime
   contract.
 - [ ] `docs/STABILITY.md` defines the public compatibility policy for the release.
-- [ ] `dev/PUBLIC_EXPORT.md`, `.gitignore`, and `.distignore` agree on local
-  install files that stay out of source control and the public release.
+- [ ] `dev/PUBLIC_EXPORT.md`, `.gitignore`, `.gitattributes`, and `.distignore`
+  agree on source-control boundaries, install-local state, and package/archive
+  boundaries.
 - [ ] `runtime/README.md` reflects the released module tree.
-- [ ] `docs/MODULES.md` lists every released module and clearly marks adapters,
-  legacy modules, and experimental modules. Internal-only modules stay out of
-  public module documentation and are validated by release scripts.
+- [ ] `docs/MODULES.md` lists every public module and clearly marks adapters,
+  legacy modules, and experimental modules. Application-owned modules stay out
+  of public module documentation and package artifacts.
 - [ ] `LICENSE` and `docs/NOTICE.md` match the intended public license.
 - [ ] `docs/THIRD_PARTY_NOTICES.md` lists bundled third-party and service client code.
 - [ ] Community files are present under `docs/`: `CONTRIBUTING.md`, `SUPPORT.md`,
   `SECURITY.md`, and `CODE_OF_CONDUCT.md`.
-- [ ] GitHub issue templates, pull request templates, and CI workflows stay
-  source-checkout-only; prepared public exports omit `.github/`.
+- [ ] GitHub issue templates, pull request templates, and CI workflows are
+  source-checkout support rather than runtime package API.
 
 ## Licensing
 
@@ -60,11 +61,11 @@ larger project or prepared as a standalone export.
 - [ ] Added or changed production hot-path code follows `dev/PERFORMANCE.md`:
   shared framework behavior, lean implementation, benchmark evidence when
   performance-sensitive, and targeted behavior verification.
-- [ ] Release validation passes against the prepared public tree.
-- [ ] Prepared public export contains `RELEASE_MANIFEST.json` with non-sensitive
-  export counts, public module inventory, bundled component inventory, per-file
-  hashes, deterministic tree hash, omitted artifact categories, and verification
-  entries.
+- [ ] Package validation passes against the prepared package tree.
+- [ ] Prepared package artifact contains `RELEASE_MANIFEST.json` when a manifest
+  is generated, with non-sensitive export counts, public module inventory,
+  bundled component inventory, per-file hashes, deterministic tree hash, omitted
+  artifact categories, and verification entries.
 - [ ] `./dev/tools/public/lint_php.ps1` passes for real PHP files when running a
   narrower PHP-only check.
 - [ ] Composer metadata validates.
@@ -72,7 +73,7 @@ larger project or prepared as a standalone export.
 - [ ] Markdown local links pass.
 - [ ] JSON fixtures parse successfully.
 - [ ] Public CI validates Composer metadata, PHP linting, and MCP validation.
-- [ ] Release validation completes before publication.
+- [ ] Package validation completes before publication.
 
 ## Embedded Install Review
 
@@ -81,8 +82,9 @@ larger project or prepared as a standalone export.
 - [ ] `flight_sheet.php` is reviewed for the release context.
 - [ ] Local `config/*.php`, plugin hooks, keys, cache, and logs are excluded or
   replaced with public `*.example.php` templates.
-- [ ] Local `plugins/mcp/*.json` declarations are excluded from public exports.
-- [ ] Prepared export was built outside the embedded working copy.
+- [ ] Local `plugins/mcp/*.json` declarations are excluded from package
+  artifacts.
+- [ ] Prepared package artifact was built from a clean source checkout.
 - [ ] Export verification has no forbidden local files, high-confidence secret
   markers, or app-owned runtime/asset ownership markers.
 - [ ] Public docs explain which files are install-specific.

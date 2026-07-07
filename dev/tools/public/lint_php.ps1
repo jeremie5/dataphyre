@@ -2,11 +2,33 @@
 param(
 	[string]$Root,
 	[string]$Php,
-	[switch]$AllowMissingPhp
+	[switch]$AllowMissingPhp,
+	[switch]$Help
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+function Show-Usage {
+	@'
+Usage:
+  ./dev/tools/public/lint_php.ps1 [-Root <repo>] [-Php <path-or-command>] [-AllowMissingPhp]
+
+Options:
+  -Root             Dataphyre source checkout root. Defaults to the repository root.
+  -Php              PHP executable path or command name. Defaults to DATAPHYRE_PHP, then php on PATH.
+  -AllowMissingPhp  Exit successfully with SKIP when PHP is not available.
+  -Help             Show this help text.
+
+The lint pass scans real PHP files and skips generated state, logs, cache, vendor,
+and non-PHP fixtures that only contain PHP-like text.
+'@ | Write-Host
+}
+
+if ($Help) {
+	Show-Usage
+	exit 0
+}
 
 if ([string]::IsNullOrWhiteSpace($Root)) {
 	$scriptDirectory = if ([string]::IsNullOrWhiteSpace($PSScriptRoot)) {

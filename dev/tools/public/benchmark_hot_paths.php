@@ -2,7 +2,7 @@
 /*************************************************************************
  * Dataphyre
  *
- * Copyright (c) 2025 Shopiro Ltd.
+ * Copyright (c) 2025 Dataphyre
  * SPDX-License-Identifier: MIT
  */
 
@@ -90,12 +90,12 @@ if(!defined('DP_VESTRA_CFG')){
 	define('DP_VESTRA_CFG', [
 		'base_url'=>'https://vestra.example.com/',
 		'object_url'=>'https://vestra.example.com/',
-		'default_tenant'=>'shopiro-store-content',
+		'default_tenant'=>'dataphyre-bench-tenant',
 		'use_tenant_grant'=>true,
 		'allow_unsigned'=>true,
 		'tenants'=>[
-			'shopiro-store-content'=>[
-				'tenant'=>'shopiro-store-content',
+			'dataphyre-bench-tenant'=>[
+				'tenant'=>'dataphyre-bench-tenant',
 				'rate'=>'s.p',
 				'object_url'=>'https://vestra.example.com/',
 				'allow_unsigned'=>true,
@@ -306,6 +306,23 @@ use Dataphyre\Currency\ExchangeSnapshot;
 use Dataphyre\Currency\Money;
 use Dataphyre\Currency\StoredMoney;
 use dataphyre\routing\compiled_route_dispatcher;
+
+if(in_array('--help', $argv, true) || in_array('-h', $argv, true)){
+	echo <<<'HELP'
+Usage:
+  php dev/tools/public/benchmark_hot_paths.php [scenario] [iterations] [warmup]
+
+Arguments:
+  scenario    Scenario name, or all. Default: all.
+  iterations  Measurement iterations per scenario. Default: 300.
+  warmup      Warmup iterations per scenario. Default: 50.
+
+This contributor tool supports maintainer proof for Dataphyre production
+hot-path changes. It emits JSON.
+
+HELP;
+	exit(0);
+}
 
 $scenario=$argv[1] ?? 'all';
 
@@ -748,7 +765,7 @@ function make_locale_definition(int $index): LocaleDefinition {
 	return new LocaleDefinition(
 		$index,
 		$index % 2===0 ? 'en_CA' : 'fr_CA',
-		$index % 3===0 ? 'shopiro' : null,
+		$index % 3===0 ? 'dataphyre_bench' : null,
 		$index % 3===1 ? '/catalog/product-'.$index : null,
 		$index % 3===0 ? 'theme' : ($index % 3===1 ? 'local' : 'global'),
 		'catalog.label_'.$index,
@@ -868,7 +885,7 @@ function make_mailer_message_payload(int $tagCount): array {
 		$tags[]=$index % 9===0 ? '' : 'campaign_'.$index;
 	}
 	return [
-		'from'=>'Shopiro <no-reply@example.com>',
+		'from'=>'DataphyreBench <no-reply@example.com>',
 		'to'=>['Customer <customer@example.com>'],
 		'subject'=>'Catalog update',
 		'html'=>'<p>Hello</p>',
@@ -3023,7 +3040,7 @@ if($scenario==='all' || $scenario==='templating-state-asset-policy'){
 		'is_dev_mode'=>true,
 		'cache_dir'=>'/tmp/dataphyre/templates',
 		'global_context'=>[
-			'app'=>'ShopiCore',
+			'app'=>'DataphyreBench',
 			'locale'=>'en_CA',
 		],
 		'strict_mode'=>true,
@@ -3065,7 +3082,7 @@ if($scenario==='all' || $scenario==='templating-state-asset-policy-fresh'){
 		'is_dev_mode'=>true,
 		'cache_dir'=>'/tmp/dataphyre/templates',
 		'global_context'=>[
-			'app'=>'ShopiCore',
+			'app'=>'DataphyreBench',
 			'locale'=>'en_CA',
 		],
 		'strict_mode'=>true,
@@ -3664,7 +3681,7 @@ if($scenario==='all' || $scenario==='vestra-object-url-fabric'){
 	$reference=[
 		'driver'=>'vestra',
 		'object_id'=>123456789,
-		'tenant'=>'shopiro-store-content',
+		'tenant'=>'dataphyre-bench-tenant',
 		'fabric'=>[
 			'blockid'=>123456789,
 			'tenant_url_template'=>'/v/{tenant}/{rate}/{blockid}',
@@ -3691,7 +3708,7 @@ if($scenario==='all' || $scenario==='vestra-asset-url-fabric'){
 	$reference=[
 		'driver'=>'vestra',
 		'object_id'=>123456789,
-		'tenant'=>'shopiro-store-content',
+		'tenant'=>'dataphyre-bench-tenant',
 		'fabric'=>[
 			'blockid'=>123456789,
 			'tenant_url_template'=>'/v/{tenant}/{rate}/{blockid}',
@@ -3718,7 +3735,7 @@ if($scenario==='all' || $scenario==='vestra-client-object-url-fabric'){
 	$reference=[
 		'driver'=>'vestra',
 		'object_id'=>123456789,
-		'tenant'=>'shopiro-store-content',
+		'tenant'=>'dataphyre-bench-tenant',
 		'fabric'=>[
 			'blockid'=>123456789,
 			'tenant_url_template'=>'/v/{tenant}/{rate}/{blockid}',
@@ -3745,7 +3762,7 @@ if($scenario==='all' || $scenario==='vestra-client-asset-url-fabric'){
 	$reference=[
 		'driver'=>'vestra',
 		'object_id'=>123456789,
-		'tenant'=>'shopiro-store-content',
+		'tenant'=>'dataphyre-bench-tenant',
 		'fabric'=>[
 			'blockid'=>123456789,
 			'tenant_url_template'=>'/v/{tenant}/{rate}/{blockid}',
@@ -3772,7 +3789,7 @@ if($scenario==='all' || $scenario==='vestra-ingest-known-changes'){
 	$reference=[
 		'driver'=>'vestra',
 		'object_id'=>123456789,
-		'tenant'=>'shopiro-store-content',
+		'tenant'=>'dataphyre-bench-tenant',
 		'fabric'=>[
 			'blockid'=>123456789,
 			'tenant_url_template'=>'/v/{tenant}/{rate}/{blockid}',
@@ -3801,7 +3818,7 @@ if($scenario==='all' || $scenario==='vestra-ingest-known-changes'){
 
 if($scenario==='all' || $scenario==='env-get-has-repeated'){
 	$values=[
-		'bench/env/name'=>'ShopiCore',
+		'bench/env/name'=>'DataphyreBench',
 		'bench/env/debug'=>false,
 		'bench/env/plan'=>'business',
 	];
@@ -3826,7 +3843,7 @@ if($scenario==='all' || $scenario==='env-get-has-repeated'){
 
 if($scenario==='all' || $scenario==='env-only-selection'){
 	$values=[
-		'bench/env/tenant'=>'shopiro',
+		'bench/env/tenant'=>'demo-tenant',
 		'bench/env/region'=>'ca',
 		'bench/env/features'=>['catalog', 'checkout', 'media'],
 	];
@@ -3853,7 +3870,7 @@ if($scenario==='all' || $scenario==='env-only-selection'){
 if($scenario==='all' || $scenario==='env-repository-scoped-read'){
 	$repository=Env::scope('bench/env');
 	$values=[
-		'tenant'=>'shopiro',
+		'tenant'=>'demo-tenant',
 		'plan'=>'business',
 		'limits/images'=>250000,
 	];
@@ -3879,7 +3896,7 @@ if($scenario==='all' || $scenario==='env-repository-scoped-read'){
 if($scenario==='all' || $scenario==='env-repository-only-selection'){
 	$repository=Env::scope('bench/env');
 	$values=[
-		'tenant'=>'shopiro',
+		'tenant'=>'demo-tenant',
 		'region'=>'ca',
 		'features'=>['catalog', 'checkout', 'media'],
 	];
@@ -3906,7 +3923,7 @@ if($scenario==='all' || $scenario==='env-repository-only-selection'){
 if($scenario==='all' || $scenario==='env-repository-scope-state'){
 	$repository=Env::scope('bench/env_state');
 	$values=[
-		'tenant'=>'shopiro',
+		'tenant'=>'demo-tenant',
 		'plan'=>'business',
 		'limits/images'=>250000,
 	];
@@ -3938,7 +3955,7 @@ if($scenario==='all' || $scenario==='env-repository-scope-state'){
 if($scenario==='all' || $scenario==='env-repository-keys'){
 	$repository=Env::scope('bench/env_keys');
 	$values=[
-		'tenant'=>'shopiro',
+		'tenant'=>'demo-tenant',
 		'plan'=>'business',
 		'limits/images'=>250000,
 	];
@@ -3963,7 +3980,7 @@ if($scenario==='all' || $scenario==='env-repository-keys'){
 
 if($scenario==='all' || $scenario==='env-snapshot-to-array'){
 	$snapshot=new \Dataphyre\EnvSnapshot('app', '/', [
-		'name'=>'ShopiCore',
+		'name'=>'DataphyreBench',
 		'env'=>'production',
 		'debug'=>false,
 		'cache'=>[
@@ -3983,7 +4000,7 @@ if($scenario==='all' || $scenario==='env-snapshot-to-array-fresh'){
 	$results[]=bench_run(
 		'env-snapshot-to-array-fresh',
 		static fn() => (new \Dataphyre\EnvSnapshot('app', '/', [
-			'name'=>'ShopiCore',
+			'name'=>'DataphyreBench',
 			'env'=>'production',
 			'debug'=>false,
 			'cache'=>[

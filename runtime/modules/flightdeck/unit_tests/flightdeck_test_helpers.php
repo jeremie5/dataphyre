@@ -47,7 +47,7 @@ function dp_flightdeck_unit_auth_accepts_cross_app_toolbar_cookies(): array {
 		: ($GLOBALS['dataphyre_bootstrap_config'] ?? []);
 	$default_app=is_array($bootstrap) && is_string($bootstrap['app'] ?? null) && $bootstrap['app']!==''
 		? $bootstrap['app']
-		: (defined('APP') ? (string)APP : 'shopiro');
+		: (defined('APP') ? (string)APP : 'demo_app');
 	$previous_bootstrap=$GLOBALS['dataphyre_bootstrap_config'] ?? null;
 	if(!defined('DATAPHYRE_BOOTSTRAP_CONFIG')){
 		$GLOBALS['dataphyre_bootstrap_config']=array_replace(is_array($previous_bootstrap) ? $previous_bootstrap : [], ['app'=>$default_app]);

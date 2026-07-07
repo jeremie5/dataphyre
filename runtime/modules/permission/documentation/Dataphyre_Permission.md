@@ -1,6 +1,6 @@
 # Dataphyre Permission
 
-Dataphyre Permission is a semantic authorization module for fast, readable permission rules. It keeps the Shopiro permission grammar that worked well, then makes it first-class for Dataphyre Access, Panel, policy gate integration, and optional Laravel adapter support.
+Dataphyre Permission is a semantic authorization module for fast, readable permission rules. It keeps the legacy permission grammar that worked well, then makes it first-class for Dataphyre Access, Panel, policy gate integration, and optional Laravel adapter support.
 
 ## Rule Grammar
 
@@ -20,7 +20,7 @@ Supported forms:
 | `-orders.delete` | explicit deny; deny always wins |
 | `-orders.*` | deny every child permission |
 | `<orders.view>` | strict exact check, no parent inference |
-| `role.admin` / `group.admin` | expand a configured role; `group.*` is kept for Shopiro compatibility |
+| `role.admin` / `group.admin` | expand a configured role; `group.*` is kept for legacy compatibility |
 
 Checks with an array require every listed permission. Use `Permission::any([...])` for any-of checks.
 

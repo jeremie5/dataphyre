@@ -28,7 +28,7 @@ return [
 		'vestra'=>[
 			'driver'=>'vestra',
 			'manifest'=>ROOTPATH['dataphyre'].'cache/storage-vestra-manifest.json',
-			'tenant'=>'shopiro-store-content',
+			'tenant'=>'dataphyre-demo-content',
 		],
 		'vestra_s3'=>[
 			'driver'=>'s3',

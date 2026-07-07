@@ -12,6 +12,23 @@ if(PHP_SAPI!=='cli'){
 	exit(2);
 }
 
+if(in_array('--help', $argv, true) || in_array('-h', $argv, true)){
+	echo <<<'HELP'
+Usage:
+  php dev/tools/public/mcp_config.php [--php <path-or-command>] [--allow-unsafe]
+
+Options:
+  --php           PHP executable to place in the generated MCP client config.
+                  Defaults to DATAPHYRE_PHP, then the current PHP binary.
+  --allow-unsafe  Include --allow-unsafe in the generated server args.
+  -h, --help      Show this help text.
+
+Prints a JSON MCP client config for the local Dataphyre source checkout.
+
+HELP;
+	exit(0);
+}
+
 $workspace=dataphyre_mcp_config_workspace_root(__DIR__);
 if(!is_array($workspace)){
 	fwrite(STDERR, "Unable to resolve Dataphyre source checkout root. Expected common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php below a workspace root or runtime/modules/mcp/kernel/dataphyre_mcp.php below a standalone checkout.\n");

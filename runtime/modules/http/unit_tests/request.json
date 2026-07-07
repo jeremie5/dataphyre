@@ -27,7 +27,7 @@
         "product": "native"
       },
       {
-        "tenant": "shopiro"
+        "tenant": "demo_tenant"
       }
     ],
     "expected": "Dataphyre\\Http\\Request"

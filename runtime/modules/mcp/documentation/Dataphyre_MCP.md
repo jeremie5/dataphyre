@@ -83,8 +83,8 @@ Client configs must use `common/dataphyre/runtime/modules/mcp/kernel/dataphyre_m
 - `dataphyre_run_panel_field_catalog_check`: wrapper around the route-free Panel field catalog harness.
 - `dataphyre_verification_surface_catalog`: static catalog of JSON unit-test manifests, diagnostic files, route-free checks, regression scripts, and MCP/release helper scripts without executing them; ordinary app agents use it as discovery, not as a release gate.
 - `dataphyre_php_lint`: focused `php -l` checks for repo-local PHP files.
-- `dataphyre_release_check`: maintainer Dataphyre public release checks for release or framework claims, not routine app behavior proof.
-- `dataphyre_release_triage_summary`: maintainer release check failure summary grouped by actionable categories.
+- `dataphyre_release_check`: Dataphyre release-check boundary metadata for release or framework claims, not routine app behavior proof.
+- `dataphyre_release_triage_summary`: release-check boundary and available failure summary grouped by actionable categories.
 - `dataphyre_release_fix_plan`: ordered read-only maintainer repair batches from release-check failures.
 - `dataphyre_mcp_manifest_export`: client-visible manifest of tools, prompts, resources, groups, schemas, protocol, and safety posture.
 - `dataphyre_prompt_pack_export`: reusable workflow prompt bundles for clients and agents.

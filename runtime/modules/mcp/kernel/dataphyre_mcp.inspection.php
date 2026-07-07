@@ -31,7 +31,7 @@ trait dataphyre_mcp_inspection_surfaces {
 			'execution'=>'not_exposed',
 			'available'=>false,
 			'passed'=>false,
-			'message'=>'Local release sanitation commands are outside the public MCP execution surface.',
+			'message'=>'Release-check execution is outside the public MCP execution surface.',
 		];
 		$result['application_agent_operating_contract']=$this->mcp_application_agent_operating_contract('release_check');
 		$result['ordinary_app_work']=$this->mcp_ordinary_app_work_contract('release_check');
@@ -185,7 +185,7 @@ trait dataphyre_mcp_inspection_surfaces {
 	/**
 	 * Converts release check output into categorized failure counts and examples.
 	 *
-	 * executes the standard release check, parses FAIL lines into stable categories, and returns a
+	 * parses available release-check output into stable categories and returns a
 	 * summary suitable for planning without mutating the workspace.
 	 *
 	 * @return array{exit_code: mixed, total_failures: int, categories: array<string, array>} Release triage summary.
@@ -218,8 +218,8 @@ trait dataphyre_mcp_inspection_surfaces {
 	/**
 	 * Produces a prioritized repair plan from release check output.
 	 *
-	 * accepts caller-provided output or executes the release check, then groups failures by category
-	 * with recommended actions and verification gates. It does not apply fixes.
+	 * accepts caller-provided output or current release-check boundary metadata, then groups failures
+	 * by category with recommended actions and verification gates. It does not apply fixes.
 	 *
 	 * @param array{release_output?: string, max_examples_per_batch?: int} $args Planning options.
 	 * @return array<string, mixed> Release repair plan.

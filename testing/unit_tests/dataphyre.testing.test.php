@@ -15,7 +15,7 @@ use function Dataphyre\Test\test;
 dataset('strict equality shapes', [
 	'string'=>['dataphyre', 'dataphyre'],
 	'integer'=>[42, 42],
-	'array'=>[['tenant'=>'shopiro'], ['tenant'=>'shopiro']],
+	'array'=>[['tenant'=>'demo_tenant'], ['tenant'=>'demo_tenant']],
 ]);
 
 fixture('temp_file', static function(): string {
@@ -51,11 +51,11 @@ test('throw assertions return the throwable', static function(Context $t): void 
 })->tag('assertion');
 
 test('expectation chains keep tests compact', static function(Context $t): void {
-	$payload=['tenant'=>'shopiro', 'plan'=>'enterprise'];
+	$payload=['tenant'=>'demo_tenant', 'plan'=>'enterprise'];
 	$t->expect($payload)
 		->toHaveKey('tenant')
 		->toHaveCount(2);
-	$t->expect($payload['tenant'])->toBe('shopiro')->toContain('shop');
+	$t->expect($payload['tenant'])->toBe('demo_tenant')->toContain('demo');
 	$t->expect(strlen($payload['plan']))->toBeGreaterThan(5)->toBeLessThan(20);
 })->tag('expectation', 'assertion');
 
@@ -69,7 +69,7 @@ test('common fakes cover app service boundaries', static function(Context $t): v
 	$t->expect($storage->files('tenant'))->toHaveCount(1);
 
 	$mailer=$t->fakeMailer();
-	$mailer->send('ops@example.test', 'Ready', ['tenant'=>'shopiro']);
+	$mailer->send('ops@example.test', 'Ready', ['tenant'=>'demo_tenant']);
 	$t->same(1, $mailer->count());
 	$t->same('Ready', $mailer->last()['subject'] ?? null);
 

@@ -21,7 +21,7 @@ after_all(static function(): void {
 });
 
 test('negative numeric string and money assertions are explicit', static function(Context $t): void {
-	$t->notSame('shopiro', 'dataphyre');
+	$t->notSame('demo_tenant', 'dataphyre');
 	$t->notEquals(10, 11);
 	$t->expect('dataphyre-core')->not()->toBe('laravel');
 	$t->expect('dataphyre-core')->toStartWith('data')->toEndWith('core')->toHaveLength(14);
@@ -38,7 +38,7 @@ test('negative numeric string and money assertions are explicit', static functio
 
 test('deep paths subsets and exception details are first class', static function(Context $t): void {
 	$payload=[
-		'tenant'=>'shopiro',
+		'tenant'=>'demo_tenant',
 		'items'=>[
 			['id'=>42, 'state'=>'active'],
 		],
@@ -50,7 +50,7 @@ test('deep paths subsets and exception details are first class', static function
 	$t->pathEquals('items.0.state', 'active', $payload);
 	$t->missingPath('items.1.id', $payload);
 	$t->subset(['meta'=>['currency'=>'CAD']], $payload);
-	$t->expect($payload)->toHavePathValue('tenant', 'shopiro')->not()->toHavePath('archived_at');
+	$t->expect($payload)->toHavePathValue('tenant', 'demo_tenant')->not()->toHavePath('archived_at');
 	$t->throwsLike(static fn()=>throw new RuntimeException('provider refused token', 409), RuntimeException::class, 'token', 409);
 	$t->doesNotThrow(static fn()=>true);
 })->tag('assertion', 'deep-structure');
@@ -92,10 +92,10 @@ test('fake-specific assertions keep service boundary tests compact', static func
 	$storage->assertMissing($t, 'tenant/missing.txt');
 
 	$mailer=$t->fakeMailer();
-	$mailer->send('ops@example.test', 'Ready', ['tenant'=>'shopiro']);
-	$mailer->queue('ops@example.test', 'Queued', ['tenant'=>'shopiro']);
-	$mailer->assertSent($t, 'ops@example.test', 'Ready', ['tenant'=>'shopiro']);
-	$mailer->assertSent($t, 'ops@example.test', 'Queued', ['tenant'=>'shopiro']);
+	$mailer->send('ops@example.test', 'Ready', ['tenant'=>'demo_tenant']);
+	$mailer->queue('ops@example.test', 'Queued', ['tenant'=>'demo_tenant']);
+	$mailer->assertSent($t, 'ops@example.test', 'Ready', ['tenant'=>'demo_tenant']);
+	$mailer->assertSent($t, 'ops@example.test', 'Queued', ['tenant'=>'demo_tenant']);
 	$mailer->assertSentCount($t, 2);
 
 	$http=$t->fakeHttp();

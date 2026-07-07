@@ -101,7 +101,7 @@ Each `modules` entry describes one exported runtime module:
 | `docs` | string | Documentation link target from `docs/MODULES.md`. |
 | `purpose` | string | Short public purpose summary. |
 
-The public export checker validates this inventory against both
+The release preparation process validates this inventory against both
 `runtime/modules/` and `docs/MODULES.md`.
 
 ## Bundled Component Entries
@@ -116,7 +116,7 @@ the prepared export:
 | `license` | string | SPDX-style license label used by the public notice inventory. |
 | `license_file` | string | Public relative path to the component license file. |
 
-The public export checker validates this inventory against
+The release preparation process validates this inventory against
 `docs/THIRD_PARTY_NOTICES.md` and the exported license files.
 
 ## File Entries
@@ -129,8 +129,8 @@ Each `files` entry describes one exported file:
 | `bytes` | integer | File length in bytes. |
 | `sha256` | string | Lowercase SHA-256 hash of the file contents. |
 
-The public export checker validates file paths, duplicate entries, byte counts,
-and SHA-256 hashes against the prepared export tree.
+The release preparation process validates file paths, duplicate entries, byte
+counts, and SHA-256 hashes against the prepared export tree.
 
 ## Tree Hash
 

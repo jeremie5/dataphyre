@@ -69,9 +69,9 @@ test('queue clock hooks reactor and permission fakes stay scoped', static functi
 	$dialbacks->assertNotCalled($t, 'DATAPHYRE_VESTRA_OBJECT_SIGN', 'app');
 
 	$callbacks=$t->fakeCallbacks('app');
-	$callbacks->on('shopiro_product_saved', static fn(array $payload): int=>$payload['id']);
-	$callbacks->dispatch('SHOPIRO_PRODUCT_SAVED', ['id'=>42]);
-	$callbacks->assertCalledTimes($t, 'shopiro_product_saved', 1);
+	$callbacks->on('demo_product_saved', static fn(array $payload): int=>$payload['id']);
+	$callbacks->dispatch('DEMO_PRODUCT_SAVED', ['id'=>42]);
+	$callbacks->assertCalledTimes($t, 'demo_product_saved', 1);
 
 	$reactor=$t->fakeReactor();
 	$reactor->listen('product.saved', static fn(array $payload): int=>$payload['id']);

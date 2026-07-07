@@ -271,7 +271,7 @@ class vestra{
 			$token=trim((string)\config('vestra_tenant_read_token'));
 		}
 		if($token===''){
-			$token=trim((string)(getenv('VESTRA_TENANT_READ_TOKEN') ?: getenv('SHOPIRO_VESTRA_TENANT_READ_TOKEN') ?: ''));
+			$token=trim((string)(getenv('VESTRA_TENANT_READ_TOKEN') ?: ''));
 		}
 		return $token;
 	}

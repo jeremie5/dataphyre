@@ -22,7 +22,7 @@
 		"expected": [
 			{
 				"result": {
-					"default_app": "shopiro",
+					"default_app": "demo_app",
 					"auth_project_differs_from_legacy": true,
 					"auth_accepts_legacy_default_app_cookie": true,
 					"debugbar_project_differs_from_legacy": true,

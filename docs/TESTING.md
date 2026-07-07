@@ -114,7 +114,7 @@ $t->moneyAmount('12.99', 1299);
 
 $t->hasPath('items.0.id', $payload);
 $t->pathEquals('data.status', 'active', $payload);
-$t->subset(['tenant' => 'shopiro'], $payload);
+$t->subset(['tenant' => 'demo_tenant'], $payload);
 
 $t->responseStatus(202, $response);
 $t->responseHeader('content-type', 'application/json', $response);
@@ -174,7 +174,7 @@ Fakes also expose focused assertion methods:
 
 ```php
 $storage->assertStored($t, 'tenant/logo.txt', 'logo');
-$mailer->assertSent($t, 'ops@example.test', 'Ready', ['tenant' => 'shopiro']);
+$mailer->assertSent($t, 'ops@example.test', 'Ready', ['tenant' => 'demo_tenant']);
 $http->assertRequested($t, 'POST', 'https://example.test/hook', ['id' => 42]);
 $auth->assertAuthenticatedAs($t, 42);
 $sql->assertQueried($t, '/update products/i', [1299, 42]);

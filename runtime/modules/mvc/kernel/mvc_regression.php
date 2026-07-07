@@ -3210,15 +3210,15 @@ namespace {
 			'REMOTE_ADDR'=>'10.0.0.10',
 		], [
 			'Host'=>'internal.test',
-			'X-Forwarded-Host'=>'shopiro.test, proxy.test',
+			'X-Forwarded-Host'=>'dataphyre.test, proxy.test',
 			'X-Forwarded-Proto'=>'https',
 			'X-Forwarded-For'=>'203.0.113.10, 10.0.0.10',
 			'User-Agent'=>'DataphyreBot/1.0',
 		]);
-		if($request->scheme()!=='https' || $request->host()!=='shopiro.test' || $request->root()!=='https://shopiro.test'){
+		if($request->scheme()!=='https' || $request->host()!=='dataphyre.test' || $request->root()!=='https://dataphyre.test'){
 			$failures[]='HTTP request URL helpers should honor forwarded scheme and host headers.';
 		}
-		if($request->url()!=='https://shopiro.test/reports/monthly' || $request->fullUrl()!=='https://shopiro.test/reports/monthly?page=2&filter=data%20phyre'){
+		if($request->url()!=='https://dataphyre.test/reports/monthly' || $request->fullUrl()!=='https://dataphyre.test/reports/monthly?page=2&filter=data%20phyre'){
 			$failures[]='HTTP request URL helpers should build current URL and full URL with encoded query.';
 		}
 		if($request->ip()!=='203.0.113.10' || $request->userAgent()!=='DataphyreBot/1.0'){

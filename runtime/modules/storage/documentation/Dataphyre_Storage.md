@@ -60,7 +60,7 @@ return [
 		'vestra'=>[
 			'driver'=>'vestra',
 			'manifest'=>ROOTPATH['dataphyre'].'cache/storage-vestra-manifest.json',
-			'tenant'=>'shopiro-store-content',
+			'tenant'=>'dataphyre-demo-content',
 		],
 		'vestra_s3'=>[
 			'driver'=>'s3',
@@ -239,7 +239,7 @@ to stable references:
   "catalog/hero.jpg": {
     "driver": "vestra",
     "object_id": 123456789,
-    "tenant": "shopiro-store-content",
+    "tenant": "dataphyre-demo-content",
     "fabric": {
       "blockid": 123456789,
       "tenant_url_template": "/v/{tenant}/{rate}/{blockid}",

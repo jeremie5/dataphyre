@@ -672,7 +672,7 @@ Footer hooks are intentionally opt-in:
 ```php
 Panel::make('ops')
 	->footerMode('docked')
-	->renderHook('footer', fn() => '<div class="dp-panel-footer-slim"><p>&copy; 2026 Shopiro Ltd.</p><nav><a href="/policies">Policies</a></nav></div>');
+	->renderHook('footer', fn() => '<div class="dp-panel-footer-slim"><p>&copy; 2026 Example Corp.</p><nav><a href="/policies">Policies</a></nav></div>');
 ```
 
 Panel also has an explicit page-width contract. By default, sidebar layouts use
@@ -3700,7 +3700,7 @@ Plugins expose a package contract too. Use `Panel::pluginManifest()`,
 shell, test, package browser, or Flightdeck tab needs to inspect extensions:
 
 ```php
-$manifest=$panel->pluginManifest('shopiro_ops_signals');
+$manifest=$panel->pluginManifest('dataphyre_ops_signals');
 
 $manifest['package'];       // id, class, and version
 $manifest['configuration']; // safe config shape and redacted scalar values
@@ -5720,8 +5720,8 @@ route. It exits `0` when checks pass, `1` when checks fail, and `2` when a suite
 cannot be loaded.
 
 ```powershell
-& '.\.local\shopiro\php\php.exe' 'common\dataphyre\runtime\modules\panel\kernel\panel_regression.php' --example
-& '.\.local\shopiro\php\php.exe' 'common\dataphyre\runtime\modules\panel\kernel\panel_regression.php' --example --json '.tmp\panel-regression.json'
+php common\dataphyre\runtime\modules\panel\kernel\panel_regression.php --example
+php common\dataphyre\runtime\modules\panel\kernel\panel_regression.php --example --json .tmp\panel-regression.json
 ```
 
 Regression suites are not a browser replacement. They sit between unit tests and

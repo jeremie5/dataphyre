@@ -12,6 +12,23 @@ if(PHP_SAPI!=='cli'){
 	exit(2);
 }
 
+if(in_array('--help', $argv, true) || in_array('-h', $argv, true)){
+	echo <<<'HELP'
+Usage:
+  php dev/tools/public/mcp_live_validate.php [--php <path-or-command>]
+
+Options:
+  --php       PHP executable used to start the MCP server. Defaults to the
+              current PHP binary.
+  -h, --help  Show this help text.
+
+Runs a bounded stdio validation against the Dataphyre MCP server. The tool can
+run from an embedded common/dataphyre checkout or a standalone source checkout.
+
+HELP;
+	exit(0);
+}
+
 $root=dataphyre_mcp_live_validate_workspace_root(__DIR__);
 if(!is_string($root)){
 	fwrite(STDERR, "Unable to resolve embedded Dataphyre source checkout root. Expected common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php below the workspace root.\n");

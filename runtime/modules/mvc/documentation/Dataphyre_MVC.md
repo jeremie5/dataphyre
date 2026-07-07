@@ -857,7 +857,7 @@ Dataphyre SQL module.
 ## Regression Check
 
 ```powershell
-.local\shopiro\php\php.exe -c .local\shopiro\php\php.ini common\dataphyre\runtime\modules\mvc\kernel\mvc_regression.php
+php common\dataphyre\runtime\modules\mvc\kernel\mvc_regression.php
 ```
 
 The runner verifies route parameters, controller string resolution, named URL

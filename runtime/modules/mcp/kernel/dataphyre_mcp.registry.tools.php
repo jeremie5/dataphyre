@@ -336,7 +336,7 @@ trait dataphyre_mcp_registry_tool_surfaces {
 				'paths'=>['type'=>'array', 'items'=>['type'=>'string'], 'description'=>'Repo-relative PHP files.'],
 			], ['paths']),
 			$this->tool('dataphyre_release_check', 'Report the Dataphyre release-check boundary for public MCP clients; not app behavior proof.', []),
-			$this->tool('dataphyre_release_triage_summary', 'Run local private Dataphyre release checks when present and group failures by actionable category for maintainer release work, not ordinary application-agent verification.', []),
+			$this->tool('dataphyre_release_triage_summary', 'Summarize release-check boundary metadata and group available failure output by actionable category for release work, not ordinary application-agent verification.', []),
 			$this->tool('dataphyre_release_fix_plan', 'Create an ordered, read-only maintainer/source-checkout release repair plan from Dataphyre release-check failures.', [
 				'release_output'=>['type'=>'string', 'description'=>'Optional release-check output to plan from instead of running the check. Useful for deterministic tests.'],
 				'max_examples_per_batch'=>['type'=>'integer', 'description'=>'Maximum examples per repair batch, default 8.'],

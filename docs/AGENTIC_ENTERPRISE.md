@@ -175,8 +175,8 @@ performance contract to:
 - prefer clear reusable code unless benchmark data proves the lower-level path
   is worth keeping.
 
-Docs, cold-path diagnostics, and release scripts do not
-need microbenchmarks by default, but they still need focused verification.
+Docs, cold-path diagnostics, and package review do not need microbenchmarks by
+default, but they still need focused verification.
 
 ## Enterprise Adoption Checklist
 
@@ -186,7 +186,7 @@ Before presenting a feature as enterprise-ready, verify:
 - MCP or static diagnostics can inspect the feature without unsafe execution;
 - configuration shape avoids leaking secrets and app-local values;
 - tests or manifests cover the intended public contract;
-- release checks and public export checks pass where relevant;
+- package validation and manifest checks pass where relevant;
 - release manifest provenance is present for public packages;
 - agent guidance explains how to extend the feature without patching core for an
   application.

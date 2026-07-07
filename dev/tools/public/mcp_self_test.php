@@ -12,6 +12,21 @@ if(PHP_SAPI!=='cli'){
 	exit(2);
 }
 
+if(in_array('--help', $argv, true) || in_array('-h', $argv, true)){
+	echo <<<'HELP'
+Usage:
+  php dev/tools/public/mcp_self_test.php
+
+Options:
+  -h, --help  Show this help text.
+
+Runs the Dataphyre MCP self-test suite for contributors. The tool can run from
+an embedded common/dataphyre checkout or a standalone source checkout.
+
+HELP;
+	exit(0);
+}
+
 $root=dataphyre_mcp_self_test_workspace_root(__DIR__);
 if(!is_string($root)){
 	fwrite(STDERR, "Unable to resolve embedded Dataphyre source checkout root. Expected common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php below the workspace root.\n");
@@ -210,7 +225,7 @@ $checks=[
 				'dataphyre_mcp_task_start_pack_export'=>['builder-profile cold-start context', 'app-builder compact planning', 'broader workflow discovery', 'defaults payload_profile=builder'],
 				'dataphyre_mcp_agent_brief_export'=>['compact read-only brief', 'direct app-builder fast lane', 'first-view guidance', 'next_detail_page', 'collapsed enterprise context'],
 				'dataphyre_release_check'=>['Dataphyre release-check boundary', 'not app behavior proof'],
-				'dataphyre_release_triage_summary'=>['local private Dataphyre release checks', 'not ordinary application-agent verification'],
+				'dataphyre_release_triage_summary'=>['release-check boundary metadata', 'not ordinary application-agent verification'],
 				'dataphyre_release_fix_plan'=>['maintainer/source-checkout release repair plan'],
 				'dataphyre_application_info'=>['copy_safe_startup_summary', 'instead of root or raw git output'],
 				'dataphyre_mcp_docs_coverage_report'=>['MCP/release-surface claims', 'not app behavior proof'],
@@ -12700,7 +12715,7 @@ $checks=[
 					'proposed_files'=>[
 						'dataphyre/runtime/modules/panel/kernel/panel_field_catalog_check.php',
 						'runtime/modules/sql/Framework/TableRepository.php',
-						'applications/shopiro/backend/dataphyre/panel/resources/ProductResource.php',
+						'applications/demo_shop/backend/dataphyre/panel/resources/ProductResource.php',
 					],
 					'change_summary'=>'Add panel validation and one app-owned resource.',
 				],
@@ -12721,9 +12736,9 @@ $checks=[
 				|| ($data['plan_type'] ?? null)!=='dataphyre_apply_audit_plan'
 				|| (($byPath['dataphyre/runtime/modules/panel/kernel/panel_field_catalog_check.php']['scope_path'] ?? null)!=='runtime/modules/panel/kernel/panel_field_catalog_check.php')
 				|| (($byPath['runtime/modules/sql/Framework/TableRepository.php']['scope_path'] ?? null)!=='runtime/modules/sql/Framework/TableRepository.php')
-				|| (($byPath['applications/shopiro/backend/dataphyre/panel/resources/ProductResource.php']['scope_path'] ?? null)!=='applications/shopiro/backend/dataphyre/panel/resources/ProductResource.php')
+				|| (($byPath['applications/demo_shop/backend/dataphyre/panel/resources/ProductResource.php']['scope_path'] ?? null)!=='applications/demo_shop/backend/dataphyre/panel/resources/ProductResource.php')
 				|| (($byPath['dataphyre/runtime/modules/panel/kernel/panel_field_catalog_check.php']['package_scope'] ?? null)!=='dataphyre_package')
-				|| (($byPath['applications/shopiro/backend/dataphyre/panel/resources/ProductResource.php']['package_scope'] ?? null)!=='caller')
+				|| (($byPath['applications/demo_shop/backend/dataphyre/panel/resources/ProductResource.php']['package_scope'] ?? null)!=='caller')
 				|| !in_array('dataphyre_run_panel_field_catalog_check', $data['verification'] ?? [], true)
 				|| (($data['apply_next_action']['status'] ?? null)!=='escalate_framework_change')
 				|| (($data['apply_next_action']['tool'] ?? null)!=='dataphyre_mcp_enterprise_adoption_audit')
@@ -12860,7 +12875,7 @@ $checks=[
 				|| !str_contains($boundary, 'non-object JSON')
 				|| !str_contains($boundary, 'safe_repo_path')
 				|| !str_contains($boundary, 'sibling paths that only share a prefix are rejected')
-				|| !str_contains($boundary, 'ordinary application agents do not need dev artifacts')
+				|| !str_contains($boundary, 'ordinary application agents use focused app verification')
 				|| !in_array('dataphyre_mcp_manifest_export', $toolNames, true)
 				|| (($planningTools[0] ?? null)!=='dataphyre_app_builder_plan_generate')
 				|| (($planningTools[1] ?? null)!=='dataphyre_task_pack_generate')
@@ -13512,7 +13527,7 @@ $checks=[
 				|| !in_array('prompt pack export before ordinary app work', $data['app_after_setup_next_action']['not_required'] ?? [], true)
 				|| !str_contains($boundary, 'Content-Length framed JSON-RPC')
 				|| !str_contains($boundary, 'safe_repo_path')
-				|| !str_contains($boundary, 'ordinary application agents do not need dev artifacts')
+				|| !str_contains($boundary, 'ordinary application agents use focused app verification')
 				|| (($data['server_entrypoint_contract']['stdio_server'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
 				|| (($data['server_entrypoint_contract']['module_bootstrap'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php')
 				|| (($data['server_entrypoint_contract']['validation_tool'] ?? null)!=='common/dataphyre/dev/tools/public/mcp_live_validate.php')
@@ -13664,7 +13679,7 @@ $checks=[
 				|| !in_array('full manifest scraping before ordinary app work', $data['app_after_setup_next_action']['not_required'] ?? [], true)
 				|| !str_contains($boundary, 'Content-Length framed JSON-RPC')
 				|| !str_contains($boundary, 'safe_repo_path')
-				|| !str_contains($boundary, 'ordinary application agents do not need dev artifacts')
+				|| !str_contains($boundary, 'ordinary application agents use focused app verification')
 				|| (($data['current_safe_surfaces']['config_audit'] ?? null)!=='dataphyre_mcp_client_config_audit')
 				|| (($data['proposed_writes'][0]['write_policy'] ?? null)!=='caller_owned_write_only')
 				|| !in_array('dataphyre_mcp_client_config_audit', $verificationTools, true)
@@ -13714,7 +13729,7 @@ $checks=[
 				|| !in_array('Dataphyre hot-path benchmarks', $data['tool_audience_boundaries']['not_default_for_ordinary_app_work'] ?? [], true)
 				|| !str_contains($boundary, 'Content-Length framed JSON-RPC')
 				|| !str_contains($boundary, 'safe_repo_path')
-				|| !str_contains($boundary, 'ordinary application agents do not need dev artifacts')
+				|| !str_contains($boundary, 'ordinary application agents use focused app verification')
 				|| !isset($data['scripts']['node']['script'])
 				|| !in_array('initialize', $requestNames, true)
 				|| !in_array('tools/call doctor', $requestNames, true)
@@ -13850,7 +13865,7 @@ $checks=[
 				|| (($data['client_setup_next_action']['tool'] ?? null)!=='dataphyre_mcp_client_config_audit')
 				|| !str_contains($boundary, 'Content-Length framed JSON-RPC')
 				|| !str_contains($boundary, 'safe_repo_path')
-				|| !str_contains($boundary, 'ordinary application agents do not need dev artifacts')
+				|| !str_contains($boundary, 'ordinary application agents use focused app verification')
 				|| !isset($data['smoke_tests']['scripts']['php']['script'])
 				|| (($data['manifest_excerpt']['tool_count'] ?? 0)<60)
 				|| (($data['manifest_excerpt']['application_agent_operating_contract']['default_posture'] ?? null)!=='read_only_metadata_first')
@@ -13914,7 +13929,7 @@ $checks=[
 				|| !str_contains($boundary, 'Content-Length framed JSON-RPC')
 				|| !str_contains($boundary, 'parse error')
 				|| !str_contains($boundary, 'safe_repo_path')
-				|| !str_contains($boundary, 'ordinary application agents do not need dev artifacts')
+				|| !str_contains($boundary, 'ordinary application agents use focused app verification')
 				|| (($data['application_agent_operating_contract']['default_posture'] ?? null)!=='read_only_metadata_first')
 				|| (($data['ordinary_app_work']['verification_owner'] ?? null)!=='consuming_application')
 				|| (($data['tool_audience_boundaries']['ordinary_app_verification'] ?? null)!=='focused application or module checks')
@@ -14030,7 +14045,7 @@ $checks=[
 				|| !in_array('dataphyre_mcp_verify_all for ordinary local client setup', $data['client_setup_next_action']['not_required'] ?? [], true)
 				|| !str_contains($boundary, 'Content-Length framed JSON-RPC')
 				|| !str_contains($boundary, 'safe_repo_path')
-				|| !str_contains($boundary, 'ordinary application agents do not need dev artifacts')
+				|| !str_contains($boundary, 'ordinary application agents use focused app verification')
 				|| (($data['server_entrypoint_contract']['stdio_server'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
 				|| (($data['server_entrypoint_contract']['module_bootstrap'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php')
 				|| (($data['expected']['server_arg'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
@@ -14073,7 +14088,7 @@ $checks=[
 				|| !in_array('module_bootstrap_used_as_server', $issueIds, true)
 				|| !str_contains($boundary, 'Content-Length framed JSON-RPC')
 				|| !str_contains($boundary, 'safe_repo_path')
-				|| !str_contains($boundary, 'ordinary application agents do not need dev artifacts')
+				|| !str_contains($boundary, 'ordinary application agents use focused app verification')
 				|| (($data['server_entrypoint_contract']['stdio_server'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
 				|| (($data['server_entrypoint_contract']['module_bootstrap'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php')
 			){
@@ -14147,7 +14162,7 @@ $checks=[
 				|| !str_contains($boundary, 'parse error')
 				|| !str_contains($boundary, 'safe_repo_path')
 				|| !str_contains($boundary, 'sibling paths that only share a prefix are rejected')
-				|| !str_contains($boundary, 'ordinary application agents do not need dev artifacts')
+				|| !str_contains($boundary, 'ordinary application agents use focused app verification')
 				|| !str_contains($safetyNextActionSource, "'allowed_next_tools'=>['dataphyre_php_lint', 'dataphyre_run_panel_regression', 'dataphyre_run_panel_field_catalog_check']")
 				|| str_contains($safetyNextActionSource, "'allowed_next_tools'=>['dataphyre_php_lint', 'dataphyre_run_panel_regression', 'dataphyre_run_panel_field_catalog_check', 'dataphyre_mcp_live_validate']")
 				|| !str_contains($safetyNextActionSource, "'publication_validation_tools'=>['dataphyre_mcp_live_validate']")
@@ -14923,7 +14938,7 @@ $checks=[
 					'state'=>[
 						'state_id'=>'self-test-state-path-risk',
 						'workflow'=>'routes',
-						'task'=>'inspect route workflow at C:/Users/jeref/OneDrive/Bureau/ShopiCore/private-note.txt tenant_id=tenant_123 client_secret="state-oauth-secret" accessToken=state-access-token signing_secret => "state-signing-secret" https://vault.example.test/vault/object?X-Amz-Signature=deadbeef&passkey=123&plan=enterprise',
+						'task'=>'inspect route workflow at C:/Users/example/Workspace/PrivateApp/private-note.txt tenant_id=tenant_123 client_secret="state-oauth-secret" accessToken=state-access-token signing_secret => "state-signing-secret" https://vault.example.test/vault/object?X-Amz-Signature=deadbeef&passkey=123&plan=enterprise',
 						'created_at'=>'2026-01-01T00:00:00Z',
 						'updated_at'=>'2026-01-01T00:05:00Z',
 						'client'=>['name'=>'self-test', 'version'=>'1.0.0', 'transport'=>'stdio'],
@@ -15033,9 +15048,9 @@ $checks=[
 				'arguments'=>[
 					'workflow'=>'routes',
 					'state'=>[
-						'state_id'=>'C:/Users/jeref/OneDrive/Bureau/private-state.json?X-Amz-Signature=deadbeef',
+						'state_id'=>'C:/Users/example/Workspace/private-state.json?X-Amz-Signature=deadbeef',
 						'workflow'=>'routes',
-						'task'=>'continue route workflow for tenant_id=tenant_123 from C:/Users/jeref/OneDrive/Bureau/private-task.txt',
+						'task'=>'continue route workflow for tenant_id=tenant_123 from C:/Users/example/Workspace/private-task.txt',
 						'created_at'=>'2026-01-01T00:00:00Z',
 						'updated_at'=>'2026-01-01T00:05:00Z',
 						'client'=>['name'=>'self-test', 'version'=>'1.0.0', 'transport'=>'stdio'],
@@ -15043,7 +15058,7 @@ $checks=[
 						'current_phase'=>'handoff_summary',
 						'last_decision'=>'summarize_or_verify',
 						'last_tool'=>'dataphyre_mcp_workflow_state_audit',
-						'transcript_ref'=>'tenant_id=tenant_123 C:/Users/jeref/OneDrive/Bureau/transcript.json',
+						'transcript_ref'=>'tenant_id=tenant_123 C:/Users/example/Workspace/transcript.json',
 						'checkpoint_ref'=>'customer_id=cus_321&passkey=123',
 						'checkpoint_status'=>'needs_review',
 						'pending_tools'=>['dataphyre_mcp_workflow_next_action_export'],
@@ -15069,7 +15084,7 @@ $checks=[
 				|| str_contains($text, 'tenant_123')
 				|| str_contains($text, 'cus_321')
 				|| str_contains($text, 'deadbeef')
-				|| str_contains($text, 'C:/Users/jeref')
+				|| str_contains($text, 'C:/Users/example')
 			){
 				throw new RuntimeException('mcp workflow state summary export leaked caller-controlled ids or refs.');
 			}
@@ -15420,7 +15435,7 @@ $checks=[
 							[
 								'order'=>1,
 								'request'=>['method'=>'tools/call', 'tool'=>'dataphyre_mcp_client_config_summary', 'arguments'=>['target'=>'generic']],
-								'response'=>['ok'=>true, 'content_summary'=>'Config read from C:/Users/jeref/OneDrive/Bureau/ShopiCore/private-config.json customer_id=cus_321 webhookSecret=transcript-hook-secret private_key=transcript-private-key refreshToken: transcript-refresh-token https://vault.example.test/vault/object?X-Amz-Credential=tenant-secret&totp=987654&plan_id=plan_123', 'result_keys'=>['manual_config']],
+								'response'=>['ok'=>true, 'content_summary'=>'Config read from C:/Users/example/Workspace/PrivateApp/private-config.json customer_id=cus_321 webhookSecret=transcript-hook-secret private_key=transcript-private-key refreshToken: transcript-refresh-token https://vault.example.test/vault/object?X-Amz-Credential=tenant-secret&totp=987654&plan_id=plan_123', 'result_keys'=>['manual_config']],
 								'redactions'=>[],
 							],
 						],
@@ -15585,7 +15600,7 @@ $checks=[
 				'arguments'=>[
 					'workflow'=>'client',
 					'transcript'=>[
-						'transcript_id'=>'C:/Users/jeref/OneDrive/Bureau/transcript.json?tenant_id=tenant_123&X-Amz-Signature=deadbeef',
+						'transcript_id'=>'C:/Users/example/Workspace/transcript.json?tenant_id=tenant_123&X-Amz-Signature=deadbeef',
 						'workflow'=>'client',
 						'created_at'=>'2026-01-01T00:00:00Z',
 						'client'=>['name'=>'self-test', 'version'=>'1.0.0', 'transport'=>'stdio'],
@@ -15614,7 +15629,7 @@ $checks=[
 				|| !str_contains((string)($data['step_summaries'][0]['content_summary'] ?? ''), '[REDACTED]')
 				|| str_contains($text, 'tenant_123')
 				|| str_contains($text, 'deadbeef')
-				|| str_contains($text, 'C:/Users/jeref')
+				|| str_contains($text, 'C:/Users/example')
 				|| str_contains($text, 'summary-oauth-secret')
 				|| str_contains($text, 'summary-access-token')
 				|| str_contains($text, 'summary-hook-secret')
@@ -15708,10 +15723,10 @@ $checks=[
 			'params'=>[
 				'name'=>'dataphyre_mcp_workflow_checkpoint_export',
 				'arguments'=>[
-					'task'=>'checkpoint task for customer_id=cus_321 client_secret="checkpoint-oauth-secret" accessToken=checkpoint-access-token from C:/Users/jeref/OneDrive/Bureau/private-task.txt',
+					'task'=>'checkpoint task for customer_id=cus_321 client_secret="checkpoint-oauth-secret" accessToken=checkpoint-access-token from C:/Users/example/Workspace/private-task.txt',
 					'workflow'=>'client',
 					'transcript'=>[
-						'transcript_id'=>'C:/Users/jeref/OneDrive/Bureau/checkpoint-transcript.json?passkey=123&tenant_id=tenant_123&webhookSecret=checkpoint-hook-secret',
+						'transcript_id'=>'C:/Users/example/Workspace/checkpoint-transcript.json?passkey=123&tenant_id=tenant_123&webhookSecret=checkpoint-hook-secret',
 						'workflow'=>'client',
 						'created_at'=>'2026-01-01T00:00:00Z',
 						'client'=>['name'=>'self-test', 'version'=>'1.0.0', 'transport'=>'stdio'],
@@ -15742,7 +15757,7 @@ $checks=[
 				|| str_contains($text, 'cus_321')
 				|| str_contains($text, 'tenant_123')
 				|| str_contains($text, 'passkey=123')
-				|| str_contains($text, 'C:/Users/jeref')
+				|| str_contains($text, 'C:/Users/example')
 				|| str_contains($text, 'checkpoint-oauth-secret')
 				|| str_contains($text, 'checkpoint-access-token')
 				|| str_contains($text, 'checkpoint-hook-secret')
@@ -18058,7 +18073,7 @@ $checks=[
 				|| !str_contains($boundary, 'malformed_json_policy')
 				|| !str_contains($boundary, 'safe_repo_path')
 				|| !str_contains($boundary, 'sibling paths that only share a prefix are rejected')
-				|| !str_contains($boundary, 'ordinary application agents do not need dev artifacts')
+				|| !str_contains($boundary, 'ordinary application agents use focused app verification')
 				|| (($data['package_release_boundary']['ready'] ?? null)!==true)
 				|| (($data['package_release_boundary']['boundary']['release_manifest'] ?? null)!=='RELEASE_MANIFEST.json')
 				|| (($data['package_release_boundary']['boundary']['ordinary_app_entrypoint'] ?? null)!=='dataphyre_app_builder_plan_generate')
@@ -19077,7 +19092,7 @@ $checks=[
 					'files'=>[
 						'common/dataphyre/runtime/modules/core/kernel/runtime.php',
 						'common/dataphyre/runtime/modules/sql/Framework/TableRepository.php',
-						'applications/shopiro/backend/dataphyre/panel/resources/ProductResource.php',
+						'applications/demo_shop/backend/dataphyre/panel/resources/ProductResource.php',
 					],
 					'public_claim'=>false,
 				],
@@ -19901,7 +19916,7 @@ $checks=[
 				!str_contains($text, '# Dataphyre MCP')
 				|| !str_contains($text, 'Client configs must use `common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php` as the MCP stdio server entrypoint')
 				|| !str_contains($text, '`common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php` is only the Dataphyre runtime module bootstrap')
-				|| !str_contains($text, 'maintainer Dataphyre public release checks for release or framework claims, not routine app behavior proof')
+				|| !str_contains($text, 'Dataphyre release-check boundary metadata for release or framework claims, not routine app behavior proof')
 				|| !str_contains($text, 'aggregate maintainer MCP verification suite for MCP/release-surface claims, not routine app verification')
 				|| !str_contains($text, 'ordinary app agents use it as discovery, not as a release gate')
 				|| !str_contains($text, '`builder_response`')
@@ -20507,8 +20522,8 @@ function dataphyre_mcp_self_test_write_tracelog_artifact(string $path): void {
 		.'Authorization: Bearer eyJhbGciOiJIUzI1Ni.secret.payload Cookie: session_id=session-secret-456'."\n"
 		.'Standalone credential Bearer eyJzdWIiOiIxMjM0NTY3ODkw.sensitive.claims'."\n"
 		.'-----BEGIN PRIVATE KEY----- private-key-material -----END PRIVATE KEY-----'."\n"
-		.'Connection dsn: postgres://app_user:superpass@db.internal:5432/app path=C:\\Users\\jeref\\OneDrive\\Bureau\\ShopiCore\\.env unix=/home/app/.env'."\n"
-		.'Fatal error: Synthetic MCP failure token=secret-token-123 password="open-sesame" customer_id=cus_321 in C:\\Users\\jeref\\OneDrive\\Bureau\\ShopiCore\\SelfTest.php on line 12';
+		.'Connection dsn: postgres://app_user:superpass@db.internal:5432/app path=C:\\Users\\example\\Workspace\\PrivateApp\\.env unix=/home/app/.env'."\n"
+		.'Fatal error: Synthetic MCP failure token=secret-token-123 password="open-sesame" customer_id=cus_321 in C:\\Users\\example\\Workspace\\PrivateApp\\SelfTest.php on line 12';
 	file_put_contents($path, $payload, LOCK_EX);
 }
 
@@ -20570,7 +20585,7 @@ function dataphyre_mcp_self_test_sensitive_fixture_fragments(): array {
 		'app_user',
 		'superpass',
 		'db.internal',
-		'C:\\Users\\jeref',
+		'C:\\Users\\example',
 		'/home/app/.env',
 		'cus_321',
 	];
@@ -21035,28 +21050,14 @@ function dataphyre_mcp_self_test_shared_mcp_app_coupling_guard(string $root): vo
 		}
 	}
 	$productNeedles=[
-		'sho'.'piro',
-		'Sho'.'piro',
-		'applications/sho'.'piro',
-		'applications\\sho'.'piro',
-		'north'.'star',
-		'North'.'star',
-		'vestra'.'-control',
-		'vestra'.'_control',
-		'applications/vestra'.'_control',
-		'applications\\vestra'.'_control',
-		'volume'.'trix',
-		'Volume'.'trix',
-		'applications/volume'.'trix',
-		'applications\\volume'.'trix',
-		'exo'.'dus',
-		'Exo'.'dus',
-		'applications/exo'.'dus',
-		'applications\\exo'.'dus',
-		'applications/north'.'star',
-		'.local\\sho'.'piro',
-		'Bureau\\ShopiCore',
-		'OneDrive\\Bureau',
+		'PrivateProduct',
+		'private_product',
+		'applications/private_product',
+		'applications\\private_product',
+		'private-adapter',
+		'private_adapter',
+		'.local\\private_product',
+		'Workspace\\PrivateApp',
 	];
 	foreach(array_values(array_unique($paths)) as $path){
 		$text=(string)file_get_contents($path);
