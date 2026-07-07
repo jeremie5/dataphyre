@@ -26,7 +26,7 @@ new version.
 |---|---|---|
 | `schema` | string | Manifest schema identifier. |
 | `package` | string | Composer package name. |
-| `generated_by` | string | Stable identifier for the release preparation process. |
+| `generated_by` | string | Stable identifier for the manifest/package preparation process. |
 | `generated_at_utc` | string | UTC timestamp when the manifest was written. |
 | `copied_source_files` | integer | Number of source files represented before the manifest was written. |
 | `skipped_source_files` | integer | Number of source files outside the package boundary. |
@@ -38,7 +38,7 @@ new version.
 | `verification_scope` | string | Constant scope marker: `release_attestation_not_app_runtime_requirement`. |
 | `modules` | object array | Public module inventory generated from `docs/MODULES.md`. |
 | `bundled_components` | object array | Bundled third-party component inventory. |
-| `files` | object array | Exported file inventory, excluding `RELEASE_MANIFEST.json`. |
+| `files` | object array | Packaged file inventory, excluding `RELEASE_MANIFEST.json`. |
 
 ## Release Boundary
 
@@ -82,12 +82,12 @@ reusable framework contributions, and shared production hot-path changes.
 
 The boundary's `not_ordinary_app_ceremony` field names items that are
 explicitly not ordinary app ceremony:
-`dataphyre_mcp_verify_all`, Dataphyre project-wide release validation,
+`dataphyre_mcp_verify_all`, Dataphyre project-wide package validation,
 Dataphyre hot-path benchmarks, and Dataphyre runtime-internal edits to make one
-application work. The `project_evidence_scope` field names when release or
+application work. The `project_evidence_scope` field names when package or
 benchmark evidence is relevant: Dataphyre framework changes,
-MCP/release-surface claims, public release preparation, and shared production
-hot-path changes.
+MCP/package-surface claims, package preparation, and shared production hot-path
+changes.
 
 ## Module Entries
 
@@ -121,7 +121,7 @@ Package validation can check this inventory against
 
 ## File Entries
 
-Each `files` entry describes one exported file:
+Each `files` entry describes one packaged file:
 
 | Field | Type | Description |
 |---|---|---|

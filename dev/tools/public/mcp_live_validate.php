@@ -23,7 +23,7 @@ Options:
   -h, --help  Show this help text.
 
 Runs a bounded stdio validation against the Dataphyre MCP server. The tool can
-run from an embedded common/dataphyre tree or a standalone source tree.
+run from an embedded common/dataphyre tree or a standalone Git worktree.
 
 HELP;
 	exit(0);
@@ -31,7 +31,7 @@ HELP;
 
 $root=dataphyre_mcp_live_validate_workspace_root(__DIR__);
 if(!is_string($root)){
-	fwrite(STDERR, "Unable to resolve embedded Dataphyre source tree root. Expected common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php below the workspace root.\n");
+	fwrite(STDERR, "Unable to resolve embedded Dataphyre Git worktree root. Expected common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php below the workspace root.\n");
 	exit(2);
 }
 

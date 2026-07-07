@@ -303,7 +303,7 @@ trait dataphyre_mcp_source_surfaces {
 				'branch names',
 				'dirty-file paths',
 				'secrets',
-				'source-checkout dev tool output',
+				'contributor tool output',
 				'dataphyre_mcp_verify_all output',
 				'Dataphyre benchmark output',
 			],

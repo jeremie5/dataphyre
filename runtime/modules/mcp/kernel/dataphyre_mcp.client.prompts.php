@@ -172,7 +172,7 @@ trait dataphyre_mcp_client_prompt_surfaces {
 		return match($name){
 			'dataphyre_panel_workflow'=>'Call dataphyre_app_builder_plan_generate with payload_profile=compact first; read builder_response.first_read before opening detail pages. Follow builder_response.first_read.next_action and first_read.scaffold_completion_summary.next_continuation until deferred_entities is empty, preserving dependency_context; open planning, implementation, verification, or controls details only when the first read points there.',
 			'dataphyre_feature_plan'=>'Call dataphyre_app_builder_plan_generate with payload_profile=compact first for app creation; read builder_response.first_read and follow builder_response.first_read.next_action before opening full planning details. Pass explicit entities, fields, and max_entities when known, using foreign_key_target for relationships, not_foreign_key for external ids, and json/jsonb for structured columns; open implementation_recipe, verification_execution_plan, acceptance_review_plan, or verification_recovery_plan only when ready for that phase.',
-			'dataphyre_release_triage'=>'Use maintainer/source-checkout release triage only for release-surface work, not ordinary app verification.',
+			'dataphyre_release_triage'=>'Use Dataphyre maintainer release triage only for release-surface work, not ordinary app verification.',
 			'dataphyre_runtime_guidelines'=>'Read runtime guidelines when touching Dataphyre internals or elevated governance/security/release scope.',
 			'dataphyre_sql_schema_workflow'=>'Inspect SQL metadata and query plans only; do not execute SQL.',
 			'dataphyre_route_manifest_workflow'=>'Inspect route manifests and URL previews only; do not dispatch handlers.',

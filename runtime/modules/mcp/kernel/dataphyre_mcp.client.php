@@ -142,7 +142,7 @@ trait dataphyre_mcp_client_surfaces {
 			'module_bootstrap'=>'common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php',
 			'client_policy'=>'MCP stdio clients must launch dataphyre_mcp.php from the project root; mcp.main.php is the Dataphyre runtime module bootstrap and is not a stdio MCP server.',
 			'validation_tool'=>'common/dataphyre/dev/tools/public/mcp_live_validate.php',
-			'validation_policy'=>'The dev/tools validator is a maintainer/source-checkout fallback for MCP wiring checks, not ordinary application-agent release or app-behavior proof.',
+			'validation_policy'=>'The dev/tools validator is a Dataphyre maintainer fallback for MCP wiring checks, not ordinary application-agent release or app-behavior proof.',
 		];
 	}
 
@@ -487,7 +487,7 @@ trait dataphyre_mcp_client_surfaces {
 			'ordinary_app_verification'=>'focused application or module checks',
 			'publication_validation_tools'=>$publication_validation_tools,
 			'publication_validation_tool_boundaries'=>$this->mcp_tool_boundary_map($publication_validation_tools),
-			'publication_validation_scope'=>'MCP/release-surface claims, published shared MCP setup docs, release notes, MCP server wiring changes, or maintainer-requested source-checkout evidence.',
+			'publication_validation_scope'=>'MCP/release-surface claims, published shared MCP setup docs, release notes, MCP server wiring changes, or maintainer-requested framework contributor evidence.',
 			'not_default_for_ordinary_app_work'=>[
 				'dataphyre_mcp_verify_all',
 				'Dataphyre project evidence',
@@ -545,7 +545,7 @@ trait dataphyre_mcp_client_surfaces {
 			],
 			'dataphyre_mcp_verify_all'=>[
 				'audience_scope'=>'publication_validation_not_ordinary_app_work',
-				'claim_boundary'=>'Aggregate MCP/source-checkout validation for MCP or release-surface claims only.',
+				'claim_boundary'=>'Aggregate MCP validation for MCP or release-surface claims only.',
 				'not_app_behavior_proof'=>true,
 				'not_required_for'=>['ordinary application behavior proof', 'focused app/module verification'],
 			],
@@ -619,7 +619,7 @@ trait dataphyre_mcp_client_surfaces {
 				'dataphyre_mcp_doctor',
 				'dataphyre_mcp_docs_coverage_report',
 			],
-			'applies_to'=>'MCP/release-surface claims, published shared MCP setup docs, release notes, MCP server wiring changes, or maintainer-requested source-checkout evidence.',
+			'applies_to'=>'MCP/release-surface claims, published shared MCP setup docs, release notes, MCP server wiring changes, or maintainer-requested framework contributor evidence.',
 			'app_behavior_verification'=>'Use focused application or module verification for ordinary app behavior.',
 			'not_required'=>[
 				'ordinary local client setup',

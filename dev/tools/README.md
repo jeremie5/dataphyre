@@ -1,7 +1,7 @@
 # Public Contributor Tools
 
 The tracked tools in `dev/tools/public/` are for contributors working on
-Dataphyre from a source checkout. They are not framework runtime API and
+Dataphyre from a Git worktree. They are not framework runtime API and
 applications should not call them.
 
 Most tools accept `--help` or `-Help`:

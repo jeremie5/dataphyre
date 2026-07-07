@@ -13,7 +13,7 @@ Usage:
   ./dev/tools/public/check_trace_dialback_usage.ps1 [-Root <repo>]
 
 Options:
-  -Root  Dataphyre source checkout root. Defaults to the repository root.
+  -Root  Dataphyre Git worktree root. Defaults to the repository root.
   -Help  Show this help text.
 
 Checks public source files for trace/dialback naming, documentation coverage,

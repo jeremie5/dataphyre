@@ -173,7 +173,7 @@ trait dataphyre_mcp_client_enterprise_audit_surfaces {
 					'mcp_docs_missing_tools'=>$coverage['counts']['missing_tools'] ?? null,
 					'mcp_docs_missing_core_resources'=>$coverage['counts']['missing_core_resources'] ?? null,
 				],
-				'action'=>'Collect maintainer/source-checkout MCP self-test and release check evidence before claiming enterprise-ready status.',
+				'action'=>'Collect Dataphyre maintainer MCP self-test and release check evidence before claiming enterprise-ready status.',
 			],
 		];
 		$statuses=array_count_values(array_map(static fn(array $item): string => (string)$item['status'], $checklist));
@@ -205,9 +205,9 @@ trait dataphyre_mcp_client_enterprise_audit_surfaces {
 		$recommended_verification=array_values(array_unique(array_filter([
 			$mcp_files!==[] ? 'php -l runtime/modules/mcp/kernel/dataphyre_mcp.php runtime/modules/mcp/kernel/dataphyre_mcp.registry.php runtime/modules/mcp/kernel/dataphyre_mcp.client.php runtime/modules/mcp/kernel/dataphyre_mcp.client.workflow.state.php runtime/modules/mcp/kernel/dataphyre_mcp.client.workflow.start_pack.php runtime/modules/mcp/kernel/dataphyre_mcp.client.workflow.php runtime/modules/mcp/kernel/dataphyre_mcp.client.enterprise.php runtime/modules/mcp/kernel/dataphyre_mcp.client.skills.php runtime/modules/mcp/kernel/dataphyre_mcp.client.setup.php runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.php runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.contract.php runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.response.php runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.schema.php runtime/modules/mcp/kernel/dataphyre_mcp.planning.docs.php runtime/modules/mcp/kernel/dataphyre_mcp.planning.task_pack.php runtime/modules/mcp/kernel/dataphyre_mcp.inspection.data.php runtime/modules/mcp/kernel/dataphyre_mcp.inspection.routing.php runtime/modules/mcp/kernel/dataphyre_mcp.inspection.mvc.php runtime/modules/mcp/kernel/dataphyre_mcp.inspection.verification.php' : null,
 			$mcp_files!==[] ? 'Dataphyre MCP publication evidence for MCP surface changes' : null,
-			$hot_path_files!==[] ? 'maintainer/source-checkout benchmark evidence required before keeping Dataphyre shared hot-path changes' : null,
+			$hot_path_files!==[] ? 'Dataphyre maintainer benchmark evidence required before keeping Dataphyre shared hot-path changes' : null,
 			$hot_path_files!==[] ? 'do not ask application agents to run contributor benchmark tooling' : null,
-			$public_claim ? 'maintainer/source-checkout release check evidence before public claims' : null,
+			$public_claim ? 'Dataphyre maintainer release check evidence before public claims' : null,
 		])));
 		$evidence_next_action=$this->mcp_enterprise_evidence_next_action($checklist, $runtime_quality_gates, $governance_baseline, $change_classification, $recommended_verification);
 		$claim_summary=[
@@ -221,7 +221,7 @@ trait dataphyre_mcp_client_enterprise_audit_surfaces {
 			'attention_ids'=>$attention_ids,
 			'next_evidence'=>array_slice($missing_evidence, 0, 5),
 			'evidence_next_action'=>$evidence_next_action,
-			'verification_boundary'=>'Application behavior stays application-owned; Dataphyre framework, release-facing, and shared hot-path claims require source-checkout maintainer evidence.',
+			'verification_boundary'=>'Application behavior stays application-owned; Dataphyre framework, release-facing, and shared hot-path claims require Dataphyre maintainer evidence.',
 		];
 		return [
 			'audit_type'=>'dataphyre_mcp_enterprise_adoption_audit',
@@ -361,7 +361,7 @@ trait dataphyre_mcp_client_enterprise_audit_surfaces {
 			'required_evidence'=>[],
 			'suggested_tools'=>[],
 			'verification_hint'=>($change_classification['benchmark_required'] ?? false)===true
-				? 'maintainer/source-checkout benchmark evidence remains required for Dataphyre shared production hot-path claims'
+				? 'Dataphyre maintainer benchmark evidence remains required for Dataphyre shared production hot-path claims'
 				: 'focused verification appropriate to the changed surface',
 			'handoff_fields'=>['claim_summary', 'recommended_verification'],
 			'not_required'=>[
@@ -448,7 +448,7 @@ trait dataphyre_mcp_client_enterprise_audit_surfaces {
 			static fn(array $gate): bool => !in_array((string)$gate['status'], ['ready', 'not_applicable'], true)
 		));
 		return [
-			'contract'=>'maintainer/source-checkout runtime quality gates',
+			'contract'=>'Dataphyre maintainer runtime quality gates',
 			'gates'=>$gates,
 			'attention_ids'=>array_map(static fn(array $gate): string => (string)$gate['id'], $attention),
 			'ready'=>count($attention)===0,
@@ -554,7 +554,7 @@ trait dataphyre_mcp_client_enterprise_audit_surfaces {
 				'required_evidence'=>[
 					'Dataphyre framework proof for framework claims',
 					'application-owned verification handoff for application behavior',
-					'maintainer/source-checkout benchmark evidence only for Dataphyre shared production hot-path changes',
+					'Dataphyre maintainer benchmark evidence only for Dataphyre shared production hot-path changes',
 				],
 				'suggested_tools'=>['dataphyre_verification_surface_catalog', 'dataphyre_mcp_readiness_report', 'dataphyre_mcp_enterprise_adoption_audit'],
 			],
@@ -865,7 +865,7 @@ trait dataphyre_mcp_client_enterprise_audit_surfaces {
 				break;
 			}
 		}
-		foreach(['dataphyre runtime', 'framework internals', 'core runtime', 'shared runtime', 'shared production hot path', 'shared production hot-path', 'dataphyre hot path', 'dataphyre hot-path', 'dataphyre performance', 'dataphyre benchmark', 'dataphyre opcache', 'dataphyre jit', 'runtime benchmark', 'framework benchmark', 'source-checkout benchmark'] as $needle){
+		foreach(['dataphyre runtime', 'framework internals', 'core runtime', 'shared runtime', 'shared production hot path', 'shared production hot-path', 'dataphyre hot path', 'dataphyre hot-path', 'dataphyre performance', 'dataphyre benchmark', 'dataphyre opcache', 'dataphyre jit', 'runtime benchmark', 'framework benchmark', 'framework benchmark'] as $needle){
 			if(str_contains($lower, $needle)){
 				$signals[]='framework_or_hot_path_work';
 				$required_reviews[]='enterprise_audit';

@@ -130,7 +130,7 @@ trait dataphyre_mcp_client_readiness_surfaces {
 			],
 			'hot_path_benchmark_policy'=>[
 				'status'=>'documented',
-				'evidence'=>'maintainer/source-checkout performance contract',
+				'evidence'=>'Dataphyre maintainer performance contract',
 				'purpose'=>'Require benchmark proof for Dataphyre shared production hot-path changes without pushing that requirement onto applications.',
 			],
 			'governance_baseline'=>[
@@ -611,7 +611,7 @@ trait dataphyre_mcp_client_readiness_surfaces {
 				'local_client_setup'=>'Use config audit, smoke-test export, and live stdio validation for ordinary app-client setup.',
 				'mcp_publication'=>'Use dataphyre_mcp_verify_all for MCP/release-surface claims, published shared MCP setup docs, release notes, or MCP server wiring changes.',
 				'ordinary_app_exclusion'=>'Do not use dataphyre_mcp_verify_all, maintainer release proof, or Dataphyre benchmark output as ordinary application behavior evidence.',
-				'hot_paths'=>'Use maintainer/source-checkout benchmark evidence only for Dataphyre shared production hot-path changes.',
+				'hot_paths'=>'Use Dataphyre maintainer benchmark evidence only for Dataphyre shared production hot-path changes.',
 				'next_action_contract'=>'dataphyre_verification_surface_catalog exposes verification_next_action to select run_bounded_mcp_wrapper, inspect_unit_manifest, triage_diagnostic_surface, or no_focused_surface_selected without turning discovery into release proof.',
 			],
 			'diagnostic_handoff_policy'=>[

@@ -132,7 +132,7 @@ trait dataphyre_mcp_client_brief_surfaces {
 			'attention_count'=>$start_pack['enterprise_audit']['attention_count'] ?? $start_pack['deep_context']['enterprise_summary']['attention_count'] ?? 0,
 			'attention_ids'=>$start_pack['enterprise_audit']['attention_ids'] ?? $start_pack['deep_context']['enterprise_summary']['attention_ids'] ?? [],
 			'runtime_quality'=>[
-				'contract'=>$start_pack['enterprise_audit']['runtime_quality_gates']['contract'] ?? 'maintainer/source-checkout runtime quality gates',
+				'contract'=>$start_pack['enterprise_audit']['runtime_quality_gates']['contract'] ?? 'Dataphyre maintainer runtime quality gates',
 				'ready'=>$start_pack['enterprise_audit']['runtime_quality_gates']['ready'] ?? null,
 				'attention_ids'=>$start_pack['enterprise_audit']['runtime_quality_gates']['attention_ids'] ?? [],
 			],

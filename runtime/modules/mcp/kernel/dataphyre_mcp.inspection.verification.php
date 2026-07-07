@@ -56,7 +56,7 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 				'SQL queries',
 				'file writes',
 			],
-			'escalate_only_for'=>'Use maintainer/source-checkout aggregate verification only for MCP/release-surface claims, published shared MCP setup docs, public enterprise claims, Dataphyre framework work, or shared hot-path changes.',
+			'escalate_only_for'=>'Use Dataphyre maintainer aggregate verification only for MCP/release-surface claims, published shared MCP setup docs, public enterprise claims, Dataphyre framework work, or shared hot-path changes.',
 		];
 	}
 
@@ -418,7 +418,7 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 				'next_action'=>[
 					'status'=>'use_only_for_publication_or_mcp_claim',
 					'tool'=>'dataphyre_release_triage_summary',
-					'action'=>'Use publication validation only for Dataphyre release, MCP/release-surface, public framework, or maintainer-requested source-checkout evidence.',
+					'action'=>'Use publication validation only for Dataphyre release, MCP/release-surface, public framework, or maintainer-requested framework contributor evidence.',
 					'not_required'=>['ordinary app behavior proof', 'focused app/module verification', 'Dataphyre hot-path benchmarks unless shared production hot paths changed'],
 				],
 			],
@@ -478,7 +478,7 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 				'raw full logs',
 				'secrets, tokens, cookies, auth headers, or signed URLs',
 				'tenant/customer/product identifiers unless already public test fixtures',
-				'maintainer/source-checkout release proof',
+				'Dataphyre maintainer release proof',
 				'Dataphyre hot-path benchmark output',
 				'dataphyre_mcp_verify_all output',
 			],
@@ -543,7 +543,7 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 			'handoff_fields'=>['verification_handoff', 'tool', 'surface', 'concrete_app_paths_or_arguments', 'pass_fail_summary', 'failing_check_names_when_any'],
 			'not_required'=>[
 				'MCP/release-surface validation for ordinary app behavior',
-				'maintainer/source-checkout release proof',
+				'Dataphyre maintainer release proof',
 				'Dataphyre hot-path benchmark evidence unless Dataphyre shared production hot paths are changed',
 			],
 			'ordinary_app_exclusion'=>'Do not use release triage, dataphyre_mcp_verify_all, maintainer release proof, or Dataphyre benchmark output as ordinary application behavior evidence.',

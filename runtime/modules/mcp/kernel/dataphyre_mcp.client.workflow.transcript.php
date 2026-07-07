@@ -187,7 +187,7 @@ trait dataphyre_mcp_client_workflow_transcript_surfaces {
 			],
 			'dataphyre_mcp_verify_all'=>[
 				'audience_scope'=>'publication_validation_not_ordinary_app_work',
-				'purpose'=>'Run aggregate MCP/source-checkout validation only for MCP/release-surface workflow claims.',
+				'purpose'=>'Run aggregate MCP validation only for MCP/release-surface workflow claims.',
 				'not_app_behavior_proof'=>true,
 				'not_required_for'=>['ordinary application behavior proof', 'focused app/module verification'],
 			],

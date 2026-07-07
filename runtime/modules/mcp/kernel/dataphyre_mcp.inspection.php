@@ -65,7 +65,7 @@ trait dataphyre_mcp_inspection_surfaces {
 			'execution'=>'stdio_server_spawned',
 			'application_agent_operating_contract'=>$this->mcp_application_agent_operating_contract('mcp_live_validate'),
 			'ordinary_app_work'=>$this->mcp_ordinary_app_work_contract('mcp_live_validate'),
-			'evidence'=>'maintainer/source-checkout live validation evidence',
+			'evidence'=>'Dataphyre maintainer live validation evidence',
 			'maintainer_tool_boundary'=>[
 				'tool_scope'=>'source_checkout_mcp_stdio_validation',
 				'app_agent_default'=>'use_for_local_client_setup_or_mcp_surface_changes_not_app_behavior_proof',
@@ -408,7 +408,7 @@ trait dataphyre_mcp_inspection_surfaces {
 		$source_checkout_support=$this->mcp_source_checkout_support_files();
 		foreach($source_checkout_support as $name=>$path){
 			$checks[]=[
-				'name'=>'source-checkout-support:'.$name,
+				'name'=>'contributor-support:'.$name,
 				'passed'=>true,
 				'detail'=>[
 					'path'=>$path,

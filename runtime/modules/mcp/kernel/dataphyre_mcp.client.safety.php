@@ -67,7 +67,7 @@ trait dataphyre_mcp_client_safety_surfaces {
 				'allowed_only_when'=>[
 					'The caller explicitly requested a local unsafe-gated verification workflow.',
 					'The tool is listed in unsafe_gated_or_bounded and has a route-free, bounded contract.',
-					'The run is local to the source checkout and does not require application secrets or tenant data.',
+					'The run is local to the Dataphyre worktree and does not require application secrets or tenant data.',
 				],
 				'still_never_exposes'=>$manifest['safety']['intentionally_not_exposed'] ?? [
 					'SQL query execution',

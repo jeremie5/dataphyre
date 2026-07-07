@@ -68,7 +68,7 @@ trait dataphyre_mcp_inspection_inventory_surfaces {
 	}
 
 	/**
-	 * Returns tracked source-checkout MCP support files for public validation.
+	 * Returns tracked contributor MCP support files for public validation.
 	 *
 	 * @return array<string,string> Stable diagnostic names mapped to repo-relative PHP paths.
 	 */

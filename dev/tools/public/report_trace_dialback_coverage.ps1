@@ -21,7 +21,7 @@ Usage:
   ./dev/tools/public/report_trace_dialback_coverage.ps1 [-Root <repo>] [-ModuleName <module>] [-AllRuntime] [-CandidatesOnly] [-Limit <n>] [-Format Text|Json] [-Output <path>] [-Php <path-or-command>]
 
 Options:
-  -Root            Dataphyre source checkout root. Defaults to the repository root.
+  -Root            Dataphyre Git worktree root. Defaults to the repository root.
   -ModuleName      Limit the report to one runtime module.
   -AllRuntime      Include kernel and framework code. Defaults to framework-oriented coverage.
   -CandidatesOnly  Show only methods that look like semantic trace/dialback candidates.

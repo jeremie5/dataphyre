@@ -53,20 +53,3 @@ interactive command:
 
 For client JSON examples and safety boundaries, see
 [MCP server](../runtime/modules/mcp/documentation/Dataphyre_MCP.md).
-
-## Contributor Source-Checkout Tools
-
-These tools live under `dev/tools/public/` and support contributors working on
-Dataphyre itself from the Git source tree. They are not framework runtime API,
-and application/package users do not need them for normal app work.
-
-| Command | Purpose |
-| --- | --- |
-| `./dev/tools/public/lint_php.ps1 [-Php <path>]` | Lint real PHP files while skipping generated state and fixtures. |
-| `php dev/tools/public/mcp_config.php` | Print a local MCP client config. |
-| `php dev/tools/public/mcp_live_validate.php [--php <path>]` | Validate the MCP server over stdio. |
-| `php dev/tools/public/mcp_self_test.php` | Run the MCP self-test suite. |
-| `./dev/tools/public/check_trace_dialback_usage.ps1` | Check trace and dialback naming and coverage rules. |
-| `./dev/tools/public/report_trace_dialback_coverage.ps1 [-ModuleName <module>]` | Report trace/dialback coverage candidates. |
-| `php dev/tools/public/benchmark_hot_paths.php [scenario] [iterations] [warmup]` | Run focused hot-path benchmarks for Dataphyre framework changes. |
-| `./dev/tools/public/benchmark_hot_paths_matrix.ps1 [-Profiles baseline,opcache,opcache-jit]` | Run benchmark scenarios across PHP/opcache/JIT profiles. |

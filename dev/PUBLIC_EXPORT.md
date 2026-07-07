@@ -52,7 +52,7 @@ These paths are local to an installation and stay out of source control:
 Install-local MCP plugin declarations under `plugins/mcp/*.json` are local
 integration metadata. They are not part of the public package contract.
 
-## Source Checkout Support
+## Contributor Support
 
 The public repository may include contributor-facing files that are useful when
 working on Dataphyre itself but are not part of the runtime contract:
@@ -61,7 +61,7 @@ working on Dataphyre itself but are not part of the runtime contract:
   review documents.
 - `.github/` for issue templates, pull request templates, and CI workflows.
 
-These files are source-checkout support. Applications must not call them at
+These files are contributor support. Applications must not call them at
 runtime, and framework users should treat `runtime/`, `config/*.example.php`,
 `plugins/`, `installer/`, examples, and docs as the package surface.
 
@@ -72,9 +72,9 @@ a framework API and ordinary application agents should not run or preserve them.
 ## Package And Archive Boundary
 
 Package/archive builders can use `.gitattributes` export-ignore and
-`.distignore` to omit source-checkout support files such as `dev/`, `.github/`,
+`.distignore` to omit contributor support files such as `dev/`, `.github/`,
 local state, caches, logs, vendors, and generated files from prepared artifacts.
-That archive boundary is separate from the public Git source checkout.
+That archive boundary is separate from the public Git worktree.
 
 The ignore rules are intentionally conservative because install-specific files
 may contain application names, service credentials, local keys, or
@@ -82,7 +82,7 @@ environment-only routing.
 
 ## Export Verification
 
-Build release packages from a clean source tree and validate the resulting file
+Build release packages from a clean Git worktree and validate the resulting file
 set before publishing.
 
 Prepared public trees include `RELEASE_MANIFEST.json`, a non-sensitive export
@@ -111,7 +111,7 @@ For a new public-friendly install:
    `config/*.php` files.
 4. Put application-specific plugin hooks under `plugins/pre_init/` and
    `plugins/post_init/`.
-5. Build or package from a clean source checkout.
+5. Build or package from a clean Git worktree.
 6. Confirm the prepared artifact contains the expected public files and, when a
    manifest is generated, `RELEASE_MANIFEST.json`.
 7. Run release validation before publishing or tagging a release.

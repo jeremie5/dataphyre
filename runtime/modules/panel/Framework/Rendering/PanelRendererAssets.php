@@ -125,7 +125,7 @@ trait PanelRendererAssets {
 			.self::totalsCss().self::paymentsCss().self::shipmentsCss().self::attachmentsCss().self::messagesCss()
 			.self::notesCss().self::modalCss().self::reactivityCss().self::themeSelectorCss().self::sidebarCss()
 			.self::sidebarSearchCss().self::actionGroupCss().self::tabsCss().self::stepsCss().self::repeaterCss()
-			.self::fieldComponentCss().self::themeOverrideCss().self::surfaceGuidanceCss().self::chartCss().self::actionPolishCss()
+			.self::fieldComponentCss().self::fieldComponentCoverageCss().self::themeOverrideCss().self::surfaceGuidanceCss().self::chartCss().self::actionPolishCss()
 			.self::tableShellCss().self::columnDescriptionCss().self::commandPaletteCss().self::appFrameCss()
 			.self::advancedGridCss().self::nextLevelUiCss().self::shellLayoutCss().self::commandbarCss().self::commandbarModeCss()
 			.self::tableGroupCss().self::dataWorkspaceCss().self::selectionCss().self::rowActionsCss()

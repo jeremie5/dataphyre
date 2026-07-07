@@ -46,7 +46,7 @@ All notable Dataphyre changes are tracked here.
 - Fixed release manifest verification for portable JSON integer types.
 - Fixed MCP command validation on PHP 8.1 by preserving child-process exit
   codes when command output is collected.
-- Fixed MCP source-checkout path handling so symlinked `common/dataphyre`
+- Fixed MCP Git-worktree path handling so symlinked `common/dataphyre`
   layouts continue to return portable package-relative paths.
 
 ## 2.0.1 - 2026-07-07
@@ -59,8 +59,8 @@ All notable Dataphyre changes are tracked here.
   `common`.
 - Added code-defined regression coverage for standalone and embedded bootstrap
   root resolution.
-- Sanitized prepared public export metadata when `.gitattributes` contains
-  directory-level private-module export rules.
+- Normalized package metadata when `.gitattributes` contains directory-level
+  package-boundary rules.
 - Corrected getting-started and runtime documentation for standalone and
   embedded root resolution.
 
@@ -86,7 +86,7 @@ All notable Dataphyre changes are tracked here.
   valid JSON fixtures, missing MIT/SPDX headers, and release hygiene markers.
 - Added public architecture, package contract, stability, export, and
   third-party notice documentation.
-- Added public export verification for local install files, high-confidence
+- Added package-boundary verification for local install files, high-confidence
   secret markers, local filesystem/deployment path markers, and app-owned
   runtime or asset ownership markers.
 - Removed product-specific, policy-specific, and internal adapter modules from
@@ -98,14 +98,14 @@ All notable Dataphyre changes are tracked here.
   files, vendor state, and Composer lock state.
 - Normalized prepared export metadata so `.gitattributes` does not retain
   private adapter paths in public release packages.
-- Added public export checks for private adapter name markers in sanitized
+- Added package-boundary checks for app-owned adapter markers in package
   metadata and documentation.
 - Kept GitHub CI, pull request, and issue template metadata out of public
   runtime packages.
-- Added GitHub Actions CI for Composer metadata validation, release surface
-  checks, public export preparation, public export checks, PHP linting, MCP
-  self-test, and MCP live stdio validation.
-- Added `RELEASE_MANIFEST.json` to prepared public exports with public module
+- Added GitHub Actions CI for Composer metadata validation, package surface
+  checks, package-boundary checks, PHP linting, MCP self-test, and MCP live
+  stdio validation.
+- Added `RELEASE_MANIFEST.json` to package artifacts with public module
   inventory, bundled component inventory, file hashes, and a deterministic export
   tree hash, plus public schema documentation and a machine-readable JSON
   Schema.

@@ -28,7 +28,7 @@ larger project or prepared as a standalone export.
 - [ ] Community files are present under `docs/`: `CONTRIBUTING.md`, `SUPPORT.md`,
   `SECURITY.md`, and `CODE_OF_CONDUCT.md`.
 - [ ] GitHub issue templates, pull request templates, and CI workflows are
-  source-checkout support rather than runtime package API.
+  contributor support rather than runtime package API.
 
 ## Licensing
 
@@ -84,7 +84,7 @@ larger project or prepared as a standalone export.
   replaced with public `*.example.php` templates.
 - [ ] Local `plugins/mcp/*.json` declarations are excluded from package
   artifacts.
-- [ ] Prepared package artifact was built from a clean source checkout.
+- [ ] Prepared package artifact was built from a clean Git worktree.
 - [ ] Export verification has no forbidden local files, high-confidence secret
   markers, or app-owned runtime/asset ownership markers.
 - [ ] Public docs explain which files are install-specific.

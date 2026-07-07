@@ -1418,7 +1418,7 @@ trait dataphyre_mcp_utility_methods {
 	}
 
 	/**
-	 * Accepts files reached through the source-checkout common/dataphyre symlink.
+	 * Accepts files reached through the Git worktree common/dataphyre symlink.
 	 */
 	private function path_is_within_dataphyre_real_root(string $path): bool {
 		$real=realpath($this->common_root.'/dataphyre');

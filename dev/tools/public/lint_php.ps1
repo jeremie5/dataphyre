@@ -15,7 +15,7 @@ Usage:
   ./dev/tools/public/lint_php.ps1 [-Root <repo>] [-Php <path-or-command>] [-AllowMissingPhp]
 
 Options:
-  -Root             Dataphyre source checkout root. Defaults to the repository root.
+  -Root             Dataphyre Git worktree root. Defaults to the repository root.
   -Php              PHP executable path or command name. Defaults to DATAPHYRE_PHP, then php on PATH.
   -AllowMissingPhp  Exit successfully with SKIP when PHP is not available.
   -Help             Show this help text.

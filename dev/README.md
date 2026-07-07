@@ -1,6 +1,6 @@
 # Dataphyre Contributor Workspace
 
-This directory is for Dataphyre contributors working from a source checkout.
+This directory is for Dataphyre contributors working from a Git worktree.
 Files here support validation and review; they are not framework runtime API and
 applications should not depend on them.
 

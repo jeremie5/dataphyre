@@ -22,6 +22,8 @@
 /runtime/cache/
 /runtime/logs/
 /runtime/modcache.php
+/runtime/modules/profanity/
+/runtime/modules/sentinel/
 /runtime/sql_migration/plans/
 /runtime/sql_migration/snapshots/
 /sql_migration/plans/

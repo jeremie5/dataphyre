@@ -131,7 +131,7 @@ trait dataphyre_mcp_planning_agent_context_surfaces {
 		$lines[]='- Read `common/dataphyre/docs/AGENTIC_ENTERPRISE.md` before framework-level edits.';
 		$lines[]='- Prefer config, dialbacks, callbacks, plugins, MCP metadata, and reusable modules before changing Dataphyre internals for an application.';
 		$lines[]='- Keep agent-facing behavior discoverable, bounded, extensible, proven, portable, and composable.';
-		$lines[]='- For Dataphyre shared production hot-path changes only, keep the change only with maintainer/source-checkout proof; ordinary application agents should not inherit that evidence burden.';
+		$lines[]='- For Dataphyre shared production hot-path changes only, keep the change only with Dataphyre maintainer proof; ordinary application agents should not inherit that evidence burden.';
 		$lines[]='';
 		$lines[]='## Runtime Shape';
 		$lines[]='';

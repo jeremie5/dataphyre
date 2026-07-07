@@ -21,7 +21,7 @@ Options:
   -h, --help  Show this help text.
 
 Runs the Dataphyre MCP self-test suite for contributors. The tool can run from
-an embedded common/dataphyre tree or a standalone source tree.
+an embedded common/dataphyre tree or a standalone Git worktree.
 
 HELP;
 	exit(0);
@@ -29,7 +29,7 @@ HELP;
 
 $root=dataphyre_mcp_self_test_workspace_root(__DIR__);
 if(!is_string($root)){
-	fwrite(STDERR, "Unable to resolve embedded Dataphyre source tree root. Expected common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php below the workspace root.\n");
+	fwrite(STDERR, "Unable to resolve embedded Dataphyre Git worktree root. Expected common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php below the workspace root.\n");
 	exit(2);
 }
 
@@ -216,7 +216,7 @@ $checks=[
 				}
 			}
 			if(str_contains($toolsJson, 'common/dataphyre/dev/tools')){
-				throw new RuntimeException('tools/list exposed source-checkout dev helper paths in tool metadata.');
+				throw new RuntimeException('tools/list exposed Git worktree dev helper paths in tool metadata.');
 			}
 			foreach([
 				'dataphyre_app_builder_plan_generate'=>['first app-building plan', 'entities', 'files/schema', 'prewrite checklist', 'next action', 'verification handoff', 'compact by default'],
@@ -226,14 +226,14 @@ $checks=[
 				'dataphyre_mcp_agent_brief_export'=>['compact read-only brief', 'direct app-builder fast lane', 'first-view guidance', 'next_detail_page', 'collapsed enterprise context'],
 				'dataphyre_release_check'=>['Dataphyre release-check boundary', 'not app behavior proof'],
 				'dataphyre_release_triage_summary'=>['release-check boundary metadata', 'not ordinary application-agent verification'],
-				'dataphyre_release_fix_plan'=>['maintainer/source-checkout release repair plan'],
+				'dataphyre_release_fix_plan'=>['Dataphyre maintainer release repair plan'],
 				'dataphyre_application_info'=>['copy_safe_startup_summary', 'instead of root or raw git output'],
 				'dataphyre_mcp_docs_coverage_report'=>['MCP/release-surface claims', 'not app behavior proof'],
 				'dataphyre_mcp_safety_boundary_report'=>['not an ordinary app-building entrypoint', 'dataphyre_app_builder_plan_generate payload_profile=compact'],
 				'dataphyre_mcp_status_board'=>['MCP surface health', 'not an ordinary app-building entrypoint', 'dataphyre_app_builder_plan_generate payload_profile=compact'],
 				'dataphyre_mcp_capability_matrix'=>['release-facing MCP capability matrix', 'not an ordinary app-building entrypoint', 'dataphyre_app_builder_plan_generate payload_profile=compact'],
 				'dataphyre_mcp_readiness_report'=>['MCP/framework readiness', 'not an ordinary app-building entrypoint', 'dataphyre_app_builder_plan_generate payload_profile=compact'],
-				'dataphyre_mcp_verify_all'=>['maintainer/source-checkout MCP or release-surface claims', 'not routine app verification'],
+				'dataphyre_mcp_verify_all'=>['Dataphyre maintainer MCP or release-surface claims', 'not routine app verification'],
 				'dataphyre_mcp_live_validate'=>['local client setup or MCP publication checks', 'not app behavior proof'],
 				'dataphyre_mcp_doctor'=>['after MCP surface changes', 'not app behavior proof'],
 			] as $toolName=>$requiredText){
@@ -512,7 +512,7 @@ $checks=[
 				|| !str_contains($text, 'verification_handoff')
 				|| !str_contains($text, 'Escalate to Dataphyre maintainer workflows')
 				|| !str_contains($text, 'shared runtime work')
-				|| str_contains($text, 'source-checkout tooling')
+				|| str_contains($text, 'contributor tooling')
 				|| str_contains($text, 'hot-path benchmark evidence')
 			){
 				throw new RuntimeException('prompts/get feature plan did not return the application-agent default lane.');
@@ -525,7 +525,7 @@ $checks=[
 		'assert'=>static function(array $response): void {
 			$text=(string)($response['result']['messages'][0]['content']['text'] ?? '');
 			if(
-				!str_contains($text, 'Release triage is maintainer/source-checkout work')
+				!str_contains($text, 'Release triage is Dataphyre maintainer work')
 				|| !str_contains($text, 'not ordinary application-agent verification')
 				|| !str_contains($text, 'dataphyre_release_check')
 			){
@@ -602,7 +602,7 @@ $checks=[
 				|| !in_array('root', $data['copy_safe_startup_summary']['not_included'] ?? [], true)
 				|| !in_array('git.stdout', $data['copy_safe_startup_summary']['not_included'] ?? [], true)
 				|| !in_array('git.stderr', $data['copy_safe_startup_summary']['not_included'] ?? [], true)
-				|| !in_array('source-checkout dev tool output', $data['copy_safe_startup_summary']['not_included'] ?? [], true)
+				|| !in_array('contributor tool output', $data['copy_safe_startup_summary']['not_included'] ?? [], true)
 				|| !in_array('dataphyre_mcp_verify_all output', $data['copy_safe_startup_summary']['not_included'] ?? [], true)
 				|| !in_array('Dataphyre benchmark output', $data['copy_safe_startup_summary']['not_included'] ?? [], true)
 			){
@@ -2269,7 +2269,7 @@ $checks=[
 				|| ($data['validation_type'] ?? null)!=='dataphyre_mcp_live_validate'
 				|| ($data['execution'] ?? null)!=='stdio_server_spawned'
 				|| (($data['passed'] ?? null)!==true)
-				|| (($data['evidence'] ?? null)!=='maintainer/source-checkout live validation evidence')
+				|| (($data['evidence'] ?? null)!=='Dataphyre maintainer live validation evidence')
 				|| (($data['application_agent_operating_contract']['default_audience'] ?? null)!=='application_agents_building_apps')
 				|| !in_array('dataphyre_mcp_verify_all', $data['application_agent_operating_contract']['not_default_requirements'] ?? [], true)
 				|| (($data['ordinary_app_work']['owner'] ?? null)!=='consuming_application')
@@ -2926,8 +2926,8 @@ $checks=[
 				|| !str_contains($content, 'Keep maintainer-only release proof')
 				|| !str_contains($content, '## Enterprise Contract')
 				|| !str_contains($content, 'Dataphyre shared production hot-path changes only')
-				|| !str_contains($content, 'maintainer/source-checkout proof')
-				|| str_contains($content, 'source-checkout developer tools')
+				|| !str_contains($content, 'Dataphyre maintainer proof')
+				|| str_contains($content, 'contributor tools')
 				|| str_contains($content, 'dataphyre_mcp_verify_all')
 				|| str_contains($content, 'benchmark evidence')
 				|| !str_contains($content, 'For application work, start with `dataphyre_app_builder_plan_generate payload_profile=compact`')
@@ -16024,7 +16024,7 @@ $checks=[
 				|| ($data['execution'] ?? null)!=='not_executed'
 				|| (($data['enterprise_preflight']['tool'] ?? null)!=='dataphyre_mcp_enterprise_adoption_audit')
 				|| (($data['enterprise_preflight']['arguments']['public_claim'] ?? null)!==true)
-				|| (($data['enterprise_preflight']['runtime_quality_contract'] ?? null)!=='maintainer/source-checkout runtime quality gates')
+				|| (($data['enterprise_preflight']['runtime_quality_contract'] ?? null)!=='Dataphyre maintainer runtime quality gates')
 				|| !str_contains((string)($data['enterprise_preflight']['purpose'] ?? ''), 'enterprise-ready')
 				|| !in_array('Dataphyre hot-path benchmarks', $data['ordinary_app_work']['not_required_for_ordinary_app_work'] ?? [], true)
 				|| !in_array('Dataphyre runtime-internal edits', $data['tool_audience_boundaries']['not_default_for_ordinary_app_work'] ?? [], true)
@@ -16811,7 +16811,7 @@ $checks=[
 				|| (($data['app_builder_lane']['verification_evidence'][0]['status'] ?? null)!=='pending_until_executed_by_agent')
 				|| (($data['app_builder_lane']['verification_handoff']['owner'] ?? null)!=='consuming_application')
 				|| !in_array('diagnostic_summary.copy_safe_evidence_when_focused_check_failed', $data['app_builder_lane']['verification_handoff']['copy_safe_fields'] ?? [], true)
-				|| !in_array('maintainer/source-checkout release proof', $data['app_builder_lane']['verification_handoff']['not_included'] ?? [], true)
+				|| !in_array('Dataphyre maintainer release proof', $data['app_builder_lane']['verification_handoff']['not_included'] ?? [], true)
 				|| !str_contains((string)($data['app_builder_lane']['recovery_hints']['path_placeholders'] ?? ''), 'concrete consuming-application paths')
 				|| !str_contains((string)($data['app_builder_lane']['recovery_hints']['escalation_boundary'] ?? ''), 'Do not use MCP/release-surface validation')
 				|| (($data['app_builder_lane']['code_skeleton_summary']['total'] ?? 0)<6)
@@ -17955,7 +17955,7 @@ $checks=[
 				|| (($data['enterprise_preflight']['tool'] ?? null)!=='dataphyre_mcp_enterprise_adoption_audit')
 				|| (($data['enterprise_preflight']['arguments']['public_claim'] ?? null)!==true)
 				|| (($data['application_agent_operating_contract']['default_audience'] ?? null)!=='application_agents_building_apps')
-				|| (($data['enterprise_preflight']['runtime_quality_contract'] ?? null)!=='maintainer/source-checkout runtime quality gates')
+				|| (($data['enterprise_preflight']['runtime_quality_contract'] ?? null)!=='Dataphyre maintainer runtime quality gates')
 				|| !str_contains((string)($data['enterprise_preflight']['purpose'] ?? ''), 'corporate-ready')
 				|| (($data['publication_validation']['audience_scope'] ?? null)!=='publication_validation_not_ordinary_app_work')
 				|| (($data['publication_validation']['app_agent_default'] ?? null)!=='not_required_for_ordinary_application_work')
@@ -18428,7 +18428,7 @@ $checks=[
 				|| (($data['agentic_enterprise_readiness']['recommended_gate'] ?? null)!=='dataphyre_mcp_enterprise_adoption_audit')
 				|| (($data['agentic_enterprise_readiness']['gates']['extension_strategy']['status'] ?? null)!=='ready')
 				|| (($data['agentic_enterprise_readiness']['gates']['governance_baseline']['status'] ?? null)!=='documented')
-				|| (($data['agentic_enterprise_readiness']['gates']['hot_path_benchmark_policy']['evidence'] ?? null)!=='maintainer/source-checkout performance contract')
+				|| (($data['agentic_enterprise_readiness']['gates']['hot_path_benchmark_policy']['evidence'] ?? null)!=='Dataphyre maintainer performance contract')
 				|| !in_array('Dataphyre hot-path benchmarks', $data['application_agent_operating_contract']['not_default_requirements'] ?? [], true)
 				|| !in_array('Dataphyre shared production hot-path changes', $data['application_agent_operating_contract']['escalate_only_for'] ?? [], true)
 				|| (($data['ordinary_app_work']['owner'] ?? null)!=='consuming_application')
@@ -18991,7 +18991,7 @@ $checks=[
 				|| !in_array('config', $data['extension_strategy']['preferred_order'] ?? [], true)
 				|| !in_array('install_plugins', $data['extension_strategy']['preferred_order'] ?? [], true)
 				|| !str_contains((string)($data['extension_strategy']['framework_edit_rule'] ?? ''), 'app-specific behavior')
-				|| (($data['runtime_quality_gates']['contract'] ?? null)!=='maintainer/source-checkout runtime quality gates')
+				|| (($data['runtime_quality_gates']['contract'] ?? null)!=='Dataphyre maintainer runtime quality gates')
 				|| (($data['runtime_quality_gates']['ready'] ?? null)!==false)
 				|| !in_array('provenance', $data['runtime_quality_gates']['attention_ids'] ?? [], true)
 				|| !in_array('small_surface', array_column($data['runtime_quality_gates']['gates'] ?? [], 'id'), true)
@@ -19001,7 +19001,7 @@ $checks=[
 				|| !in_array('machine_local_reference', $signals, true)
 				|| !in_array('url_secret_parameter', $signals, true)
 				|| !in_array('Dataphyre MCP publication evidence for MCP surface changes', $data['recommended_verification'] ?? [], true)
-				|| !in_array('maintainer/source-checkout release check evidence before public claims', $data['recommended_verification'] ?? [], true)
+				|| !in_array('Dataphyre maintainer release check evidence before public claims', $data['recommended_verification'] ?? [], true)
 				|| count(array_filter($data['recommended_verification'] ?? [], static fn(string $item): bool => str_contains($item, 'dev/tools')))!==0
 			){
 				throw new RuntimeException('mcp enterprise adoption audit did not return the expected contract checklist: '.json_encode([
@@ -19055,7 +19055,7 @@ $checks=[
 				|| (($data['governance_next_action']['status'] ?? null)!=='collect_governance_evidence')
 				|| (($data['governance_next_action']['id'] ?? null)!=='framework_vs_application_verification')
 				|| (($data['governance_next_action']['change_classification'] ?? null)!=='dataphyre_hot_path_candidate')
-				|| !in_array('maintainer/source-checkout benchmark evidence only for Dataphyre shared production hot-path changes', $data['governance_next_action']['required_evidence'] ?? [], true)
+				|| !in_array('Dataphyre maintainer benchmark evidence only for Dataphyre shared production hot-path changes', $data['governance_next_action']['required_evidence'] ?? [], true)
 				|| !in_array('Dataphyre hot-path benchmark evidence unless Dataphyre shared production hot paths are changed', $data['governance_next_action']['not_required'] ?? [], true)
 				|| (($data['claim_summary']['claim'] ?? null)!=='internal_or_planning_claim')
 				|| (($data['claim_summary']['disposition'] ?? null)!=='report_missing_evidence')
@@ -19065,10 +19065,10 @@ $checks=[
 				|| (($data['evidence_next_action']['status'] ?? null)!=='collect_missing_evidence')
 				|| !str_contains((string)($data['evidence_next_action']['verification_hint'] ?? ''), 'benchmark evidence')
 				|| !in_array('Dataphyre hot-path benchmark evidence unless Dataphyre shared production hot paths are changed', $data['evidence_next_action']['not_required'] ?? [], true)
-				|| !str_contains((string)($data['claim_summary']['verification_boundary'] ?? ''), 'shared hot-path claims require source-checkout maintainer evidence')
+				|| !str_contains((string)($data['claim_summary']['verification_boundary'] ?? ''), 'shared hot-path claims require Dataphyre maintainer evidence')
 				|| !str_contains((string)($data['change_classification']['proof_contract'] ?? ''), 'Source-checkout maintainer benchmark evidence')
 				|| !str_contains((string)($data['change_classification']['proof_contract'] ?? ''), 'opcache-JIT')
-				|| !in_array('maintainer/source-checkout benchmark evidence required before keeping Dataphyre shared hot-path changes', $data['recommended_verification'] ?? [], true)
+				|| !in_array('Dataphyre maintainer benchmark evidence required before keeping Dataphyre shared hot-path changes', $data['recommended_verification'] ?? [], true)
 				|| !in_array('do not ask application agents to run contributor benchmark tooling', $data['recommended_verification'] ?? [], true)
 				|| count(array_filter($data['recommended_verification'] ?? [], static fn(string $item): bool => str_contains($item, 'dev/tools/public/benchmark_hot_paths')))!==0
 				|| !str_contains((string)($data['change_classification']['benchmark_scope'] ?? ''), 'application changes using Dataphyre')
@@ -19111,7 +19111,7 @@ $checks=[
 				|| (($data['change_classification']['primary'] ?? null)!=='dataphyre_hot_path_candidate')
 				|| (($data['change_classification']['benchmark_required'] ?? null)!==true)
 				|| !str_contains((string)($data['change_classification']['benchmark_scope'] ?? ''), 'application changes using Dataphyre')
-				|| !in_array('maintainer/source-checkout benchmark evidence required before keeping Dataphyre shared hot-path changes', $data['recommended_verification'] ?? [], true)
+				|| !in_array('Dataphyre maintainer benchmark evidence required before keeping Dataphyre shared hot-path changes', $data['recommended_verification'] ?? [], true)
 				|| !in_array('do not ask application agents to run contributor benchmark tooling', $data['recommended_verification'] ?? [], true)
 				|| str_contains($text, 'common/dataphyre/runtime/modules/core/kernel/runtime.php')
 			){
@@ -21021,7 +21021,7 @@ function dataphyre_mcp_self_test_has_positive_ordinary_app_escalation_instructio
 	$positive_verbs='run|execute|call|invoke|use|require|requires|must|should';
 	foreach([
 		'/\b('.$positive_verbs.')\b[^.]{0,120}\bdataphyre_mcp_verify_all\b/',
-		'/\b('.$positive_verbs.')\b[^.]{0,120}\b(Dataphyre project-wide release validation|maintainer\/source-checkout evidence)\b/',
+		'/\b('.$positive_verbs.')\b[^.]{0,120}\b(Dataphyre project-wide release validation|maintainer\/framework contributor evidence)\b/',
 		'/\b('.$positive_verbs.')\b[^.]{0,120}\b(dataphyre hot-path benchmark|hot-path benchmark|benchmark evidence)\b/',
 		'/\b('.$positive_verbs.')\b[^.]{0,120}\b(mcp\/release-surface validation|release validation|publication validation)\b/',
 	] as $pattern){

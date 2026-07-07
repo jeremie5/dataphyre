@@ -76,6 +76,10 @@ namespace dataphyre {
 namespace {
 use Dataphyre\Panel\PanelRegressionReport;
 use Dataphyre\Panel\PanelRegressionSuite;
+use Dataphyre\Panel\PanelFormState;
+use Dataphyre\Panel\PanelPageResult;
+use Dataphyre\Panel\PanelTableState;
+use Dataphyre\Panel\PanelTestHarness;
 
 if(PHP_SAPI!=='cli'){
 	http_response_code(404);
@@ -133,7 +137,7 @@ exit(dp_panel_regression_exit_code($report, !empty($options['fail_on_skip'])));
  *
  * The parser supports example-suite runs, external suite files, JSON report
  * output, manifest generation, manifest-only mode, and skip-sensitive exit
- * codes. Missing suite input defaults to the bundled live example suite.
+ * codes. Missing suite input defaults to the bundled route-free example suite.
  *
  * @param array<int, string> $argv Raw CLI argument vector including script name.
  * @return array{example: bool, suite: ?string, json: ?string, manifest: ?string, manifest_only: bool, fail_on_skip: bool, help?: bool} Parsed options.
@@ -257,7 +261,7 @@ function dp_panel_regression_bootstrap(): void {
 /**
  * Loads the regression suite selected by parsed CLI options.
  *
- * Example mode loads the bundled live example. Custom suites are resolved from
+ * Example mode loads the bundled route-free example. Custom suites are resolved from
  * CLI paths and may either return a `PanelRegressionSuite` directly or return a
  * callable that constructs one after bootstrap.
  *
@@ -288,36 +292,50 @@ function dp_panel_regression_load_suite(array $options): PanelRegressionSuite {
 }
 
 /**
- * Loads the bundled live-example regression suite.
+ * Loads the bundled route-free regression suite.
  *
- * The live example is included in no-emit mode so it can build its panel
- * instance without sending a browser response. Its exported suite factory may
- * accept the created panel instance when one is available.
+ * This suite proves the runner, report writer, manifest writer, and Panel test
+ * harness can execute from a clean source tree without a debug application.
  *
  * @return PanelRegressionSuite Bundled example suite.
  *
- * @throws RuntimeException When the example entrypoint or suite export is unavailable.
+ * @throws RuntimeException When the suite cannot be built.
  */
 function dp_panel_regression_load_example_suite(): PanelRegressionSuite {
-	$root=dp_panel_regression_common_root();
-	$example=$root.'/debug/dataphyre-panel-live-example/index.php';
-	if(!is_file($example)){
-		throw new RuntimeException('Live example entrypoint not found at '.$example.'.');
-	}
-	if(!defined('DP_PANEL_LIVE_EXAMPLE_NO_EMIT')){
-		define('DP_PANEL_LIVE_EXAMPLE_NO_EMIT', true);
-	}
-	require_once $example;
-	if(!function_exists('dp_panel_live_example_regression_suite')){
-		throw new RuntimeException('Live example did not export dp_panel_live_example_regression_suite().');
-	}
-	$suite=isset($panel) && $panel instanceof \Dataphyre\Panel\PanelInstance
-		? dp_panel_live_example_regression_suite($panel)
-		: dp_panel_live_example_regression_suite();
-	if(!$suite instanceof PanelRegressionSuite){
-		throw new RuntimeException('Live example regression export did not return PanelRegressionSuite.');
-	}
-	return $suite;
+	return PanelRegressionSuite::make('panel_cli_example')
+		->meta([
+			'module'=>'panel',
+			'fixture'=>'route_free',
+			'deterministic'=>true,
+		])
+		->check('html result assertions', static function(PanelTestHarness $test): string {
+			$result=PanelPageResult::html('<main><h1>Orders</h1><p>Ready</p></main>');
+			PanelTestHarness::assertOk($result);
+			PanelTestHarness::assertSee($result, 'Orders');
+			PanelTestHarness::assertDontSee($result, 'Customers');
+			return 'HTML result accepted.';
+		}, ['surface'=>'result'])
+		->check('table state assertions', static function(): array {
+			$state=PanelTableState::make(
+				[['id'=>1, 'title'=>'Order 1001'], ['id'=>2, 'title'=>'Order 1002']],
+				['id'=>['label'=>'ID'], 'title'=>['label'=>'Title']],
+				['title'=>['label'=>'Title']],
+				[],
+				['total_records'=>2]
+			);
+			PanelTestHarness::assertTableTotal($state, 2);
+			PanelTestHarness::assertTableColumn($state, 'title');
+			PanelTestHarness::assertTableColumn($state, 'id', false);
+			return ['message'=>'Table state accepted.', 'records'=>$state->totalRecords()];
+		}, ['surface'=>'table'])
+		->check('form state assertions', static function(): string {
+			$valid=PanelFormState::make(['title'=>'Order 1001']);
+			$invalid=PanelFormState::make(['title'=>''], ['title'=>'Required']);
+			PanelTestHarness::assertFormValid($valid);
+			PanelTestHarness::assertFormValue($valid, 'title', 'Order 1001');
+			PanelTestHarness::assertFormInvalid($invalid, 'title');
+			return 'Form state accepted.';
+		}, ['surface'=>'form']);
 }
 
 /**

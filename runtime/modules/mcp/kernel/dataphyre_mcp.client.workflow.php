@@ -648,7 +648,7 @@ trait dataphyre_mcp_client_workflow_surfaces {
 			'enterprise_preflight'=>$release_claim ? [
 				'tool'=>'dataphyre_mcp_enterprise_adoption_audit',
 				'arguments'=>['feature'=>$task, 'public_claim'=>true],
-				'runtime_quality_contract'=>'maintainer/source-checkout runtime quality gates',
+				'runtime_quality_contract'=>'Dataphyre maintainer runtime quality gates',
 				'purpose'=>'Audit enterprise contract evidence before agent-first, corporate-ready, public, or release-facing claims.',
 			] : null,
 			'publication_validation'=>$release_claim ? $this->mcp_publication_validation_contract('workflow_next_action') : [],
@@ -869,7 +869,7 @@ trait dataphyre_mcp_client_workflow_surfaces {
 			'enterprise_preflight'=>$release_claim ? [
 				'tool'=>'dataphyre_mcp_enterprise_adoption_audit',
 				'arguments'=>['feature'=>$task_raw, 'public_claim'=>true],
-				'runtime_quality_contract'=>'maintainer/source-checkout runtime quality gates',
+				'runtime_quality_contract'=>'Dataphyre maintainer runtime quality gates',
 				'purpose'=>'Run before describing the result as enterprise-ready, agent-first, corporate-ready, public, or release-facing.',
 			] : null,
 			'fallback_tool'=>'dataphyre_mcp_workflow_catalog',

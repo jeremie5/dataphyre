@@ -337,7 +337,7 @@ trait dataphyre_mcp_registry_tool_surfaces {
 			], ['paths']),
 			$this->tool('dataphyre_release_check', 'Report the Dataphyre release-check boundary for public MCP clients; not app behavior proof.', []),
 			$this->tool('dataphyre_release_triage_summary', 'Summarize release-check boundary metadata and group available failure output by actionable category for release work, not ordinary application-agent verification.', []),
-			$this->tool('dataphyre_release_fix_plan', 'Create an ordered, read-only maintainer/source-checkout release repair plan from Dataphyre release-check failures.', [
+			$this->tool('dataphyre_release_fix_plan', 'Create an ordered, read-only Dataphyre maintainer release repair plan from Dataphyre release-check failures.', [
 				'release_output'=>['type'=>'string', 'description'=>'Optional release-check output to plan from instead of running the check. Useful for deterministic tests.'],
 				'max_examples_per_batch'=>['type'=>'integer', 'description'=>'Maximum examples per repair batch, default 8.'],
 			]),
@@ -442,7 +442,7 @@ trait dataphyre_mcp_registry_tool_surfaces {
 			$this->tool('dataphyre_mcp_docs_coverage_report', 'Report whether live MCP tools, resources, prompts, and safety boundaries are documented for MCP/release-surface claims, not app behavior proof.', []),
 			$this->tool('dataphyre_mcp_readiness_report', 'Report Dataphyre MCP agentic capability coverage, safety posture, gaps, and recommended next tool slices for MCP/framework readiness; not an ordinary app-building entrypoint, start app work with dataphyre_app_builder_plan_generate payload_profile=compact.', []),
 			$this->tool('dataphyre_mcp_live_validate', 'Run live stdio validation through a spawned MCP server process for local client setup or MCP publication checks, not app behavior proof.', []),
-			$this->tool('dataphyre_mcp_verify_all', 'Run the core MCP verification suite for maintainer/source-checkout MCP or release-surface claims, not routine app verification.', []),
+			$this->tool('dataphyre_mcp_verify_all', 'Run the core MCP verification suite for Dataphyre maintainer MCP or release-surface claims, not routine app verification.', []),
 			$this->tool('dataphyre_mcp_doctor', 'Run a fast self-inspection of Dataphyre MCP module wiring, docs, tools, and app-coupling guardrails after MCP surface changes, not app behavior proof.', []),
 		]];
 	}

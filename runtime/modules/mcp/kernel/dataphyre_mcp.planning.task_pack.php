@@ -560,7 +560,7 @@ trait dataphyre_mcp_planning_task_pack_surfaces {
 					'reusable Dataphyre framework behavior or MCP/release-surface rationale',
 					'focused verification for touched files',
 					'publication validation only for shared MCP/release-surface claims',
-					'maintainer/source-checkout benchmark evidence only for Dataphyre shared production hot-path changes',
+					'Dataphyre maintainer benchmark evidence only for Dataphyre shared production hot-path changes',
 				],
 			];
 		}
@@ -730,7 +730,7 @@ trait dataphyre_mcp_planning_task_pack_surfaces {
 				$publication_validation[]='dataphyre_mcp_verify_all only before publishing shared MCP/release-surface claims';
 			}
 			if($this->apply_audit_path_is_in_scope($path, 'docs') || $path==='RELEASE_MANIFEST'){
-				$publication_validation[]='maintainer/source-checkout release check evidence before public claims';
+				$publication_validation[]='Dataphyre maintainer release check evidence before public claims';
 			}
 		}
 		return array_values(array_unique($publication_validation));

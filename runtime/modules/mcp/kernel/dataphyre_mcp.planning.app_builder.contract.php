@@ -5479,7 +5479,7 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 				'raw full logs',
 				'secrets, tokens, cookies, auth headers, or signed URLs',
 				'tenant/customer/product identifiers unless already public test fixtures',
-				'maintainer/source-checkout release proof',
+				'Dataphyre maintainer release proof',
 				'Dataphyre hot-path benchmark output',
 			],
 			'post_write_handoff_template'=>[
@@ -5831,7 +5831,7 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 				'unredacted snippets',
 				'secrets, tokens, cookies, auth headers, or signed URLs',
 				'tenant/customer/product identifiers unless already public test fixtures',
-				'maintainer/source-checkout release proof',
+				'Dataphyre maintainer release proof',
 				'Dataphyre benchmark output',
 			],
 			'not_required'=>[
