@@ -58,7 +58,7 @@ function bootstrap(){
 	$GLOBALS['dataphyre_flightdeck_config']=is_array($bootstrap_config['flightdeck'] ?? null) ? $bootstrap_config['flightdeck'] : [];
 	$GLOBALS['dataphyre_flightdeck_replay']=$flightdeck_replay;
 
-	define('BS_VERSION', '2.0.1');
+	define('BS_VERSION', '2.0.3');
 	define('DATAPHYRE_PROJECT_ROOT', rtrim($project_root, '/\\').'/');
 	define('DATAPHYRE_RUNTIME_ROOT', rtrim(__DIR__, '/\\').'/');
 	define('DATAPHYRE_BOOTSTRAP_CONFIG', $bootstrap_config); // still needed?

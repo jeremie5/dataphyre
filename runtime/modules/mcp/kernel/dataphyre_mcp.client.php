@@ -86,7 +86,7 @@ trait dataphyre_mcp_client_surfaces {
 		return [
 			'manifest_type'=>'dataphyre_mcp_manifest',
 			'server'=>'dataphyre-mcp',
-			'version'=>'2.0.1',
+			'version'=>'2.0.3',
 			'protocol'=>'2025-11-25',
 			'generated_from'=>'live tool, prompt, and resource registration',
 			'default_safety'=>'read_only',

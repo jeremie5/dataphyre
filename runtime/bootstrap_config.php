@@ -25,8 +25,9 @@ final class bootstrap_config {
 	public static function resolve(string $runtime_root): array {
 		$runtime_root=rtrim($runtime_root, '/\\').'/';
 		$install_root=rtrim(dirname($runtime_root), '/\\').'/';
-		$project_root=self::project_root($install_root);
-		$flight_sheet=self::load_flight_sheet($install_root);
+		$project_root_override=self::project_root_override();
+		$project_root=self::project_root($install_root, $project_root_override);
+		$flight_sheet=self::load_flight_sheet($install_root, $project_root_override);
 		$bootstrap=array_key_exists('bootstrap', $flight_sheet) && is_array($flight_sheet['bootstrap']) ? $flight_sheet['bootstrap'] : [];
 		$config=array_replace(self::defaults($runtime_root), $bootstrap);
 		return [
@@ -85,9 +86,13 @@ final class bootstrap_config {
 	 * other in the install root.
 	 *
 	 * @param string $install_root Dataphyre install root.
+	 * @param string|null $project_root_override Explicit project root for vendor installs.
 	 * @return string Project root with trailing slash.
 	 */
-	private static function project_root(string $install_root): string {
+	private static function project_root(string $install_root, ?string $project_root_override): string {
+		if($project_root_override!==null){
+			return $project_root_override;
+		}
 		$install_root=rtrim($install_root, '/\\');
 		$parent=dirname($install_root);
 		if(strtolower(basename($install_root))==='dataphyre' && strtolower(basename($parent))==='common'){
@@ -97,15 +102,36 @@ final class bootstrap_config {
 	}
 
 	/**
-	 * Loads the install-level flight sheet when present.
+	 * Loads the install-level or explicit project-root flight sheet when present.
 	 *
 	 * @param string $install_root Dataphyre install root.
+	 * @param string|null $project_root_override Explicit project root for vendor installs.
 	 * @return array<string,mixed> Flight sheet payload, or an empty array when absent or invalid.
 	 */
-	private static function load_flight_sheet(string $install_root): array {
-		$flight_sheet_path=$install_root.'flight_sheet.php';
+	private static function load_flight_sheet(string $install_root, ?string $project_root_override): array {
+		$flight_sheet_root=$project_root_override ?? $install_root;
+		$flight_sheet_path=$flight_sheet_root.'flight_sheet.php';
 		$flight_sheet=is_file($flight_sheet_path) ? require($flight_sheet_path) : [];
 		return is_array($flight_sheet) ? $flight_sheet : [];
+	}
+
+	/**
+	 * Reads an explicit project root for Composer vendor installs.
+	 *
+	 * Consumers can set DATAPHYRE_PROJECT_ROOT on $_SERVER before including the runtime
+	 * bootstrap so local flight_sheet.php and applications stay outside vendor.
+	 *
+	 * @return string|null Absolute project root with trailing slash, or null.
+	 */
+	private static function project_root_override(): ?string {
+		$value=isset($_SERVER['DATAPHYRE_PROJECT_ROOT']) ? trim((string)$_SERVER['DATAPHYRE_PROJECT_ROOT']) : '';
+		if($value===''){
+			return null;
+		}
+		if(!self::is_absolute_path($value)){
+			throw new \RuntimeException('DATAPHYRE_PROJECT_ROOT must be an absolute path.');
+		}
+		return rtrim($value, '/\\').'/';
 	}
 
 	/**

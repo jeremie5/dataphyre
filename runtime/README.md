@@ -23,7 +23,7 @@ runtime/
   logs/              Generated runtime logs
 ```
 
-Minimal entrypoint:
+Minimal embedded/source entrypoint:
 
 ```php
 <?php
@@ -34,6 +34,10 @@ require __DIR__.'/runtime/bootstrap.php';
 Most installations provide `flight_sheet.php` beside `runtime/` in the
 Dataphyre install root for bootstrap settings such as the default application,
 application roots, direct-access controls, and Flightdeck settings.
+
+Composer vendor installs can keep `flight_sheet.php` and `applications/` in the
+consumer project root by setting `$_SERVER['DATAPHYRE_PROJECT_ROOT']` before
+requiring `vendor/dataphyre/dataphyre/runtime/bootstrap.php`.
 
 ## Runtime Boundary
 

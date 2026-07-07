@@ -33,7 +33,9 @@ logs/                  generated logs
 
 The request boot path is:
 
-1. The web entrypoint requires `runtime/bootstrap.php`.
+1. The web entrypoint requires `runtime/bootstrap.php`, or in Composer vendor
+   installs sets `$_SERVER['DATAPHYRE_PROJECT_ROOT']` and requires
+   `vendor/dataphyre/dataphyre/runtime/bootstrap.php`.
 2. `bootstrap_config::resolve()` loads `flight_sheet.php`, merges defaults, and
    normalizes configured application roots.
 3. `runtime/bootstrap.php` defines constants such as `DATAPHYRE_PROJECT_ROOT`,
@@ -72,9 +74,11 @@ Applications are searched under:
 
 Relative roots in `flight_sheet.php` are resolved from the Dataphyre project
 root. Standalone installs use the install root as the project root; embedded
-`common/dataphyre` installs use the directory above `common`. The environment
-variable `DATAPHYRE_APPLICATION_ROOTS` can append more roots using the platform
-path separator.
+`common/dataphyre` installs use the directory above `common`; Composer vendor
+installs can set `$_SERVER['DATAPHYRE_PROJECT_ROOT']` to the consumer project
+directory before requiring the package runtime. The environment variable
+`DATAPHYRE_APPLICATION_ROOTS` can append more roots using the platform path
+separator.
 
 ## Application Definition
 

@@ -18,6 +18,18 @@ The bootstrap file resolves `flight_sheet.php`, locates the configured
 application, registers Dataphyre's runtime autoloader, and then hands control to
 the selected application.
 
+Composer vendor installs should keep install-local files outside `vendor/`.
+Set `DATAPHYRE_PROJECT_ROOT` on `$_SERVER` before including the installed
+runtime. The public `index.example.php` template performs this check for a
+standard Composer project:
+
+```php
+<?php
+
+$_SERVER['DATAPHYRE_PROJECT_ROOT']=__DIR__;
+require __DIR__.'/vendor/dataphyre/dataphyre/runtime/bootstrap.php';
+```
+
 ## Composer Repository Resolution
 
 Tagged public releases are installable through Composer when the consumer
@@ -39,7 +51,9 @@ Composer repositories do not resolve the package, add the GitHub VCS repository:
 ```
 
 Composer installs the package under `vendor/dataphyre/dataphyre/`. Boot it by
-including the explicit runtime bootstrap from that installed directory.
+including the explicit runtime bootstrap from that installed directory after
+setting `$_SERVER['DATAPHYRE_PROJECT_ROOT']` to the project directory that
+contains `flight_sheet.php` and `applications/`.
 
 ## Composer Autoload
 

@@ -1,12 +1,13 @@
 ﻿# Getting Started
 
-This guide shows the smallest useful Dataphyre install shape. It is written for
-an embedded install, where the Dataphyre runtime lives beside one or more
-applications rather than owning the whole project.
+This guide shows the smallest useful Dataphyre install shape. Dataphyre can run
+from an embedded/source tree or from `vendor/dataphyre/dataphyre` in a Composer
+consumer project.
 
 ## Install Shape
 
-Dataphyre resolves paths from the physical location of `runtime/bootstrap.php`.
+By default, Dataphyre resolves paths from the physical location of
+`runtime/bootstrap.php`.
 If the runtime lives at:
 
 ```text
@@ -26,6 +27,12 @@ project/applications/
 
 You can also provide explicit application roots in `flight_sheet.php`.
 
+Composer vendor installs keep the package under `vendor/`; their live
+`flight_sheet.php`, `index.php`, and `applications/` normally stay in the
+consumer project root. In that layout, set
+`$_SERVER['DATAPHYRE_PROJECT_ROOT']=__DIR__` before requiring the package
+runtime.
+
 ## Composer Install
 
 Dataphyre releases are Composer packages, but the stable boot contract is still
@@ -41,8 +48,9 @@ composer require dataphyre/dataphyre:^2.0
 
 In a Composer vendor install, Dataphyre lives under
 `vendor/dataphyre/dataphyre/`. Copy the public templates from that directory and
-include `vendor/dataphyre/dataphyre/runtime/bootstrap.php` from your entrypoint,
-or embed the package under your chosen framework path.
+keep live install files in your project root. The public entrypoint template
+detects that Composer layout and sets `$_SERVER['DATAPHYRE_PROJECT_ROOT']`
+before including `vendor/dataphyre/dataphyre/runtime/bootstrap.php`.
 
 ## Minimal Files
 
@@ -101,12 +109,25 @@ For available keys, see [Configuration reference](CONFIGURATION.md).
 
 ## Entrypoint
 
-The entrypoint only needs to include the runtime bootstrap:
+For an embedded/source install, the entrypoint only needs to include the runtime
+bootstrap:
 
 ```php
 <?php
 
 require __DIR__.'/runtime/bootstrap.php';
+```
+
+For a Composer vendor install, keep `flight_sheet.php` and `applications/`
+beside your project entrypoint and point Dataphyre at that project root before
+including the package runtime. `index.example.php` already does this when it
+finds `vendor/dataphyre/dataphyre/runtime/bootstrap.php`:
+
+```php
+<?php
+
+$_SERVER['DATAPHYRE_PROJECT_ROOT']=__DIR__;
+require __DIR__.'/vendor/dataphyre/dataphyre/runtime/bootstrap.php';
 ```
 
 For a local smoke test from the Dataphyre install root:

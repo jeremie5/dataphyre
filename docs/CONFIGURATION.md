@@ -19,8 +19,12 @@ or reusable modules before proposing Dataphyre runtime-internal edits.
 
 ## Flight Sheet
 
-`flight_sheet.php` lives beside `runtime/` in the Dataphyre install root. It
-returns an array with optional `bootstrap` and `install` sections.
+`flight_sheet.php` lives in the Dataphyre project root. For source or standalone
+installs that is the directory beside `runtime/`. For embedded
+`common/dataphyre` installs it is the directory above `common`. For Composer
+vendor installs, the entrypoint can set `$_SERVER['DATAPHYRE_PROJECT_ROOT']` so
+the project root is the consumer project directory instead of
+`vendor/dataphyre/dataphyre`.
 
 Start from [flight_sheet.example.php](../flight_sheet.example.php):
 
@@ -50,7 +54,7 @@ defaults.
 | `allow_app_override` | `true` | Allows app switching with a generated `app_override_key`. Public templates set this to `false`. |
 | `is_production` | `true` | Controls production behavior such as whether bootstrap exceptions are shown directly. |
 | `max_execution_time` | `30` | Passed to PHP's `set_time_limit()` during bootstrap. |
-| `application_roots` | `[]` | Extra application root directories. Relative paths are resolved from Dataphyre's project root: the install root for standalone installs, or the directory above `common` for embedded `common/dataphyre` installs. |
+| `application_roots` | `[]` | Extra application root directories. Relative paths are resolved from Dataphyre's project root: the install root for standalone installs, the directory above `common` for embedded `common/dataphyre` installs, or the explicit `$_SERVER['DATAPHYRE_PROJECT_ROOT']` for Composer vendor installs. |
 | `public_ip_address` | `null` | Optional server address override for proxy or tunnel deployments. |
 | `web_server_port` | `null` | Optional port paired with `public_ip_address`. |
 | `license` | `false` | Install-provided license metadata. Dataphyre itself is MIT; this is install metadata. |
@@ -58,7 +62,10 @@ defaults.
 
 `HTTP_X_DATAPHYRE_APPLICATION` can select the application before `APP` is
 defined. `DATAPHYRE_APPLICATION_ROOTS` can append application roots using the
-platform path separator.
+platform path separator. CLI helper scripts may also read a process environment
+variable named `DATAPHYRE_PROJECT_ROOT`; the web/runtime bootstrap override is
+the `$_SERVER['DATAPHYRE_PROJECT_ROOT']` value set by the entrypoint before
+including `runtime/bootstrap.php`.
 
 ## Flightdeck Keys
 

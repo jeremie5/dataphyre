@@ -129,7 +129,7 @@ if(!defined('RUN_MODE')){
 	define('RUN_MODE', 'ci');
 }
 if(!defined('BS_VERSION')){
-	define('BS_VERSION', '2.0.1');
+	define('BS_VERSION', '2.0.3');
 }
 if(!defined('IS_PRODUCTION')){
 	define('IS_PRODUCTION', false);

@@ -215,7 +215,7 @@ final class dataphyre_mcp_server {
 			'serverInfo'=>[
 				'name'=>'dataphyre-mcp',
 				'title'=>'Dataphyre MCP',
-				'version'=>'2.0.1',
+				'version'=>'2.0.3',
 				'description'=>'Local Dataphyre development server for tools, resources, prompts, and guarded diagnostics.',
 			],
 			'capabilities'=>[

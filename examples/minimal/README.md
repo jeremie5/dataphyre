@@ -1,8 +1,8 @@
 # Minimal Embedded Install
 
-This example is a small smoke-test application for Dataphyre's embedded runtime
-shape. It keeps the runtime in the Dataphyre install and places the application
-under an explicit application root.
+This example is a small smoke-test application for Dataphyre's embedded/source
+runtime shape and Composer vendor installs. It keeps application code outside
+the reusable runtime and points the bootstrap at that app root.
 
 ## Files
 
@@ -26,8 +26,9 @@ From a Dataphyre install root:
 4. Open `http://127.0.0.1:8080/`.
 
 The example flight sheet points directly at
-`examples/minimal/applications/example_app`, so the application can stay in this
-directory for a first run.
+`examples/minimal/applications/example_app` when run from a Dataphyre source
+tree, or at `applications/example_app` when copied into a Composer consumer
+project.
 
 The example intentionally sets `is_production` to `false` and disables
 direct-access protection. Treat it as a local bootstrap template, not as a

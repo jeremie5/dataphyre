@@ -1146,7 +1146,7 @@ trait dataphyre_mcp_source_surfaces {
 		);
 		return [
 			'server'=>'dataphyre-mcp',
-			'version'=>'2.0.1',
+			'version'=>'2.0.3',
 			'protocol'=>'2025-11-25',
 			'default_safety'=>'read_only',
 			'unsafe_enabled'=>$this->allow_unsafe,

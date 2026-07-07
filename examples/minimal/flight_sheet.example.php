@@ -5,6 +5,7 @@
  * Copyright (c) 2025 Shopiro Ltd.
  * SPDX-License-Identifier: MIT
  */
+$example_applications=is_dir(__DIR__.'/applications/example_app') ? __DIR__.'/applications' : __DIR__.'/examples/minimal/applications';
 return [
 	'bootstrap'=>[
 		'app'=>'example_app',
@@ -13,7 +14,7 @@ return [
 		'is_production'=>false,
 		'max_execution_time'=>30,
 		'application_roots'=>[
-			__DIR__.'/examples/minimal/applications',
+			$example_applications,
 		],
 		'flightdeck'=>[
 			'enabled'=>false,

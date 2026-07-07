@@ -4,7 +4,23 @@ All notable public-release preparation changes are tracked here.
 
 ## Unreleased
 
-No public-release changes yet.
+No unreleased public changes yet.
+
+## 2.0.3 - 2026-07-07
+
+### Added
+
+- Added clean Composer vendor-install boot validation that keeps
+  `flight_sheet.php`, `index.php`, and `applications/` in the consumer project
+  root instead of writing install-local files into `vendor/`.
+- Made the public minimal entrypoint and flight sheet templates work in both
+  source/embedded installs and Composer consumer projects.
+
+### Fixed
+
+- Added `DATAPHYRE_PROJECT_ROOT` support during bootstrap config resolution so
+  Composer vendor installs can boot applications outside the package directory.
+- Aligned public release/version metadata for the bootstrap and MCP surfaces.
 
 ## 2.0.2 - 2026-07-07
 

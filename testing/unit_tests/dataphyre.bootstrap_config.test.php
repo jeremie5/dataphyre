@@ -39,6 +39,31 @@ test('bootstrap config keeps embedded common/dataphyre installs rooted at the pr
 	}
 })->tag('bootstrap', 'embedded');
 
+test('bootstrap config supports vendor installs with explicit project root', static function(Context $t): void {
+	$consumer_root=sys_get_temp_dir().'/dataphyre-vendor-'.bin2hex(random_bytes(4)).'/consumer';
+	$install_root=$consumer_root.'/vendor/dataphyre/dataphyre';
+	mkdir($install_root.'/runtime', 0775, true);
+	file_put_contents($consumer_root.'/flight_sheet.php', "<?php return ['bootstrap'=>['application_roots'=>['applications']]];\n");
+	$had_previous=array_key_exists('DATAPHYRE_PROJECT_ROOT', $_SERVER);
+	$previous=$_SERVER['DATAPHYRE_PROJECT_ROOT'] ?? null;
+	$_SERVER['DATAPHYRE_PROJECT_ROOT']=$consumer_root;
+	try{
+		$result=\dataphyre\bootstrap_config::resolve($install_root.'/runtime');
+		$t->same(str_replace('\\', '/', $consumer_root).'/', str_replace('\\', '/', $result['project_root']));
+		$t->same(str_replace('\\', '/', $consumer_root).'/applications', str_replace('\\', '/', $result['application_roots'][0] ?? ''));
+	}
+	finally{
+		if($had_previous){
+			$_SERVER['DATAPHYRE_PROJECT_ROOT']=$previous;
+		}
+		else
+		{
+			unset($_SERVER['DATAPHYRE_PROJECT_ROOT']);
+		}
+		dataphyre_bootstrap_config_remove(dirname($consumer_root));
+	}
+})->tag('bootstrap', 'package', 'vendor');
+
 function dataphyre_bootstrap_config_make_install(string $install_root): void {
 	mkdir($install_root.'/runtime', 0775, true);
 	file_put_contents($install_root.'/flight_sheet.php', "<?php return ['bootstrap'=>['application_roots'=>['applications']]];\n");
