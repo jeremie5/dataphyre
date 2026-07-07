@@ -1164,7 +1164,7 @@ trait dataphyre_mcp_source_surfaces {
 				'detail_pages'=>['planning', 'implementation', 'verification', 'controls'],
 				'collapsed_until_needed'=>['raw handoff_fields', 'full code_skeletons', 'full implementation/verification/control handoffs'],
 				'collapsed_until_explicit_escalation_request'=>['full contracts', 'status/safety reports', 'enterprise audit', 'workflow handoff/session details', 'publication validation'],
-				'not_ordinary_app_ceremony'=>['dataphyre_mcp_verify_all', 'source-checkout dev tools', 'Dataphyre hot-path benchmarks', 'runtime-internal edits for one app'],
+				'not_ordinary_app_ceremony'=>['dataphyre_mcp_verify_all', 'Dataphyre project-wide release validation', 'Dataphyre hot-path benchmarks', 'runtime-internal edits for one app'],
 				'details'=>'dataphyre_mcp_readiness_report.agent_workload_policy',
 			],
 			'diagnostic_handoff_summary'=>[
@@ -1253,7 +1253,7 @@ trait dataphyre_mcp_source_surfaces {
 				],
 				'verification_execution_plan_contract'=>[
 					'first_read'=>'builder_response.verification_execution_plan maps focused verification tools to ordered tool calls, concrete arguments, related recipe paths, and failure branches.',
-					'policy'=>'Use verification_execution_plan.items after app-owned writes and write_readiness blockers are resolved; exclude dataphyre_mcp_verify_all, source-checkout dev tools, release validation, and Dataphyre hot-path benchmarks from ordinary app verification.',
+					'policy'=>'Use verification_execution_plan.items after app-owned writes and write_readiness blockers are resolved; exclude dataphyre_mcp_verify_all, Dataphyre project-wide release validation, release validation, and Dataphyre hot-path benchmarks from ordinary app verification.',
 				],
 				'verification_handoff_contract'=>[
 					'first_read'=>'builder_response.verification_handoff maps ordinary app completion evidence to copy-safe fields, post_write_handoff_template, and focused_completion_packet.',

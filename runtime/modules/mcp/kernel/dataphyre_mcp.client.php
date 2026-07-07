@@ -283,7 +283,7 @@ trait dataphyre_mcp_client_surfaces {
 			'handoff_fields'=>['client_setup_next_action', 'client_audience', 'tool_audience_boundaries', 'ordinary_app_work'],
 			'not_required'=>[
 				'dataphyre_mcp_verify_all for ordinary local client setup',
-				'maintainer/source-checkout MCP self-test evidence for routine app-client setup',
+				'Dataphyre MCP publication evidence for routine app-client setup',
 				'Dataphyre hot-path benchmark evidence',
 				'Dataphyre runtime-internal edits',
 			],
@@ -490,7 +490,7 @@ trait dataphyre_mcp_client_surfaces {
 			'publication_validation_scope'=>'MCP/release-surface claims, published shared MCP setup docs, release notes, MCP server wiring changes, or maintainer-requested source-checkout evidence.',
 			'not_default_for_ordinary_app_work'=>[
 				'dataphyre_mcp_verify_all',
-				'maintainer/source-checkout evidence',
+				'Dataphyre project evidence',
 				'Dataphyre hot-path benchmarks',
 				'Dataphyre runtime-internal edits',
 			],
@@ -649,9 +649,9 @@ trait dataphyre_mcp_client_surfaces {
 				'focused application or module checks for app behavior',
 			],
 			'not_required_for_app_agents'=>[
-				'dev/tools helper scripts',
+				'Dataphyre project-wide release validation',
 				'dataphyre_mcp_verify_all',
-				'maintainer/source-checkout MCP self-test evidence',
+				'Dataphyre MCP publication evidence',
 				'Dataphyre hot-path benchmarks',
 				'Dataphyre runtime-internal edits',
 			],

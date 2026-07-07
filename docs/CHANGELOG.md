@@ -41,12 +41,11 @@ All notable public-release preparation changes are tracked here.
   covering install-local config, plugin declarations, generated state, modcache
   files, vendor state, and Composer lock state.
 - Normalized prepared export metadata so `.gitattributes` does not retain
-  private adapter paths after redacted module directories are omitted.
+  private adapter paths in public release packages.
 - Added public export checks for private adapter name markers in sanitized
   metadata and documentation.
-- Moved GitHub CI, pull request, and issue template metadata to
-  source-only export exclusions so public packages do not expose
-  maintainer tool commands.
+- Kept GitHub CI, pull request, and issue template metadata out of public
+  runtime packages.
 - Added GitHub Actions CI for Composer metadata validation, release surface
   checks, public export preparation, public export checks, PHP linting, MCP
   self-test, and MCP live stdio validation.
@@ -57,13 +56,13 @@ All notable public-release preparation changes are tracked here.
 - Clarified application-agent release boundaries: MCP users default to
   application agents building apps, while publication validation,
   `dataphyre_mcp_verify_all`, release gates, and Dataphyre hot-path benchmarks
-  remain maintainer evidence for framework, MCP publication, release-surface, or
+  remain project evidence for framework, MCP publication, release-surface, or
   shared production hot-path work.
 - Added standalone release manifest verification tooling for prepared public
   exports.
 - Added machine-readable release-boundary fields for ordinary app-agent
   entrypoints, verification, extension ownership, escalation, non-ceremony,
-  omitted artifacts, and maintainer evidence, plus matching Composer app-agent
+  release content, and project evidence, plus matching Composer app-agent
   entrypoint/profile metadata.
 - Renamed Dpanel JSON fixtures from `.php` to `.json` and fixed malformed JSON.
 - Normalized Stripe unit-test fixture keys so public export secret scanning does
@@ -76,8 +75,8 @@ All notable public-release preparation changes are tracked here.
 - Dataphyre is now released under the MIT License.
 - Product-specific embedded adapters are redacted from public release packages
   and are not core runtime dependencies.
-- Internal developer tooling can still discover redacted modules through
-  install-local MCP plugin declarations that are omitted from public exports.
+- Local MCP plugin declarations can still describe private integrations for
+  application-owned tooling without making them public runtime modules.
 - Legacy and experimental modules remain labeled in `MODULES.md` until their
   public APIs, schemas, and configuration contracts are fully stable.
 

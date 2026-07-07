@@ -11,11 +11,34 @@ runtime/modules/stripe/src/** linguist-vendored
 runtime/modules/sql/third_party/** linguist-vendored
 runtime/modules/sql/third_party/adminer/** linguist-vendored
 
-# Embedded-tree private adapters are vendored for internal review only and are
-# omitted from prepared public exports.
+# Internal service clients keep their upstream shape in source.
 runtime/modules/private_adapter/private_adapter-client/** linguist-vendored
 runtime/modules/private_adapter/***REMOVED***/** linguist-vendored
 
-# Contributor-only helpers are source artifacts, not release payload.
+# Archive/release boundary.
+/.github export-ignore
+/.github/** export-ignore
+/dev export-ignore
 /dev/** export-ignore
+/tools export-ignore
 /tools/** export-ignore
+/cache export-ignore
+/cache/** export-ignore
+/logs export-ignore
+/logs/** export-ignore
+/runtime/cache export-ignore
+/runtime/cache/** export-ignore
+/runtime/logs export-ignore
+/runtime/logs/** export-ignore
+/plugins/mcp export-ignore
+/plugins/mcp/** export-ignore
+/runtime/modules/private_adapter export-ignore
+/runtime/modules/private_adapter/** export-ignore
+/runtime/modules/internal_module export-ignore
+/runtime/modules/internal_module/** export-ignore
+/runtime/modules/policy_module export-ignore
+/runtime/modules/policy_module/** export-ignore
+/runtime/modules/internal_module export-ignore
+/runtime/modules/internal_module/** export-ignore
+/runtime/modules/private_adapter export-ignore
+/runtime/modules/private_adapter/** export-ignore

@@ -58,7 +58,7 @@ trait dataphyre_mcp_client_capability_surfaces {
 				'returned_outputs'=>'stdout and stderr from bounded first-party command helpers',
 				'redacted'=>true,
 				'redaction_policy'=>'Credential, signed URL, tenant/customer/product, and machine-local path patterns are redacted before command output is returned through MCP.',
-				'claim_boundary'=>'Redacted command output is maintainer/source-checkout evidence, not ordinary application-agent proof.',
+				'claim_boundary'=>'Redacted command output is Dataphyre project evidence, not ordinary application-agent proof.',
 			],
 			'app_first_verification_policy'=>[
 				'default'=>'Application behavior uses focused application or module verification; capability readiness is not proof of app behavior.',
@@ -81,7 +81,7 @@ trait dataphyre_mcp_client_capability_surfaces {
 			],
 			'release_guardrails'=>[
 				'Keep capability claims tied to live tool registration, not hand-maintained lists.',
-				'Use dataphyre_mcp_doctor and maintainer/source-checkout MCP self-test evidence after changing MCP surfaces.',
+				'Use dataphyre_mcp_doctor and Dataphyre MCP publication evidence after changing MCP surfaces.',
 				'Run the app-coupling guard before release so product-specific names stay out of shared MCP code.',
 			],
 		];
@@ -197,7 +197,7 @@ trait dataphyre_mcp_client_capability_surfaces {
 	}
 
 	/**
-	 * Lists maintainer/source-checkout evidence for publishing MCP capability claims.
+	 * Lists Dataphyre project evidence for publishing MCP capability claims.
 	 *
 	 * @param string $family Capability family key.
 	 * @return array Publication validation guidance rows.
@@ -205,7 +205,7 @@ trait dataphyre_mcp_client_capability_surfaces {
 	private function capability_family_publication_validation(string $family): array {
 		$common=[
 			'dataphyre_mcp_doctor',
-			'maintainer/source-checkout MCP self-test evidence',
+			'Dataphyre MCP publication evidence',
 		];
 		return match($family){
 			'publication_validation'=>array_merge(['dataphyre_mcp_verify_all for MCP/release-surface verification claims'], $common),

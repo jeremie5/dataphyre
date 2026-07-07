@@ -711,7 +711,7 @@ trait dataphyre_mcp_planning_task_pack_surfaces {
 	}
 
 	/**
-	 * Infers maintainer/source-checkout evidence needed before publishing changed surfaces.
+	 * Infers Dataphyre project evidence needed before publishing changed surfaces.
 	 *
 	 * @param array<int,array<string,mixed>> $files Proposed file entries.
 	 * @return array<int,string> Publication validation guidance.
@@ -725,7 +725,7 @@ trait dataphyre_mcp_planning_task_pack_surfaces {
 				|| str_starts_with($path, 'dev/tools/mcp_')
 			){
 				$publication_validation[]='dataphyre_mcp_doctor';
-				$publication_validation[]='maintainer/source-checkout MCP self-test evidence';
+				$publication_validation[]='Dataphyre MCP publication evidence';
 				$publication_validation[]='MCP app-coupling guard scan';
 				$publication_validation[]='dataphyre_mcp_verify_all only before publishing shared MCP/release-surface claims';
 			}

@@ -26,16 +26,16 @@ new version.
 |---|---|---|
 | `schema` | string | Manifest schema identifier. |
 | `package` | string | Composer package name for the export. |
-| `generated_by` | string | Tool that produced the manifest. |
+| `generated_by` | string | Stable identifier for the release preparation process. |
 | `generated_at_utc` | string | UTC timestamp when the manifest was written. |
 | `copied_source_files` | integer | Number of source files copied into the export before the manifest was written. |
 | `skipped_source_files` | integer | Number of source files omitted by export rules or redaction rules. |
 | `export_file_count` | integer | Total file count in the prepared export, including `RELEASE_MANIFEST.json`. |
 | `export_tree_sha256` | string | Deterministic SHA-256 of the exported file list, excluding `RELEASE_MANIFEST.json`. |
-| `release_boundary` | object | Machine-readable app-agent and maintainer boundary for the prepared export. |
+| `release_boundary` | object | Machine-readable app-agent and project evidence boundary for the prepared export. |
 | `excluded_categories` | string array | Non-sensitive categories of artifacts intentionally left out of the export. |
-| `verification` | string array | Source-checkout maintainer tools used by the export process. These are provenance, not framework-user or application-agent commands. |
-| `verification_scope` | string | Constant scope marker: `maintainer_source_checkout_provenance_not_app_agent_requirement`. |
+| `verification` | string array | Release attestation checks represented by the export process. These are provenance, not framework-user or application-agent commands. |
+| `verification_scope` | string | Constant scope marker: `release_attestation_not_app_runtime_requirement`. |
 | `modules` | object array | Public module inventory generated from `docs/MODULES.md`. |
 | `bundled_components` | object array | Bundled third-party component inventory. |
 | `files` | object array | Exported file inventory, excluding `RELEASE_MANIFEST.json`. |
@@ -82,11 +82,12 @@ reusable framework contributions, and shared production hot-path changes.
 
 The boundary's `not_ordinary_app_ceremony` field names items that are
 explicitly not ordinary app ceremony:
-`dataphyre_mcp_verify_all`, Dataphyre hot-path benchmarks, and Dataphyre
-runtime-internal edits to make one application work. The
-`maintainer_evidence_scope` field names when release or benchmark evidence is
-relevant: Dataphyre framework changes, MCP/release-surface claims, public export
-preparation, and shared production hot-path changes.
+`dataphyre_mcp_verify_all`, Dataphyre project-wide release validation,
+Dataphyre hot-path benchmarks, and Dataphyre runtime-internal edits to make one
+application work. The `project_evidence_scope` field names when release or
+benchmark evidence is relevant: Dataphyre framework changes,
+MCP/release-surface claims, public release preparation, and shared production
+hot-path changes.
 
 ## Module Entries
 

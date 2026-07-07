@@ -205,7 +205,7 @@ trait dataphyre_mcp_client_discovery_surfaces {
 				: ['ordinary_app_work', 'tool_audience_boundaries', 'diagnostic_summary.copy_safe_evidence', 'copy_safe_resume'],
 			'governance_inline'=>false,
 			'escalate_only_for'=>$this->mcp_escalation_triggers(),
-			'not_ordinary_app_ceremony'=>['dataphyre_mcp_verify_all', 'source-checkout dev tools', 'Dataphyre hot-path benchmarks', 'runtime-internal edits for one app'],
+			'not_ordinary_app_ceremony'=>['dataphyre_mcp_verify_all', 'Dataphyre project-wide release validation', 'Dataphyre hot-path benchmarks', 'runtime-internal edits for one app'],
 			'default_policy'=>'inline',
 			'escalation_details'=>'dataphyre_mcp_readiness_report.agent_workload_policy',
 		];

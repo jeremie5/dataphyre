@@ -335,7 +335,7 @@ trait dataphyre_mcp_registry_tool_surfaces {
 			$this->tool('dataphyre_php_lint', 'Run php -l for explicitly provided repo-local PHP files when local verification is requested.', [
 				'paths'=>['type'=>'array', 'items'=>['type'=>'string'], 'description'=>'Repo-relative PHP files.'],
 			], ['paths']),
-			$this->tool('dataphyre_release_check', 'Run bounded Dataphyre public release checks and return maintainer/source-checkout evidence for release or framework claims, not app behavior proof.', []),
+			$this->tool('dataphyre_release_check', 'Run bounded Dataphyre public release checks and return Dataphyre project evidence for release or framework claims, not app behavior proof.', []),
 			$this->tool('dataphyre_release_triage_summary', 'Run Dataphyre release checks and group failures by actionable category for maintainer/source-checkout release work, not ordinary application-agent verification.', []),
 			$this->tool('dataphyre_release_fix_plan', 'Create an ordered, read-only maintainer/source-checkout release repair plan from Dataphyre release-check failures.', [
 				'release_output'=>['type'=>'string', 'description'=>'Optional release-check output to plan from instead of running the check. Useful for deterministic tests.'],

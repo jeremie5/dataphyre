@@ -16,7 +16,5 @@ The vendored paths are marked in `.gitattributes` and excluded from
 Dataphyre-owned header rewriting. If a bundled component is updated, review its
 license file and update this inventory in the same change.
 
-The embedded working tree can also mark vendored code inside private adapter
-modules. Those adapters and their export metadata entries are redacted by the
-public export scripts, so they are not part of this public release inventory.
+Private/internal service clients are not part of this public release inventory.
 

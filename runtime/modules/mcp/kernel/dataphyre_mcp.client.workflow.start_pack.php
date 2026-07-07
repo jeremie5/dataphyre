@@ -1150,7 +1150,7 @@ trait dataphyre_mcp_client_workflow_start_pack_surfaces {
 			],
 			'not_required_for_ordinary_app_work'=>[
 				'dataphyre_mcp_verify_all',
-				'source-checkout dev tools',
+				'Dataphyre project-wide release validation',
 				'Dataphyre hot-path benchmarks',
 				'Dataphyre runtime-internal edits to make one application work',
 			],

@@ -59,7 +59,7 @@ says otherwise:
 - compiled route/cache artifacts;
 - local plugin hook contents;
 - install-local MCP plugin declarations under `plugins/mcp/*.json`;
-- redacted runtime modules and private adapter modules omitted from the public
+- redacted runtime modules and private adapter modules outside the public
   module index;
 - private helper functions not documented in module guides;
 - module internals under `kernel/` that are only loaded as part of boot;
@@ -75,12 +75,12 @@ behavior.
 
 Private `plugins/mcp/*.json` declarations are app-local or internal metadata for
 agent/tool visibility. They are stable as an extension location, not as public
-framework payload: prepared public exports omit private declarations.
+framework payload.
 
 Do not treat internal surfaces, generated state, local plugin contents,
 `dataphyre_mcp_verify_all`, Dataphyre hot-path benchmarks,
 or runtime-internal edits as ordinary app-agent requirements.
-Escalate to maintainer evidence only for release-facing public
+Escalate to project evidence only for release-facing public
 framework claims, corporate-ready or enterprise-readiness claims,
 security/identity/access/session/credential/governance/tenant/privacy/
 compliance/data-residency/retention/legal-hold/access-policy compatibility

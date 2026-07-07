@@ -172,7 +172,7 @@ trait dataphyre_mcp_client_enterprise_surfaces {
 			'verification'=>'focused application or module checks',
 			'not_required_for_ordinary_app_work'=>[
 				'dataphyre_mcp_verify_all',
-				'maintainer/source-checkout evidence',
+				'Dataphyre project evidence',
 				'Dataphyre hot-path benchmarks',
 				'Dataphyre runtime-internal edits',
 			],
@@ -251,7 +251,7 @@ trait dataphyre_mcp_client_enterprise_surfaces {
 		$notes[]='';
 		$notes[]='## Verification';
 		$notes[]='- Run `php -l` on touched MCP PHP files.';
-		$notes[]='- Confirm maintainer/source-checkout MCP self-test evidence for touched MCP surfaces.';
+		$notes[]='- Confirm Dataphyre MCP publication evidence for touched MCP surfaces.';
 		$notes[]='- Run `dataphyre_mcp_doctor` after MCP tool, prompt, resource, or documentation changes.';
 		$notes[]='- Run the MCP app-coupling guard so product-specific paths and names stay out of shared MCP code.';
 		$notes[]='- Run `dataphyre_mcp_enterprise_adoption_audit` before agent-first, corporate-ready, public, or release-facing Dataphyre framework claims.';

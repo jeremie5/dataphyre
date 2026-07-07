@@ -119,12 +119,12 @@ trait dataphyre_mcp_client_workflow_surfaces {
 		$includes_release=array_key_exists('release', $selected);
 		$not_ordinary_app_requirements=$includes_release ? [
 			'dataphyre_mcp_verify_all',
-			'dev/tools helper scripts',
-			'maintainer/source-checkout evidence',
+			'Dataphyre project-wide release validation',
+			'Dataphyre project evidence',
 			'Dataphyre hot-path benchmarks',
 		] : [
 			'MCP/release-surface publication validation',
-			'maintainer-only Dataphyre runtime proof',
+			'Dataphyre project release proof',
 			'Dataphyre shared hot-path benchmark evidence',
 		];
 		$payload=[

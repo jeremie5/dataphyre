@@ -207,12 +207,8 @@ leaking rows into a shared development database.
 ## Real Engines
 
 The lightweight HTML helpers above parse strings in PHP. For real browser work,
-install the Node dev dependencies and use the browser bridge:
-
-```bash
-npm ci
-php tools/unit_tests.php run --kind=code --tag=browser
-```
+install the application-owned Node test dependencies and use the browser bridge
+from the consuming project's test runner.
 
 ```php
 $result=$t->browser()->assertHtml($t, $html, [
@@ -436,20 +432,10 @@ dependent case instead of producing noisy follow-on failures.
 
 ## Running Tests
 
-In a ShopiCore project checkout:
-
-```bash
-php tools/unit_tests.php list
-php tools/unit_tests.php run --scope=framework
-php tools/unit_tests.php run --scope=apps --app=shopirocs
-php tools/unit_tests.php run --kind=code
-php tools/unit_tests.php run --kind=code --tag=money
-php tools/unit_tests.php run --kind=code --group=billing
-php tools/unit_tests.php run --kind=code --name="/minor units/"
-php tools/unit_tests.php ci --parallel=4 --junit=cache/ci/unit-tests.junit.xml
-php tools/unit_tests.php ci --parallel=4 --coverage=cache/ci/unit-tests.coverage.json --coverage-min-files=2
-php tools/unit_tests.php run --kind=code --json
-```
+Dataphyre ships the test kit and worker contracts; the consuming project owns
+the actual runner command. A project runner should be able to list tests, run
+framework/module tests, run application tests, select code-defined tests, emit
+CI reports, and expose machine-readable output.
 
 Useful filters:
 

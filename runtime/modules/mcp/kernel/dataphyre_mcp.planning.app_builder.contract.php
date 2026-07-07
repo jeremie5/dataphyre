@@ -5798,7 +5798,7 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 			'failure_recovery'=>'builder_response.verification_recovery_plan',
 			'not_required'=>[
 				'dataphyre_mcp_verify_all for ordinary app behavior',
-				'source-checkout dev tools for ordinary app verification',
+				'Dataphyre project-wide release validation for ordinary app verification',
 				'MCP/release-surface validation for ordinary app verification',
 				'Dataphyre hot-path benchmark evidence unless Dataphyre shared production hot paths are changed',
 			],
@@ -6099,7 +6099,7 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 			],
 			'not_required'=>[
 				'dataphyre_mcp_verify_all for ordinary app acceptance',
-				'source-checkout dev tools for ordinary app acceptance',
+				'Dataphyre project-wide release validation for ordinary app acceptance',
 				'MCP/release-surface validation for ordinary app acceptance',
 				'Dataphyre hot-path benchmark evidence unless Dataphyre shared production hot paths are changed',
 			],

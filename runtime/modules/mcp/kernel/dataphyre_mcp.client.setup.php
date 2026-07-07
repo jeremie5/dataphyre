@@ -95,7 +95,7 @@ trait dataphyre_mcp_client_setup_surfaces {
 			],
 			'publication_validation'=>[
 				'Use dataphyre_mcp_verify_all only before publishing shared MCP setup docs, release notes, or MCP/release-surface claims.',
-				'Use maintainer/source-checkout MCP self-test evidence only after changing MCP server wiring or public setup surfaces.',
+				'Use Dataphyre MCP publication evidence only after changing MCP server wiring or public setup surfaces.',
 			],
 		];
 	}

@@ -29,7 +29,7 @@
       "const": "dataphyre/dataphyre"
     },
     "generated_by": {
-      "const": "dev/tools/prepare_export"
+      "const": "dataphyre_public_export_builder"
     },
     "generated_at_utc": {
       "type": "string",
@@ -71,7 +71,7 @@
       "uniqueItems": true
     },
     "verification_scope": {
-      "const": "maintainer_source_checkout_provenance_not_app_agent_requirement"
+      "const": "release_attestation_not_app_runtime_requirement"
     },
     "modules": {
       "type": "array",
@@ -106,8 +106,7 @@
         "app_builder_handoff_fields",
         "escalate_only_for",
         "not_ordinary_app_ceremony",
-        "omitted_not_required_for_app_agents",
-        "maintainer_evidence_scope"
+        "project_evidence_scope"
       ],
       "properties": {
         "default_audience": {
@@ -233,15 +232,7 @@
           },
           "uniqueItems": true
         },
-        "omitted_not_required_for_app_agents": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "uniqueItems": true
-        },
-        "maintainer_evidence_scope": {
+        "project_evidence_scope": {
           "type": "array",
           "items": {
             "type": "string",

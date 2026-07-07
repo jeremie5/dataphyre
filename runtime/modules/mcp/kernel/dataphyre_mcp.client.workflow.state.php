@@ -651,7 +651,7 @@ trait dataphyre_mcp_client_workflow_state_surfaces {
 				'raw transcript bodies',
 				'raw full logs',
 				'dataphyre_mcp_verify_all',
-				'source-checkout dev tools',
+				'Dataphyre project-wide release validation',
 				'Dataphyre hot-path benchmarks',
 				'Dataphyre runtime-internal edits to make one application work',
 			],

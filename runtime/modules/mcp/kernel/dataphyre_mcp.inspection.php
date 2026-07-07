@@ -125,7 +125,7 @@ trait dataphyre_mcp_inspection_surfaces {
 		$steps[]=[
 			'name'=>'full_self_test',
 			'passed'=>($self_test['exit_code'] ?? 1)===0,
-			'evidence'=>'maintainer/source-checkout MCP self-test evidence',
+			'evidence'=>'Dataphyre MCP publication evidence',
 			'internal_step'=>'fixed first-party MCP self-test helper',
 			'result'=>$self_test,
 		];

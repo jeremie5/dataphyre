@@ -255,7 +255,7 @@ trait dataphyre_mcp_client_readiness_surfaces {
 			],
 			'not_default'=>[
 				'dataphyre_mcp_verify_all',
-				'source-checkout dev tools',
+				'Dataphyre project-wide release validation',
 				'Dataphyre hot-path benchmarks',
 				'Dataphyre runtime-internal edits for one application',
 			],
@@ -382,7 +382,7 @@ trait dataphyre_mcp_client_readiness_surfaces {
 				'verification_execution_plan_contract'=>[
 					'first_read'=>'builder_response.verification_execution_plan is present on direct app-builder plans and build-shaped start packs.',
 					'compact_lane'=>'app_builder_lane.verification_execution_plan and app_builder_summary.verification_execution_plan repeat ordered focused tool calls, concrete arguments, related recipe paths, and failure branches without opening release validation.',
-					'policy'=>'Follow verification_execution_plan.items after app-owned writes and write_readiness blockers are resolved; it is ordinary app verification and excludes dataphyre_mcp_verify_all, source-checkout dev tools, release validation, and Dataphyre hot-path benchmarks.',
+					'policy'=>'Follow verification_execution_plan.items after app-owned writes and write_readiness blockers are resolved; it is ordinary app verification and excludes dataphyre_mcp_verify_all, Dataphyre project-wide release validation, release validation, and Dataphyre hot-path benchmarks.',
 				],
 				'local_convention_probe_contract'=>[
 					'first_read'=>'builder_response.local_convention_probe is present on direct app-builder plans and build-shaped start packs; builder_response.first_read.next_action.write_start_packet.first_probe mirrors one bounded actionable probe with inspect_globs, signals, capture_fields, and apply_to while full local_convention_probe.items remains the detail source.',
@@ -675,7 +675,7 @@ trait dataphyre_mcp_client_readiness_surfaces {
 				],
 				'not_ordinary_app_ceremony'=>[
 					'dataphyre_mcp_verify_all',
-					'source-checkout dev tools',
+					'Dataphyre project-wide release validation',
 					'Dataphyre hot-path benchmarks',
 					'runtime-internal edits to make one application work',
 				],

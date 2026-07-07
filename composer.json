@@ -37,7 +37,7 @@
         "ordinary-app-entrypoint": "dataphyre_app_builder_plan_generate",
         "ordinary-app-payload-profile": "compact",
         "agentic-enterprise-contract": "docs/AGENTIC_ENTERPRISE.md",
-        "framework-maintenance": "explicit_maintainer_work_only",
+        "framework-maintenance": "explicit_framework_contribution_only",
         "escalate-only-for": [
           "release_facing_or_public_framework_claims",
           "corporate_ready_or_enterprise_readiness_claims",
@@ -78,9 +78,9 @@
           "policy_decision_register"
         ],
         "not-default-requirements": [
-          "dev_tools",
+          "project_wide_release_validation",
           "dataphyre_mcp_verify_all",
-          "hot_path_benchmarks",
+          "dataphyre_hot_path_benchmarks",
           "runtime_internal_edits"
         ]
       }

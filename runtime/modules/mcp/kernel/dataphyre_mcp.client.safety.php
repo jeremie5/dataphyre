@@ -200,9 +200,9 @@ trait dataphyre_mcp_client_safety_surfaces {
 			],
 			'not_default_requirements'=>[
 				'Dataphyre runtime-internal edits',
-				'dev/tools helper scripts',
+				'Dataphyre project-wide release validation',
 				'dataphyre_mcp_verify_all',
-				'maintainer/source-checkout evidence',
+				'Dataphyre project evidence',
 				'Dataphyre hot-path benchmarks',
 				'unsafe MCP mode',
 			],
@@ -259,20 +259,14 @@ trait dataphyre_mcp_client_safety_surfaces {
 			'escalate_only_for'=>$this->mcp_escalation_triggers(),
 			'not_ordinary_app_ceremony'=>[
 				'dataphyre_mcp_verify_all',
-				'source-checkout dev tools',
+				'Dataphyre project-wide release validation',
 				'Dataphyre hot-path benchmarks',
 				'Dataphyre runtime-internal edits to make one application work',
 			],
-			'omitted_not_required_for_app_agents'=>[
-				'developer tooling',
-				'source-checkout release scripts',
-				'MCP aggregate verification',
-				'Dataphyre hot-path benchmarks',
-			],
-			'maintainer_evidence_scope'=>[
+			'project_evidence_scope'=>[
 				'Dataphyre framework changes',
 				'MCP/release-surface claims',
-				'public export preparation',
+				'public release preparation',
 				'shared production hot-path changes',
 			],
 		];
