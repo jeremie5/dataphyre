@@ -229,8 +229,21 @@ final class ExchangeSnapshot implements \Countable, \JsonSerializable {
 	 * @return float Converted rounded amount.
 	 * @throws Exceptions\UnknownExchangeRateException When either currency cannot be quoted by this rate table.
 	 */
-	public function convert(float|int|null $amount, string $sourceCurrency, string $targetCurrency): float {
+	public function convert(float|int|string|null $amount, string $sourceCurrency, string $targetCurrency): float {
 		return $this->quoteOrFail($sourceCurrency, $targetCurrency)->convert($amount);
+	}
+
+	/**
+	 * Converts source-currency minor units directly to target-currency minor units.
+	 *
+	 * @param int $minorAmount Amount in source-currency minor units.
+	 * @param string $sourceCurrency Source ISO currency code.
+	 * @param string $targetCurrency Target ISO currency code.
+	 * @return int Converted amount in target-currency minor units.
+	 * @throws Exceptions\UnknownExchangeRateException When either currency cannot be quoted by this rate table.
+	 */
+	public function convertMinorUnits(int $minorAmount, string $sourceCurrency, string $targetCurrency): int {
+		return $this->quoteOrFail($sourceCurrency, $targetCurrency)->convertMinorUnits($minorAmount);
 	}
 
 	/**
@@ -242,7 +255,7 @@ final class ExchangeSnapshot implements \Countable, \JsonSerializable {
 	 * @return float Converted rounded amount.
 	 * @throws Exceptions\UnknownExchangeRateException When either currency cannot be quoted by this rate table.
 	 */
-	public function convertOrFail(float|int|null $amount, string $sourceCurrency, string $targetCurrency): float {
+	public function convertOrFail(float|int|string|null $amount, string $sourceCurrency, string $targetCurrency): float {
 		return $this->convert($amount, $sourceCurrency, $targetCurrency);
 	}
 
@@ -261,7 +274,7 @@ final class ExchangeSnapshot implements \Countable, \JsonSerializable {
 	 * @throws StaleExchangeRatesException When the quote timestamp is older than the threshold.
 	 */
 	public function convertOrFailFresh(
-		float|int|null $amount,
+		float|int|string|null $amount,
 		string $sourceCurrency,
 		string $targetCurrency,
 		int $maxAgeSeconds
@@ -276,13 +289,25 @@ final class ExchangeSnapshot implements \Countable, \JsonSerializable {
 	 * performs final rounding and currency normalization through the captured
 	 * manager policy.
 	 *
-	 * @param float|int|null $amount Amount in major currency units.
+	 * @param float|int|string|null $amount Amount in major currency units.
 	 * @param string|null $currency Optional ISO currency code.
 	 * @return Money Immutable money value.
 	 */
-	public function money(float|int|null $amount, ?string $currency=null): Money {
+	public function money(float|int|string|null $amount, ?string $currency=null): Money {
 		$currency=$currency===null ? $this->baseCurrency() : mb_strtoupper(trim($currency));
-		return new Money((float)$amount, $currency, $this->manager, $this->overrides);
+		return new Money($amount, $currency, $this->manager, $this->overrides);
+	}
+
+	/**
+	 * Creates a Money value from canonical integer minor units using this snapshot's context.
+	 *
+	 * @param int $minorAmount Amount in currency minor units.
+	 * @param string|null $currency Optional ISO currency code.
+	 * @return Money Immutable money value.
+	 */
+	public function moneyFromMinor(int $minorAmount, ?string $currency=null): Money {
+		$currency=$currency===null ? $this->baseCurrency() : mb_strtoupper(trim($currency));
+		return Money::fromMinor($minorAmount, $currency, $this->manager, $this->overrides);
 	}
 
 	/**
@@ -300,8 +325,9 @@ final class ExchangeSnapshot implements \Countable, \JsonSerializable {
 	public function convertMoney(Money $money, string $targetCurrency): Money {
 		$targetCurrency=mb_strtoupper(trim($targetCurrency));
 		$overrides=array_replace($this->overrides, $money->contextOverrides());
-		return new Money(
-			$this->quoteOrFail($money->currency(), $targetCurrency)->convert($money->amount()),
+		$quote=$this->quoteOrFail($money->currency(), $targetCurrency);
+		return Money::fromMinor(
+			$quote->convertMinorUnits($money->minorAmount()),
 			$targetCurrency,
 			$this->manager,
 			$overrides

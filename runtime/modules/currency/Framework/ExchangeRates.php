@@ -211,8 +211,21 @@ final class ExchangeRates implements \Countable, \JsonSerializable {
 	 * @return float Converted amount rounded to the target currency minor units.
 	 * @throws UnknownExchangeRateException When either side of the pair cannot be quoted.
 	 */
-	public function convert(float|int|null $amount, string $sourceCurrency, string $targetCurrency): float {
+	public function convert(float|int|string|null $amount, string $sourceCurrency, string $targetCurrency): float {
 		return $this->quoteOrFail($sourceCurrency, $targetCurrency)->convert($amount);
+	}
+
+	/**
+	 * Converts source-currency minor units directly to target-currency minor units.
+	 *
+	 * @param int $minorAmount Amount in source-currency minor units.
+	 * @param string $sourceCurrency Source currency code.
+	 * @param string $targetCurrency Target currency code.
+	 * @return int Converted amount in target-currency minor units.
+	 * @throws UnknownExchangeRateException When either side of the pair cannot be quoted.
+	 */
+	public function convertMinorUnits(int $minorAmount, string $sourceCurrency, string $targetCurrency): int {
+		return $this->quoteOrFail($sourceCurrency, $targetCurrency)->convertMinorUnits($minorAmount);
 	}
 
 	/**
@@ -298,7 +311,7 @@ final class ExchangeRates implements \Countable, \JsonSerializable {
 	 * @return float Converted amount rounded to the target currency minor units.
 	 * @throws UnknownExchangeRateException When either side of the pair cannot be quoted.
 	 */
-	public function convertOrFail(float|int|null $amount, string $sourceCurrency, string $targetCurrency): float {
+	public function convertOrFail(float|int|string|null $amount, string $sourceCurrency, string $targetCurrency): float {
 		return $this->quoteOrFail($sourceCurrency, $targetCurrency)->convert($amount);
 	}
 

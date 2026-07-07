@@ -1402,8 +1402,9 @@ $product_schema=Panel::schema()
 		]
 	)
 	->section('Pricing', [
-		Panel::field('price', 'decimal')->required()->rules('min:0'),
-		Panel::field('compare_at_price', 'decimal')->rules('min:0'),
+		Panel::field('price_minor', 'integer')->required()->rules('min:0'),
+		Panel::field('compare_at_price_minor', 'integer')->rules('min:0'),
+		Panel::field('currency', 'select')->options(['CAD'=>'CAD', 'USD'=>'USD']),
 	])
 	->tab('Publishing', [
 		Panel::schemaSection(
@@ -1430,7 +1431,9 @@ Panel::resource('products')
 				'draft'=>'Draft',
 				'active'=>'Active',
 			]),
-			Panel::entry('price', 'decimal')->prefix('CAD ')->icon('wallet'),
+			Panel::entry('price_minor', 'integer')
+				->displayUsing(fn($value) => 'CAD '.number_format(((int)$value)/100, 2))
+				->icon('wallet'),
 		])
 	)
 	->bulkSchema(Panel::schema([
@@ -1466,7 +1469,9 @@ fields, while adding record-display presentation helpers:
 ```php
 Panel::entry('order_number')->label('Order')->copyable()->icon('hash');
 Panel::entry('status')->badge(['paid'=>'success', 'review'=>'warning']);
-Panel::entry('total', 'decimal')->prefix('CAD ')->icon('wallet');
+Panel::entry('total_minor', 'integer')
+	->displayUsing(fn($value) => 'CAD '.number_format(((int)$value)/100, 2))
+	->icon('wallet');
 Panel::entry('notes')->emptyLabel('No notes yet')->description('Internal team context.');
 ```
 
@@ -2033,8 +2038,8 @@ the read-only record view. Hidden fields are omitted from the show view.
 changing form hydration, dehydration, validation, or save payloads:
 
 ```php
-Panel::field('total', 'number')
-	->displayUsing(fn($value) => 'CAD '.number_format((float)$value, 2));
+Panel::field('total_minor', 'integer')
+	->displayUsing(fn($value) => 'CAD '.number_format(((int)$value)/100, 2));
 
 Panel::field('name')
 	->displayUsing(fn($value, $record) => $record['first_name'].' '.$record['last_name']);

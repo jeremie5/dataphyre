@@ -88,7 +88,7 @@ namespace dataphyre {
 			}
 
 			public static function dialback(string $event_name, mixed ...$data): mixed {
-				if($event_name==='CALL_Vestra_ISSUE_TENANT_TOKEN'){
+				if($event_name==='CALL_VESTRA_ISSUE_TENANT_TOKEN'){
 					return [
 						'token'=>'g1.testgrant',
 						'expires_at'=>time()+300,
@@ -106,6 +106,14 @@ namespace DataphyreUnitTests {
 	require_once __DIR__.'/../kernel/vestra.main.php';
 	require_once __DIR__.'/../Framework/VestraManager.php';
 	require_once __DIR__.'/../Framework/Client.php';
+
+	if(class_exists('\dataphyre\core', false) && method_exists('\dataphyre\core', 'register_dialback')){
+		\dataphyre\core::register_dialback('CALL_VESTRA_ISSUE_TENANT_TOKEN', static fn(): array=>[
+			'token'=>'g1.testgrant',
+			'expires_at'=>time()+300,
+			'tenant_grant'=>true,
+		]);
+	}
 
 	function vestra_ingestion_result_from_array_json(array $payload): string {
 		return json_encode(\Dataphyre\Vestra\IngestionResult::fromArray($payload)->toArray(), JSON_UNESCAPED_SLASHES);

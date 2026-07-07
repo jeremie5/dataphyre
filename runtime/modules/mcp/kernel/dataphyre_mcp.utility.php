@@ -243,14 +243,22 @@ trait dataphyre_mcp_utility_methods {
 	 */
 	private function markdown_docs(int $limit): array {
 		$docs=[];
-		foreach($this->all_files($this->root, 20000) as $path){
-			if(strtolower(pathinfo($path, PATHINFO_EXTENSION))==='md'){
-				$docs[]=$this->relative_path($path);
-			}
-			if(count($docs)>=$limit){
-				break;
+		$roots=[$this->root];
+		$dataphyre_root=$this->common_root.'/dataphyre';
+		if(is_dir($dataphyre_root) && $this->normalize_path($dataphyre_root)!==$this->root){
+			$roots[]=$dataphyre_root;
+		}
+		foreach($roots as $root){
+			foreach($this->all_files($root, 20000) as $path){
+				if(strtolower(pathinfo($path, PATHINFO_EXTENSION))==='md'){
+					$docs[]=$this->relative_path($path);
+				}
+				if(count($docs)>=$limit){
+					break 2;
+				}
 			}
 		}
+		$docs=array_values(array_unique($docs));
 		sort($docs);
 		return $docs;
 	}
@@ -1416,6 +1424,13 @@ trait dataphyre_mcp_utility_methods {
 		$path=$this->normalize_path($path);
 		if(str_starts_with($path, $this->root.'/')){
 			return substr($path, strlen($this->root)+1);
+		}
+		$dataphyre_root=$this->normalize_path($this->common_root.'/dataphyre');
+		if($this->path_is_within_root($path, $dataphyre_root)){
+			if($path===$dataphyre_root){
+				return 'common/dataphyre';
+			}
+			return 'common/dataphyre/'.substr($path, strlen($dataphyre_root)+1);
 		}
 		return $path;
 	}

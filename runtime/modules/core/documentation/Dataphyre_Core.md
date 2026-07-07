@@ -1317,7 +1317,13 @@ $sql=$user_point->sql();
 
 ## `Dataphyre\Dialback`
 
-`Dialback` is the framework facade for registering and firing kernel dialbacks.
+`Dialback` is the framework facade for registering and firing dialbacks through
+the shared core registry. Dialback event names are exact runtime contracts:
+preserve existing names when maintaining a module, register callbacks before
+firing, and add new kernel/runtime events with a module-scoped
+`CALL_<MODULE>_<ACTION>` name. New Framework-owned extension points should use
+`CALL_<MODULE>_FRAMEWORK_<SURFACE_OR_CONCEPT>_<ACTION>` unless the Framework code
+is intentionally bridging an existing kernel hook.
 
 Methods include:
 
@@ -1343,6 +1349,18 @@ $result=Dialback::fire('CALL_APP_EXAMPLE', 'hello');
 $event=Dialback::event('CALL_APP_EXAMPLE');
 $catalog=Dialback::catalog('CALL_APP_');
 ```
+
+The lower-case kernel API remains available for legacy modules:
+
+```php
+\dataphyre\core::register_dialback('CALL_APP_EXAMPLE', static fn(string $value): string=>$value);
+$result=\dataphyre\core::dialback('CALL_APP_EXAMPLE', 'hello');
+```
+
+Do not use dialbacks as hidden application rewrites. They are narrow extension
+points for explicitly named behavior, diagnostics, and policy overrides. For
+ordinary application behavior, prefer application code, config, callbacks,
+plugins, or application-owned adapters.
 
 ## `Dataphyre\DialbackEvent`
 

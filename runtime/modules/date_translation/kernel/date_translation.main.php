@@ -32,7 +32,7 @@ class date_translation{
 	 * @return string|null Translated date string, or null if legacy loading leaves no locale payload.
 	 */
 	static function translate_date(string $string, string $lang, string $format) : string|null {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(str_starts_with($lang, 'en')){
 			return $string;
 		}

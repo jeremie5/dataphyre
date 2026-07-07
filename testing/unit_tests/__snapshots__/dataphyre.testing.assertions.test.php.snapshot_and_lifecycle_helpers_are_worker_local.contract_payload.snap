@@ -1,0 +1,9 @@
+{
+    "name": "Asset",
+    "fields": [
+        "id",
+        "name",
+        "price_minor"
+    ],
+    "currency": "CAD"
+}

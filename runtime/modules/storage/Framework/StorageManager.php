@@ -886,11 +886,34 @@ final class StorageManager {
 	 * @return array<string,mixed> Lifecycle application report with applied actions, skipped objects, and errors.
 	 */
 	public function applyLifecycle(string $prefix='', ?string $disk=null, array $options=[]): array {
-		$driver=$this->disk($disk);
-		if(!method_exists($driver, 'applyLifecycle')){
-			return ['ok'=>false, 'dry_run'=>false, 'eligible'=>0, 'deleted'=>0, 'paths'=>[], 'message'=>'Disk does not support lifecycle application.'];
+		$name=$this->diskName($disk);
+		$prefix=trim(str_replace('\\', '/', $prefix), '/');
+		$payload=[
+			'disk'=>$name,
+			'prefix'=>$prefix,
+			'options_keys'=>array_values(array_map('strval', array_keys($options))),
+		];
+		$dialback=\dataphyre\core::dialback('CALL_STORAGE_FRAMEWORK_LIFECYCLE_BEFORE_APPLY', $payload);
+		if(is_array($dialback)){
+			return $dialback;
 		}
-		return $driver->applyLifecycle($prefix, $options);
+		$driver=$this->disk($name);
+		if(!method_exists($driver, 'applyLifecycle')){
+			$result=['ok'=>false, 'dry_run'=>false, 'eligible'=>0, 'deleted'=>0, 'paths'=>[], 'message'=>'Disk does not support lifecycle application.'];
+			$dialback=\dataphyre\core::dialback('CALL_STORAGE_FRAMEWORK_LIFECYCLE_AFTER_APPLY', $payload+['ok'=>false, 'unsupported'=>true, 'counts'=>['eligible'=>0, 'deleted'=>0]]);
+			return is_array($dialback) ? $dialback : $result;
+		}
+		$result=$driver->applyLifecycle($prefix, $options);
+		$dialback=\dataphyre\core::dialback('CALL_STORAGE_FRAMEWORK_LIFECYCLE_AFTER_APPLY', $payload+[
+			'ok'=>(bool)($result['ok'] ?? false),
+			'unsupported'=>false,
+			'counts'=>[
+				'eligible'=>(int)($result['eligible'] ?? 0),
+				'deleted'=>(int)($result['deleted'] ?? 0),
+				'errors'=>is_countable($result['errors'] ?? null) ? count($result['errors']) : 0,
+			],
+		]);
+		return is_array($dialback) ? $dialback : $result;
 	}
 
 	/**
@@ -924,11 +947,33 @@ final class StorageManager {
 	 * @return array<string,mixed> Quarantine purge report with removed objects, retained findings, and errors.
 	 */
 	public function purgeQuarantine(string $prefix='', ?string $disk=null, array $options=[]): array {
-		$driver=$this->disk($disk);
-		if(!method_exists($driver, 'purgeQuarantine')){
-			return ['ok'=>false, 'purged'=>0, 'message'=>'Disk does not support quarantine purging.'];
+		$name=$this->diskName($disk);
+		$prefix=trim(str_replace('\\', '/', $prefix), '/');
+		$payload=[
+			'disk'=>$name,
+			'prefix'=>$prefix,
+			'options_keys'=>array_values(array_map('strval', array_keys($options))),
+		];
+		$dialback=\dataphyre\core::dialback('CALL_STORAGE_FRAMEWORK_QUARANTINE_BEFORE_PURGE', $payload);
+		if(is_array($dialback)){
+			return $dialback;
 		}
-		return $driver->purgeQuarantine($prefix, $options);
+		$driver=$this->disk($name);
+		if(!method_exists($driver, 'purgeQuarantine')){
+			$result=['ok'=>false, 'purged'=>0, 'message'=>'Disk does not support quarantine purging.'];
+			$dialback=\dataphyre\core::dialback('CALL_STORAGE_FRAMEWORK_QUARANTINE_AFTER_PURGE', $payload+['ok'=>false, 'unsupported'=>true, 'counts'=>['purged'=>0]]);
+			return is_array($dialback) ? $dialback : $result;
+		}
+		$result=$driver->purgeQuarantine($prefix, $options);
+		$dialback=\dataphyre\core::dialback('CALL_STORAGE_FRAMEWORK_QUARANTINE_AFTER_PURGE', $payload+[
+			'ok'=>(bool)($result['ok'] ?? false),
+			'unsupported'=>false,
+			'counts'=>[
+				'purged'=>(int)($result['purged'] ?? 0),
+				'errors'=>is_countable($result['errors'] ?? null) ? count($result['errors']) : 0,
+			],
+		]);
+		return is_array($dialback) ? $dialback : $result;
 	}
 
 	/**
@@ -1224,6 +1269,19 @@ final class StorageManager {
 		$dryRun=(bool)($options['dry_run'] ?? true);
 		$deleteExtra=(bool)($options['delete_extra'] ?? false);
 		$compare=(string)($options['compare'] ?? 'checksum');
+		$payload=[
+			'from'=>$from,
+			'to'=>$to,
+			'prefix'=>$prefix,
+			'dry_run'=>$dryRun,
+			'delete_extra'=>$deleteExtra,
+			'compare'=>$compare,
+			'options_keys'=>array_values(array_map('strval', array_keys($options))),
+		];
+		$dialback=\dataphyre\core::dialback('CALL_STORAGE_FRAMEWORK_SYNC_BEFORE', $payload);
+		if(is_array($dialback)){
+			return $dialback;
+		}
 		$source=$this->indexMetadata($this->list($prefix, $from));
 		$target=$this->indexMetadata($this->list($prefix, $to));
 		$copied=[];
@@ -1276,7 +1334,11 @@ final class StorageManager {
 			],
 		];
 		$this->emit('storage.sync', $result);
-		return $result;
+		$dialback=\dataphyre\core::dialback('CALL_STORAGE_FRAMEWORK_SYNC_AFTER', $payload+[
+			'ok'=>$result['ok'],
+			'counts'=>$result['counts'],
+		]);
+		return is_array($dialback) ? $dialback : $result;
 	}
 
 	/**

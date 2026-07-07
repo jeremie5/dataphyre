@@ -1,4 +1,4 @@
-﻿* text=auto eol=lf
+* text=auto eol=lf
 
 *.png binary
 *.jpg binary
@@ -11,6 +11,10 @@ runtime/modules/stripe/src/** linguist-vendored
 runtime/modules/sql/third_party/** linguist-vendored
 runtime/modules/sql/third_party/adminer/** linguist-vendored
 
+# Embedded-tree private adapters are vendored for internal review only and are
+# omitted from prepared public exports.
+runtime/modules/private_adapter/private_adapter-client/** linguist-vendored
+runtime/modules/private_adapter/***REMOVED***/** linguist-vendored
 
 # Contributor-only helpers are source artifacts, not release payload.
 /dev/** export-ignore

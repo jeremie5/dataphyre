@@ -721,17 +721,17 @@ final class Mvc {
 	 *
 	 * Namespaced currency is preferred, then the legacy formatter. Without currency support, the numeric amount is string-cast with null becoming zero.
 	 *
-	 * @param float|int|null $amount Amount.
+	 * @param float|int|string|null $amount Amount.
 	 * @param bool $showFree Whether zero/null amounts may render as a free label.
 	 * @param ?string $currency Currency.
 	 * @return string.
 	 */
-	public static function moneyFormat(float|int|null $amount, bool $showFree=false, ?string $currency=null): string {
+	public static function moneyFormat(float|int|string|null $amount, bool $showFree=false, ?string $currency=null): string {
 		if(class_exists('\Dataphyre\Currency\Currency', false)){
 			return \Dataphyre\Currency\Currency::format($amount, $showFree, $currency);
 		}
 		if(class_exists('\dataphyre\currency', false) && method_exists('\dataphyre\currency', 'formatter')){
-			return \dataphyre\currency::formatter($amount===null ? null : (float)$amount, $showFree, $currency);
+			return \dataphyre\currency::formatter($amount, $showFree, $currency);
 		}
 		return (string)($amount ?? 0);
 	}
@@ -741,7 +741,7 @@ final class Mvc {
 	 *
 	 * Namespaced currency is preferred, then the legacy converter. Without currency support, formatted output falls back to moneyFormat() and numeric output returns the original amount as float.
 	 *
-	 * @param float|int|null $amount Amount.
+	 * @param float|int|string|null $amount Amount.
 	 * @param string $sourceCurrency Currency code of the input amount.
 	 * @param string $targetCurrency Currency code requested for output.
 	 * @param bool $formatted Whether to return a display string instead of a numeric amount.
@@ -749,7 +749,7 @@ final class Mvc {
 	 * @return string|float.
 	 */
 	public static function moneyConvert(
-		float|int|null $amount,
+		float|int|string|null $amount,
 		string $sourceCurrency,
 		string $targetCurrency,
 		bool $formatted=false,
@@ -759,7 +759,7 @@ final class Mvc {
 			return \Dataphyre\Currency\Currency::convert($amount, $sourceCurrency, $targetCurrency, $formatted, $showFree);
 		}
 		if(class_exists('\dataphyre\currency', false) && method_exists('\dataphyre\currency', 'convert')){
-			return \dataphyre\currency::convert($amount===null ? null : (float)$amount, $sourceCurrency, $targetCurrency, $formatted, $showFree);
+			return \dataphyre\currency::convert($amount, $sourceCurrency, $targetCurrency, $formatted, $showFree);
 		}
 		return $formatted ? self::moneyFormat($amount, $showFree, $targetCurrency) : (float)($amount ?? 0);
 	}
@@ -769,18 +769,18 @@ final class Mvc {
 	 *
 	 * Without currency support, formatted output falls back to moneyFormat() and numeric output returns the original amount as float.
 	 *
-	 * @param float|int|null $amount Amount.
+	 * @param float|int|string|null $amount Amount.
 	 * @param bool $formatted Whether to return a display string instead of a numeric amount.
 	 * @param bool $showFree Whether zero/null amounts may render as a free label.
 	 * @param ?string $currency Currency.
 	 * @return string|float.
 	 */
-	public static function moneyToDisplay(float|int|null $amount, bool $formatted=false, bool $showFree=true, ?string $currency=null): string|float {
+	public static function moneyToDisplay(float|int|string|null $amount, bool $formatted=false, bool $showFree=true, ?string $currency=null): string|float {
 		if(class_exists('\Dataphyre\Currency\Currency', false)){
 			return \Dataphyre\Currency\Currency::convertToDisplay($amount, $formatted, $showFree, $currency);
 		}
 		if(class_exists('\dataphyre\currency', false) && method_exists('\dataphyre\currency', 'convert_to_user_currency')){
-			return \dataphyre\currency::convert_to_user_currency($amount===null ? null : (float)$amount, $formatted, $showFree, $currency);
+			return \dataphyre\currency::convert_to_user_currency($amount, $formatted, $showFree, $currency);
 		}
 		return $formatted ? self::moneyFormat($amount, $showFree, $currency) : (float)($amount ?? 0);
 	}
@@ -790,18 +790,18 @@ final class Mvc {
 	 *
 	 * Without currency support, formatted output falls back to moneyFormat() using the original currency and numeric output returns the original amount as float.
 	 *
-	 * @param float|int|null $amount Amount.
+	 * @param float|int|string|null $amount Amount.
 	 * @param string $originalCurrency Currency code of the input amount.
 	 * @param bool $formatted Whether to return a display string instead of a numeric amount.
 	 * @param bool $showFree Whether zero/null amounts may render as a free label.
 	 * @return string|float.
 	 */
-	public static function moneyToBase(float|int|null $amount, string $originalCurrency, bool $formatted=false, bool $showFree=true): string|float {
+	public static function moneyToBase(float|int|string|null $amount, string $originalCurrency, bool $formatted=false, bool $showFree=true): string|float {
 		if(class_exists('\Dataphyre\Currency\Currency', false)){
 			return \Dataphyre\Currency\Currency::convertToBase($amount, $originalCurrency, $formatted, $showFree);
 		}
 		if(class_exists('\dataphyre\currency', false) && method_exists('\dataphyre\currency', 'convert_to_website_currency')){
-			return \dataphyre\currency::convert_to_website_currency($amount===null ? null : (float)$amount, $originalCurrency, $formatted, $showFree);
+			return \dataphyre\currency::convert_to_website_currency($amount, $originalCurrency, $formatted, $showFree);
 		}
 		return $formatted ? self::moneyFormat($amount, $showFree, $originalCurrency) : (float)($amount ?? 0);
 	}
@@ -811,17 +811,17 @@ final class Mvc {
 	 *
 	 * Currency modules own precision and cash-rounding rules. Without currency support, amounts are rounded to two decimals.
 	 *
-	 * @param float|int|null $amount Amount.
+	 * @param float|int|string|null $amount Amount.
 	 * @param string $currency ISO currency code used to choose precision rules.
 	 * @param bool $cash Whether to apply cash-rounding increments.
 	 * @return float.
 	 */
-	public static function moneyRound(float|int|null $amount, string $currency, bool $cash=false): float {
+	public static function moneyRound(float|int|string|null $amount, string $currency, bool $cash=false): float {
 		if(class_exists('\Dataphyre\Currency\Currency', false)){
 			return \Dataphyre\Currency\Currency::roundAmount($amount, $currency, $cash);
 		}
 		if(class_exists('\dataphyre\currency', false) && method_exists('\dataphyre\currency', 'round_amount')){
-			return \dataphyre\currency::round_amount($amount===null ? null : (float)$amount, $currency, $cash);
+			return \dataphyre\currency::round_amount($amount, $currency, $cash);
 		}
 		return round((float)($amount ?? 0), 2);
 	}
@@ -831,18 +831,18 @@ final class Mvc {
 	 *
 	 * Currency modules own rounding remainders. Without currency support, an empty allocation is returned.
 	 *
-	 * @param float|int|null $amount Amount.
+	 * @param float|int|string|null $amount Amount.
 	 * @param string $currency ISO currency code used for split precision and rounding.
 	 * @param int $parts Number of parts to split into.
 	 * @param bool $cash Whether to apply cash-rounding increments.
 	 * @return array.
 	 */
-	public static function moneySplit(float|int|null $amount, string $currency, int $parts, bool $cash=false): array {
+	public static function moneySplit(float|int|string|null $amount, string $currency, int $parts, bool $cash=false): array {
 		if(class_exists('\Dataphyre\Currency\Currency', false)){
 			return \Dataphyre\Currency\Currency::splitAmount($amount, $currency, $parts, $cash);
 		}
 		if(class_exists('\dataphyre\currency', false) && method_exists('\dataphyre\currency', 'split_amount')){
-			return \dataphyre\currency::split_amount($amount===null ? null : (float)$amount, $currency, $parts, $cash);
+			return \dataphyre\currency::split_amount($amount, $currency, $parts, $cash);
 		}
 		return [];
 	}
@@ -852,18 +852,18 @@ final class Mvc {
 	 *
 	 * Currency modules own ratio normalization and rounding remainders. Without currency support, an empty allocation is returned.
 	 *
-	 * @param float|int|null $amount Amount.
+	 * @param float|int|string|null $amount Amount.
 	 * @param string $currency ISO currency code used for allocation precision.
 	 * @param array<int, int|float> $ratios Allocation ratios used by the currency module.
 	 * @param bool $cash Whether to apply cash-rounding increments.
 	 * @return array.
 	 */
-	public static function moneyAllocate(float|int|null $amount, string $currency, array $ratios, bool $cash=false): array {
+	public static function moneyAllocate(float|int|string|null $amount, string $currency, array $ratios, bool $cash=false): array {
 		if(class_exists('\Dataphyre\Currency\Currency', false)){
 			return \Dataphyre\Currency\Currency::allocateAmount($amount, $currency, $ratios, $cash);
 		}
 		if(class_exists('\dataphyre\currency', false) && method_exists('\dataphyre\currency', 'allocate_amount')){
-			return \dataphyre\currency::allocate_amount($amount===null ? null : (float)$amount, $currency, $ratios, $cash);
+			return \dataphyre\currency::allocate_amount($amount, $currency, $ratios, $cash);
 		}
 		return [];
 	}

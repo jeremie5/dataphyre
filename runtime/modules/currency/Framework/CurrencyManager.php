@@ -152,6 +152,65 @@ final class CurrencyManager {
 	}
 
 	/**
+	 * Returns the major-to-minor unit factor for a currency.
+	 *
+	 * @param string $currency Currency code.
+	 * @return int Positive integer factor.
+	 */
+	public function minorFactor(string $currency): int {
+		$precision=$this->minorUnits($currency);
+		return (int)(10 ** $precision);
+	}
+
+	/**
+	 * Converts a major-unit amount into integer minor units.
+	 *
+	 * @param float|int|string|null $amount Amount in major currency units.
+	 * @param string $currency Currency code.
+	 * @param bool $cash Use cash rounding rules.
+	 * @param array{base_currency?:string,display_currency?:string,display_language?:string,display_country?:string,available_currencies?:array<string,string>} $overrides Temporary state overrides applied only during conversion.
+	 * @return int Signed minor-unit amount.
+	 */
+	public function amountToMinorUnits(float|int|string|null $amount, string $currency, bool $cash=false, array $overrides=[]): int {
+		return $this->withStateOverrides($overrides, static function() use($amount, $currency, $cash): int {
+			return \dataphyre\currency::amount_to_minor_units($amount, mb_strtoupper(trim($currency)), $cash);
+		});
+	}
+
+	/**
+	 * Converts integer minor units into a fixed-decimal major-unit string.
+	 *
+	 * @param int $minor_amount Signed minor-unit amount.
+	 * @param string $currency Currency code.
+	 * @param array{base_currency?:string,display_currency?:string,display_language?:string,display_country?:string,available_currencies?:array<string,string>} $overrides Temporary state overrides applied only during conversion.
+	 * @return string Fixed-decimal major-unit amount.
+	 */
+	public function minorUnitsToDecimal(int $minor_amount, string $currency, array $overrides=[]): string {
+		return $this->withStateOverrides($overrides, static function() use($minor_amount, $currency): string {
+			return \dataphyre\currency::minor_units_to_amount($minor_amount, mb_strtoupper(trim($currency)));
+		});
+	}
+
+	/**
+	 * Converts canonical integer minor units between currencies.
+	 *
+	 * @param int $minor_amount Source amount in source currency minor units.
+	 * @param string $source_currency Source currency code.
+	 * @param string $target_currency Target currency code.
+	 * @param array{base_currency?:string,display_currency?:string,display_language?:string,display_country?:string,available_currencies?:array<string,string>} $overrides Temporary state overrides applied only during conversion.
+	 * @return int Converted amount in target currency minor units.
+	 */
+	public function convertMinorUnits(int $minor_amount, string $source_currency, string $target_currency, array $overrides=[]): int {
+		return $this->withStateOverrides($overrides, static function() use($minor_amount, $source_currency, $target_currency): int {
+			return \dataphyre\currency::convert_minor_units(
+				$minor_amount,
+				mb_strtoupper(trim($source_currency)),
+				mb_strtoupper(trim($target_currency))
+			);
+		});
+	}
+
+	/**
 	 * Returns the cash rounding increment for a currency.
 	 *
 	 * @param string $currency Currency code.
@@ -365,15 +424,15 @@ final class CurrencyManager {
 	/**
 	 * Formats an amount using active currency display state.
 	 *
-	 * @param float|int|null $amount Amount to format.
+	 * @param float|int|string|null $amount Amount to format.
 	 * @param bool $show_free Whether zero/null values may render as free.
 	 * @param ?string $currency Optional currency override.
 	 * @param array{base_currency?:string,display_currency?:string,display_language?:string,display_country?:string,available_currencies?:array<string,string>} $overrides Temporary state overrides applied only during formatting.
 	 * @return string Formatted money string.
 	 */
-	public function format(float|int|null $amount, bool $show_free=false, ?string $currency=null, array $overrides=[]): string {
+	public function format(float|int|string|null $amount, bool $show_free=false, ?string $currency=null, array $overrides=[]): string {
 		return $this->withStateOverrides($overrides, static function() use($amount, $show_free, $currency): string {
-			return (string)\dataphyre\currency::formatter((float)$amount, $show_free, $currency);
+			return (string)\dataphyre\currency::formatter($amount, $show_free, $currency);
 		});
 	}
 
@@ -386,9 +445,9 @@ final class CurrencyManager {
 	 * @param array{base_currency?:string,display_currency?:string,display_language?:string,display_country?:string,available_currencies?:array<string,string>} $overrides Temporary state overrides applied only during rounding.
 	 * @return float Rounded amount.
 	 */
-	public function roundAmount(float|int|null $amount, string $currency, bool $cash=false, array $overrides=[]): float {
+	public function roundAmount(float|int|string|null $amount, string $currency, bool $cash=false, array $overrides=[]): float {
 		return $this->withStateOverrides($overrides, static function() use($amount, $currency, $cash): float {
-			return \dataphyre\currency::round_amount((float)$amount, mb_strtoupper(trim($currency)), $cash);
+			return \dataphyre\currency::round_amount($amount, mb_strtoupper(trim($currency)), $cash);
 		});
 	}
 
@@ -404,7 +463,7 @@ final class CurrencyManager {
 	 * @return string|float Converted amount or formatted string.
 	 */
 	public function convert(
-		float|int|null $amount,
+		float|int|string|null $amount,
 		string $source_currency,
 		string $target_currency,
 		bool $formatted=false,
@@ -413,7 +472,7 @@ final class CurrencyManager {
 	): string|float {
 		return $this->withStateOverrides($overrides, static function() use($amount, $source_currency, $target_currency, $formatted, $show_free): string|float {
 			$result=\dataphyre\currency::convert(
-				(float)$amount,
+				$amount,
 				mb_strtoupper(trim($source_currency)),
 				mb_strtoupper(trim($target_currency)),
 				$formatted,
@@ -434,7 +493,7 @@ final class CurrencyManager {
 	 * @return string|float Converted amount or formatted string.
 	 */
 	public function convertToDisplay(
-		float|int|null $amount,
+		float|int|string|null $amount,
 		bool $formatted=false,
 		bool $show_free=true,
 		?string $currency=null,
@@ -444,7 +503,7 @@ final class CurrencyManager {
 			$overrides['display_currency']=$currency;
 		}
 		return $this->withStateOverrides($overrides, static function() use($amount, $formatted, $show_free, $currency): string|float {
-			$result=\dataphyre\currency::convert_to_user_currency((float)$amount, $formatted, $show_free, $currency);
+			$result=\dataphyre\currency::convert_to_user_currency($amount, $formatted, $show_free, $currency);
 			return $formatted ? (string)$result : (float)$result;
 		});
 	}
@@ -460,7 +519,7 @@ final class CurrencyManager {
 	 * @return string|float Converted amount or formatted string.
 	 */
 	public function convertToBase(
-		float|int|null $amount,
+		float|int|string|null $amount,
 		string $original_currency,
 		bool $formatted=false,
 		bool $show_free=true,
@@ -468,7 +527,7 @@ final class CurrencyManager {
 	): string|float {
 		return $this->withStateOverrides($overrides, static function() use($amount, $original_currency, $formatted, $show_free): string|float {
 			$result=\dataphyre\currency::convert_to_website_currency(
-				(float)$amount,
+				$amount,
 				mb_strtoupper(trim($original_currency)),
 				$formatted,
 				$show_free
@@ -485,9 +544,22 @@ final class CurrencyManager {
 	 * @param array{base_currency?:string,display_currency?:string,display_language?:string,display_country?:string,available_currencies?:array<string,string>} $overrides Context overrides carried by the Money object.
 	 * @return Money Money value object.
 	 */
-	public function money(float|int|null $amount, ?string $currency=null, array $overrides=[]): Money {
+	public function money(float|int|string|null $amount, ?string $currency=null, array $overrides=[]): Money {
 		$currency=$currency===null ? $this->baseCurrency($overrides) : mb_strtoupper(trim($currency));
-		return new Money((float)$amount, $currency, $this, $overrides);
+		return new Money($amount, $currency, $this, $overrides);
+	}
+
+	/**
+	 * Creates an immutable Money value from canonical integer minor units.
+	 *
+	 * @param int $minor_amount Amount in currency minor units.
+	 * @param ?string $currency Currency code, or base currency when omitted.
+	 * @param array{base_currency?:string,display_currency?:string,display_language?:string,display_country?:string,available_currencies?:array<string,string>} $overrides Context overrides carried by the Money object.
+	 * @return Money Money value object.
+	 */
+	public function moneyFromMinor(int $minor_amount, ?string $currency=null, array $overrides=[]): Money {
+		$currency=$currency===null ? $this->baseCurrency($overrides) : mb_strtoupper(trim($currency));
+		return Money::fromMinor($minor_amount, $currency, $this, $overrides);
 	}
 
 	/**
@@ -506,8 +578,8 @@ final class CurrencyManager {
 		$overrides=array_replace($money->contextOverrides(), $overrides);
 		$target_currency=mb_strtoupper(trim($target_currency));
 		$quote=$this->quoteOrFail($money->currency(), $target_currency, $refresh, $overrides);
-		return new Money(
-			$quote->convert($money->amount()),
+		return Money::fromMinor(
+			$quote->convertMinorUnits($money->minorAmount()),
 			$target_currency,
 			$this,
 			$overrides
@@ -548,7 +620,7 @@ final class CurrencyManager {
 	 * @return float Converted amount.
 	 */
 	public function convertOrFailFresh(
-		float|int|null $amount,
+		float|int|string|null $amount,
 		string $source_currency,
 		string $target_currency,
 		int $max_age_seconds,
@@ -604,7 +676,7 @@ final class CurrencyManager {
 	/**
 	 * Splits an amount into equal Money parts while preserving rounding remainder.
 	 *
-	 * @param float|int|null $amount Amount to split.
+	 * @param float|int|string|null $amount Amount to split.
 	 * @param string $currency Currency code.
 	 * @param int $parts Number of parts.
 	 * @param bool $cash Use cash rounding rules.
@@ -612,16 +684,17 @@ final class CurrencyManager {
 	 * @return list<Money> Split money parts whose rounded amounts preserve the original total.
 	 */
 	public function splitAmount(
-		float|int|null $amount,
+		float|int|string|null $amount,
 		string $currency,
 		int $parts,
 		bool $cash=false,
 		array $overrides=[]
 	): array {
 		$currency=mb_strtoupper(trim($currency));
+		$minor_amount=$this->amountToMinorUnits($amount, $currency, $cash, $overrides);
 		if($overrides===[]){
 			$cache_key=[
-				(float)$amount,
+				$minor_amount,
 				$currency,
 				$parts,
 				$cash,
@@ -631,21 +704,39 @@ final class CurrencyManager {
 			if($this->lastSplitAmountResult!==null && $this->lastSplitAmountKey===$cache_key){
 				return $this->lastSplitAmountResult;
 			}
-			$amounts=\dataphyre\currency::split_amount((float)$amount, $currency, $parts, $cash);
-			$result=array_map(fn(float $part): Money => new Money($part, $currency, $this), $amounts);
+			$result=$this->splitMinorAmount($minor_amount, $currency, $parts, $cash);
 			$this->lastSplitAmountKey=$cache_key;
 			return $this->lastSplitAmountResult=$result;
 		}
-		return $this->withStateOverrides($overrides, function() use($amount, $currency, $parts, $cash, $overrides): array {
-			$amounts=\dataphyre\currency::split_amount((float)$amount, $currency, $parts, $cash);
-			return array_map(fn(float $part): Money => new Money($part, $currency, $this, $overrides), $amounts);
+		return $this->splitMinorAmount($minor_amount, $currency, $parts, $cash, $overrides);
+	}
+
+	/**
+	 * Splits canonical minor units into integer minor-unit parts.
+	 *
+	 * @param int $minor_amount Rounded signed minor-unit amount.
+	 * @param string $currency Currency code.
+	 * @param int $parts Number of parts.
+	 * @param bool $cash Use cash rounding rules.
+	 * @param array{base_currency?:string,display_currency?:string,display_language?:string,display_country?:string,available_currencies?:array<string,string>} $overrides Context overrides applied only during allocation.
+	 * @return list<int> Split minor-unit parts preserving the rounded total.
+	 */
+	public function splitMinorUnits(
+		int $minor_amount,
+		string $currency,
+		int $parts,
+		bool $cash=false,
+		array $overrides=[]
+	): array {
+		return $this->withStateOverrides($overrides, static function() use($minor_amount, $currency, $parts, $cash): array {
+			return \dataphyre\currency::split_minor_units($minor_amount, mb_strtoupper(trim($currency)), $parts, $cash);
 		});
 	}
 
 	/**
 	 * Allocates an amount by ratios and returns Money values keyed like the ratios.
 	 *
-	 * @param float|int|null $amount Amount to allocate.
+	 * @param float|int|string|null $amount Amount to allocate.
 	 * @param string $currency Currency code.
 	 * @param array<int|string,int|float> $ratios Allocation ratios keyed by recipient.
 	 * @param bool $cash Use cash rounding rules.
@@ -653,21 +744,176 @@ final class CurrencyManager {
 	 * @return array<int|string,Money> Allocated money values keyed like the ratio input.
 	 */
 	public function allocateAmount(
-		float|int|null $amount,
+		float|int|string|null $amount,
 		string $currency,
 		array $ratios,
 		bool $cash=false,
 		array $overrides=[]
 	): array {
-		return $this->withStateOverrides($overrides, function() use($amount, $currency, $ratios, $cash, $overrides): array {
-			$currency=mb_strtoupper(trim($currency));
-			$amounts=\dataphyre\currency::allocate_amount((float)$amount, $currency, $ratios, $cash);
-			$allocations=[];
-			foreach($amounts as $key=>$allocated_amount){
-				$allocations[$key]=new Money((float)$allocated_amount, $currency, $this, $overrides);
-			}
-			return $allocations;
+		$currency=mb_strtoupper(trim($currency));
+		return $this->allocateMinorAmount(
+			$this->amountToMinorUnits($amount, $currency, $cash, $overrides),
+			$currency,
+			$ratios,
+			$cash,
+			$overrides
+		);
+	}
+
+	/**
+	 * Allocates canonical minor units by ratio and returns integer minor units.
+	 *
+	 * @param int $minor_amount Rounded signed minor-unit amount.
+	 * @param string $currency Currency code.
+	 * @param array<int|string,int|float|string> $ratios Positive allocation ratios keyed by bucket.
+	 * @param bool $cash Use cash rounding rules.
+	 * @param array{base_currency?:string,display_currency?:string,display_language?:string,display_country?:string,available_currencies?:array<string,string>} $overrides Context overrides applied only during allocation.
+	 * @return array<int|string,int> Allocated minor units keyed like valid ratio input.
+	 */
+	public function allocateMinorUnits(
+		int $minor_amount,
+		string $currency,
+		array $ratios,
+		bool $cash=false,
+		array $overrides=[]
+	): array {
+		return $this->withStateOverrides($overrides, static function() use($minor_amount, $currency, $ratios, $cash): array {
+			return \dataphyre\currency::allocate_minor_units($minor_amount, mb_strtoupper(trim($currency)), $ratios, $cash);
 		});
+	}
+
+	/**
+	 * Splits rounded minor units into allocation units and returns Money values.
+	 *
+	 * @param int $minor_amount Rounded signed minor-unit amount.
+	 * @param string $currency Normalized currency code.
+	 * @param int $parts Number of parts to produce.
+	 * @param bool $cash Use cash rounding rules.
+	 * @param array<string,mixed> $overrides Context overrides for returned Money objects.
+	 * @return list<Money> Split money parts whose minor units preserve the original total.
+	 */
+	private function splitMinorAmount(
+		int $minor_amount,
+		string $currency,
+		int $parts,
+		bool $cash=false,
+		array $overrides=[]
+	): array {
+		if($parts<=0){
+			return [];
+		}
+		$total_units=$this->minorToAllocationUnits($minor_amount, $currency, $cash);
+		$sign=$total_units<0 ? -1 : 1;
+		$total_units=abs($total_units);
+		$base_units=intdiv($total_units, $parts);
+		$remainder=$total_units % $parts;
+		$result=[];
+		for($index=0; $index<$parts; $index++){
+			$result[]=$this->moneyFromAllocationUnits(
+				($base_units+($index<$remainder ? 1 : 0))*$sign,
+				$currency,
+				$cash,
+				$overrides
+			);
+		}
+		return $result;
+	}
+
+	/**
+	 * Allocates rounded minor units across positive ratios and returns Money values.
+	 *
+	 * @param int $minor_amount Rounded signed minor-unit amount.
+	 * @param string $currency Normalized currency code.
+	 * @param array<int|string,int|float|string> $ratios Positive allocation ratios keyed by bucket.
+	 * @param bool $cash Use cash rounding rules.
+	 * @param array<string,mixed> $overrides Context overrides for returned Money objects.
+	 * @return array<int|string,Money> Allocated Money values keyed like valid ratios.
+	 */
+	private function allocateMinorAmount(
+		int $minor_amount,
+		string $currency,
+		array $ratios,
+		bool $cash=false,
+		array $overrides=[]
+	): array {
+		$prepared=[];
+		foreach($ratios as $key=>$ratio){
+			if(!is_numeric($ratio) || (float)$ratio<=0){
+				continue;
+			}
+			$prepared[$key]=(float)$ratio;
+		}
+		if($prepared===[]){
+			return [];
+		}
+		$total_units=$this->minorToAllocationUnits($minor_amount, $currency, $cash);
+		$sign=$total_units<0 ? -1 : 1;
+		$total_units=abs($total_units);
+		$ratio_sum=array_sum($prepared);
+		if($ratio_sum<=0){
+			return [];
+		}
+		$unit_allocations=[];
+		$fractional_parts=[];
+		$positions=[];
+		$allocated_units=0;
+		$position=0;
+		foreach($prepared as $key=>$ratio){
+			$exact_units=($total_units*$ratio)/$ratio_sum;
+			$floor_units=(int)floor($exact_units);
+			$unit_allocations[$key]=$floor_units;
+			$fractional_parts[$key]=$exact_units-$floor_units;
+			$positions[$key]=$position++;
+			$allocated_units+=$floor_units;
+		}
+		$remaining_units=$total_units-$allocated_units;
+		uksort($fractional_parts, static function($left, $right) use($fractional_parts, $positions): int {
+			$comparison=$fractional_parts[$right]<=>$fractional_parts[$left];
+			if($comparison!==0){
+				return $comparison;
+			}
+			return $positions[$left]<=>$positions[$right];
+		});
+		foreach(array_keys($fractional_parts) as $key){
+			if($remaining_units<=0){
+				break;
+			}
+			$unit_allocations[$key]++;
+			$remaining_units--;
+		}
+		$result=[];
+		foreach($unit_allocations as $key=>$units){
+			$result[$key]=$this->moneyFromAllocationUnits($units*$sign, $currency, $cash, $overrides);
+		}
+		return $result;
+	}
+
+	private function minorToAllocationUnits(int $minor_amount, string $currency, bool $cash): int {
+		$step=$this->allocationMinorStep($currency, $cash);
+		$negative=$minor_amount<0;
+		$minor_amount=abs($minor_amount);
+		$units=intdiv($minor_amount, $step);
+		$remainder=$minor_amount % $step;
+		if($remainder*2 >= $step){
+			$units++;
+		}
+		return $negative ? -$units : $units;
+	}
+
+	private function moneyFromAllocationUnits(int $units, string $currency, bool $cash, array $overrides): Money {
+		return Money::fromMinor($units*$this->allocationMinorStep($currency, $cash), $currency, $this, $overrides);
+	}
+
+	private function allocationMinorStep(string $currency, bool $cash): int {
+		if(!$cash){
+			return 1;
+		}
+		$increment=$this->cashRoundingIncrement($currency);
+		if($increment===null || $increment<=0){
+			return 1;
+		}
+		$step=(int)round($increment*(10**$this->minorUnits($currency)));
+		return $step>0 ? $step : 1;
 	}
 
 	/**

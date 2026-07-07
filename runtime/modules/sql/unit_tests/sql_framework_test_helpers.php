@@ -6,6 +6,16 @@
  * SPDX-License-Identifier: MIT
  */
 
+if(!function_exists('tracelog')){
+	function tracelog(...$args): void {}
+}
+if(!defined('RUN_MODE')){
+	define('RUN_MODE', 'unit_test');
+}
+if(!function_exists('dataphyre\\dp_define_module_config')){
+	eval('namespace dataphyre; function dp_define_module_config(string $module, string $constant, array $defaults=[]): void { if(!defined($constant)){ define($constant, $defaults); } }');
+}
+
 require_once __DIR__.'/../Framework/SqlError.php';
 require_once __DIR__.'/../Framework/QuerySpec.php';
 require_once __DIR__.'/../Framework/TableDefinition.php';
@@ -14,14 +24,49 @@ require_once __DIR__.'/../Framework/MutationResult.php';
 require_once __DIR__.'/../Framework/MutationBatchResult.php';
 require_once __DIR__.'/../Framework/PageResult.php';
 require_once __DIR__.'/../Framework/Record.php';
+require_once __DIR__.'/../Framework/CurrencyBridge.php';
+require_once __DIR__.'/../Framework/TableRepository.php';
+require_once __DIR__.'/../../currency/kernel/currency.main.php';
+require_once __DIR__.'/../../currency/Framework/CurrencyManager.php';
+require_once __DIR__.'/../../currency/Framework/ExchangeQuote.php';
+require_once __DIR__.'/../../currency/Framework/ExchangeRates.php';
+require_once __DIR__.'/../../currency/Framework/ExchangeSnapshot.php';
+require_once __DIR__.'/../../currency/Framework/Currency.php';
+require_once __DIR__.'/../../currency/Framework/Money.php';
+require_once __DIR__.'/../../currency/Framework/StoredMoney.php';
 
+use Dataphyre\Database\CurrencyBridge;
 use Dataphyre\Database\MutationBatchResult;
 use Dataphyre\Database\MutationResult;
 use Dataphyre\Database\PageResult;
 use Dataphyre\Database\QuerySpec;
 use Dataphyre\Database\Record;
 use Dataphyre\Database\TableDefinition;
+use Dataphyre\Database\TableRepository;
 use Dataphyre\Database\TableSchema;
+use Dataphyre\Currency\Currency;
+use Dataphyre\Currency\ExchangeQuote;
+use Dataphyre\Currency\ExchangeRates;
+use Dataphyre\Currency\ExchangeSnapshot;
+use Dataphyre\Currency\StoredMoney;
+
+if(!class_exists('DpSqlUnitDynamicMoneyRepository')){
+	class DpSqlUnitDynamicMoneyRepository extends TableRepository {
+		public static array $money=[];
+
+		protected static function table(): string {
+			return 'orders';
+		}
+
+		protected static function moneyColumns(): array {
+			return self::$money;
+		}
+
+		public static function resolvedTargets(): array {
+			return array_column(static::resolvedMoneyColumns(), 'target_column');
+		}
+	}
+}
 
 function dp_sql_unit_normalize_params(string|array $params): string|array {
 	if(is_array($params)){
@@ -234,5 +279,90 @@ function dp_sql_unit_page_result_helpers(): array {
 		'last_item_index'=>$page->lastItemIndex(),
 		'pluck'=>$page->pluck('status', 'id'),
 		'key_by'=>array_keys($page->keyBy('id')),
+	];
+}
+
+function dp_sql_unit_currency_bridge_minor_money_mapping(): array {
+	$mapping=CurrencyBridge::normalizeMoneyMapping('amount_minor', 'currency', null, 'money', 'orders');
+	$row=CurrencyBridge::applyMoneyMapping([
+		'amount_minor'=>1995,
+		'currency'=>'USD',
+	], $mapping, 'orders');
+	$money=Currency::money('19.95', 'USD');
+	$fields=CurrencyBridge::expandWriteFields(['money'=>$money], [$mapping], [], 'orders');
+
+	return [
+		'amount'=>$row['money']->decimalAmount(),
+		'minor'=>$row['money']->minorAmount(),
+		'write_amount_minor'=>$fields['amount_minor'],
+		'write_currency'=>$fields['currency'],
+	];
+}
+
+function dp_sql_unit_currency_bridge_rejects_non_integer_minor_values(): array {
+	$mapping=CurrencyBridge::normalizeMoneyMapping('amount_minor', 'currency', null, 'money', 'orders');
+	$canonical=CurrencyBridge::applyMoneyMapping([
+		'amount_minor'=>'001995',
+		'currency'=>'USD',
+	], $mapping, 'orders');
+	$rejected=[];
+	foreach(['19.95', '123abc', 1.2, '9223372036854775808'] as $value){
+		try{
+			CurrencyBridge::applyMoneyMapping([
+				'amount_minor'=>$value,
+				'currency'=>'USD',
+			], $mapping, 'orders');
+			$rejected[]=false;
+		}
+		catch(Throwable){
+			$rejected[]=true;
+		}
+	}
+	$blank=CurrencyBridge::applyMoneyMapping([
+		'amount_minor'=>'',
+		'currency'=>'USD',
+	], $mapping, 'orders');
+	return [
+		'canonical_minor'=>$canonical['money']->minorAmount(),
+		'rejected'=>$rejected,
+		'blank_is_null'=>$blank['money']===null,
+	];
+}
+
+function dp_sql_unit_currency_bridge_stored_money_defaults_are_minor(): array {
+	$mapping=CurrencyBridge::normalizeStoredMoneyMapping([], 'stored_money', 'orders');
+	$money=Currency::money('19.95', 'USD');
+	$time=time();
+	$rates=new ExchangeRates('USD', 'unit', $time, ['USD'=>1], ['USD'=>2]);
+	$snapshot=new ExchangeSnapshot($rates, Currency::manager());
+	$quote=new ExchangeQuote('USD', 'USD', 'USD', 2, 2, 1.0, 'unit', $time);
+	$stored=new StoredMoney($money, $money, $snapshot, $quote);
+	$fields=CurrencyBridge::expandWriteFields(['stored_money'=>$stored], [], [$mapping], 'orders');
+
+	return [
+		'original_amount_column'=>$mapping['original_amount_column'],
+		'base_amount_column'=>$mapping['base_amount_column'],
+		'original_amount_minor'=>$fields['original_amount_minor'],
+		'base_amount_minor'=>$fields['base_amount_minor'],
+		'hydrated_original_minor'=>CurrencyBridge::applyStoredMoneyMapping($fields, $mapping, 'orders')['stored_money']->originalMinorAmount(),
+	];
+}
+
+function dp_sql_unit_table_repository_money_mapping_cache_refreshes(): array {
+	DpSqlUnitDynamicMoneyRepository::$money=[
+		'amount_minor'=>'currency',
+	];
+	$first=DpSqlUnitDynamicMoneyRepository::resolvedTargets();
+	DpSqlUnitDynamicMoneyRepository::$money=[
+		'fee_minor'=>[
+			'currency'=>'USD',
+			'target_column'=>'fee_money',
+		],
+	];
+	$second=DpSqlUnitDynamicMoneyRepository::resolvedTargets();
+
+	return [
+		'first'=>$first,
+		'second'=>$second,
 	];
 }

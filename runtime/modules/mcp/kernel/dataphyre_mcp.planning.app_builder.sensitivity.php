@@ -213,7 +213,7 @@ trait dataphyre_mcp_planning_app_builder_sensitivity_surfaces {
 	private function app_builder_sensitivity_rules(): array {
 		return [
 			'identity_or_contact'=>['email', 'phone', 'mobile', 'address', 'postal', 'zip', 'dob', 'birth', 'ip_address', 'user_agent'],
-			'billing_or_financial'=>['card', 'payment', 'billing', 'bank', 'iban', 'routing_number', 'tax_id', 'vat', 'stripe', 'invoice', 'plan_id', 'subscription_id', 'entitlement_id', 'amount_cents', 'price_cents', 'total_cents'],
+			'billing_or_financial'=>['card', 'payment', 'billing', 'bank', 'iban', 'routing_number', 'tax_id', 'vat', 'stripe', 'invoice', 'plan_id', 'subscription_id', 'entitlement_id', 'amount_minor', 'price_minor', 'total_minor'],
 			'credentials_or_secrets'=>['password', 'passwd', 'pwd', 'secret', 'token', 'api_key', 'apikey', 'authorization', 'auth_token', 'cookie', 'private_key', 'totp', 'otp', 'passkey', 'credential'],
 			'tenant_or_access_scope'=>['tenant_id', 'workspace_id', 'organization_id', 'org_id', 'team_id', 'account_id', 'customer_id', 'store_id', 'role_id', 'permission_id'],
 			'regulated_personal_data'=>['ssn', 'sin', 'national_id', 'passport', 'health', 'medical', 'hipaa', 'gdpr'],

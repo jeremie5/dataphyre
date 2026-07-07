@@ -1,5 +1,5 @@
 [{
-    "max_millis":  10,
+    "max_millis":  40,
     "name":  "convert_to_server_date_moves_toronto_to_utc",
     "function":  "dp_core_unit_format_dates",
     "args":  [

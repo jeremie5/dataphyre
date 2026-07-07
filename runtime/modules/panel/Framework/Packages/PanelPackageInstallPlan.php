@@ -181,6 +181,21 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 		$root=$this->resolveRoot($targetRoot, !$dryRun);
 		$manifest=$this->buildManifest(is_array($options['meta'] ?? null) ? $options['meta'] : [], $overwritePolicy, $root);
 		$packageId=(string)($manifest['package']['id'] ?? 'panel_package');
+		$dialbackPayload=[
+			'package_id'=>$packageId,
+			'target_root'=>$root,
+			'dry_run'=>$dryRun,
+			'overwrite_policy'=>$overwritePolicy,
+			'plan_blocked'=>!empty($manifest['blocked']),
+			'step_count'=>is_countable($manifest['steps'] ?? null) ? count($manifest['steps']) : 0,
+		];
+		$dialback=\dataphyre\core::dialback('CALL_PANEL_FRAMEWORK_PACKAGE_BEFORE_APPLY', $dialbackPayload);
+		if($dialback instanceof PanelPackageApplyResult){
+			return $dialback;
+		}
+		if(is_array($dialback)){
+			return PanelPackageApplyResult::make($dialback);
+		}
 		$artifacts=[];
 		foreach($this->template->artifacts() as $artifact){
 			$path=$this->normalizeArtifactPath((string)($artifact['path'] ?? ''));
@@ -310,7 +325,7 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 		}
 		$finished=microtime(true);
 		$finishedAt=(new \DateTimeImmutable('@'.(string)(int)$finished))->setTimezone(new \DateTimeZone(date_default_timezone_get()))->format(DATE_ATOM);
-		return PanelPackageApplyResult::make([
+		$result=PanelPackageApplyResult::make([
 			'ok'=>$blocked===[],
 			'package'=>$manifest['package'] ?? [],
 			'target_root'=>$root,
@@ -327,6 +342,21 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 				'backup_root'=>(string)($options['backup_root'] ?? ''),
 			],
 		]);
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Panel package apply '.($result->ok() ? 'succeeded' : 'blocked').'; package='.$packageId.'; dry_run='.($dryRun ? 'yes' : 'no').'; written='.count($result->written()).'; skipped='.count($result->skipped()).'; blocked='.count($result->blocked()).'; backups='.count($result->backups()), $S=$result->ok() ? 'info' : 'warning');
+		$dialback=\dataphyre\core::dialback('CALL_PANEL_FRAMEWORK_PACKAGE_AFTER_APPLY', $dialbackPayload+[
+			'ok'=>$result->ok(),
+			'counts'=>[
+				'written'=>count($result->written()),
+				'skipped'=>count($result->skipped()),
+				'blocked'=>count($result->blocked()),
+				'backups'=>count($result->backups()),
+			],
+			'duration_ms'=>$result->toArray()['duration_ms'] ?? 0,
+		]);
+		if($dialback instanceof PanelPackageApplyResult){
+			return $dialback;
+		}
+		return is_array($dialback) ? PanelPackageApplyResult::make($dialback) : $result;
 	}
 
 	/**

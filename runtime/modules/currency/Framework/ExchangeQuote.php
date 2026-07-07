@@ -173,16 +173,36 @@ final class ExchangeQuote implements \JsonSerializable {
 	/**
 	 * Converts a scalar amount using this quote multiplier.
 	 *
-	 * Null is treated as zero. The result is rounded to target currency precision
+	 * Null is treated as zero. Source amounts are first normalized to the source
+	 * currency's minor unit before the quote multiplier is applied, matching the
+	 * procedural currency conversion path and avoiding raw float drift from string
+	 * inputs such as 10.005. The result is rounded to target currency precision
 	 * using half-up numeric rounding before being returned. This method does not
 	 * perform freshness checks; use convertOrFailFresh() when stale rates must be
 	 * rejected before display or persistence.
 	 *
-	 * @param float|int|null $amount Amount in source currency major units.
+	 * @param float|int|string|null $amount Amount in source currency major units.
 	 * @return float Converted amount rounded to target minor units.
 	 */
-	public function convert(float|int|null $amount): float {
-		return round(((float)$amount)*$this->rate, $this->targetMinorUnits, PHP_ROUND_HALF_UP);
+	public function convert(float|int|string|null $amount): float {
+		$source_minor=\dataphyre\currency::amount_to_minor_units($amount, $this->sourceCurrency);
+		$target_minor=$this->convertMinorUnits($source_minor);
+		return (float)\dataphyre\currency::minor_units_to_amount($target_minor, $this->targetCurrency);
+	}
+
+	/**
+	 * Converts source-currency minor units directly to target-currency minor units.
+	 *
+	 * @param int $minorAmount Amount in source-currency minor units.
+	 * @return int Amount in target-currency minor units.
+	 */
+	public function convertMinorUnits(int $minorAmount): int {
+		return \dataphyre\currency::convert_minor_units_with_rate(
+			$minorAmount,
+			$this->sourceCurrency,
+			$this->targetCurrency,
+			$this->rate
+		);
 	}
 
 	/**
@@ -191,12 +211,12 @@ final class ExchangeQuote implements \JsonSerializable {
 	 * The freshness guard runs before conversion, so stale quotes never produce a
 	 * rounded amount for downstream storage or rendering.
 	 *
-	 * @param float|int|null $amount Amount in source currency major units.
+	 * @param float|int|string|null $amount Amount in source currency major units.
 	 * @param int $maxAgeSeconds Maximum acceptable quote age in seconds.
 	 * @return float Converted amount rounded to target minor units.
 	 * @throws StaleExchangeRatesException When the quote timestamp is older than the threshold.
 	 */
-	public function convertOrFailFresh(float|int|null $amount, int $maxAgeSeconds): float {
+	public function convertOrFailFresh(float|int|string|null $amount, int $maxAgeSeconds): float {
 		return $this->assertFresh($maxAgeSeconds)->convert($amount);
 	}
 

@@ -89,7 +89,7 @@ class localization{
 	 * @return array<string,mixed> Bootstrap localization configuration.
 	 */
 	protected static function configured_initialization(): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		return DP_LOCALIZATION_CFG;
 	}
 
@@ -104,7 +104,7 @@ class localization{
 	 * @return array<string,mixed> Resolved initialization payload.
 	 */
 	protected static function resolve_initialization(?array $initialization=null): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$configured=self::configured_initialization();
 		$initialization=$initialization ?? [];
 		$resolved=array_replace($configured, $initialization);
@@ -126,7 +126,7 @@ class localization{
 	 * @return self Initialized localization runtime.
 	 */
 	public static function init(?array $initialization=null): self {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		return new self($initialization);
 	}
 
@@ -142,7 +142,7 @@ class localization{
 	 * @return void
 	 */
 	protected static function apply_resolved_initialization(array $initialization): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		self::$custom_parameters=$initialization['custom_parameters'];
 		self::$enable_theme_locales=$initialization['enable_theme_locales'];
 		self::$enable_global_locales=$initialization['enable_global_locales'];
@@ -178,7 +178,7 @@ class localization{
 	 * @return array<string,mixed> Current runtime state snapshot.
 	 */
 	public static function state(): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		return [
 			'custom_parameters'=>self::$custom_parameters,
 			'enable_theme_locales'=>self::$enable_theme_locales,
@@ -212,7 +212,7 @@ class localization{
 	 * @return void
 	 */
 	public static function apply_state(array $state): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		self::apply_resolved_initialization(self::resolve_initialization($state));
 	}
 
@@ -287,7 +287,7 @@ class localization{
 	 * @return string Normalized page path beginning with `/`, or an empty string.
 	 */
 	public static function active_page(?string $forced_page=null): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if($forced_page!==null){
 			return self::normalize_local_path($forced_page);
 		}
@@ -309,7 +309,7 @@ class localization{
 	 * @param ?array<string,mixed> $initialization Optional runtime overrides.
 	 */
 	function __construct(?array $initialization=null){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$initialization=self::resolve_initialization($initialization);
 		self::$rebuilder_running_lock_file=ROOTPATH['dataphyre']."cache/locks/locale_rebuilding";
 		self::$learning_lock_file=ROOTPATH['dataphyre']."cache/locks/locale_learning";
@@ -331,7 +331,7 @@ class localization{
 	 * @return string Valid language code or default fallback.
 	 */
 	public static function validate_language_code(string $lang): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(!isset(self::$available_languages)){
 			\dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D="Available languages unknown when dataphyre\localization::validate_language_code() was called.", "safemode");
 		}
@@ -354,7 +354,7 @@ class localization{
 	 * @return array<string,mixed> Decoded locale dictionary.
 	 */
 	public static function get_locales(string $scope, string $path, string $language) : array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$locales=[];
 		$file_path=self::resolve_locale_file_path($scope, $language, self::$user_theme, $path);
 		if($file_path!==null && file_exists($file_path)){
@@ -373,7 +373,7 @@ class localization{
 	 * @return string Normalized page path.
 	 */
 	protected static function normalize_local_path(string $path): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$path=trim($path);
 		if($path===''){
 			return '';
@@ -399,7 +399,7 @@ class localization{
 	 * @return ?string Resolved locale file path.
 	 */
 	protected static function resolve_locale_file_path(string $scope, string $language, ?string $theme=null, string $path=''): ?string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if($scope==="global"){
 			return self::$global_locale_path!==null
 				? str_replace('%language%', $language, self::$global_locale_path)
@@ -681,7 +681,7 @@ class localization{
 	 * @return string Locale string after parameter replacement.
 	 */
 	public static function locale_parameters(string $string, ?array $parameters=[]): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$string=str_replace('&lt;{','<{', str_replace('}&gt;','}>', $string));
 		if(str_contains($string, '<{') && str_contains($string, '}>')){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locale contains parameters");
@@ -721,7 +721,7 @@ class localization{
 	 * @return string Resolved locale string.
 	 */
 	public static function locale(string $string_name, ?string $fallback_string=null, ?array $parameters=null, ?string $forced_language=null, ?string $forced_page=null) : string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$user_theme=self::$user_theme;
 		$user_language=self::$user_language;
 		if(isset($forced_language)){
@@ -770,7 +770,7 @@ class localization{
 			return self::locale_parameters(self::$locale[$string_name], $parameters);
 		}
 		if($scope==="global"){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Reading locale file $path into memory");
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Reading locale file into memory");
 			if(file_exists($path) && null!==$locale_data=json_decode(file_get_contents($path), true)){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Done reading");
 				self::$locale=array_merge(self::$locale, $locale_data);
@@ -784,14 +784,14 @@ class localization{
 			}
 			else
 			{
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locale file at $path is corrupted or does not exist, attempting rebuild.", "warning");
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locale file is corrupted or does not exist, attempting rebuild.", "warning");
 				if(self::$database_backed){
 					self::rebuild_locale([$scope], [$user_language], [$user_theme], [$user_theme]);
 				}
 			}
 		}
 		elseif($scope==="theme"){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Reading locale file $path into memory");
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Reading locale file into memory");
 			if(file_exists($path) && null!==$locale_data=json_decode(file_get_contents($path), true)){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Done reading");
 				self::$locale[$user_theme]=$locale_data;
@@ -805,14 +805,14 @@ class localization{
 			}
 			else
 			{
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locale file at $path is corrupted or does not exist, attempting rebuild.", "warning");
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locale file is corrupted or does not exist, attempting rebuild.", "warning");
 				if(self::$database_backed){
 					self::rebuild_locale([$scope], [$user_language], [$user_theme], [$user_theme]);
 				}
 			}
 		}
 		elseif($scope==="local"){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Reading locale file $path into memory");
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Reading locale file into memory");
 			if(file_exists($path) && null!==$locale_data=json_decode(file_get_contents($path), true)){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Done reading");
 				self::$locale[$user_theme][$active_page]=$locale_data;
@@ -826,7 +826,7 @@ class localization{
 			}
 			else
 			{
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locale file at $path is corrupted or does not exist, attempting rebuild.", "warning");
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Locale file is corrupted or does not exist, attempting rebuild.", "warning");
 				if(self::$database_backed){
 					self::rebuild_locale([$scope], [$user_language], [$user_theme], [$active_page]);
 				}
@@ -853,7 +853,7 @@ class localization{
 	 * @return bool|null True when a new unknown locale was written, false when disabled or unwritable, null when skipped.
 	 */
 	protected static function create_unknown_locale_data(string $path='', string $scope='', string $string_name='', string $string=''){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(!defined('IS_PRODUCTION') || IS_PRODUCTION!==false){
 			return false;
 		}
@@ -893,7 +893,7 @@ class localization{
 	 * @return string Normalized locale key.
 	 */
 	protected static function normalize_locale_name(string $string_name): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		return strtoupper(trim($string_name));
 	}
 
@@ -908,7 +908,7 @@ class localization{
 	 * @return string Normalized locale type.
 	 */
 	protected static function normalize_locale_type(string $type): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$type=strtolower(trim($type));
 		if(!in_array($type, ['global', 'theme', 'local'], true)){
 			\dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D="Invalid locale type {$type}", "safemode");
@@ -932,7 +932,7 @@ class localization{
 	 * @return array{type:string,language:string,name:string,theme:?string,path:?string} Normalized definition identity.
 	 */
 	protected static function normalize_locale_definition(string $type, string $language, string $name, ?string $theme=null, ?string $path=null): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$type=self::normalize_locale_type($type);
 		$language=trim($language);
 		if($language===''){
@@ -983,7 +983,7 @@ class localization{
 	 * @return array{params:string,vars:list<mixed>} SQL predicate fragment and bound variables.
 	 */
 	protected static function locale_definition_where(array $definition): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$params="WHERE type=? AND lang=? AND name=?";
 		$vars=[
 			$definition['type'],
@@ -1019,7 +1019,7 @@ class localization{
 	 * @return bool True when rebuild did not report failure.
 	 */
 	protected static function locale_definition_rebuild(string $type, string $language, ?string $theme=null, ?string $path=null): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(!self::$database_backed){
 			return true;
 		}
@@ -1038,7 +1038,7 @@ class localization{
 	 * @return string Rebuild target key.
 	 */
 	protected static function locale_definition_target_key(array $definition): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		return implode("\n", [
 			(string)$definition['type'],
 			(string)$definition['language'],
@@ -1057,7 +1057,7 @@ class localization{
 	 * @return array<string,array{type:string,language:string,theme:?string,path:?string}> Rebuild targets keyed by target identity.
 	 */
 	protected static function locale_definition_target_map(array $definitions): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$targets=[];
 		foreach($definitions as $definition){
 			if(!is_array($definition)){
@@ -1083,7 +1083,7 @@ class localization{
 	 * @return bool True when all valid targets rebuild successfully.
 	 */
 	protected static function rebuild_locale_definition_targets(array $targets): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		foreach($targets as $target){
 			if(!is_array($target)){
 				continue;
@@ -1112,7 +1112,7 @@ class localization{
 	 * @return array<string,mixed> Normalized definition payload.
 	 */
 	protected static function normalize_locale_definition_payload(array $definition, bool $require_string=false): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$normalized=self::normalize_locale_definition(
 			(string)($definition['type'] ?? ''),
 			(string)($definition['language'] ?? $definition['lang'] ?? ''),
@@ -1139,7 +1139,7 @@ class localization{
 	 * @return array<string,mixed> SQL-safe filter map.
 	 */
 	protected static function normalize_locale_definition_filters(array $filters=[]): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$normalized_filters=[];
 		if(isset($filters['type']) && trim((string)$filters['type'])!==''){
 			$normalized_filters['type']=self::normalize_locale_type((string)$filters['type']);
@@ -1173,7 +1173,7 @@ class localization{
 	 * @return array{params:string,vars:list<mixed>} SQL predicate fragment and variables.
 	 */
 	protected static function locale_definition_filters_where(array $filters=[]): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$params="WHERE 1=1";
 		$vars=[];
 		foreach($filters as $field=>$value){
@@ -1296,7 +1296,7 @@ class localization{
 	 * @return array<string,array<string,mixed>> Unknown locale records keyed by locale name.
 	 */
 	protected static function read_unknown_locales_data(): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(!file_exists(self::$unknown_locales_file)){
 			return [];
 		}
@@ -1322,7 +1322,7 @@ class localization{
 	 * @return bool True when the queue was written.
 	 */
 	protected static function persist_unknown_locales_data(array $unknown_locales): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		return \dataphyre\core::file_put_contents_forced(
 			self::$unknown_locales_file,
 			json_encode($unknown_locales, JSON_UNESCAPED_UNICODE)
@@ -1338,7 +1338,7 @@ class localization{
 	 * @return array<string,array<string,mixed>> Unknown locale records.
 	 */
 	public static function unknown_locales(): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		return self::read_unknown_locales_data();
 	}
 
@@ -1352,7 +1352,7 @@ class localization{
 	 * @return ?array<string,mixed> Unknown locale record.
 	 */
 	public static function unknown_locale(?string $string_name): ?array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if($string_name===null){
 			return null;
 		}
@@ -1371,7 +1371,7 @@ class localization{
 	 * @return bool True when an unknown locale record exists.
 	 */
 	public static function has_unknown_locale(string $string_name): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		return self::unknown_locale($string_name)!==null;
 	}
 
@@ -1385,7 +1385,7 @@ class localization{
 	 * @return bool True when the queue was left clear or updated successfully.
 	 */
 	public static function clear_unknown_locale(?string $string_name=null): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if($string_name===null){
 			return self::persist_unknown_locales_data([]);
 		}
@@ -1411,7 +1411,7 @@ class localization{
 	 * @return list<array<string,mixed>> Locale definition rows.
 	 */
 	public static function locale_definitions(array $filters=[], int $limit=250, int $offset=0): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$limit=max(1, min(5000, $limit));
 		$offset=max(0, $offset);
 		$normalized_filters=self::normalize_locale_definition_filters($filters);
@@ -1502,7 +1502,7 @@ class localization{
 	 * @return ?array<string,mixed> Locale definition row.
 	 */
 	public static function locale_definition(string $type, string $language, string $name, ?string $theme=null, ?string $path=null): ?array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$definition=self::normalize_locale_definition($type, $language, $name, $theme, $path);
 		if(!self::$database_backed){
 			return self::file_locale_definition($definition);
@@ -1544,7 +1544,7 @@ class localization{
 		?string $path=null,
 		bool $rebuild=true
 	): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$definition=self::normalize_locale_definition($type, $language, $name, $theme, $path);
 		if(!self::$database_backed){
 			return self::save_file_locale_definition($definition, $string);
@@ -1598,7 +1598,7 @@ class localization{
 		?string $path=null,
 		bool $rebuild=true
 	): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$definition=self::normalize_locale_definition($type, $language, $name, $theme, $path);
 		if(!self::$database_backed){
 			return self::delete_file_locale_definition($definition);
@@ -1636,7 +1636,7 @@ class localization{
 	 * @return array{ok:bool,requested:int,processed:int,skipped:int,rebuilt:bool,rebuild_targets:int} Batch save summary.
 	 */
 	public static function save_locale_definitions(array $definitions, bool $rebuild=true): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$normalized_definitions=[];
 		foreach($definitions as $definition){
 			if(is_array($definition)){
@@ -1701,7 +1701,7 @@ class localization{
 	 * @return array{ok:bool,requested:int,processed:int,skipped:int,rebuilt:bool,rebuild_targets:int} Batch delete summary.
 	 */
 	public static function delete_locale_definitions(array $definitions, bool $rebuild=true): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$normalized_definitions=[];
 		foreach($definitions as $definition){
 			if(is_array($definition)){
@@ -1791,7 +1791,7 @@ class localization{
 	 * @return array<int,true> Processed row ids keyed by id.
 	 */
 	protected static function read_last_synced_locale_ids(): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(!file_exists(self::$last_locales_file)){
 			return [];
 		}
@@ -1820,7 +1820,7 @@ class localization{
 	 * @return void
 	 */
 	protected static function persist_locale_sync_state(int $timestamp, array $ids_at_timestamp): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		\dataphyre\core::file_put_contents_forced(self::$last_locale_sync_file, (string)max(0, $timestamp));
 		\dataphyre\core::file_put_contents_forced(
 			self::$last_locales_file,
@@ -1846,7 +1846,7 @@ class localization{
 	 * @return void
 	 */
 	protected static function upsert_locale(string $language, string $user_theme, string $path, string $string_name, string $string, string $type, string $scope_condition, array $scope_values): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(false!==$row=sql_select(
 			$S="id,string,name",
 			$L=self::$locales_table,
@@ -1900,7 +1900,7 @@ class localization{
 	 * @return int|string Number of learned locale keys, or a string failure/status code.
 	 */
 	public static function learn_unknown_locales(): int|string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$i=0;
 		$function_exit=function(string|int $error, ?callable $callback=null):string|int{
 			if(file_exists($file=self::$learning_lock_file))
@@ -1986,7 +1986,7 @@ class localization{
 	 * @return void
 	 */
 	public static function sync_locales($forced=false){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(!self::$database_backed){
 			return;
 		}
@@ -2079,7 +2079,7 @@ class localization{
 	 * @return bool|null False on write failure, null on completion.
 	 */
 	public static function rebuild_locale(?array $type=[], ?array $lang=[], ?array $theme=[], ?array $paths=[]){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(!self::$database_backed){
 			return null;
 		}

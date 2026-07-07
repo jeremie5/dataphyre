@@ -297,7 +297,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 			'subscriptionchange'=>$this->app_builder_default_subscription_change_fields($args),
 			'plan'=>[
 				'name'=>['type'=>'string', 'required'=>true],
-				'price_cents'=>['type'=>'integer', 'required'=>true],
+				'price_minor'=>['type'=>'integer', 'required'=>true],
 				'currency'=>['type'=>'string', 'default'=>'USD'],
 				'status'=>['type'=>'string', 'default'=>'active'],
 			],
@@ -386,7 +386,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 				'account_id'=>['type'=>'integer', 'required'=>true, 'foreign_key_target'=>'accounts'],
 				'subscription_id'=>['type'=>'integer', 'foreign_key_target'=>'subscriptions'],
 				'renewal_at'=>['type'=>'date', 'required'=>true],
-				'amount_cents'=>['type'=>'integer'],
+				'amount_minor'=>['type'=>'integer'],
 				'stage'=>['type'=>'string', 'default'=>'open'],
 			],
 			'healthscore'=>[
@@ -893,7 +893,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		return [
 			'employee_id'=>['type'=>'integer', 'required'=>true, 'foreign_key_target'=>'employees'],
 			'currency'=>['type'=>'string', 'default'=>'USD'],
-			'base_salary_cents'=>['type'=>'integer'],
+			'base_salary_minor'=>['type'=>'integer'],
 			'effective_from'=>['type'=>'date', 'required'=>true],
 			'effective_to'=>['type'=>'date'],
 		];
@@ -3416,7 +3416,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'name'=>['type'=>'string', 'required'=>true],
-			'amount_cents'=>['type'=>'integer', 'required'=>true],
+			'amount_minor'=>['type'=>'integer', 'required'=>true],
 			'currency'=>['type'=>'string', 'default'=>'USD'],
 			'period_start'=>['type'=>'date'],
 			'period_end'=>['type'=>'date'],
@@ -3446,7 +3446,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 			$fields['approved_by']=['type'=>'integer', 'foreign_key_target'=>'users'];
 		}
 		return $fields + [
-			'amount_cents'=>['type'=>'integer', 'required'=>true],
+			'amount_minor'=>['type'=>'integer', 'required'=>true],
 			'currency'=>['type'=>'string', 'default'=>'USD'],
 			'expense_date'=>['type'=>'date'],
 			'status'=>['type'=>'string', 'default'=>'submitted'],
@@ -4285,7 +4285,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'change_type'=>['type'=>'string', 'default'=>'upgrade'],
-			'proration_cents'=>['type'=>'integer', 'default'=>0],
+			'proration_minor'=>['type'=>'integer', 'default'=>0],
 			'effective_at'=>['type'=>'datetime'],
 			'requested_by'=>['type'=>'integer', 'foreign_key_target'=>'users'],
 			'approved_by'=>['type'=>'integer', 'foreign_key_target'=>'users'],
@@ -4318,7 +4318,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		return $fields + [
 			'invoice_number'=>['type'=>'string', 'required'=>true],
 			'currency'=>['type'=>'string', 'default'=>'USD'],
-			'total_cents'=>['type'=>'integer', 'required'=>true],
+			'total_minor'=>['type'=>'integer', 'required'=>true],
 			'issued_at'=>['type'=>'datetime'],
 			'due_at'=>['type'=>'datetime'],
 			'status'=>['type'=>'string', 'default'=>'open'],
@@ -4342,8 +4342,8 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		return $fields + [
 			'description'=>['type'=>'string', 'required'=>true],
 			'quantity'=>['type'=>'integer', 'default'=>1],
-			'unit_price_cents'=>['type'=>'integer', 'required'=>true],
-			'amount_cents'=>['type'=>'integer', 'required'=>true],
+			'unit_price_minor'=>['type'=>'integer', 'required'=>true],
+			'amount_minor'=>['type'=>'integer', 'required'=>true],
 			'revenue_start_at'=>['type'=>'date'],
 			'revenue_end_at'=>['type'=>'date'],
 			'status'=>['type'=>'string', 'default'=>'active'],
@@ -4426,7 +4426,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'provider_payment_id'=>['type'=>'string', 'not_foreign_key'=>true],
-			'amount_cents'=>['type'=>'integer', 'required'=>true],
+			'amount_minor'=>['type'=>'integer', 'required'=>true],
 			'currency'=>['type'=>'string', 'default'=>'USD'],
 			'reconciled_at'=>['type'=>'datetime'],
 			'posted_at'=>['type'=>'datetime'],
@@ -4457,7 +4457,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		return $fields + [
 			'provider_dispute_id'=>['type'=>'string', 'required'=>true, 'not_foreign_key'=>true],
 			'dispute_reason'=>['type'=>'string', 'default'=>'fraudulent'],
-			'amount_cents'=>['type'=>'integer', 'required'=>true],
+			'amount_minor'=>['type'=>'integer', 'required'=>true],
 			'currency'=>['type'=>'string', 'default'=>'USD'],
 			'evidence_ref'=>['type'=>'json'],
 			'response_due_at'=>['type'=>'datetime'],
@@ -4515,7 +4515,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'provider_refund_id'=>['type'=>'string', 'not_foreign_key'=>true],
-			'amount_cents'=>['type'=>'integer', 'required'=>true],
+			'amount_minor'=>['type'=>'integer', 'required'=>true],
 			'currency'=>['type'=>'string', 'default'=>'USD'],
 			'refund_reason'=>['type'=>'text'],
 			'approved_by'=>['type'=>'integer', 'foreign_key_target'=>'users'],
@@ -4541,7 +4541,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'credit_memo_number'=>['type'=>'string', 'required'=>true],
-			'amount_cents'=>['type'=>'integer', 'required'=>true],
+			'amount_minor'=>['type'=>'integer', 'required'=>true],
 			'currency'=>['type'=>'string', 'default'=>'USD'],
 			'credit_reason'=>['type'=>'text'],
 			'approved_by'=>['type'=>'integer', 'foreign_key_target'=>'users'],
@@ -4582,8 +4582,8 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'account_code'=>['type'=>'string', 'required'=>true],
-			'debit_cents'=>['type'=>'integer', 'default'=>0],
-			'credit_cents'=>['type'=>'integer', 'default'=>0],
+			'debit_minor'=>['type'=>'integer', 'default'=>0],
+			'credit_minor'=>['type'=>'integer', 'default'=>0],
 			'currency'=>['type'=>'string', 'default'=>'USD'],
 			'memo'=>['type'=>'string'],
 			'status'=>['type'=>'string', 'default'=>'posted'],
@@ -4607,7 +4607,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'schedule_key'=>['type'=>'string', 'required'=>true],
-			'total_revenue_cents'=>['type'=>'integer', 'required'=>true],
+			'total_revenue_minor'=>['type'=>'integer', 'required'=>true],
 			'currency'=>['type'=>'string', 'default'=>'USD'],
 			'period_start'=>['type'=>'date', 'required'=>true],
 			'period_end'=>['type'=>'date', 'required'=>true],
@@ -4632,7 +4632,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'recognition_date'=>['type'=>'date', 'required'=>true],
-			'amount_cents'=>['type'=>'integer', 'required'=>true],
+			'amount_minor'=>['type'=>'integer', 'required'=>true],
 			'currency'=>['type'=>'string', 'default'=>'USD'],
 			'recognized_at'=>['type'=>'datetime'],
 			'status'=>['type'=>'string', 'default'=>'pending'],
@@ -5147,7 +5147,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'application_number'=>['type'=>'string', 'required'=>true],
-			'requested_amount_cents'=>['type'=>'integer', 'required'=>true],
+			'requested_amount_minor'=>['type'=>'integer', 'required'=>true],
 			'application_status'=>['type'=>'string', 'default'=>'submitted'],
 			'submitted_at'=>['type'=>'datetime'],
 		];
@@ -5213,7 +5213,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		return $fields + [
 			'decision'=>['type'=>'string', 'default'=>'pending'],
 			'decision_reason'=>['type'=>'text', 'required'=>true],
-			'approved_amount_cents'=>['type'=>'integer'],
+			'approved_amount_minor'=>['type'=>'integer'],
 			'decided_at'=>['type'=>'datetime'],
 		];
 	}
@@ -5233,7 +5233,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		return $fields + [
 			'collateral_type'=>['type'=>'string', 'required'=>true],
 			'description'=>['type'=>'text'],
-			'valuation_cents'=>['type'=>'integer'],
+			'valuation_minor'=>['type'=>'integer'],
 			'valuation_at'=>['type'=>'datetime'],
 			'status'=>['type'=>'string', 'default'=>'proposed'],
 		];
@@ -5279,7 +5279,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'account_number'=>['type'=>'string', 'required'=>true],
-			'principal_balance_cents'=>['type'=>'integer', 'default'=>0],
+			'principal_balance_minor'=>['type'=>'integer', 'default'=>0],
 			'interest_rate_bps'=>['type'=>'integer'],
 			'status'=>['type'=>'string', 'default'=>'active'],
 		];
@@ -5302,7 +5302,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'disbursement_number'=>['type'=>'string', 'required'=>true],
-			'amount_cents'=>['type'=>'integer', 'required'=>true],
+			'amount_minor'=>['type'=>'integer', 'required'=>true],
 			'approved_at'=>['type'=>'datetime'],
 			'status'=>['type'=>'string', 'default'=>'pending'],
 		];
@@ -5323,8 +5323,8 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		return $fields + [
 			'installment_number'=>['type'=>'integer', 'required'=>true],
 			'due_at'=>['type'=>'datetime', 'required'=>true],
-			'principal_due_cents'=>['type'=>'integer', 'required'=>true],
-			'interest_due_cents'=>['type'=>'integer'],
+			'principal_due_minor'=>['type'=>'integer', 'required'=>true],
+			'interest_due_minor'=>['type'=>'integer'],
 			'status'=>['type'=>'string', 'default'=>'scheduled'],
 		];
 	}
@@ -5346,7 +5346,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'payment_reference'=>['type'=>'string', 'not_foreign_key'=>true],
-			'amount_cents'=>['type'=>'integer', 'required'=>true],
+			'amount_minor'=>['type'=>'integer', 'required'=>true],
 			'reconciled_at'=>['type'=>'datetime'],
 			'status'=>['type'=>'string', 'default'=>'received'],
 		];
@@ -5690,7 +5690,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 			'unit_number'=>['type'=>'string', 'required'=>true],
 			'unit_type'=>['type'=>'string'],
 			'availability_status'=>['type'=>'string', 'default'=>'available'],
-			'market_rent_cents'=>['type'=>'integer'],
+			'market_rent_minor'=>['type'=>'integer'],
 		];
 	}
 
@@ -5768,7 +5768,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		return $fields + [
 			'period_start'=>['type'=>'datetime', 'required'=>true],
 			'period_end'=>['type'=>'datetime'],
-			'rent_due_cents'=>['type'=>'integer', 'required'=>true],
+			'rent_due_minor'=>['type'=>'integer', 'required'=>true],
 			'due_at'=>['type'=>'datetime', 'required'=>true],
 			'status'=>['type'=>'string', 'default'=>'scheduled'],
 		];
@@ -5791,7 +5791,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'payment_reference'=>['type'=>'string', 'not_foreign_key'=>true],
-			'amount_cents'=>['type'=>'integer', 'required'=>true],
+			'amount_minor'=>['type'=>'integer', 'required'=>true],
 			'reconciled_at'=>['type'=>'datetime'],
 			'status'=>['type'=>'string', 'default'=>'received'],
 		];
@@ -5810,8 +5810,8 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 			$fields['lease_id']=['type'=>'integer', 'required'=>true, 'foreign_key_target'=>'leases'];
 		}
 		return $fields + [
-			'deposit_amount_cents'=>['type'=>'integer', 'required'=>true],
-			'held_amount_cents'=>['type'=>'integer', 'default'=>0],
+			'deposit_amount_minor'=>['type'=>'integer', 'required'=>true],
+			'held_amount_minor'=>['type'=>'integer', 'default'=>0],
 			'accounting_status'=>['type'=>'string', 'default'=>'held'],
 		];
 	}
@@ -5830,7 +5830,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'offer_number'=>['type'=>'string', 'required'=>true],
-			'proposed_rent_cents'=>['type'=>'integer'],
+			'proposed_rent_minor'=>['type'=>'integer'],
 			'offered_at'=>['type'=>'datetime'],
 			'response_status'=>['type'=>'string', 'default'=>'pending'],
 		];
@@ -5853,7 +5853,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'case_number'=>['type'=>'string', 'required'=>true],
-			'balance_due_cents'=>['type'=>'integer', 'required'=>true],
+			'balance_due_minor'=>['type'=>'integer', 'required'=>true],
 			'days_past_due'=>['type'=>'integer', 'default'=>0],
 			'status'=>['type'=>'string', 'default'=>'open'],
 		];
@@ -5910,8 +5910,8 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'coverage_code'=>['type'=>'string', 'required'=>true],
-			'limit_cents'=>['type'=>'integer'],
-			'deductible_cents'=>['type'=>'integer'],
+			'limit_minor'=>['type'=>'integer'],
+			'deductible_minor'=>['type'=>'integer'],
 			'status'=>['type'=>'string', 'default'=>'active'],
 		];
 	}
@@ -5977,7 +5977,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'exposure_type'=>['type'=>'string', 'required'=>true],
-			'estimated_loss_cents'=>['type'=>'integer'],
+			'estimated_loss_minor'=>['type'=>'integer'],
 			'status'=>['type'=>'string', 'default'=>'open'],
 		];
 	}
@@ -5998,7 +5998,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 			$fields['approved_by']=['type'=>'integer', 'foreign_key_target'=>'users'];
 		}
 		return $fields + [
-			'reserve_amount_cents'=>['type'=>'integer', 'required'=>true],
+			'reserve_amount_minor'=>['type'=>'integer', 'required'=>true],
 			'change_reason'=>['type'=>'text'],
 			'approved_at'=>['type'=>'datetime'],
 			'status'=>['type'=>'string', 'default'=>'pending'],
@@ -6025,7 +6025,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'payment_number'=>['type'=>'string', 'required'=>true],
-			'amount_cents'=>['type'=>'integer', 'required'=>true],
+			'amount_minor'=>['type'=>'integer', 'required'=>true],
 			'approved_at'=>['type'=>'datetime'],
 			'status'=>['type'=>'string', 'default'=>'pending'],
 		];
@@ -6112,8 +6112,8 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		}
 		return $fields + [
 			'recovery_target'=>['type'=>'string', 'required'=>true],
-			'expected_recovery_cents'=>['type'=>'integer'],
-			'recovered_cents'=>['type'=>'integer', 'default'=>0],
+			'expected_recovery_minor'=>['type'=>'integer'],
+			'recovered_minor'=>['type'=>'integer', 'default'=>0],
 			'status'=>['type'=>'string', 'default'=>'open'],
 		];
 	}
@@ -6848,7 +6848,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 		return $fields + [
 			'sku'=>['type'=>'string', 'required'=>true],
 			'quantity'=>['type'=>'integer', 'required'=>true],
-			'unit_cost_cents'=>['type'=>'integer'],
+			'unit_cost_minor'=>['type'=>'integer'],
 			'used_at'=>['type'=>'datetime'],
 			'status'=>['type'=>'string', 'default'=>'posted'],
 		];

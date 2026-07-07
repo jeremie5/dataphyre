@@ -98,9 +98,9 @@ namespace {
 	}
 
 	function dp_stripe_unit_load_stripe_dialback_json(): string {
-		\dataphyre\core::register_dialback('CALL_LOAD_STRIPE', fn()=>false);
+		\dataphyre\core::register_dialback('CALL_STRIPE_LOAD', fn()=>false);
 		$blocked=\dataphyre\stripe::load_stripe();
-		\dataphyre\core::register_dialback('CALL_LOAD_STRIPE', fn()=>true);
+		\dataphyre\core::register_dialback('CALL_STRIPE_LOAD', fn()=>true);
 		\Stripe\Stripe::$api_key='unit_dialback_existing';
 		\Stripe\Stripe::$apiKey='unit_dialback_existing';
 		$platform_account=\dataphyre\stripe::get_platform_account();

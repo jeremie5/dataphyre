@@ -44,7 +44,7 @@ class mysql_query_builder {
 	 * @return object Active MySQLi connection.
 	 */
 	private static function connect_to_cluster(string $dbms_cluster){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_OPEN_MAIN_CONNECTION",...func_get_args())) return $early_return;
 		$endpoints=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
 		if(!isset(self::$conns[$dbms_cluster]) || isset(self::$conns[$dbms_cluster]) && !is_object(self::$conns[$dbms_cluster])){
@@ -73,7 +73,7 @@ class mysql_query_builder {
 	 * @return object|false MySQLi connection on success, or `false` when the endpoint is unavailable.
 	 */
 	private static function connect_to_endpoint(string $endpoint, string $dbms_cluster='default') : object {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(isset(self::$conns[$dbms_cluster])){
 			return	self::$conns[$dbms_cluster];
 		}
@@ -123,7 +123,7 @@ class mysql_query_builder {
 	 * @return bool `true` when every prepared statement completed.
 	 */
 	private static function execute_prepared_statements(object $conn, array $prepared_statements, array &$results, string $dbms_cluster='n/a') : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$index=0;
 		$has_write=sql::query_has_write(serialize($prepared_statements));
 		try{
@@ -171,7 +171,7 @@ class mysql_query_builder {
 	 * @return bool `true` when the entire multi-query batch completed.
 	 */
 	private static function execute_multi_query_string(object $conn, string $multi_query_string, array &$results, string $dbms_cluster='n/a') : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$index=0;
 		$has_write=sql::query_has_write(serialize($multi_query_string));
 		try{
@@ -207,7 +207,7 @@ class mysql_query_builder {
 	 * @return void
 	 */
 	private static function process_results(?array $results, ?array $queries): void {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null);
 		$query_list=self::queued_query_list($queries);
 		foreach(($results ?? []) as $index=>$result){
 			$query=$query_list[$index] ?? null;
@@ -283,7 +283,7 @@ class mysql_query_builder {
 	 * @return null|bool `null` when the queue does not exist, otherwise execution success.
 	 */
 	public static function execute_multiquery(string $queue='', bool $hydration_retry=false) : null|bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(!isset(self::$queued_queries[$queue]))return null;
 		$queued_queries=self::$queued_queries[$queue];
 		unset(self::$queued_queries[$queue]);
@@ -400,7 +400,7 @@ class mysql_query_builder {
 	 * @return bool|array `true` for non-row success, row data for reads, or `false` on failure.
 	 */
 	public static function mysql_query(string $dbms_cluster, string $query, ?array $vars, ?bool $associative, ?bool $multipoint=true) : bool|array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_SIMPLE_SELECT",...func_get_args())) return $early_return;
 		$execute_query=function($conn) use ($query, $vars) {
 			if(is_array($vars)){
@@ -486,7 +486,7 @@ class mysql_query_builder {
 	 * @return bool|array Row data, or `false` when no rows or execution fails.
 	 */
 	public static function mysql_select(string $dbms_cluster, string $select, string $location, ?string $params, ?array $vars, ?bool $associative) : bool|array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_SIMPLE_SELECT",...func_get_args())) return $early_return;
 		$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster);
 		$query_result=false;
@@ -543,7 +543,7 @@ class mysql_query_builder {
 	 * @return int|bool Count value, or `false` on failure.
 	 */
 	public static function mysql_count(string $dbms_cluster, string $location, string $params, ?array $vars) : int|bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_SIMPLE_COUNT",...func_get_args())) return $early_return;
 		$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster);
 		$query="SELECT COUNT(*) as count FROM ".$location." ".$params;
@@ -589,7 +589,7 @@ class mysql_query_builder {
 	 * @return bool|int Maximum affected-row count across successful endpoints, or `false`.
 	 */
 	public static function mysql_update(string $dbms_cluster, string $location, string $fields, string $params, array $vars) : bool|int {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_SIMPLE_UPDATE",...func_get_args())) return $early_return;
 		$datatypes='';
 		foreach($vars as &$value){
@@ -651,7 +651,7 @@ class mysql_query_builder {
 	 * @return array|bool Returned row, `true` when no row was available, or `false` on failure.
 	 */
 	public static function mysql_insert(string $dbms_cluster, string $location, string $fields, array $vars, string $returning='*') : array|bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_SIMPLE_INSERT",...func_get_args())) return $early_return;
 		$datatypes='';
 		foreach($vars as &$value){
@@ -696,7 +696,7 @@ class mysql_query_builder {
 	 * @return bool|int Maximum affected-row count across successful endpoints, or `false`.
 	 */
 	public static function mysql_delete(string $dbms_cluster, string $location, string $params, ?array $vars) : bool|int {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_SIMPLE_DELETE",...func_get_args())) return $early_return;
 		$succeeded=0;
 		$affected_rows=[];

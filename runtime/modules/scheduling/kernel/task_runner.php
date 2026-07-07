@@ -23,7 +23,7 @@ $scheduler=dataphyre\scheduling::read_scheduler($scheduler_name);
 if($scheduler===null){
 	if(method_exists("dataphyre\core", "dialback")){
 		$task=["scheduler"=>$scheduler];
-		dataphyre\core::dialback("SCHEDULING_TASK_FAILED",$task);
+		dataphyre\core::dialback("CALL_SCHEDULING_TASK_FAILED",$task);
 	}
 	if(function_exists("pre_init_error")){
 		pre_init_error('Fatal error: scheduler does not exist ('.$scheduler_name.' at '.$scheduler_properties_file.')');
@@ -68,7 +68,7 @@ try{
 }catch(Throwable $e){
 	if(method_exists("dataphyre\core", "dialback")){
 		$task=["scheduler"=>$scheduler];
-		dataphyre\core::dialback("SCHEDULING_TASK_FAILED", $task);
+		dataphyre\core::dialback("CALL_SCHEDULING_TASK_FAILED", $task);
 	}
 	if(function_exists("pre_init_error")){
 		pre_init_error('Fatal error: scheduler task failed ('.$scheduler_name.')', $e);

@@ -167,6 +167,8 @@ final class ApiManager {
 	 * @return array<string, mixed> Normalized dispatch result with ok, status, timing, response data, and route context.
 	 */
 	public function dispatch(array $requestDefinition, array $options=[]): array {
+		$traceSuppressed=(bool)($options['__dataphyre_trace_suppressed'] ?? false);
+		unset($options['__dataphyre_trace_suppressed']);
 		$startedAt=microtime(true);
 		$initialBody=is_array($requestDefinition['body'] ?? null)
 			? $requestDefinition['body']
@@ -181,17 +183,23 @@ final class ApiManager {
 			'alias'=>$initialAlias,
 			'profile'=>$this->normalizeProfileName($requestDefinition['profile'] ?? null),
 		];
+		$trustedAuth=false;
+		$route=null;
 		try{
 			$definition=$this->normalizeInternalRequestDefinition($requestDefinition);
 			$manifest=$this->applicationManifest(isset($options['application']) ? (string)$options['application'] : null);
 			$resolution=$this->resolveManifestDispatch($manifest['routes'] ?? [], $definition);
 			if(isset($resolution['route'])===false){
-				return $this->dispatchFailureRecord(
+				$record=$this->dispatchFailureRecord(
 					$definition,
 					(int)($resolution['status'] ?? 404),
 					(string)($resolution['message'] ?? 'API route not found.'),
 					$startedAt
 				);
+				if(!$traceSuppressed){
+					tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API internal dispatch failed; method='.$definition['method'].'; target='.($definition['path'] ?? $definition['alias'] ?? 'unknown').'; status='.(int)($record['status'] ?? 0), $S='warning');
+				}
+				return $record;
 			}
 			$route=$resolution['route'];
 
@@ -200,17 +208,29 @@ final class ApiManager {
 			if($trustedAuth===false){
 				$authorizationResponse=$this->authorizeCompiledRoute($route, $request);
 				if($authorizationResponse instanceof Response){
-					return $this->normalizeDispatchedResponse($definition, $route, $authorizationResponse, $startedAt);
+					$record=$this->normalizeDispatchedResponse($definition, $route, $authorizationResponse, $startedAt);
+					if(!$traceSuppressed){
+						tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API internal dispatch authorization failed; method='.$definition['method'].'; target='.($definition['path'] ?? $definition['alias'] ?? 'unknown').'; status='.$authorizationResponse->status, $S='warning');
+					}
+					return $record;
 				}
 			}
 
 			$response=$this->dispatchMatchedRoute($route, $request);
-			return $this->normalizeDispatchedResponse($definition, $route, $response, $startedAt);
+			$record=$this->normalizeDispatchedResponse($definition, $route, $response, $startedAt);
+			if(!$traceSuppressed){
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API internal dispatch completed; method='.$definition['method'].'; target='.($definition['path'] ?? $definition['alias'] ?? 'unknown').'; status='.$response->status.'; trusted_auth='.($trustedAuth ? 'yes' : 'no'), $S=$response->status < 400 ? 'info' : 'warning');
+			}
+			return $record;
 		}catch(\Throwable $exception){
 			$message=($options['expose_exceptions'] ?? false)===true && trim($exception->getMessage())!==''
 				? $exception->getMessage()
 				: 'Internal API dispatch failed.';
-			return $this->dispatchFailureRecord($definition, 500, $message, $startedAt);
+			$record=$this->dispatchFailureRecord($definition, 500, $message, $startedAt);
+			if(!$traceSuppressed){
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API internal dispatch threw; method='.$definition['method'].'; target='.($definition['path'] ?? $definition['alias'] ?? 'unknown').'; exception='.get_class($exception), $S='warning');
+			}
+			return $record;
 		}
 	}
 
@@ -228,7 +248,7 @@ final class ApiManager {
 		$startedAt=microtime(true);
 		$limit=max(1, (int)($options['limit'] ?? 128));
 		if(count($requests)>$limit){
-			return [
+			$result=[
 				'ok'=>false,
 				'error'=>(string)($options['limit_error'] ?? 'too_many_requests'),
 				'limit'=>$limit,
@@ -236,9 +256,12 @@ final class ApiManager {
 				'duration_ms'=>round((microtime(true)-$startedAt)*1000, 3),
 				'responses'=>[],
 			];
+			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API internal batch dispatch blocked; requested='.count($requests).'; limit='.$limit, $S='warning');
+			return $result;
 		}
 
 		$continueOnError=($options['continue_on_error'] ?? true)===true;
+		$dispatchOptions=$options+['__dataphyre_trace_suppressed'=>true];
 		$responses=[];
 		foreach($requests as $key=>$requestDefinition){
 			if(is_array($requestDefinition)===false){
@@ -260,7 +283,7 @@ final class ApiManager {
 					$requestDefinition['alias']=trim($key);
 				}
 			}
-			$record=$this->dispatch($requestDefinition, $options);
+			$record=$this->dispatch($requestDefinition, $dispatchOptions);
 			$responses[]=$record;
 			if($continueOnError===false && ($record['ok'] ?? false)!==true){
 				break;
@@ -274,13 +297,15 @@ final class ApiManager {
 			}
 		}
 
-		return [
+		$result=[
 			'ok'=>$failures===0,
 			'count'=>count($responses),
 			'failures'=>$failures,
 			'duration_ms'=>round((microtime(true)-$startedAt)*1000, 3),
 			'responses'=>$responses,
 		];
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API internal batch dispatch completed; requested='.count($requests).'; responses='.count($responses).'; failures='.$failures, $S=$failures===0 ? 'info' : 'warning');
+		return $result;
 	}
 
 	/**
@@ -294,11 +319,13 @@ final class ApiManager {
 	 * @return array<string, mixed> Chain status record with responses and aggregate counts.
 	 */
 	public function dispatchChain(array $requests, array $options=[]): array {
-		return $this->dispatchBatch($requests, array_replace([
+		$result=$this->dispatchBatch($requests, array_replace([
 			'limit'=>128,
 			'limit_error'=>'too_many_chainlinks',
 			'continue_on_error'=>true,
 		], $options));
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API internal chain dispatch completed; requested='.count($requests).'; responses='.(int)($result['count'] ?? 0).'; failures='.(int)($result['failures'] ?? 0), $S=($result['ok'] ?? false)===true ? 'info' : 'warning');
+		return $result;
 	}
 
 	/**
@@ -397,19 +424,23 @@ final class ApiManager {
 				if($authorizedPayload!==null){
 					$request->setAttribute(self::AUTH_ATTRIBUTE, $authorizedPayload);
 				}
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API route authorization passed; route='.$this->apiRouteTraceLabel($route).'; requirements='.count($requirements).'; scheme='.((string)($authorizedPayload['scheme'] ?? 'unknown')), $S='info');
 				return null;
 			}
 		}
 
 		if(isset($firstFailure['response']) && $firstFailure['response'] instanceof Response){
+			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API route authorization failed; route='.$this->apiRouteTraceLabel($route).'; requirements='.count($requirements).'; scheme='.((string)($firstFailure['scheme'] ?? 'unknown')).'; status='.$firstFailure['response']->status, $S='warning');
 			return $firstFailure['response'];
 		}
 
+		$status=(int)($firstFailure['status'] ?? 401);
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API route authorization failed; route='.$this->apiRouteTraceLabel($route).'; requirements='.count($requirements).'; scheme='.((string)($firstFailure['scheme'] ?? 'unknown')).'; status='.$status, $S='warning');
 		return Response::json([
 			'ok'=>false,
 			'error'=>$firstFailure['message'] ?? 'Authentication failed.',
 			'scheme'=>$firstFailure['scheme'] ?? null,
-		], (int)($firstFailure['status'] ?? 401), is_array($firstFailure['headers'] ?? null) ? $firstFailure['headers'] : []);
+		], $status, is_array($firstFailure['headers'] ?? null) ? $firstFailure['headers'] : []);
 	}
 
 	/**
@@ -487,6 +518,7 @@ final class ApiManager {
 						$cacheTrace
 					)
 					: null;
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API compiled route execution completed; route='.$this->apiRouteTraceLabel($route).'; status='.$cached['response']->status.'; cache=hit; lifecycle_phases='.count($lifecycle), $S=$cached['response']->status < 400 ? 'info' : 'warning');
 				return $this->applyTraceToResponse($cached['response'], $tracePayload, $traceOptions);
 			}
 			if($bindings!==[]){
@@ -554,7 +586,9 @@ final class ApiManager {
 				$cacheTrace
 			)
 			: null;
-		return $this->applyTraceToResponse($finalResponse, $tracePayload, $traceOptions);
+		$response=$this->applyTraceToResponse($finalResponse, $tracePayload, $traceOptions);
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API compiled route execution completed; route='.$this->apiRouteTraceLabel($route).'; status='.$response->status.'; cache='.(string)($cacheTrace['state'] ?? $endpointCache['state'] ?? 'bypass').'; lifecycle_phases='.count($lifecycle), $S=$response->status < 400 ? 'info' : 'warning');
+		return $response;
 	}
 
 	/**
@@ -1280,14 +1314,35 @@ final class ApiManager {
 		if(!is_array($hooks) || $hooks===[]){
 			return null;
 		}
+		$payload=[
+			'phase'=>$phase,
+			'hook_count'=>count($hooks),
+			'route'=>$this->apiRouteTraceDescriptor($route),
+			'extra_count'=>count($extra),
+		];
+		$dialback=\dataphyre\core::dialback('CALL_API_FRAMEWORK_LIFECYCLE_BEFORE_RUN', $payload);
+		if($dialback instanceof Response){
+			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API lifecycle phase short-circuited before run; phase='.$phase.'; route='.$this->apiRouteTraceLabel($route).'; hooks='.count($hooks).'; status='.$dialback->status, $S=$dialback->status < 400 ? 'info' : 'warning');
+			return $dialback;
+		}
 		foreach($hooks as $hook){
 			if(!is_array($hook)){
 				continue;
 			}
 			$result=$this->invokeLifecycleHook($phase, $hook, $context, $request, $route, ...$extra);
 			if($result instanceof Response){
+				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API lifecycle phase short-circuited by hook; phase='.$phase.'; route='.$this->apiRouteTraceLabel($route).'; hooks='.count($hooks).'; status='.$result->status, $S=$result->status < 400 ? 'info' : 'warning');
+				$dialback=\dataphyre\core::dialback('CALL_API_FRAMEWORK_LIFECYCLE_AFTER_RUN', $payload+['short_circuited'=>true, 'status'=>$result->status]);
+				if($dialback instanceof Response){
+					return $dialback;
+				}
 				return $result;
 			}
+		}
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API lifecycle phase completed; phase='.$phase.'; route='.$this->apiRouteTraceLabel($route).'; hooks='.count($hooks), $S='info');
+		$dialback=\dataphyre\core::dialback('CALL_API_FRAMEWORK_LIFECYCLE_AFTER_RUN', $payload+['short_circuited'=>false]);
+		if($dialback instanceof Response){
+			return $dialback;
 		}
 		return null;
 	}
@@ -1314,14 +1369,35 @@ final class ApiManager {
 		$this->loadFrameworkModulesForExecutionTarget($hook);
 		$callable=$this->resolveExecutionCallable($hook);
 		if($callable===null){
+			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API lifecycle hook resolution failed; phase='.$phase.'; route='.$this->apiRouteTraceLabel($route).'; target_type='.(string)($hook['type'] ?? 'unknown'), $S='warning');
 			throw new \RuntimeException('API lifecycle target is invalid or unavailable.');
+		}
+		$payload=[
+			'phase'=>$phase,
+			'route'=>$this->apiRouteTraceDescriptor($route),
+			'target_type'=>(string)($hook['type'] ?? 'unknown'),
+			'class'=>isset($hook['class']) && is_string($hook['class']) ? trim($hook['class'], '\\') : null,
+			'method'=>isset($hook['method']) && is_string($hook['method']) ? trim($hook['method']) : null,
+			'reference'=>isset($hook['reference']) && is_string($hook['reference']) ? trim($hook['reference']) : null,
+			'extra_count'=>count($extra),
+		];
+		$dialback=\dataphyre\core::dialback('CALL_API_FRAMEWORK_LIFECYCLE_BEFORE_INVOKE', $payload);
+		if($dialback instanceof Response){
+			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API lifecycle hook replaced before invoke; phase='.$phase.'; route='.$this->apiRouteTraceLabel($route).'; status='.$dialback->status, $S=$dialback->status < 400 ? 'info' : 'warning');
+			return $dialback;
 		}
 		$args=match ($phase) {
 			'after' => array_merge([$context], $extra, [$request, $route]),
 			'error' => array_merge([$context], $extra, [$request, $route]),
 			default => [$context, $request, $route],
 		};
-		return $this->invokeCallableWithArgs($callable, $args);
+		$result=$this->invokeCallableWithArgs($callable, $args);
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API lifecycle hook invoked; phase='.$phase.'; route='.$this->apiRouteTraceLabel($route).'; result_type='.$this->apiValueType($result), $S=$result instanceof Response && $result->status >= 400 ? 'warning' : 'info');
+		$dialback=\dataphyre\core::dialback('CALL_API_FRAMEWORK_LIFECYCLE_AFTER_INVOKE', $payload+[
+			'result_type'=>$this->apiValueType($result),
+			'status'=>$result instanceof Response ? $result->status : null,
+		]);
+		return $dialback instanceof Response ? $dialback : $result;
 	}
 
 	/**
@@ -3102,10 +3178,71 @@ final class ApiManager {
 	): array {
 		$resolver=$this->resolveCallableReference($runtime['resolver'] ?? null);
 		if($resolver===null){
+			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API auth resolver unavailable; route='.$this->apiRouteTraceLabel($route).'; scheme='.$schemeName, $S='warning');
 			return $this->failure($schemeName, $runtime, $runtime['failure_message'] ?? 'Authentication is required for this endpoint.');
 		}
+		$payload=[
+			'scheme'=>$schemeName,
+			'route'=>$this->apiRouteTraceDescriptor($route),
+			'credential_type'=>$this->apiValueType($credentials),
+			'scope_count'=>count($scopes),
+			'runtime_keys'=>array_values(array_map('strval', array_keys($runtime))),
+		];
+		$dialback=\dataphyre\core::dialback('CALL_API_FRAMEWORK_AUTH_BEFORE_RESOLVER', $payload);
+		if($dialback!==null){
+			$result=$this->normalizeAuthorizationResult($schemeName, $runtime, $dialback);
+			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API auth resolver replaced before invoke; route='.$this->apiRouteTraceLabel($route).'; scheme='.$schemeName.'; authorized='.(($result['authorized'] ?? false)===true ? 'yes' : 'no'), $S=($result['authorized'] ?? false)===true ? 'info' : 'warning');
+			return $result;
+		}
 		$result=$resolver($credentials, $request, $route, $scopes, $runtime);
-		return $this->normalizeAuthorizationResult($schemeName, $runtime, $result);
+		$normalized=$this->normalizeAuthorizationResult($schemeName, $runtime, $result);
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API auth resolver completed; route='.$this->apiRouteTraceLabel($route).'; scheme='.$schemeName.'; authorized='.(($normalized['authorized'] ?? false)===true ? 'yes' : 'no').'; result_type='.$this->apiValueType($result), $S=($normalized['authorized'] ?? false)===true ? 'info' : 'warning');
+		$dialback=\dataphyre\core::dialback('CALL_API_FRAMEWORK_AUTH_AFTER_RESOLVER', $payload+[
+			'authorized'=>($normalized['authorized'] ?? false)===true,
+			'status'=>$normalized['status'] ?? null,
+			'result_type'=>$this->apiValueType($result),
+		]);
+		return $dialback!==null ? $this->normalizeAuthorizationResult($schemeName, $runtime, $dialback) : $normalized;
+	}
+
+	/**
+	 * Builds a compact, non-sensitive route descriptor for trace and dialback metadata.
+	 *
+	 * @param array<string, mixed> $route Compiled route manifest row.
+	 * @return array<string, mixed> Summary metadata without request data, headers, credentials, or response bodies.
+	 */
+	private function apiRouteTraceDescriptor(array $route): array {
+		$api=is_array($route['api'] ?? null) ? $route['api'] : [];
+		return [
+			'path'=>(string)($api['path'] ?? $route['path_template'] ?? $route['exact_path'] ?? '/'),
+			'operation_id'=>isset($api['operation_id']) && is_string($api['operation_id']) ? trim($api['operation_id']) : null,
+			'profile'=>isset($api['profile']) && is_string($api['profile']) ? trim($api['profile']) : null,
+			'methods'=>array_values(array_map('strval', is_array($api['methods'] ?? null) ? $api['methods'] : (is_array($route['methods'] ?? null) ? $route['methods'] : []))),
+		];
+	}
+
+	/**
+	 * Builds a compact route label for one-line trace messages.
+	 *
+	 * @param array<string, mixed> $route Compiled route manifest row.
+	 * @return string Trace-safe route label.
+	 */
+	private function apiRouteTraceLabel(array $route): string {
+		$descriptor=$this->apiRouteTraceDescriptor($route);
+		$operation=is_string($descriptor['operation_id'] ?? null) && $descriptor['operation_id']!==''
+			? '@'.$descriptor['operation_id']
+			: '';
+		return (string)$descriptor['path'].$operation;
+	}
+
+	/**
+	 * Returns a non-sensitive value type label for traces and dialback summaries.
+	 *
+	 * @param mixed $value Value being described.
+	 * @return string Type label; object values use their class name.
+	 */
+	private function apiValueType(mixed $value): string {
+		return is_object($value) ? $value::class : gettype($value);
 	}
 
 	/**

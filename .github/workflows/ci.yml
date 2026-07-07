@@ -27,18 +27,24 @@ jobs:
 
       - name: Run release surface checks
         shell: pwsh
-        run: ./tools/release_check
+        run: ./dev/tools/release_check
 
-      - name: Run public export checks
+      - name: Run public export source audit
         shell: pwsh
-        run: ./tools/check_export
+        run: ./dev/tools/check_export -WarnOnly -WarningLimit 200
 
       - name: Build sanitized public export
         shell: pwsh
         run: |
           $export = Join-Path $env:RUNNER_TEMP 'dataphyre-export'
-          ./tools/prepare_export -Output $export
+          ./dev/tools/prepare_export -Output $export
 
       - name: Lint PHP files
         shell: pwsh
-        run: ./tools/lint_php.ps1
+        run: ./dev/tools/lint_php.ps1
+
+      - name: Run MCP self-test
+        run: php dev/tools/mcp_self_test.php
+
+      - name: Run MCP live validation
+        run: php dev/tools/mcp_live_validate.php

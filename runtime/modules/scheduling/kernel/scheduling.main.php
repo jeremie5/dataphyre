@@ -46,7 +46,7 @@ class scheduling {
      * @return bool Whether the scheduler definition was accepted and persisted.
      */
     public static function run(string $name, string $file_path, float $frequency, float $timeout, string $memory_limit, array $dependencies, ?string $app_override=null) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(!isset($app_override))$app_override=APP;
 		$name=self::normalize_scheduler_name($name);
 		if($name===''){
@@ -208,7 +208,7 @@ class scheduling {
 	 * @return bool Whether run() should register a shutdown dispatch.
 	 */
 	private static function can_run(array $scheduler) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Execution frequency is '.$scheduler['frequency']);
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Execution timeout is '.$scheduler['timeout']);
 		\dataphyre\core::get_server_load_level();

@@ -98,6 +98,26 @@ final class Currency {
 		return self::manager()->minorUnits($currency);
 	}
 
+	/** Returns the major-to-minor unit factor for a currency code. */
+	public static function minorFactor(string $currency): int {
+		return self::manager()->minorFactor($currency);
+	}
+
+	/** Converts a major-unit amount into integer minor units. */
+	public static function amountToMinorUnits(float|int|string|null $amount, string $currency, bool $cash=false): int {
+		return self::manager()->amountToMinorUnits($amount, $currency, $cash);
+	}
+
+	/** Converts integer minor units into a fixed-decimal major-unit string. */
+	public static function minorUnitsToDecimal(int $minor_amount, string $currency): string {
+		return self::manager()->minorUnitsToDecimal($minor_amount, $currency);
+	}
+
+	/** Converts canonical integer minor units between currencies. */
+	public static function convertMinorUnits(int $minor_amount, string $source_currency, string $target_currency): int {
+		return self::manager()->convertMinorUnits($minor_amount, $source_currency, $target_currency);
+	}
+
 	/** Returns the cash rounding increment for a currency code. */
 	public static function cashRoundingIncrement(string $currency): ?float {
 		return self::manager()->cashRoundingIncrement($currency);
@@ -169,18 +189,18 @@ final class Currency {
 	}
 
 	/** Formats an amount using active currency display state. */
-	public static function format(float|int|null $amount, bool $show_free=false, ?string $currency=null): string {
+	public static function format(float|int|string|null $amount, bool $show_free=false, ?string $currency=null): string {
 		return self::manager()->format($amount, $show_free, $currency);
 	}
 
 	/** Rounds an amount according to currency precision or cash increment. */
-	public static function roundAmount(float|int|null $amount, string $currency, bool $cash=false): float {
+	public static function roundAmount(float|int|string|null $amount, string $currency, bool $cash=false): float {
 		return self::manager()->roundAmount($amount, $currency, $cash);
 	}
 
 	/** Converts an amount between explicit currencies. */
 	public static function convert(
-		float|int|null $amount,
+		float|int|string|null $amount,
 		string $source_currency,
 		string $target_currency,
 		bool $formatted=false,
@@ -191,7 +211,7 @@ final class Currency {
 
 	/** Converts an amount from base currency to display currency. */
 	public static function convertToDisplay(
-		float|int|null $amount,
+		float|int|string|null $amount,
 		bool $formatted=false,
 		bool $show_free=true,
 		?string $currency=null
@@ -201,7 +221,7 @@ final class Currency {
 
 	/** Converts an amount from an original currency to base currency. */
 	public static function convertToBase(
-		float|int|null $amount,
+		float|int|string|null $amount,
 		string $original_currency,
 		bool $formatted=false,
 		bool $show_free=true
@@ -210,8 +230,13 @@ final class Currency {
 	}
 
 	/** Creates a Money value bound to the shared manager. */
-	public static function money(float|int|null $amount, ?string $currency=null): Money {
+	public static function money(float|int|string|null $amount, ?string $currency=null): Money {
 		return self::manager()->money($amount, $currency);
+	}
+
+	/** Creates a Money value from canonical integer minor units. */
+	public static function moneyFromMinor(int $minor_amount, ?string $currency=null): Money {
+		return self::manager()->moneyFromMinor($minor_amount, $currency);
 	}
 
 	/** Converts a Money value to another currency. */
@@ -231,7 +256,7 @@ final class Currency {
 
 	/** Converts a scalar amount using a fresh-enough snapshot. */
 	public static function convertOrFailFresh(
-		float|int|null $amount,
+		float|int|string|null $amount,
 		string $source_currency,
 		string $target_currency,
 		int $max_age_seconds,
@@ -266,12 +291,22 @@ final class Currency {
 	}
 
 	/** Splits an amount into equal Money parts while preserving rounding remainder. */
-	public static function splitAmount(float|int|null $amount, string $currency, int $parts, bool $cash=false): array {
+	public static function splitAmount(float|int|string|null $amount, string $currency, int $parts, bool $cash=false): array {
 		return self::manager()->splitAmount($amount, $currency, $parts, $cash);
 	}
 
+	/** Splits canonical integer minor units into integer minor-unit parts. */
+	public static function splitMinorUnits(int $minor_amount, string $currency, int $parts, bool $cash=false): array {
+		return self::manager()->splitMinorUnits($minor_amount, $currency, $parts, $cash);
+	}
+
 	/** Allocates an amount by ratios and returns Money values keyed like the ratios. */
-	public static function allocateAmount(float|int|null $amount, string $currency, array $ratios, bool $cash=false): array {
+	public static function allocateAmount(float|int|string|null $amount, string $currency, array $ratios, bool $cash=false): array {
 		return self::manager()->allocateAmount($amount, $currency, $ratios, $cash);
+	}
+
+	/** Allocates canonical integer minor units by ratio and returns integer minor units. */
+	public static function allocateMinorUnits(int $minor_amount, string $currency, array $ratios, bool $cash=false): array {
+		return self::manager()->allocateMinorUnits($minor_amount, $currency, $ratios, $cash);
 	}
 }

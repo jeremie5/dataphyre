@@ -6,6 +6,8 @@
  * SPDX-License-Identifier: MIT
  */
 if(!function_exists('dp_access_unit_create_session')){
+	require_once __DIR__.'/../kernel/access.main.php';
+
 	function dp_access_unit_create_session(int $userid, bool $keepalive): bool {
 		$GLOBALS['dp_unit_sql_insert']=static function(string $table, array $fields)use($userid): mixed {
 			return (($fields['userid'] ?? null)===$userid && $userid!==999) ? ['unit_insert'=>true] : false;

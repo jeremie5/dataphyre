@@ -348,9 +348,9 @@ Templating::setAssetPolicy(
 Built-in money formatting works in both helper and filter form:
 
 ```tpl
-{{ order.total | money }}
-{{ order.total | money('CAD') }}
-{{ money(order.total, 'USD') }}
+{{ order.total_money | money }}
+{{ order.display_total | money('CAD') }}
+{{ money(order.total_money, 'USD') }}
 ```
 
 Register a contract and render in strict mode:
@@ -646,7 +646,8 @@ Framework registration methods just delegate to the kernel:
 
 ```php
 Templating::registerTag('currency', function(array $args, array $data){
-	return '$'.number_format((float)($data[$args[0]] ?? 0), 2);
+	$minor_units=(int)($data[$args[0]] ?? 0);
+	return '$'.number_format($minor_units/100, 2);
 });
 
 Templating::registerFilter('upper', fn($value)=>mb_strtoupper((string)$value));
@@ -1056,7 +1057,7 @@ $missing_assets=$asset_manifest->missing();
 - Asset tags and manifest bundles respect the active asset policy for preload toggles, script strategy, script type, style media, and font crossorigin handling.
 - `RenderedTemplate` carries the same asset bundle, so application code can render the view content and asset blocks from one typed object.
 - View bindings resolve explicitly before render, and `inspect()` records which bindings ran, how long they took, and which ones failed.
-- The built-in `money` helper and filter understand Dataphyre `Money` objects directly and can also format plain numeric values.
+- The built-in `money` helper and filter understand Dataphyre `Money` objects directly and can also format decimal display-boundary values.
 - Static file-render caching includes the active asset policy and helper/filter/tag/extension registry signature, so asset-policy changes do not leave stale cached HTML behind.
 - `strict_mode` turns missing references, undefined variables, render errors, and contract violations into an error-template path instead of a silent partial render.
 - `strict_mode` also bypasses static output caching so the actual render graph is validated.

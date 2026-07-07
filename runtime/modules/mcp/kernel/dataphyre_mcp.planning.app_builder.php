@@ -80,6 +80,17 @@ trait dataphyre_mcp_planning_app_builder_surfaces {
 			foreach($this->app_builder_code_skeletons($plan) as $skeleton){
 				$code_skeletons[]=$skeleton;
 			}
+			$code_unit_test_skeletons=$this->app_builder_code_unit_test_skeletons($plan);
+			foreach($code_unit_test_skeletons as $skeleton){
+				$path=(string)($skeleton['path'] ?? '');
+				if($path!==''){
+					$files[]=$path;
+				}
+				$code_skeletons[]=$skeleton;
+			}
+			if($code_unit_test_skeletons!==[]){
+				$verification[]='app_local_php_unit_tests';
+			}
 			foreach($this->app_builder_data_model($plan, $schema_context) as $model){
 				$data_model[]=$model;
 				foreach($this->app_builder_data_model_code_skeletons($model) as $skeleton){
@@ -162,6 +173,135 @@ trait dataphyre_mcp_planning_app_builder_surfaces {
 			'fields'=>$this->app_builder_schema_fields($field_hints),
 			'relationships'=>$this->app_builder_relationships($field_hints),
 		];
+	}
+
+	/**
+	 * Builds lightweight app-owned PHP test skeletons beside generated unit-test manifests.
+	 *
+	 * @param array<string,mixed> $plan Dry-run scaffold plan.
+	 * @return array<int,array<string,mixed>> Code-defined PHP test skeleton previews.
+	 */
+	private function app_builder_code_unit_test_skeletons(array $plan): array {
+		$path=$this->app_builder_code_unit_test_path($plan);
+		if($path===''){
+			return [];
+		}
+		$type=(string)($plan['type'] ?? '');
+		$name=(string)($plan['name'] ?? 'Resource');
+		$suite=basename($path, '.test.php');
+		$kind=match($type){
+			'panel_resource'=>'panel_code_unit_test',
+			'api_endpoint'=>'api_code_unit_test',
+			'sql_table'=>'sql_code_unit_test',
+			default=>'app_code_unit_test',
+		};
+		$purpose=match($kind){
+			'panel_code_unit_test'=>'Lightweight app-owned PHP unit test skeleton for generated Panel resource behavior',
+			'api_code_unit_test'=>'Lightweight app-owned PHP unit test skeleton for generated API endpoint behavior',
+			'sql_code_unit_test'=>'Lightweight app-owned PHP unit test skeleton for generated SQL/data-model behavior',
+			default=>'Lightweight app-owned PHP unit test skeleton for generated app behavior',
+		};
+		$focus=match($kind){
+			'panel_code_unit_test'=>'resource loading, manifest registration, fields, filters, actions, and relation adapters',
+			'api_code_unit_test'=>'endpoint handler results, request validation, auth policy, and copy-safe response payloads',
+			'sql_code_unit_test'=>'TableSchema metadata, repository defaults, required fields, indexes, and relationship hints',
+			default=>'the generated app contract and local integration points',
+		};
+		return [[
+			'path'=>$path,
+			'kind'=>$kind,
+			'language'=>'php',
+			'purpose'=>$purpose,
+			'adaptation_notes'=>[
+				'Keep this test file under the consuming application backend/dataphyre/unit_tests directory.',
+				'Replace placeholder assertions with app-local checks for '.$focus.'.',
+				'Run it with the consuming application local PHP unit-test command after adapting generated files.',
+				'Use this as focused app verification; do not turn ordinary app scaffolds into maintainer or release-validation work.',
+			],
+			'content'=>$this->app_builder_code_unit_test_content($suite, $kind, $name, is_array($plan['field_hints'] ?? null) ? $plan['field_hints'] : []),
+		]];
+	}
+
+	/**
+	 * Derives an app-owned PHP test path from the scaffold's focused manifest path.
+	 *
+	 * @param array<string,mixed> $plan Dry-run scaffold plan.
+	 * @return string Repo-relative app-owned test path, or empty when no app-owned unit-test manifest exists.
+	 */
+	private function app_builder_code_unit_test_path(array $plan): string {
+		foreach(is_array($plan['proposed_files'] ?? null) ? $plan['proposed_files'] : [] as $file){
+			$file=(string)$file;
+			if(str_contains($file, '/backend/dataphyre/unit_tests/') && str_ends_with($file, '.json')){
+				return substr($file, 0, -5).'.test.php';
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * Builds a runner-neutral PHP test skeleton for app-owned unit test files.
+	 *
+	 * @param string $suite Test suite id derived from the planned file name.
+	 * @param string $kind Skeleton kind.
+	 * @param string $name Planned resource or endpoint name.
+	 * @return string PHP skeleton content.
+	 */
+	private function app_builder_code_unit_test_content(string $suite, string $kind, string $name, array $field_hints=[]): string {
+		$case=match($kind){
+			'panel_code_unit_test'=>'generated_panel_resource_contract',
+			'api_code_unit_test'=>'generated_api_endpoint_contract',
+			'sql_code_unit_test'=>'generated_sql_data_contract',
+			default=>'generated_app_contract',
+		};
+		$tag=match($kind){
+			'panel_code_unit_test'=>'panel',
+			'api_code_unit_test'=>'api',
+			'sql_code_unit_test'=>'sql',
+			default=>'app',
+		};
+		$focus=match($kind){
+			'panel_code_unit_test'=>'resource, manifest, schema, filter, action, and relation assertions',
+			'api_code_unit_test'=>'handler, validation, auth, and copy-safe response assertions',
+			'sql_code_unit_test'=>'schema, repository, record, and SQL config assertions',
+			default=>'app-owned generated behavior assertions',
+		};
+		$field_names=array_values(array_filter(array_map('strval', array_keys($field_hints)), static fn(string $field): bool=>$field!==''));
+		$field_export=var_export($field_names, true);
+		$assertion_block=match($kind){
+			'panel_code_unit_test'=>
+				"    \$expected_fields=".$field_export.";\n".
+				"    \$surface=[]; // TODO: load the app-owned Panel resource/manifest surface.\n".
+				"    foreach(\$expected_fields as \$field){\n".
+				"        \$t->panelHasField(\$surface, \$field);\n".
+				"    }\n".
+				"    // \$permissions=\$t->fakePermissions()->allow('".$this->slug_name($name).".view', '*', ['id'=>1]);\n".
+				"    // \$t->permits(\$permissions, ['id'=>1], '".$this->slug_name($name).".view');\n",
+			'api_code_unit_test'=>
+				"    \$response=[]; // TODO: call the app-owned endpoint handler with a fake request.\n".
+				"    \$t->responseStatus(200, \$response);\n".
+				"    \$t->responseJsonSubset(['data'=>[]], \$response);\n".
+				"    // \$auth=\$t->fakeAuth(['id'=>1]);\n".
+				"    // \$auth->assertAuthenticated(\$t);\n",
+			'sql_code_unit_test'=>
+				"    \$schema=[]; // TODO: load the app-owned TableSchema metadata.\n".
+				"    foreach(".$field_export." as \$field){\n".
+				"        \$t->schemaHasColumn(\$schema, \$field);\n".
+				"    }\n".
+				"    // \$db=\$t->fakeDatabase(['".$this->slug_name($name)."'=>array_fill_keys(".$field_export.", 'mixed')]);\n".
+				"    // \$t->tableCount(\$db, '".$this->slug_name($name)."', 0);\n",
+			default=>
+				"    \$events=[]; // TODO: record app-owned integration events or trace rows.\n".
+				"    \$t->expect(\$events)->toBeType('array');\n",
+		};
+		$todo='Bind this skeleton to app-local '.$focus.' for '.$this->title_label($name).($field_names!==[] ? '; inferred fields: '.implode(', ', $field_names) : '').'.';
+		return "<?php\n".
+			"declare(strict_types=1);\n\n".
+			"use Dataphyre\\Test\\Context;\n".
+			"use function Dataphyre\\Test\\test;\n\n".
+			"test(".var_export($case, true).", static function(Context \$t): void {\n".
+			"    \$t->todo(".var_export($todo, true).");\n".
+			$assertion_block.
+			"})->tag(".var_export($tag, true).", 'generated-scaffold', ".var_export($suite, true).");\n";
 	}
 
 	/**

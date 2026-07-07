@@ -71,6 +71,9 @@ return [
 				'plugins',
 				'plugins/pre_init',
 				'plugins/post_init',
+				'sql_migration',
+				'sql_migration/plans',
+				'sql_migration/snapshots',
 			],
 			'files'=>[
 				[

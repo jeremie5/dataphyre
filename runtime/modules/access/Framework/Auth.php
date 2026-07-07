@@ -286,7 +286,18 @@ final class Auth {
 	 * @return bool True when login succeeds.
 	 */
 	public static function login(mixed $user, bool $remember=false, ?string $guard=null): bool {
-		return self::guard($guard)->login($user, $remember);
+		$payload=[
+			'guard'=>$guard,
+			'remember'=>$remember,
+			'user_type'=>is_object($user) ? $user::class : gettype($user),
+		];
+		$dialback=\dataphyre\core::dialback('CALL_ACCESS_FRAMEWORK_AUTH_BEFORE_LOGIN', $payload);
+		if(is_bool($dialback)){
+			return $dialback;
+		}
+		$result=self::guard($guard)->login($user, $remember);
+		$dialback=\dataphyre\core::dialback('CALL_ACCESS_FRAMEWORK_AUTH_AFTER_LOGIN', $payload+['ok'=>$result]);
+		return is_bool($dialback) ? $dialback : $result;
 	}
 
 	/**
@@ -298,7 +309,18 @@ final class Auth {
 	 * @return bool True when login succeeds.
 	 */
 	public static function loginUsingId(int|string $identifier, bool $remember=false, ?string $guard=null): bool {
-		return self::guard($guard)->loginUsingId($identifier, $remember);
+		$payload=[
+			'guard'=>$guard,
+			'remember'=>$remember,
+			'identifier_type'=>gettype($identifier),
+		];
+		$dialback=\dataphyre\core::dialback('CALL_ACCESS_FRAMEWORK_AUTH_BEFORE_LOGIN_USING_ID', $payload);
+		if(is_bool($dialback)){
+			return $dialback;
+		}
+		$result=self::guard($guard)->loginUsingId($identifier, $remember);
+		$dialback=\dataphyre\core::dialback('CALL_ACCESS_FRAMEWORK_AUTH_AFTER_LOGIN_USING_ID', $payload+['ok'=>$result]);
+		return is_bool($dialback) ? $dialback : $result;
 	}
 
 	/**
@@ -310,7 +332,18 @@ final class Auth {
 	 * @return bool True when credentials authenticate.
 	 */
 	public static function attempt(array $credentials, bool $remember=false, ?string $guard=null): bool {
-		return self::guard($guard)->attempt($credentials, $remember);
+		$payload=[
+			'guard'=>$guard,
+			'remember'=>$remember,
+			'credential_keys'=>array_values(array_map('strval', array_keys($credentials))),
+		];
+		$dialback=\dataphyre\core::dialback('CALL_ACCESS_FRAMEWORK_AUTH_BEFORE_ATTEMPT', $payload);
+		if(is_bool($dialback)){
+			return $dialback;
+		}
+		$result=self::guard($guard)->attempt($credentials, $remember);
+		$dialback=\dataphyre\core::dialback('CALL_ACCESS_FRAMEWORK_AUTH_AFTER_ATTEMPT', $payload+['ok'=>$result]);
+		return is_bool($dialback) ? $dialback : $result;
 	}
 
 	/**
@@ -351,7 +384,14 @@ final class Auth {
 	 * @return bool True when logout succeeds.
 	 */
 	public static function logout(?string $guard=null): bool {
-		return self::guard($guard)->logout();
+		$payload=['guard'=>$guard];
+		$dialback=\dataphyre\core::dialback('CALL_ACCESS_FRAMEWORK_AUTH_BEFORE_LOGOUT', $payload);
+		if(is_bool($dialback)){
+			return $dialback;
+		}
+		$result=self::guard($guard)->logout();
+		$dialback=\dataphyre\core::dialback('CALL_ACCESS_FRAMEWORK_AUTH_AFTER_LOGOUT', $payload+['ok'=>$result]);
+		return is_bool($dialback) ? $dialback : $result;
 	}
 
 	/**

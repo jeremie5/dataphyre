@@ -41,6 +41,9 @@
 /runtime/modcache.php
 /runtime/sql_migration/plans/
 /runtime/sql_migration/snapshots/
+**/src/AccessToken.json
+**/src/request_times.log
+**/src/last_curl_error.txt
 
 # Local bootstrap keys and generated install artifacts
 /sql_migration/plans/

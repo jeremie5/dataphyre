@@ -36,10 +36,21 @@ Prefer these extension points:
 - MCP metadata under `plugins/mcp/` for local agent/tool integration
 - reusable runtime modules when behavior belongs in the framework
 
+Use existing dialback names exactly; they are runtime extension contracts.
+New kernel/runtime dialbacks should be explicit module-scoped events, normally
+`CALL_<MODULE>_<ACTION>`. New Framework-owned dialbacks should use
+`CALL_<MODULE>_FRAMEWORK_<SURFACE_OR_CONCEPT>_<ACTION>` unless the Framework code
+is intentionally bridging an existing kernel hook. Document new public hooks
+where the module exposes them. Use the global `tracelog()` helper for Dataphyre
+runtime instrumentation, but do not add `tracelog()` to functions that can run
+1000+ times per request unless the retained overhead is proven with maintainer
+benchmarks. Log `function_call_with_test` only for functions suitable for
+dynamic unit-test discovery. Functions with `#[SensitiveParameter]` should use
+`function_call` and no argument payload, and traces must not include secrets or
+tenant-private payloads.
+
 Core edits are appropriate for framework development: bugs in Dataphyre itself,
 performance work, public API changes, module behavior, and documentation.
-Contributor tooling, benchmarks, and private `plugins/mcp/*.json` declarations
-are outside public release payloads.
 
 Before changing framework runtime code, changes should be reusable across
 modules, inspectable, provenance-aware, verified, and small in runtime surface.

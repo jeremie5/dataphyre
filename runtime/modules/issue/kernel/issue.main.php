@@ -230,7 +230,7 @@ class issue{
 	 * @return bool True when the deferred recrypt task is queued or completed by core.
 	 */
 	public static function recrypt(int $issueid) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		return \dataphyre\core::defer_recrypt(__METHOD__, $issueid, function(string $queue)use($issueid){
 			sql_select(
 				$S="*",
@@ -280,7 +280,7 @@ class issue{
 	 * @return bool|int Existing or created issue id; false when the database insert fails.
 	 */
 	public static function create(string $type, array $context=[], string $description='', int $severity=0, mixed $legacy_extra=null) : bool|int {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$base_context=self::base_context($context);
 		$md5=md5($type.self::encode_context($base_context));
 		$existing_issue=sql_select(

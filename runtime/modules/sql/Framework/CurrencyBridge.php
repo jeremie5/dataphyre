@@ -30,10 +30,12 @@ final class CurrencyBridge {
 	 * Normalizes a simple money mapping definition.
 	 *
 	 * A mapping needs an amount column and either a currency column or fixed
-	 * currency. The target column is where hydrated `Money` objects appear in
-	 * result rows and where write expansion looks for incoming money objects.
+	 * currency. Columns ending in `_minor` store integer minor units; other amount
+	 * columns are treated as fixed-decimal major-unit values. The target column is
+	 * where hydrated `Money` objects appear in result rows and where write
+	 * expansion looks for incoming money objects.
 	 *
-	 * @param string $amountColumn SQL column containing the numeric amount.
+	 * @param string $amountColumn SQL column containing integer minor units when named `*_minor`, otherwise a decimal major-unit amount.
 	 * @param ?string $currencyColumn SQL column containing the row currency.
 	 * @param ?string $currency Fixed currency used when no currency column exists.
 	 * @param ?string $targetColumn Hydrated object/write input column; defaults to amount column.
@@ -113,7 +115,7 @@ final class CurrencyBridge {
 				"Money hydration requires a non-empty currency value for '{$mapping['amount_column']}'."
 			);
 		}
-		$row[$targetColumn]=self::money((float)$amount, (string)$currency);
+		$row[$targetColumn]=self::moneyFromColumnValue($amount, (string)$currency, $mapping['amount_column']);
 		return $row;
 	}
 
@@ -146,7 +148,7 @@ final class CurrencyBridge {
 		self::$lastStoredMoneyMappingInput=$input;
 		return self::$lastStoredMoneyMappingOutput=[
 			'original_amount_column'=>self::normalizeColumn(
-				isset($definition['original_amount_column']) ? (string)$definition['original_amount_column'] : 'original_amount',
+				isset($definition['original_amount_column']) ? (string)$definition['original_amount_column'] : 'original_amount_minor',
 				'stored money original amount',
 				$owner
 			),
@@ -156,7 +158,7 @@ final class CurrencyBridge {
 				$owner
 			),
 			'base_amount_column'=>self::normalizeColumn(
-				isset($definition['base_amount_column']) ? (string)$definition['base_amount_column'] : 'base_amount',
+				isset($definition['base_amount_column']) ? (string)$definition['base_amount_column'] : 'base_amount_minor',
 				'stored money base amount',
 				$owner
 			),
@@ -308,13 +310,15 @@ final class CurrencyBridge {
 	 *
 	 * `Money` values are converted to the fixed currency when provided. Scalar
 	 * amounts are only accepted with a fixed currency, since otherwise the stored
-	 * amount column has no currency context.
+	 * amount column has no currency context. Scalar comparisons accept integers
+	 * and numeric strings only; floats are rejected so money filters do not carry
+	 * binary floating-point drift into query bindings.
 	 *
 	 * @param mixed $value Money object or scalar amount.
 	 * @param ?string $fixedCurrency Fixed storage currency for scalar comparisons.
 	 * @param string $owner Query/table owner used in validation errors.
 	 * @param string $amountColumn Amount column being compared.
-	 * @return array{amount: float, currency: string} Comparable amount and currency.
+	 * @return array{amount: int|float|string, currency: string} Comparable amount and currency.
 	 */
 	public static function normalizeComparableValue(
 		mixed $value,
@@ -330,11 +334,11 @@ final class CurrencyBridge {
 				$value=self::currencyFacade()::convertMoney($value, $fixedCurrency);
 			}
 			return [
-				'amount'=>(float)$value->amount(),
+				'amount'=>self::moneyStorageAmount($value, $amountColumn),
 				'currency'=>$fixedCurrency ?? (string)$value->currency(),
 			];
 		}
-		if(is_int($value) || is_float($value) || (is_string($value) && is_numeric(trim($value)))){
+		if(is_int($value) || (is_string($value) && is_numeric(trim($value)))){
 			if($fixedCurrency===null){
 				throw SqlError::invalidMoneyComparison(
 					$owner,
@@ -343,8 +347,9 @@ final class CurrencyBridge {
 					'Pass a Money object for same-currency row filtering, or use whereMoney...In(..., $currency) when the stored amount column is already normalized to one currency.'
 				);
 			}
+			$money=self::money($value, $fixedCurrency);
 			return [
-				'amount'=>(float)$value,
+				'amount'=>self::moneyStorageAmount($money, $amountColumn),
 				'currency'=>$fixedCurrency,
 			];
 		}
@@ -352,19 +357,19 @@ final class CurrencyBridge {
 			$owner,
 			$amountColumn,
 			'Unsupported money comparison value.',
-			'Pass a Dataphyre\\Currency\\Money object, or a scalar amount together with a fixed storage currency.'
+			'Pass a Dataphyre\\Currency\\Money object, or an integer or numeric-string scalar amount together with a fixed storage currency.'
 		);
 	}
 
 	/**
 	 * Creates a Currency framework `Money` object.
 	 *
-	 * @param float|int $amount Numeric amount.
+	 * @param float|int|string $amount Numeric amount.
 	 * @param string $currency Currency code.
 	 * @return object Currency framework Money instance.
 	 */
-	public static function money(float|int $amount, string $currency): object {
-		return self::currencyFacade()::money((float)$amount, self::normalizeCurrency($currency, 'sql-currency-bridge'));
+	public static function money(float|int|string $amount, string $currency): object {
+		return self::currencyFacade()::money($amount, self::normalizeCurrency($currency, 'sql-currency-bridge'));
 	}
 
 	/**
@@ -450,12 +455,12 @@ final class CurrencyBridge {
 	private static function expandStoredMoneyPrefixes(array $definition): array {
 		if(isset($definition['original_prefix']) && !isset($definition['original_amount_column'])){
 			$prefix=(string)$definition['original_prefix'];
-			$definition['original_amount_column']=$prefix.'amount';
+			$definition['original_amount_column']=$prefix.'amount_minor';
 			$definition['original_currency_column'] ??= $prefix.'currency';
 		}
 		if(isset($definition['base_prefix']) && !isset($definition['base_amount_column'])){
 			$prefix=(string)$definition['base_prefix'];
-			$definition['base_amount_column']=$prefix.'amount';
+			$definition['base_amount_column']=$prefix.'amount_minor';
 			$definition['base_currency_column'] ??= $prefix.'currency';
 		}
 		if(isset($definition['exchange_prefix'])){
@@ -487,7 +492,7 @@ final class CurrencyBridge {
 			if($fixedCurrency!==null && (string)$money->currency()!==$fixedCurrency){
 				$money=self::currencyFacade()::convertMoney($money, $fixedCurrency);
 			}
-			$fields[$mapping['amount_column']]=$money->amount();
+			$fields[$mapping['amount_column']]=self::moneyStorageAmount($money, $mapping['amount_column']);
 			if($mapping['currency_column']!==null){
 				$fields[$mapping['currency_column']]=$money->currency();
 			}
@@ -524,9 +529,9 @@ final class CurrencyBridge {
 				$mapping['base_currency']
 			);
 		}
-		$fields[$mapping['original_amount_column']]=$storedMoney->originalAmount();
+		$fields[$mapping['original_amount_column']]=self::storedMoneyStorageAmount($storedMoney, $mapping['original_amount_column'], 'original');
 		$fields[$mapping['original_currency_column']]=$storedMoney->originalCurrency();
-		$fields[$mapping['base_amount_column']]=$storedMoney->baseAmount();
+		$fields[$mapping['base_amount_column']]=self::storedMoneyStorageAmount($storedMoney, $mapping['base_amount_column'], 'base');
 		$fields[$mapping['base_currency_column']]=$storedMoney->baseCurrency();
 		$fields[$mapping['exchange_rate_column']]=$storedMoney->exchangeRate();
 		$fields[$mapping['exchange_source_column']]=$storedMoney->exchangeSource();
@@ -554,6 +559,103 @@ final class CurrencyBridge {
 	 */
 	private static function writeCandidateColumns(string $targetColumn, string $amountColumn): array {
 		return array_values(array_unique([$targetColumn, $amountColumn]));
+	}
+
+	/**
+	 * Reports whether a mapped amount column stores integer minor units.
+	 *
+	 * @param string $column SQL amount column name.
+	 * @return bool True when the column follows the *_minor convention.
+	 */
+	private static function isMinorAmountColumn(string $column): bool {
+		return str_ends_with($column, '_minor') || str_ends_with($column, '.amount_minor');
+	}
+
+	/**
+	 * Normalizes an integer minor-unit column without accepting lossy casts.
+	 *
+	 * @param mixed $amount Raw minor-unit amount from a driver or caller.
+	 * @param string $amountColumn Mapped amount column name.
+	 * @return int Canonical integer minor units.
+	 */
+	private static function minorAmountFromColumn(mixed $amount, string $amountColumn): int {
+		if(is_int($amount)){
+			return $amount;
+		}
+		if(is_string($amount)){
+			$amount=trim($amount);
+			if($amount!=='' && preg_match('/^-?\d+$/', $amount)===1){
+				$negative=$amount[0]==='-';
+				$digits=ltrim($negative ? substr($amount, 1) : $amount, '0');
+				$digits=$digits==='' ? '0' : $digits;
+				$limit=$negative ? '9223372036854775808' : (string)PHP_INT_MAX;
+				if(strlen($digits)<strlen($limit) || (strlen($digits)===strlen($limit) && strcmp($digits, $limit)<=0)){
+					return (int)$amount;
+				}
+			}
+		}
+		throw SqlError::invalidMoneyDefinition(
+			'sql-currency-bridge',
+			"Money amount column '{$amountColumn}' must contain integer minor units."
+		);
+	}
+
+	/**
+	 * Converts a raw mapped column value into a Money object.
+	 *
+	 * @param mixed $amount Raw major-unit or minor-unit amount.
+	 * @param string $currency Currency code.
+	 * @param string $amountColumn Mapped amount column name.
+	 * @return object Currency framework Money instance.
+	 */
+	private static function moneyFromColumnValue(mixed $amount, string $currency, string $amountColumn): object {
+		if(self::isMoney($amount)){
+			return $amount;
+		}
+		$currency=self::normalizeCurrency($currency, 'sql-currency-bridge');
+		if(self::isMinorAmountColumn($amountColumn)){
+			$amount=self::currencyFacade()::minorUnitsToDecimal(self::minorAmountFromColumn($amount, $amountColumn), $currency);
+		}
+		return self::money($amount, $currency);
+	}
+
+	/**
+	 * Returns the scalar amount to write for a mapped Money column.
+	 *
+	 * @param object $money Money object.
+	 * @param string $amountColumn Mapped amount column name.
+	 * @return int|float|string Scalar SQL amount.
+	 */
+	private static function moneyStorageAmount(object $money, string $amountColumn): int|float|string {
+		if(self::isMinorAmountColumn($amountColumn) && method_exists($money, 'minorAmount')){
+			return $money->minorAmount();
+		}
+		return method_exists($money, 'decimalAmount') ? $money->decimalAmount() : $money->amount();
+	}
+
+	/**
+	 * Returns the scalar amount to write for a mapped StoredMoney column.
+	 *
+	 * @param object $storedMoney StoredMoney object.
+	 * @param string $amountColumn Mapped amount column name.
+	 * @param string $scope original or base.
+	 * @return int|float|string Scalar SQL amount.
+	 */
+	private static function storedMoneyStorageAmount(object $storedMoney, string $amountColumn, string $scope): int|float|string {
+		if($scope==='original'){
+			if(self::isMinorAmountColumn($amountColumn) && method_exists($storedMoney, 'originalMinorAmount')){
+				return $storedMoney->originalMinorAmount();
+			}
+			return method_exists($storedMoney, 'originalDecimalAmount')
+				? $storedMoney->originalDecimalAmount()
+				: $storedMoney->originalAmount();
+		}
+		if(self::isMinorAmountColumn($amountColumn) && method_exists($storedMoney, 'baseMinorAmount')){
+			return $storedMoney->baseMinorAmount();
+		}
+		return method_exists($storedMoney, 'baseDecimalAmount')
+			? $storedMoney->baseDecimalAmount()
+			: $storedMoney->baseAmount();
 	}
 
 	/**
@@ -593,7 +695,7 @@ final class CurrencyBridge {
 				"Stored money {$scope} currency '{$currencyColumn}' must be a non-empty currency code."
 			);
 		}
-		return self::money((float)$amount, (string)$currency);
+		return self::moneyFromColumnValue($amount, (string)$currency, $amountColumn);
 	}
 
 	/**

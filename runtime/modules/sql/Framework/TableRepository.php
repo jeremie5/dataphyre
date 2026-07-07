@@ -23,6 +23,23 @@ use Dataphyre\Database\Hydrators\RecordObjectHydrator;
 abstract class TableRepository {
 
 	/**
+	 * Per-repository normalized money mapping cache.
+	 *
+	 * The raw hook payload is retained so dynamic subclasses can change their
+	 * mapping definitions without stale normalized output.
+	 *
+	 * @var array<class-string, array{raw: array<int|string, mixed>, resolved: array<int, array<string, mixed>>}>
+	 */
+	private static array $resolvedMoneyColumnsCache=[];
+
+	/**
+	 * Per-repository normalized stored-money mapping cache.
+	 *
+	 * @var array<class-string, array{raw: array<int|string, mixed>, resolved: array<int, array<string, mixed>>}>
+	 */
+	private static array $resolvedStoredMoneyColumnsCache=[];
+
+	/**
 	 * Returns the SQL table identifier owned by this repository.
 	 *
 	 * The value is passed to the Dataphyre SQL kernel and schema helpers, so
@@ -6419,8 +6436,13 @@ abstract class TableRepository {
 	 * @throws SqlError When moneyColumns() returns an invalid definition.
 	 */
 	protected static function resolvedMoneyColumns(): array {
+		$raw=static::moneyColumns();
+		$class=static::class;
+		if(isset(self::$resolvedMoneyColumnsCache[$class]) && self::$resolvedMoneyColumnsCache[$class]['raw']===$raw){
+			return self::$resolvedMoneyColumnsCache[$class]['resolved'];
+		}
 		$resolved=[];
-		foreach(static::moneyColumns() as $amountColumn=>$definition){
+		foreach($raw as $amountColumn=>$definition){
 			if(is_int($amountColumn)){
 				if(!is_array($definition) || !isset($definition['amount_column'])){
 					throw SqlError::invalidMoneyDefinition(
@@ -6449,6 +6471,10 @@ abstract class TableRepository {
 				static::class
 			);
 		}
+		self::$resolvedMoneyColumnsCache[$class]=[
+			'raw'=>$raw,
+			'resolved'=>$resolved,
+		];
 		return $resolved;
 	}
 
@@ -6461,8 +6487,13 @@ abstract class TableRepository {
 	 * @throws SqlError When storedMoneyColumns() returns an invalid definition.
 	 */
 	protected static function resolvedStoredMoneyColumns(): array {
+		$raw=static::storedMoneyColumns();
+		$class=static::class;
+		if(isset(self::$resolvedStoredMoneyColumnsCache[$class]) && self::$resolvedStoredMoneyColumnsCache[$class]['raw']===$raw){
+			return self::$resolvedStoredMoneyColumnsCache[$class]['resolved'];
+		}
 		$resolved=[];
-		foreach(static::storedMoneyColumns() as $targetColumn=>$definition){
+		foreach($raw as $targetColumn=>$definition){
 			if(is_int($targetColumn)){
 				if(!is_array($definition)){
 					throw SqlError::invalidMoneyDefinition(
@@ -6490,6 +6521,10 @@ abstract class TableRepository {
 				static::class
 			);
 		}
+		self::$resolvedStoredMoneyColumnsCache[$class]=[
+			'raw'=>$raw,
+			'resolved'=>$resolved,
+		];
 		return $resolved;
 	}
 }

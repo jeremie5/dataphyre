@@ -525,12 +525,12 @@ abstract class Controller {
 	 *
 	 * Formatting is delegated to the MVC currency bridge so controller responses and views use the same free/zero and display-currency rules.
 	 *
-	 * @param float|int|null $amount Amount.
+	 * @param float|int|string|null $amount Amount.
 	 * @param bool $showFree Whether zero/null amounts may render as a free label.
 	 * @param ?string $currency Currency.
 	 * @return string.
 	 */
-	protected function moneyFormat(float|int|null $amount, bool $showFree=false, ?string $currency=null): string {
+	protected function moneyFormat(float|int|string|null $amount, bool $showFree=false, ?string $currency=null): string {
 		return Mvc::moneyFormat($amount, $showFree, $currency);
 	}
 
@@ -546,7 +546,7 @@ abstract class Controller {
 	 * @param bool $showFree Whether zero/null amounts may render as a free label.
 	 * @return string|float.
 	 */
-	protected function moneyConvert(float|int|null $amount, string $sourceCurrency, string $targetCurrency, bool $formatted=false, bool $showFree=true): string|float {
+	protected function moneyConvert(float|int|string|null $amount, string $sourceCurrency, string $targetCurrency, bool $formatted=false, bool $showFree=true): string|float {
 		return Mvc::moneyConvert($amount, $sourceCurrency, $targetCurrency, $formatted, $showFree);
 	}
 
@@ -555,13 +555,13 @@ abstract class Controller {
 	 *
 	 * The MVC currency bridge applies the active display currency and optional formatting rules.
 	 *
-	 * @param float|int|null $amount Amount.
+	 * @param float|int|string|null $amount Amount.
 	 * @param bool $formatted Whether to return a display string instead of a numeric amount.
 	 * @param bool $showFree Whether zero/null amounts may render as a free label.
 	 * @param ?string $currency Currency.
 	 * @return string|float.
 	 */
-	protected function moneyToDisplay(float|int|null $amount, bool $formatted=false, bool $showFree=true, ?string $currency=null): string|float {
+	protected function moneyToDisplay(float|int|string|null $amount, bool $formatted=false, bool $showFree=true, ?string $currency=null): string|float {
 		return Mvc::moneyToDisplay($amount, $formatted, $showFree, $currency);
 	}
 
@@ -570,13 +570,13 @@ abstract class Controller {
 	 *
 	 * The MVC currency bridge converts the supplied currency into the configured base currency before optional formatting.
 	 *
-	 * @param float|int|null $amount Amount.
+	 * @param float|int|string|null $amount Amount.
 	 * @param string $originalCurrency Currency code of the input amount.
 	 * @param bool $formatted Whether to return a display string instead of a numeric amount.
 	 * @param bool $showFree Whether zero/null amounts may render as a free label.
 	 * @return string|float.
 	 */
-	protected function moneyToBase(float|int|null $amount, string $originalCurrency, bool $formatted=false, bool $showFree=true): string|float {
+	protected function moneyToBase(float|int|string|null $amount, string $originalCurrency, bool $formatted=false, bool $showFree=true): string|float {
 		return Mvc::moneyToBase($amount, $originalCurrency, $formatted, $showFree);
 	}
 
@@ -585,12 +585,12 @@ abstract class Controller {
 	 *
 	 * Rounding is delegated to the MVC currency bridge so cash rounding and currency precision stay centralized.
 	 *
-	 * @param float|int|null $amount Amount.
+	 * @param float|int|string|null $amount Amount.
 	 * @param string $currency ISO currency code used to choose precision rules.
 	 * @param bool $cash Whether to apply cash-rounding increments.
 	 * @return float.
 	 */
-	protected function moneyRound(float|int|null $amount, string $currency, bool $cash=false): float {
+	protected function moneyRound(float|int|string|null $amount, string $currency, bool $cash=false): float {
 		return Mvc::moneyRound($amount, $currency, $cash);
 	}
 
@@ -599,13 +599,13 @@ abstract class Controller {
 	 *
 	 * Allocation is delegated to the MVC currency bridge to preserve currency precision and cash-rounding behavior across split parts.
 	 *
-	 * @param float|int|null $amount Amount.
+	 * @param float|int|string|null $amount Amount.
 	 * @param string $currency ISO currency code used for split precision and rounding.
 	 * @param int $parts Number of parts to split into.
 	 * @param bool $cash Whether to apply cash-rounding increments.
 	 * @return list<float> Split amounts.
 	 */
-	protected function moneySplit(float|int|null $amount, string $currency, int $parts, bool $cash=false): array {
+	protected function moneySplit(float|int|string|null $amount, string $currency, int $parts, bool $cash=false): array {
 		return Mvc::moneySplit($amount, $currency, $parts, $cash);
 	}
 
@@ -614,13 +614,13 @@ abstract class Controller {
 	 *
 	 * Allocation is delegated to the MVC currency bridge so ratio rounding remains consistent with other money helpers.
 	 *
-	 * @param float|int|null $amount Amount.
+	 * @param float|int|string|null $amount Amount.
 	 * @param string $currency ISO currency code used for allocation precision.
 	 * @param list<float|int> $ratios Allocation ratios.
 	 * @param bool $cash Whether to apply cash-rounding increments.
 	 * @return list<float> Allocated amounts.
 	 */
-	protected function moneyAllocate(float|int|null $amount, string $currency, array $ratios, bool $cash=false): array {
+	protected function moneyAllocate(float|int|string|null $amount, string $currency, array $ratios, bool $cash=false): array {
 		return Mvc::moneyAllocate($amount, $currency, $ratios, $cash);
 	}
 

@@ -106,7 +106,7 @@ Runtime modules live under `runtime/modules/<module>/`. A module may include:
 kernel/          legacy/runtime entry files
 Framework/       framework-facing classes
 documentation/   module docs
-unit_tests/      fixtures or smoke-test assets
+unit_tests/      JSON manifests, code-defined tests, fixtures, or smoke assets
 third_party/     bundled upstream code, when needed
 ```
 
@@ -155,5 +155,4 @@ not source code and are excluded by `.gitignore` and `.distignore`.
 
 Prepared public exports keep generated cache and logs out of the portable
 runtime package.
-
 

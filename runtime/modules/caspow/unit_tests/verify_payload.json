@@ -1,6 +1,7 @@
 [
 	{
 		"name": "verify_payload accepts valid signed proof",
+		"file": "/common/dataphyre/runtime/modules/caspow/unit_tests/caspow_test_helpers.php",
 		"function": "verify_payload",
 		"class": "dataphyre\\caspow",
 		"static_method": true,
@@ -18,6 +19,7 @@
 	},
 	{
 		"name": "verify_payload rejects tampered signature",
+		"file": "/common/dataphyre/runtime/modules/caspow/unit_tests/caspow_test_helpers.php",
 		"function": "verify_payload",
 		"class": "dataphyre\\caspow",
 		"static_method": true,

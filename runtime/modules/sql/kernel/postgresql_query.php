@@ -43,7 +43,7 @@ class postgresql_query_builder {
 	 * @return string PostgreSQL-compatible SQL with numbered placeholders and translated functions.
 	 */
 	private static function mysql_compatibility_layer(string $query='') : string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$index=0;
 		$query=preg_replace_callback('/\?/', static function()use(&$index): string{return '$'.(++$index);}, $query);
 		$query=preg_replace('/RAND\(\)/i', 'RANDOM()', $query);
@@ -83,7 +83,7 @@ class postgresql_query_builder {
 	 * @return mixed Active PostgreSQL connection resource/object, or a dialback override.
 	 */
 	private static function connect_to_cluster(string $dbms_cluster) : mixed {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_POSTGRESQL_OPEN_MAIN_CONNECTION",...func_get_args())) return $early_return;
 		$endpoints=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
 		if(isset(self::$conns[$dbms_cluster]) && is_object(self::$conns[$dbms_cluster]))return self::$conns[$dbms_cluster];
@@ -105,7 +105,7 @@ class postgresql_query_builder {
 	 * @return object|bool PostgreSQL connection on success, or `false` when unavailable.
 	 */
 	private static function connect_to_endpoint(string $endpoint, ?string $dbms_cluster): object|bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$dbms_cluster??=DP_SQL_CFG['default_cluster'];
 		if(isset(self::$conns[$dbms_cluster]))return self::$conns[$dbms_cluster];
 		if(!sql::is_server_available($endpoint)){
@@ -158,7 +158,7 @@ class postgresql_query_builder {
 	 * @return bool `true` when every prepared statement completed.
 	 */
 	private static function execute_prepared_statements(object $conn, array $prepared_statements, array &$results, string $dbms_cluster='n/a'): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$has_write=sql::query_has_write(serialize($prepared_statements));
 		try{
 			if($has_write && !pg_query($conn, "BEGIN")){
@@ -221,7 +221,7 @@ class postgresql_query_builder {
 	 * @return bool `true` when the entire batch completed.
 	 */
 	private static function execute_multi_query_string(object $conn, string $multi_query_string, array &$results, string $dbms_cluster='n/a'): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$queries=explode(";", $multi_query_string);
 		$has_write=sql::query_has_write(serialize($multi_query_string));
 		$index=0;
@@ -278,7 +278,7 @@ class postgresql_query_builder {
 	 * @return void
 	 */
 	private static function process_results(?array $results, ?array $queries): void {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null);
 		$query_list=self::queued_query_list($queries);
 		foreach(($results ?? []) as $index=>$result){
 			$query=$query_list[$index] ?? null;
@@ -354,7 +354,7 @@ class postgresql_query_builder {
 	 * @return null|bool `null` when the queue does not exist, otherwise execution success.
 	 */
 	public static function execute_multiquery(string $queue='', bool $hydration_retry=false) : null|bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__,$T=null,$S='function_call',$A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__,$T=null,$S='function_call',$A=null); // Log the function call
 		if(!isset(self::$queued_queries[$queue]))return null;
 		$queued_queries=self::$queued_queries[$queue];
 		unset(self::$queued_queries[$queue]);
@@ -470,7 +470,7 @@ class postgresql_query_builder {
 	 * @return bool|array Row data, empty array for no row payload, or `false` on failure.
 	 */
 	public static function postgresql_query(string $dbms_cluster, string $query, ?array $vars, ?bool $associative, ?bool $multipoint=true): bool|array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_POSTGRESQL_SIMPLE_SELECT", ...func_get_args())) return $early_return;
 		$execute_query=function($conn) use ($query, $vars, $associative, $dbms_cluster){
 			$result=false;
@@ -549,7 +549,7 @@ class postgresql_query_builder {
 	 * @return bool|array Row data, or `false` when no rows or execution fails.
 	 */
 	public static function postgresql_select(string $dbms_cluster, string|array $select, string $location, ?string $params, ?array $vars, ?bool $associative): bool|array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_POSTGRESQL_SIMPLE_SELECT", ...func_get_args())) return $early_return;
 		$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster);
 		$query_result=[];
@@ -608,7 +608,7 @@ class postgresql_query_builder {
 	 * @return bool|int Count value, or `false` on failure.
 	 */
 	public static function postgresql_count(string $dbms_cluster, string $location, string $params, ?array $vars): bool|int {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_POSTGRESQL_SIMPLE_COUNT", ...func_get_args())) return $early_return;
 		$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster);
 		$count=false;
@@ -660,7 +660,7 @@ class postgresql_query_builder {
 	 * @return bool|int Maximum affected-row count across successful endpoints, or `false`.
 	 */
 	public static function postgresql_update(string $dbms_cluster, string $location, string $fields, string $params, array $vars): bool|int {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_POSTGRESQL_SIMPLE_UPDATE", ...func_get_args())) return $early_return;
 		$succeeded=0;
 		$affected_rows=[];
@@ -706,7 +706,7 @@ class postgresql_query_builder {
 	 * @return array|bool Returned row, or `false` on failure/no returned row.
 	 */
 	public static function postgresql_insert(string $dbms_cluster, string $location, string $fields, array $vars, string $returning='*', int $retry_count=3): array|bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_POSTGRESQL_SIMPLE_INSERT", ...func_get_args())) return $early_return;
 		$is_multipoint=DP_SQL_CFG['tables'][$location]['multipoint_writes']??false;
 		$endpoints=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
@@ -756,7 +756,7 @@ class postgresql_query_builder {
 	 * @return bool|int Maximum affected-row count across successful endpoints, or `false`.
 	 */
 	public static function postgresql_delete(string $dbms_cluster, string $location, string $params, ?array $vars): bool|int {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_POSTGRESQL_SIMPLE_DELETE", ...func_get_args())) return $early_return;
 		$succeeded=0;
 		$affected_rows=[];

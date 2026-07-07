@@ -420,12 +420,14 @@ final class SearchManager {
 		?string $language=null
 	): bool {
 		$type=$type!==null && trim($type)!=='' ? strtolower(trim($type)) : $this->defaultIndexType();
-		return \dataphyre\fulltext_engine::create_index(
+		$created=\dataphyre\fulltext_engine::create_index(
 			$indexName,
 			$primaryKeyColumnName,
 			$type,
 			$this->normalizeLanguage($language)
 		);
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Fulltext index create '.($created ? 'succeeded' : 'failed').'; index='.$indexName.'; type='.$type.'; primary_key='.$primaryKeyColumnName, $S=$created ? 'info' : 'warning');
+		return $created;
 	}
 
 	/**
@@ -438,7 +440,9 @@ final class SearchManager {
 	 * @return bool True when the kernel deletes the index.
 	 */
 	public function deleteIndex(string $indexName): bool {
-		return \dataphyre\fulltext_engine::delete_index($indexName);
+		$deleted=\dataphyre\fulltext_engine::delete_index($indexName);
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Fulltext index delete '.($deleted ? 'succeeded' : 'failed').'; index='.$indexName, $S=$deleted ? 'info' : 'warning');
+		return $deleted;
 	}
 
 	/**
@@ -659,6 +663,7 @@ final class SearchManager {
 			}
 		}
 
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Fulltext index sync completed; desired='.count($desired).'; prune_missing='.($pruneMissing ? 'yes' : 'no').'; created='.count($report->created()).'; unchanged='.count($report->unchanged()).'; mismatched='.count($report->mismatched()).'; pruned='.count($report->pruned()).'; failed='.count($report->failed()), $S=$report->failed()===[] ? 'info' : 'warning');
 		return $report;
 	}
 

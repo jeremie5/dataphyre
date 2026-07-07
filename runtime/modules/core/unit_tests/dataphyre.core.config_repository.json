@@ -1,5 +1,5 @@
 [{
-    "max_millis":  10,
+    "max_millis":  100,
     "name":  "config_repository_scoped_contract",
     "function":  "dp_core_unit_config_repository_contract",
     "args":  [

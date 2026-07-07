@@ -58,7 +58,7 @@ class sql {
 	 * @param string $dbms_cluster SQL cluster name used to select the configured DBMS connection.
 	 */
 	public function __construct(string $dbms_cluster="sql"){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		core::dialback("CALL_SQL_CONSTRUCT",...func_get_args());
 		register_shutdown_function(function(){
 			try{
@@ -77,7 +77,7 @@ class sql {
 	 * @return void SQL trace, cache, transaction, or error state is updated in place.
 	 */
 	public static function session_cache_gc(): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(self::readonly_replay_enabled()===true){
 			return;
 		}
@@ -482,11 +482,11 @@ class sql {
 	}
 
 	/**
-	 * Redacts and bounds bound-variable values before observer emission.
+	 * Summarizes bound-variable values before observer emission.
 	 *
-	 * Sensitive keys are replaced with `[redacted]`, nested arrays are traversed,
-	 * objects are reduced to their debug type, and very long strings are truncated
-	 * so SQL traces remain safe to render in debug tools.
+	 * SQL bind values often include tenant-private IDs, emails, tokens, addresses,
+	 * or business data under ordinary key names, so observer traces expose shape
+	 * metadata instead of values.
 	 *
 	 * @param array<string|int,mixed> $vars Bound variable map or list.
 	 * @return array<string|int,mixed> Sanitized variable payload.
@@ -495,21 +495,22 @@ class sql {
 		$resolved=[];
 		foreach($vars as $key=>$value){
 			if(is_string($key) && preg_match('/password|passwd|secret|token|csrf|api[_-]?key|authorization|cookie/i', $key)===1){
-				$resolved[$key]='[redacted]';
+				$resolved[$key]=['type'=>'redacted'];
 				continue;
 			}
 			if(is_array($value)){
-				$resolved[$key]=self::trace_values($value);
+				$resolved[$key]=['type'=>'array', 'count'=>count($value)];
 				continue;
 			}
 			if(is_object($value)){
-				$resolved[$key]='[object '.get_debug_type($value).']';
+				$resolved[$key]=['type'=>'object', 'class'=>get_debug_type($value)];
 				continue;
 			}
-			if(is_string($value) && strlen($value)>1000){
-				$value=substr($value, 0, 1000).'...';
+			if(is_string($value)){
+				$resolved[$key]=['type'=>'string', 'bytes'=>strlen($value)];
+				continue;
 			}
-			$resolved[$key]=$value;
+			$resolved[$key]=['type'=>get_debug_type($value)];
 		}
 		return $resolved;
 	}
@@ -527,7 +528,7 @@ class sql {
 	 * @return void SQL trace, cache, transaction, or error state is updated in place.
 	 */
 	public static function log_query_error(string $dbms, string $cluster, string $query, ?array $vars=[], ?\Throwable $exception=null): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		self::$last_query_error=[
 			'dbms'=>$dbms,
 			'cluster'=>$cluster,
@@ -560,7 +561,7 @@ class sql {
 			<pre class="dp-sql-stack-trace" style="background: #fff1f2; color:#111827; padding: 8px 10px; border-radius: 5px; line-height: 1.18; white-space: pre-wrap;">'.$error_trace.'</pre>
 		</div>';
 		log_error($error);
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=$error, $S='warning');
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='SQL query error details forwarded to log_error for '.$dbms.' on cluster '.$cluster, $S='warning');
 	}
 
 	/**
@@ -1151,7 +1152,7 @@ class sql {
 	 * @return bool True when the SQL metadata, transaction, cache, or write operation succeeds.
 	 */
 	public static function query_has_write(string $query) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		static $write_ops=null;
 		if($write_ops===null){
 			$write_ops=array_flip([
@@ -1180,7 +1181,7 @@ class sql {
 	 * @return array|bool Structured SQL trace, cache, definition, manifest, or diagnostic payload.
 	 */
 	public static function get_table_cache_policy(string $location) : array|bool{
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_GET_TABLE_CACHE_POLICY",...func_get_args())) return $early_return;
 		$default_cache_policy=defined('DP_SQL_DEFAULT_CACHE_POLICY_OVERRIDE')
 			? DP_SQL_DEFAULT_CACHE_POLICY_OVERRIDE
@@ -1207,7 +1208,7 @@ class sql {
 	 * @return null|bool Affected-row count, true/null queue status, or false when execution fails.
 	 */
 	public static function execute_queue(string $queue='end') : null|bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$trace_started_at=microtime(true);
 		if(self::readonly_replay_enabled()===true){
 			self::readonly_replay_block('queue_execute', (string)$queue, [
@@ -1286,7 +1287,7 @@ class sql {
 	 * @return bool True when the SQL metadata, transaction, cache, or write operation succeeds.
 	 */
 	public static function flag_server_unavailable(string $serverip) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_FLAG_SERVER_UNAVAILABLE",...func_get_args())) return $early_return;
 		$_SESSION['unavailable_servers'][$serverip]=microtime();
 		return true;
@@ -1301,7 +1302,7 @@ class sql {
 	 * @return bool True when the SQL metadata, transaction, cache, or write operation succeeds.
 	 */
 	public static function is_server_available(string $serverip) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_IS_SERVER_AVAILABLE",...func_get_args())) return $early_return;
 		$_SESSION['unavailable_servers']??=[];
 		if(isset($_SESSION['unavailable_servers'][$serverip])){
@@ -1324,7 +1325,7 @@ class sql {
 	 * @return mixed Query result, cached payload, callback result, or false/null failure value from the driver.
 	 */
 	public static function get_query_cached_result(string $location, string $hash, array|bool|null $cache_policy=null) : mixed {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if($cache_policy===null){
 			$cache_policy=self::get_table_cache_policy($location);
 		}
@@ -1464,7 +1465,7 @@ class sql {
 	 * @return mixed Query result, cached payload, callback result, or false/null failure value from the driver.
 	 */
 	public static function cache_query_result(string $location, string $hash, mixed $query_result, array $caching=[true], array|bool|null $cache_policy=null) : mixed {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(self::readonly_replay_enabled()===true){
 			self::readonly_replay_block('cache_store', $location, [
 				'hash'=>$hash,
@@ -1477,11 +1478,11 @@ class sql {
 		}
 		if($cache_policy!==false){
 			if(empty($location)){
-				self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), [], new \Exception("Invalid cache location"));
+				self::log_query_error('N/A', 'N/A', 'cache_query_result invalid location', [], new \Exception("Invalid cache location"));
 				return false;
 			}
 			if(empty($hash)){
-				self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), [], new \Exception("Invalid cache hash"));
+				self::log_query_error('N/A', 'N/A', 'cache_query_result invalid hash for '.$location, [], new \Exception("Invalid cache hash"));
 				return false;
 			}
 			if($cache_policy['type']==='shared_cache'){
@@ -1510,7 +1511,7 @@ class sql {
 			}
 			else
 			{
-				self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), [], new \Exception("Unknown cache policy type for table $location"));
+				self::log_query_error('N/A', 'N/A', 'cache_query_result unknown cache policy for '.$location, [], new \Exception("Unknown cache policy type for table $location"));
 				return false;
 			}
 			foreach($caching as $cache_index){
@@ -1542,7 +1543,7 @@ class sql {
 	 * @return bool True when the SQL metadata, transaction, cache, or write operation succeeds.
 	 */
 	public static function invalidate_cache(array|string $clear_cache_for, array|bool|null $cache_policy=null) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(self::readonly_replay_enabled()===true){
 			self::readonly_replay_block('cache_invalidate', is_string($clear_cache_for) ? $clear_cache_for : '', [
 				'invalidation_names'=>is_array($clear_cache_for) ? self::trace_invalidation_names($clear_cache_for) : [$clear_cache_for],
@@ -1574,7 +1575,7 @@ class sql {
 				}
 				else
 				{
-					self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), [], new \Exception("Unknown cache policy type for table"));
+					self::log_query_error('N/A', 'N/A', 'invalidate_cache unknown cache policy', [], new \Exception("Unknown cache policy type for table"));
 					return false;
 				}
 				self::emit_observer_event([
@@ -1589,7 +1590,7 @@ class sql {
 			}
 			else
 			{
-				self::log_query_error('N/A', 'N/A', json_encode(func_get_args()), [], new \Exception("clear_cache_for parameter must be a string if valid cache policy parameter is given"));
+				self::log_query_error('N/A', 'N/A', 'invalidate_cache invalid cache target type', [], new \Exception("clear_cache_for parameter must be a string if valid cache policy parameter is given"));
 				return false;
 			}
 		}
@@ -1750,7 +1751,7 @@ class sql {
 	 * @return mixed Query result, cached payload, callback result, or false/null failure value from the driver.
 	 */
 	public static function query(string|array $query, ?array $vars=null, ?bool $associative=false, ?bool $multipoint=false, null|bool|array|string $caching=[false], bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : mixed {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_SELECT",...func_get_args())) return $early_return;
 		$trace_started_at=microtime(true);
 		$location='raw';
@@ -1780,7 +1781,7 @@ class sql {
 		$dbms=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($query)){
 			if(!isset($query[$dbms])){
-				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Query has no compatibility for DBMS ($dbms) for location $location."));
+				self::log_query_error($dbms, 'N/A', 'raw query compatibility check for '.$location, [], new \Exception("Query has no compatibility for DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$query=$query[$dbms];
@@ -1938,7 +1939,7 @@ class sql {
 	 * @return mixed Query result, cached payload, callback result, or false/null failure value from the driver.
 	 */
 	public static function select(string|array $select, string $location, array|string|null $params=null, ?array $vars=null, ?bool $associative=false, null|bool|array|string $caching=[true], ?string $queue='end', ?callable $callback=null) : mixed { //bool|array|null
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_SELECT",...func_get_args())) return $early_return;
 		$original_select=$select;
 		$original_location=$location;
@@ -1965,13 +1966,13 @@ class sql {
 					}
 					if(null!==$cache=self::get_query_cached_result($location, $hash, $cache_policy)){
 						if(is_integer($cache)){
-							self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Unexpected cached query result, possible hash collision. Returning false."));
+							self::log_query_error($dbms, 'N/A', 'select cached result shape for '.$location, [], new \Exception("Unexpected cached query result, possible hash collision. Returning false."));
 							return false;
 						}
 						if($associative===true && is_array($cache)){
 							foreach($cache as $item){
 								if(!is_array($item)){
-									self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Cached query result is not a multidimensional array as expected, possible hash collision. Returning false."));
+									self::log_query_error($dbms, 'N/A', 'select cached row shape for '.$location, [], new \Exception("Cached query result is not a multidimensional array as expected, possible hash collision. Returning false."));
 									return false;
 								}
 							}
@@ -1986,14 +1987,14 @@ class sql {
 		$dbms=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($select)){
 			if(!isset($select[$dbms])){
-				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Query's selection has no compatibility for DBMS ($dbms) for location $location."));
+				self::log_query_error($dbms, 'N/A', 'select compatibility check for '.$location, [], new \Exception("Query's selection has no compatibility for DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$select=$select[$dbms];
 		}
 		if(is_array($params)){
 			if(!isset($params[$dbms])){
-				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Query's parameters has no compatibility for DBMS ($dbms) for location $location."));
+				self::log_query_error($dbms, 'N/A', 'select parameter compatibility check for '.$location, [], new \Exception("Query's parameters has no compatibility for DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$params=$params[$dbms];
@@ -2133,7 +2134,7 @@ class sql {
 	 * @return int|bool|null Affected-row count, true/null queue status, or false when execution fails.
 	 */
 	public static function count(string $location, array|string|null $params=null, ?array $vars=null, null|bool|array|string $caching=[true], ?string $queue='end', ?callable $callback=null) : int|bool|null {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_COUNT",...func_get_args())) return $early_return;
 		$original_location=$location;
 		$original_params=$params;
@@ -2154,7 +2155,7 @@ class sql {
 				}
 				if(null!==$cache=self::get_query_cached_result($location, $hash, $cache_policy)){
 					if(is_integer($cache)===false){
-						self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Unexpected cached query result, possible hash collision. Returning false."));
+						self::log_query_error($dbms, 'N/A', 'count cached result shape for '.$location, [], new \Exception("Unexpected cached query result, possible hash collision. Returning false."));
 						return false;
 					}
 					if(null!==$callback)$callback($cache);
@@ -2165,12 +2166,12 @@ class sql {
 		$dbms_cluster=DP_SQL_CFG['tables'][$location]['cluster']??DP_SQL_CFG['default_cluster'];
 		$dbms=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if($query_dbms && $dbms!==$query_dbms){
-			self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Query has explicit DBMS compatibility flag $query_dbms that is not compatible with DBMS ($dbms) for location $location."));
+			self::log_query_error($dbms, 'N/A', 'count dbms compatibility check for '.$location, [], new \Exception("Query has explicit DBMS compatibility flag $query_dbms that is not compatible with DBMS ($dbms) for location $location."));
 			return false;
 		}
 		if(is_array($params)){
 			if(!isset($params[$dbms])){
-				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Query's parameters have no compatibility for DBMS ($dbms) for location $location."));
+				self::log_query_error($dbms, 'N/A', 'count parameter compatibility check for '.$location, [], new \Exception("Query's parameters have no compatibility for DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$params=$params[$dbms];
@@ -2299,7 +2300,7 @@ class sql {
 	 * @return mixed Query result, cached payload, callback result, or false/null failure value from the driver.
 	 */
 	public static function insert(string $location, string|array $fields, ?array $vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : mixed {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_INSERT",...func_get_args())) return $early_return;
 		$original_location=$location;
 		$original_fields=$fields;
@@ -2308,7 +2309,7 @@ class sql {
 		$trace_started_at=microtime(true);
 		if(is_array($fields)){
 			if(!empty($vars)){
-				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Variables has to be empty when fields is of type array."));
+				self::log_query_error($dbms, 'N/A', 'insert field array argument check for '.$location, [], new \Exception("Variables has to be empty when fields is of type array."));
 				return false;
 			}
 			$vars=array_values($fields);
@@ -2461,7 +2462,7 @@ class sql {
 	 * @return int|bool|null Affected-row count, true/null queue status, or false when execution fails.
 	 */
 	public static function update(string $location, string|array $fields, null|string|array $params, ?array $vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : int|bool|null {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_UPDATE",...func_get_args())) return $early_return;
 		$original_location=$location;
 		$original_fields=$fields;
@@ -2478,7 +2479,7 @@ class sql {
 		if(is_array($vars) && isset($vars[$dbms]))$vars=$vars[$dbms];
 		if(is_array($params)){
 			if(!isset($params[$dbms])){
-				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Query's parameters have no compatibility for DBMS ($dbms) for location $location."));
+				self::log_query_error($dbms, 'N/A', 'update parameter compatibility check for '.$location, [], new \Exception("Query's parameters have no compatibility for DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$params=$params[$dbms];
@@ -2638,7 +2639,7 @@ class sql {
 	 * @return int|bool|null Affected-row count, true/null queue status, or false when execution fails.
 	 */
 	public static function delete(string $location, array|string|null $params=null, ?array $vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : int|bool|null {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_DELETE",...func_get_args())) return $early_return;
 		$original_location=$location;
 		$original_params=$params;
@@ -2650,7 +2651,7 @@ class sql {
 		$dbms=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($params)){
 			if(!isset($params[$dbms])){
-				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Query has no compatibility with DBMS ($dbms) for location $location."));
+				self::log_query_error($dbms, 'N/A', 'delete compatibility check for '.$location, [], new \Exception("Query has no compatibility with DBMS ($dbms) for location $location."));
 				return false;
 			}
 			$params=$params[$dbms];
@@ -2681,7 +2682,7 @@ class sql {
 		}
 		if(stripos($params, 'WHERE')!==false){
 			if(DP_SQL_CFG['safe_delete']===false){
-				self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception("Query attempted to delete all rows of a table but safe_delete is not false."));
+				self::log_query_error($dbms, 'N/A', 'delete safety check for '.$location, [], new \Exception("Query attempted to delete all rows of a table but safe_delete is not false."));
 				return false;
 			}
 		}
@@ -2797,7 +2798,7 @@ class sql {
 	 * @return int|bool|null Affected-row count, true/null queue status, or false when execution fails.
 	 */
 	public static function upsert(string $location, array $fields, string|array|null $update_params=null, ?array $update_vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null): int|bool|null {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(null !== $early_return=core::dialback("CALL_SQL_DB_UPSERT", ...func_get_args())) return $early_return;
 		$original_location=$location;
 		$original_fields=$fields;
@@ -2818,7 +2819,7 @@ class sql {
 				}
 				else
 				{
-					self::log_query_error($dbms, 'N/A', json_encode(func_get_args()), [], new \Exception('Key conflict scope unknown for postgresql'));
+					self::log_query_error($dbms, 'N/A', 'upsert conflict scope check for '.$location, [], new \Exception('Key conflict scope unknown for postgresql'));
 					return false;
 				}
 			}

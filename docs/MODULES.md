@@ -26,7 +26,6 @@ For compatibility guarantees attached to these status labels, see
 | `aceit_engine` | legacy | No | [docs](../runtime/modules/aceit_engine/documentation/Dataphyre_AceIt_Engine.md) | Legacy experimentation module. It does not use the current `kernel/<module>.main.php` or `Framework/` discovery shape. |
 | `api` | optional | No | [docs](../runtime/modules/api/documentation/Dataphyre_Api.md) | API route definitions, security schemes, OpenAPI generation, and Swagger UI support. |
 | `async` | optional | No | [docs](../runtime/modules/async/documentation/Dataphyre_Async.md) | Coroutines, promises, process dispatch, queues, and async task orchestration. |
-| `cache` | optional | No | [docs](../runtime/modules/cache/documentation/Dataphyre_Cache.md) | Memcached-backed runtime cache integration and cache helpers. |
 | `caspow` | optional | No | [docs](../runtime/modules/caspow/documentation/Dataphyre_CASPOW.md) | Proof-of-work anti-spam and abuse-control challenge system. |
 | `core` | core | Yes | [docs](../runtime/modules/core/documentation/Dataphyre_Core.md) | Runtime bootstrap, module discovery, config, helpers, app location, autoloading, and framework loading. |
 | `currency` | optional | No | [docs](../runtime/modules/currency/documentation/Dataphyre_Currency.md) | Money values, exchange rates, conversion, and formatting helpers. |

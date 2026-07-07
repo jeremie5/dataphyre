@@ -80,11 +80,11 @@ class core {
 	 * @return void
 	 */
 	public static function load_plugins(string $type): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Looking for $type plugins");
 		foreach(['common_dataphyre', 'dataphyre'] as $plugin_path){
 			foreach(glob(ROOTPATH[$plugin_path].'plugins/'.$type.'/*.php') as $plugin){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Loading $type plugin at $plugin");
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Loading $type plugin");
 				require($plugin);
 			}
 		}
@@ -330,7 +330,7 @@ class core {
 	 * @return void
 	 */
 	public static function end_client_connection(?string $output=null): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		ignore_user_abort(true);
 		if(ob_get_level()===0) ob_start();
 		if($output===null) $output=ob_get_contents();
@@ -356,8 +356,8 @@ class core {
 	 * @return mixed Returns the result of the last executed dialback function or `null` if no such event is registered.
 	 *
 	 * @example
-	 * // Assuming 'my_event' has been registered with a dialback
-	 * $result = dataphyre\core::dialback('my_event', 'arg1', 'arg2');
+	 * // Assuming 'CALL_CORE_EXAMPLE' has been registered with a dialback
+	 * $result = dataphyre\core::dialback('CALL_CORE_EXAMPLE', 'arg1', 'arg2');
 	 * if ($result !== null) {
 	 *     echo "Dialback executed with result: $result";
 	 * }
@@ -392,15 +392,15 @@ class core {
 	 * @return bool Returns `true` if the registration is successful, otherwise triggers an error and enters safemode.
 	 *
 	 * @example
-	 * // Register a function named 'my_callback' for an event named 'my_event'
-	 * if (dataphyre\core::register_dialback('my_event', 'my_callback')) {
+	 * // Register a callable for an explicit module-scoped event
+	 * if (dataphyre\core::register_dialback('CALL_CORE_EXAMPLE', static fn(): bool=>true)) {
 	 *     echo "Dialback registered successfully.";
 	 * }
 	 * 
 	 * @common_pitfalls
 	 * 1. Ensure that the dialback function exists and is callable, otherwise an error will be logged and the application enters safemode.
-	 * 2. Event names are case-sensitive, make sure to use the correct case when registering or triggering events.
-	 * 3. No validation is done on the event name; avoid using special characters or reserved words.
+	 * 2. Event names are case-sensitive; use existing names exactly when extending framework hooks.
+	 * 3. New framework-facing events should use `CALL_<MODULE>_<ACTION>` names.
 	 */
 	public static function register_dialback(string $event_name, callable $dialback_function){
 		if(is_callable($dialback_function)){
@@ -425,7 +425,7 @@ class core {
 	 */
 	public static function set_http_headers(): void {
 		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		}
 		if(!headers_sent()){
 			header_remove("X-Powered-By");
@@ -475,7 +475,7 @@ class core {
 	 *  3. Caching the server load level can result in stale or inaccurate data.
 	 */
 	public static function get_server_load_level() : int {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		if(null!==$early_return=self::dialback("CALL_CORE_GET_SERVER_LOAD_LEVEL", ...func_get_args())) return $early_return;
 		if(self::$server_load_level!==null) return self::$server_load_level;
 		$cache_file=ROOTPATH['common_dataphyre'].'cache/load_level.php';
@@ -536,7 +536,7 @@ class core {
 	 * @return void
 	 */
 	public static function delayed_requests_lock() : void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		if(fopen(ROOTPATH['dataphyre']."delaying_lock", 'w+')===false){
 			self::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D="Failed to create delaying lock", $T="safemode");
 		}
@@ -550,7 +550,7 @@ class core {
 	 * @return void
 	 */
 	public static function delayed_requests_unlock() : void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		if(!unlink(ROOTPATH['dataphyre']."delaying_lock")){
 			self::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D="Failed to remove delaying lock", $T="safemode");
 		}
@@ -565,7 +565,7 @@ class core {
 	 * @return void
 	 */
 	public static function check_delayed_requests_lock() : void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		$timer=0;
 		while($timer<5){
 			if(!is_file(ROOTPATH['dataphyre']."delaying_lock")){
@@ -586,7 +586,7 @@ class core {
 	 * @return string inline CSS declaring the compact system-font class used by core fallback UI.
 	 */
 	public static function minified_font() : string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		return ".phyro-bold{font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-weight:700;font-style:normal;line-height:1.15;-webkit-font-smoothing:antialiased}";
 	}
 	
@@ -613,7 +613,7 @@ class core {
 	 *  2. Make sure that `core::dialback` behavior is as expected when it is in use.
 	 */
 	public static function get_password(#[\SensitiveParameter] string $string) : string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CORE_GET_PASSWORD",...func_get_args())) return $early_return;
 		$salting_data=[dpvk()];
 		$key=substr(hash('sha256', base64_encode($salting_data[0])), 0, 16);
@@ -655,7 +655,7 @@ class core {
 	 * - Ensure that the server timezone is set and valid. Otherwise, the function will throw an exception and fall back to safemode.
 	 */
 	public static function high_precision_server_date(string $format='Y-m-d H:i:s.u'): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CORE_HIGH_PRECISION_SERVER_DATE",...func_get_args())) return $early_return;
 		$server_timezone=core::get_config('base_timezone');
 		$valid_timezones=timezone_identifiers_list();
@@ -707,7 +707,7 @@ class core {
 	 * - Make sure to pass a valid format string.
 	 */
 	public static function format_date(string $date, string $format='n/j/Y g:i A', bool $translation=true) : string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CORE_FORMAT_DATE",...func_get_args())) return $early_return;
 		if(is_numeric($date)){
 			$date=date('Y-m-d H:i:s', (int)$date);
@@ -757,7 +757,7 @@ class core {
 	 * - Ensure that the "dataphyre\date_translation" class exists and functions as expected if using translations.
 	 */
 	public static function convert_to_user_date(string|int $date, string $user_timezone, string $format='n/j/Y g:i A', bool $translation=true) : string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CORE_CONVERT_TO_USER_DATE",...func_get_args())) return $early_return;
 		$server_timezone=core::get_config('base_timezone');
 		$valid_timezones=timezone_identifiers_list();
@@ -821,7 +821,7 @@ class core {
 	 * 2. Providing a non-existing dialback function name will result in the function returning early.
 	 */
 	public static function convert_to_server_date(string|int $date, string $user_timezone, string $format='n/j/Y g:i A') : string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CORE_CONVERT_TO_SERVER_DATE",...func_get_args())) return $early_return;
 		$server_timezone=core::get_config('base_timezone');
 		if(in_array($server_timezone, timezone_identifiers_list())){
@@ -875,7 +875,7 @@ class core {
 	 */
 	public static function add_config(string|array $config, mixed $value=null) : bool {
 		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		}
 		if(null!==$early_return=core::dialback('CALL_CORE_ADD_CONFIG',...func_get_args())) return $early_return;
 		$cfg=&self::config_store();
@@ -954,7 +954,7 @@ class core {
 	 */
 	public static function get_config(string $index): mixed {
 		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		}
 		if(null!==$early_return=core::dialback('CALL_CORE_GET_CONFIG',...func_get_args())) return $early_return;
 		$cfg=&self::config_store();
@@ -1116,7 +1116,7 @@ class core {
 	 */
 	public static function unavailable(string $file, string $line, string $class, string $function, string $error_description='unknown', string $error_type='unknown', ?object $exception=null) : never {
 		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=func_get_args()); // Log the function call
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		}
 		if(RUN_MODE!=='diagnostic'){
 			if(class_exists('dataphyre\internal_module')){
@@ -1284,7 +1284,7 @@ class core {
 	 */
 	public static function url_updated_querystring(string $url, array|null $value=null, array|null|bool $remove=false) : string{
 		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		}
 		if(null!==$early_return=core::dialback("CALL_CORE_URL_UPDATED_QUERYSTRING",...func_get_args())) return $early_return;
 		if(empty($value) && empty($remove))return $url;
@@ -1343,7 +1343,7 @@ class core {
 	 */
 	public static function url_self_updated_querystring(array|null $value, array|null|bool $remove=false) : string{
 		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		}
 		if(null!==$early_return=core::dialback("CALL_CORE_URL_SELF_UPDATED_QUERYSTRING",...func_get_args())) return $early_return;
 		if(empty($value) && empty($remove))return core::url_self(true);
@@ -1418,7 +1418,7 @@ class core {
 	 * implementation stays with the caller.
 	 */
 	public static function defer_recrypt(string $scope, string|int $identifier, callable $scheduler, string $queue='end') : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null);
 		if(null!==$early_return=core::dialback("CALL_CORE_DEFER_RECRYPT",...func_get_args())) return $early_return;
 		static $scheduled_recrypts=[];
 		$key=$scope.':'.(string)$identifier;
@@ -1457,7 +1457,7 @@ class core {
 	 * 3. Function Return: This function may return an empty string if the input string is empty or null.
 	 */
 	public static function encrypt_data(#[\SensitiveParameter] ?string $string, #[\SensitiveParameter] ?array $salting_data=[]) : string{
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CORE_ENCRYPT_DATA",...func_get_args())) return $early_return;
 		if($string==='')return'';
 		if(empty($salting_data))$salting_data=['arbitrary_value'];
@@ -1501,7 +1501,7 @@ class core {
 	 * 4. Deprecation Callback: Make sure the deprecation callback function correctly re-encrypts the data with the latest encryption method.
 	 */
 	public static function decrypt_data(#[\SensitiveParameter] ?string $string, #[\SensitiveParameter] ?array $salting_data=[], callable|string|null $deprecation_callback=null) : string{
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=[]); // Log the function call;
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call;
 		if(null!==$early_return=core::dialback("CALL_CORE_DECRYPT_DATA",...func_get_args())) return $early_return;
 		$latest_version=DP_CORE_CFG['encryption_version'] ?? 0;
 		if($string==='')return'';
@@ -1557,7 +1557,7 @@ class core {
 	 * 3. Token Reuse: After successful validation, the token is unset. Trying to validate the same token again will result in a false return value.
 	 */
 	public static function csrf(string $form_name, #[\SensitiveParameter] mixed $token=null) : string|bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__,$T=null,$S="function_call_with_test",$A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__,$T=null,$S="function_call",$A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CORE_CSRF",...func_get_args()))return$early_return;
 		if(!isset($_SESSION['token'][$form_name]) && $token===null){
 			$_SESSION['token'][$form_name]=bin2hex(openssl_random_pseudo_bytes(16));
@@ -1707,7 +1707,7 @@ class core {
 	 * @return array{ip:string, remote_addr:string, source:string, source_header:?string, trusted_proxy:bool, trusted_headers:array, trusted_proxies:array} Client IP decision payload.
 	 */
 	public static function get_client_ip_details(): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call_with_test", $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		$core_config=DP_CORE_CFG['core']['client_ip_identification'] ?? [];
 		$remote_addr=$_SERVER['REMOTE_ADDR'] ?? $core_config['default_ip'] ?? '0.0.0.0';
 		$trusted_proxies=$core_config['trusted_proxies'] ?? [];

@@ -33,7 +33,7 @@ class sanitation {
 	 * @return string Masked email address, or an empty string for invalid input.
 	 */
 	public static function anonymize_email(string $str, int $count=2, string $char='*') : string {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(null!==$early_return=core::dialback("CALL_SANITATION_ANONYMIZE_EMAIL", ...func_get_args())) return $early_return;
 		$str=trim($str);
 		if($str==='' || str_contains($str, '@')===false){
@@ -71,7 +71,7 @@ class sanitation {
 		?bool $escape_html_legacy=null,
 		?string $legacy_datatype=null
 	) : string|bool {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(null!==$early_return=core::dialback("CALL_SANITATION_SANITIZE", ...func_get_args())) return $early_return;
 		$options=self::resolve_sanitize_signature($datatype_or_trim, $escape_html_legacy, $legacy_datatype);
 		$string=self::stringify_input($value);
@@ -250,7 +250,7 @@ class sanitation {
 	 * @return array<string, string|false> Sanitized field values.
 	 */
 	public static function sanitize_many(array $input, array $schema, bool $preserve_invalid=false) : array {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null);
 		$sanitized=[];
 		foreach($schema as $field=>$datatype){
 			$raw=$input[$field] ?? null;

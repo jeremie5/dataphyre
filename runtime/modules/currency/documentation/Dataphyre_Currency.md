@@ -110,13 +110,19 @@ Loads exchange rates in this order:
 
 Runs one application callback, normalizes the result, stores it in session, and persists it to SQL when the SQL module is loaded.
 
-### `formatter(float|null $amount, bool|null $show_free=false, string|null $currency=null): string`
+### `formatter(float|int|string|null $amount, bool|null $show_free=false, string|null $currency=null): string`
 
-Formats an amount using the active display locale and currency symbol map.
+Formats a display-boundary amount using the active display locale and currency
+symbol map. Prefer `Money` objects or integer minor-unit storage for persisted
+money; decimal strings remain acceptable at UI and provider boundaries.
 
-### `convert(float|null $amount, string $source_currency, string $target_currency, bool|null $formatted=false, bool|null $show_free=true): string|float`
+### `convert(float|int|string|null $amount, string $source_currency, string $target_currency, bool|null $formatted=false, bool|null $show_free=true): string|float`
 
-Converts between two currencies using cached rates. Rates are loaded lazily when needed.
+Converts between two currencies using cached rates. Rates are loaded lazily when
+needed. Persist converted money as integer minor units plus currency when the
+value leaves the display or provider boundary. For canonical calculations and
+storage, prefer `convert_minor_units(...)` or the framework
+`Currency::convertMinorUnits(...)` helper.
 
 ### `convert_to_user_currency(...)`
 
@@ -160,10 +166,12 @@ $eur_rate=Currency::rate('EUR');
 $quote=Currency::quoteOrFail('USD', 'CAD');
 $minor_units=Currency::minorUnits('JPY');
 
-$formatted=Currency::format(149.99, false, 'USD');
-$converted=Currency::convert(149.99, 'USD', 'CAD');
+$price_minor=Currency::amountToMinorUnits('149.99', 'USD');
+$cad_price_minor=Currency::convertMinorUnits($price_minor, 'USD', 'CAD');
+$cad_price_minor_from_rates=$rates->convertMinorUnits($price_minor, 'USD', 'CAD');
+$formatted=Currency::format(Currency::minorUnitsToDecimal($price_minor, 'USD'), false, 'USD');
 
-$money=Currency::money(149.99, 'USD')->inDisplayCurrency();
+$money=Currency::moneyFromMinor($price_minor, 'USD')->inDisplayCurrency();
 echo $money->format();
 
 $snapshot=Currency::snapshot();
@@ -180,8 +188,8 @@ $fr_ca=Currency::context(
 	display_country: 'CA'
 );
 
-echo $fr_ca->format(149.99, false, 'CAD');
-echo $fr_ca->convertToDisplay(149.99, true);
+echo $fr_ca->format('149.99', false, 'CAD');
+echo $fr_ca->convertToDisplay('149.99', true);
 ```
 
 ### Quote And Money Examples
@@ -190,10 +198,12 @@ echo $fr_ca->convertToDisplay(149.99, true);
 use Dataphyre\Currency\Currency;
 
 $quote=Currency::quoteOrFail('USD', 'EUR');
-$converted=$quote->convert(149.99);
+$converted_minor=$quote->convertMinorUnits(
+	Currency::amountToMinorUnits('149.99', 'USD')
+);
 
-$subtotal=Currency::money(149.99, 'USD');
-$tax=Currency::money(22.50, 'USD');
+$subtotal=Currency::money('149.99', 'USD');
+$tax=Currency::money('22.50', 'USD');
 $total=$subtotal->add($tax);
 
 if($total->greaterThan(100)){
@@ -213,9 +223,9 @@ use Dataphyre\Currency\Currency;
 $snapshot=Currency::snapshot();
 
 $quote=$snapshot->quoteOrFail('USD', 'CAD');
-$converted=$snapshot->convert(149.99, 'USD', 'CAD');
+$converted_minor=$quote->convertMinorUnits(Currency::amountToMinorUnits('149.99', 'USD'));
 
-$money=Currency::money(149.99, 'USD');
+$money=Currency::money('149.99', 'USD');
 $priced=$money->convertedWith($snapshot, 'CAD');
 ```
 
@@ -233,6 +243,7 @@ Useful methods include:
 - `quoteOrFail(...)`
 - `quoteOrFailFresh(...)`
 - `convert(...)`
+- `convertMinorUnits(...)`
 - `convertOrFailFresh(...)`
 - `convertMoney(...)`
 - `convertMoneyOrFailFresh(...)`
@@ -251,9 +262,9 @@ use Dataphyre\Currency\Currency;
 
 $snapshot=Currency::snapshotOrFail(3600);
 $quote=Currency::quoteOrFailFresh('USD', 'CAD', 3600);
-$converted=Currency::convertOrFailFresh(149.99, 'USD', 'CAD', 3600);
+$converted_minor=$quote->convertMinorUnits(Currency::amountToMinorUnits('149.99', 'USD'));
 
-$money=Currency::money(149.99, 'USD');
+$money=Currency::money('149.99', 'USD');
 $priced=Currency::convertMoneyOrFailFresh($money, 'CAD', 3600);
 ```
 
@@ -273,7 +284,7 @@ $money->convertedWithFresh($snapshot, 'CAD', 3600);
 use Dataphyre\Currency\Currency;
 
 $stored=Currency::storeMoney(
-	Currency::money(149.99, 'USD'),
+	Currency::money('149.99', 'USD'),
 	'CAD'
 );
 
@@ -281,14 +292,18 @@ $row=$stored->toArray();
 ```
 
 Default storage keys are:
-- `original_amount`
+- `original_amount_minor`
 - `original_currency`
-- `base_amount`
+- `base_amount_minor`
 - `base_currency`
 - `exchange_rate`
 - `exchange_source`
 - `exchange_time`
 - `exchange_base_currency`
+
+`StoredMoney` storage projections use integer minor units for money amounts.
+Use `Money::decimalAmount()` or formatting helpers when a decimal string is
+needed at an API or display edge.
 
 You can also customize the prefixes:
 
@@ -304,26 +319,26 @@ The same helper is available from snapshots, contexts, and money objects:
 
 ```php
 $snapshot=Currency::snapshot();
-$stored=$snapshot->storeMoney(Currency::money(149.99, 'USD'), 'CAD');
+$stored=$snapshot->storeMoney(Currency::money('149.99', 'USD'), 'CAD');
 
-$money=Currency::money(149.99, 'USD');
+$money=Currency::money('149.99', 'USD');
 $stored=$money->stored('CAD');
 $strict=$money->storedFresh(3600, 'CAD');
 ```
 
 ### SQL Integration
 
-The SQL framework can hydrate stored amount-and-currency pairs into `Money` objects explicitly:
+The SQL framework can hydrate stored integer minor-unit amount-and-currency pairs into `Money` objects explicitly:
 
 ```php
 \dataphyre\core::load_framework_module('sql');
 \dataphyre\core::load_framework_module('currency');
 
 $orders=OrderRepository::query()
-	->asMoney('total_amount', 'currency')
+	->asMoney('total_amount_minor', 'currency', 'total')
 	->getRecords();
 
-$first_total=$orders[0]->total_amount ?? null;
+$first_total=$orders[0]->total ?? null;
 ```
 
 Money-aware query helpers also exist on SQL query builders:
@@ -334,11 +349,11 @@ use Dataphyre\Currency\Currency;
 $cap=Currency::money(100, 'USD');
 
 $matching=OrderRepository::query()
-	->whereMoneyLte('total_amount', $cap, 'currency')
+	->whereMoneyLte('total_amount_minor', $cap, 'currency')
 	->get();
 ```
 
-For tables that already store normalized base-currency amounts, use the fixed-currency helpers such as `whereMoneyLteIn(...)`.
+For tables that already store normalized base-currency minor-unit amounts, use the fixed-currency helpers such as `whereMoneyLteIn(...)`.
 
 If a repository always carries the same money fields, it can also declare them once through `protected static function moneyColumns(): array`, and record hydration will apply the money casting automatically.
 
@@ -349,8 +364,8 @@ Kernel and framework both use currency-specific minor units instead of hardcoded
 ```php
 use Dataphyre\Currency\Currency;
 
-$rounded=Currency::roundAmount(10.127, 'USD');
-$yen=Currency::roundAmount(10.9, 'JPY');
+$rounded=Currency::roundAmount('10.127', 'USD');
+$yen=Currency::roundAmount('10.9', 'JPY');
 
 $parts=Currency::splitAmount(10, 'USD', 3);
 $allocated=Currency::allocateAmount(10, 'USD', [

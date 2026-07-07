@@ -19,7 +19,7 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 	 * @return array<string,mixed> Compact skeleton grouping and write-order metadata.
 	 */
 	private function app_builder_code_skeleton_summary(array $skeletons): array {
-		$known_order=['table_schema', 'table_repository', 'table_record', 'panel_resource', 'panel_manifest', 'panel_regression_manifest', 'api_route', 'api_endpoint_handler', 'api_regression_manifest'];
+		$known_order=['table_schema', 'table_repository', 'table_record', 'sql_code_unit_test', 'panel_resource', 'panel_manifest', 'panel_regression_manifest', 'panel_code_unit_test', 'api_route', 'api_endpoint_handler', 'api_regression_manifest', 'api_code_unit_test', 'app_code_unit_test'];
 		$paths_by_kind=[];
 		$sensitive_paths=[];
 		$sensitive_categories=[];
@@ -408,12 +408,17 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 		$files=array_values(array_map('strval', $files));
 		$resource_files=array_values(array_filter($files, static fn(string $file): bool => str_contains($file, '/panel/resources/')));
 		$manifest_files=array_values(array_filter($files, static fn(string $file): bool => str_contains($file, '/panel/manifests/')));
-		$test_files=array_values(array_filter($files, static fn(string $file): bool => str_contains($file, '/unit_tests/')));
+		$panel_regression_files=array_values(array_filter($files, static fn(string $file): bool => str_contains($file, '/unit_tests/panel.') && str_ends_with($file, '.json')));
+		$code_unit_test_files=array_values(array_filter($files, static fn(string $file): bool => str_contains($file, '/unit_tests/') && str_ends_with($file, '.test.php')));
 		$api_route_files=array_values(array_filter($files, static fn(string $file): bool => str_contains($file, '/routes/api/')));
 		$api_handler_files=array_values(array_filter($files, static fn(string $file): bool => str_contains($file, '/api/') && str_ends_with($file, 'Endpoints.php')));
-		$api_test_files=array_values(array_filter($files, static fn(string $file): bool => str_contains($file, '/unit_tests/api.')));
+		$api_test_files=array_values(array_filter($files, static fn(string $file): bool => str_contains($file, '/unit_tests/api.') && str_ends_with($file, '.json')));
 		$tables=array_values(array_filter(array_map(static fn(array $schema): string => (string)($schema['table'] ?? ''), $schemas), static fn(string $table): bool => $table!==''));
 		$entity_build_order=$this->app_builder_schema_dependency_order($schemas);
+		$focused_verification_tools=['dataphyre_php_lint', 'dataphyre_run_panel_regression', 'dataphyre_run_panel_field_catalog_check'];
+		if($code_unit_test_files!==[]){
+			$focused_verification_tools[]='app_local_php_unit_tests';
+		}
 		$sequence=[
 			[
 				'order'=>1,
@@ -448,13 +453,13 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 				'order'=>5,
 				'id'=>'add_route_free_regression',
 				'goal'=>'Add focused route-free Panel regression manifests for table rendering, form schema, filters, and expected actions.',
-				'files'=>$test_files,
+				'files'=>$panel_regression_files,
 			],
 			[
 				'order'=>6,
 				'id'=>'run_focused_verification',
 				'goal'=>'Run focused application or module checks for the files above; keep publication validation for MCP/release-surface claims.',
-				'tools'=>['dataphyre_php_lint', 'dataphyre_run_panel_regression', 'dataphyre_run_panel_field_catalog_check'],
+				'tools'=>$focused_verification_tools,
 			],
 		];
 		if($api_route_files!==[] || $api_handler_files!==[] || $api_test_files!==[]){
@@ -478,9 +483,17 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 					'files'=>$api_test_files,
 				],
 			]);
-			foreach($sequence as $index=>$step){
-				$sequence[$index]['order']=$index+1;
-			}
+		}
+		if($code_unit_test_files!==[]){
+			array_splice($sequence, -1, 0, [[
+				'order'=>6,
+				'id'=>'add_code_unit_tests',
+				'goal'=>'Add lightweight app-owned PHP test skeletons for generated resources, endpoints, or data-model contracts.',
+				'files'=>$code_unit_test_files,
+			]]);
+		}
+		foreach($sequence as $index=>$step){
+			$sequence[$index]['order']=$index+1;
 		}
 		return $sequence;
 	}
@@ -527,34 +540,34 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 		};
 		$add_probe(
 			'panel_resource_style',
-			['panel_resource', 'panel_manifest', 'panel_regression_manifest'],
-			[$app_root.'/panel/resources/*.php', $app_root.'/panel/manifests/*.php', $app_root.'/unit_tests/panel.*.json'],
-			['namespace', 'queryUsing pattern', 'field/filter/action naming', 'relation option sources', 'manifest registration', 'route-free regression shape'],
-			['implementation_recipe.items[kind=panel_resource]', 'implementation_recipe.items[kind=panel_manifest]', 'verification_execution_plan.items[tool=dataphyre_run_panel_regression]'],
-			['resource namespace/imports', 'field/filter/action array shape', 'relationship option callbacks/adapters', 'panel regression manifest naming']
+			['panel_resource', 'panel_manifest', 'panel_regression_manifest', 'panel_code_unit_test'],
+			[$app_root.'/panel/resources/*.php', $app_root.'/panel/manifests/*.php', $app_root.'/unit_tests/panel.*.json', $app_root.'/unit_tests/panel.*.test.php'],
+			['namespace', 'queryUsing pattern', 'field/filter/action naming', 'relation option sources', 'manifest registration', 'route-free regression shape', 'code-defined PHP test shape'],
+			['implementation_recipe.items[kind=panel_resource]', 'implementation_recipe.items[kind=panel_manifest]', 'verification_execution_plan.items[tool=dataphyre_run_panel_regression]', 'verification_execution_plan.items[tool=app_local_php_unit_tests]'],
+			['resource namespace/imports', 'field/filter/action array shape', 'relationship option callbacks/adapters', 'panel regression manifest naming', 'PHP test skeleton naming and assertions']
 		);
 		$add_probe(
 			'data_model_style',
-			['table_schema', 'table_repository', 'table_record'],
-			[$app_root.'/**/*Schema.php', $app_root.'/**/*Repository.php', $app_root.'/**/*Record.php', $app_root.'/**/dataphyre/sql/*.php'],
-			['schema registration', 'repository query shape', 'record/cast conventions', 'table naming', 'tenant/owner scoping pattern'],
-			['implementation_recipe.items[kind=table_schema]', 'implementation_recipe.items[kind=table_repository]', 'verification_execution_plan.items[tool=dataphyre_sql_schema_read]'],
-			['TableSchema registration shape', 'repository method/query conventions', 'Record casts/accessors', 'tenant or owner scope helper naming']
+			['table_schema', 'table_repository', 'table_record', 'sql_code_unit_test'],
+			[$app_root.'/**/*Schema.php', $app_root.'/**/*Repository.php', $app_root.'/**/*Record.php', $app_root.'/**/dataphyre/sql/*.php', $app_root.'/unit_tests/sql.*.test.php'],
+			['schema registration', 'repository query shape', 'record/cast conventions', 'table naming', 'tenant/owner scoping pattern', 'code-defined SQL/data tests'],
+			['implementation_recipe.items[kind=table_schema]', 'implementation_recipe.items[kind=table_repository]', 'verification_execution_plan.items[tool=dataphyre_sql_schema_read]', 'verification_execution_plan.items[tool=app_local_php_unit_tests]'],
+			['TableSchema registration shape', 'repository method/query conventions', 'Record casts/accessors', 'tenant or owner scope helper naming', 'PHP test skeleton naming and assertions']
 		);
 		$add_probe(
 			'api_endpoint_style',
-			['api_route', 'api_endpoint_handler', 'api_regression_manifest'],
-			[$app_root.'/routes/api/*.php', $app_root.'/api/**/*.php', $app_root.'/unit_tests/api.*.json'],
-			['route declaration style', 'execute target shape', 'auth metadata', 'operationId naming', 'response schema conventions', 'API regression manifest shape'],
-			['implementation_recipe.items[kind=api_route]', 'implementation_recipe.items[kind=api_endpoint_handler]', 'verification_execution_plan.items[tool=dataphyre_route_match_preview]'],
-			['route registration shape', 'handler class/function style', 'auth and policy metadata placement', 'API regression manifest naming']
+			['api_route', 'api_endpoint_handler', 'api_regression_manifest', 'api_code_unit_test'],
+			[$app_root.'/routes/api/*.php', $app_root.'/api/**/*.php', $app_root.'/unit_tests/api.*.json', $app_root.'/unit_tests/api.*.test.php'],
+			['route declaration style', 'execute target shape', 'auth metadata', 'operationId naming', 'response schema conventions', 'API regression manifest shape', 'code-defined PHP endpoint tests'],
+			['implementation_recipe.items[kind=api_route]', 'implementation_recipe.items[kind=api_endpoint_handler]', 'verification_execution_plan.items[tool=dataphyre_route_match_preview]', 'verification_execution_plan.items[tool=app_local_php_unit_tests]'],
+			['route registration shape', 'handler class/function style', 'auth and policy metadata placement', 'API regression manifest naming', 'PHP test skeleton naming and assertions']
 		);
 		if($items===[]){
 			$items[]=[
 				'id'=>'app_owned_style',
 				'applies_to_kinds'=>[],
-				'inspect_globs'=>[$app_root.'/**/*.php', $app_root.'/unit_tests/*.json'],
-				'signals'=>['namespace', 'registration pattern', 'test manifest shape'],
+				'inspect_globs'=>[$app_root.'/**/*.php', $app_root.'/unit_tests/*.json', $app_root.'/unit_tests/*.test.php'],
+				'signals'=>['namespace', 'registration pattern', 'test manifest shape', 'code-defined PHP test shape'],
 				'feeds'=>['implementation_recipe.items', 'verification_execution_plan.items'],
 				'capture_fields'=>[
 					'matched_files',
@@ -1102,6 +1115,10 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 				'panel_resource', 'panel_manifest', 'panel_regression_manifest'=>['dataphyre_run_panel_regression', 'dataphyre_php_lint'],
 				'table_schema', 'table_repository', 'table_record'=>['dataphyre_sql_schema_read', 'dataphyre_php_lint'],
 				'api_route', 'api_endpoint_handler', 'api_regression_manifest'=>['dataphyre_route_manifest_read', 'dataphyre_api_docs_static_summary', 'dataphyre_php_lint'],
+				'panel_code_unit_test'=>['app_local_php_unit_tests', 'dataphyre_run_panel_regression', 'dataphyre_php_lint'],
+				'api_code_unit_test'=>['app_local_php_unit_tests', 'dataphyre_api_docs_static_summary', 'dataphyre_php_lint'],
+				'sql_code_unit_test'=>['app_local_php_unit_tests', 'dataphyre_sql_schema_read', 'dataphyre_php_lint'],
+				'app_code_unit_test'=>['app_local_php_unit_tests', 'dataphyre_php_lint'],
 				default=>[],
 			};
 			$failure_branch=null;
@@ -5182,6 +5199,7 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 	private function app_builder_verification_plan(array $files, array $data_model, array $tools): array {
 		$php_paths=[];
 		$panel_suites=[];
+		$code_unit_test_paths=[];
 		foreach($files as $file){
 			$file=(string)$file;
 			if(str_ends_with($file, '.php')){
@@ -5189,6 +5207,9 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 			}
 			if(str_ends_with($file, '.json') && str_contains($file, '/unit_tests/panel.')){
 				$panel_suites[]=$file;
+			}
+			if(str_ends_with($file, '.test.php') && str_contains($file, '/backend/dataphyre/unit_tests/')){
+				$code_unit_test_paths[]=$file;
 			}
 		}
 		foreach($data_model as $model){
@@ -5339,6 +5360,19 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 				'arguments'=>(object)[],
 				'purpose'=>'Review static API cache contracts without touching cache storage.',
 				'requires_concrete_paths'=>false,
+			];
+		}
+		if(in_array('app_local_php_unit_tests', $tools, true) && $code_unit_test_paths!==[]){
+			$steps[]=[
+				'order'=>11,
+				'tool'=>'app_local_php_unit_tests',
+				'when'=>'after adapting generated app PHP files and code-defined unit test skeletons',
+				'arguments'=>[
+					'paths'=>array_values(array_unique($code_unit_test_paths)),
+					'runner'=>'consuming application local PHP unit-test command',
+				],
+				'purpose'=>'Run lightweight code-defined PHP tests for generated app resources, endpoints, or data-model contracts.',
+				'requires_concrete_paths'=>true,
 			];
 		}
 		$tables=[];
@@ -5877,6 +5911,10 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 				$branch['likely_app_owned_fix']='Fix app-owned Panel resource, manifest, relationship adapter, filters, actions, or route-free regression manifest.';
 				$branch['next_reads']=['builder_response.relationship_contract_summary', 'builder_response.implementation_matrix', 'builder_response.verification_handoff'];
 				break;
+			case 'app_local_php_unit_tests':
+				$branch['likely_app_owned_fix']='Fix app-owned generated PHP resources, handlers, data-model artifacts, or the lightweight test skeleton assertions.';
+				$branch['next_reads']=['builder_response.code_skeleton_summary.paths_by_kind', 'builder_response.implementation_recipe.items', 'builder_response.verification_handoff'];
+				break;
 			case 'dataphyre_sql_schema_read':
 				$branch['likely_app_owned_fix']='Fix app-owned SQL config registration, TableSchema metadata, repository/table naming, or required/index/foreign-key hints.';
 				$branch['next_reads']=['builder_response.data_integrity_summary', 'builder_response.code_skeleton_summary.paths_by_kind.table_schema'];
@@ -5922,6 +5960,7 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 			'dataphyre_php_lint'=>'Keep the lint command, concrete app-owned paths, and pass/fail output summary.',
 			'dataphyre_run_panel_field_catalog_check'=>'Keep the catalog check result and any unsupported field/control type names.',
 			'dataphyre_run_panel_regression'=>'Keep the suite path, route-free regression result, and failing check names if any.',
+			'app_local_php_unit_tests'=>'Keep the app-local PHP test command, concrete *.test.php paths, pass/fail summary, and failing test names if any.',
 			'dataphyre_sql_schema_read'=>'Keep the table name, config path, and metadata fields observed without database execution.',
 			'dataphyre_route_manifest_read'=>'Keep the manifest path, route count, named route presence, handler summary, and middleware summary without dispatch output.',
 			'dataphyre_route_url_preview'=>'Keep the manifest path, route name, concrete parameters, and generated URL preview without HTTP requests.',
@@ -5955,6 +5994,13 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 		foreach($files as $file){
 			if(str_contains((string)$file, '<app>')){
 				$criteria[]='All placeholder paths such as <app> and <app framework> are replaced with real app-owned paths before verification.';
+				break;
+			}
+		}
+		foreach($files as $file){
+			$file=(string)$file;
+			if(str_contains($file, '/backend/dataphyre/unit_tests/') && str_ends_with($file, '.test.php')){
+				$criteria[]='Lightweight PHP unit test skeletons exist under app-owned backend/dataphyre/unit_tests and run with the consuming application local PHP test command.';
 				break;
 			}
 		}
@@ -6141,7 +6187,7 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 		$fields=array_values(array_unique($fields));
 		$ownership_fields=array_values(array_intersect(['owner_id', 'assignee_id', 'requester_id', 'approver_id', 'actor_id', 'created_by', 'updated_by'], $fields));
 		$scope_fields=array_values(array_intersect(['tenant_id', 'workspace_id', 'organization_id', 'org_id', 'team_id', 'account_id', 'customer_id', 'store_id'], $fields));
-		$billing_fields=array_values(array_intersect(['billing_account_id', 'billing_email', 'plan_id', 'subscription_id', 'entitlement_id', 'invoice_id', 'payment_id', 'amount_cents', 'price_cents', 'total_cents', 'currency', 'current_period_end'], $fields));
+		$billing_fields=array_values(array_intersect(['billing_account_id', 'billing_email', 'plan_id', 'subscription_id', 'entitlement_id', 'invoice_id', 'payment_id', 'amount_minor', 'price_minor', 'total_minor', 'currency', 'current_period_end'], $fields));
 		$access_fields=array_values(array_intersect(['role_id', 'permission_id', 'policy_id', 'sso_provider_id', 'api_key_id'], $fields));
 		$lifecycle_fields=array_values(array_intersect(['status', 'priority', 'archived_at', 'deleted_at'], $fields));
 		$audit_fields=array_values(array_intersect(['created_at', 'updated_at', 'created_by', 'updated_by', 'actor_id'], $fields));
@@ -6356,7 +6402,7 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 		$definitions=[
 			'dashboards_or_reporting'=>[
 				'phrases'=>['dashboard', 'reporting', 'analytics', 'metrics', 'qbr'],
-				'fields'=>['status', 'priority', 'amount_cents', 'total_cents', 'price_cents', 'quantity', 'created_at', 'updated_at', 'occurred_at', 'due_at', 'current_period_end', 'score', 'measured_at'],
+				'fields'=>['status', 'priority', 'amount_minor', 'total_minor', 'price_minor', 'quantity', 'created_at', 'updated_at', 'occurred_at', 'due_at', 'current_period_end', 'score', 'measured_at'],
 			],
 			'approval_workflow'=>[
 				'phrases'=>['approval', 'approvals', 'approve', 'approved_by', 'approver', 'review workflow'],
@@ -6396,7 +6442,7 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 			],
 			'renewal_lifecycle'=>[
 				'phrases'=>['renewal', 'renewals', 'expires', 'expiration', 'contract end', 'term end'],
-				'fields'=>['renewal_at', 'expires_at', 'effective_at', 'current_period_end', 'stage', 'status', 'amount_cents'],
+				'fields'=>['renewal_at', 'expires_at', 'effective_at', 'current_period_end', 'stage', 'status', 'amount_minor'],
 			],
 			'import_export'=>[
 				'phrases'=>['import', 'imports', 'export', 'exports', 'csv', 'spreadsheet'],

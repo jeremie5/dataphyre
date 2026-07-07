@@ -137,22 +137,46 @@ final class MailerManager {
 	 * @return SendResult Provider result, validation failure, suppression result, queue result, or delivery safety failure.
 	 */
 	public function send(array|Message $message, ?string $provider=null, array $options=[]): SendResult {
+		$traceSuppressed=(bool)($options['__dataphyre_trace_suppressed'] ?? false);
+		unset($options['__dataphyre_trace_suppressed']);
+		$payload=[
+			'provider'=>$provider ?? $this->providerName(null),
+			'queue'=>(bool)($options['queue'] ?? false),
+			'message_type'=>$message instanceof Message ? Message::class : 'array',
+			'option_keys'=>array_values(array_map('strval', array_keys($options))),
+		];
+		$dialback=\dataphyre\core::dialback('CALL_MAILER_FRAMEWORK_SEND_BEFORE', $payload);
+		if($dialback instanceof SendResult){
+			return $dialback;
+		}
 		$message=$message instanceof Message ? $message : Message::make($this->renderMessageArray($message, $options));
 		$message=$this->applyDeliverySafety($message, $provider, $options);
 		if($message instanceof SendResult){
-			return $message;
+			$result=$message;
 		}
-		if(false!==$invalid=$this->validateMessage($message, $provider)){
-			return $invalid;
+		elseif(false!==$invalid=$this->validateMessage($message, $provider)){
+			$result=$invalid;
 		}
-		if(false!==$suppressed=$this->suppressionResult($message, $provider, $options)){
-			return $suppressed;
+		elseif(false!==$suppressed=$this->suppressionResult($message, $provider, $options)){
+			$result=$suppressed;
 		}
-		$options=$this->withIdempotency($message, $options);
-		if(($options['queue'] ?? false)===true){
-			return $this->queue($message, $provider, $options);
+		else
+		{
+			$options=$this->withIdempotency($message, $options);
+			$result=(($options['queue'] ?? false)===true)
+				? $this->queue($message, $provider, $options)
+				: $this->sendThroughProviders($message, $this->providerChain($provider, $options), $options);
 		}
-		return $this->sendThroughProviders($message, $this->providerChain($provider, $options), $options);
+		if(!$traceSuppressed){
+			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Mailer send '.($result->ok() ? 'succeeded' : 'failed').'; provider='.$result->provider().'; status='.$result->status().'; queued='.(($options['queue'] ?? false)===true ? 'yes' : 'no'), $S=$result->ok() ? 'info' : 'warning');
+		}
+		$dialback=\dataphyre\core::dialback('CALL_MAILER_FRAMEWORK_SEND_AFTER', $payload+[
+			'ok'=>$result->ok(),
+			'result_provider'=>$result->provider(),
+			'status'=>$result->status(),
+			'has_message_id'=>$result->messageId()!==null,
+		]);
+		return $dialback instanceof SendResult ? $dialback : $result;
 	}
 
 	/**
@@ -167,6 +191,16 @@ final class MailerManager {
 	 * @return array<int,SendResult> Result for each input message in input order.
 	 */
 	public function sendBatch(array $messages, ?string $provider=null, array $options=[]): array {
+		$payload=[
+			'provider'=>$provider ?? $this->providerName(null),
+			'queue'=>(bool)($options['queue'] ?? false),
+			'message_count'=>count($messages),
+			'option_keys'=>array_values(array_map('strval', array_keys($options))),
+		];
+		$dialback=\dataphyre\core::dialback('CALL_MAILER_FRAMEWORK_SEND_BATCH_BEFORE', $payload);
+		if(is_array($dialback) && $dialback!==[]){
+			return $dialback;
+		}
 		$normalized=[];
 		foreach($messages as $message){
 			$message=$message instanceof Message ? $message : Message::make($this->renderMessageArray(is_array($message) ? $message : [], $options));
@@ -187,24 +221,43 @@ final class MailerManager {
 		}
 		$sendable=array_values(array_filter($normalized, static fn(mixed $item): bool => $item instanceof Message));
 		if($sendable===[]){
-			return $normalized;
+			$results=$normalized;
 		}
-		if(($options['queue'] ?? false)===true){
-			return array_map(fn(Message|SendResult $item): SendResult => $item instanceof SendResult ? $item : $this->queue($item, $provider, $options), $normalized);
+		elseif(($options['queue'] ?? false)===true){
+			$results=array_map(fn(Message|SendResult $item): SendResult => $item instanceof SendResult ? $item : $this->queue($item, $provider, $options), $normalized);
 		}
-		$chain=$this->providerChain($provider, $options);
-		$primary=$this->provider($chain[0] ?? null);
-		if($primary instanceof BatchMailProvider && count($chain)===1){
-			$batchResults=$primary->sendBatch(array_map(fn(Message $message): Message => $message, $sendable), $options);
-			$index=0;
-			return array_map(static function(Message|SendResult $item) use (&$index, $batchResults): SendResult {
-				if($item instanceof SendResult){
-					return $item;
-				}
-				return $batchResults[$index++] ?? SendResult::failure('batch', 'Batch provider did not return a result for this message.', 500);
-			}, $normalized);
+		else
+		{
+			$chain=$this->providerChain($provider, $options);
+			$primary=$this->provider($chain[0] ?? null);
+			if($primary instanceof BatchMailProvider && count($chain)===1){
+				$batchResults=$primary->sendBatch(array_map(fn(Message $message): Message => $message, $sendable), $options);
+				$index=0;
+				$results=array_map(static function(Message|SendResult $item) use (&$index, $batchResults): SendResult {
+					if($item instanceof SendResult){
+						return $item;
+					}
+					return $batchResults[$index++] ?? SendResult::failure('batch', 'Batch provider did not return a result for this message.', 500);
+				}, $normalized);
+			}
+			else
+			{
+				$sendOptions=$options+['__dataphyre_trace_suppressed'=>true];
+				$results=array_map(fn(Message|SendResult $item): SendResult => $item instanceof SendResult ? $item : $this->send($item, $provider, $sendOptions), $normalized);
+			}
 		}
-		return array_map(fn(Message|SendResult $item): SendResult => $item instanceof SendResult ? $item : $this->send($item, $provider, $options), $normalized);
+		$failed=0;
+		foreach($results as $result){
+			if($result instanceof SendResult && !$result->ok()){
+				$failed++;
+			}
+		}
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Mailer batch send completed; requested='.count($messages).'; results='.count($results).'; failed='.$failed.'; queued='.(($options['queue'] ?? false)===true ? 'yes' : 'no'), $S=$failed===0 ? 'info' : 'warning');
+		$dialback=\dataphyre\core::dialback('CALL_MAILER_FRAMEWORK_SEND_BATCH_AFTER', $payload+[
+			'result_count'=>count($results),
+			'failed'=>$failed,
+		]);
+		return is_array($dialback) && $dialback!==[] ? $dialback : $results;
 	}
 
 	/**
@@ -219,10 +272,26 @@ final class MailerManager {
 	 * @return mixed Async dispatch handle/result, or SendResult when queue fallback is used.
 	 */
 	public function sendAsync(array|Message $message, ?string $provider=null, array $options=[]): mixed {
-		if(\dataphyre\core::load_framework_module('async')===true && class_exists('\Dataphyre\Async\Async')){
-			return \Dataphyre\Async\Async::dispatch(fn(): array => $this->send($message, $provider, $options)->toArray(), [], $options['async_driver'] ?? $this->config('async.driver'));
+		$payload=[
+			'provider'=>$provider ?? $this->providerName(null),
+			'message_type'=>$message instanceof Message ? Message::class : 'array',
+			'async_driver'=>is_string($options['async_driver'] ?? null) ? (string)$options['async_driver'] : (string)$this->config('async.driver'),
+			'option_keys'=>array_values(array_map('strval', array_keys($options))),
+		];
+		$dialback=\dataphyre\core::dialback('CALL_MAILER_FRAMEWORK_SEND_ASYNC_BEFORE', $payload);
+		if($dialback!==null){
+			return $dialback;
 		}
-		return $this->queue($message, $provider, $options);
+		if(\dataphyre\core::load_framework_module('async')===true && class_exists('\Dataphyre\Async\Async')){
+			$result=\Dataphyre\Async\Async::dispatch(fn(): array => $this->send($message, $provider, $options)->toArray(), [], $options['async_driver'] ?? $this->config('async.driver'));
+			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Mailer async send dispatched; provider='.$payload['provider'].'; async_driver='.$payload['async_driver']);
+			$dialback=\dataphyre\core::dialback('CALL_MAILER_FRAMEWORK_SEND_ASYNC_AFTER', $payload+['queued_fallback'=>false, 'result_type'=>is_object($result) ? $result::class : gettype($result)]);
+			return $dialback!==null ? $dialback : $result;
+		}
+		$result=$this->queue($message, $provider, $options);
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Mailer async send queued fallback; provider='.$result->provider().'; status='.$result->status(), $S=$result->ok() ? 'info' : 'warning');
+		$dialback=\dataphyre\core::dialback('CALL_MAILER_FRAMEWORK_SEND_ASYNC_AFTER', $payload+['queued_fallback'=>true, 'ok'=>$result->ok(), 'status'=>$result->status()]);
+		return $dialback!==null ? $dialback : $result;
 	}
 
 	/**

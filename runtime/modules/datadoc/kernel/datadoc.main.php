@@ -1549,7 +1549,7 @@ class datadoc{
 	 * @param string $path Project root path used for file discovery and manual docs.
 	 */
 	public static function create_project(string $name='', string $title='', string $path=''): bool {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		self::$last_error='';
 		$fields=[
 			'name'=>$name,
@@ -1611,7 +1611,7 @@ class datadoc{
 	 * @return string|false Linkified HTML or `false` when processing fails.
 	 */
 	public static function reference_functions(string $content, string $current_project, string $current_class): string|false {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$pattern='/\b([a-zA-Z_\x80-\xff][a-zA-Z0-9_\x80-\xff]*|\$\w+)\b/';
 		preg_match_all($pattern, $content, $matches);
 		foreach($matches[0] as $detected_entity){
@@ -1644,7 +1644,7 @@ class datadoc{
 	 * Walks the filesystem and writes rows to `dataphyre.datadoc_files`; use `discover_files_to_project()` for bounded request-time discovery.
 	 */
 	public static function add_files_to_project(string $dirpath, string $project=''): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$dirpath=self::normalize_filesystem_path($dirpath);
 		if(is_dir($dirpath)){
 			$files=scandir($dirpath);
@@ -1667,7 +1667,7 @@ class datadoc{
 	 * @return array{registered:int,skipped:int,failed:int,scanned:int,last_cursor:string,done:bool,error:?string}
 	 */
 	public static function discover_files_to_project(string $dirpath, string $project='', int $limit=250, string $after=''): array {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null);
 		$dirpath=rtrim(self::normalize_filesystem_path($dirpath), '/');
 		$after=self::normalize_filesystem_path($after);
 		$stats=[
@@ -1862,7 +1862,7 @@ class datadoc{
 	 * Writes file state to `dataphyre.datadoc_files`, tokenizes the file, replaces existing indexed records, and writes new rows to `dataphyre.datadoc_data`.
 	 */
 	public static function add_file_to_project(string $filepath, string $project=''): bool {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$filepath=self::normalize_filesystem_path($filepath);
 		if(!file_exists($filepath) || !str_ends_with($filepath, '.php') || self::should_exclude_index_file($filepath)){
 			return false;
@@ -1883,7 +1883,7 @@ class datadoc{
 	 * Stores normalized path, checksum, stale state, and project key in `dataphyre.datadoc_files` for later batch sync.
 	 */
 	public static function register_file_to_project(string $filepath, string $project=''): bool {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null);
 		$filepath=self::normalize_filesystem_path($filepath);
 		if($project==='' || !file_exists($filepath) || !str_ends_with($filepath, '.php') || self::should_exclude_index_file($filepath)){
 			return false;
@@ -1947,7 +1947,7 @@ class datadoc{
 	 * Removes matching rows from `dataphyre.datadoc_data` and `dataphyre.datadoc_files`.
 	 */
 	public static function delete_file(string $filepath, string $project=''): bool {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$filepath=self::normalize_filesystem_path($filepath);
 		if(is_dir($filepath) || str_ends_with($filepath, '/')){
 			$filepath=rtrim($filepath, '/').'/';
@@ -1985,7 +1985,7 @@ class datadoc{
 	 * Reads `dataphyre.datadoc_files` for rows marked stale or whose checksums no longer match the current filesystem content.
 	 */
 	public static function get_stale_files(string $project=''): array {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$result=sql_select(
 			$S='filepath',
 			$L='dataphyre.datadoc_files',
@@ -2006,7 +2006,7 @@ class datadoc{
 	 * Tokenizes each stale file and rewrites project/file records in `dataphyre.datadoc_data`. This can be expensive on large projects; browser flows should prefer `sync_project_batch()`.
 	 */
 	public static function sync_all_files(string $project=''): bool {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		self::prune_excluded_project_files($project);
 		$result=sql_select(
 			$S='*',
@@ -2090,7 +2090,7 @@ class datadoc{
 	 * @return array{synced:int,skipped:int,failed:int,processed:int,remaining:int,stopped_by:?string,error:?string}
 	 */
 	public static function sync_project_batch(string $project='', int $limit=25, float $max_seconds=4.0): array {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null);
 		$limit=max(1, min(250, $limit));
 		$deadline=microtime(true)+max(0.5, $max_seconds);
 		$stats=[
@@ -2312,7 +2312,7 @@ class datadoc{
 	 * Updates both file-state and indexed-symbol rows so links continue to point at the new source path.
 	 */
 	public static function change_filepath(string $old_filepath, string $new_filepath): bool {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$result=sql_update(
 			$L='dataphyre.datadoc_data',
 			$F=[
@@ -2330,7 +2330,7 @@ class datadoc{
 	 * Tokenizes PHP symbols, deletes previous records for that file/project, writes namespace/class/function rows to `dataphyre.datadoc_data`, and updates file-state metadata.
 	 */
 	public static function sync_file(string $file, string $project=''): bool {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$file=self::normalize_filesystem_path($file);
 		if(!file_exists($file) || self::should_exclude_index_file($file)){
 			return false;

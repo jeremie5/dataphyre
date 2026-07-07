@@ -15,7 +15,7 @@ body:
   - type: textarea
     id: issue
     attributes:
-      label: What should change?
+      label: What changes?
       description: Describe what is missing, incorrect, or hard to follow.
     validations:
       required: true

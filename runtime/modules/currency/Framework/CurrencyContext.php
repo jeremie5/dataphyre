@@ -114,6 +114,26 @@ final class CurrencyContext {
 		return $this->manager->minorUnits($currency);
 	}
 
+	/** Returns the major-to-minor unit factor for a currency. */
+	public function minorFactor(string $currency): int {
+		return $this->manager->minorFactor($currency);
+	}
+
+	/** Converts a major-unit amount into integer minor units. */
+	public function amountToMinorUnits(float|int|string|null $amount, string $currency, bool $cash=false): int {
+		return $this->manager->amountToMinorUnits($amount, $currency, $cash, $this->overrides);
+	}
+
+	/** Converts integer minor units into a fixed-decimal major-unit string. */
+	public function minorUnitsToDecimal(int $minorAmount, string $currency): string {
+		return $this->manager->minorUnitsToDecimal($minorAmount, $currency, $this->overrides);
+	}
+
+	/** Converts canonical integer minor units between currencies. */
+	public function convertMinorUnits(int $minorAmount, string $sourceCurrency, string $targetCurrency): int {
+		return $this->manager->convertMinorUnits($minorAmount, $sourceCurrency, $targetCurrency, $this->overrides);
+	}
+
 	/**
 	 * Returns the cash-rounding increment configured for a currency.
 	 *
@@ -192,24 +212,24 @@ final class CurrencyContext {
 	 *
 	 * Passing a currency overrides only the currency used for this formatting call.
 	 *
-	 * @param float|int|null $amount Amount in major currency units.
+	 * @param float|int|string|null $amount Amount in major currency units.
 	 * @param bool $showFree Render zero as a localized Free label when true.
 	 * @param string|null $currency Optional currency override for output.
 	 * @return string User-facing formatted amount.
 	 */
-	public function format(float|int|null $amount, bool $showFree=false, ?string $currency=null): string {
+	public function format(float|int|string|null $amount, bool $showFree=false, ?string $currency=null): string {
 		return $this->manager->format($amount, $showFree, $currency, $this->overrides);
 	}
 
 	/**
 	 * Rounds an amount according to currency precision and optional cash rules.
 	 *
-	 * @param float|int|null $amount Amount in major currency units.
+	 * @param float|int|string|null $amount Amount in major currency units.
 	 * @param string $currency ISO currency code.
 	 * @param bool $cash Whether cash-rounding increments should apply.
 	 * @return float Rounded amount.
 	 */
-	public function roundAmount(float|int|null $amount, string $currency, bool $cash=false): float {
+	public function roundAmount(float|int|string|null $amount, string $currency, bool $cash=false): float {
 		return $this->manager->roundAmount($amount, $currency, $cash, $this->overrides);
 	}
 
@@ -267,7 +287,7 @@ final class CurrencyContext {
 	 * Unformatted results follow the manager/kernel numeric-string behavior, while
 	 * formatted results use context formatting and optional Free display.
 	 *
-	 * @param float|int|null $amount Amount in source currency major units.
+	 * @param float|int|string|null $amount Amount in source currency major units.
 	 * @param string $sourceCurrency Source ISO currency code.
 	 * @param string $targetCurrency Target ISO currency code.
 	 * @param bool $formatted Whether to return formatted display output.
@@ -275,7 +295,7 @@ final class CurrencyContext {
 	 * @return string|float Converted amount representation.
 	 */
 	public function convert(
-		float|int|null $amount,
+		float|int|string|null $amount,
 		string $sourceCurrency,
 		string $targetCurrency,
 		bool $formatted=false,
@@ -289,14 +309,14 @@ final class CurrencyContext {
 	 *
 	 * A currency argument overrides the context display currency for this call.
 	 *
-	 * @param float|int|null $amount Amount in base currency major units.
+	 * @param float|int|string|null $amount Amount in base currency major units.
 	 * @param bool $formatted Whether to return formatted display output.
 	 * @param bool $showFree Whether zero should display as Free.
 	 * @param string|null $currency Optional target display currency.
 	 * @return string|float Converted amount representation.
 	 */
 	public function convertToDisplay(
-		float|int|null $amount,
+		float|int|string|null $amount,
 		bool $formatted=false,
 		bool $showFree=true,
 		?string $currency=null
@@ -307,14 +327,14 @@ final class CurrencyContext {
 	/**
 	 * Converts an amount from its original currency into this context's base currency.
 	 *
-	 * @param float|int|null $amount Amount in original currency major units.
+	 * @param float|int|string|null $amount Amount in original currency major units.
 	 * @param string $originalCurrency Source ISO currency code.
 	 * @param bool $formatted Whether to return formatted display output.
 	 * @param bool $showFree Whether zero should display as Free.
 	 * @return string|float Converted base-currency representation.
 	 */
 	public function convertToBase(
-		float|int|null $amount,
+		float|int|string|null $amount,
 		string $originalCurrency,
 		bool $formatted=false,
 		bool $showFree=true
@@ -327,12 +347,25 @@ final class CurrencyContext {
 	 *
 	 * Missing currency defaults to the context display currency.
 	 *
-	 * @param float|int|null $amount Amount in major currency units.
+	 * @param float|int|string|null $amount Amount in major currency units.
 	 * @param string|null $currency Optional ISO currency code.
 	 * @return Money Immutable money value.
 	 */
-	public function money(float|int|null $amount, ?string $currency=null): Money {
+	public function money(float|int|string|null $amount, ?string $currency=null): Money {
 		return $this->manager->money($amount, $currency, $this->overrides);
+	}
+
+	/**
+	 * Creates a Money value from canonical integer minor units.
+	 *
+	 * Missing currency defaults to the context display currency.
+	 *
+	 * @param int $minorAmount Amount in currency minor units.
+	 * @param string|null $currency Optional ISO currency code.
+	 * @return Money Immutable money value.
+	 */
+	public function moneyFromMinor(int $minorAmount, ?string $currency=null): Money {
+		return $this->manager->moneyFromMinor($minorAmount, $currency, $this->overrides);
 	}
 
 	/**
@@ -377,7 +410,7 @@ final class CurrencyContext {
 	 * Unlike convert(), this fail-fast method returns a float amount rather than a
 	 * formatted or numeric-string representation.
 	 *
-	 * @param float|int|null $amount Amount in source currency major units.
+	 * @param float|int|string|null $amount Amount in source currency major units.
 	 * @param string $sourceCurrency Source ISO currency code.
 	 * @param string $targetCurrency Target ISO currency code.
 	 * @param int $maxAgeSeconds Maximum acceptable rate age.
@@ -385,7 +418,7 @@ final class CurrencyContext {
 	 * @return float Converted rounded amount.
 	 */
 	public function convertOrFailFresh(
-		float|int|null $amount,
+		float|int|string|null $amount,
 		string $sourceCurrency,
 		string $targetCurrency,
 		int $maxAgeSeconds,
@@ -452,21 +485,47 @@ final class CurrencyContext {
 	 * @param bool $cash Whether cash-rounding rules should apply.
 	 * @return array<int, float> Rounded split amounts.
 	 */
-	public function splitAmount(float|int|null $amount, string $currency, int $parts, bool $cash=false): array {
+	public function splitAmount(float|int|string|null $amount, string $currency, int $parts, bool $cash=false): array {
 		return $this->manager->splitAmount($amount, $currency, $parts, $cash, $this->overrides);
+	}
+
+	/**
+	 * Splits canonical minor units into integer minor-unit parts.
+	 *
+	 * @param int $minorAmount Amount in currency minor units.
+	 * @param string $currency ISO currency code.
+	 * @param int $parts Number of parts to produce.
+	 * @param bool $cash Whether cash-rounding rules should apply.
+	 * @return list<int> Split minor-unit parts preserving the rounded total.
+	 */
+	public function splitMinorUnits(int $minorAmount, string $currency, int $parts, bool $cash=false): array {
+		return $this->manager->splitMinorUnits($minorAmount, $currency, $parts, $cash, $this->overrides);
 	}
 
 	/**
 	 * Allocates an amount proportionally across positive ratios.
 	 *
-	 * @param float|int|null $amount Amount in major currency units.
+	 * @param float|int|string|null $amount Amount in major currency units.
 	 * @param string $currency ISO currency code.
 	 * @param array<int|string, float|int|string> $ratios Positive allocation ratios keyed by bucket.
 	 * @param bool $cash Whether cash-rounding rules should apply.
 	 * @return array<int|string, float> Rounded allocated amounts.
 	 */
-	public function allocateAmount(float|int|null $amount, string $currency, array $ratios, bool $cash=false): array {
+	public function allocateAmount(float|int|string|null $amount, string $currency, array $ratios, bool $cash=false): array {
 		return $this->manager->allocateAmount($amount, $currency, $ratios, $cash, $this->overrides);
+	}
+
+	/**
+	 * Allocates canonical minor units proportionally across positive ratios.
+	 *
+	 * @param int $minorAmount Amount in currency minor units.
+	 * @param string $currency ISO currency code.
+	 * @param array<int|string, float|int|string> $ratios Positive allocation ratios keyed by bucket.
+	 * @param bool $cash Whether cash-rounding rules should apply.
+	 * @return array<int|string,int> Allocated minor units keyed like valid ratio input.
+	 */
+	public function allocateMinorUnits(int $minorAmount, string $currency, array $ratios, bool $cash=false): array {
+		return $this->manager->allocateMinorUnits($minorAmount, $currency, $ratios, $cash, $this->overrides);
 	}
 
 	/**

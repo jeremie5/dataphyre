@@ -1,6 +1,10 @@
 ### Tracelog Module
 
-The `Tracelog` module in Dataphyre provides robust logging and tracing capabilities, including error handling, profiling, and debugging functionalities. It captures function calls, error details, and performance metrics, which are stored in session variables or files based on configuration. This module is essential for debugging and analyzing the execution flow and performance of applications.
+The `Tracelog` module captures Dataphyre runtime diagnostics for Flightdeck,
+dynamic unit-test discovery, error reporting, and optional call-graph plotting.
+Framework code should instrument through the global `tracelog()` shim so early
+bootstrap events, legacy call shapes, production suppression, deferred buffers,
+and the constructed `dataphyre\tracelog` backend all follow one path.
 
 ![Dataphyre Tracelog Viewer Example](Tracelog_Viewer_Example.png "Dataphyre Tracelog Viewer Example")
 
@@ -32,23 +36,62 @@ Flightdeck owns authentication, layout, navigation, and visual framing. Tracelog
 
 ---
 
+#### Usage Contract
+
+Use the global helper for module/runtime instrumentation:
+
+```php
+tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Message', $S='info');
+tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+```
+
+The canonical argument order is:
+
+```php
+tracelog($file, $line, $class, $function, $text, $type, $arguments);
+```
+
+The common local variable names are historical:
+
+- `$T` is message text.
+- `$S` is severity or event type.
+- `$A` is the argument payload, usually `func_get_args()` for non-sensitive
+  functions and `null` for sensitive calls.
+
+Use `function_call` for trace-only function entry markers. Use
+`function_call_with_test` only when the function is suitable for dynamic unit
+test discovery. Use `warning`, `error`, or `fatal` for exceptional conditions,
+and avoid logging secrets, tokens, credentials, cookies, private keys, full
+request bodies, or tenant-private data. Functions with `#[SensitiveParameter]`
+should use `function_call` and omit the argument payload instead of passing raw
+`func_get_args()`. Functions whose arguments include callables, closures, or
+arrays of callables should also avoid `function_call_with_test` and raw argument
+payloads because those values are not replayable dynamic-test inputs.
+
+The static backend dispatcher exists for the runtime pipeline. Prefer the
+global helper in framework modules unless you are inside the Tracelog backend
+itself.
+
 #### Class: `tracelog`
 
 ##### Static Properties
 
-- **`$tracelog`**: Stores the generated tracelog entries as HTML for display or file output.
+- **`$tracelog`**: Stores generated trace entries as HTML for display.
 - **`$enable`**: Boolean to enable or disable tracing.
-- **`$open`**: Manages the state of tracelog storage.
-- **`$file`**: Defines the file path where tracelog data is stored if configured.
-- **`$profiling`**: Boolean flag to enable profiling mode, which records performance metrics for each function call.
-- **`$plotting`**: Boolean flag that, when enabled, saves trace data for further visualization.
+- **`$open`**: Controls whether the Flightdeck viewer popup is launched from the response buffer.
+- **`$constructed`**: Tracks whether the backend has been initialized.
+- **`$plotting`**: Boolean flag that, when enabled, writes call-graph frame data for the plotter.
+- **`$dynamic_unit_testing`**: Tracks dynamic unit-test capture state.
+- **`$defer`**: Defers trace formatting until retroactive bootstrap rows are drained.
+- **`$save_to_sql`**: Enables shutdown persistence into the tracelog SQL table.
 
 ---
 
 #### Key Methods
 
 ##### `__construct()`
-- Initializes the tracelog by starting a session if not already started.
+- Initializes the backend.
 - Calls `set_handler()` to register a custom error handler.
 
 ##### `set_handler()`
@@ -58,21 +101,18 @@ Flightdeck owns authentication, layout, navigation, and visual framing. Tracelog
 
 ##### `tracelog()`
 - **Parameters**:
-  - `$filename_full`, `$line`, `$class`, `$function`, `$text`, `$type` (optional), `$arguments` (optional)
-- **Purpose**: Logs trace information, including function calls and custom messages, along with timing and profiling information.
+  - `$file`, `$line`, `$class`, `$function`, `$text`, `$type` (optional), `$arguments` (optional)
+- **Purpose**: Logs trace information, including function calls and custom messages, along with timing and memory deltas.
 - **Process**:
   - Logs data to `$tracelog` in HTML format.
-  - If `$plotting` is enabled, it writes trace data to `plotting.dat` for visualization.
-  - If `$profiling` is enabled, it logs performance metrics to `profiling` files, organized by function and timestamp.
-  - If `$file` is configured, it saves logs to HTML files in a `logs` directory, rotating based on configured lifespan.
+  - If `$plotting` is enabled, writes trace frame data for visualization.
+  - Defers early events until the backend drains the retroactive bootstrap buffer.
+  - Trims large buffers to protect request memory.
 - **Returns**: Boolean indicating success.
 
-##### `setPlotting($value)`
+##### `set_plotting($value)`
 - Enables or disables plotting mode.
-- When enabled, it clears previous plotting data from `plotting.dat`.
-
-##### `getPlotting()`
-- Returns the current state of plotting mode.
+- When enabled, clears the previous plotting cache file.
 
 ---
 
@@ -80,34 +120,29 @@ Flightdeck owns authentication, layout, navigation, and visual framing. Tracelog
 
 1. **Error Logging**:
    ```php
-   tracelog::tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, "An error occurred", "fatal");
+   tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='An error occurred', $S='fatal');
    ```
 
 2. **Function Call Logging**:
    ```php
-   tracelog::tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, "Processing request", "function_call", func_get_args());
+   tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
    ```
 
 3. **Enable Plotting**:
    ```php
-   tracelog::setPlotting(true);
-   ```
-
-4. **Profiling Mode**:
-   ```php
-   tracelog::$profiling = true;
+   \dataphyre\tracelog::set_plotting(true);
    ```
 
 ---
 
 #### Additional Details
 
-- **Plotting**: When `setPlotting(true)` is called, trace data is saved in `plotting.dat`, useful for visualizing the call stack and execution times.
-- **Profiling**: With `$profiling` enabled, each function’s timing is logged, allowing for performance analysis.
-- **File Output**: Logs can be stored in HTML format with rotating logs based on a lifespan configuration. The folder structure is based on date and time, ensuring organized logs.
+- **Plotting**: When `set_plotting(true)` is called, trace frame data is written for the call-graph plotter.
+- **Session and Handoff Output**: Traces are stored in session-safe form and, when needed, as signed handoff files for Flightdeck.
 - **Error Types**: Supports logging various error types:
   - **Info**: Default logging type with a green indicator.
   - **Warning**: Logs warnings in orange.
+  - **Error**: Logs recoverable errors in pink.
   - **Fatal**: Logs critical issues in red and saves to an error file.
 
 This module is integral for debugging and performance optimization in Dataphyre applications, offering both real-time and persistent logging solutions.

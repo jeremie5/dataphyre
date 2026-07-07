@@ -589,22 +589,25 @@ SQL can hydrate money values explicitly when the currency framework is loaded:
 use Dataphyre\Currency\Currency;
 
 $order=OrderRepository::query()
-	->asMoney('total_amount', 'currency')
+	->asMoney('total_amount_minor', 'currency', 'total')
 	->whereKey($order_id)
 	->firstRecordOrFail();
 
-$total=$order->total_amount;
+$total=$order->total;
 ```
 
-That keeps the raw storage shape in SQL while letting application code work with `Dataphyre\Currency\Money` objects naturally.
+That keeps the raw integer storage shape in SQL while letting application code work with `Dataphyre\Currency\Money` objects naturally.
 
 If a repository always stores the same money fields, it can declare them once and let record hydration apply them automatically:
 
 ```php
 protected static function moneyColumns(): array {
 	return [
-		'total_amount'=>'currency',
-		'base_total'=>[
+		'total_amount_minor'=>[
+			'currency_column'=>'currency',
+			'target_column'=>'total',
+		],
+		'base_total_minor'=>[
 			'currency'=>'CAD',
 			'target_column'=>'base_total_money',
 		],
@@ -618,7 +621,7 @@ When rows carry their own currency column, money comparisons stay honest by matc
 
 ```php
 $orders=OrderRepository::query()
-	->whereMoneyLte('total_amount', Currency::money(100, 'USD'), 'currency')
+	->whereMoneyLte('total_amount_minor', Currency::money(100, 'USD'), 'currency')
 	->get();
 ```
 
@@ -626,11 +629,11 @@ When the stored amount column is normalized to one fixed currency, use the fixed
 
 ```php
 $rows=LedgerRepository::query()
-	->whereMoneyGteIn('base_total', Currency::money(100, 'USD'), 'CAD')
+	->whereMoneyGteIn('base_total_minor', Currency::money(100, 'USD'), 'CAD')
 	->get();
 ```
 
-`whereMoney...(...)` is for amount-plus-currency row storage. `whereMoney...In(...)` is for columns stored in one known currency.
+`whereMoney...(...)` is for minor-amount-plus-currency row storage. `whereMoney...In(...)` is for minor-unit columns stored in one known currency.
 
 SQL can also hydrate the canonical persisted `StoredMoney` shape when rows keep original money, normalized base money, and exchange metadata together:
 
@@ -645,11 +648,11 @@ $original=$stored->original();
 $base=$stored->base();
 ```
 
-`asStoredMoney()` defaults to the canonical storage keys:
+`asStoredMoney()` defaults to the canonical integer minor-unit storage keys:
 
-- `original_amount`
+- `original_amount_minor`
 - `original_currency`
-- `base_amount`
+- `base_amount_minor`
 - `base_currency`
 - `exchange_rate`
 - `exchange_source`
@@ -664,9 +667,14 @@ $order=OrderRepository::query()
 		'original_prefix'=>'price_',
 		'base_prefix'=>'price_base_',
 		'exchange_prefix'=>'price_exchange_',
-	])
+])
 	->firstRecordOrFail();
 ```
+
+Prefix mappings derive `amount_minor` columns by default, such as
+`price_amount_minor` and `price_base_amount_minor`. Explicit
+`original_amount_column` or `base_amount_column` values are still honored for
+older schemas, but new storage should use integer minor-unit columns.
 
 Repository hydration can own that mapping too:
 
@@ -702,7 +710,7 @@ With repository mappings like:
 ```php
 protected static function moneyColumns(): array {
 	return [
-		'display_total_amount'=>[
+		'display_total_minor'=>[
 			'currency_column'=>'display_total_currency',
 			'target_column'=>'display_total',
 		],

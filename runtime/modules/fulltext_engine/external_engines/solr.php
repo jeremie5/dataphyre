@@ -57,7 +57,7 @@ class elasticsearch {
 	 * [primary-key-value => score] rows that pass the requested score threshold.
 	 */
     public static function find(string $index_name, array $search_data, string $primary_column_name, bool|string $boolean_mode, string $language, int $max_results, float $threshold){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$language=explode('-', $language)[0];
 		$index_name=strtolower($index_name);
         $query=self::buildElasticsearchQuery($search_data, $boolean_mode, $language, $max_results);
@@ -85,7 +85,7 @@ class elasticsearch {
 	 * the supplied language tag before the PUT request is sent.
 	 */
 	public static function create_index(string $index_name, string $primary_key, string $language): bool {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = null, $S = 'function_call', $A = func_get_args());
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = null, $S = 'function_call', $A=null);
 		$language=explode('-', $language)[0];
 		$index_name=strtolower($index_name);
 		$analyzer = self::mapLanguageToAnalyzer($language);
@@ -134,7 +134,7 @@ class elasticsearch {
 			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = "Index [$index_name] created successfully", $S = 'info');
 			return true;
 		}
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = "Failed to create index [$index_name]: HTTP $code | $error | $response", $S = 'warning');
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = "Failed to create index [$index_name]: HTTP $code | $error | response_bytes=".(is_string($response) ? strlen($response) : 0), $S = 'warning');
 		return false;
 	}
 
@@ -147,7 +147,7 @@ class elasticsearch {
 	 * in this path, so remote error semantics remain outside the local contract.
 	 */
     public static function delete_index(string $index_name): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$index_name=strtolower($index_name);
         $url=self::index_url($index_name);
         $ch=curl_init($url);
@@ -170,7 +170,7 @@ class elasticsearch {
 	 * false.
 	 */
     public static function update(string $index_name, array $values, string $primary_column_name, string $primary_key_value, string $language): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$language=explode('-', $language)[0];
 		$index_name=strtolower($index_name);
         $url=self::index_url($index_name, '_search');
@@ -226,7 +226,7 @@ class elasticsearch {
 	 * outside 2xx is treated as a failed mutation and logged for diagnostics.
 	 */
 	public static function add(string $index_name, array $values, string $primary_column_name, string $primary_key_value, string $language): bool {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = null, $S = 'function_call', $A = func_get_args());
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = null, $S = 'function_call', $A = [$index_name, count($values), $primary_column_name, $language]);
 		$language=explode('-', $language)[0];
 		$index_name=strtolower($index_name);
 		if (empty($primary_column_name)) {
@@ -238,7 +238,7 @@ class elasticsearch {
 			fn($k) => $k !== '',
 			ARRAY_FILTER_USE_KEY
 		);
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = 'Indexing document: '.json_encode($document), $S = 'info');
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = 'Indexing document into '.$index_name.' with '.count($document).' fields', $S = 'info');
 		$url = self::index_url($index_name, '_doc');
 		$json_data = json_encode($document);
 		$ch = curl_init($url);
@@ -250,7 +250,7 @@ class elasticsearch {
 		$http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		$error = curl_error($ch);
 		curl_close($ch);
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = "HTTP $http_code | Response: $response", $S = 'info');
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = "HTTP $http_code | response_bytes=".(is_string($response) ? strlen($response) : 0), $S = 'info');
 		if ($http_code < 200 || $http_code >= 300) {
 			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = "Failed to add document: $error", $S = 'warning');
 			return false;
@@ -266,7 +266,7 @@ class elasticsearch {
 	 * treated as a successful no-op by this legacy adapter contract.
 	 */
 	public static function remove(string $index_name, string $primary_column_name, string $primary_key_value) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$index_name=strtolower($index_name);
         $url=self::index_url($index_name, '_search');
         $query=array(
@@ -328,7 +328,7 @@ class elasticsearch {
 	 * short terms disable fuzziness to avoid excessive expansion.
 	 */
     private static function buildElasticsearchQuery(array $search_data, bool|string $boolean_mode, string $language, int $max_results){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$language=explode('-', $language)[0];
 		$operator=match(true){
 			is_bool($boolean_mode)=>($boolean_mode ? 'and' : 'or'),
@@ -365,7 +365,7 @@ class elasticsearch {
 	 * preserves the upstream engine-agnostic shape of [primary-key-value => score].
 	 */
     private static function processElasticsearchResults(array $response_data, string $primary_column_name, float $threshold){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
         $results=array();
         if(isset($response_data['hits']['hits'])){
             foreach($response_data['hits']['hits'] as $hit){

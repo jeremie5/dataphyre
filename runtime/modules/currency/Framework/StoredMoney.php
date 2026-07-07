@@ -104,6 +104,24 @@ final class StoredMoney implements \JsonSerializable {
 	}
 
 	/**
+	 * Returns the original amount as a fixed decimal string.
+	 *
+	 * @return string Decimal string from original().
+	 */
+	public function originalDecimalAmount(): string {
+		return $this->original->decimalAmount();
+	}
+
+	/**
+	 * Returns the original amount in integer minor units.
+	 *
+	 * @return int Minor-unit amount from original().
+	 */
+	public function originalMinorAmount(): int {
+		return $this->original->minorAmount();
+	}
+
+	/**
 	 * Returns the original currency code.
 	 *
 	 * @return string Currency code from original().
@@ -119,6 +137,24 @@ final class StoredMoney implements \JsonSerializable {
 	 */
 	public function baseAmount(): float {
 		return $this->base->amount();
+	}
+
+	/**
+	 * Returns the converted base amount as a fixed decimal string.
+	 *
+	 * @return string Decimal string from base().
+	 */
+	public function baseDecimalAmount(): string {
+		return $this->base->decimalAmount();
+	}
+
+	/**
+	 * Returns the converted base amount in integer minor units.
+	 *
+	 * @return int Minor-unit amount from base().
+	 */
+	public function baseMinorAmount(): int {
+		return $this->base->minorAmount();
 	}
 
 	/**
@@ -175,6 +211,9 @@ final class StoredMoney implements \JsonSerializable {
 	 * callers that map this array into SQL columns must supply trusted column-name
 	 * fragments.
 	 *
+	 * Monetary amounts are emitted only as integer minor units. Decimal or float
+	 * major-unit amounts belong at display/API edges, not durable storage.
+	 *
 	 * @param string $originalPrefix Prefix for original amount and currency keys.
 	 * @param string $basePrefix Prefix for base amount and currency keys.
 	 * @param string $exchangePrefix Prefix for exchange provenance keys.
@@ -187,9 +226,9 @@ final class StoredMoney implements \JsonSerializable {
 	): array {
 		if($originalPrefix==='original_' && $basePrefix==='base_' && $exchangePrefix==='exchange_'){
 			return $this->defaultArrayPayload ??= [
-				'original_amount'=>$this->original->amount(),
+				'original_amount_minor'=>$this->original->minorAmount(),
 				'original_currency'=>$this->original->currency(),
-				'base_amount'=>$this->base->amount(),
+				'base_amount_minor'=>$this->base->minorAmount(),
 				'base_currency'=>$this->base->currency(),
 				'exchange_rate'=>$this->quote->rate(),
 				'exchange_source'=>$this->snapshot->source(),
@@ -198,9 +237,9 @@ final class StoredMoney implements \JsonSerializable {
 			];
 		}
 		return [
-			$originalPrefix.'amount'=>$this->original->amount(),
+			$originalPrefix.'amount_minor'=>$this->original->minorAmount(),
 			$originalPrefix.'currency'=>$this->original->currency(),
-			$basePrefix.'amount'=>$this->base->amount(),
+			$basePrefix.'amount_minor'=>$this->base->minorAmount(),
 			$basePrefix.'currency'=>$this->base->currency(),
 			$exchangePrefix.'rate'=>$this->quote->rate(),
 			$exchangePrefix.'source'=>$this->snapshot->source(),

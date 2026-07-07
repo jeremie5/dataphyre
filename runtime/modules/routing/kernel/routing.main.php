@@ -192,7 +192,7 @@ class routing{
 	 * @return never
 	 */
 	public static function not_found(): never {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$not_found_errorpage=self::not_found_errorpage();
 		self::set_page("/".$not_found_errorpage);
 		if($not_found_errorpage!==''){
@@ -238,7 +238,7 @@ class routing{
 	 * @return string The same file path so `check_route()` can return it directly.
 	 */
 	private static function set_page(string $file): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		self::$realpage="/".str_replace(ROOTPATH['views'], '', substr($file, 0, strrpos($file, ".")));
 		self::$page=self::$realpage;
 		return $file;

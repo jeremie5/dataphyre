@@ -35,7 +35,7 @@ The owning kernel exposes the merged readonly config as `DP_VESTRA_CFG`.
   - Tenant profile key used when a reference or call does not specify a tenant.
 - `rate`
   - Optional default Fabric rate for the flat/default profile. Applications should prefer
-    `CALL_Vestra_RESOLVE_TENANT_CONTEXT` when the rate depends on billing state.
+    `CALL_VESTRA_RESOLVE_TENANT_CONTEXT` when the rate depends on billing state.
 - `tenants`
   - Map of Fabric tenant ids or aliases to tenant-specific profile overrides.
     Each profile can set `tenant`, `base_url`, `object_url`, `rate`,
@@ -137,7 +137,7 @@ of modifying Dataphyre:
 
 ```php
 \dataphyre\core::register_dialback(
-	'CALL_Vestra_RESOLVE_TENANT_CONTEXT',
+	'CALL_VESTRA_RESOLVE_TENANT_CONTEXT',
 	static function(array $reference, array $parameters, array $context): array {
 		return [
 			'tenant'=>'example-store-content',
@@ -147,7 +147,7 @@ of modifying Dataphyre:
 );
 ```
 
-`CALL_Vestra_ISSUE_TENANT_TOKEN` may be used when an application or plugin owns
+`CALL_VESTRA_ISSUE_TENANT_TOKEN` may be used when an application or plugin owns
 token issuance. Dataphyre caches issued tokens in-process by tenant/rate and, for
 object-bound tokens, by block id. Otherwise the module calls Vestra Fabric
 `POST /tenant/token/issue` with `tenant`, `rate`, `blockid`, TTL/grace, optional

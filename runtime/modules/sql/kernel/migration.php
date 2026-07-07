@@ -38,7 +38,7 @@ class migration {
      * @return void
      */
     public static function run_all(bool $interactive=false): void {
-        tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+        tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
         if(file_exists(self::$lock_file)){
             core::unavailable(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $D='Schema migration in progress', 'maintenance');
         }
@@ -98,7 +98,7 @@ class migration {
      * @throws \RuntimeException When the PHP YAML extension is unavailable.
      */
     private static function parse_yaml(string $path): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
         if(!function_exists('yaml_parse_file')){
             throw new \RuntimeException("YAML PHP extension not installed");
         }
@@ -113,7 +113,7 @@ class migration {
      * @return int Applied version number, or zero when the table has no version record.
      */
     public static function get_current_version(string $table, string $scope='common_dataphyre'): int {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
         $versions=file_exists(self::$version_file) ? json_decode(file_get_contents(self::$version_file), true) : [];
         $table_key=$scope.':'.$table;
         return $versions[$table_key]['current_version'] ?? 0;
@@ -129,7 +129,7 @@ class migration {
      * @return array<string, array{current_version?: int, log?: array<int, array<string, mixed>>}> Table version records keyed by `scope:table`.
      */
     public static function status(): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
         return file_exists(self::$version_file) ? json_decode(file_get_contents(self::$version_file), true) : [];
     }
 
@@ -139,7 +139,7 @@ class migration {
      * @return bool True when run_all() has created the lock file and not yet removed it.
      */
     public static function is_migrating(): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
         return file_exists(self::$lock_file);
     }
 	
@@ -157,7 +157,7 @@ class migration {
      * @return ?string Generated YAML filename, or null when no migration SQL was produced.
      */
     public static function generate_migration_diff(string $table, string $scope='dataphyre'): ?string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
         $dbms=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][DP_SQL_CFG['default_cluster']]['dbms'];
         $snapshot_file=self::$snapshot_dir.$scope.'.'.$table.'.json';
         $current=sql::select('*', [

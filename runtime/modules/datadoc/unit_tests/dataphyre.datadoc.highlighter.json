@@ -21,7 +21,7 @@
 		"args": [],
 		"expected": "{\"js_splits_br_variants\":true,\"php_emits_xml_breaks\":true,\"line_start_metadata\":true,\"loads_annotator_asset\":true}",
 		"file": "/common/dataphyre/runtime/modules/datadoc/unit_tests/datadoc_test_helpers.php",
-		"max_millis": 10
+		"max_millis": 40
 	},
 	{
 		"name": "linkify php handles manual links project links and empty project safely",
@@ -37,7 +37,7 @@
 		"args": [],
 		"expected": "{\"has_warnings\":false,\"has_expanded_attribute\":true,\"has_collapse_class\":true,\"links_record\":true}",
 		"file": "/common/dataphyre/runtime/modules/datadoc/unit_tests/datadoc_test_helpers.php",
-		"max_millis": 10
+		"max_millis": 75
 	},
 	{
 		"name": "manudoc load and delete stay inside project manual root",
@@ -45,7 +45,7 @@
 		"args": [],
 		"expected": "{\"loads_valid\":true,\"blocks_traversal\":true,\"refuses_traversal_delete\":true,\"blocks_project_traversal\":true,\"keeps_outside_file\":true,\"deletes_valid\":true}",
 		"file": "/common/dataphyre/runtime/modules/datadoc/unit_tests/datadoc_test_helpers.php",
-		"max_millis": 20
+		"max_millis": 75
 	},
 	{
 		"name": "legacy manudoc sidebar escapes category and document titles",

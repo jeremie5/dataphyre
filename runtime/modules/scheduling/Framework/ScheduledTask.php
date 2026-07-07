@@ -142,15 +142,18 @@ final class ScheduledTask {
 
 	/** Registers the task through the scheduling kernel. */
 	public function register(): bool {
-		return \dataphyre\scheduling::run(
+		$dependencies=array_values(array_unique($this->dependencies));
+		$registered=\dataphyre\scheduling::run(
 			$this->name,
 			$this->filePath,
 			$this->period->secondsValue(),
 			$this->timeout->secondsValue(),
 			$this->memoryLimit,
-			array_values(array_unique($this->dependencies)),
+			$dependencies,
 			$this->appOverride
 		);
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Scheduled task registration '.($registered ? 'succeeded' : 'failed').'; name='.$this->name.'; period='.$this->period->secondsValue().'; timeout='.$this->timeout->secondsValue().'; dependencies='.count($dependencies), $S=$registered ? 'info' : 'warning');
+		return $registered;
 	}
 
 	/** Alias for register(). */

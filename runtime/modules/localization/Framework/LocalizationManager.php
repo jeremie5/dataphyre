@@ -487,6 +487,7 @@ final class LocalizationManager {
 		bool $rebuild=true
 	): LocalizationMaintenanceResult {
 		$saved=\dataphyre\localization::save_locale_definition($type, $language, $name, $string, $theme, $path, $rebuild);
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Localization definition save '.($saved ? 'succeeded' : 'failed').'; type='.$type.'; language='.$language.'; rebuild='.($rebuild ? 'yes' : 'no'), $S=$saved ? 'info' : 'warning');
 		return new LocalizationMaintenanceResult(
 			'save_definition',
 			$saved ? 'saved_definition' : 'save_definition_failed',
@@ -518,6 +519,7 @@ final class LocalizationManager {
 			}
 		}
 		$result=\dataphyre\localization::save_locale_definitions($mutationRows, $rebuild);
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Localization definition batch save completed; requested='.count($definitions).'; processed='.(int)($result['processed'] ?? 0).'; skipped='.(int)($result['skipped'] ?? 0).'; rebuild='.($rebuild ? 'yes' : 'no'), $S=((bool)($result['ok'] ?? false)) ? 'info' : 'warning');
 		return new LocaleDefinitionBatchResult(
 			'save_definitions',
 			(bool)($result['ok'] ?? false),
@@ -554,6 +556,7 @@ final class LocalizationManager {
 	): LocalizationMaintenanceResult {
 		$existing=\dataphyre\localization::locale_definition($type, $language, $name, $theme, $path);
 		if(!is_array($existing)){
+			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Localization definition delete skipped; definition not found; type='.$type.'; language='.$language.'; rebuild='.($rebuild ? 'yes' : 'no'), $S='info');
 			return new LocalizationMaintenanceResult(
 				'delete_definition',
 				'definition_not_found',
@@ -564,6 +567,7 @@ final class LocalizationManager {
 			);
 		}
 		$deleted=\dataphyre\localization::delete_locale_definition($type, $language, $name, $theme, $path, $rebuild);
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Localization definition delete '.($deleted ? 'succeeded' : 'failed').'; type='.$type.'; language='.$language.'; rebuild='.($rebuild ? 'yes' : 'no'), $S=$deleted ? 'info' : 'warning');
 		return new LocalizationMaintenanceResult(
 			'delete_definition',
 			$deleted ? 'deleted_definition' : 'delete_definition_failed',
@@ -595,6 +599,7 @@ final class LocalizationManager {
 			}
 		}
 		$result=\dataphyre\localization::delete_locale_definitions($mutationRows, $rebuild);
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Localization definition batch delete completed; requested='.count($definitions).'; processed='.(int)($result['processed'] ?? 0).'; skipped='.(int)($result['skipped'] ?? 0).'; rebuild='.($rebuild ? 'yes' : 'no'), $S=((bool)($result['ok'] ?? false)) ? 'info' : 'warning');
 		return new LocaleDefinitionBatchResult(
 			'delete_definitions',
 			(bool)($result['ok'] ?? false),
@@ -637,6 +642,7 @@ final class LocalizationManager {
 	 */
 	public function sync(bool $forced=false): LocalizationMaintenanceResult {
 		\dataphyre\localization::sync_locales($forced);
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Localization sync completed; forced='.($forced ? 'yes' : 'no'));
 		return new LocalizationMaintenanceResult(
 			'sync',
 			$forced ? 'synced_forced' : 'synced',
@@ -684,6 +690,7 @@ final class LocalizationManager {
 			$selection->themes(),
 			$selection->paths()
 		);
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Localization rebuild '.($result===false ? 'failed' : 'completed').'; types='.count($selection->types()).'; languages='.count($selection->languages()).'; themes='.count($selection->themes()).'; paths='.count($selection->paths()), $S=$result===false ? 'warning' : 'info');
 		return new LocalizationMaintenanceResult(
 			'rebuild',
 			$result===false ? 'rebuild_failed' : 'rebuilt',

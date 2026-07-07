@@ -577,7 +577,7 @@ class fulltext_engine{
      * @return array<string,mixed> Search response, or empty array when the index cannot be searched.
      */
     public static function search(string $index_name, array $data, string $language='en', int $max_results=50, bool $boolean_mode=true, float $threshold=0.3, string $forced_algorithms='') : array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$start_micros=microtime(true);
 		$results=[];
 		if(false!==$search_results=self::find_in_index($index_name, $data, $language, $boolean_mode, $max_results, $threshold, $forced_algorithms)){
@@ -639,7 +639,7 @@ class fulltext_engine{
 	 * @return array<int, string> Extracted search tokens.
 	 */
 	public static function tokenize(string $text, string $language='en') : array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(strlen($text)>2){
 			$text=self::remove_stopwords($text, $language);
 			$text=self::apply_stemming($text, $language);
@@ -674,7 +674,7 @@ class fulltext_engine{
 	 * @return float Normalized score from 0.0 to roughly 1.0, depending on algorithm.
 	 */
 	public static function get_score(string $index_value, string $search_value, string $search_value_raw, string $language='en', bool $boolean_mode=false, string $forced_algorithms='') : float{
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$normalized_score=0;
 		if($boolean_mode===true){
 			$tokens=self::tokenize_expression($search_value_raw);
@@ -787,7 +787,7 @@ class fulltext_engine{
 	 * @return bool True when the expression matches the indexed value.
 	 */
 	public static function evaluate_expression(string $index_value, array $expression) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$stack=[];
 		foreach($expression as $token){
 			if($token==='AND' || $token==='OR'){
@@ -825,7 +825,7 @@ class fulltext_engine{
 	 * @return array<int, string> Expression tokens.
 	 */
 	public static function tokenize_expression(string $search_value) : array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		preg_match_all('/\(|\)|\bAND\b|\bOR\b|\bNOT\b|[+\-]?[^()\s]+/iu', $search_value, $matches);
 		$expr=[];
 		foreach($matches[0] ?? [] as $part){
@@ -851,7 +851,7 @@ class fulltext_engine{
 	 * @return array<int, string> Reverse-polish expression.
 	 */
 	public static function parse_expression(array $tokens) : array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$output=[];
 		$operators=[];
 		$precedence=[
@@ -909,7 +909,7 @@ class fulltext_engine{
      * @return bool True when an existing entry was updated.
      */
     public static function update_in_index(string $index_name, array $values, string $language='en') : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$definition=self::index_definition($index_name);
 		if($definition===null){
 			return false;
@@ -1031,7 +1031,7 @@ class fulltext_engine{
      * @return bool True when the entry was inserted.
      */
     public static function add_to_index(string $index_name, array $values, string $language='en') : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$definition=self::index_definition($index_name);
 		if($definition===null){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Index is not defined");
@@ -1140,7 +1140,7 @@ class fulltext_engine{
 	 * @return bool True when an entry was removed.
 	 */
 	public static function remove_from_index(string $index_name, string $primary_key_value) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$definition=self::index_definition($index_name);
 		$primary_column_name=self::index_primary_key($index_name);
 		if($definition===null || $primary_column_name===null){
@@ -1230,7 +1230,7 @@ class fulltext_engine{
 	 * @return bool True when backend storage and manifest state were removed.
 	 */
 	public static function delete_index(string $index_name) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		self::init();
 		$index_definitions=self::index_definitions();
 		if(!isset($index_definitions[$index_name])){
@@ -1285,7 +1285,7 @@ class fulltext_engine{
 	 * @return bool True when backend initialization and manifest persistence succeed.
 	 */
 	public static function create_index(string $index_name, string $primary_key_column_name, string $type="json", $language='en') : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		self::init();
 		$index_name=self::normalize_identifier($index_name);
 		$primary_key_column_name=self::normalize_identifier($primary_key_column_name);
@@ -1370,7 +1370,7 @@ class fulltext_engine{
 	 * @return false|array<int, array<string, float>> Candidate result rows shaped as `[primaryKey => score]`.
 	 */
 	public static function find_in_index(string $index_name, array $search_data, string $language='en', bool $boolean_mode=false, int $max_results=50, float $threshold=0.85, string $forced_algorithms='') : bool|array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$result_primarykeys=[];
 		$definition=self::index_definition($index_name);
 		if($definition===null){
@@ -1511,7 +1511,7 @@ class fulltext_engine{
 	 * @return array<int, string> Stopword list.
 	 */
 	public static function get_stopwords(string $language) : array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$language_prefix=substr($language, 0, 2);
 		$file_path=dirname(__DIR__)."/stopwords/{$language_prefix}_stopwords.php";
 		if(file_exists($file_path)){
@@ -1537,7 +1537,7 @@ class fulltext_engine{
 	 * @return string Query text with stopword terms removed.
 	 */
 	public static function remove_stopwords(string $query, string $language) : string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$stopwords=self::get_stopwords($language);
 		$words=explode(' ', strtolower($query));
 		$filtered_words=array_filter($words, function($word) use ($stopwords){ return !in_array($word, $stopwords); });
@@ -1557,7 +1557,7 @@ class fulltext_engine{
 	 * @return string Stemmed query text.
 	 */
 	public static function apply_stemming(string $query, string $language) : string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$load_stemmer=function($language){
 			$language_prefix=substr($language, 0, 2);
 		$file_path=dirname(__DIR__)."/stemmers/{$language_prefix}_stemmer.php";
@@ -1591,7 +1591,7 @@ class fulltext_engine{
 	 * @return array<int, array<string, float>> The sorted result rows.
 	 */
 	private static function sort_by_relevance(array &$results) : array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		usort($results, function($a, $b){
 			$a_value=reset($a);
 			$b_value=reset($b);

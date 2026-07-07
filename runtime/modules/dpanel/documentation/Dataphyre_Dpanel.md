@@ -36,6 +36,11 @@ Dpanel explicitly runs module diagnostic files during a Flightdeck scan, even wh
 
 Flightdeck Dpanel raises the request memory limit to `256M` for diagnostic scans when the active limit is lower. Unit-test execution also includes a memory guard that records a warning and skips remaining unit-test work before class instantiation if the process is too close to the active memory limit. Flightdeck scans disable unit-test execution by default and focus on module diagnostics, PHP validation, dependency checks, and trace capture; this keeps broad scans from turning a diagnostic result into a fatal memory error. Unit-test execution remains available to Dpanel internals and non-Flightdeck callers that explicitly leave `\dataphyre\dpanel::$run_unit_tests` enabled.
 
+Flightdeck Dpanel runs unit-test manifests in bounded PHP worker processes. On
+hosts where the web SAPI exposes a CGI/FPM binary through `PHP_BINARY`, set
+`DATAPHYRE_DPANEL_PHP_BINARY` or `DATAPHYRE_PHP` to the PHP CLI binary used for
+worker execution.
+
 Legacy JSON fields that evaluate PHP, such as `custom_script` and `file_dynamic`,
 are disabled by default. They are only for trusted local diagnostic suites. To
 enable them, set `\dataphyre\dpanel::$allow_eval_unit_tests=true`, define

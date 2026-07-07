@@ -60,7 +60,7 @@ class caspow{
 	 * @return array<string, mixed> Public challenge payload for the browser worker.
 	 */
 	public static function create_challenge(?string $scope=null, ?array $capabilities=null) : array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		self::ensure_store();
 		self::gc_store();
 		$scope=self::normalize_scope($scope);
@@ -107,7 +107,7 @@ class caspow{
 	 * @return bool True when the proof is valid and consumed.
 	 */
 	public static function verify_payload(mixed $payload) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		self::ensure_store();
 		self::gc_store();
 		$payload=self::decode_payload($payload);

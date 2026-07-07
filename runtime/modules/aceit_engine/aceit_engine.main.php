@@ -60,7 +60,7 @@ dataphyre\aceit_engine::define_experiment(
 	$aggregation="hourly"
 );
 
-dataphyre\core::register_dialback("WEBSITE_EXPERIENCE_FEEDBACK_FORM", function($score, $comment){
+dataphyre\core::register_dialback("CALL_ACEIT_ENGINE_WEBSITE_EXPERIENCE_FEEDBACK_FORM", function($score, $comment){
 	dataphyre\aceit_engine::metricize("exp_larger_product_title_font", $score, $comment);
 	return null;
 });
@@ -96,7 +96,7 @@ class aceit_engine{
 	 * request lifecycle.
 	 */
 	public static function import_experiments(array $experiments) : void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		self::$experiment_list=array_merge($experiments, self::$experiment_list);
 	}
 
@@ -108,7 +108,7 @@ class aceit_engine{
 	 * surface when an experiment does not supply its own save callback.
 	 */
 	private static function load_experiment_list() : void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(empty(self::$experiment_list)){
 			$data=file_get_contents(__DIR__."/experimentation_data.json");
 			self::$experiment_list=json_decode($data);
@@ -123,7 +123,7 @@ class aceit_engine{
 	 * registry so count, finished, and aggregated flags survive later requests.
 	 */
 	private static function save_experiment(string $experiment_name) : void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(!empty(self::$experiment_list)){
 			if(is_callable($save_callback=self::$experiment_list[$experiment_name]['save_callback'])){
 				$save_callback(self::$experiment_list[$experiment_name]);
@@ -163,7 +163,7 @@ class aceit_engine{
 	 * aggregation at shutdown when finished results still need compaction.
 	 */
     public static function define_experiment(string $experiment_name, array $experiment_parameters, array $environmental_factors, callable $eligibility_callback, callable $metrification_callback, callable $reporting_callback, string $aggregation="hourly") : void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		self::load_experiment_list();
 		if(self::$experiment_list[$experiment_name]['start']<time()){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Experiment is not yet started');
@@ -225,7 +225,7 @@ class aceit_engine{
 	 * experiment sample count, and persists definition state.
 	 */
     public static function metricize($experiment_name) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		self::load_experiment_list();
 		if(isset(self::$experiment_list[$experiment_name])){
 			if(isset(self::$experiment_list[$experiment_name]['is_finished'])){
@@ -292,7 +292,7 @@ class aceit_engine{
 	 * the experiment aggregated, and persists that lifecycle flag.
 	 */
 	public static function aggregate_experiment(string $experiment_name, string $granulation="hourly") : void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$time_granulation_query="";
 		switch($granulation){
 			case"hourly":
@@ -330,7 +330,7 @@ class aceit_engine{
 	 * without per-experiment guards.
 	 */
 	public static function event(string $event_name, mixed $event_value, string ...$experiment_names) : void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		foreach($experiment_names as $experiment_name){
 			if(isset($_SESSION['ongoing_experiments'][$experiment_name])){
 				$_SESSION['ongoing_experiments'][$experiment_name]['events'][]=[
@@ -350,7 +350,7 @@ class aceit_engine{
 	 * before returning the leading group name or null when no scored rows exist.
 	 */
 	private static function get_leading_test_group(string $experiment_name) : string|null {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$query="SELECT group, SUM(score) as total_score FROM dataphyre.aceit_engine_experiments WHERE experiment_name=? GROUP BY group ORDER BY total_score DESC LIMIT 1";
 		$result=sql_query($query, [$experiment_name]);
 		self::$experiment_list[$experiment_name]['is_finished']=true;
@@ -369,7 +369,7 @@ class aceit_engine{
 	 * prefilled with zero so consumers can render continuous time-series charts.
 	 */
 	public static function chart_experiment(string $experiment_name, ?string $test_group, ?array $parameters) : array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$query="SELECT `group`, DATE(date_column) as experiment_date, SUM(score) as total_score ";
 		$query.="FROM dataphyre.aceit_engine_experiments WHERE experiment_name=?";
 		$params=[$experiment_name];

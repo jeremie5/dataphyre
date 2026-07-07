@@ -424,9 +424,9 @@ When Dataphyre Currency is loaded, controllers and `Mvc` can format and convert
 money through the currency module:
 
 ```php
-$price=$this->moneyFormat(19.99, false, 'CAD');
-$display=$this->moneyToDisplay($product_price, true);
-$shares=$this->moneyAllocate(10.00, 'CAD', [1, 3]);
+$price=$this->moneyFormat('19.99', false, 'CAD');
+$display=$this->moneyToDisplay($product_money, true);
+$shares=$this->moneyAllocate('10.00', 'CAD', [1, 3]);
 ```
 
 Dataphyre Date Translation can also be reached through `translateDate()` or

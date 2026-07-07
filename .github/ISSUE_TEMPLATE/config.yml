@@ -1,7 +1,7 @@
 blank_issues_enabled: true
 contact_links:
   - name: Support policy
-    url: https://github.com/jeremie5/dataphyre/blob/main/SUPPORT.md
+    url: https://github.com/jeremie5/dataphyre/blob/main/docs/SUPPORT.md
     about: Read where to ask and what details to include.
   - name: Security vulnerability
     url: mailto:security@dataphyre.com

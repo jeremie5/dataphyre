@@ -6,6 +6,9 @@ All notable public-release preparation changes are tracked here.
 
 ### Changed
 
+- Added [Dataphyre 2.0 migration notes](changelog/v2.0.md) summarizing the
+  `457e55322e606d962355f315f6b3e66acd7f17f3` to
+  `e962dbbb9dbdeff3a895945ec4fcf27fb38d66ad` release jump.
 - Prepared Dataphyre for a public MIT re-release.
 - Normalized Dataphyre-owned PHP headers to MIT/SPDX.
 - Clarified the repository layout as an embedded Dataphyre installation with
@@ -77,7 +80,6 @@ All notable public-release preparation changes are tracked here.
   install-local MCP plugin declarations that are omitted from public exports.
 - Legacy and experimental modules remain labeled in `MODULES.md` until their
   public APIs, schemas, and configuration contracts are fully stable.
-
 
 
 

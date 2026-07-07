@@ -74,6 +74,286 @@
 		"max_millis": 5
 	},
 	{
+		"name": "amount_to_minor_units_parses_decimal_string_without_float_drift",
+		"function": "amount_to_minor_units",
+		"class": "dataphyre\\currency",
+		"static_method": true,
+		"args": [
+			"10.005",
+			"USD",
+			false
+		],
+		"expected": [
+			1001
+		],
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 5
+	},
+	{
+		"name": "amount_to_minor_units_respects_zero_decimal_currency",
+		"function": "amount_to_minor_units",
+		"class": "dataphyre\\currency",
+		"static_method": true,
+		"args": [
+			"123.5",
+			"JPY",
+			false
+		],
+		"expected": [
+			124
+		],
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 5
+	},
+	{
+		"name": "minor_units_to_amount_returns_fixed_decimal_string",
+		"function": "minor_units_to_amount",
+		"class": "dataphyre\\currency",
+		"static_method": true,
+		"args": [
+			-1234,
+			"USD"
+		],
+		"expected": [
+			"-12.34"
+		],
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 5
+	},
+	{
+		"name": "amount_to_minor_units_expands_scientific_string_without_float_drift",
+		"function": "amount_to_minor_units",
+		"class": "dataphyre\\currency",
+		"static_method": true,
+		"args": [
+			"1.0000000000000001e2",
+			"USD",
+			false
+		],
+		"expected": [
+			10000
+		],
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 5
+	},
+	{
+		"name": "convert_minor_units_returns_same_currency_without_rate_lookup",
+		"function": "convert_minor_units",
+		"class": "dataphyre\\currency",
+		"static_method": true,
+		"args": [
+			12345,
+			"usd",
+			"USD"
+		],
+		"expected": [
+			12345
+		],
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 5
+	},
+	{
+		"name": "convert_minor_units_converts_to_target_minor_units",
+		"function": "dp_currency_unit_test_convert_minor_units_with_rates",
+		"args": [
+			1001,
+			"USD",
+			"CAD"
+		],
+		"expected": [
+			1351
+		],
+		"file": "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "currency_facade_convert_minor_units_keeps_integer_canonical_path",
+		"function": "dp_currency_unit_test_currency_facade_convert_minor_units",
+		"args": [
+			1001,
+			"USD",
+			"CAD"
+		],
+		"expected": [
+			1351
+		],
+		"file": "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency",
+				"Dataphyre\\Currency\\Currency"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "framework_convert_minor_units_entrypoints_keep_integer_path",
+		"function": "dp_currency_unit_test_framework_convert_minor_units_entrypoints",
+		"args": [
+			1001,
+			"USD",
+			"CAD"
+		],
+		"expected": [
+			{
+				"rates": 1351,
+				"snapshot": 1351,
+				"context": 1351
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency",
+				"Dataphyre\\Currency\\Currency",
+				"Dataphyre\\Currency\\ExchangeRates",
+				"Dataphyre\\Currency\\ExchangeSnapshot",
+				"Dataphyre\\Currency\\CurrencyContext"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "convert_minor_units_respects_zero_decimal_target",
+		"function": "dp_currency_unit_test_convert_minor_units_with_rates",
+		"args": [
+			12345,
+			"USD",
+			"JPY"
+		],
+		"expected": [
+			18518
+		],
+		"file": "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "convert_minor_units_preserves_large_minor_integer_precision",
+		"function": "dp_currency_unit_test_convert_minor_units_with_rates",
+		"args": [
+			9007199254740993,
+			"USD",
+			"CAD"
+		],
+		"expected": [
+			12159718993900341
+		],
+		"file": "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "convert_minor_units_preserves_negative_half_up_rounding",
+		"function": "dp_currency_unit_test_convert_minor_units_with_rates",
+		"args": [
+			-1001,
+			"USD",
+			"CAD"
+		],
+		"expected": [
+			-1351
+		],
+		"file": "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "convert_minor_units_respects_three_decimal_target",
+		"function": "dp_currency_unit_test_convert_minor_units_with_rates",
+		"args": [
+			123,
+			"USD",
+			"KWD"
+		],
+		"expected": [
+			378
+		],
+		"file": "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "convert_minor_units_respects_zero_decimal_source",
+		"function": "dp_currency_unit_test_convert_minor_units_with_rates",
+		"args": [
+			123,
+			"JPY",
+			"USD"
+		],
+		"expected": [
+			82
+		],
+		"file": "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "amount_to_minor_units_applies_cash_rounding_step",
+		"function": "amount_to_minor_units",
+		"class": "dataphyre\\currency",
+		"static_method": true,
+		"args": [
+			"10.03",
+			"CHF",
+			true
+		],
+		"expected": [
+			1005
+		],
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 5
+	},
+	{
 		"name": "round_amount_applies_cash_rounding_increment",
 		"function": "round_amount",
 		"class": "dataphyre\\currency",
@@ -143,5 +423,214 @@
 			]
 		},
 		"max_millis": 5
+	},
+	{
+		"name": "split_minor_units_distributes_remainder_as_integers",
+		"function": "split_minor_units",
+		"class": "dataphyre\\currency",
+		"static_method": true,
+		"args": [
+			1000,
+			"USD",
+			3,
+			false
+		],
+		"expected": [
+			[
+				334,
+				333,
+				333
+			]
+		],
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 5
+	},
+	{
+		"name": "minor_allocation_entrypoints_keep_integer_path",
+		"function": "dp_currency_unit_test_minor_allocation_entrypoints",
+		"args": [
+			1000,
+			"USD"
+		],
+		"expected": [
+			{
+				"custom_script": "return is_array($result) && ($result['kernel_split'] ?? null)===[334,333,333] && ($result['facade_split'] ?? null)===[334,333,333] && ($result['context_split'] ?? null)===[334,333,333] && ($result['money_split'] ?? null)===[334,333,333] && ($result['kernel_allocate'] ?? null)===['platform'=>250,'seller'=>750] && ($result['facade_allocate'] ?? null)===['platform'=>250,'seller'=>750] && ($result['context_allocate'] ?? null)===['platform'=>250,'seller'=>750] && ($result['money_allocate'] ?? null)===['platform'=>250,'seller'=>750];"
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency",
+				"Dataphyre\\Currency\\Currency"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "money_value_exposes_minor_projection",
+		"function": "dp_currency_unit_test_money_minor_projection",
+		"args": [
+			"19.995",
+			"USD"
+		],
+		"expected": [
+			{
+				"custom_script": "return is_array($result) && $result['amount']===20.0 && $result['decimal']==='20.00' && $result['minor']===2000 && ($result['array']['amount'] ?? null)==='20.00' && ($result['array']['amount_minor'] ?? null)===2000;"
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency",
+				"Dataphyre\\Currency\\Currency"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "money_allocate_preserves_minor_units",
+		"function": "dp_currency_unit_test_money_allocate_preserves_minor_units",
+		"args": [
+			1000,
+			"USD"
+		],
+		"expected": [
+			{
+				"custom_script": "return is_array($result) && ($result['allocate'] ?? null)===['platform'=>250,'seller'=>750] && ($result['allocate_minor'] ?? null)===['platform'=>250,'seller'=>750];"
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency",
+				"Dataphyre\\Currency\\Currency"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "money_arithmetic_preserves_minor_units",
+		"function": "dp_currency_unit_test_money_arithmetic_minor_units",
+		"args": [
+			"1234.56",
+			"USD"
+		],
+		"expected": [
+			{
+				"custom_script": "return is_array($result) && ($result['multiply'] ?? null)===132715 && ($result['divide'] ?? null)===41152 && ($result['add'] ?? null)===123500 && ($result['subtract'] ?? null)===123400 && ($result['negative_half'] ?? null)===-188;"
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency",
+				"Dataphyre\\Currency\\Currency"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "money_from_minor_preserves_canonical_units",
+		"function": "dp_currency_unit_test_money_from_minor_projection",
+		"args": [
+			123456,
+			"USD"
+		],
+		"expected": [
+			{
+				"custom_script": "return is_array($result) && $result['amount']===1234.56 && $result['decimal']==='1234.56' && $result['minor']===123456 && ($result['array']['amount'] ?? null)==='1234.56' && ($result['array']['amount_minor'] ?? null)===123456;"
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency",
+				"Dataphyre\\Currency\\Currency"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "stored_money_projection_uses_minor_units",
+		"function": "dp_currency_unit_test_stored_money_minor_projection",
+		"args": [
+			"19.995",
+			"USD",
+			"CAD"
+		],
+		"expected": [
+			{
+				"custom_script": "return is_array($result) && !array_key_exists('original_amount', $result) && !array_key_exists('base_amount', $result) && ($result['original_amount_minor'] ?? null)===2000 && ($result['base_amount_minor'] ?? null)===2700 && ($result['original_currency'] ?? null)==='USD' && ($result['base_currency'] ?? null)==='CAD';"
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency",
+				"Dataphyre\\Currency\\Currency"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "php_minor_conversion_matches_bcmath_without_float_fallback",
+		"function": "dp_currency_unit_test_php_minor_conversion_matches_bcmath",
+		"args": [],
+		"expected": [
+			{
+				"typical": {
+					"php": 15241,
+					"bc": 15241,
+					"same": true
+				},
+				"negative": {
+					"php": -15241,
+					"bc": -15241,
+					"same": true
+				},
+				"reduced_large": {
+					"php": 659999765999,
+					"bc": 659999765999,
+					"same": true
+				},
+				"large_precision": {
+					"php": 1939795745370506478,
+					"bc": 1939795745370506478,
+					"same": true
+				}
+			}
+		],
+		"file": "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency"
+			]
+		},
+		"max_millis": 10
+	},
+	{
+		"name": "exchange_quote_normalizes_source_to_minor_units_before_rate",
+		"function": "dp_currency_unit_test_exchange_quote_minor_normalization",
+		"args": [
+			"10.005",
+			"USD",
+			"CAD",
+			1.35
+		],
+		"expected": [
+			13.51
+		],
+		"file": "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+		"dependencies": {
+			"class": [
+				"dataphyre\\currency",
+				"Dataphyre\\Currency\\ExchangeQuote"
+			]
+		},
+		"max_millis": 10
 	}
 ]

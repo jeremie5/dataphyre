@@ -665,7 +665,7 @@ final class RepositoryQuery extends QuerySpec {
 	 *
 	 * The normalized mapping is also remembered for write paths, letting repository writes apply the same money conversion rules before persistence.
 	 *
-	 * @param string $amountColumn Column containing the original numeric amount.
+	 * @param string $amountColumn Column containing integer minor units when named `*_minor`, otherwise a decimal major-unit amount.
 	 * @param string $currencyColumn Column containing the currency code.
 	 * @param ?string $targetColumn Optional destination column for the mapped money value.
 	 * @return self Current repository query instance.
@@ -690,7 +690,7 @@ final class RepositoryQuery extends QuerySpec {
 	 *
 	 * The fixed-currency mapping is also remembered for write paths, keeping read and persistence conversion behavior aligned.
 	 *
-	 * @param string $amountColumn Column containing the original numeric amount.
+	 * @param string $amountColumn Column containing integer minor units when named `*_minor`, otherwise a decimal major-unit amount.
 	 * @param string $currency Currency code applied to every mapped row.
 	 * @param ?string $targetColumn Optional destination column for the mapped money value.
 	 * @return self Current repository query instance.

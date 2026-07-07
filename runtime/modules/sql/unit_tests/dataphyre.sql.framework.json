@@ -291,5 +291,72 @@
 			}
 		],
 		"max_millis": 10
+	},
+	{
+		"name": "currency_bridge_maps_minor_money_columns_without_decimal_storage",
+		"file": "/common/dataphyre/runtime/modules/sql/unit_tests/sql_framework_test_helpers.php",
+		"function": "dp_sql_unit_currency_bridge_minor_money_mapping",
+		"args": [],
+		"expected": [
+			{
+				"amount": "19.95",
+				"minor": 1995,
+				"write_amount_minor": 1995,
+				"write_currency": "USD"
+			}
+		],
+		"max_millis": 10
+	},
+	{
+		"name": "currency_bridge_rejects_non_integer_minor_values",
+		"file": "/common/dataphyre/runtime/modules/sql/unit_tests/sql_framework_test_helpers.php",
+		"function": "dp_sql_unit_currency_bridge_rejects_non_integer_minor_values",
+		"args": [],
+		"expected": [
+			{
+				"canonical_minor": 1995,
+				"rejected": [
+					true,
+					true,
+					true,
+					true
+				],
+				"blank_is_null": true
+			}
+		],
+		"max_millis": 10
+	},
+	{
+		"name": "currency_bridge_stored_money_defaults_are_minor_unit_columns",
+		"file": "/common/dataphyre/runtime/modules/sql/unit_tests/sql_framework_test_helpers.php",
+		"function": "dp_sql_unit_currency_bridge_stored_money_defaults_are_minor",
+		"args": [],
+		"expected": [
+			{
+				"original_amount_column": "original_amount_minor",
+				"base_amount_column": "base_amount_minor",
+				"original_amount_minor": 1995,
+				"base_amount_minor": 1995,
+				"hydrated_original_minor": 1995
+			}
+		],
+		"max_millis": 10
+	},
+	{
+		"name": "table_repository_money_mapping_cache_refreshes_when_hook_payload_changes",
+		"file": "/common/dataphyre/runtime/modules/sql/unit_tests/sql_framework_test_helpers.php",
+		"function": "dp_sql_unit_table_repository_money_mapping_cache_refreshes",
+		"args": [],
+		"expected": [
+			{
+				"first": [
+					"amount_minor"
+				],
+				"second": [
+					"fee_money"
+				]
+			}
+		],
+		"max_millis": 10
 	}
 ]

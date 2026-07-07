@@ -735,7 +735,7 @@ class vestra{
 		curl_close($curl);
 		$decoded_result=json_decode($result, true);
 		if(!is_array($decoded_result)){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Vestra server returned invalid JSON: '.$result, $S='fatal');
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Vestra server returned invalid JSON; response_bytes='.strlen((string)$result), $S='fatal');
 			return false;
 		}
 		return $decoded_result;
@@ -1262,7 +1262,7 @@ class vestra{
 				$context[$key]=$reference[$key];
 			}
 		}
-		if(null!==$dialback=core::dialback('CALL_Vestra_RESOLVE_TENANT_CONTEXT', $reference, $parameters, $context)){
+		if(null!==$dialback=core::dialback('CALL_VESTRA_RESOLVE_TENANT_CONTEXT', $reference, $parameters, $context)){
 			if(is_array($dialback)){
 				$context=array_merge($context, $dialback);
 			}
@@ -1315,7 +1315,7 @@ class vestra{
 			}
 			unset($token_cache[$cache_key]);
 		}
-		if(null!==$dialback=core::dialback('CALL_Vestra_ISSUE_TENANT_TOKEN', $reference, $context)){
+		if(null!==$dialback=core::dialback('CALL_VESTRA_ISSUE_TENANT_TOKEN', $reference, $context)){
 			if(is_array($dialback) && isset($dialback['token'])){
 				$token_cache[$cache_key]=$dialback;
 				return $dialback;
@@ -1610,7 +1610,7 @@ class vestra{
 	 * @return bool|int New positive use count, 0 after successful purge, or false on failure.
 	 */
 	public static function update_use_count(mixed $reference, int $amount) : bool|int {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$object_id=self::object_id_from_reference($reference);
 		if($object_id===false){
 			return false;
@@ -1660,7 +1660,7 @@ class vestra{
 	 * @return array{new_html:string,changes:array<string,array<string,mixed>>} Rewritten HTML and Vestra references.
 	 */
 	public static function ingest_resources(string $html, ?int $resource_limit=null, array $known_changes=[]): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$patterns=[
 			'img'=>'/<img\s[^>]*?src=["\']([^"\']+)["\']/i',
 			'video'=>'/<source\s[^>]*?src=["\']([^"\']+)["\']/i',
@@ -1771,8 +1771,8 @@ class vestra{
 	 * @return array<string,mixed>|false Vestra Fabric reference, or false on failure.
 	 */
 	public static function propagate(string $file, bool $encryption=false) : bool|array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
-		if(null!==$early_return=core::dialback("CALL_Vestra_PROPAGATE",...func_get_args())) return $early_return;
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		if(null!==$early_return=core::dialback("CALL_VESTRA_PROPAGATE",...func_get_args())) return $early_return;
 		$fileid=uuid().'.'.pathinfo($file, PATHINFO_EXTENSION);
 		$hash='';
 		$encrypted_metadata=[];
@@ -1880,7 +1880,12 @@ class vestra{
 			}
 			$reference=self::reference_from_response($decoded_result, $hash);
 			if($reference===false){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Vestra fetch returned a negative result:'.json_encode($decoded_result), $S='fatal');
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Vestra fetch returned a negative result: '.json_encode([
+					'ok'=>$decoded_result['ok'] ?? null,
+					'code'=>$decoded_result['code'] ?? null,
+					'status'=>$decoded_result['status'] ?? null,
+					'keys'=>array_slice(array_keys($decoded_result), 0, 8),
+				], JSON_UNESCAPED_SLASHES), $S='fatal');
 				if(!filter_var($file, FILTER_VALIDATE_URL) && isset($staged_file) && is_string($staged_file) && file_exists($staged_file)){
 					unlink($staged_file);
 				}

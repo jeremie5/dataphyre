@@ -245,7 +245,7 @@ class vespa {
 	 * @return bool Whether Vespa accepted deletion or the application was absent.
 	 */
 	public static function delete_index(string $application_name): bool {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = null, $S = 'function_call', $A = func_get_args());
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = null, $S = 'function_call', $A=null);
 		$url=self::config_base_url().'/application/v2/tenant/default/application/'.
 			$application_name.'/environment/dev/region/default/instance/default';
 		$ch=curl_init($url);
@@ -270,7 +270,7 @@ class vespa {
 	 * @return bool Whether the application package was prepared and activated.
 	 */
 	public static function create_index(string $application_name, string $primary_key): bool {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = null, $S = 'function_call', $A = func_get_args());
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = null, $S = 'function_call', $A=null);
 		$app_dir=self::application_directory($application_name);
 		$schema_dir=$app_dir.'/schemas';
 		$zip_path=$app_dir.'.zip';
@@ -386,7 +386,7 @@ XML;
 	 * @return array<int,array<string,float>> Result maps of primary key value to relevance score.
 	 */
     public static function find(string $application_name, array $search_data, string $primary_column_name, bool|string $boolean_mode, string $language, int $max_results, float $threshold): array {
-        tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+        tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if($primary_column_name===''){
 			return [];
 		}
@@ -419,7 +419,7 @@ XML;
 	 * @return bool Whether Vespa accepted document creation.
 	 */
 	public static function add(string $application_name, array $values, string $primary_column_name, string $primary_key_value, string $language): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$url=self::document_endpoint($application_name, $primary_key_value);
 		$json_data=json_encode(['fields'=>self::build_document_fields($values, $primary_column_name, $primary_key_value)]);
 		$ch=curl_init($url);
@@ -448,7 +448,7 @@ XML;
 	 * @return bool Whether Vespa accepted the document replacement.
 	 */
 	public static function update(string $application_name, array $values, string $primary_column_name, string $primary_key_value, string $language): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$url=self::document_endpoint($application_name, $primary_key_value);
 		$json_data=json_encode(['fields'=>self::build_document_fields($values, $primary_column_name, $primary_key_value)]);
 		$ch=curl_init($url);
@@ -476,7 +476,7 @@ XML;
 	 * @return bool Whether Vespa accepted deletion or the document was absent.
 	 */
 	public static function remove(string $application_name, string $primary_column_name, string $primary_key_value): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$url=self::document_endpoint($application_name, $primary_key_value);
 		$ch=curl_init($url);
 		curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
@@ -530,7 +530,7 @@ XML;
 	 * @return array<int,array<string,float>> Result maps of primary key value to relevance score.
 	 */
     private static function processVespaResults(array $response_data, string $primary_column_name, float $threshold): array {
-        tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+        tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
         $results=[];
         if(isset($response_data['root']['children']) && is_array($response_data['root']['children'])) {
             foreach($response_data['root']['children'] as $child) {

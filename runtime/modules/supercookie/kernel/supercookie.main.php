@@ -31,7 +31,7 @@ class supercookie{
 	 * @return bool True when the aggregate cookie was rewritten.
 	 */
 	static function del(string $name): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SUPERCOOKIE_DEL",...func_get_args())) return $early_return;
 		if(isset($_COOKIE['__Secure-'.self::$cookie_name])){
 			$params_array=json_decode($_COOKIE['__Secure-'.self::$cookie_name], true);
@@ -56,7 +56,7 @@ class supercookie{
 	 * @return mixed Stored value, null when the cookie or key is absent, or a dialback return value.
 	 */
 	static function get(string $name){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SUPERCOOKIE_GET",...func_get_args())) return $early_return;
 		if(isset($_COOKIE['__Secure-'.self::$cookie_name])){
 			$params_array=json_decode($_COOKIE['__Secure-'.self::$cookie_name], true);
@@ -79,7 +79,7 @@ class supercookie{
 	 * @return bool True when the aggregate cookie was rewritten.
 	 */
 	static function set(string $name, mixed $value) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback('CALL_SUPERCOOKIE_SET',...func_get_args())) return $early_return;
 		if(preg_match('/[=,; \t\r\n\013\014]/', $name)){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Cannot set cookie, name is not allowed.', $S='fatal');

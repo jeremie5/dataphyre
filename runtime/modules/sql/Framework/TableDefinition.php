@@ -86,6 +86,34 @@ final class TableDefinition {
 	}
 
 	/**
+	 * Adds a legacy column whose live SQL identifier predates Dataphyre naming rules.
+	 *
+	 * New schema code should keep using column(), string(), bigInt(), and the other
+	 * strict helpers. This method exists so app-owned schema snapshots can represent
+	 * historical database columns such as locale-prefixed names and 2fa fields.
+	 *
+	 * @param string $name Legacy SQL column identifier.
+	 * @param string|array<string, string> $type DBMS-specific type map or shared SQL type.
+	 * @return self This table definition builder.
+	 */
+	public function legacyColumn(string $name, string|array $type): self {
+		$name=$this->assertLegacyColumnIdentifier($name);
+		$this->columns[$name]=[
+			'name'=>$name,
+			'type'=>$this->normalizeType($type),
+			'nullable'=>true,
+			'default'=>null,
+			'default_sql'=>null,
+			'on_update_current'=>false,
+			'inline_primary'=>false,
+			'check'=>null,
+			'cast'=>null,
+		];
+		$this->lastColumn=$name;
+		return $this;
+	}
+
+	/**
 	 * Adds a string column.
 	 *
 	 * MySQL and PostgreSQL use VARCHAR(length); SQLite uses TEXT because SQLite does
@@ -1011,6 +1039,24 @@ final class TableDefinition {
 		$pattern=$allowDot ? '/^[A-Za-z_][A-Za-z0-9_\.]*$/' : '/^[A-Za-z_][A-Za-z0-9_]*$/';
 		if($identifier==='' || preg_match($pattern, $identifier)!==1){
 			throw new \InvalidArgumentException("Invalid SQL identifier: {$identifier}");
+		}
+		return $identifier;
+	}
+
+	/**
+	 * Validates legacy column identifiers captured from existing application tables.
+	 *
+	 * This intentionally accepts a narrower set than arbitrary quoted SQL: letters,
+	 * digits, underscores, and hyphens only. Dots and quote characters remain
+	 * forbidden because this method is for column names, not expressions.
+	 *
+	 * @param string $identifier Raw legacy column identifier.
+	 * @return string Validated legacy column identifier.
+	 */
+	private function assertLegacyColumnIdentifier(string $identifier): string {
+		$identifier=trim($identifier);
+		if($identifier==='' || preg_match('/^[A-Za-z0-9_][A-Za-z0-9_-]*$/', $identifier)!==1){
+			throw new \InvalidArgumentException("Invalid legacy SQL column identifier: {$identifier}");
 		}
 		return $identifier;
 	}

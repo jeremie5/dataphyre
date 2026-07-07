@@ -48,7 +48,7 @@ class coroutine{
 	 * @return int Scheduler id that can be passed to cancel().
 	 */
 	public static function create(callable $callable, int $priority=0): int {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$id=self::$id++;
 		self::$fibers[$id]=new \Fiber($callable);
 		self::$prioritized_tasks[$priority][$id]=$id;
@@ -66,7 +66,7 @@ class coroutine{
 	 * when all remaining work is timer-bound.
 	 */
 	public static function run(): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::$event_loop_running){
 			return;
 		}
@@ -124,7 +124,7 @@ class coroutine{
 	 * @param float $seconds Delay before the Fiber may resume.
 	 */
 	public static function sleep(float $seconds): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$fiber=\Fiber::getCurrent();
 		$id=self::$id++;
 		self::$waiting[$id]=[
@@ -144,7 +144,7 @@ class coroutine{
 	 * @return object Promise that resolves with the callable result or rejects with a Throwable.
 	 */
 	public static function async(callable $callable): object {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		return new \dataphyre\async\promise(function($resolve, $reject)use($callable){
 			self::create(function()use($callable, $resolve, $reject){
 				try{
@@ -168,7 +168,7 @@ class coroutine{
 	 * @return int Scheduler id for the timeout task.
 	 */
 	public static function set_timeout(callable $callable, int $milliseconds): int {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		return self::create(function()use($callable, $milliseconds){
 			self::sleep($milliseconds/1000);
 			$callable();
@@ -186,7 +186,7 @@ class coroutine{
 	 * @return int Scheduler id for the interval task.
 	 */
 	public static function set_interval(callable $callable, int $milliseconds): int {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		return self::create(function()use($callable, $milliseconds){
 			while(true){
 				self::sleep($milliseconds/1000);
@@ -204,7 +204,7 @@ class coroutine{
 	 * @param int $id Scheduler id returned by create(), set_timeout(), set_interval(), or defer().
 	 */
 	public static function cancel(int $id): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(isset(self::$fibers[$id])){
 			unset(self::$fibers[$id]);
 		}
@@ -219,7 +219,7 @@ class coroutine{
 	 * @return int Scheduler id for the deferred task.
 	 */
 	public static function defer(callable $callable): int {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$id=self::$id++;
 		self::$deferred[$id]=['task'=>new \Fiber($callable)];
 		return $id;
@@ -235,7 +235,7 @@ class coroutine{
 	 * @return mixed Chained promise returned by promise::then() after registering the pass-through continuation.
 	 */
 	public static function await(callable $callable): mixed {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		return self::async($callable)->then(function($result){
 			return $result;
 		});
@@ -251,7 +251,7 @@ class coroutine{
 	 * @param mixed $value Context value stored without cloning or serialization.
 	 */
 	public static function set_context(mixed $key, mixed $value): void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		self::$context[$key]=$value;
 	}
 
@@ -262,7 +262,7 @@ class coroutine{
 	 * @return mixed Stored value, or null when the key is absent.
 	 */
 	public static function get_context(mixed $key) : mixed{
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		return self::$context[$key]??null;
 	}
 	

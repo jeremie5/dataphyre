@@ -212,18 +212,16 @@ if(!function_exists('dp_core_unit_config_repository_contract')){
 		require_once __DIR__.'/../Framework/ConfigSnapshot.php';
 
 		$prefix='unit/config_repository_'.bin2hex(random_bytes(4));
-		\Dataphyre\Config::set([
-			$prefix=>[
-				'nested'=>[
-					'value'=>42,
-				],
-				'null_value'=>null,
-				'empty'=>[],
-				'false_scalar'=>false,
+		\Dataphyre\Config::set($prefix, [
+			'nested'=>[
+				'value'=>42,
 			],
-			$prefix.'/exact'=>[
-				'zeta'=>9,
-			],
+			'null_value'=>null,
+			'empty'=>[],
+			'false_scalar'=>false,
+		]);
+		\Dataphyre\Config::set($prefix.'/exact', [
+			'zeta'=>9,
 		]);
 		$repo=\Dataphyre\Config::scope($prefix);
 		$nested=$repo->scope('nested');

@@ -59,7 +59,7 @@ class time_machine{
 	 * @return bool `true` when the delete call reports success, otherwise `false`.
 	 */
 	public static function purge_old(string $period='7 days'): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(null!==$early_return=core::dialback("CALL_TIME_MACHINE_ROLLBACK",...func_get_args())) return $early_return;
 		if(false!==sql_delete(
 			$L="dataphyre.user_changes", 
@@ -89,7 +89,7 @@ class time_machine{
 	 * @return bool `true` after the inverse mutation and rollback marker are stored, otherwise `false`.
 	 */
 	public static function rollback(string $changeid, int $userid, int $rollback_request_userid=0): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(null!==$early_return=core::dialback("CALL_TIME_MACHINE_ROLLBACK",...func_get_args())) return $early_return;
 		if(false!==$change=sql_select(
 			$S="changeid", 
@@ -223,7 +223,7 @@ class time_machine{
 	 * @return bool `true` when the row is inserted, or `false` after insert failure.
 	 */
 	public static function create(string $type, string $rollback_type, array $change_data, bool $can_rollback=false): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(null!==$early_return=core::dialback("CALL_TIME_MACHINE_CREATE",...func_get_args())) return $early_return;
 		global $userid;
 		$executor_data=[
@@ -248,7 +248,7 @@ class time_machine{
 		)){
 			return $change['changeid'];
 		}
-		core::dialback("DP_TIMEMACHINE_FAILED_CREATING");
+		core::dialback("CALL_TIME_MACHINE_FAILED_CREATING");
 		return false;
 	}
 	

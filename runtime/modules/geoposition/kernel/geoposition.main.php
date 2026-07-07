@@ -39,7 +39,7 @@ class geoposition{
 	 * @return array{postal_codes_regex_table:string,postal_codes_table:string,subdivision_positions_path:string} Geoposition configuration.
 	 */
 	protected static function config(): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		return DP_GEOPOSITION_CFG;
 	}
 
@@ -49,7 +49,7 @@ class geoposition{
 	 * @return string Fully qualified SQL table name.
 	 */
 	protected static function postal_codes_regex_table(): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		return (string)self::config()['postal_codes_regex_table'];
 	}
 
@@ -59,7 +59,7 @@ class geoposition{
 	 * @return string Fully qualified SQL table name.
 	 */
 	protected static function postal_codes_table(): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		return (string)self::config()['postal_codes_table'];
 	}
 
@@ -69,7 +69,7 @@ class geoposition{
 	 * @return string Absolute dataset path.
 	 */
 	protected static function subdivision_positions_path(): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		return (string)self::config()['subdivision_positions_path'];
 	}
 
@@ -80,7 +80,7 @@ class geoposition{
 	 * @return string Uppercase trimmed country code.
 	 */
 	protected static function normalize_country_code(string $country): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		return strtoupper(trim($country));
 	}
 
@@ -91,7 +91,7 @@ class geoposition{
 	 * @return string Uppercase subdivision code, or `*` for empty input.
 	 */
 	protected static function normalize_subdivision_code(string $subdivision='*'): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$subdivision=trim($subdivision);
 		return $subdivision==='' ? '*' : strtoupper($subdivision);
 	}
@@ -103,7 +103,7 @@ class geoposition{
 	 * @return string Trimmed postal code.
 	 */
 	protected static function normalize_postal_code(string $postal_code): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		return trim($postal_code);
 	}
 
@@ -117,7 +117,7 @@ class geoposition{
 	 * @return array<string, true> Rule lookup map.
 	 */
 	protected static function postal_code_rule_map(?string $rules): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if($rules===null || trim($rules)===''){
 			return [];
 		}
@@ -138,7 +138,7 @@ class geoposition{
 	 * @return array{0:string,1:string}|null PCRE pattern/replacement pair.
 	 */
 	protected static function regex_replace_pair(?string $encoded_regex): ?array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if($encoded_regex===null || trim($encoded_regex)===''){
 			return null;
 		}
@@ -159,7 +159,7 @@ class geoposition{
 	 * @return array{latitude:float,longitude:float,lat:float,long:float,subdivision?:string}|false Normalized point, or false when coordinates are missing.
 	 */
 	protected static function normalize_point(?array $position): array|false {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(!is_array($position)){
 			return false;
 		}
@@ -187,7 +187,7 @@ class geoposition{
 	 * @return array{latitude:float,longitude:float}|false Components usable by distance formulas.
 	 */
 	protected static function point_components(array $position): array|false {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(false===($normalized=self::normalize_point($position))){
 			return false;
 		}
@@ -203,7 +203,7 @@ class geoposition{
 	 * @return array<string, array<string, array<string, mixed>>> Dataset keyed by country and subdivision.
 	 */
 	protected static function subdivision_positions(): array {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::$subdivision_positions_cache!==null){
 			return self::$subdivision_positions_cache;
 		}
@@ -232,7 +232,7 @@ class geoposition{
 	 * @return string Reformatted postal code.
 	 */
 	public static function reformat_postal_code(string $country, string $subdivision, string $postal_code): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$country=self::normalize_country_code($country);
 		$subdivision=self::normalize_subdivision_code($subdivision);
 		$postal_code=self::normalize_postal_code($postal_code);
@@ -282,7 +282,7 @@ class geoposition{
 	 * @return bool True when no validation rule rejects the formatted code.
 	 */
 	public static function validate_postal_code(string $country, string $subdivision, string $postal_code): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$country=self::normalize_country_code($country);
 		$subdivision=self::normalize_subdivision_code($subdivision);
 		$postal_code=self::reformat_postal_code($country, $subdivision, $postal_code);
@@ -316,7 +316,7 @@ class geoposition{
 	 * @return array{latitude:float,longitude:float,lat:float,long:float,subdivision?:string}|false Normalized coordinate payload.
 	 */
 	public static function get_position_for_postal_code(string $country, string $postal_code=''): array|false {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$country=self::normalize_country_code($country);
 		$postal_code=self::normalize_postal_code($postal_code);
 		while(true){
@@ -352,7 +352,7 @@ class geoposition{
 	 * @return array{latitude:float,longitude:float,lat:float,long:float,subdivision?:string}|false Normalized coordinate payload.
 	 */
 	public static function get_position_for_subdivision(string $country, string $subdivision): array|bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$country=self::normalize_country_code($country);
 		$subdivision=self::normalize_subdivision_code($subdivision);
 		$subdivision_positions=self::subdivision_positions();
@@ -373,7 +373,7 @@ class geoposition{
 	 * @return float|false Distance in kilometers, or false when either subdivision is unknown.
 	 */
 	public static function distance_between_subdivisions(string $country1, string $subdivision1, string $country2, string $subdivision2, bool $better_precision=false){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$position1=geoposition::get_position_for_subdivision($country1, $subdivision1);
 		$position2=geoposition::get_position_for_subdivision($country2, $subdivision2);
 		if(!empty($position1) && !empty($position2)){
@@ -399,7 +399,7 @@ class geoposition{
 	 * @return float|false Distance in kilometers, or false when either postal code cannot be located.
 	 */
 	public static function distance_between_postal_codes(string $country1, string $postal_code1, string $country2, string $postal_code2, bool $better_precision=false){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$position1=geoposition::get_position_for_postal_code($country1, $postal_code1);
 		$position2=geoposition::get_position_for_postal_code($country2, $postal_code2);
 		if(!empty($position1) && !empty($position2)){
@@ -420,7 +420,7 @@ class geoposition{
 	 * @return float|false Distance in kilometers, or false when either point is invalid.
 	 */
 	public static function distance_between_points(array $position1, array $position2, bool $better_precision=false){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$position1=self::point_components($position1);
 		$position2=self::point_components($position2);
 		if(!empty($position1) && !empty($position2)){
@@ -446,7 +446,7 @@ class geoposition{
 	 * @return float Distance in kilometers.
 	 */
 	public static function haversine_great_circle_distance(float $latitude1, float $longitude1, float $latitude2, float $longitude2, int $earth_radius=6371){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$lat_from=deg2rad($latitude1);
 		$lon_from=deg2rad($longitude1);
 		$lat_to=deg2rad($latitude2);
@@ -472,7 +472,7 @@ class geoposition{
 	 * @return float Distance in kilometers.
 	 */
 	public static function vincenty_great_circle_distance(float $latitude1, float $longitude1, float $latitude2, float $longitude2, int $a=6378137, float $f=1/298.257223563){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if($latitude1===$latitude2 && $longitude1===$longitude2){
 			return 0.0;
 		}

@@ -468,7 +468,7 @@ class access{
 	 * @return void
 	 */
 	private static function enforce_fingerprint_drift() : void {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(isset($_SESSION['dp_access']['fingerprint'])){
 			if(1<self::fingerprint_drift_score(self::$fingerprint, $_SESSION['dp_access']['fingerprint'])){
 				$_SESSION['dp_access']['minimum_security_alert']=true;
@@ -494,7 +494,7 @@ class access{
 	 * @return string Fingerprint subnet or original value when parsing fails.
 	 */
 	private static function extract_subnet(string $ip): string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)){
 			return implode('.', array_slice(explode('.', $ip), 0, 3)); // Class C
 		}
@@ -515,7 +515,7 @@ class access{
 	 * @return int Number of changed fingerprint fields.
 	 */
 	private static function fingerprint_drift_score(array $stored, array $current): int {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$diffs=0;
 		foreach($stored as $key=>$value){
 			if(!isset($current[$key]) || $current[$key] !== $value){
@@ -541,7 +541,7 @@ class access{
 	  * @return bool			True on success, false on failure
 	  */
 	public static function create_session(int $userid, bool $keepalive=false, ?string $auth_type=null) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_CREATE_SESSION",...func_get_args())) return $early_return;
 		$auth_type=self::resolve_auth_type($auth_type);
 		if(null!==$delegated=self::delegate_auth_type('CREATE_SESSION', $auth_type, [$userid, $keepalive])){
@@ -591,7 +591,7 @@ class access{
 	  * @return string Session identifier
 	  */
 	public static function create_id(?string $auth_type=null) : string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$auth_type=self::resolve_auth_type($auth_type);
 		$identifier=rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
 		$prefix=self::auth_type_prefix($auth_type);
@@ -613,7 +613,7 @@ class access{
 	 * @return bool True when format, prefix, and HMAC signature all match.
 	 */
 	public static function validate_id(string $dpid, ?string $auth_type=null) : bool {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(null!==$early_return=core::dialback("CALL_ACCESS_VALIDATE_ID", ...func_get_args())) return $early_return;
 		$auth_type=$auth_type!==null ? self::resolve_auth_type($auth_type) : null;
 		if(null!==$delegated=self::delegate_auth_type('VALIDATE_ID', $auth_type ?? self::auth_type_from_prefix(substr($dpid, 0, 4)), [$dpid])){
@@ -636,7 +636,7 @@ class access{
 		}
 		else
 		{
-			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Invalid DPID format: $dpid");
+			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T="Invalid DPID format");
 		}
 		$_SESSION['dp_access']['minimum_security_alert']=true;
 		self::disable_session($auth_type);
@@ -745,7 +745,7 @@ class access{
 	 * @return string|false Base32 secret suitable for authenticator apps, or false on entropy failure.
 	 */
 	public static function create_totp_secret(int $bytes=20): string|false {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(null!==$early_return=core::dialback("CALL_ACCESS_CREATE_TOTP_SECRET",...func_get_args())) return $early_return;
 		if($bytes<10){
 			$bytes=10;
@@ -772,7 +772,7 @@ class access{
 	 * @return string|false Zero-padded numeric TOTP code, or false for invalid inputs.
 	 */
 	public static function totp_code(string $secret, ?int $timestamp=null, int $period=30, int $digits=6): string|false {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(null!==$early_return=core::dialback("CALL_ACCESS_TOTP_CODE",...func_get_args())) return $early_return;
 		$binary_secret=self::normalize_totp_secret($secret);
 		if($binary_secret===false){
@@ -811,7 +811,7 @@ class access{
 	 * @return bool True when any code in the allowed window matches.
 	 */
 	public static function verify_totp(string $secret, string $code, int $window=1, ?int $timestamp=null, int $period=30, int $digits=6): bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(null!==$early_return=core::dialback("CALL_ACCESS_VERIFY_TOTP",...func_get_args())) return $early_return;
 		$code=preg_replace('/\s+/', '', trim($code));
 		if($code==='' || preg_match('/^\d+$/', $code)!==1){
@@ -841,7 +841,7 @@ class access{
 	 * @return string|false TOTP provisioning URI, or false when enrollment data is invalid.
 	 */
 	public static function totp_uri(string $secret, string $account_name, ?string $issuer=null): string|false {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(null!==$early_return=core::dialback("CALL_ACCESS_TOTP_URI",...func_get_args())) return $early_return;
 		$normalized_secret=strtoupper(trim($secret));
 		$normalized_secret=str_replace([' ', '-', '='], '', $normalized_secret);
@@ -876,7 +876,7 @@ class access{
 	 * @return string|false SVG data URI for enrollment, or false when pairing data is invalid.
 	 */
 	public static function get_totp_pairing_image(string $secret, string $account_name, ?string $issuer=null, int $size=200): string|false {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(null!==$early_return=core::dialback("CALL_ACCESS_GET_TOTP_PAIRING_IMAGE",...func_get_args())) return $early_return;
 		$uri=self::totp_uri($secret, $account_name, $issuer);
 		if($uri===false){
@@ -893,7 +893,7 @@ class access{
 	  * @return mixed		Userid if user is logged in otherwise false
 	  */
 	public static function userid(?string $auth_type=null) : bool|int|string {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_USERID",...func_get_args())) return $early_return;
 		$auth_type=self::resolve_auth_type($auth_type);
 		if(null!==$delegated=self::delegate_auth_type('USERID', $auth_type, [])){
@@ -917,7 +917,7 @@ class access{
 	  * @return bool		True if positive, false on negative
 	  */
 	public static function is_bot() : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		static $cache=null;
 		if($cache!==null)return $cache;
 		if(null!==$early_return=core::dialback("CALL_ACCESS_IS_BOT",...func_get_args())) return $early_return;
@@ -942,7 +942,7 @@ class access{
 	  * @return bool		True on success, false on failure
 	  */
 	public static function is_mobile() : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		static $cache=null;
 		if($cache!==null)return $cache;
 		if(null!==$early_return=core::dialback("CALL_ACCESS_IS_MOBILE",...func_get_args())) return $early_return;
@@ -968,7 +968,7 @@ class access{
 	  * @return bool		True on success, false on failure
 	  */
 	public static function disable_session(?string $auth_type=null) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_DISABLE_SESSION",...func_get_args())) return $early_return;
 		$auth_type=self::resolve_auth_type($auth_type);
 		if(null!==$delegated=self::delegate_auth_type('DISABLE_SESSION', $auth_type, [])){
@@ -1013,7 +1013,7 @@ class access{
 	  */
 	public static function disable_all_sessions_of_user(int $userid, ?string $auth_type=null) : bool {
 		if(null!==$early_return=core::dialback("CALL_ACCESS_DISABLE_ALL_SESSIONS_OF_USER",...func_get_args())) return $early_return;
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$auth_type=self::resolve_auth_type($auth_type);
 		if(null!==$delegated=self::delegate_auth_type('DISABLE_ALL_SESSIONS_OF_USER', $auth_type, [$userid])){
 			return (bool)$delegated;
@@ -1047,7 +1047,7 @@ class access{
 	 */
 	public static function disable_other_sessions_of_user(int $userid, string $current_session_id, ?string $auth_type=null) : bool {
 		if(null!==$early_return=core::dialback("CALL_ACCESS_DISABLE_OTHER_SESSIONS_OF_USER",...func_get_args())) return $early_return;
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$auth_type=self::resolve_auth_type($auth_type);
 		if(null!==$delegated=self::delegate_auth_type('DISABLE_OTHER_SESSIONS_OF_USER', $auth_type, [$userid, $current_session_id])){
 			return (bool)$delegated;
@@ -1084,7 +1084,7 @@ class access{
 	 * @return bool True when the request has a valid active session for the guard.
 	 */
 	public static function validate_session(bool $cache=true, ?string $auth_type=null) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_VALIDATE_SESSION",...func_get_args())) return $early_return;
 		$auth_type=self::resolve_auth_type($auth_type);
 		if(null!==$delegated=self::delegate_auth_type('VALIDATE_SESSION', $auth_type, [$cache])){
@@ -1155,7 +1155,7 @@ class access{
 	  * @return bool		 True on success, false on failure
 	  */
 	public static function recover_session(?string $auth_type=null) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_RECOVER_SESSION",...func_get_args())) return $early_return;
 		$auth_type=self::resolve_auth_type($auth_type);
 		if(null!==$delegated=self::delegate_auth_type('RECOVER_SESSION', $auth_type, [])){
@@ -1208,7 +1208,7 @@ class access{
 	  * @return bool		True on positive, false on negative
 	  */
 	public static function logged_in(?string $auth_type=null) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_LOGGED_IN",...func_get_args())) return $early_return;
 		$auth_type=self::resolve_auth_type($auth_type);
 		if(null!==$delegated=self::delegate_auth_type('LOGGED_IN', $auth_type, [])){
@@ -1243,7 +1243,7 @@ class access{
 	  * @return bool		True on success, false on failure
 	  */
 	public static function access(bool $session_required=true, bool $must_no_session=false, bool $prevent_mobile=false, bool $prevent_robot=false) : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S=null, $T='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_ACCESS_ACCESS",...func_get_args()))return $early_return;
 		$error=function(string $error_string='Unknown error', int $response_code=403){
 			if(defined('RUN_MODE') && RUN_MODE==='diagnostic'){

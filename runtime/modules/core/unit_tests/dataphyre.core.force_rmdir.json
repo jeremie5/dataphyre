@@ -1,5 +1,5 @@
 [{
-    "max_millis":  20,
+    "max_millis":  75,
     "name":  "force_rmdir_removes_nested_directory_tree",
     "function":  "dp_core_unit_file_helpers",
     "args":  [

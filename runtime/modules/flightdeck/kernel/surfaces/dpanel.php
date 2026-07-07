@@ -457,7 +457,7 @@ final class dataphyre_flightdeck_dpanel_surface {
 			if($type==='unit_test' && ($entry['passed'] ?? null)===true && isset($entry['unit_test_pass_count'])){
 				$summary['executed_tests']+=(int)($entry['unit_test_pass_count'] ?? 1);
 			}
-			elseif($type==='unit_test' && isset($entry['test_name']) && (($entry['passed'] ?? null)!==null || isset($entry['execution_time']))){
+			elseif(in_array($type, ['unit_test', 'code_unit_test'], true) && isset($entry['test_name']) && (($entry['passed'] ?? null)!==null || isset($entry['execution_time']))){
 				$summary['executed_tests']++;
 			}
 			elseif($type==='unit_test_worker' && isset($entry['manifest'], $entry['case_index'])){
@@ -468,13 +468,13 @@ final class dataphyre_flightdeck_dpanel_surface {
 			}
 			if(in_array($level, ['fatal', 'error'], true) || ($entry['passed'] ?? null)===false){
 				$summary['failed']++;
-				if($type==='unit_test_worker'){
+				if(in_array($type, ['unit_test_worker', 'code_unit_test_worker'], true)){
 					$summary['worker_issues']++;
 				}
 				elseif(in_array($type, ['php_exception', 'diagnostic_exception'], true)){
 					$summary['runtime_issues']++;
 				}
-				elseif(in_array($type, ['unit_test', 'performance_warning'], true)){
+				elseif(in_array($type, ['unit_test', 'code_unit_test', 'performance_warning'], true)){
 					$summary['test_failures']++;
 				}
 			}
@@ -482,61 +482,111 @@ final class dataphyre_flightdeck_dpanel_surface {
 		if($error!==null){
 			$summary['failed']++;
 		}
-		$cards=[
-			['Findings', $summary['total'], 'Diagnostic entries captured.'],
-			['Passed', $summary['passed'], 'Unit and module checks marked as passing.'],
-			['Warnings', $summary['warnings'], 'Non-fatal runtime concerns.'],
-			['Failed', $summary['failed'], 'Errors, fatal entries, or failed checks.'],
-			['Worker Issues', $summary['worker_issues'], 'Bounded worker exits, timeouts, or process failures.'],
-			['Runtime Issues', $summary['runtime_issues'], 'Exceptions raised while loading or diagnosing modules.'],
-			['Test Failures', $summary['test_failures'], 'Unit-test assertions, dependency gaps, or performance thresholds.'],
-		];
+		$module_processed=0;
+		$module_total=0;
+		$manifest_processed=0;
+		$manifest_total=0;
+		$worker_cases=null;
 		if(is_array($scan) && is_array($scan['test_inventory'] ?? null)){
 			$inventory=$scan['test_inventory'];
-			$cards[]=[
-				'Worker Cases',
-				(string)(int)($inventory['worker_test_cases'] ?? $inventory['test_cases'] ?? 0),
-				'Unit-test cases queued for bounded workers.',
-			];
-			$cards[]=[
-				'Executed Tests',
-				(string)$summary['executed_tests'],
-				'Unit-test cases executed during this scan.',
-			];
-			if((int)($inventory['deferred_test_cases'] ?? 0)>0){
-				$cards[]=[
-					'Deferred Cases',
-					(string)(int)$inventory['deferred_test_cases'],
-					'Discovered cases without a module worker in this scan phase.',
-				];
-			}
+			$worker_cases=(int)($inventory['worker_test_cases'] ?? $inventory['test_cases'] ?? 0);
 		}
 		if(is_array($scan) && isset($scan['cursor'], $scan['queue'])){
-			$cards[]=[
-				'Progress',
-				(string)min((int)$scan['cursor'], count((array)$scan['queue'])).' / '.(string)count((array)$scan['queue']),
-				((int)($scan['cursor'] ?? 0))>=count((array)$scan['queue']) ? 'Module scan completed.' : 'Continue to process the remaining modules.',
-			];
-		}
-		if(is_array($scan) && isset($scan['test_cursor'], $scan['test_queue'])){
-			$cards[]=[
-				'Unit Progress',
-				(string)min((int)$scan['test_cursor'], count((array)$scan['test_queue'])).' / '.(string)count((array)$scan['test_queue']),
-				($scan['test_done'] ?? false)===true ? 'Worker test phase completed.' : 'Worker test phase is queued.',
-			];
+			$module_processed=min((int)$scan['cursor'], count((array)$scan['queue']));
+			$module_total=count((array)$scan['queue']);
 		}
 		if(is_array($scan) && isset($scan['manifest_cursor'], $scan['manifest_queue'])){
-			$cards[]=[
-				'Manifest Progress',
-				(string)min((int)$scan['manifest_cursor'], count((array)$scan['manifest_queue'])).' / '.(string)count((array)$scan['manifest_queue']),
-				($scan['manifest_done'] ?? false)===true ? 'Manifest worker phase completed.' : 'Manifest worker phase is queued.',
-			];
+			$manifest_processed=min((int)$scan['manifest_cursor'], count((array)$scan['manifest_queue']));
+			$manifest_total=count((array)$scan['manifest_queue']);
 		}
-		$html='<section class="fd-metrics">';
-		foreach($cards as $card){
-			$html.='<div class="fd-metric"><span>'.self::e($card[0]).'</span><b>'.self::e((string)$card[1]).'</b><p>'.self::e($card[2]).'</p></div>';
+		$done=is_array($scan) && ($scan['done'] ?? false)===true;
+		$running=is_array($scan) && $done!==true && ((int)($scan['batches'] ?? 0)>0 || $module_total>0 || $manifest_total>0);
+		$has_failures=$summary['failed']>0 || $summary['worker_issues']>0 || $summary['runtime_issues']>0 || $summary['test_failures']>0;
+		$tone=$has_failures ? 'bad' : ($summary['warnings']>0 ? 'warn' : 'good');
+		$title=$has_failures
+			? 'Attention needed'
+			: ($done ? 'Scan complete' : ($running ? 'Scan running' : 'Ready to scan'));
+		$phase='Module scan';
+		if($module_processed>=$module_total && $manifest_total>0 && $manifest_processed<$manifest_total){
+			$phase='Unit tests';
+		}elseif($done){
+			$phase='Complete';
 		}
+		$lead=$has_failures
+			? 'Open diagnostics below; failures are prioritized in the table.'
+			: ($summary['warnings']>0
+				? 'No failures so far. Warnings are listed below for review.'
+				: ($running ? 'No failures so far. The browser will continue bounded batches.' : 'Choose a scope to begin diagnostics.'));
+		$pills=[
+			['Modules', $module_total>0 ? $module_processed.' / '.$module_total : 'not started', ''],
+		];
+		if($worker_cases!==null){
+			$pills[]=['Tests', $summary['executed_tests'].' / '.$worker_cases, $manifest_total>0 && $manifest_processed<$manifest_total ? 'queued' : ''];
+		}
+		$pills[]=['Findings', (string)$summary['total'], ''];
+		if($summary['warnings']>0){
+			$pills[]=['Warnings', (string)$summary['warnings'], 'warn'];
+		}
+		if($summary['failed']>0){
+			$pills[]=['Failed', (string)$summary['failed'], 'bad'];
+		}
+		if($summary['worker_issues']>0){
+			$pills[]=['Worker issues', (string)$summary['worker_issues'], 'bad'];
+		}
+		$details=[
+			['Passed rows', (string)$summary['passed']],
+			['Warnings', (string)$summary['warnings']],
+			['Failed rows', (string)$summary['failed']],
+			['Runtime issues', (string)$summary['runtime_issues']],
+			['Test failures', (string)$summary['test_failures']],
+			['Worker issues', (string)$summary['worker_issues']],
+			['Modules processed', $module_total>0 ? $module_processed.' / '.$module_total : '0 / 0'],
+			['Unit-test workers', $manifest_total>0 ? $manifest_processed.' / '.$manifest_total : '0 / 0'],
+		];
+		$html='<section class="fd-dpanel-overview fd-dpanel-'.$tone.'">';
+		$html.='<div class="fd-dpanel-overview-main">';
+		$html.='<div><span class="fd-dpanel-kicker">'.self::e($phase).'</span><h2>'.self::e($title).'</h2><p>'.self::e($lead).'</p></div>';
+		$html.='<div class="fd-dpanel-pills">';
+		foreach($pills as $pill){
+			$html.='<span class="fd-dpanel-pill'.($pill[2]!=='' ? ' fd-dpanel-pill-'.$pill[2] : '').'"><b>'.self::e($pill[0]).'</b> '.self::e($pill[1]).'</span>';
+		}
+		$html.='</div></div>';
+		$html.='<details class="fd-details fd-dpanel-run-details"><summary>Run details</summary>';
+		$html.=dataphyre_flightdeck_view::table(['Item', 'Value'], array_map(
+			static fn(array $row): array=>[
+				dataphyre_flightdeck_view::e((string)$row[0]),
+				dataphyre_flightdeck_view::e((string)$row[1]),
+			],
+			$details
+		));
+		$html.='</details>';
 		return $html.'</section>';
+	}
+
+	/**
+	 * Returns a compact status line for a running or completed scan.
+	 *
+	 * @param ?array<string,mixed> $scan Current scan state.
+	 * @return string Human-readable scan phase summary.
+	 */
+	private static function scan_phase_message(?array $scan): string {
+		if(!is_array($scan)){
+			return '';
+		}
+		$module_processed=min((int)($scan['cursor'] ?? 0), count((array)($scan['queue'] ?? [])));
+		$module_total=count((array)($scan['queue'] ?? []));
+		$manifest_processed=min((int)($scan['manifest_cursor'] ?? 0), count((array)($scan['manifest_queue'] ?? [])));
+		$manifest_total=count((array)($scan['manifest_queue'] ?? []));
+		if(($scan['done'] ?? false)===true){
+			return 'Complete. Modules '.$module_processed.' / '.$module_total.'; unit-test workers '.$manifest_processed.' / '.$manifest_total.'.';
+		}
+		if($module_total>0 && $module_processed<$module_total){
+			return 'Scanning modules '.$module_processed.' / '.$module_total.'. Unit tests run after module diagnostics.';
+		}
+		if($manifest_total>0 && $manifest_processed<$manifest_total){
+			return 'Running unit-test workers '.$manifest_processed.' / '.$manifest_total.'.';
+		}
+		return 'Preparing diagnostic batches.';
 	}
 
 	/**
@@ -576,9 +626,9 @@ final class dataphyre_flightdeck_dpanel_surface {
 	/**
 	 * Renders the unit-test inventory separately from browser-safe execution.
 	 *
-	 * Flightdeck can count manifests and test cases without executing arbitrary
-	 * module code. The execution count intentionally remains separate so skipped
-	 * tests are visible instead of being hidden inside the module scan result.
+	 * JSON manifests are counted from decoded data; code-defined PHP tests are
+	 * listed only through the reusable child worker when available. Execution
+	 * counts stay separate so skipped tests remain visible.
 	 *
 	 * @param ?array<string,mixed> $scan Current scan state.
 	 * @return string Unit-test inventory card, or an empty string before a scan exists.
@@ -598,15 +648,25 @@ final class dataphyre_flightdeck_dpanel_surface {
 			];
 		}
 		$body='<div class="fd-test-inventory">';
-		$body.='<p class="fd-muted">Unit tests are discovered from configured Dataphyre roots and executed in bounded worker processes after the module scan. Fatal tests, exits, and module side effects are contained outside the Flightdeck request.</p>';
-		$body.='<section class="fd-metrics fd-compact-metrics">';
-		$body.='<div class="fd-metric"><span>Manifests</span><b>'.self::e((string)(int)($inventory['manifests'] ?? 0)).'</b><p>JSON unit-test files discovered.</p></div>';
-		$body.='<div class="fd-metric"><span>Declared Cases</span><b>'.self::e((string)(int)($inventory['test_cases'] ?? 0)).'</b><p>Cases declared inside manifests.</p></div>';
-		$body.='<div class="fd-metric"><span>Module Cases</span><b>'.self::e((string)(int)($inventory['module_worker_test_cases'] ?? 0)).'</b><p>Cases owned by module-wide workers.</p></div>';
-		$body.='<div class="fd-metric"><span>Manifest Cases</span><b>'.self::e((string)(int)($inventory['manifest_worker_test_cases'] ?? 0)).'</b><p>Cases owned by manifest workers.</p></div>';
-		$body.='<div class="fd-metric"><span>Deferred Cases</span><b>'.self::e((string)(int)($inventory['deferred_test_cases'] ?? 0)).'</b><p>Discovered cases outside this worker phase.</p></div>';
-		$body.='<div class="fd-metric"><span>Malformed</span><b>'.self::e((string)(int)($inventory['malformed'] ?? 0)).'</b><p>Files that could not be parsed.</p></div>';
-		$body.='</section>';
+		$body.='<details class="fd-details fd-dpanel-inventory-details"><summary>Unit tests: '
+			.self::e((string)(int)($inventory['test_cases'] ?? 0)).' cases in '
+			.self::e((string)((int)($inventory['json_manifests'] ?? $inventory['manifests'] ?? 0) + (int)($inventory['code_files'] ?? 0))).' files</summary>';
+		$body.='<p class="fd-muted">Unit tests run in bounded workers after module diagnostics. Fatal tests, exits, and module side effects stay outside the Flightdeck request.</p>';
+		$body.=dataphyre_flightdeck_view::table(['Item', 'Count'], [
+			[self::e('JSON manifests'), self::e((string)(int)($inventory['json_manifests'] ?? $inventory['manifests'] ?? 0))],
+			[self::e('JSON cases'), self::e((string)(int)($inventory['json_test_cases'] ?? 0))],
+			[self::e('Code test files'), self::e((string)(int)($inventory['code_files'] ?? 0))],
+			[self::e('Code cases'), self::e((string)(int)($inventory['code_test_cases'] ?? 0))],
+			[self::e('Grouped code cases'), self::e((string)(int)($inventory['code_grouped_cases'] ?? 0))],
+			[self::e('Dependent code cases'), self::e((string)(int)($inventory['code_dependent_cases'] ?? 0))],
+			[self::e('Declared cases'), self::e((string)(int)($inventory['test_cases'] ?? 0))],
+			[self::e('JSON worker cases'), self::e((string)(int)($inventory['manifest_worker_test_cases'] ?? 0))],
+			[self::e('Code worker cases'), self::e((string)(int)($inventory['code_worker_test_cases'] ?? 0))],
+			[self::e('Deferred cases'), self::e((string)(int)($inventory['deferred_test_cases'] ?? 0))],
+			[self::e('Skipped code files'), self::e((string)(int)($inventory['code_skipped_files'] ?? 0))],
+			[self::e('Code discovery issues'), self::e((string)(int)($inventory['code_discovery_errors'] ?? 0))],
+			[self::e('Malformed files'), self::e((string)(int)($inventory['malformed'] ?? 0))],
+		]);
 		if($rows!==[]){
 			$body.='<details class="fd-details"><summary>Modules with tests</summary>';
 			$body.=dataphyre_flightdeck_view::table(['Module', 'Cases'], $rows);
@@ -615,12 +675,8 @@ final class dataphyre_flightdeck_dpanel_surface {
 			}
 			$body.='</details>';
 		}
-		$body.='</div>';
-		return dataphyre_flightdeck_view::card(
-			'Unit Test Inventory',
-			$body,
-			['subtitle'=>'Counts discovered test manifests and reports bounded worker execution separately.']
-		);
+		$body.='</details></div>';
+		return $body;
 	}
 
 	/**
@@ -690,6 +746,12 @@ final class dataphyre_flightdeck_dpanel_surface {
 		}
 		elseif(isset($entry['input']) || isset($entry['execution_time']) || isset($entry['test_name'])){
 			$details=self::details('Diagnostic Context', json_encode($entry, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) ?: '');
+		}
+		elseif(isset($entry['stdout']) || isset($entry['stderr'])){
+			$details=self::details('Worker Output', json_encode(array_filter([
+				'stdout'=>$entry['stdout'] ?? null,
+				'stderr'=>$entry['stderr'] ?? null,
+			], static fn(mixed $value): bool=>$value!==null && $value!==''), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) ?: '');
 		}
 		elseif($message===''){
 			$details=self::details('Raw Diagnostic Entry', json_encode($entry, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) ?: '');
@@ -832,7 +894,7 @@ final class dataphyre_flightdeck_dpanel_surface {
 				$label='Run Test Worker';
 			}
 			elseif(((int)($scan['cursor'] ?? 0))>=count((array)($scan['queue'] ?? [])) && ($scan['test_done'] ?? true)===true && ($scan['manifest_done'] ?? true)!==true){
-				$label='Run Manifest Worker';
+				$label='Run Unit-Test Worker';
 			}
 			$html.='<form method="post" id="fd-dpanel-continue-form">'.$csrf.
 				'<input type="hidden" name="fd_dpanel_action" value="continue">'.
@@ -911,12 +973,32 @@ final class dataphyre_flightdeck_dpanel_surface {
 .fd-action-row form{margin:0}
 .fd-action-row button[disabled]{cursor:wait;opacity:.72}
 .fd-secondary{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:11px 16px;text-decoration:none;font-weight:900;border:1px solid rgba(14,165,233,.22);background:#e0f2fe;color:#075985}
-.fd-scan-status{margin-bottom:20px}
+.fd-dpanel-overview{display:grid;gap:10px;margin-bottom:12px;padding:14px 16px;border:1px solid rgba(15,23,42,.1);border-left-width:5px;border-radius:10px;background:#fff}
+.fd-dpanel-overview-main{display:flex;gap:14px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+.fd-dpanel-overview h2{margin:2px 0 4px;font-size:18px;line-height:1.2}
+.fd-dpanel-overview p{margin:0;color:#475569}
+.fd-dpanel-kicker{display:block;color:#64748b;font-size:12px;font-weight:900;text-transform:uppercase}
+.fd-dpanel-good{border-left-color:#16a34a}
+.fd-dpanel-warn{border-left-color:#d97706}
+.fd-dpanel-bad{border-left-color:#dc2626}
+.fd-dpanel-pills{display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:wrap;max-width:620px}
+.fd-dpanel-pill{display:inline-flex;gap:5px;align-items:center;border:1px solid rgba(15,23,42,.1);border-radius:999px;padding:6px 9px;background:#f8fafc;color:#334155;font-size:12px;white-space:nowrap}
+.fd-dpanel-pill b{color:#0f172a}
+.fd-dpanel-pill-warn{border-color:rgba(217,119,6,.28);background:#fff7ed;color:#9a3412}
+.fd-dpanel-pill-bad{border-color:rgba(220,38,38,.28);background:#fef2f2;color:#991b1b}
+.fd-dpanel-status{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px;padding:9px 12px;border:1px solid rgba(15,23,42,.08);border-radius:8px;background:#f8fafc;color:#334155}
+.fd-dpanel-status b{color:#0f172a}
+.fd-dpanel-status span{color:#475569}
+.fd-dpanel-status small{color:#64748b}
+.fd-scan-status{margin-bottom:12px}
 .fd-details{margin-top:12px}
 .fd-details summary{cursor:pointer;color:#075985;font-weight:900}
 .fd-details pre{margin-top:10px}
 .fd-details .fd-table-wrap{margin-top:10px}
 .fd-details .fd-code{margin:0;padding:10px;border-radius:12px;line-height:1.35}
+.fd-dpanel-run-details{margin-top:0}
+.fd-dpanel-inventory-details{margin-bottom:12px;padding:10px 12px;border:1px solid rgba(15,23,42,.08);border-radius:8px;background:#fff}
+.fd-dpanel-inventory-details>summary{color:#334155}
 ';
 	}
 
@@ -1191,10 +1273,10 @@ document.addEventListener("DOMContentLoaded", function(){
 	}
 
 	/**
-	 * Runs one deferred manifest in a bounded child worker.
+	 * Runs deferred unit-test file jobs in bounded child workers.
 	 *
 	 * @param array<string,mixed> $state Current scan state loaded from the session.
-	 * @return array<string,mixed> Updated scan state after one manifest worker.
+	 * @return array<string,mixed> Updated scan state after one unit-test file worker.
 	 */
 	private static function run_manifest_worker_batch(array $state): array {
 		$manifest_queue=(array)($state['manifest_queue'] ?? []);
@@ -1209,17 +1291,20 @@ document.addEventListener("DOMContentLoaded", function(){
 		$limit=self::manifest_worker_batch_limit();
 		$ran=0;
 		while($manifest_cursor<count($manifest_queue) && $ran<$limit && (microtime(true)-$started)<self::scan_batch_seconds()){
-		$job=is_array($manifest_queue[$manifest_cursor] ?? null) ? $manifest_queue[$manifest_cursor] : [];
-		$manifest=(string)($job['path'] ?? '');
-		$module=(string)($job['module'] ?? 'manifest');
-		$case_index=(int)($job['case_index'] ?? 0);
-		$label=$module.':'.basename($manifest).'#'.($case_index + 1);
+			$job=is_array($manifest_queue[$manifest_cursor] ?? null) ? $manifest_queue[$manifest_cursor] : [];
+			$manifest=(string)($job['path'] ?? '');
+			$module=(string)($job['module'] ?? 'manifest');
+			$kind=(string)($job['kind'] ?? 'json');
+			$case_index=(int)($job['case_index'] ?? 0);
+			$label=self::unit_test_worker_job_label($job);
 			$state['active_phase']='unit_test_manifest';
 			$state['active_module']=$label;
 			$state['active_started_at']=time();
 			$state['updated_at']=time();
 			self::store_scan($state);
-			$result=self::run_unit_test_worker($module, $manifest, $case_index);
+			$result=$kind==='code'
+				? self::run_code_unit_test_worker($module, $manifest, $case_index)
+				: self::run_unit_test_worker($module, $manifest, $case_index);
 			$trace=is_array($result['trace'] ?? null) ? $result['trace'] : [];
 			foreach($trace as $index=>$entry){
 				if(is_array($entry) && !isset($entry['module'])){
@@ -1266,7 +1351,7 @@ document.addEventListener("DOMContentLoaded", function(){
 		$state['updated_at']=time();
 		self::store_scan($state);
 
-		$result=self::run_unit_test_worker($module, (string)($job['manifest_path'] ?? ''));
+		$result=self::run_unit_test_worker($module, (string)($job['manifest_path'] ?? ''), (int)($job['case_index'] ?? -1));
 		$trace=is_array($result['trace'] ?? null) ? $result['trace'] : [];
 		foreach($trace as $index=>$entry){
 			if(is_array($entry) && !isset($entry['module'])){
@@ -1324,22 +1409,6 @@ document.addEventListener("DOMContentLoaded", function(){
 				]],
 			];
 		}
-		$dir=self::worker_state_dir();
-		if($dir==='' || (is_dir($dir)!==true && @mkdir($dir, 0775, true)!==true)){
-			return [
-				'passed'=>false,
-				'trace'=>[[
-					'type'=>'unit_test_worker',
-					'level'=>'error',
-					'module'=>$module,
-					'message'=>'Unit-test worker state directory is unavailable.',
-					'passed'=>false,
-				]],
-			];
-		}
-		$id=sha1($module.'|'.$manifest_path.'|'.$case_index.'|'.microtime(true).'|'.bin2hex(random_bytes(6)));
-		$payload_path=$dir.'/'.$id.'.payload.json';
-		$output_path=$dir.'/'.$id.'.result.json';
 		$payload=[
 			'module'=>$module,
 			'manifest_path'=>$manifest_path,
@@ -1347,21 +1416,103 @@ document.addEventListener("DOMContentLoaded", function(){
 			'rootpath'=>defined('ROOTPATH') ? ROOTPATH : [],
 			'timeout_seconds'=>self::unit_test_worker_timeout_seconds(),
 			'memory_limit'=>self::unit_test_worker_memory_limit(),
-			'output_path'=>$output_path,
 		];
-		if(@file_put_contents($payload_path, json_encode($payload, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES))===false){
+		return self::run_unit_test_payload_worker($module, $worker, $payload, 'Unit-test worker', 'unit_test_worker');
+	}
+
+	/**
+	 * Executes one code-defined Dataphyre test case in a bounded PHP child process.
+	 *
+	 * @param string $module Inventory owner label.
+	 * @param string $test_file Absolute PHP test file path.
+	 * @param int $case_index Expanded code-test case index.
+	 * @param string $mode Worker mode: run or list.
+	 * @return array{passed:bool,trace:array<int,array<string,mixed>>}
+	 */
+	private static function run_code_unit_test_worker(string $module, string $test_file, int $case_index=0, string $mode='run'): array {
+		if(!function_exists('proc_open')){
+			return self::code_unit_test_worker_skip($module, $test_file, 'Code-defined unit tests were skipped because proc_open is unavailable in this PHP environment.');
+		}
+		$worker=self::code_unit_test_worker_script();
+		if($worker==='' || !is_file($worker)){
+			return self::code_unit_test_worker_skip($module, $test_file, 'Code-defined unit tests were skipped because common/dataphyre/testing/code_worker.php is unavailable.');
+		}
+		$payload=[
+			'module'=>$module,
+			'mode'=>$mode,
+			'test_file'=>$test_file,
+			'manifest_path'=>$test_file,
+			'case_index'=>$case_index,
+			'rootpath'=>defined('ROOTPATH') ? ROOTPATH : [],
+			'timeout_seconds'=>self::unit_test_worker_timeout_seconds(),
+			'memory_limit'=>self::unit_test_worker_memory_limit(),
+		];
+		return self::run_unit_test_payload_worker($module, $worker, $payload, 'Code unit-test worker', 'code_unit_test_worker');
+	}
+
+	/**
+	 * Builds a non-fatal skip result for code-defined tests that cannot be run.
+	 *
+	 * @param string $module Inventory owner label.
+	 * @param string $test_file Code test file path.
+	 * @param string $message Warning text.
+	 * @return array{passed:bool,trace:array<int,array<string,mixed>>}
+	 */
+	private static function code_unit_test_worker_skip(string $module, string $test_file, string $message): array {
+		return [
+			'passed'=>true,
+			'trace'=>[[
+				'type'=>'code_unit_test_worker',
+				'level'=>'warning',
+				'module'=>$module,
+				'file'=>$test_file,
+				'message'=>$message,
+			]],
+		];
+	}
+
+	/**
+	 * Runs a prepared unit-test worker payload through a bounded child PHP process.
+	 *
+	 * @param string $module Owner label used in diagnostics.
+	 * @param string $worker Absolute worker script path.
+	 * @param array<string,mixed> $payload Serializable worker payload.
+	 * @param string $worker_label Human-readable worker label for diagnostics.
+	 * @param string $trace_type Trace type for worker control-plane rows.
+	 * @return array{passed:bool,trace:array<int,array<string,mixed>>}
+	 */
+	private static function run_unit_test_payload_worker(string $module, string $worker, array $payload, string $worker_label, string $trace_type): array {
+		$dir=self::worker_state_dir();
+		if($dir==='' || (is_dir($dir)!==true && @mkdir($dir, 0775, true)!==true)){
 			return [
 				'passed'=>false,
 				'trace'=>[[
-					'type'=>'unit_test_worker',
+					'type'=>$trace_type,
 					'level'=>'error',
 					'module'=>$module,
-					'message'=>'Unit-test worker payload could not be written.',
+					'message'=>$worker_label.' state directory is unavailable.',
 					'passed'=>false,
 				]],
 			];
 		}
-		$command=self::php_binary().' -d memory_limit='.escapeshellarg(self::unit_test_worker_memory_limit()).' '.escapeshellarg($worker).' '.escapeshellarg($payload_path);
+		$id=sha1($module.'|'.json_encode($payload, JSON_UNESCAPED_SLASHES).'|'.microtime(true).'|'.bin2hex(random_bytes(6)));
+		$payload_path=$dir.'/'.$id.'.payload.json';
+		$output_path=$dir.'/'.$id.'.result.json';
+		$payload['output_path']=$output_path;
+		if(@file_put_contents($payload_path, json_encode($payload, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES))===false){
+			return [
+				'passed'=>false,
+				'trace'=>[[
+					'type'=>$trace_type,
+					'level'=>'error',
+					'module'=>$module,
+					'message'=>$worker_label.' payload could not be written.',
+					'passed'=>false,
+				]],
+			];
+		}
+		$memory_limit=(string)($payload['memory_limit'] ?? self::unit_test_worker_memory_limit());
+		$command=self::php_binary().' -d memory_limit='.escapeshellarg($memory_limit).' '.escapeshellarg($worker).' '.escapeshellarg($payload_path);
 		$descriptors=[
 			0=>['pipe', 'r'],
 			1=>['pipe', 'w'],
@@ -1373,10 +1524,10 @@ document.addEventListener("DOMContentLoaded", function(){
 			return [
 				'passed'=>false,
 				'trace'=>[[
-					'type'=>'unit_test_worker',
+					'type'=>$trace_type,
 					'level'=>'error',
 					'module'=>$module,
-					'message'=>'Unit-test worker process could not be started.',
+					'message'=>$worker_label.' process could not be started.',
 					'passed'=>false,
 				]],
 			];
@@ -1416,32 +1567,38 @@ document.addEventListener("DOMContentLoaded", function(){
 		@unlink($payload_path);
 		@unlink($output_path);
 		if($timed_out){
-			return self::unit_test_worker_failure($module, 'Unit-test worker timed out after '.self::unit_test_worker_timeout_seconds().' second(s).', $stdout, $stderr);
+			return self::unit_test_worker_failure($module, $worker_label.' timed out after '.self::unit_test_worker_timeout_seconds().' second(s).', $stdout, $stderr, $trace_type);
 		}
 		if(!is_array($result)){
-			return self::unit_test_worker_failure($module, 'Unit-test worker did not return a valid result. Exit code: '.$exit_code.'.', $stdout, $stderr);
+			return self::unit_test_worker_failure($module, $worker_label.' did not return a valid result. Exit code: '.$exit_code.'.', $stdout, $stderr, $trace_type);
 		}
 		$trace=is_array($result['trace'] ?? null) ? $result['trace'] : [];
 		if((string)($result['output'] ?? '')!==''){
 			$trace[]=[
-				'type'=>'unit_test_worker_output',
+				'type'=>$trace_type.'_output',
 				'level'=>'warning',
 				'module'=>$module,
-				'message'=>'Unit-test worker emitted output while running.',
+				'message'=>$worker_label.' emitted output while running.',
 				'output'=>(string)$result['output'],
 				'passed'=>false,
 			];
 		}
-		return [
+		$response=[
 			'passed'=>($result['passed'] ?? false)===true && $exit_code===0,
 			'trace'=>$trace!==[] ? $trace : [[
-				'type'=>'unit_test_worker',
+				'type'=>$trace_type,
 				'level'=>($exit_code===0 ? 'info' : 'error'),
 				'module'=>$module,
-				'message'=>$exit_code===0 ? 'Unit-test worker completed without diagnostic rows.' : 'Unit-test worker exited with code '.$exit_code.'.',
+				'message'=>$exit_code===0 ? $worker_label.' completed without diagnostic rows.' : $worker_label.' exited with code '.$exit_code.'.',
 				'passed'=>$exit_code===0,
 			]],
 		];
+		foreach(['cases', 'duration_seconds'] as $key){
+			if(array_key_exists($key, $result)){
+				$response[$key]=$result[$key];
+			}
+		}
+		return $response;
 	}
 
 	/**
@@ -1453,12 +1610,13 @@ document.addEventListener("DOMContentLoaded", function(){
 	 * @param string $stderr Captured stderr.
 	 * @return array{passed:bool,trace:array<int,array<string,mixed>>} Failure result.
 	 */
-	private static function unit_test_worker_failure(string $module, string $message, string $stdout, string $stderr): array {
+	private static function unit_test_worker_failure(string $module, string $message, string $stdout, string $stderr, string $trace_type='unit_test_worker'): array {
 		$entry=[
-			'type'=>'unit_test_worker',
+			'type'=>$trace_type,
 			'level'=>'error',
 			'module'=>$module,
 			'message'=>$message,
+			'php_binary'=>self::php_binary(),
 			'passed'=>false,
 		];
 		if(trim($stdout)!==''){
@@ -1496,8 +1654,22 @@ document.addEventListener("DOMContentLoaded", function(){
 	 * @return string Shell-escaped PHP binary path.
 	 */
 	private static function php_binary(): string {
-		$binary=defined('PHP_BINARY') && PHP_BINARY!=='' ? PHP_BINARY : 'php';
-		return escapeshellarg((string)$binary);
+		$configured=trim((string)(getenv('DATAPHYRE_DPANEL_PHP_BINARY') ?: getenv('DATAPHYRE_PHP') ?: ''));
+		if($configured!=='' && is_file($configured)){
+			return escapeshellarg($configured);
+		}
+		$current=defined('PHP_BINARY') && PHP_BINARY!=='' ? (string)PHP_BINARY : '';
+		$current_name=$current!=='' ? strtolower(basename($current)) : '';
+		$current_is_cli=$current!=='' && !str_contains($current_name, 'cgi') && !str_contains($current_name, 'fpm');
+		if($current_is_cli && is_file($current)){
+			return escapeshellarg($current);
+		}
+		$bindir=defined('PHP_BINDIR') ? (string)PHP_BINDIR : '';
+		$cli_candidate=$bindir!=='' ? rtrim($bindir, '/\\').DIRECTORY_SEPARATOR.(DIRECTORY_SEPARATOR==='\\' ? 'php.exe' : 'php') : '';
+		if($cli_candidate!=='' && is_file($cli_candidate)){
+			return escapeshellarg($cli_candidate);
+		}
+		return escapeshellarg($current!=='' ? $current : 'php');
 	}
 
 	/**
@@ -1510,6 +1682,46 @@ document.addEventListener("DOMContentLoaded", function(){
 			return '';
 		}
 		return rtrim((string)ROOTPATH['common_dataphyre_runtime'], '/\\').'/modules/dpanel/kernel/dpanel.worker.php';
+	}
+
+	/**
+	 * Returns the reusable runtime worker for code-defined PHP unit tests.
+	 *
+	 * @return string Absolute code worker script path.
+	 */
+	private static function code_unit_test_worker_script(): string {
+		if(defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre'])){
+			return rtrim((string)ROOTPATH['common_dataphyre'], '/\\').'/testing/code_worker.php';
+		}
+		if(defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre_runtime'])){
+			return dirname(rtrim((string)ROOTPATH['common_dataphyre_runtime'], '/\\')).'/testing/code_worker.php';
+		}
+		return '';
+	}
+
+	/**
+	 * Returns whether code-defined PHP tests can be listed or run in a child worker.
+	 *
+	 * @return bool True when the reusable code worker and proc_open are available.
+	 */
+	private static function code_unit_test_worker_available(): bool {
+		$worker=self::code_unit_test_worker_script();
+		return function_exists('proc_open') && $worker!=='' && is_file($worker);
+	}
+
+	/**
+	 * Returns the committed runtime code-test root when it can be resolved.
+	 *
+	 * @return string Absolute unit-test root, or empty string.
+	 */
+	private static function dataphyre_testing_unit_test_root(): string {
+		if(defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre'])){
+			return rtrim((string)ROOTPATH['common_dataphyre'], '/\\').'/testing/unit_tests';
+		}
+		if(defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre_runtime'])){
+			return dirname(rtrim((string)ROOTPATH['common_dataphyre_runtime'], '/\\')).'/testing/unit_tests';
+		}
+		return '';
 	}
 
 	/**
@@ -1571,7 +1783,7 @@ document.addEventListener("DOMContentLoaded", function(){
 		if($active_phase==='unit_test_manifest'){
 			$queue=(array)($scan['manifest_queue'] ?? []);
 			$cursor=(int)($scan['manifest_cursor'] ?? 0);
-			$current=is_array($queue[$cursor] ?? null) ? (string)($queue[$cursor]['module'] ?? '').':'.basename((string)($queue[$cursor]['path'] ?? '')).'#'.(((int)($queue[$cursor]['case_index'] ?? 0)) + 1) : '';
+			$current=is_array($queue[$cursor] ?? null) ? self::unit_test_worker_job_label($queue[$cursor]) : '';
 		}
 		else
 		{
@@ -1605,7 +1817,7 @@ document.addEventListener("DOMContentLoaded", function(){
 			'type'=>'diagnostic_runtime',
 			'level'=>'warning',
 			'module'=>$active_module,
-			'message'=>'Skipped '.($active_phase==='unit_test_manifest' ? 'manifest worker' : ($active_phase==='unit_test' ? 'unit-test worker' : 'module')).' `'.$active_module.'` after the previous batch stalled long enough to look like a timeout or recursion loop.',
+			'message'=>'Skipped '.($active_phase==='unit_test_manifest' ? 'unit-test worker' : ($active_phase==='unit_test' ? 'unit-test worker' : 'module')).' `'.$active_module.'` after the previous batch stalled long enough to look like a timeout or recursion loop.',
 			'passed'=>false,
 		];
 		self::store_scan($scan);
@@ -1663,6 +1875,7 @@ document.addEventListener("DOMContentLoaded", function(){
 		}
 		$state['queue']=$queue;
 		$state['test_inventory']=self::unit_test_inventory_for_scope($scope);
+		$trace=array_merge($trace, self::unit_test_inventory_trace($state['test_inventory']));
 		$state['test_queue']=[];
 		$state['manifest_queue']=self::manifest_test_queue_from_inventory($state['test_inventory'], $queue);
 		$state['test_inventory']=self::apply_worker_inventory_counts($state['test_inventory'], $state['test_queue'], $state['manifest_queue']);
@@ -1676,11 +1889,35 @@ document.addEventListener("DOMContentLoaded", function(){
 	}
 
 	/**
+	 * Converts inventory-level unit-test notices into scan diagnostics.
+	 *
+	 * @param array<string,mixed> $inventory Unit-test inventory summary.
+	 * @return array<int,array<string,mixed>> Diagnostic rows to append to the scan trace.
+	 */
+	private static function unit_test_inventory_trace(array $inventory): array {
+		$trace=[];
+		foreach((array)($inventory['warnings'] ?? []) as $warning){
+			if(!is_array($warning)){
+				continue;
+			}
+			$trace[]=[
+				'type'=>(string)($warning['type'] ?? 'unit_test_inventory'),
+				'level'=>(string)($warning['level'] ?? 'warning'),
+				'module'=>(string)($warning['module'] ?? 'unit_tests'),
+				'message'=>(string)($warning['message'] ?? 'Unit-test inventory warning.'),
+			]+array_filter([
+				'file'=>$warning['file'] ?? null,
+			], static fn(mixed $value): bool=>$value!==null && $value!=='');
+		}
+		return $trace;
+	}
+
+	/**
 	 * Builds the worker execution queue from discovered unit-test modules.
 	 *
-	 * Dynamic and unscoped manifests remain visible in the inventory, but they do
-	 * not map to a single module entrypoint and therefore wait for a manifest-level
-	 * worker rather than the module worker phase.
+	 * Dynamic and unscoped files remain visible in the inventory, but they do not
+	 * map to a single module entrypoint and therefore wait for the file-worker
+	 * phase rather than the module worker phase.
 	 *
 	 * @param array<string,mixed> $inventory Unit-test inventory summary.
 	 * @param array<int,string> $module_queue Modules included in the structural scan.
@@ -1704,11 +1941,11 @@ document.addEventListener("DOMContentLoaded", function(){
 	}
 
 	/**
-	 * Builds manifest-level worker jobs for every executable test manifest.
+	 * Builds file-level worker jobs for every executable unit-test case.
 	 *
 	 * @param array<string,mixed> $inventory Unit-test inventory summary.
 	 * @param array<int,string> $module_queue Modules included in the structural scan.
-	 * @return array<int,array{module:string,path:string,cases:int,case_index:int}> Manifest worker jobs.
+	 * @return array<int,array{module:string,path:string,kind:string,cases:int,case_index:int}> Unit-test worker jobs.
 	 */
 	private static function manifest_test_queue_from_inventory(array $inventory, array $module_queue): array {
 		$known_modules=array_fill_keys(array_map('strval', $module_queue), true);
@@ -1717,26 +1954,43 @@ document.addEventListener("DOMContentLoaded", function(){
 			if(!is_array($file)){
 				continue;
 			}
+			$kind=(string)($file['kind'] ?? 'json');
 			$module=(string)($file['module'] ?? '');
-			if($module!=='' && !in_array($module, ['dynamic', 'unscoped'], true) && !isset($known_modules[$module])){
+			if($kind!=='code' && $module!=='' && !in_array($module, ['dynamic', 'unscoped'], true) && !isset($known_modules[$module])){
 				$module='unscoped';
 			}
 			$path=(string)($file['path'] ?? '');
 			if($path===''){
 				continue;
 			}
-			$cases=max(1, (int)($file['cases'] ?? 1));
+			$cases=max(0, (int)($file['cases'] ?? 0));
 			for($case_index=0; $case_index<$cases; $case_index++){
 				$jobs[]=[
 					'module'=>$module!=='' ? $module : 'unscoped',
 					'path'=>$path,
+					'kind'=>$kind==='code' ? 'code' : 'json',
 					'cases'=>1,
 					'case_index'=>$case_index,
 				];
 			}
 		}
-		usort($jobs, static fn(array $a, array $b): int=>[$a['module'], $a['path'], $a['case_index']] <=> [$b['module'], $b['path'], $b['case_index']]);
+		usort($jobs, static fn(array $a, array $b): int=>[$a['kind'], $a['module'], $a['path'], $a['case_index']] <=> [$b['kind'], $b['module'], $b['path'], $b['case_index']]);
 		return $jobs;
+	}
+
+	/**
+	 * Builds the active label for a queued unit-test worker job.
+	 *
+	 * @param array<string,mixed> $job Queued unit-test job.
+	 * @return string Stable label for progress and stalled-scan recovery.
+	 */
+	private static function unit_test_worker_job_label(array $job): string {
+		$module=(string)($job['module'] ?? 'unit_tests');
+		$path=(string)($job['path'] ?? '');
+		$kind=(string)($job['kind'] ?? 'json');
+		$case_index=(int)($job['case_index'] ?? 0);
+		$file=$path!=='' ? basename($path) : 'unit-test';
+		return $module.':'.$file.'#'.($case_index + 1).($kind==='code' ? ':code' : '');
 	}
 
 	/**
@@ -1744,7 +1998,7 @@ document.addEventListener("DOMContentLoaded", function(){
 	 *
 	 * @param array<string,mixed> $inventory Unit-test inventory summary.
 	 * @param array<int,string> $test_queue Module workers scheduled for execution.
-	 * @param array<int,array{module:string,path:string,cases:int}> $manifest_queue Manifest workers scheduled for execution.
+	 * @param array<int,array{module:string,path:string,kind?:string,cases:int}> $manifest_queue File workers scheduled for execution.
 	 * @return array<string,mixed> Inventory with worker and deferred case counts.
 	 */
 	private static function apply_worker_inventory_counts(array $inventory, array $test_queue, array $manifest_queue): array {
@@ -1754,68 +2008,143 @@ document.addEventListener("DOMContentLoaded", function(){
 			$module_worker_cases+=(int)($modules[(string)$module] ?? 0);
 		}
 		$manifest_worker_cases=0;
+		$code_worker_cases=0;
 		foreach($manifest_queue as $job){
-			$manifest_worker_cases+=(int)($job['cases'] ?? 0);
+			if(($job['kind'] ?? 'json')==='code'){
+				$code_worker_cases+=(int)($job['cases'] ?? 0);
+			}
+			else
+			{
+				$manifest_worker_cases+=(int)($job['cases'] ?? 0);
+			}
 		}
 		$total=(int)($inventory['test_cases'] ?? 0);
-		$worker_cases=$module_worker_cases + $manifest_worker_cases;
+		$worker_cases=$module_worker_cases + $manifest_worker_cases + $code_worker_cases;
 		$inventory['module_worker_test_cases']=$module_worker_cases;
 		$inventory['manifest_worker_test_cases']=$manifest_worker_cases;
+		$inventory['code_worker_test_cases']=$code_worker_cases;
 		$inventory['worker_test_cases']=$worker_cases;
 		$inventory['deferred_test_cases']=max(0, $total - $worker_cases);
 		return $inventory;
 	}
 
 	/**
-	 * Counts unit-test manifests and declared cases for the selected scan scope.
+	 * Counts JSON manifests, code-defined PHP tests, and declared cases for the selected scan scope.
 	 *
 	 * Paths are resolved from ROOTPATH entries so local applications, shared
 	 * runtime code, and generated dynamic tests do not depend on a fixed checkout
 	 * shape.
 	 *
 	 * @param string $scope Runtime, app, or all module scope label.
-	 * @return array{manifests:int,test_cases:int,malformed:int,modules:array<string,int>,roots:array<int,string>} Test inventory summary.
+	 * @return array<string,mixed> Test inventory summary.
 	 */
 	private static function unit_test_inventory_for_scope(string $scope): array {
 		$roots=[];
+		$include_dynamic=self::include_dynamic_unit_tests();
 		if(($scope==='runtime' || $scope==='all') && defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre_runtime'])){
 			$roots[]=rtrim((string)ROOTPATH['common_dataphyre_runtime'], '/\\').'/modules';
+			$testing_root=self::dataphyre_testing_unit_test_root();
+			if($testing_root!==''){
+				$roots[]=$testing_root;
+			}
 		}
 		if(($scope==='app' || $scope==='all') && defined('ROOTPATH') && !empty(ROOTPATH['dataphyre'])){
 			$dataphyre_root=rtrim((string)ROOTPATH['dataphyre'], '/\\');
 			$roots[]=$dataphyre_root.'/modules';
-			$roots[]=$dataphyre_root.'/unit_tests/dynamic';
+			$roots[]=$dataphyre_root.'/unit_tests';
 		}
 		$files=[];
 		foreach(array_unique($roots) as $root){
-			foreach(self::collect_unit_test_files($root) as $file){
+			foreach(self::collect_unit_test_files($root, $include_dynamic) as $file){
 				$files[$file]=$file;
 			}
 		}
 		ksort($files, SORT_STRING);
 		$inventory=[
 			'manifests'=>0,
+			'json_manifests'=>0,
+			'json_test_cases'=>0,
+			'code_files'=>0,
+			'code_test_cases'=>0,
+			'code_grouped_cases'=>0,
+			'code_dependent_cases'=>0,
+			'code_skipped_files'=>0,
+			'code_discovery_errors'=>0,
 			'test_cases'=>0,
 			'malformed'=>0,
 			'modules'=>[],
 			'files'=>[],
 			'roots'=>array_values(array_unique($roots)),
+			'warnings'=>[],
+			'dynamic_unit_tests_enabled'=>$include_dynamic,
 		];
+		$code_worker_available=self::code_unit_test_worker_available();
+		$code_skip_warning_added=false;
 		foreach($files as $file){
-			$inventory['manifests']++;
-			$content=@file_get_contents($file);
-			$decoded=is_string($content) ? json_decode($content, true) : null;
-			if(!is_array($decoded)){
-				$inventory['malformed']++;
-				continue;
-			}
-			$count=self::unit_test_case_count($decoded);
-			$inventory['test_cases']+=$count;
+			$kind=self::unit_test_file_kind($file);
 			$module=self::module_name_from_unit_test_path($file);
+			if($kind==='code'){
+				$inventory['code_files']++;
+				if($code_worker_available!==true){
+					$inventory['code_skipped_files']++;
+					if($code_skip_warning_added!==true){
+						$inventory['warnings'][]=[
+							'type'=>'code_unit_test_worker',
+							'level'=>'warning',
+							'module'=>'unit_tests',
+							'message'=>function_exists('proc_open')
+								? 'Code-defined PHP unit tests were discovered but skipped because common/dataphyre/testing/code_worker.php is unavailable.'
+								: 'Code-defined PHP unit tests were discovered but skipped because proc_open is unavailable in this PHP environment.',
+						];
+						$code_skip_warning_added=true;
+					}
+					$inventory['files'][]=[
+						'path'=>$file,
+						'module'=>$module,
+						'kind'=>'code',
+						'cases'=>0,
+					];
+					continue;
+				}
+				$result=self::run_code_unit_test_worker($module, $file, 0, 'list');
+				$cases=is_array($result['cases'] ?? null) ? $result['cases'] : [];
+				if(($result['passed'] ?? false)!==true || $cases===[]){
+					$inventory['code_discovery_errors']++;
+					$count=1;
+				}
+				else
+				{
+					$count=max(1, count($cases));
+					foreach($cases as $case){
+						if(is_array($case) && isset($case['groups']) && is_array($case['groups']) && $case['groups']!==[]){
+							$inventory['code_grouped_cases']++;
+						}
+						if(is_array($case) && isset($case['dependencies']) && is_array($case['dependencies']) && $case['dependencies']!==[]){
+							$inventory['code_dependent_cases']++;
+						}
+					}
+				}
+				$inventory['code_test_cases']+=$count;
+			}
+			else
+			{
+				$inventory['manifests']++;
+				$inventory['json_manifests']++;
+				$content=@file_get_contents($file);
+				$decoded=is_string($content) ? json_decode($content, true) : null;
+				if(!is_array($decoded)){
+					$inventory['malformed']++;
+					continue;
+				}
+				$count=self::unit_test_case_count($decoded);
+				$inventory['json_test_cases']+=$count;
+			}
+			$inventory['test_cases']+=$count;
 			$inventory['modules'][$module]=($inventory['modules'][$module] ?? 0) + $count;
 			$inventory['files'][]=[
 				'path'=>$file,
 				'module'=>$module,
+				'kind'=>$kind,
 				'cases'=>$count,
 			];
 		}
@@ -1824,15 +2153,16 @@ document.addEventListener("DOMContentLoaded", function(){
 	}
 
 	/**
-	 * Finds JSON unit-test manifests beneath a root folder.
+	 * Finds JSON manifests and code-defined PHP unit tests beneath a root folder.
 	 *
 	 * Dynamic metadata companions are excluded because they describe observations
 	 * rather than executable test definitions.
 	 *
 	 * @param string $root Absolute folder to scan.
-	 * @return array<int,string> Sorted manifest paths.
+	 * @param bool $include_dynamic Whether generated dynamic diagnostics should be included.
+	 * @return array<int,string> Sorted unit-test file paths.
 	 */
-	private static function collect_unit_test_files(string $root): array {
+	private static function collect_unit_test_files(string $root, bool $include_dynamic=false): array {
 		if(!is_dir($root)){
 			return [];
 		}
@@ -1842,17 +2172,29 @@ document.addEventListener("DOMContentLoaded", function(){
 				new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)
 			);
 			foreach($iterator as $file){
-				if(!$file instanceof \SplFileInfo || !$file->isFile() || strtolower($file->getExtension())!=='json'){
-					continue;
-				}
-				if(str_ends_with($file->getFilename(), '.meta.json')){
+				if(!$file instanceof \SplFileInfo || !$file->isFile()){
 					continue;
 				}
 				$path=$file->getPathname();
+				$normalized=str_replace('\\', '/', $path);
+				if(!str_contains($normalized, '/unit_tests/')){
+					continue;
+				}
+				if($include_dynamic!==true && self::is_dynamic_unit_test_path($path)){
+					continue;
+				}
 				if(self::is_internal_unit_test_fixture($path)){
 					continue;
 				}
-				if(str_contains(str_replace('\\', '/', $path), '/unit_tests/') || str_contains(str_replace('\\', '/', $path), '/unit_tests\\')){
+				$extension=strtolower($file->getExtension());
+				if($extension==='json'){
+					if(str_ends_with($file->getFilename(), '.meta.json')){
+						continue;
+					}
+					$files[]=$path;
+					continue;
+				}
+				if($extension==='php' && self::is_code_unit_test_file($path)){
 					$files[]=$path;
 				}
 			}
@@ -1861,6 +2203,48 @@ document.addEventListener("DOMContentLoaded", function(){
 		}
 		sort($files, SORT_STRING);
 		return $files;
+	}
+
+	/**
+	 * Returns the inventory kind for a discovered unit-test file.
+	 *
+	 * @param string $path Candidate test file path.
+	 * @return string Unit-test kind: json or code.
+	 */
+	private static function unit_test_file_kind(string $path): string {
+		return self::is_code_unit_test_file($path) ? 'code' : 'json';
+	}
+
+	/**
+	 * Returns whether a path is a committed code-defined unit test.
+	 *
+	 * @param string $path Candidate PHP unit-test path.
+	 * @return bool True for Dataphyre\Test DSL files.
+	 */
+	private static function is_code_unit_test_file(string $path): bool {
+		$normalized=str_replace('\\', '/', $path);
+		return str_contains($normalized, '/unit_tests/')
+			&& str_ends_with(basename($normalized), '.test.php');
+	}
+
+	/**
+	 * Returns whether a unit-test path belongs to generated dynamic diagnostics.
+	 *
+	 * @param string $path Candidate unit-test path.
+	 * @return bool True when the file is under unit_tests/dynamic.
+	 */
+	private static function is_dynamic_unit_test_path(string $path): bool {
+		return str_contains(str_replace('\\', '/', $path), '/unit_tests/dynamic/');
+	}
+
+	/**
+	 * Returns whether Dpanel should include generated dynamic unit-test diagnostics.
+	 *
+	 * @return bool True when explicitly enabled by environment.
+	 */
+	private static function include_dynamic_unit_tests(): bool {
+		$value=strtolower(trim((string)(getenv('DATAPHYRE_DPANEL_INCLUDE_DYNAMIC_UNIT_TESTS') ?: '')));
+		return in_array($value, ['1', 'true', 'yes', 'on'], true);
 	}
 
 	/**
@@ -1911,11 +2295,17 @@ document.addEventListener("DOMContentLoaded", function(){
 		if(preg_match('#/modules/([^/]+)/unit_tests/#', $normalized, $matches)===1){
 			return (string)$matches[1];
 		}
+		if(str_contains($normalized, '/common/dataphyre/testing/unit_tests/') || str_contains($normalized, '/dataphyre/testing/unit_tests/')){
+			return 'testing';
+		}
 		if(preg_match('#/unit_tests/dynamic/dataphyre/([^/.]+)/#', $normalized, $matches)===1){
 			return (string)$matches[1];
 		}
 		if(str_contains($normalized, '/unit_tests/dynamic/')){
 			return 'dynamic';
+		}
+		if(str_contains($normalized, '/dataphyre/unit_tests/')){
+			return 'app';
 		}
 		return 'unscoped';
 	}
@@ -2062,7 +2452,7 @@ document.addEventListener("DOMContentLoaded", function(){
 		if(!is_array($entry)){
 			return false;
 		}
-		if(($entry['type'] ?? null)!=='unit_test' || ($entry['passed'] ?? null)!==true){
+		if(!in_array(($entry['type'] ?? null), ['unit_test', 'code_unit_test'], true) || ($entry['passed'] ?? null)!==true){
 			return false;
 		}
 		$level=strtolower((string)($entry['level'] ?? 'info'));
@@ -2159,61 +2549,56 @@ document.addEventListener("DOMContentLoaded", function(){
 			return '';
 		}
 		$prepared=((int)($scan['batches'] ?? 0)===0 && ($scan['done'] ?? false)!==true);
-		$class=($scan['done'] ?? false)===true ? 'fd-warning' : 'fd-warning fd-scan-status';
+		$class=($scan['done'] ?? false)===true ? 'fd-dpanel-status' : 'fd-dpanel-status fd-scan-status';
 		$html='<div class="'.$class.'"><b>';
 		if(($scan['done'] ?? false)===true){
-			$html.='Scan complete.';
+			$html.='Complete';
 		}
 		elseif($prepared){
-			$html.='Scan prepared.';
+			$html.='Prepared';
 		}
 		else
 		{
-			$html.='Scan in progress.';
+			$html.='Running';
 		}
-		$html.='</b> ';
-		$html.=self::e(ucfirst((string)($scan['scope'] ?? 'all'))).' processed ';
-		$html.=self::e((string)$processed).' of '.self::e((string)$total).' module(s)';
-		$html.=' across '.self::e((string)($scan['batches'] ?? 0)).' batch(es).';
-		if($test_total>0){
-			$html.=' Unit-test workers completed '.self::e((string)$test_processed).' of '.self::e((string)$test_total).' module(s).';
-		}
-		if($manifest_total>0){
-			$html.=' Manifest workers completed '.self::e((string)$manifest_processed).' of '.self::e((string)$manifest_total).' manifest(s).';
-		}
+		$html.='</b><span>'.self::e(self::scan_phase_message($scan)).'</span>';
 		$active_module=(string)($scan['active_module'] ?? '');
 		$active_phase=(string)($scan['active_phase'] ?? '');
 		$last_module=(string)($scan['last_module'] ?? '');
 		$last_failed_module=(string)($scan['last_failed_module'] ?? '');
 		$last_test_module=(string)($scan['last_test_module'] ?? '');
 		$last_failed_test_module=(string)($scan['last_failed_test_module'] ?? '');
+		$tail='';
 		if($active_module!==''){
-			$active_label=$active_phase==='unit_test_manifest' ? 'manifest worker' : ($active_phase==='unit_test' ? 'test worker' : 'module');
-			$html.=' Active '.$active_label.': '.self::e($active_module).'.';
+			$active_label=$active_phase==='unit_test_manifest' ? 'unit-test worker' : ($active_phase==='unit_test' ? 'test worker' : 'module');
+			$tail='Active '.$active_label.': '.$active_module.'.';
 		}
 		elseif($last_failed_test_module!==''){
-			$html.=' Last failed test worker: '.self::e($last_failed_test_module).'.';
+			$tail='Last failed test worker: '.$last_failed_test_module.'.';
 		}
 		elseif($last_failed_module!==''){
-			$html.=' Last skipped module: '.self::e($last_failed_module).'.';
+			$tail='Last skipped module: '.$last_failed_module.'.';
 		}
 		elseif($last_test_module!==''){
-			$html.=' Last completed test worker: '.self::e($last_test_module).'.';
+			$tail='Last completed test worker: '.$last_test_module.'.';
 		}
 		elseif($last_module!==''){
-			$html.=' Last completed module: '.self::e($last_module).'.';
+			$tail='Last completed module: '.$last_module.'.';
 		}
 		if($prepared){
-			$html.=($scan['autorun'] ?? true)===true
+			$tail.=($scan['autorun'] ?? true)===true
 				? ' The browser will begin the first batch automatically.'
 				: ' Begin the first batch when you are ready.';
 		}
 		elseif(($scan['done'] ?? false)!==true){
-			$html.=$active_module!==''
+			$tail.=$active_module!==''
 				? ' Waiting for the active batch to finish or reach the recovery window.'
 				: (($scan['autorun'] ?? true)===true
 				? ' The browser will continue the next batch automatically.'
 				: ' Continue to process the remaining modules without risking a request timeout.');
+		}
+		if($tail!==''){
+			$html.='<small>'.self::e(trim($tail)).'</small>';
 		}
 		return $html.'</div>';
 	}
@@ -2312,9 +2697,9 @@ document.addEventListener("DOMContentLoaded", function(){
 	}
 
 	/**
-	 * Returns the maximum number of manifest workers launched in one AJAX batch.
+	 * Returns the maximum number of unit-test file workers launched in one AJAX batch.
 	 *
-	 * @return int Manifest worker batch limit.
+	 * @return int Unit-test file worker batch limit.
 	 */
 	private static function manifest_worker_batch_limit(): int {
 		return 6;

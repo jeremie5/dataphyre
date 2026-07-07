@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "name": "dataphyre",
+  "package": "dataphyre/dataphyre",
+  "layout_version": 1,
+  "exports": [
+    {
+      "from": ".",
+      "to": "common/dataphyre",
+      "required": true
+    }
+  ],
+  "protected_paths": [
+    "applications",
+    "common/backend",
+    "common/debug",
+    "common/themes",
+    ".env",
+    "logs",
+    "data"
+  ],
+  "exclude": [
+    ".git",
+    ".github",
+    "cache",
+    "dev",
+    "logs",
+    "runtime/cache",
+    "runtime/logs",
+    "runtime/modules/policy_module",
+    "runtime/modules/internal_module",
+    "runtime/modcache.php",
+    "runtime/sql_migration/plans",
+    "runtime/sql_migration/snapshots",
+    "sql_migration/plans",
+    "sql_migration/snapshots",
+    "sql_migration/table_versions.json",
+    "tools",
+    "vendor",
+    "composer.lock"
+  ],
+  "checks": {
+    "mode": "explicit_cli",
+    "runtime_request_checks": false,
+    "lock_required": true
+  }
+}

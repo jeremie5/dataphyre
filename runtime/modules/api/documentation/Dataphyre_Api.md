@@ -79,9 +79,9 @@ Api::get('/api/orders/{order_id}')
 		'order',
 		OrderRepository::query()
 			->asStoredMoney('priced_total', [
-				'amount_column'=>'priced_total_amount',
+				'amount_column'=>'priced_total_amount_minor',
 				'currency_column'=>'priced_total_currency',
-				'base_amount_column'=>'base_total_amount',
+				'base_amount_column'=>'base_total_amount_minor',
 				'base_currency_column'=>'base_total_currency',
 				'rate_column'=>'exchange_rate',
 				'rate_source_column'=>'exchange_source',
@@ -664,10 +664,10 @@ Api::get('/api/orders/latest')
 		'orders',
 		OrderRepository::query()
 			->latest('created_at')
-			->asMoney('total_amount', 'currency'),
+			->asMoney('total_amount_minor', 'currency', 'total'),
 		'records',
 		[
-			'columns'=>['order_id', 'total_amount', 'currency', 'created_at'],
+			'columns'=>['order_id', 'total_amount_minor', 'currency', 'created_at'],
 		]
 	)
 	->execute('app\\framework\\Api\\OrderEndpoints::latest');
@@ -707,7 +707,7 @@ Common binding methods on `ApiContext`:
 ```php
 $bindings=$context->bindings();
 $orders=$context->binding('orders', []);
-$first_order_total=$context->binding('orders.0.total_amount');
+$first_order_total=$context->binding('orders.0.total');
 $has_summary=$context->hasBinding('summary');
 $binding_trace=$context->bindingTrace();
 $binding_data=$context->bindingData();

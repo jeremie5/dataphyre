@@ -46,7 +46,7 @@ class firewall{
 	 * Otherwise the request is checked for an existing captcha block.
 	 */
 	public static function captcha(){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_FIREWALL_CAPTCHA",...func_get_args())) return $early_return;
 		$ipaddress=$_SERVER['REMOTE_ADDR'];
 		if(isset($_SESSION['captcha_unblock'])){
@@ -62,7 +62,7 @@ class firewall{
 					$CC=true
 				);
 			}
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Captcha block removed for IP $ipaddress");
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Captcha block removed for current visitor");
 			unset($_SESSION['captcha_unblock']);
 			unset($_SESSION['captcha_blocked']);
 			unset($_SESSION['last_requests']);
@@ -82,7 +82,7 @@ class firewall{
 	 * @return int Number of recent requests allowed before firewall action.
 	 */
 	public static function flooding_threshold(){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_FIREWALL_FLOODING_CHECK",...func_get_args())) return $early_return;
 		$threshold=3;
 		if(dp_module_present("access")){
@@ -100,7 +100,7 @@ class firewall{
 	 * reached, the firewall either sleeps or captcha-blocks the visitor.
 	 */
 	public static function flooding_check(){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_FIREWALL_FLOODING_CHECK",...func_get_args())) return $early_return;
 		$throttling_config=DP_FIREWALL_CFG['throttling'];
 		$min_time=(int)$throttling_config['min_time'];
@@ -153,7 +153,7 @@ class firewall{
 	 */
 	public static function rps_limiter(int $timing) : bool {
 		return true;
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_FIREWALL_RPS_LIMITER",...func_get_args())) return $early_return;
 		if(isset($_SESSION['last_requests'][0])){
 			if(microtime(true)-$_SESSION['last_requests'][0]<$timing/1000){
@@ -174,7 +174,7 @@ class firewall{
 	 * @return bool True when the current visitor is captcha-blocked.
 	 */
 	public static function check_if_captcha_blocked() : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_FIREWALL_CHECK_IF_CAPTCHA_BLOCKED",...func_get_args())) return $early_return;
 		$ipaddress=$_SERVER['REMOTE_ADDR'];
 		if(class_exists('dataphyre\cache')){
@@ -222,7 +222,7 @@ class firewall{
 	 * @return bool True after the block has been recorded or already exists.
 	 */
 	public static function captcha_block_user(string $reason='unknown') : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_FIREWALL_CAPTCHA_BLOCK_USER",...func_get_args())) return $early_return;
 		$ipaddress=$_SERVER['REMOTE_ADDR'];
 		$expiry=strtotime("+6 hours");

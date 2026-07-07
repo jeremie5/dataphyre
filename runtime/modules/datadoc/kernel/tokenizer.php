@@ -120,7 +120,7 @@ class tokenizer{
 	 * @return list<array{type:string,namespace:string,class:string,function:string,content:string,line:int,phpdoc:array{description:string,tags:array<string,string|list<string>>}}>|false
 	 */
 	public static function tokenize($filename){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args()); // Log the function call
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(!file_exists($filename)){
 			return false;
 		}

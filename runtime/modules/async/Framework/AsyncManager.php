@@ -145,7 +145,25 @@ final class AsyncManager {
 	 * @return PendingTask Pending task wrapper for the dispatched work.
 	 */
 	public function dispatch(mixed $task, array $arguments=[], ?string $driver=null): PendingTask {
-		return PendingTask::fromPromise($this->dispatcher($driver)->dispatch($task, $arguments));
+		[$pendingTask, $resolvedDriver]=$this->dispatchTask($task, $arguments, $driver);
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Async task dispatched; driver='.$resolvedDriver.'; task_type='.(is_object($task) ? $task::class : gettype($task)).'; argument_count='.count($arguments));
+		return $pendingTask;
+	}
+
+	/**
+	 * Dispatches one task without tracing so batch() can emit one summary trace.
+	 *
+	 * @param mixed $task Dispatcher-supported task payload.
+	 * @param array<int,mixed> $arguments Positional arguments supplied to the task.
+	 * @param ?string $driver Optional dispatcher driver override.
+	 * @return array{0:PendingTask,1:string} Pending task and resolved driver name.
+	 */
+	private function dispatchTask(mixed $task, array $arguments=[], ?string $driver=null): array {
+		$resolvedDriver=$driver!==null && trim($driver)!=='' ? strtolower(trim($driver)) : $this->defaultDispatcher();
+		return [
+			PendingTask::fromPromise($this->dispatcher($resolvedDriver)->dispatch($task, $arguments)),
+			$resolvedDriver,
+		];
 	}
 
 	/**
@@ -165,15 +183,18 @@ final class AsyncManager {
 				continue;
 			}
 			if(is_array($task) && array_key_exists('task', $task)){
-				$pendingTasks[]=$this->dispatch(
+				[$pendingTask]=$this->dispatchTask(
 					$task['task'],
 					is_array($task['arguments'] ?? null) ? array_values($task['arguments']) : [],
 					is_string($task['driver'] ?? null) ? (string)$task['driver'] : $driver
 				);
+				$pendingTasks[]=$pendingTask;
 				continue;
 			}
-			$pendingTasks[]=$this->dispatch($task, [], $driver);
+			[$pendingTask]=$this->dispatchTask($task, [], $driver);
+			$pendingTasks[]=$pendingTask;
 		}
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Async batch normalized; requested='.count($tasks).'; pending='.count($pendingTasks).'; driver='.($driver!==null && trim($driver)!=='' ? strtolower(trim($driver)) : $this->defaultDispatcher()));
 		return new Batch($pendingTasks);
 	}
 

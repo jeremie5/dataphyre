@@ -347,7 +347,20 @@ class Provider {
 		if(!is_callable($resolver)){
 			return null;
 		}
-		return $resolver($oauthUser, $this);
+		$payload=[
+			'provider'=>$this->name,
+			'oauth_user_type'=>$oauthUser::class,
+		];
+		$dialback=\dataphyre\core::dialback('CALL_ACCESS_FRAMEWORK_OAUTH_BEFORE_RESOLVE_LOCAL_USER', $payload);
+		if($dialback!==null){
+			return $dialback;
+		}
+		$localUser=$resolver($oauthUser, $this);
+		$dialback=\dataphyre\core::dialback('CALL_ACCESS_FRAMEWORK_OAUTH_AFTER_RESOLVE_LOCAL_USER', $payload+[
+			'resolved'=>$localUser!==null && $localUser!==false,
+			'local_user_type'=>is_object($localUser) ? $localUser::class : gettype($localUser),
+		]);
+		return $dialback!==null ? $dialback : $localUser;
 	}
 
 	/**
@@ -372,9 +385,29 @@ class Provider {
 			: $this->user($requestOrUser instanceof Request || is_array($requestOrUser) ? $requestOrUser : null);
 		$localUser=$this->resolveLocalUser($oauthUser);
 		if($localUser===null || $localUser===false){
+			\dataphyre\core::dialback('CALL_ACCESS_FRAMEWORK_OAUTH_AFTER_LOGIN', [
+				'provider'=>$this->name,
+				'guard'=>$guard,
+				'remember'=>$remember,
+				'resolved'=>false,
+				'ok'=>false,
+			]);
 			return false;
 		}
-		return Auth::login($localUser, $remember, $guard);
+		$payload=[
+			'provider'=>$this->name,
+			'guard'=>$guard,
+			'remember'=>$remember,
+			'resolved'=>true,
+			'local_user_type'=>is_object($localUser) ? $localUser::class : gettype($localUser),
+		];
+		$dialback=\dataphyre\core::dialback('CALL_ACCESS_FRAMEWORK_OAUTH_BEFORE_LOGIN', $payload);
+		if(is_bool($dialback)){
+			return $dialback;
+		}
+		$result=Auth::login($localUser, $remember, $guard);
+		$dialback=\dataphyre\core::dialback('CALL_ACCESS_FRAMEWORK_OAUTH_AFTER_LOGIN', $payload+['ok'=>$result]);
+		return is_bool($dialback) ? $dialback : $result;
 	}
 
 	/**

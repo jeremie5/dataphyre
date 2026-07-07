@@ -45,13 +45,13 @@
                          }
     },
     {
-        "name":  "Should validate execution time respect",
+        "name":  "Should report a slow test without failing manifest execution",
         "function":  "dataphyre\\dpanel::unit_test",
         "args":  [
                      "/common/dataphyre/runtime/modules/dpanel/unit_tests/dpanel_mock_slowtest.json"
                  ],
         "expected":  [
-                         false
+                         true
                      ],
         "dependencies":  {
                              "function":  [

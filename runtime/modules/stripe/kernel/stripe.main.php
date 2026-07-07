@@ -64,7 +64,7 @@ class stripe {
 	 * @return string|false Active Stripe API key, or false when the SDK cannot be loaded.
 	 */
 	public static function get_platform_account(){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()){
 			return \Stripe\Stripe::$api_key;
 		}
@@ -80,7 +80,7 @@ class stripe {
 	 * @return bool True when the SDK accepted the configured platform key.
 	 */
 	public static function set_platform_account(){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()){
 			\Stripe\Stripe::$api_key=self::get_secret_key();
 			return true;
@@ -94,7 +94,7 @@ class stripe {
 	 * @return string|false Live or test publishable key, or false when unconfigured.
 	 */
 	public static function get_publishable_key() : string|bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::test_mode()!==true){
 			return self::cfg('api_publishable_key_live', false);
 		}
@@ -107,7 +107,7 @@ class stripe {
 	 * @return string|false Webhook secret, or false when unconfigured.
 	 */
 	public static function get_webhook_secret_key() : string|bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		return self::cfg('webhook_secret_key', false);
 	}
 
@@ -117,7 +117,7 @@ class stripe {
 	 * @return string|false Live or test secret key, or false when unconfigured.
 	 */
 	public static function get_secret_key() : string|bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::test_mode()!==true){
 			return self::cfg('api_secret_key_live', false);
 		}
@@ -127,7 +127,7 @@ class stripe {
 	/**
 	 * Loads and configures the bundled Stripe SDK.
 	 *
-	 * A CALL_LOAD_STRIPE dialback may short-circuit SDK loading for tests or custom
+	 * A CALL_STRIPE_LOAD dialback may short-circuit SDK loading for tests or custom
 	 * bootstraps. Normal loading requires the bundled SDK, sets the selected secret
 	 * key, and enables network retries. Missing SDK or key state escalates through
 	 * core::unavailable() because payment operations must fail closed.
@@ -135,8 +135,8 @@ class stripe {
 	 * @return bool True when the Stripe SDK is available for calls.
 	 */
 	public static function load_stripe() : bool {
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
-		if(null!==$early_return=core::dialback("CALL_LOAD_STRIPE",...func_get_args())) return $early_return;
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
+		if(null!==$early_return=core::dialback("CALL_STRIPE_LOAD",...func_get_args())) return $early_return;
 		if(!class_exists("\Stripe\Stripe")){
 			try{
 				require_once(dirname(__DIR__)."/src/init.php");
@@ -166,7 +166,7 @@ class stripe {
 	 * @return mixed Callback result, false when platform setup fails, or void after emitting an HTTP response.
 	 */
 	public static function handle_webhook(){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::set_platform_account()){
 			if(self::load_stripe()===true){
 				$signature=$_SERVER['HTTP_STRIPE_SIGNATURE'];
@@ -204,7 +204,7 @@ class stripe {
 	 * @return \Stripe\Balance|false Stripe balance resource, or false on load/API failure.
 	 */
 	public static function get_platform_balance(){
-		tracelog( __FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog( __FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$balance=\Stripe\Balance::retrieve();
@@ -231,7 +231,7 @@ class stripe {
 	 * @return bool|string False on load failure, true on success, or a business failure marker.
 	 */
 	public static function handle_new_payment_method(string $stripe_token, int $userid, string $stripe_customer_id, string $name_on_card, ?callable $no_customer_account_callback=null){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			if(false===sql_select(
 				$S="id",
@@ -311,7 +311,7 @@ class stripe {
 	 * @return \Stripe\Customer|false Stripe customer resource, or false on load/API failure.
 	 */
 	public static function create_customer(int $userid, string $email, string $name){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$customer=\Stripe\Customer::create([
@@ -334,7 +334,7 @@ class stripe {
 	 * @return \Stripe\Account|false Stripe account resource, or false on load/API failure.
 	 */
     public static function create_account(array $params){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$account=\Stripe\Account::create($params);
@@ -354,7 +354,7 @@ class stripe {
 	 * @return \Stripe\Account|false Updated account resource, or false on load/API failure.
 	 */
 	public static function verify_account(string $account_id, array $params){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$account=\Stripe\Account::update($account_id, $params);
@@ -374,7 +374,7 @@ class stripe {
 	 * @return \Stripe\BankAccount|\Stripe\Card|false Stripe external account resource, or false on load/API failure.
 	 */
 	public static function create_bank_account(string $account_id, array $params){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$bank_account=\Stripe\Account::createExternalAccount($account_id, ['external_account' => $params]);
@@ -394,7 +394,7 @@ class stripe {
 	 * @return \Stripe\Account|false Updated account resource, or false on load/API failure.
 	 */
 	public static function set_default_for_payouts(string $account_id, string $bank_account_id){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$account=\Stripe\Account::update($account_id, ['default_for_currency' => $bank_account_id]);
@@ -414,7 +414,7 @@ class stripe {
 	 * @return \Stripe\Account|false Updated account resource, or false on load/API failure.
 	 */
 	public static function update_account(string $account_id, array $params){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$account=\Stripe\Account::update($account_id, $params);
@@ -433,7 +433,7 @@ class stripe {
 	 * @return \Stripe\PaymentIntent|false PaymentIntent resource, or false on load/API failure.
 	 */
     public static function create_payment_intent(array $params){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$payment_intent=\Stripe\PaymentIntent::create($params);
@@ -452,7 +452,7 @@ class stripe {
 	 * @return string|false PaymentIntent status, or false on load/API failure.
 	 */
 	public static function check_payment_status(string $payment_intent_id){
-		tracelog( __FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog( __FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$payment_intent=\Stripe\PaymentIntent::retrieve($payment_intent_id);
@@ -471,7 +471,7 @@ class stripe {
 	 * @return \Stripe\PaymentIntent|false Cancelled PaymentIntent resource, or false on load/API failure.
 	 */
 	public static function cancel_payment(string $payment_intentId){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$payment_intent=\Stripe\PaymentIntent::retrieve($payment_intentId);
@@ -493,7 +493,7 @@ class stripe {
 	 * @return \Stripe\AccountLink|false AccountLink resource, or false on load/API failure.
 	 */
 	public static function create_account_link(string $account_id, string $return_url, string $refresh_url){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$account_link=\Stripe\AccountLink::create([
@@ -517,7 +517,7 @@ class stripe {
 	 * @return \Stripe\Account|false Account resource, or false on load/API failure.
 	 */
 	public static function check_account_status(string $account_id){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call_with_test', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$account = \Stripe\Account::retrieve($account_id);
@@ -536,7 +536,7 @@ class stripe {
 	 * @return \Stripe\Transfer|false Transfer resource, or false on load/API failure.
 	 */
 	public static function initiate_transfer(array $params){
-		tracelog( __FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog( __FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$transfer=\Stripe\Transfer::create($params);
@@ -556,7 +556,7 @@ class stripe {
 	 * @return \Stripe\Payout|false Payout resource, or false on load/API failure.
 	 */
 	public static function create_payout(array $params, $options=[]){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$payout=\Stripe\Payout::create($params, $options);
@@ -575,7 +575,7 @@ class stripe {
 	 * @return \Stripe\PaymentIntent|false Confirmed PaymentIntent resource, or false on load/API failure.
 	 */
 	public static function submit_payment(string $payment_intentId){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$payment_intent=\Stripe\PaymentIntent::retrieve($payment_intentId);
@@ -596,11 +596,11 @@ class stripe {
 	 * over-refund call from leaving Dataphyre.
 	 *
 	 * @param string $payment_intent_id Stripe PaymentIntent id.
-	 * @param mixed $amount_to_refund Amount in the smallest currency unit.
+	 * @param int $amount_to_refund Amount in the smallest currency unit.
 	 * @return \Stripe\Refund|false Refund resource, or false on validation/load/API failure.
 	 */
-	public static function submit_refund(string $payment_intent_id, $amount_to_refund){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+	public static function submit_refund(string $payment_intent_id, int $amount_to_refund){
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$payment_intent=\Stripe\PaymentIntent::retrieve($payment_intent_id);
@@ -635,7 +635,7 @@ class stripe {
 	 * @return bool True after local delete is attempted, false on SDK load failure.
 	 */
 	public static function delete_payment_method(string $payment_method_id){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$payment_method=\Stripe\PaymentMethod::retrieve($payment_method_id);
@@ -661,7 +661,7 @@ class stripe {
 	 * @return \Stripe\PaymentMethod|false PaymentMethod resource, or false on load/API failure.
 	 */
 	public static function retrieve_payment_method(string $payment_method_id){
-	  tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+	  tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 		try{
 		  $payment_method=\Stripe\PaymentMethod::retrieve($payment_method_id);
@@ -680,7 +680,7 @@ class stripe {
 	 * @return \Stripe\PaymentIntent|false PaymentIntent resource, or false on load/API failure.
 	 */
 	public static function retrieve_payment_intent(string $payment_intentId){
-	  tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+	  tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 		try{
 		  $payment_intent=\Stripe\PaymentIntent::retrieve($payment_intentId);
@@ -699,7 +699,7 @@ class stripe {
 	 * @return \Stripe\PaymentIntent|false Captured PaymentIntent resource, or false on load/API failure.
 	 */
 	public static function capture_payment_intent(string $payment_intentId){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$payment_intent=\Stripe\PaymentIntent::retrieve($payment_intentId);
@@ -719,7 +719,7 @@ class stripe {
 	 * @return \Stripe\Collection|false PaymentMethod collection, or false on load/API failure.
 	 */
 	public static function retrieve_all_payment_methods(string $customer_id){
-	  tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+	  tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 	  if(self::load_stripe()===true){
 		try{
 		  $payment_methods=\Stripe\PaymentMethod::all([
@@ -746,7 +746,7 @@ class stripe {
 	 * @return \Stripe\PaymentMethod|string|false Attached PaymentMethod, `card_declined`, or false on load/API failure.
 	 */
 	public static function attach_payment_method(string $payment_method_id, string $customer_id){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=func_get_args());
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::load_stripe()===true){
 			try{
 				$payment_method=\Stripe\PaymentMethod::retrieve($payment_method_id);
