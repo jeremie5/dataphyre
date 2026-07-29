@@ -1844,7 +1844,8 @@ test('PostgreSQL migration runner applies a bootstrap transaction and records re
 			],
 			array_slice($entries, 0, 4)
 		))
-		->queueScalar(1);
+		->queueScalar(1)
+		->queueStatement(new ScriptedPdoStatement([], true));
 	$result=(new PostgreSqlMigrationRunner(
 		$pdo,
 		dp_postgresql_migration_profile()
@@ -1861,9 +1862,9 @@ test('PostgreSQL migration runner applies a bootstrap transaction and records re
 	$t->same('2.0.0', $result['release_version']);
 	$t->same(str_repeat('a', 64), $result['release_sha256']);
 	$t->same(true, $result['pending_validation']['eligible']);
-	$t->same('pg_advisory_xact_lock:fixture.postgresql_migrations', $result['lock']);
-	$t->same(['begin', 'exec', 'exec'], array_slice($pdo->operationNames(), 0, 3));
-	$t->same('commit', $pdo->operationNames()[array_key_last($pdo->operationNames())]);
+	$t->same('per_migration', $result['transaction_scope']);
+	$t->same('pg_advisory_lock:fixture.postgresql_migrations', $result['lock']);
+	$t->same(5, array_count_values($pdo->operationNames())['commit'] ?? 0);
 	$t->count(4, $journalInsert->executions());
 	$t->same(['001_base', $entries[0]['up']['sha256']], $journalInsert->executions()[0]);
 	$t->same('up', $eventOne->executions()[0][2] ?? null);
@@ -2075,7 +2076,8 @@ test('PostgreSQL migration runner rolls back dry runs and rejects locked-state d
 			'checksum_sha256'=>str_repeat('0', 64),
 			'applied_at'=>'2026-07-23 12:00:00+00',
 		]])
-		->queueScalar(1);
+		->queueScalar(1)
+		->queueStatement(new ScriptedPdoStatement([], true));
 	$t->throws(
 		static fn()=>(new PostgreSqlMigrationRunner(
 			$beforeDriftPdo,
@@ -2085,8 +2087,8 @@ test('PostgreSQL migration runner rolls back dry runs and rejects locked-state d
 		'changed or drifted'
 	);
 	$t->same(
-		'rollback',
-		$beforeDriftPdo->operationNames()[array_key_last($beforeDriftPdo->operationNames())]
+		1,
+		array_count_values($beforeDriftPdo->operationNames())['rollback'] ?? 0
 	);
 
 	$afterDriftPdo=$t->scriptedPdo('pgsql')
@@ -2103,7 +2105,8 @@ test('PostgreSQL migration runner rolls back dry runs and rejects locked-state d
 			'checksum_sha256'=>str_repeat('0', 64),
 			'applied_at'=>'2026-07-23 12:00:00+00',
 		]])
-		->queueScalar(1);
+		->queueScalar(1)
+		->queueStatement(new ScriptedPdoStatement([], true));
 	$t->throws(
 		static fn()=>(new PostgreSqlMigrationRunner(
 			$afterDriftPdo,
@@ -2123,7 +2126,8 @@ test('PostgreSQL migration runner rolls back dry runs and rejects locked-state d
 		->queueStatement(new ScriptedPdoStatement())
 		->queueScalar(1)
 		->queueRows($rows)
-		->queueScalar(1);
+		->queueScalar(1)
+		->queueStatement(new ScriptedPdoStatement([], true));
 	$skip=(new PostgreSqlMigrationRunner(
 		$skipPdo,
 		dp_postgresql_migration_profile()
@@ -2147,7 +2151,8 @@ test('PostgreSQL migration runner rolls back dry runs and rejects locked-state d
 			],
 			array_slice($fullEntries, 0, 2)
 		))
-		->queueScalar(1);
+		->queueScalar(1)
+		->queueStatement(new ScriptedPdoStatement([], true));
 	$t->throws(
 		static fn()=>(new PostgreSqlMigrationRunner(
 			$ineligiblePdo,

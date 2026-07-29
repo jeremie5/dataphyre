@@ -444,7 +444,13 @@ final class PostgreSqlMigrationRunner {
 	}
 
 	/**
-	 * Apply the deployment mode's selected pending migration set in one transaction.
+	 * Apply the deployment mode's selected pending migration set.
+	 *
+	 * Bootstrap history is committed one migration at a time while one
+	 * session-scoped advisory lock protects the complete batch. This preserves
+	 * each migration's SQL+journal atomicity without retaining PostgreSQL
+	 * trigger events across unrelated legacy files. Rolling and maintenance
+	 * batches retain their single-transaction contract.
 	 *
 	 * @param ?array{release_version:?string,release_sha256:?string} $releaseIdentity
 	 * @param ?string $verifiedMinimumActiveRelease Caller-verified fleet floor
@@ -468,14 +474,22 @@ final class PostgreSqlMigrationRunner {
 			$verifiedMinimumActiveRelease
 		);
 		$identity=self::releaseIdentity($releaseIdentity);
-		$this->begin();
 		$executed=[];
 		$pendingValidation=null;
 		$operationId=bin2hex(random_bytes(16));
 		$normalizedAliases=[];
+		$bootstrapTransactions=$mode==='bootstrap' && !$dryRun;
+		$sessionLockHeld=false;
 		try{
+			if($bootstrapTransactions){
+				$this->acquireSessionLock();
+				$sessionLockHeld=true;
+			}
+			$this->begin();
 			$this->configureTransaction();
-			$this->acquireLock();
+			if(!$bootstrapTransactions){
+				$this->acquireLock();
+			}
 			$normalizedAliases=$this->normalizeJournalAliases($manifest);
 			$state=$this->status($manifest);
 			if(($state['drift_count'] ?? 0)>0){
@@ -511,12 +525,19 @@ final class PostgreSqlMigrationRunner {
 					' (migration_name, checksum_sha256, applied_at) '.
 					'VALUES (?, ?, CURRENT_TIMESTAMP)'
 			);
+			if($bootstrapTransactions){
+				$this->commit();
+			}
 			foreach($manifest->entries() as $entry){
 				if(
 					($statuses[$entry['id']] ?? null)==='applied'
 					|| !isset($selected[$entry['id']])
 				){
 					continue;
+				}
+				if($bootstrapTransactions){
+					$this->begin();
+					$this->configureTransaction();
 				}
 				$this->executeSql($entry['up']['sql'], 'Migration up SQL failed: '.$entry['id'].'.');
 				$this->executeStatement(
@@ -526,6 +547,9 @@ final class PostgreSqlMigrationRunner {
 				);
 				$this->recordEvent($operationId, $entry, 'up', $identity);
 				$executed[]=$entry['id'];
+				if($bootstrapTransactions){
+					$this->commit();
+				}
 			}
 			$after=$this->status($manifest);
 			if(($after['drift_count'] ?? 0)>0){
@@ -535,15 +559,26 @@ final class PostgreSqlMigrationRunner {
 			}
 			if($dryRun){
 				$this->rollbackTransaction();
-			}else{
+			}elseif(!$bootstrapTransactions){
 				$this->commit();
 			}
+			if($sessionLockHeld){
+				$this->releaseSessionLock();
+				$sessionLockHeld=false;
+			}
 		}catch(Throwable $exception){
-			$this->rollbackAfterFailure($exception);
+			if($this->pdo->inTransaction()){
+				$this->pdo->rollBack();
+			}
+			if($sessionLockHeld){
+				$this->releaseSessionLock();
+			}
+			throw $exception;
 		}
 
 		return [
 			'transaction'=>$dryRun ? 'rolled_back' : 'committed',
+			'transaction_scope'=>$bootstrapTransactions ? 'per_migration' : 'deployment',
 			'migrations'=>$executed,
 			'deployment_mode'=>$mode,
 			'direction'=>'up',
@@ -556,7 +591,9 @@ final class PostgreSqlMigrationRunner {
 				$pendingValidation['verified_minimum_active_release'],
 			'normalized_legacy_aliases'=>$normalizedAliases,
 			'bootstrap_cutoff'=>$manifest->bootstrapCutoff(),
-			'lock'=>$this->profile->lockEvidence(),
+			'lock'=>$bootstrapTransactions
+				? 'pg_advisory_lock:'.$this->profile->advisoryLock()
+				: $this->profile->lockEvidence(),
 			'pending_validation'=>$pendingValidation,
 		];
 	}
@@ -937,6 +974,30 @@ final class PostgreSqlMigrationRunner {
 			'Dataphyre could not acquire the migration advisory lock.'
 		);
 		$statement->fetchColumn();
+	}
+
+	private function acquireSessionLock(): void {
+		$statement=$this->prepare('SELECT pg_advisory_lock(hashtext(?))');
+		$this->executeStatement(
+			$statement,
+			[$this->profile->advisoryLock()],
+			'Dataphyre could not acquire the bootstrap migration advisory lock.'
+		);
+		$statement->fetchColumn();
+	}
+
+	private function releaseSessionLock(): void {
+		$statement=$this->prepare('SELECT pg_advisory_unlock(hashtext(?))');
+		$this->executeStatement(
+			$statement,
+			[$this->profile->advisoryLock()],
+			'Dataphyre could not release the bootstrap migration advisory lock.'
+		);
+		if($statement->fetchColumn()!==true){
+			throw new RuntimeException(
+				'Dataphyre did not hold the bootstrap migration advisory lock.'
+			);
+		}
 	}
 
 	private function tableExists(string $regclass): bool {

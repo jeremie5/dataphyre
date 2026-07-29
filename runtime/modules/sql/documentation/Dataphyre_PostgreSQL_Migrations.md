@@ -21,7 +21,7 @@ They live in `Dataphyre\Database\Migrations`.
 |---|---|---|
 | `PostgreSqlMigrationProfile` | `fromArray(...)`, `compareVersions(...)`, normalized accessors, `jsonSerialize()` | Validate policy and exact Semantic Version precedence. |
 | `PostgreSqlMigrationManifest` | `load(...)`, `entries()`, `publicSummary()`, `sqlSafetyIssues(...)` | Load, confine, checksum, and normalize immutable migration history; classify transaction-incompatible SQL through a pure shared contract. |
-| `PostgreSqlMigrationRunner` | `status(...)`, `deploymentEvidence(...)`, `apply(...)`, `rollback(...)` | Inspect and mutate one PostgreSQL schema under a transaction-scoped advisory lock. |
+| `PostgreSqlMigrationRunner` | `status(...)`, `deploymentEvidence(...)`, `apply(...)`, `rollback(...)` | Inspect and mutate one PostgreSQL schema under a PostgreSQL advisory lock with mode-appropriate transaction boundaries. |
 | `PostgreSqlSchemaInspector` | `expectedSchema(...)`, `schemaIssues(...)`, fingerprint and certification methods | Derive the supported schema model, inspect catalogs, and certify reversible SQL. |
 
 The runner also exposes pure helpers for rolling-SQL classification, journal
@@ -92,9 +92,11 @@ observable by Dataphyre's structural fingerprint fails rollback certification
 instead of being certified from incomplete evidence.
 
 Bootstrap entries are adopted history and are deliberately outside exact
-catalog certification. Dataphyre validates their immutable bytes, replays them
-once inside its transaction, and records every checksum through the bootstrap
-cutoff. Exact schema-drift certification begins with journal-native
+catalog certification. Dataphyre validates their immutable bytes, replays each
+file once in its own transaction, and records that file's checksum in the same
+commit. One session-scoped advisory lock protects the complete bootstrap batch,
+so retries resume from the last committed file without concurrent runners
+interleaving history. Exact schema-drift certification begins with journal-native
 `rolling_expand` and `rolling_contract` entries. Applications adopting legacy
 history must therefore keep bootstrap SQL replay-safe and retain
 application-owned migration smoke checks; the framework does not pretend its
@@ -326,11 +328,15 @@ together. The digest is stored in the profile's configured event column.
 Adapters may translate an external release vocabulary at their boundary, but
 the Dataphyre contract remains `release_version` plus `release_sha256`.
 
-Dataphyre owns the transaction and uses a transaction-scoped PostgreSQL
-advisory lock. Migration SQL must not contain `BEGIN`, `COMMIT`, `ROLLBACK`, or
-psql meta-commands. Supply a connection that is not already inside a
-transaction. Every committed direction appends an immutable event with an
-operation ID and checksums.
+Dataphyre owns every transaction boundary. Bootstrap mode uses one
+session-scoped PostgreSQL advisory lock across the batch and commits each
+legacy migration together with its journal/event rows. This prevents trigger
+events from one historical file leaking into a later file and permits a failed
+bootstrap retry to resume safely. Rolling and maintenance modes retain one
+transaction-scoped advisory lock and one deployment transaction. Migration SQL
+must not contain `BEGIN`, `COMMIT`, `ROLLBACK`, or psql meta-commands. Supply a
+connection that is not already inside a transaction. Every committed direction
+appends an immutable event with an operation ID and checksums.
 
 Maintenance apply accepts the verified floor as its final optional argument and
 recomputes evidence after taking the advisory lock:
