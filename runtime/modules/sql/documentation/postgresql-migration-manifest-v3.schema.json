@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dataphyre.dev/schemas/postgresql-migration-manifest-v3.schema.json",
+  "title": "Dataphyre PostgreSQL migration manifest v3",
+  "description": "Application-neutral, ordered, immutable PostgreSQL migration inventory consumed by PostgreSqlMigrationManifest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "algorithm",
+    "bootstrap_cutoff",
+    "source",
+    "migrations"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 3
+    },
+    "algorithm": {
+      "const": "sha256"
+    },
+    "bootstrap_cutoff": {
+      "$ref": "#/$defs/migrationId"
+    },
+    "source": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_.-]{0,127}$"
+      },
+      "description": "Application-owned provenance metadata. Dataphyre preserves this object but does not interpret its keys."
+    },
+    "migrations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/migration"
+      }
+    }
+  },
+  "$defs": {
+    "migrationId": {
+      "type": "string",
+      "pattern": "^[0-9]{3}_[a-z0-9_]+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "semanticVersion": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-(?:(?:0|[1-9][0-9]*)|(?:[0-9]*[A-Za-z-][0-9A-Za-z-]*))(?:\\.(?:(?:0|[1-9][0-9]*)|(?:[0-9]*[A-Za-z-][0-9A-Za-z-]*)))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "up": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^[0-9]{3}_[a-z0-9_]+(?:\\.up)?\\.sql$"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "down": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "safety"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^[0-9]{3}_[a-z0-9_]+\\.down\\.sql$"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "safety": {
+          "enum": [
+            "lossless",
+            "data_loss"
+          ]
+        }
+      }
+    },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "phase",
+        "up",
+        "down",
+        "minimum_compatible_release",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/migrationId"
+        },
+        "phase": {
+          "enum": [
+            "bootstrap",
+            "rolling_expand",
+            "rolling_contract"
+          ]
+        },
+        "up": {
+          "$ref": "#/$defs/up"
+        },
+        "down": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/down"
+            }
+          ]
+        },
+        "irreversible_reason": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "minimum_compatible_release": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/semanticVersion"
+            }
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "down": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "down"
+            ]
+          },
+          "then": {
+            "required": [
+              "irreversible_reason"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "irreversible_reason"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "phase": {
+                "const": "bootstrap"
+              }
+            },
+            "required": [
+              "phase"
+            ]
+          },
+          "then": {
+            "properties": {
+              "up": {
+                "properties": {
+                  "path": {
+                    "pattern": "^[0-9]{3}_[a-z0-9_]+\\.sql$"
+                  }
+                }
+              },
+              "down": {
+                "type": "null"
+              },
+              "minimum_compatible_release": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "phase": {
+                "const": "rolling_expand"
+              }
+            },
+            "required": [
+              "phase"
+            ]
+          },
+          "then": {
+            "properties": {
+              "up": {
+                "properties": {
+                  "path": {
+                    "pattern": "^[0-9]{3}_[a-z0-9_]+\\.up\\.sql$"
+                  }
+                }
+              },
+              "minimum_compatible_release": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "phase": {
+                "const": "rolling_contract"
+              }
+            },
+            "required": [
+              "phase"
+            ]
+          },
+          "then": {
+            "properties": {
+              "up": {
+                "properties": {
+                  "path": {
+                    "pattern": "^[0-9]{3}_[a-z0-9_]+\\.up\\.sql$"
+                  }
+                }
+              },
+              "minimum_compatible_release": {
+                "$ref": "#/$defs/semanticVersion"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
