@@ -2508,6 +2508,106 @@ SQL;
 	}
 })->tag('sql', 'migration', 'postgresql', 'schema')->group('framework-coverage');
 
+test('PostgreSQL schema inspection canonicalizes grouped nullability and catalog indexes', static function(Context $t): void {
+	$inspector=new PostgreSqlSchemaInspector(dp_postgresql_migration_profile());
+	$sql=<<<'SQL'
+CREATE TABLE fixture.contracts (
+	id BIGINT PRIMARY KEY,
+	optional_note TEXT,
+	required_note TEXT NOT NULL,
+	status TEXT,
+	properties JSONB,
+	deleted_at TIMESTAMPTZ
+);
+ALTER TABLE fixture.contracts
+	ALTER COLUMN optional_note SET NOT NULL,
+	ALTER COLUMN required_note DROP NOT NULL;
+CREATE INDEX fixture.contracts_status_idx
+	ON fixture.contracts(status)
+	WHERE deleted_at IS NULL AND status IN ('open', 'closed');
+CREATE INDEX fixture.contracts_seat_idx
+	ON fixture.contracts(((properties->>'seat_number')::integer))
+	WHERE status='open';
+SQL;
+	$expected=$inspector->expectedSchema([['name'=>'001_fixture', 'sql'=>$sql]]);
+	$t->isFalse($expected['tables']['fixture.contracts']['columns']['optional_note']['nullable']);
+	$t->isTrue($expected['tables']['fixture.contracts']['columns']['required_note']['nullable']);
+	$t->same(
+		"deleted_at is null and status in('open', 'closed')",
+		$expected['indexes']['fixture.contracts_status_idx']['predicate']
+	);
+	$t->same(
+		["(properties->>'seat_number')::integer"],
+		$expected['indexes']['fixture.contracts_seat_idx']['keys']
+	);
+
+	$pdo=$t->scriptedPdo('pgsql')
+		->queueRows([
+			[
+				'schema_name'=>'fixture', 'table_name'=>'contracts', 'column_name'=>'id',
+				'column_type'=>'bigint', 'is_not_null'=>'t',
+			],
+			[
+				'schema_name'=>'fixture', 'table_name'=>'contracts',
+				'column_name'=>'optional_note', 'column_type'=>'text', 'is_not_null'=>'t',
+			],
+			[
+				'schema_name'=>'fixture', 'table_name'=>'contracts',
+				'column_name'=>'required_note', 'column_type'=>'text', 'is_not_null'=>'f',
+			],
+			[
+				'schema_name'=>'fixture', 'table_name'=>'contracts', 'column_name'=>'status',
+				'column_type'=>'text', 'is_not_null'=>'f',
+			],
+			[
+				'schema_name'=>'fixture', 'table_name'=>'contracts', 'column_name'=>'properties',
+				'column_type'=>'jsonb', 'is_not_null'=>'f',
+			],
+			[
+				'schema_name'=>'fixture', 'table_name'=>'contracts', 'column_name'=>'deleted_at',
+				'column_type'=>'timestamp with time zone', 'is_not_null'=>'f',
+			],
+		])
+		->queueRows([[
+			'schema_name'=>'fixture', 'table_name'=>'contracts', 'column_name'=>'id',
+		]])
+		->queueRows([])
+		->queueRows([])
+		->queueRows([
+			[
+				'index_schema'=>'fixture',
+				'index_name'=>'contracts_status_idx',
+				'table_schema'=>'fixture',
+				'table_name'=>'contracts',
+				'is_unique'=>'f',
+				'is_valid'=>'t',
+				'is_ready'=>'t',
+				'index_definition'=>
+					"CREATE INDEX contracts_status_idx ON fixture.contracts USING btree (status) ".
+					"WHERE (deleted_at IS NULL AND ".
+					"(status = ANY (ARRAY['open'::text, 'closed'::text])))",
+				'predicate'=>
+					"deleted_at IS NULL AND ".
+					"(status = ANY (ARRAY['open'::text, 'closed'::text]))",
+			],
+			[
+				'index_schema'=>'fixture',
+				'index_name'=>'contracts_seat_idx',
+				'table_schema'=>'fixture',
+				'table_name'=>'contracts',
+				'is_unique'=>'f',
+				'is_valid'=>'t',
+				'is_ready'=>'t',
+				'index_definition'=>
+					"CREATE INDEX contracts_seat_idx ON fixture.contracts USING btree ".
+					"(((properties ->> 'seat_number'::text))::integer) ".
+					"WHERE (status = 'open'::text)",
+				'predicate'=>"status = 'open'::text",
+			],
+		]);
+	$t->same([], $inspector->schemaIssues($pdo, $expected));
+})->tag('sql', 'migration', 'postgresql', 'schema', 'catalog')->group('framework-coverage');
+
 test('PostgreSQL schema inspection compares live catalog evidence through ScriptedPdo', static function(Context $t): void {
 	$inspector=new PostgreSqlSchemaInspector(dp_postgresql_migration_profile());
 	$sql=<<<'SQL'

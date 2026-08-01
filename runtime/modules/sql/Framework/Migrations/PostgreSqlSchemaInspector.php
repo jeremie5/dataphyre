@@ -129,23 +129,12 @@ final class PostgreSqlSchemaInspector {
 					}
 				}
 			}
-			if(preg_match_all(
-				'/\\bALTER\\s+TABLE\\s+(?:ONLY\\s+)?'.$qualified.
-				'\\s+ALTER\\s+COLUMN\\s+('.$identifier.
-				')\\s+(SET|DROP)\\s+NOT\\s+NULL\\s*(?:;|\\z)/is',
+			$this->applyAlterColumnNullability(
+				$expected,
 				$sql,
-				$nullabilityMatches,
-				PREG_SET_ORDER
-			)!==false){
-				foreach($nullabilityMatches as $match){
-					$table=self::qualifiedName($match[1], $match[2]);
-					$column=self::identifier($match[3]);
-					if(isset($expected['tables'][$table]['columns'][$column])){
-						$expected['tables'][$table]['columns'][$column]['nullable']=
-							strcasecmp($match[4], 'DROP')===0;
-					}
-				}
-			}
+				$identifier,
+				$qualified
+			);
 			$this->registerAlterTableChecks($expected, $sql, $identifier, $qualified);
 			if(preg_match_all(
 				'/\\bALTER\\s+TABLE\\s+(?:ONLY\\s+)?'.$qualified.
@@ -351,7 +340,7 @@ final class PostgreSqlSchemaInspector {
 				'unique'=>self::postgresqlBoolean($row['is_unique'] ?? false),
 				'keys'=>$parsedDefinition['keys'],
 				'predicate'=>isset($row['predicate']) && trim((string)$row['predicate'])!==''
-					? self::normalizeSqlExpression((string)$row['predicate'])
+					? self::normalizeIndexExpression((string)$row['predicate'])
 					: null,
 				'valid'=>self::postgresqlBoolean($row['is_valid'] ?? false)
 					&& self::postgresqlBoolean($row['is_ready'] ?? false),
@@ -926,6 +915,43 @@ final class PostgreSqlSchemaInspector {
 		return false;
 	}
 
+	/** @param array<string,array<string,mixed>> $expected */
+	private function applyAlterColumnNullability(
+		array &$expected,
+		string $sql,
+		string $identifier,
+		string $qualified
+	): void {
+		$pattern='/\\bALTER\\s+TABLE\\s+(?:ONLY\\s+)?'.$qualified.'\\s+/is';
+		if(preg_match_all($pattern, $sql, $matches, PREG_SET_ORDER|PREG_OFFSET_CAPTURE)===false){
+			return;
+		}
+		foreach($matches as $match){
+			$table=self::qualifiedName($match[1][0], $match[2][0]);
+			$bodyStart=$match[0][1]+strlen($match[0][0]);
+			$body=substr(
+				$sql,
+				$bodyStart,
+				self::statementEnd($sql, $bodyStart)-$bodyStart
+			);
+			foreach(self::splitDefinitions($body) as $action){
+				if(preg_match(
+					'/^ALTER\\s+COLUMN\\s+('.$identifier.
+					')\\s+(SET|DROP)\\s+NOT\\s+NULL$/is',
+					trim($action),
+					$nullabilityMatch
+				)!==1){
+					continue;
+				}
+				$column=self::identifier($nullabilityMatch[1]);
+				if(isset($expected['tables'][$table]['columns'][$column])){
+					$expected['tables'][$table]['columns'][$column]['nullable']=
+						strcasecmp($nullabilityMatch[2], 'DROP')===0;
+				}
+			}
+		}
+	}
+
 	/**
 	 * @return array<string,array{table:string,unique:bool,keys:list<string>,predicate:?string}>
 	 */
@@ -956,7 +982,7 @@ final class PostgreSqlSchemaInspector {
 			}
 			$tail=substr($sql, $closing+1, $statementEnd-$closing-1);
 			$predicateSql=self::topLevelKeywordTail($tail, 'where');
-			$predicate=$predicateSql===null ? null : self::normalizeSqlExpression($predicateSql);
+			$predicate=$predicateSql===null ? null : self::normalizeIndexExpression($predicateSql);
 			$tableSchema=self::identifier($match['table_schema'][0]);
 			$table=self::qualifiedName($match['table_schema'][0], $match['table_name'][0]);
 			$indexSchema=isset($match['index_schema'][0]) && $match['index_schema'][0]!==''
@@ -1101,7 +1127,7 @@ final class PostgreSqlSchemaInspector {
 	}
 
 	private static function normalizeIndexKey(string $key): string {
-		$key=self::normalizeSqlExpression($key);
+		$key=self::normalizeIndexExpression($key);
 		$nulls=null;
 		if(preg_match('/\\s+nulls\\s+(first|last)$/', $key, $nullsMatch)===1){
 			$nulls=$nullsMatch[1];
@@ -1121,6 +1147,29 @@ final class PostgreSqlSchemaInspector {
 			$key.=' nulls '.$nulls;
 		}
 		return $key;
+	}
+
+	private static function normalizeIndexExpression(string $expression): string {
+		$normalized=self::normalizeSqlExpression($expression);
+		$normalized=(string)preg_replace(
+			"/('(?:''|[^'])*')::(?:text|character varying)\\b/i",
+			'$1',
+			$normalized
+		);
+		$normalized=(string)preg_replace_callback(
+			'/\\b([A-Za-z_][A-Za-z0-9_$.\"]*)=any\\(array\\s*\\[([^\\[\\]]*)\\]\\)/i',
+			static fn(array $match): string=>$match[1].' in('.trim($match[2]).')',
+			$normalized
+		);
+		$normalized=(string)preg_replace(
+			'/\\b(and|or)\\(([A-Za-z_][A-Za-z0-9_$.\"]*\\s+in\\([^()]*\\))\\)/i',
+			'$1 $2',
+			$normalized
+		);
+		while(preg_match('/^\\(\\(([^()]*)\\)\\)(::.+)$/s', $normalized, $match)===1){
+			$normalized='('.$match[1].')'.$match[2];
+		}
+		return self::stripOuterParentheses(trim($normalized));
 	}
 
 	private static function matchingParenthesis(string $sql, int $opening): int {
