@@ -19,6 +19,42 @@ namespace {
 			}
 		}
 	}
+	if(!function_exists('sql_define_table')){
+		function sql_define_table(...$args): void {}
+	}
+	if(!function_exists('sql_select')){
+		function sql_select(...$args): mixed {
+			return \dataphyre_dpanel_worker_fixture_state::dispatchSql('select', $args, false);
+		}
+	}
+	if(!class_exists(DpGeopositionWorkerScenario::class, false)){
+		final class DpGeopositionWorkerScenario {
+			public static function begin(): void {
+				\dataphyre_dpanel_worker_fixture_state::resetSql();
+			}
+
+			/** @param list<mixed> $results */
+			public static function postalLookups(array $results): void {
+				$queue=$results;
+				\dataphyre_dpanel_worker_fixture_state::respondToSql('select', static function() use (&$queue): mixed {
+					return array_shift($queue) ?? false;
+				});
+			}
+
+			/** @return list<array<int,mixed>> */
+			public static function lookups(): array {
+				return \dataphyre_dpanel_worker_fixture_state::sqlCalls('select');
+			}
+
+			/** @return list<string> */
+			public static function lookedUpPostalPrefixes(): array {
+				return array_values(array_filter(array_map(
+					static fn(array $call): ?string=>isset($call[3][1]) ? (string)$call[3][1] : null,
+					self::lookups()
+				)));
+			}
+		}
+	}
 }
 
 namespace DataphyreUnitTests {
@@ -47,23 +83,18 @@ function geoposition_vincenty_rounded(float $latitude1, float $longitude1, float
 }
 
 function geoposition_internal_normalization_json(): string {
-	$reflection=new \ReflectionClass(\dataphyre\geoposition::class);
-	$normalize_country=$reflection->getMethod('normalize_country_code');
-	$normalize_country->setAccessible(true);
-	$normalize_subdivision=$reflection->getMethod('normalize_subdivision_code');
-	$normalize_subdivision->setAccessible(true);
-	$rule_map=$reflection->getMethod('postal_code_rule_map');
-	$rule_map->setAccessible(true);
-	$point=$reflection->getMethod('normalize_point');
-	$point->setAccessible(true);
-	$rules=$rule_map->invoke(null, ' force_uppercase, digits_only, ,letters_only ');
+	$rules=\dataphyre_dpanel_worker_fixture_state::invokeNonPublic(
+		\dataphyre\geoposition::class,
+		'postal_code_rule_map',
+		[' force_uppercase, digits_only, ,letters_only '],
+	);
 	ksort($rules);
 	return json_encode([
-		'country'=>$normalize_country->invoke(null, ' ca '),
-		'default_subdivision'=>$normalize_subdivision->invoke(null, ''),
-		'point'=>$point->invoke(null, ['lat'=>'45.5', 'long'=>'-73.6', 'subdivision'=>'QC']),
+		'country'=>\dataphyre_dpanel_worker_fixture_state::invokeNonPublic(\dataphyre\geoposition::class,'normalize_country_code',[' ca ']),
+		'default_subdivision'=>\dataphyre_dpanel_worker_fixture_state::invokeNonPublic(\dataphyre\geoposition::class,'normalize_subdivision_code',['']),
+		'point'=>\dataphyre_dpanel_worker_fixture_state::invokeNonPublic(\dataphyre\geoposition::class,'normalize_point',[['lat'=>'45.5','long'=>'-73.6','subdivision'=>'QC']]),
 		'rules'=>$rules,
-		'subdivision'=>$normalize_subdivision->invoke(null, ' qc '),
+		'subdivision'=>\dataphyre_dpanel_worker_fixture_state::invokeNonPublic(\dataphyre\geoposition::class,'normalize_subdivision_code',[' qc ']),
 	], JSON_UNESCAPED_SLASHES);
 }
 }

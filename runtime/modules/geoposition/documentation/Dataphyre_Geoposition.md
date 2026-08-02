@@ -7,6 +7,7 @@ The `geoposition` module provides country-aware postal-code formatting and valid
 - kernel-only module
 - SQL-backed postal code regex and postal code coordinate lookup
 - JSON-backed subdivision coordinate lookup
+- cached ISO country/subdivision labels and canonical IANA time zones
 
 ## Optional Configuration
 
@@ -17,6 +18,7 @@ The module reads `dataphyre/geoposition` config when present:
 	'postal_codes_regex_table'=>'dataphyre.postal_codes_regex',
 	'postal_codes_table'=>'dataphyre.postal_codes',
 	'subdivision_positions_path'=>ROOTPATH['common_dataphyre'].'modules/geoposition/subdivision_positions.json',
+	'geography_catalog_path'=>ROOTPATH['common_dataphyre'].'modules/geoposition/geography_catalog.json',
 ]
 ```
 
@@ -59,6 +61,21 @@ Returned positions are normalized and include both key styles:
 
 Returns normalized subdivision coordinates from the subdivision JSON dataset, or `false` when unavailable.
 
+### `country_catalog(string $locale='en'): array`
+
+Returns every ISO 3166-1 country code with a localized display name. Locale
+fallback moves from the requested locale to its base language and then English.
+
+### `subdivision_catalog(string $country, string $locale='en'): array`
+
+Returns the ISO 3166-2 subdivisions for one country. Each record includes the
+local subdivision code, full ISO code, type, and localized name.
+
+### `timezone_catalog(?string $country=null): array`
+
+Returns canonical IANA time-zone identifiers. Passing a two-letter country code
+restricts the result to time zones used by that country.
+
 ### `distance_between_subdivisions(...)`
 
 Calculates the distance between two subdivision centroids.
@@ -92,6 +109,7 @@ $distance=\dataphyre\geoposition::distance_between_postal_codes('CA', 'K1A0B1', 
 ## Operational Notes
 
 - Country and subdivision codes are normalized before lookup.
+- Geography catalogs are loaded once per process and do not query SQL.
 - Postal-code lookups use configurable SQL table names instead of hardcoded table assumptions.
 - Subdivision coordinates are cached in memory after the first JSON load.
 - Distance helpers now operate on a consistent normalized point shape, so postal-code and subdivision lookups can be used interchangeably.

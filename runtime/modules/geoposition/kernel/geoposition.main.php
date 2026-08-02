@@ -11,7 +11,8 @@ namespace dataphyre;
 dp_define_module_config('geoposition', 'DP_GEOPOSITION_CFG', [
 	'postal_codes_regex_table'=>'dataphyre.postal_codes_regex',
 	'postal_codes_table'=>'dataphyre.postal_codes',
-	'subdivision_positions_path'=>__DIR__.'/datasets/subdivision_positions.json',
+	'subdivision_positions_path'=>dirname(__DIR__).'/datasets/subdivision_positions.json',
+	'geography_catalog_path'=>dirname(__DIR__).'/datasets/geography_catalog.json',
 ]);
 if(function_exists('sql_define_table')){
 	sql_define_table((string)DP_GEOPOSITION_CFG['postal_codes_regex_table'], __DIR__.'/geoposition.tables.php', 'postal_codes_regex');
@@ -32,11 +33,12 @@ tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 class geoposition{
 
 	protected static ?array $subdivision_positions_cache=null;
+	protected static ?array $geography_catalog_cache=null;
 
 	/**
 	 * Returns the module configuration currently bound to DP_GEOPOSITION_CFG.
 	 *
-	 * @return array{postal_codes_regex_table:string,postal_codes_table:string,subdivision_positions_path:string} Geoposition configuration.
+	 * @return array{postal_codes_regex_table:string,postal_codes_table:string,subdivision_positions_path:string,geography_catalog_path:string} Geoposition configuration.
 	 */
 	protected static function config(): array {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
@@ -71,6 +73,16 @@ class geoposition{
 	protected static function subdivision_positions_path(): string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		return (string)self::config()['subdivision_positions_path'];
+	}
+
+	/**
+	 * Returns the JSON dataset path for localized countries and subdivisions.
+	 *
+	 * @return string Absolute dataset path.
+	 */
+	protected static function geography_catalog_path(): string {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
+		return (string)self::config()['geography_catalog_path'];
 	}
 
 	/**
@@ -197,25 +209,183 @@ class geoposition{
 		];
 	}
 
+	/** Resolves two coordinate payloads through one precision-aware distance boundary. */
+	protected static function distance_between_resolved_points(mixed $position1, mixed $position2, bool $better_precision=false): float|false {
+		if(!is_array($position1) || !is_array($position2)){
+			return false;
+		}
+		$position1=self::point_components($position1);
+		$position2=self::point_components($position2);
+		if($position1===false || $position2===false){
+			return false;
+		}
+		$distance=$better_precision
+			? [self::class, 'vincenty_great_circle_distance']
+			: [self::class, 'haversine_great_circle_distance'];
+		return $distance(
+			$position1['latitude'],
+			$position1['longitude'],
+			$position2['latitude'],
+			$position2['longitude']
+		);
+	}
+
 	/**
 	 * Loads and caches the subdivision coordinate dataset.
 	 *
 	 * @return array<string, array<string, array<string, mixed>>> Dataset keyed by country and subdivision.
 	 */
-	protected static function subdivision_positions(): array {
+	protected static function subdivision_positions(?string $path=null, ?callable $exists=null, ?callable $reader=null): array {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(self::$subdivision_positions_cache!==null){
 			return self::$subdivision_positions_cache;
 		}
 		$positions=[];
-		$path=self::subdivision_positions_path();
-		if(file_exists($path)){
-			$decoded=json_decode((string)file_get_contents($path), true);
+		$path??=self::subdivision_positions_path();
+		$exists??='is_file';
+		$reader??='file_get_contents';
+		if($exists($path)){
+			$decoded=json_decode((string)$reader($path), true);
 			if(is_array($decoded)){
 				$positions=$decoded;
 			}
 		}
 		return self::$subdivision_positions_cache=$positions;
+	}
+
+	/**
+	 * Loads and caches the ISO country/subdivision catalog.
+	 *
+	 * @return array{schema_version?:int,countries?:array<string,array<string,mixed>>,subdivisions?:array<string,array<int,array<string,mixed>>>}
+	 */
+	protected static function geography_catalog_data(?string $path=null, ?callable $exists=null, ?callable $reader=null): array {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
+		if(self::$geography_catalog_cache!==null){
+			return self::$geography_catalog_cache;
+		}
+		$catalog=[];
+		$path??=self::geography_catalog_path();
+		$exists??='is_file';
+		$reader??='file_get_contents';
+		if($exists($path)){
+			$decoded=json_decode((string)$reader($path), true);
+			if(is_array($decoded)){
+				$catalog=$decoded;
+			}
+		}
+		return self::$geography_catalog_cache=$catalog;
+	}
+
+	/**
+	 * Builds locale fallbacks from most to least specific.
+	 *
+	 * @return list<string>
+	 */
+	protected static function locale_candidates(string $locale): array {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
+		$locale=strtolower(str_replace('_', '-', trim($locale)));
+		$language=explode('-', $locale, 2)[0] ?? '';
+		return array_values(array_unique(array_filter([$locale, $language, 'en'])));
+	}
+
+	/**
+	 * Resolves one catalog record name with deterministic locale fallback.
+	 *
+	 * @param array<string,mixed> $record
+	 */
+	protected static function localized_catalog_name(array $record, string $locale, string $fallback): string {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
+		$names=is_array($record['names'] ?? null) ? $record['names'] : [];
+		foreach(self::locale_candidates($locale) as $candidate){
+			$name=trim((string)($names[$candidate] ?? ''));
+			if($name!==''){
+				return $name;
+			}
+		}
+		return $fallback;
+	}
+
+	/**
+	 * Returns all ISO countries with a localized display name.
+	 *
+	 * @return list<array{code:string,alpha_3:string,numeric:string,name:string}>
+	 */
+	public static function country_catalog(string $locale='en'): array {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
+		$countries=self::geography_catalog_data()['countries'] ?? [];
+		if(!is_array($countries)){
+			return [];
+		}
+		$result=[];
+		foreach($countries as $code=>$record){
+			if(!is_array($record)){
+				continue;
+			}
+			$code=self::normalize_country_code((string)$code);
+			if(!preg_match('/^[A-Z]{2}$/', $code)){
+				continue;
+			}
+			$result[]=[
+				'code'=>$code,
+				'alpha_3'=>strtoupper(trim((string)($record['alpha_3'] ?? ''))),
+				'numeric'=>trim((string)($record['numeric'] ?? '')),
+				'name'=>self::localized_catalog_name($record, $locale, $code),
+			];
+		}
+		usort($result, static fn(array $left, array $right): int=>strnatcasecmp($left['name'], $right['name']) ?: strcmp($left['code'], $right['code']));
+		return $result;
+	}
+
+	/**
+	 * Returns subdivisions for one ISO country.
+	 *
+	 * @return list<array{code:string,full_code:string,type:string,name:string}>
+	 */
+	public static function subdivision_catalog(string $country, string $locale='en'): array {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
+		$country=self::normalize_country_code($country);
+		$subdivisions=self::geography_catalog_data()['subdivisions'][$country] ?? [];
+		if(!is_array($subdivisions)){
+			return [];
+		}
+		$result=[];
+		foreach($subdivisions as $record){
+			if(!is_array($record)){
+				continue;
+			}
+			$code=strtoupper(trim((string)($record['code'] ?? '')));
+			$full_code=strtoupper(trim((string)($record['full_code'] ?? '')));
+			if($code==='' || !str_starts_with($full_code, $country.'-')){
+				continue;
+			}
+			$result[]=[
+				'code'=>$code,
+				'full_code'=>$full_code,
+				'type'=>trim((string)($record['type'] ?? '')),
+				'name'=>self::localized_catalog_name($record, $locale, $code),
+			];
+		}
+		usort($result, static fn(array $left, array $right): int=>strnatcasecmp($left['name'], $right['name']) ?: strcmp($left['code'], $right['code']));
+		return $result;
+	}
+
+	/**
+	 * Returns canonical IANA time-zone identifiers, optionally for one country.
+	 *
+	 * @return list<string>
+	 */
+	public static function timezone_catalog(?string $country=null): array {
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
+		try{
+			$timezones=$country===null || trim($country)===''
+				? \DateTimeZone::listIdentifiers(\DateTimeZone::ALL)
+				: \DateTimeZone::listIdentifiers(\DateTimeZone::PER_COUNTRY, self::normalize_country_code($country));
+		}
+		catch(\ValueError){
+			return [];
+		}
+		sort($timezones, SORT_NATURAL|SORT_FLAG_CASE);
+		return array_values($timezones);
 	}
 
 	/**
@@ -320,7 +490,7 @@ class geoposition{
 		$country=self::normalize_country_code($country);
 		$postal_code=self::normalize_postal_code($postal_code);
 		while(true){
-			if(strlen($postal_code)<2 || (isset($row) && $row===false && is_numeric($postal_code))){
+			if(strlen($postal_code)<2){
 				break;
 			}
 			if(false!==$row=sql_select(
@@ -356,8 +526,10 @@ class geoposition{
 		$country=self::normalize_country_code($country);
 		$subdivision=self::normalize_subdivision_code($subdivision);
 		$subdivision_positions=self::subdivision_positions();
-		if(isset($subdivision_positions[$country][$subdivision])){
-			return self::normalize_point($subdivision_positions[$country][$subdivision]);
+		$key=str_starts_with($subdivision, $country.'-') ? $subdivision : $country.'-'.$subdivision;
+		$position=$subdivision_positions[$country][$key] ?? $subdivision_positions[$country][$subdivision] ?? null;
+		if(is_array($position)){
+			return self::normalize_point([...$position, 'subdivision'=>$key]);
 		}
 		return false;
 	}
@@ -376,13 +548,7 @@ class geoposition{
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$position1=geoposition::get_position_for_subdivision($country1, $subdivision1);
 		$position2=geoposition::get_position_for_subdivision($country2, $subdivision2);
-		if(!empty($position1) && !empty($position2)){
-			if($better_precision){
-				return geoposition::vincenty_great_circle_distance($position1['latitude'], $position1['longitude'], $position2['latitude'], $position2['longitude']);
-			}
-			return geoposition::haversine_great_circle_distance($position1['latitude'], $position1['longitude'], $position2['latitude'], $position2['longitude']);
-		}
-		return false;
+		return self::distance_between_resolved_points($position1, $position2, $better_precision);
 	}
 
 	/**
@@ -402,13 +568,7 @@ class geoposition{
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$position1=geoposition::get_position_for_postal_code($country1, $postal_code1);
 		$position2=geoposition::get_position_for_postal_code($country2, $postal_code2);
-		if(!empty($position1) && !empty($position2)){
-			if($better_precision){
-				return geoposition::vincenty_great_circle_distance($position1['latitude'], $position1['longitude'], $position2['latitude'], $position2['longitude']);
-			}
-			return geoposition::haversine_great_circle_distance($position1['latitude'], $position1['longitude'], $position2['latitude'], $position2['longitude']);
-		}
-		return false;
+		return self::distance_between_resolved_points($position1, $position2, $better_precision);
 	}
 
 	/**
@@ -421,15 +581,7 @@ class geoposition{
 	 */
 	public static function distance_between_points(array $position1, array $position2, bool $better_precision=false){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
-		$position1=self::point_components($position1);
-		$position2=self::point_components($position2);
-		if(!empty($position1) && !empty($position2)){
-			if($better_precision){
-				return geoposition::vincenty_great_circle_distance($position1['latitude'], $position1['longitude'], $position2['latitude'], $position2['longitude']);
-			}
-			return geoposition::haversine_great_circle_distance($position1['latitude'], $position1['longitude'], $position2['latitude'], $position2['longitude']);
-		}
-		return false;
+		return self::distance_between_resolved_points($position1, $position2, $better_precision);
 	}
 
 	/**
@@ -491,7 +643,7 @@ class geoposition{
 			$sin_lambda=sin($lambda);
 			$cos_lambda=cos($lambda);
 			$sin_sigma=sqrt(($cos_u2*$sin_lambda)**2+($cos_u1*$sin_u2-$sin_u1*$cos_u2*$cos_lambda)**2);
-			if($sin_sigma==0.0){
+			if($sin_sigma<PHP_FLOAT_EPSILON){
 				return 0.0;
 			}
 			$cos_sigma=$sin_u1*$sin_u2+$cos_u1*$cos_u2*$cos_lambda;
