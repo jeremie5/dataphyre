@@ -254,8 +254,15 @@ final class Container {
 					continue;
 				}
 				if($this->has($typeName)){
-					$arguments[]=$this->make($typeName);
-					continue;
+					$explicit=$this->hasExplicitRegistration($typeName);
+					try{
+						$arguments[]=$this->make($typeName);
+						continue;
+					}catch(ContainerException $exception){
+						if($explicit || (!$parameter->isDefaultValueAvailable() && !$parameter->allowsNull())){
+							throw $exception;
+						}
+					}
 				}
 			}
 			if(array_key_exists($name, $parameters)){
@@ -286,6 +293,23 @@ final class Container {
 			throw new ContainerException('Unable to resolve container parameter: '.$name);
 		}
 		return $arguments;
+	}
+
+	/**
+	 * Reports whether an identifier was deliberately registered.
+	 *
+	 * Optional constructor dependencies may fall back to their declared default
+	 * when reflection-only autowiring discovers that a nested dependency cannot
+	 * be built. An explicit instance or binding is operator intent, so failures
+	 * from that path must remain visible instead of being silently replaced.
+	 *
+	 * @param string $abstract Service identifier or class/interface name.
+	 * @return bool True for an explicit instance or binding.
+	 */
+	private function hasExplicitRegistration(string $abstract): bool {
+		$abstract=$this->resolveAlias($this->normalizeIdentifier($abstract));
+		return array_key_exists($abstract, $this->instances)
+			|| array_key_exists($abstract, $this->bindings);
 	}
 
 	/**
