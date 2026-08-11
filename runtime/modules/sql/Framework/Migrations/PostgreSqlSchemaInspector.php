@@ -599,8 +599,10 @@ final class PostgreSqlSchemaInspector {
 	}
 
 	/**
-	 * Proves a down migration changes structure, preserves rows when labelled
-	 * lossless, and is exactly reconstructed by its paired up migration.
+	 * Proves a schema down migration changes structure, or that an explicitly
+	 * data-only pair leaves structure untouched. The paired up/down directions
+	 * must reconstruct the selected structural and data evidence exactly, and
+	 * lossless directions must preserve application row counts.
 	 *
 	 * The caller owns the surrounding transaction and final commit/rollback.
 	 *
@@ -613,8 +615,15 @@ final class PostgreSqlSchemaInspector {
 				($entry['irreversible_reason'] ?? 'no down migration')
 			);
 		}
+		$changeKind=$entry['change_kind'] ?? 'schema';
+		if(!in_array($changeKind, PostgreSqlMigrationProfile::CHANGE_KINDS, true)){
+			throw new RuntimeException(
+				'Migration change kind is invalid during rollback certification: '.$entry['id'].'.'
+			);
+		}
+		$dataOnly=$changeKind==='data_only';
 		$before=$this->structuralFingerprint($pdo);
-		$beforeData=$entry['down']['safety']==='lossless'
+		$beforeData=$dataOnly || $entry['down']['safety']==='lossless'
 			? $this->dataFingerprint($pdo)
 			: null;
 		self::executeSql(
@@ -623,15 +632,23 @@ final class PostgreSqlSchemaInspector {
 			'Migration down SQL execution failed: '.$entry['id'].'.'
 		);
 		$down=$this->structuralFingerprint($pdo);
-		if(hash_equals($before, $down)){
+		if($dataOnly && !hash_equals($before, $down)){
+			throw new RuntimeException(
+				'Data-only migration down direction changed application structure: '.$entry['id'].'.'
+			);
+		}
+		if(!$dataOnly && hash_equals($before, $down)){
 			throw new RuntimeException(
 				'Migration down direction made no structural change: '.$entry['id'].'.'
 			);
 		}
-		if(is_array($beforeData)){
+		$downData=$dataOnly || is_array($beforeData)
+			? $this->dataFingerprint($pdo)
+			: null;
+		if(is_array($beforeData) && $entry['down']['safety']==='lossless'){
 			self::assertLosslessDownRows(
 				$beforeData,
-				$this->dataFingerprint($pdo),
+				$downData,
 				(string)$entry['id']
 			);
 		}
@@ -647,7 +664,16 @@ final class PostgreSqlSchemaInspector {
 				$entry['id'].'.'
 			);
 		}
-		if(is_array($beforeData) && $beforeData!==$this->dataFingerprint($pdo)){
+		$restoredData=$dataOnly || is_array($beforeData)
+			? $this->dataFingerprint($pdo)
+			: null;
+		if($dataOnly && $beforeData!==$restoredData){
+			throw new RuntimeException(
+				'Data-only migration up direction did not reconstruct pre-rollback data: '.
+				$entry['id'].'.'
+			);
+		}
+		if(!$dataOnly && is_array($beforeData) && $beforeData!==$restoredData){
 			throw new RuntimeException(
 				'Migration labelled lossless did not preserve all application rows through '.
 				'down/up certification: '.$entry['id'].'.'
@@ -659,16 +685,31 @@ final class PostgreSqlSchemaInspector {
 			'Migration final down SQL execution failed during rollback certification: '.$entry['id'].'.'
 		);
 		$final=$this->structuralFingerprint($pdo);
+		if($dataOnly && !hash_equals($before, $final)){
+			throw new RuntimeException(
+				'Data-only migration final down direction changed application structure: '.
+				$entry['id'].'.'
+			);
+		}
 		if(!hash_equals($down, $final)){
 			throw new RuntimeException(
 				'Migration down direction is not repeatably paired with its up migration: '.
 				$entry['id'].'.'
 			);
 		}
-		if(is_array($beforeData)){
+		$finalData=$dataOnly || is_array($beforeData)
+			? $this->dataFingerprint($pdo)
+			: null;
+		if($dataOnly && $downData!==$finalData){
+			throw new RuntimeException(
+				'Data-only migration down direction is not repeatably paired with its up '.
+				'direction: '.$entry['id'].'.'
+			);
+		}
+		if(is_array($beforeData) && $entry['down']['safety']==='lossless'){
 			self::assertLosslessDownRows(
 				$beforeData,
-				$this->dataFingerprint($pdo),
+				$finalData,
 				(string)$entry['id']
 			);
 		}

@@ -411,6 +411,7 @@ test('PostgreSQL migration manifests normalize immutable SQL and public evidence
 	$t->same(array_column($raw['migrations'], 'id'), array_column($manifest->entries(), 'id'));
 	$t->same('Fixture bootstrap baseline.', $manifest->entries()[0]['irreversible_reason']);
 	$t->same(null, $manifest->entries()[2]['irreversible_reason']);
+	$t->same('schema', $manifest->entries()[2]['change_kind']);
 	$t->same('lossless', $manifest->entries()[2]['down']['safety']);
 	$t->same(
 		[
@@ -422,6 +423,35 @@ test('PostgreSQL migration manifests normalize immutable SQL and public evidence
 	);
 	$t->same(5, $manifest->publicSummary()['migration_count']);
 	$t->same($manifest->sha256(), $manifest->publicSummary()['sha256']);
+
+	[$dataDatabase]=dp_postgresql_migration_manifest_fixture(
+		$t,
+		'valid-data-only-kind',
+		static function(array &$manifest): void {
+			$manifest['migrations'][2]['change_kind']='data_only';
+		}
+	);
+	$dataManifest=PostgreSqlMigrationManifest::load(
+		$dataDatabase,
+		dp_postgresql_migration_profile()
+	);
+	$t->same('data_only', $dataManifest->entries()[2]['change_kind']);
+	$publishedSchema=json_decode(
+		(string)file_get_contents(
+			dirname(__DIR__).'/documentation/postgresql-migration-manifest-v3.schema.json'
+		),
+		true,
+		512,
+		JSON_THROW_ON_ERROR
+	);
+	$t->same(
+		['schema', 'data_only'],
+		$publishedSchema['$defs']['migration']['properties']['change_kind']['enum'] ?? null
+	);
+	$t->same(
+		'schema',
+		$publishedSchema['$defs']['migration']['properties']['change_kind']['default'] ?? null
+	);
 })->tag('sql', 'migration', 'postgresql', 'manifest')->group('framework-coverage');
 
 test('PostgreSQL migration manifests fail closed on shape phase and direction drift', static function(Context $t): void {
@@ -544,6 +574,12 @@ test('PostgreSQL migration manifests fail closed on shape phase and direction dr
 				$manifest['migrations'][2]['down']['safety']='unknown';
 			},
 			'down safety contract',
+		],
+		'change-kind'=>[
+			static function(array &$manifest): void {
+				$manifest['migrations'][2]['change_kind']='rows';
+			},
+			'change kind is invalid',
 		],
 		'down-extra-key'=>[
 			static function(array &$manifest): void {
@@ -2945,6 +2981,118 @@ test('PostgreSQL schema fingerprints and lossless certification use inspectable 
 		]),
 		RuntimeException::class,
 		'made no structural change'
+	);
+
+	$dataOnly=$t->scriptedPdo('pgsql');
+	dp_postgresql_migration_queue_structure($dataOnly, 'same');
+	dp_postgresql_migration_queue_data($dataOnly, '2', 'before');
+	dp_postgresql_migration_queue_structure($dataOnly, 'same');
+	dp_postgresql_migration_queue_data($dataOnly, '1', 'down');
+	dp_postgresql_migration_queue_structure($dataOnly, 'same');
+	dp_postgresql_migration_queue_data($dataOnly, '2', 'before');
+	dp_postgresql_migration_queue_structure($dataOnly, 'same');
+	dp_postgresql_migration_queue_data($dataOnly, '1', 'down');
+	$inspector->certifyDown($dataOnly, [
+		'id'=>'003_data_backfill',
+		'change_kind'=>'data_only',
+		'up'=>['sql'=>'DATA UP'],
+		'down'=>['sql'=>'DATA DOWN', 'safety'=>'data_loss'],
+	]);
+	$t->same(
+		['DATA DOWN', 'DATA UP', 'DATA DOWN'],
+		array_column(array_values(array_filter(
+			$dataOnly->operations(),
+			static fn(array $operation): bool=>$operation['operation']==='exec'
+		)), 'sql')
+	);
+
+	$dataOnlyStructuralMutation=$t->scriptedPdo('pgsql');
+	dp_postgresql_migration_queue_structure($dataOnlyStructuralMutation, 'before');
+	dp_postgresql_migration_queue_data($dataOnlyStructuralMutation, '2', 'before');
+	dp_postgresql_migration_queue_structure($dataOnlyStructuralMutation, 'changed');
+	$t->throws(
+		static fn()=>$inspector->certifyDown($dataOnlyStructuralMutation, [
+			'id'=>'003_data_backfill',
+			'change_kind'=>'data_only',
+			'up'=>['sql'=>'DATA UP'],
+			'down'=>['sql'=>'DATA DOWN', 'safety'=>'data_loss'],
+		]),
+		RuntimeException::class,
+		'down direction changed application structure'
+	);
+
+	$dataOnlyUpStructuralMutation=$t->scriptedPdo('pgsql');
+	dp_postgresql_migration_queue_structure($dataOnlyUpStructuralMutation, 'same');
+	dp_postgresql_migration_queue_data($dataOnlyUpStructuralMutation, '2', 'before');
+	dp_postgresql_migration_queue_structure($dataOnlyUpStructuralMutation, 'same');
+	dp_postgresql_migration_queue_data($dataOnlyUpStructuralMutation, '1', 'down');
+	dp_postgresql_migration_queue_structure($dataOnlyUpStructuralMutation, 'changed');
+	$t->throws(
+		static fn()=>$inspector->certifyDown($dataOnlyUpStructuralMutation, [
+			'id'=>'003_data_backfill',
+			'change_kind'=>'data_only',
+			'up'=>['sql'=>'DATA UP'],
+			'down'=>['sql'=>'DATA DOWN', 'safety'=>'data_loss'],
+		]),
+		RuntimeException::class,
+		'did not reconstruct the pre-rollback schema'
+	);
+
+	$dataOnlyRestorationMismatch=$t->scriptedPdo('pgsql');
+	dp_postgresql_migration_queue_structure($dataOnlyRestorationMismatch, 'same');
+	dp_postgresql_migration_queue_data($dataOnlyRestorationMismatch, '2', 'before');
+	dp_postgresql_migration_queue_structure($dataOnlyRestorationMismatch, 'same');
+	dp_postgresql_migration_queue_data($dataOnlyRestorationMismatch, '1', 'down');
+	dp_postgresql_migration_queue_structure($dataOnlyRestorationMismatch, 'same');
+	dp_postgresql_migration_queue_data($dataOnlyRestorationMismatch, '2', 'wrong');
+	$t->throws(
+		static fn()=>$inspector->certifyDown($dataOnlyRestorationMismatch, [
+			'id'=>'003_data_backfill',
+			'change_kind'=>'data_only',
+			'up'=>['sql'=>'DATA UP'],
+			'down'=>['sql'=>'DATA DOWN', 'safety'=>'data_loss'],
+		]),
+		RuntimeException::class,
+		'did not reconstruct pre-rollback data'
+	);
+
+	$dataOnlyFinalStructuralMutation=$t->scriptedPdo('pgsql');
+	dp_postgresql_migration_queue_structure($dataOnlyFinalStructuralMutation, 'same');
+	dp_postgresql_migration_queue_data($dataOnlyFinalStructuralMutation, '2', 'before');
+	dp_postgresql_migration_queue_structure($dataOnlyFinalStructuralMutation, 'same');
+	dp_postgresql_migration_queue_data($dataOnlyFinalStructuralMutation, '1', 'down');
+	dp_postgresql_migration_queue_structure($dataOnlyFinalStructuralMutation, 'same');
+	dp_postgresql_migration_queue_data($dataOnlyFinalStructuralMutation, '2', 'before');
+	dp_postgresql_migration_queue_structure($dataOnlyFinalStructuralMutation, 'changed');
+	$t->throws(
+		static fn()=>$inspector->certifyDown($dataOnlyFinalStructuralMutation, [
+			'id'=>'003_data_backfill',
+			'change_kind'=>'data_only',
+			'up'=>['sql'=>'DATA UP'],
+			'down'=>['sql'=>'DATA DOWN', 'safety'=>'data_loss'],
+		]),
+		RuntimeException::class,
+		'final down direction changed application structure'
+	);
+
+	$dataOnlyRepeatMismatch=$t->scriptedPdo('pgsql');
+	dp_postgresql_migration_queue_structure($dataOnlyRepeatMismatch, 'same');
+	dp_postgresql_migration_queue_data($dataOnlyRepeatMismatch, '2', 'before');
+	dp_postgresql_migration_queue_structure($dataOnlyRepeatMismatch, 'same');
+	dp_postgresql_migration_queue_data($dataOnlyRepeatMismatch, '1', 'down');
+	dp_postgresql_migration_queue_structure($dataOnlyRepeatMismatch, 'same');
+	dp_postgresql_migration_queue_data($dataOnlyRepeatMismatch, '2', 'before');
+	dp_postgresql_migration_queue_structure($dataOnlyRepeatMismatch, 'same');
+	dp_postgresql_migration_queue_data($dataOnlyRepeatMismatch, '0', 'different-down');
+	$t->throws(
+		static fn()=>$inspector->certifyDown($dataOnlyRepeatMismatch, [
+			'id'=>'003_data_backfill',
+			'change_kind'=>'data_only',
+			'up'=>['sql'=>'DATA UP'],
+			'down'=>['sql'=>'DATA DOWN', 'safety'=>'data_loss'],
+		]),
+		RuntimeException::class,
+		'not repeatably paired with its up direction'
 	);
 
 	$nondeterministicFinalDown=$t->scriptedPdo('pgsql');
