@@ -280,7 +280,7 @@ final class module_registry {
 			if(!is_array($source)){
 				continue;
 			}
-			if(self::isList($source)){
+			if(self::is_list($source)){
 				$config['enabled']=self::normalize_module_list($source);
 				continue;
 			}

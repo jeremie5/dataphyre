@@ -4,6 +4,14 @@ All notable Dataphyre changes are tracked here.
 
 ## Unreleased
 
+### Fixed
+
+- Restored the optional `cache` module compatibility facade and made missing or
+  unhealthy Memcached infrastructure degrade to request-local memory instead of
+  making production requests unavailable.
+- Fixed associative `APP_MODULES` configuration resolution in the module
+  registry so configured modules can be discovered without a method-name fatal.
+
 ### Added
 
 - Added `installer/init_consumer.php`, a small Composer consumer initializer
