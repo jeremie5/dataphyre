@@ -292,6 +292,83 @@ class sqlite_query_builder {
 		}
 		return $query_list;
 	}
+
+	/**
+	 * Resolves the immutable data environment captured when a query was queued.
+	 *
+	 * Explicit non-empty cluster metadata is already resolved by the SQL kernel
+	 * and must not be passed through the ambient cluster resolver again. Legacy
+	 * payloads without a snapshot retain the environment active when drained.
+	 *
+	 * @param array<string, mixed> $query_info Queued query metadata.
+	 * @return array{name:string,cluster:string,cache_namespace:?string,captured:bool,active:bool}
+	 */
+	private static function queued_environment(array $query_info): array {
+		$current=[
+			'name'=>'live',
+			'cluster'=>null,
+			'cache_namespace'=>null,
+		];
+		if(class_exists('\\Dataphyre\\Database\\DataEnvironment')){
+			$current=\Dataphyre\Database\DataEnvironment::current();
+		}
+		$captured=is_array($query_info['data_environment'] ?? null);
+		$snapshot=$captured
+			? $query_info['data_environment']
+			: [];
+		$name=strtolower(trim((string)($snapshot['name'] ?? $current['name'] ?? 'live')));
+		if($name==='' || preg_match('/^[a-z0-9][a-z0-9._-]*$/D', $name)!==1){
+			$name='live';
+		}
+		$cluster='';
+		foreach([
+			$query_info['dbms_cluster'] ?? null,
+			$snapshot['cluster'] ?? null,
+			$current['cluster'] ?? null,
+			DP_SQL_CFG['tables']['raw']['cluster'] ?? DP_SQL_CFG['default_cluster'] ?? '',
+		] as $candidate){
+			if(!is_string($candidate) || trim($candidate)===''){
+				continue;
+			}
+			$cluster=trim($candidate);
+			break;
+		}
+		$namespace=array_key_exists('cache_namespace', $snapshot)
+			? $snapshot['cache_namespace']
+			: ($current['cache_namespace'] ?? null);
+		$namespace=is_string($namespace) && trim($namespace)!=='' ? trim($namespace) : null;
+		$active=$captured
+			? (bool)($snapshot['active'] ?? true)
+			: (class_exists('\\Dataphyre\\Database\\DataEnvironment') && \Dataphyre\Database\DataEnvironment::active());
+		return [
+			'name'=>$name,
+			'cluster'=>$cluster,
+			'cache_namespace'=>$namespace,
+			'captured'=>$captured,
+			'active'=>$active,
+		];
+	}
+
+	/** Runs execution and result side effects inside a captured data environment. */
+	private static function run_in_queued_environment(array $environment, callable $callback): mixed {
+		if(
+			($environment['captured'] ?? false)!==true
+			|| !class_exists('\\Dataphyre\\Database\\DataEnvironment')
+		){
+			return $callback();
+		}
+		if(($environment['active'] ?? true)!==true && !\Dataphyre\Database\DataEnvironment::active()){
+			return $callback();
+		}
+		return \Dataphyre\Database\DataEnvironment::run(
+			(string)$environment['name'],
+			static fn(): mixed=>$callback(),
+			[
+				'cluster'=>(string)$environment['cluster'],
+				'cache_namespace'=>$environment['cache_namespace'],
+			]
+		);
+	}
 	
 	/**
 	 * Flushes a named SQLite queue through the configured database file.
@@ -312,13 +389,56 @@ class sqlite_query_builder {
 		if(!isset(self::$queued_queries[$queue]))return null;
 		$queued_queries=self::$queued_queries[$queue];
 		unset(self::$queued_queries[$queue]);
+		$batches=[];
+		foreach(self::queued_query_list($queued_queries) as $query_info){
+			$environment=self::queued_environment($query_info);
+			$batch_index=array_key_last($batches);
+			if($batch_index===null || $batches[$batch_index]['environment']!==$environment){
+				$batches[]=[
+					'environment'=>$environment,
+					'queries'=>[],
+				];
+				$batch_index=array_key_last($batches);
+			}
+			$batches[$batch_index]['queries'][]=$query_info;
+		}
+		$success=true;
+		foreach($batches as $batch){
+			$result=self::run_in_queued_environment(
+				$batch['environment'],
+				static fn(): bool=>self::execute_multiquery_batch(
+					$queue,
+					$batch['queries'],
+					(string)$batch['environment']['cluster'],
+					$hydration_retry
+				)
+			);
+			if($result!==true){
+				$success=false;
+			}
+		}
+		return $success;
+	}
+
+	/**
+	 * Executes one cluster-homogeneous SQLite queue batch.
+	 *
+	 * @param list<array<string,mixed>> $queued_queries Queries in the best order
+	 *        recoverable from the legacy type-grouped queue representation.
+	 */
+	private static function execute_multiquery_batch(
+		string $queue,
+		array $queued_queries,
+		string $dbms_cluster,
+		bool $hydration_retry
+	): bool {
 		$multipoint=false;
 		$queries=[];
 		$multi_query_string="";
 		$index=0;
 		$prepared_statements=[];
-		foreach($queued_queries as $query_type=>$query_info_array){
-			foreach($query_info_array as $query_info){
+		foreach($queued_queries as $query_info){
+				$query_type=trim((string)($query_info['type'] ?? 'raw')) ?: 'raw';
 				if($query_type==='select'){
 					$query_info['query']="SELECT {$query_info['select']} FROM {$query_info['location']} {$query_info['params']}";
 				}
@@ -347,21 +467,19 @@ class sqlite_query_builder {
 				$query_info['type']=$query_type;
 				$queries[$index]=$query_info;
 				$index++;
-			}
 		}
 		$results=[];
-		$dbms_cluster=DP_SQL_CFG['tables']['raw']['cluster'] ?? DP_SQL_CFG['default_cluster'];
 		$endpoint=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'][0];
 		$conn=self::connect_to_endpoint($endpoint, $dbms_cluster);
 		if(!empty($prepared_statements)){
 			if(!self::execute_prepared_statements($conn, $prepared_statements, $results, $dbms_cluster)){
-				return self::retry_queue_after_hydration($queue, $queued_queries, $hydration_retry);
+				return self::retry_batch_after_hydration($queue, $queued_queries, $dbms_cluster, $hydration_retry);
 			}
 		}
 		else
 		{
 			if(!self::execute_multi_query_string($conn, $multi_query_string, $results, $dbms_cluster)){
-				return self::retry_queue_after_hydration($queue, $queued_queries, $hydration_retry);
+				return self::retry_batch_after_hydration($queue, $queued_queries, $dbms_cluster, $hydration_retry);
 			}
 		}
 		self::process_results($results, $queries);
@@ -369,7 +487,7 @@ class sqlite_query_builder {
 	}
 
 	/**
-	 * Restores a failed queue and retries it after definition-driven hydration.
+	 * Retries a failed captured batch after definition-driven hydration.
 	 *
 	 * This is the SQLite queue recovery path for missing tables or columns that
 	 * Dataphyre can create from table definitions. The method clears the last
@@ -377,17 +495,31 @@ class sqlite_query_builder {
 	 * rather than the initial structural failure.
 	 *
 	 * @param string $queue Queue name that failed execution.
-	 * @param array<string, array<int, array<string, mixed>>> $queued_queries Original grouped queue payload.
+	 * @param list<array<string, mixed>> $queued_queries Original captured batch.
 	 * @param bool $hydration_retry Whether the current call is already the retry attempt.
 	 * @return bool `true` only when hydration runs and the restored queue succeeds on its guarded retry.
 	 */
+	private static function retry_batch_after_hydration(
+		string $queue,
+		array $queued_queries,
+		string $dbms_cluster,
+		bool $hydration_retry
+	): bool {
+		if($hydration_retry===true || sql::hydrate_missing_structure_from_definition()===false){
+			return false;
+		}
+		sql::clear_last_query_error();
+		return self::execute_multiquery_batch($queue, $queued_queries, $dbms_cluster, true);
+	}
+
+	/** Preserves the legacy grouped-queue hydration retry seam. */
 	private static function retry_queue_after_hydration(string $queue, array $queued_queries, bool $hydration_retry): bool {
 		if($hydration_retry===true || sql::hydrate_missing_structure_from_definition()===false){
 			return false;
 		}
 		self::$queued_queries[$queue]=$queued_queries;
 		sql::clear_last_query_error();
-		return self::execute_multiquery($queue, true) === true;
+		return self::execute_multiquery($queue, true)===true;
 	}
 	
 	/**

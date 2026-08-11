@@ -887,16 +887,15 @@ final class DB {
 	/**
 	 * Normalizes optional cluster names before creating SQL contexts.
 	 *
-	 * blank strings collapse to null so transaction and connection helpers
-	 * can consistently fall back to default-cluster behavior instead of carrying an
-	 * invalid empty cluster identifier into the SQL kernel.
+	 * Null or blank names inherit the active data environment cluster, then fall
+	 * back to ordinary default-cluster behavior when no environment is active.
+	 * Explicit non-empty names remain authoritative.
 	 */
 	private static function normalizeCluster(?string $cluster): ?string {
-		if($cluster===null){
-			return null;
+		if($cluster===null || trim($cluster)===''){
+			return DataEnvironment::clusterOverride();
 		}
-		$cluster=trim($cluster);
-		return $cluster!=='' ? $cluster : null;
+		return trim($cluster);
 	}
 
 	/**
