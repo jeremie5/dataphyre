@@ -2581,6 +2581,59 @@ SQL;
 	);
 })->tag('sql', 'migration', 'postgresql', 'schema')->group('framework-coverage');
 
+test('PostgreSQL schema inspection tracks compound column alterations and catalog identifiers', static function(Context $t): void {
+	$inspector=new PostgreSqlSchemaInspector(dp_postgresql_migration_profile());
+	$longIndex='idx_serve_change_control_source_projection_receipts_resource_hold';
+	$expected=$inspector->expectedSchema([[
+		'name'=>'001_setup',
+		'sql'=><<<SQL
+CREATE TABLE fixture.targets (
+	old_name INTEGER PRIMARY KEY,
+	scope_key TEXT NOT NULL,
+	tenant_id BIGINT,
+	CONSTRAINT targets_positive_check CHECK (old_name >= 0),
+	CONSTRAINT targets_scope_check CHECK (scope_key='tenant:'||tenant_id::text)
+);
+CREATE INDEX fixture.{$longIndex}
+	ON fixture.targets(old_name)
+	WHERE old_name IS NOT NULL;
+SQL
+	],[
+		'name'=>'002_alter',
+		'sql'=><<<'SQL'
+ALTER TABLE fixture.targets
+	ADD COLUMN first_id BIGINT,
+	ADD COLUMN second_label TEXT NOT NULL;
+ALTER TABLE fixture.targets
+	ALTER COLUMN old_name TYPE BIGINT USING old_name::bigint;
+ALTER TABLE fixture.targets
+	RENAME COLUMN old_name TO renamed_id;
+SQL
+	]]);
+
+	$columns=$expected['tables']['fixture.targets']['columns'];
+	$t->isFalse(isset($columns['old_name']));
+	$t->same(['type'=>'bigint', 'nullable'=>false], $columns['renamed_id']);
+	$t->same(['type'=>'bigint', 'nullable'=>true], $columns['first_id']);
+	$t->same(['type'=>'text', 'nullable'=>false], $columns['second_label']);
+	$t->same(['renamed_id'], $expected['tables']['fixture.targets']['primary_key']);
+	$t->same(
+		'renamed_id>=0',
+		$expected['checks']['fixture.targets.targets_positive_check']['expression']
+	);
+	$catalogIndex='fixture.'.substr($longIndex, 0, 63);
+	$t->same(['renamed_id'], $expected['indexes'][$catalogIndex]['keys']);
+	$t->same('renamed_id is not null', $expected['indexes'][$catalogIndex]['predicate']);
+	$t->same(
+		PostgreSqlSchemaInspector::normalizeCheckExpression(
+			"scope_key='tenant:'||tenant_id::text"
+		),
+		PostgreSqlSchemaInspector::normalizeCheckExpression(
+			"scope_key=('tenant:'||tenant_id::text)"
+		)
+	);
+})->tag('sql', 'migration', 'postgresql', 'schema', 'alter')->group('framework-coverage');
+
 test('PostgreSQL schema inspection canonicalizes grouped nullability and catalog indexes', static function(Context $t): void {
 	$inspector=new PostgreSqlSchemaInspector(dp_postgresql_migration_profile());
 	$sql=<<<'SQL'

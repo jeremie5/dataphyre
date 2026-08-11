@@ -18,6 +18,8 @@ use RuntimeException;
  * transaction.
  */
 final class PostgreSqlSchemaInspector {
+	private const POSTGRESQL_IDENTIFIER_MAX_BYTES=63;
+
 	public function __construct(private PostgreSqlMigrationProfile $profile) {}
 
 	/**
@@ -85,32 +87,12 @@ final class PostgreSqlSchemaInspector {
 					}
 				}
 			}
-			if(preg_match_all(
-				'/\\bALTER\\s+TABLE\\s+(?:ONLY\\s+)?'.$qualified.
-				'\\s+ADD\\s+COLUMN\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?('.$identifier.
-				')\\s+(.+?)(?:;|\\z)/is',
+			$this->applyAlterTableColumnActions(
+				$expected,
 				$sql,
-				$columnMatches,
-				PREG_SET_ORDER
-			)!==false){
-				foreach($columnMatches as $match){
-					$table=self::qualifiedName($match[1], $match[2]);
-					if(!str_starts_with($table, $scope)){
-						continue;
-					}
-					$column=self::identifier($match[3]);
-					$type=self::columnType($match[4]);
-					$serial=self::serialColumnBaseType($match[4])!==null;
-					$expected['tables'][$table] ??=['columns'=>[], 'primary_key'=>null];
-					$expected['tables'][$table]['columns'][$column]=[
-						'type'=>$type,
-						'nullable'=>!$serial
-							&& preg_match('/\\bNOT\\s+NULL\\b/i', $match[4])!==1
-							&& preg_match('/\\bPRIMARY\\s+KEY\\b/i', $match[4])!==1,
-					];
-					self::registerExpectedCheck($expected, $table, $match[4], $identifier);
-				}
-			}
+				$identifier,
+				$qualified
+			);
 			if(preg_match_all(
 				'/\\bALTER\\s+TABLE\\s+(?:ONLY\\s+)?'.$qualified.
 				'\\s+ADD\\s+(?:CONSTRAINT\\s+'.$identifier.
@@ -133,12 +115,6 @@ final class PostgreSqlSchemaInspector {
 					}
 				}
 			}
-			$this->applyAlterColumnNullability(
-				$expected,
-				$sql,
-				$identifier,
-				$qualified
-			);
 			$this->registerAlterTableChecks($expected, $sql, $identifier, $qualified);
 			if(preg_match_all(
 				'/\\bALTER\\s+TABLE\\s+(?:ONLY\\s+)?'.$qualified.
@@ -920,7 +896,7 @@ final class PostgreSqlSchemaInspector {
 	}
 
 	/** @param array<string,array<string,mixed>> $expected */
-	private function applyAlterColumnNullability(
+	private function applyAlterTableColumnActions(
 		array &$expected,
 		string $sql,
 		string $identifier,
@@ -930,8 +906,12 @@ final class PostgreSqlSchemaInspector {
 		if(preg_match_all($pattern, $sql, $matches, PREG_SET_ORDER|PREG_OFFSET_CAPTURE)===false){
 			return;
 		}
+		$scope=$this->profile->schema().'.';
 		foreach($matches as $match){
 			$table=self::qualifiedName($match[1][0], $match[2][0]);
+			if(!str_starts_with($table, $scope)){
+				continue;
+			}
 			$bodyStart=$match[0][1]+strlen($match[0][0]);
 			$body=substr(
 				$sql,
@@ -939,10 +919,62 @@ final class PostgreSqlSchemaInspector {
 				self::statementEnd($sql, $bodyStart)-$bodyStart
 			);
 			foreach(self::splitDefinitions($body) as $action){
+				$action=trim($action);
 				if(preg_match(
-					'/^ALTER\\s+COLUMN\\s+('.$identifier.
-					')\\s+(SET|DROP)\\s+NOT\\s+NULL$/is',
-					trim($action),
+					'/^ADD\\s+(?!(?:CONSTRAINT|PRIMARY|FOREIGN|UNIQUE|CHECK|EXCLUDE)\\b)'.
+						'(?:COLUMN\\s+)?(?:IF\\s+NOT\\s+EXISTS\\s+)?('.
+						$identifier.')\\s+(.+)$/is',
+					$action,
+					$addMatch
+				)===1){
+					$column=self::identifier($addMatch[1]);
+					$definition=$addMatch[2];
+					$serial=self::serialColumnBaseType($definition)!==null;
+					$inlinePrimary=preg_match('/\\bPRIMARY\\s+KEY\\b/i', $definition)===1;
+					$expected['tables'][$table] ??=['columns'=>[], 'primary_key'=>null];
+					$expected['tables'][$table]['columns'][$column]=[
+						'type'=>self::columnType($definition),
+						'nullable'=>!$serial
+							&& !$inlinePrimary
+							&& preg_match('/\\bNOT\\s+NULL\\b/i', $definition)!==1,
+					];
+					if($inlinePrimary){
+						$expected['tables'][$table]['primary_key']=[$column];
+					}
+					self::registerExpectedCheck($expected, $table, $action, $identifier);
+					continue;
+				}
+				if(preg_match(
+					'/^RENAME\\s+(?:COLUMN\\s+)?('.$identifier.')\\s+TO\\s+('.
+						$identifier.')$/is',
+					$action,
+					$renameMatch
+				)===1){
+					self::renameExpectedColumn(
+						$expected,
+						$table,
+						self::identifier($renameMatch[1]),
+						self::identifier($renameMatch[2])
+					);
+					continue;
+				}
+				if(preg_match(
+					'/^ALTER\\s+(?:COLUMN\\s+)?('.$identifier.
+						')\\s+(?:SET\\s+DATA\\s+)?TYPE\\s+(.+)$/is',
+					$action,
+					$typeMatch
+				)===1){
+					$column=self::identifier($typeMatch[1]);
+					if(isset($expected['tables'][$table]['columns'][$column])){
+						$expected['tables'][$table]['columns'][$column]['type']=
+							self::columnType($typeMatch[2]);
+					}
+					continue;
+				}
+				if(preg_match(
+					'/^ALTER\\s+(?:COLUMN\\s+)?('.$identifier.
+						')\\s+(SET|DROP)\\s+NOT\\s+NULL$/is',
+					$action,
 					$nullabilityMatch
 				)!==1){
 					continue;
@@ -954,6 +986,90 @@ final class PostgreSqlSchemaInspector {
 				}
 			}
 		}
+	}
+
+	/** @param array<string,array<string,mixed>> $expected */
+	private static function renameExpectedColumn(
+		array &$expected,
+		string $table,
+		string $from,
+		string $to
+	): void {
+		$columns=$expected['tables'][$table]['columns'] ?? null;
+		if(!is_array($columns) || !array_key_exists($from, $columns)){
+			return;
+		}
+		$renamed=[];
+		foreach($columns as $column=>$definition){
+			$renamed[$column===$from ? $to : $column]=$definition;
+		}
+		$expected['tables'][$table]['columns']=$renamed;
+		if(is_array($expected['tables'][$table]['primary_key'] ?? null)){
+			$expected['tables'][$table]['primary_key']=array_map(
+				static fn(string $column): string=>$column===$from ? $to : $column,
+				$expected['tables'][$table]['primary_key']
+			);
+		}
+		foreach($expected['indexes'] as &$definition){
+			if(($definition['table'] ?? null)!==$table){
+				continue;
+			}
+			$definition['keys']=array_map(
+				static fn(string $key): string=>self::replaceIdentifierToken($key, $from, $to),
+				$definition['keys']
+			);
+			if(is_string($definition['predicate'] ?? null)){
+				$definition['predicate']=self::replaceIdentifierToken(
+					$definition['predicate'],
+					$from,
+					$to
+				);
+			}
+		}
+		unset($definition);
+		foreach($expected['foreign_keys'] as &$definition){
+			if(($definition['table'] ?? null)===$table){
+				$definition['columns']=array_map(
+					static fn(string $column): string=>$column===$from ? $to : $column,
+					$definition['columns']
+				);
+			}
+			if(($definition['referenced_table'] ?? null)===$table){
+				$definition['referenced_columns']=array_map(
+					static fn(string $column): string=>$column===$from ? $to : $column,
+					$definition['referenced_columns']
+				);
+			}
+		}
+		unset($definition);
+		foreach($expected['checks'] as &$definition){
+			if(($definition['table'] ?? null)===$table){
+				$definition['expression']=self::replaceIdentifierToken(
+					$definition['expression'],
+					$from,
+					$to
+				);
+			}
+		}
+		unset($definition);
+	}
+
+	private static function replaceIdentifierToken(string $sql, string $from, string $to): string {
+		return (string)preg_replace_callback(
+			"~\"(?:[^\"]|\"\")*\"|'(?:''|[^'])*'|[A-Za-z_][A-Za-z0-9_\\x24]*~",
+			static function(array $match) use ($from, $to): string {
+				$token=$match[0];
+				if($token[0]==="'"){
+					return $token;
+				}
+				if($token[0]==='"'){
+					$value=str_replace('""', '"', substr($token, 1, -1));
+					return $value===$from ? '"'.str_replace('"', '""', $to).'"' : $token;
+				}
+				return strtolower($token)===$from ? $to : $token;
+			},
+			$sql
+		);
 	}
 
 	/**
@@ -1010,7 +1126,22 @@ final class PostgreSqlSchemaInspector {
 			'$1',
 			$normalized
 		);
+		$normalized=self::normalizeRedundantConcatenationParentheses($normalized);
 		return self::normalizeBooleanCheckExpression($normalized);
+	}
+
+	private static function normalizeRedundantConcatenationParentheses(string $expression): string {
+		$literal="'(?:''|[^'])*'";
+		$quotedIdentifier='"(?:[^"]|"")*"';
+		$identifier='[A-Za-z_][A-Za-z0-9_$]*(?:\\.[A-Za-z_][A-Za-z0-9_$]*)*';
+		$type=$identifier.'(?:\\[\\])*';
+		$atom='(?:'.$literal.'|'.$quotedIdentifier.'|'.$identifier.'|[0-9]+)'.
+			'(?:::(?:'.$type.'))?';
+		return (string)preg_replace(
+			'/\\(('.$atom.'(?:\\|\\|'.$atom.')+)\\)/i',
+			'$1',
+			$expression
+		);
 	}
 
 	public static function normalizeSqlExpression(string $expression): string {
@@ -1545,7 +1676,7 @@ final class PostgreSqlSchemaInspector {
 	private static function columnType(string $definition): string {
 		preg_match(
 			'/^(.*?)(?=\\s+(?:COLLATE|CONSTRAINT|DEFAULT|GENERATED|NOT\\s+NULL|NULL|'.
-			'PRIMARY\\s+KEY|REFERENCES|UNIQUE|CHECK)\\b|$)/is',
+				'PRIMARY\\s+KEY|REFERENCES|UNIQUE|CHECK|USING)\\b|$)/is',
 			trim($definition),
 			$match
 		);
@@ -1582,7 +1713,7 @@ final class PostgreSqlSchemaInspector {
 		){
 			return str_replace('""', '"', substr($identifier, 1, -1));
 		}
-		return strtolower($identifier);
+		return strtolower(substr($identifier, 0, self::POSTGRESQL_IDENTIFIER_MAX_BYTES));
 	}
 
 	private static function qualifiedName(string $schema, string $object): string {
