@@ -197,7 +197,7 @@ trait dataphyre_mcp_planning_docs_surfaces {
 	 */
 	private function docs_chunk_builder_skip_path(string $path): bool {
 		$normalized=strtolower(str_replace('\\', '/', $path));
-		foreach(['capability_audit', 'audit.md', 'roadmap', 'release', 'changelog'] as $needle){
+		foreach(['capability_audit', 'audit.md', 'migration', 'roadmap', 'release', 'changelog'] as $needle){
 			if(str_contains($normalized, $needle)){
 				return true;
 			}
