@@ -39,7 +39,19 @@ The owning kernel exposes the merged readonly config as `DP_VESTRA_CFG`.
 - `tenants`
   - Map of Fabric tenant ids or aliases to tenant-specific profile overrides.
     Each profile can set `tenant`, `base_url`, `object_url`, `rate`,
-    `write_token`, `node_token`, token defaults, and `allow_unsigned`.
+    `api_token`, `write_api_token`, `tenant_read_token`, `write_token`,
+    `node_token`, token defaults, and `allow_unsigned`.
+- `api_token`
+  - Vestra Control credential used to mint scoped access tokens. It remains the
+    backwards-compatible fallback for write Control calls when
+    `write_api_token` is omitted.
+- `write_api_token`
+  - Vestra Control credential used only for scoped write-token issuance and
+    object reservation. Dedicated values can carry less authority than the
+    access-side `api_token`.
+- `tenant_read_token`
+  - Pre-issued tenant delivery token used when scoped access-token issuance is
+    unavailable.
 - `write_token`
   - Scoped Vestra write token used by Vestra writes. Dataphyre private keys and
     node tokens are not sent to Vestra object APIs.
@@ -56,6 +68,19 @@ The owning kernel exposes the merged readonly config as `DP_VESTRA_CFG`.
   - Local-development escape hatch for unsigned `/v/...` URLs. Keep this `false`
     for signed Fabric deployments.
 
+Credential inheritance is fail closed per tenant profile. Omitting `api_token`,
+`write_api_token`, `tenant_read_token`, `write_token`, or `node_token` from a
+profile preserves its flat module, legacy application config, and `VESTRA_*`
+environment inheritance chain. When every dedicated `write_api_token` source is
+omitted or empty, write Control calls inherit `api_token` for backwards
+compatibility. Declaring a tenant profile's `write_api_token` as empty or `null`
+explicitly disables that fallback. Declaring any other credential key empty or
+`null` likewise disables inheritance for that credential.
+
+An explicit empty or `null` `write_token` disables both static-token inheritance
+and write-token minting. To mint scoped write tokens with `write_api_token`, omit
+`write_token` from that tenant profile.
+
 Example:
 
 ```php
@@ -64,21 +89,33 @@ return [
 	'object_url'=>'https://vestra.example.com/',
 	'default_tenant'=>'example-store-content',
 	'use_tenant_grant'=>true,
-	'write_token'=>'w1...',
+	'api_token'=>'control.access...',
+	'write_api_token'=>'control.write...',
 	'node_token'=>'node...',
 	'tenants'=>[
 		'example-store-content'=>[
 			'tenant'=>'example-store-content',
 			'rate'=>'s',
-			'write_token'=>'w1...',
+			'api_token'=>'control.access...',
+			'write_api_token'=>'control.write...',
 			'node_token'=>'node...',
 		],
 		'private-app-assets'=>[
 			'tenant'=>'private-app-assets',
 			'rate'=>'internal',
 			'object_url'=>'https://vestra-internal.example.com/',
-			'write_token'=>'w1.internal...',
+			'api_token'=>'control.internal-access...',
+			'write_api_token'=>'control.internal-write...',
 			'node_token'=>'node.internal...',
+		],
+		'isolated-no-credentials'=>[
+			'tenant'=>'isolated-no-credentials',
+			'rate'=>'s',
+			'api_token'=>null,
+			'write_api_token'=>null,
+			'tenant_read_token'=>null,
+			'write_token'=>null,
+			'node_token'=>null,
 		],
 	],
 ];
@@ -88,6 +125,9 @@ return [
 
 The kernel surface is centered around `\dataphyre\vestra`.
 
+- `SEPARATE_CONTROL_CREDENTIALS_VERSION`
+  - Public capability marker. Version `1` guarantees independent `api_token`
+    and `write_api_token` resolution with fail-closed tenant overrides.
 - `configured(): bool`
   - Returns `true` when the module has enough Vestra configuration to operate.
 - `object_url(array $reference, array $parameters=[]): string|false`
@@ -131,6 +171,16 @@ When a reference includes `"tenant": "example-store-content"`, URL generation
 uses the matching `tenants.example-store-content` profile. Callers may also pass
 `['tenant'=>'profile-alias']`; if that profile defines its own `tenant`, the
 profile value becomes the actual Fabric tenant sent to Vestra.
+
+Write operations retain the profile alias for configuration and credential
+lookup, but use that profile's canonical `tenant` in Control endpoint paths,
+write-token scope templates, reservation idempotency, and persisted references.
+This keeps aliases local to application configuration instead of sending them as
+Fabric tenant identities. When the alias differs, propagated references store
+the canonical id in `tenant` and the exact local alias in `tenant_profile` so
+later signing and purge operations can recover the same profile without an
+ambiguous reverse lookup. A marker that does not resolve to the persisted
+canonical tenant is rejected.
 
 Applications that need billing-aware delivery should register dialbacks instead
 of modifying Dataphyre:

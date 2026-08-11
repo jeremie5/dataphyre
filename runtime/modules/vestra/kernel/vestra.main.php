@@ -27,6 +27,7 @@ dp_define_module_config('vestra', 'DP_VESTRA_CFG', [
 	'rate'=>'',
 	'api_url'=>'',
 	'api_token'=>'',
+	'write_api_token'=>'',
 	'api_auth_mode'=>'control_key',
 	'organization'=>'',
 	'ca_bundle'=>'',
@@ -35,6 +36,7 @@ dp_define_module_config('vestra', 'DP_VESTRA_CFG', [
 	'write_token_ttl'=>300,
 	'default_write_max_bytes'=>67108864,
 	'node_token'=>'',
+	'tenant_read_token'=>'',
 	'token_ttl'=>3600,
 	'token_grace'=>60,
 	'use_tenant_grant'=>true,
@@ -61,6 +63,8 @@ if(!is_writable($cache_directory)){
  * counts, rewrites HTML resources, and pushes assets to the configured Vestra API.
  */
 class vestra{
+	/** Public deployment capability marker for split access/write Control credentials. */
+	public const SEPARATE_CONTROL_CREDENTIALS_VERSION=1;
 
 	/**
 	 * Reads a Vestra module configuration value from DP_VESTRA_CFG.
@@ -85,6 +89,24 @@ class vestra{
 	}
 
 	/**
+	 * Resolves the profile map key used for a tenant or the configured default.
+	 *
+	 * @param string $tenant Tenant id or configured profile alias.
+	 * @param array<string,mixed> $config Full Vestra module configuration.
+	 * @return string Resolved profile map key, or an empty string when none is configured.
+	 */
+	private static function tenant_profile_key(string $tenant, array $config): string {
+		$profile_key=trim($tenant);
+		if($profile_key==='' && isset($config['default_tenant'])){
+			$profile_key=trim((string)$config['default_tenant']);
+		}
+		if($profile_key==='' && isset($config['tenant'])){
+			$profile_key=trim((string)$config['tenant']);
+		}
+		return $profile_key;
+	}
+
+	/**
 	 * Resolves a configured tenant profile.
 	 *
 	 * Flat config keys remain the default profile. Entries under `tenants` override
@@ -98,19 +120,89 @@ class vestra{
 		$profile=$config;
 		unset($profile['tenants']);
 		$tenants=is_array($config['tenants'] ?? null) ? $config['tenants'] : [];
-		$tenant=trim($tenant);
-		$profile_key=$tenant;
-		if($profile_key==='' && isset($config['default_tenant'])){
-			$profile_key=trim((string)$config['default_tenant']);
-		}
-		if($profile_key==='' && isset($config['tenant'])){
-			$profile_key=trim((string)$config['tenant']);
-		}
+		$profile_key=self::tenant_profile_key($tenant, $config);
 		if($profile_key!=='' && isset($tenants[$profile_key]) && is_array($tenants[$profile_key])){
 			$profile=array_merge($profile, $tenants[$profile_key]);
 			if(!isset($profile['tenant']) || trim((string)$profile['tenant'])===''){
 				$profile['tenant']=$profile_key;
 			}
+		}
+		return $profile;
+	}
+
+	/**
+	 * Resolves the canonical Fabric tenant while retaining the caller's profile key.
+	 *
+	 * Configuration and credentials continue to resolve through the original alias;
+	 * this value is only for tenant identity sent to Control or persisted in a
+	 * Fabric reference.
+	 *
+	 * @param string $tenant Tenant id or configured profile alias.
+	 * @return string Canonical configured tenant id, or the resolved profile key.
+	 */
+	private static function canonical_tenant(string $tenant=''): string {
+		$config=self::config_all();
+		$profile_key=self::tenant_profile_key($tenant, $config);
+		$tenants=is_array($config['tenants'] ?? null) ? $config['tenants'] : [];
+		if($profile_key!=='' && isset($tenants[$profile_key]) && is_array($tenants[$profile_key])){
+			$canonical=$tenants[$profile_key]['tenant'] ?? null;
+			if(is_scalar($canonical) && trim((string)$canonical)!==''){
+				return trim((string)$canonical);
+			}
+		}
+		return $profile_key;
+	}
+
+	/**
+	 * Builds a tenant-scoped Control route with the canonical Fabric tenant id.
+	 *
+	 * @param string $tenant Tenant id or configured profile alias.
+	 * @param string $suffix Route below `/tenants/{tenant}`.
+	 * @return string Canonical tenant Control path.
+	 */
+	private static function tenant_control_path(string $tenant, string $suffix): string {
+		$canonical=self::canonical_tenant($tenant);
+		return '/tenants/'.rawurlencode($canonical).'/'.ltrim($suffix, '/');
+	}
+
+	/**
+	 * Persists canonical tenant identity and the exact local profile alias separately.
+	 *
+	 * @param array<string,mixed> $reference Vestra Fabric reference.
+	 * @param string $tenant Tenant id or configured profile alias used by the caller.
+	 * @return array<string,mixed> Reference with canonical tenant identity.
+	 */
+	private static function apply_reference_tenant_identity(array $reference, string $tenant): array {
+		$profile_key=self::tenant_profile_key($tenant, self::config_all());
+		$canonical=self::canonical_tenant($profile_key);
+		$reference['tenant']=$canonical;
+		if($profile_key!=='' && $profile_key!==$canonical){
+			$reference['tenant_profile']=$profile_key;
+		}
+		else
+		{
+			unset($reference['tenant_profile']);
+		}
+		return $reference;
+	}
+
+	/**
+	 * Returns the local profile key from a persisted canonical reference.
+	 *
+	 * A mismatched marker is rejected instead of reverse-mapping canonical tenant
+	 * ids to an ambiguous alias.
+	 *
+	 * @param array<string,mixed> $reference Vestra Fabric reference.
+	 * @return string|false Valid profile key/tenant id, or false on identity mismatch.
+	 */
+	private static function reference_tenant_profile(array $reference): string|false {
+		$tenant=isset($reference['tenant']) && is_scalar($reference['tenant']) ? trim((string)$reference['tenant']) : '';
+		if(!array_key_exists('tenant_profile', $reference)){
+			return $tenant;
+		}
+		$profile=is_scalar($reference['tenant_profile']) ? trim((string)$reference['tenant_profile']) : '';
+		if($profile==='' || $tenant==='' || self::canonical_tenant($profile)!==$tenant){
+			return false;
 		}
 		return $profile;
 	}
@@ -126,6 +218,31 @@ class vestra{
 	private static function profile_config(string $key, string $tenant='', mixed $default=null): mixed {
 		$profile=self::tenant_profile($tenant);
 		return $profile[$key] ?? self::config($key, $default);
+	}
+
+	/**
+	 * Reads an explicitly declared tenant-profile credential without inheriting.
+	 *
+	 * Presence is intentionally tracked separately from value. An empty, null, or
+	 * otherwise non-scalar credential is an explicit fail-closed override, while an
+	 * omitted credential remains eligible for the backwards-compatible fallback chain.
+	 *
+	 * @param string $key Credential config key.
+	 * @param string $tenant Tenant id or configured profile alias.
+	 * @return array{declared:bool,value:string} Explicit override state and normalized value.
+	 */
+	private static function tenant_credential_override(string $key, string $tenant=''): array {
+		$config=self::config_all();
+		$profile_key=self::tenant_profile_key($tenant, $config);
+		$tenants=is_array($config['tenants'] ?? null) ? $config['tenants'] : [];
+		if($profile_key==='' || !isset($tenants[$profile_key]) || !is_array($tenants[$profile_key]) || !array_key_exists($key, $tenants[$profile_key])){
+			return ['declared'=>false, 'value'=>''];
+		}
+		$value=$tenants[$profile_key][$key];
+		return [
+			'declared'=>true,
+			'value'=>is_scalar($value) ? trim((string)$value) : '',
+		];
 	}
 
 	/**
@@ -249,6 +366,10 @@ class vestra{
 	 * @return string Configured Vestra write token, or an empty string.
 	 */
 	private static function vestra_api_token(string $tenant=''): string {
+		$override=self::tenant_credential_override('api_token', $tenant);
+		if($override['declared']){
+			return $override['value'];
+		}
 		$token=trim((string)self::profile_config('api_token', $tenant, ''));
 		if($token==='' && defined('\CFG') && is_array(\CFG)){
 			$token=trim((string)(\CFG['vestra_api_token'] ?? ''));
@@ -262,7 +383,40 @@ class vestra{
 		return $token;
 	}
 
+	/**
+	 * Returns the Control credential authorized for write-token and reserve routes.
+	 *
+	 * A tenant profile may explicitly deny inherited write authority with an empty
+	 * or null `write_api_token`. When the key is omitted, the dedicated flat and
+	 * legacy sources are checked before falling back to `api_token` for backwards
+	 * compatibility.
+	 *
+	 * @param string $tenant Tenant id or configured profile alias.
+	 * @return string Configured Control write credential, or an empty string.
+	 */
+	private static function vestra_write_api_token(string $tenant=''): string {
+		$override=self::tenant_credential_override('write_api_token', $tenant);
+		if($override['declared']){
+			return $override['value'];
+		}
+		$token=trim((string)self::profile_config('write_api_token', $tenant, ''));
+		if($token==='' && defined('\CFG') && is_array(\CFG)){
+			$token=trim((string)(\CFG['vestra_write_api_token'] ?? ''));
+		}
+		if($token==='' && function_exists('\config')){
+			$token=trim((string)\config('vestra_write_api_token'));
+		}
+		if($token===''){
+			$token=trim((string)(getenv('VESTRA_WRITE_API_TOKEN') ?: ''));
+		}
+		return $token!=='' ? $token : self::vestra_api_token($tenant);
+	}
+
 	private static function vestra_tenant_read_token(string $tenant=''): string {
+		$override=self::tenant_credential_override('tenant_read_token', $tenant);
+		if($override['declared']){
+			return $override['value'];
+		}
 		$token=trim((string)self::profile_config('tenant_read_token', $tenant, ''));
 		if($token==='' && defined('\CFG') && is_array(\CFG)){
 			$token=trim((string)(\CFG['vestra_tenant_read_token'] ?? ''));
@@ -332,6 +486,25 @@ class vestra{
 	}
 
 	/**
+	 * Resolves the credential family for a Vestra Control route.
+	 *
+	 * @param string $path Control API route relative to `/api`.
+	 * @param string $tenant Tenant/profile context for credentials.
+	 * @param array<string,mixed> $credentials Explicit request credentials.
+	 * @return string Selected Control credential, or an empty string.
+	 */
+	private static function control_api_token(string $path, string $tenant='', array $credentials=[]): string {
+		$path='/'.ltrim(trim($path), '/');
+		$uses_write_api_token=preg_match('#^/tenants/[^/]+/(?:tokens/write|objects/reserve)/?$#', $path)===1;
+		$key=$uses_write_api_token ? 'write_api_token' : 'api_token';
+		if(array_key_exists($key, $credentials)){
+			$value=$credentials[$key];
+			return is_scalar($value) ? trim((string)$value) : '';
+		}
+		return $uses_write_api_token ? self::vestra_write_api_token($tenant) : self::vestra_api_token($tenant);
+	}
+
+	/**
 	 * Sends a request to the public Vestra Control API.
 	 *
 	 * @param string $method HTTP method.
@@ -340,6 +513,7 @@ class vestra{
 	 * @param string $tenant Tenant/profile context for credentials.
 	 * @param string $idempotency_key Optional idempotency key.
 	 * @param string $encoding Body encoding. Use `form` for tenant control routes that parse form input.
+	 * @param array<string,mixed> $credentials Explicit request-scoped Control credentials.
 	 * @return array<string,mixed>|false Decoded envelope or false on transport failure.
 	 */
 	private static function control_request(string $method, string $path, array $payload=[], string $tenant='', string $idempotency_key='', string $encoding='json', array $credentials=[]): array|false {
@@ -347,10 +521,7 @@ class vestra{
 		if($api_url===''){
 			$api_url=self::api_url($tenant);
 		}
-		$api_token=isset($credentials['api_token']) && is_scalar($credentials['api_token']) ? trim((string)$credentials['api_token']) : '';
-		if($api_token===''){
-			$api_token=self::vestra_api_token($tenant);
-		}
+		$api_token=self::control_api_token($path, $tenant, $credentials);
 		$api_auth_mode=isset($credentials['api_auth_mode']) && is_scalar($credentials['api_auth_mode']) ? strtolower(trim((string)$credentials['api_auth_mode'])) : self::api_auth_mode($tenant);
 		if($api_url==='' || $api_token===''){
 			return false;
@@ -398,7 +569,31 @@ class vestra{
 	}
 
 	/**
-	 * Returns a scoped write token, minting one from the configured API token when needed.
+	 * Resolves only configured write credentials without minting a scoped token.
+	 *
+	 * @param string $tenant Tenant id or configured profile alias.
+	 * @return array{declared:bool,value:string} Profile declaration state and configured token.
+	 */
+	private static function configured_write_token(string $tenant=''): array {
+		$override=self::tenant_credential_override('write_token', $tenant);
+		if($override['declared']){
+			return $override;
+		}
+		$token=trim((string)self::profile_config('write_token', $tenant, ''));
+		if($token==='' && defined('\CFG') && is_array(\CFG)){
+			$token=trim((string)(\CFG['vestra_write_token'] ?? ''));
+		}
+		if($token==='' && function_exists('\config')){
+			$token=trim((string)\config('vestra_write_token'));
+		}
+		if($token===''){
+			$token=trim((string)(getenv('VESTRA_WRITE_TOKEN') ?: ''));
+		}
+		return ['declared'=>false, 'value'=>$token];
+	}
+
+	/**
+	 * Returns a scoped write token, minting one with the write Control credential when needed.
 	 *
 	 * @param string $tenant Tenant id or profile alias.
 	 * @param string $method HTTP method being authorized.
@@ -407,22 +602,9 @@ class vestra{
 	 * @return string Configured or freshly issued Vestra write token.
 	 */
 	private static function vestra_write_token(string $tenant='', string $method='PUT', string $path='', array $context=[]): string {
-		$token=trim((string)self::profile_config('write_token', $tenant, ''));
-		if($token==='' && defined('\CFG') && is_array(\CFG)){
-			$token=trim((string)(\CFG['vestra_write_token'] ?? \CFG['vestra_write_token'] ?? ''));
-		}
-		if($token==='' && function_exists('\config')){
-			$token=trim((string)(\config('vestra_write_token') ?: \config('vestra_write_token')));
-		}
-		if($token===''){
-			$token=trim((string)(getenv('VESTRA_WRITE_TOKEN') ?: ''));
-		}
-		if($token!==''){
-			return $token;
-		}
-		$api_token=self::vestra_api_token($tenant);
-		if($api_token===''){
-			return '';
+		$configured=self::configured_write_token($tenant);
+		if($configured['declared'] || $configured['value']!==''){
+			return $configured['value'];
 		}
 		$rate=trim((string)($context['rate'] ?? self::rate($tenant)));
 		$scope_path=self::write_token_path($path, $tenant, $rate, $context);
@@ -438,8 +620,9 @@ class vestra{
 		if($path===''){
 			$path='/v/{tenant}/{rate}/*';
 		}
+		$canonical_tenant=self::canonical_tenant($tenant);
 		return strtr($path, [
-			'{tenant}'=>$tenant,
+			'{tenant}'=>$canonical_tenant,
 			'{rate}'=>$rate,
 			'{plan}'=>$rate,
 			'{blockid}'=>'*',
@@ -483,7 +666,8 @@ class vestra{
 			unset($cache[$key]);
 		}
 		$api_url=self::api_url($tenant);
-		$api_token=self::vestra_api_token($tenant);
+		$control_path=self::tenant_control_path($tenant, 'tokens/write');
+		$api_token=self::control_api_token($control_path, $tenant);
 		if($api_url==='' || $api_token===''){
 			return '';
 		}
@@ -501,7 +685,7 @@ class vestra{
 		}
 		$curl=curl_init();
 		self::configure_curl_tls($curl, $tenant);
-		curl_setopt($curl, CURLOPT_URL, rtrim($api_url, '/').'/tenants/'.rawurlencode($tenant).'/tokens/write');
+		curl_setopt($curl, CURLOPT_URL, rtrim($api_url, '/').$control_path);
 		curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
 		curl_setopt($curl, CURLOPT_CUSTOMREQUEST, 'POST');
 		$headers=[
@@ -652,6 +836,10 @@ class vestra{
 	 * @return string Configured Vestra node token, or an empty string.
 	 */
 	private static function vestra_node_token(string $tenant=''): string {
+		$override=self::tenant_credential_override('node_token', $tenant);
+		if($override['declared']){
+			return $override['value'];
+		}
 		$token=trim((string)self::profile_config('node_token', $tenant, ''));
 		if($token==='' && defined('\CFG') && is_array(\CFG)){
 			$token=trim((string)(\CFG['vestra_node_token'] ?? ''));
@@ -897,10 +1085,20 @@ class vestra{
 				}
 			}
 		}
-		$reference=[
-			'driver'=>'vestra',
-			'tenant'=>(string)($source['tenant'] ?? $response['tenant'] ?? $metadata['tenant'] ?? self::tenant()),
-		];
+		$reference_tenant_value=$source['tenant'] ?? $response['tenant'] ?? $metadata['tenant'] ?? self::tenant();
+		if(!is_scalar($reference_tenant_value)){
+			return false;
+		}
+		$reference_tenant=trim((string)$reference_tenant_value);
+		$reference_profile_value=$source['tenant_profile'] ?? $response['tenant_profile'] ?? $metadata['tenant_profile'] ?? $reference_tenant;
+		if(!is_scalar($reference_profile_value)){
+			return false;
+		}
+		$reference_profile=trim((string)$reference_profile_value);
+		$reference=self::apply_reference_tenant_identity(['driver'=>'vestra'], $reference_profile);
+		if($reference_tenant!=='' && self::canonical_tenant($reference_tenant)!==$reference['tenant']){
+			return false;
+		}
 		if($object_id!==false){
 			$reference['object_id']=$object_id;
 			$reference['fabric']=[
@@ -989,11 +1187,12 @@ class vestra{
 	}
 
 	private static function fabric_reserve_upload(string $file, string $hash, string $tenant, int $bytes, string $content_type): array|false {
-		if($tenant===''){
+		$canonical_tenant=self::canonical_tenant($tenant);
+		if($canonical_tenant===''){
 			return false;
 		}
 		$object_key=self::safe_object_key($file, $hash);
-		$idempotency_key='dataphyre_'.$tenant.'_'.substr(hash('sha256', implode('|', [$tenant, $object_key, (string)$bytes, $hash])), 0, 40);
+		$idempotency_key='dataphyre_'.$canonical_tenant.'_'.substr(hash('sha256', implode('|', [$canonical_tenant, $object_key, (string)$bytes, $hash])), 0, 40);
 		$rate=self::rate($tenant);
 		$payload=[
 			'object_key'=>$object_key,
@@ -1006,7 +1205,7 @@ class vestra{
 			'checksum_sha256'=>$hash,
 			'idempotency_key'=>$idempotency_key,
 		];
-		$response=self::control_request('POST', '/tenants/'.rawurlencode($tenant).'/objects/reserve', $payload, $tenant, $idempotency_key, 'form');
+		$response=self::control_request('POST', self::tenant_control_path($tenant, 'objects/reserve'), $payload, $tenant, $idempotency_key, 'form');
 		if(!is_array($response) || (($response['ok'] ?? false)===false)){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Vestra Fabric reserve failed: '.json_encode([
 				'code'=>is_array($response) ? ($response['code'] ?? null) : null,
@@ -1036,6 +1235,7 @@ class vestra{
 		}
 		$reference=self::reference_from_response($combined, $hash);
 		if($reference!==false){
+			$reference=self::apply_reference_tenant_identity($reference, $tenant);
 			$reference['filename']=basename($file);
 			$reference['mime_type']=$content_type;
 			$reference['filesize']=$bytes;
@@ -1237,18 +1437,45 @@ class vestra{
 	 * @return array<string,mixed>|false Tenant context, or false when tenant is unknown.
 	 */
 	private static function tenant_context(array $reference, array $parameters=[]): array|false {
-		$context=[
-			'tenant'=>(string)($parameters['tenant'] ?? $reference['tenant'] ?? self::tenant()),
-		];
-		$profile=self::tenant_profile($context['tenant']);
-		$context['tenant']=(string)($profile['tenant'] ?? $parameters['tenant'] ?? $reference['tenant'] ?? $context['tenant']);
-		$context['rate']=(string)($parameters['rate'] ?? $parameters['plan'] ?? $reference['rate'] ?? $profile['rate'] ?? self::rate($context['tenant']));
+		if(array_key_exists('tenant_profile', $parameters) || array_key_exists('tenant', $parameters)){
+			$profile_value=$parameters['tenant_profile'] ?? $parameters['tenant'] ?? '';
+			$profile_key=is_scalar($profile_value) ? trim((string)$profile_value) : '';
+		}
+		else
+		{
+			$profile_key=self::reference_tenant_profile($reference);
+			if($profile_key===false){
+				return false;
+			}
+		}
+		if($profile_key===''){
+			$profile_key=self::tenant();
+		}
+		$canonical_tenant=self::canonical_tenant($profile_key);
+		if($canonical_tenant===''){
+			return false;
+		}
+		if(isset($parameters['tenant']) && is_scalar($parameters['tenant']) && self::canonical_tenant((string)$parameters['tenant'])!==$canonical_tenant){
+			return false;
+		}
+		$context=['tenant'=>$canonical_tenant];
+		if($profile_key!==$canonical_tenant){
+			$context['tenant_profile']=$profile_key;
+		}
+		$profile=self::tenant_profile($profile_key);
+		$context['rate']=(string)($parameters['rate'] ?? $parameters['plan'] ?? $reference['rate'] ?? $profile['rate'] ?? self::rate($profile_key));
 		$context['expires_in_secs']=(int)($parameters['expires_in_secs'] ?? $profile['token_ttl'] ?? self::config('token_ttl', 3600));
 		$context['grace_secs']=(int)($parameters['grace_secs'] ?? $profile['token_grace'] ?? self::config('token_grace', 60));
 		$context['tenant_grant']=(bool)($parameters['tenant_grant'] ?? $profile['use_tenant_grant'] ?? self::config('use_tenant_grant', false));
-		foreach(['base_url', 'object_url', 'api_url', 'api_token', 'api_auth_mode', 'node_token', 'write_token', 'tenant_read_token', 'allow_unsigned'] as $key){
+		foreach(['base_url', 'object_url', 'api_url', 'api_token', 'write_api_token', 'api_auth_mode', 'node_token', 'write_token', 'tenant_read_token', 'allow_unsigned'] as $key){
 			if(isset($parameters[$key])){
 				$context[$key]=$parameters[$key];
+			}
+			elseif(in_array($key, ['api_token', 'write_api_token', 'node_token', 'write_token', 'tenant_read_token'], true)){
+				$override=self::tenant_credential_override($key, $profile_key);
+				if($override['declared']){
+					$context[$key]=$override['value'];
+				}
 			}
 			elseif(isset($profile[$key])){
 				$context[$key]=$profile[$key];
@@ -1273,8 +1500,11 @@ class vestra{
 		if(isset($context['object_expires_at'])){
 			$context['tenant_grant']=false;
 		}
-		$context['tenant']=trim((string)($context['tenant'] ?? ''));
+		$context['tenant']=self::canonical_tenant(trim((string)($context['tenant'] ?? '')));
 		$context['rate']=trim((string)($context['rate'] ?? ''));
+		if(isset($context['tenant_profile']) && self::canonical_tenant((string)$context['tenant_profile'])!==$context['tenant']){
+			return false;
+		}
 		if($context['tenant']==='' || $context['rate']===''){
 			return false;
 		}
@@ -1513,7 +1743,7 @@ class vestra{
 			$query['passkey']=(string)$passkey;
 		}
 		foreach($parameters as $key=>$value){
-			if(in_array($key, ['tenant', 'rate', 'plan', 'base_url', 'object_url', 'api_url', 'api_token', 'api_auth_mode', 'node_token', 'write_token', 'tenant_read_token', 'allow_unsigned', 'expires_in_secs', 'grace_secs', 'tenant_grant', 'token', 'filename', 'passkey'], true)){
+			if(in_array($key, ['tenant', 'tenant_profile', 'rate', 'plan', 'base_url', 'object_url', 'api_url', 'api_token', 'write_api_token', 'api_auth_mode', 'node_token', 'write_token', 'tenant_read_token', 'allow_unsigned', 'expires_in_secs', 'grace_secs', 'tenant_grant', 'token', 'filename', 'passkey'], true)){
 				continue;
 			}
 			if(isset($transform_path['consumed'][$key]) && is_array($token) && isset($token['token']) && trim((string)$token['token'])!==''){
@@ -1634,10 +1864,13 @@ class vestra{
 			}
 			else
 			{
-				$tenant=is_array($reference) ? (string)($reference['tenant'] ?? '') : '';
-				$decoded_result=self::vestra_request('DELETE', '/objects/'.$object_id, [], 'write', $tenant, [
+				$profile_key=is_array($reference) ? self::reference_tenant_profile($reference) : self::tenant();
+				if($profile_key===false){
+					return false;
+				}
+				$decoded_result=self::vestra_request('DELETE', '/objects/'.$object_id, [], 'write', $profile_key, [
 					'max_bytes'=>1,
-					'rate'=>self::rate($tenant),
+					'rate'=>self::rate($profile_key),
 				]);
 				if(is_array($decoded_result) && ($decoded_result['status'] ?? '')==="success"){
 					return 0;
@@ -1891,6 +2124,7 @@ class vestra{
 				}
 				return false;
 			}
+			$reference=self::apply_reference_tenant_identity($reference, $tenant);
 		}
 		if($encrypted_metadata!==[]){
 			$reference['metadata']=array_merge(is_array($reference['metadata'] ?? null) ? $reference['metadata'] : [], $encrypted_metadata);
