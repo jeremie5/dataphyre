@@ -63,12 +63,14 @@ final class PostgreSqlSchemaInspector {
 								'Cannot parse migration column definition for '.$table.': '.$definition
 							);
 						}
-					$column=self::identifier($columnMatch[1]);
-					$type=self::columnType($columnMatch[2]);
+						$column=self::identifier($columnMatch[1]);
+						$type=self::columnType($columnMatch[2]);
+						$serial=self::serialColumnBaseType($columnMatch[2])!==null;
 						$inlinePrimary=preg_match('/\\bPRIMARY\\s+KEY\\b/i', $columnMatch[2])===1;
 						$expected['tables'][$table]['columns'][$column]=[
 							'type'=>$type,
 							'nullable'=>!$inlinePrimary
+								&& !$serial
 								&& preg_match('/\\bNOT\\s+NULL\\b/i', $columnMatch[2])!==1,
 						];
 						if($inlinePrimary){
@@ -98,10 +100,12 @@ final class PostgreSqlSchemaInspector {
 					}
 					$column=self::identifier($match[3]);
 					$type=self::columnType($match[4]);
+					$serial=self::serialColumnBaseType($match[4])!==null;
 					$expected['tables'][$table] ??=['columns'=>[], 'primary_key'=>null];
 					$expected['tables'][$table]['columns'][$column]=[
 						'type'=>$type,
-						'nullable'=>preg_match('/\\bNOT\\s+NULL\\b/i', $match[4])!==1
+						'nullable'=>!$serial
+							&& preg_match('/\\bNOT\\s+NULL\\b/i', $match[4])!==1
 							&& preg_match('/\\bPRIMARY\\s+KEY\\b/i', $match[4])!==1,
 					];
 					self::registerExpectedCheck($expected, $table, $match[4], $identifier);
@@ -1001,12 +1005,12 @@ final class PostgreSqlSchemaInspector {
 
 	public static function normalizeCheckExpression(string $expression): string {
 		$normalized=self::normalizeSqlExpression($expression);
-		$normalized=(string)preg_replace('/::(?:text|character varying)\\b/i', '', $normalized);
-		$normalized=self::stripOuterParentheses(trim($normalized));
-		if(preg_match('/^(.+)=any\\(array\\s*\\[(.*)\\]\\)$/is', $normalized, $match)===1){
-			$normalized=trim($match[1]).' in('.trim($match[2]).')';
-		}
-		return self::stripOuterParentheses($normalized);
+		$normalized=(string)preg_replace(
+			"/('(?:''|[^'])*')::(?:text|character varying)\\b/i",
+			'$1',
+			$normalized
+		);
+		return self::normalizeBooleanCheckExpression($normalized);
 	}
 
 	public static function normalizeSqlExpression(string $expression): string {
@@ -1124,6 +1128,214 @@ final class PostgreSqlSchemaInspector {
 		$type=(string)preg_replace('/^varchar\\s*(?=\\(|$)/', 'character varying', $type);
 		$type=(string)preg_replace('/^char\\s*(?=\\(|$)/', 'character', $type);
 		return (string)preg_replace('/^decimal\\s*(?=\\(|$)/', 'numeric', $type);
+	}
+
+	/**
+	 * PostgreSQL stores CHECK expressions as parsed trees and prints a canonical
+	 * form that removes redundant Boolean grouping and expands BETWEEN. Migration
+	 * SQL must be compared in the same dialect so equivalent catalog output does
+	 * not become false schema drift. The renderer keeps the SQL precedence of OR
+	 * below AND; it never reorders operands or applies algebraic simplification.
+	 */
+	private static function normalizeBooleanCheckExpression(
+		string $expression,
+		int $parentPrecedence=0
+	): string {
+		$expression=self::stripOuterParentheses(trim($expression));
+		$orParts=self::splitTopLevelBoolean($expression, 'or');
+		if(count($orParts)>1){
+			$normalized=implode(' or ', array_map(
+				static fn(string $part): string=>self::normalizeBooleanCheckExpression($part, 1),
+				$orParts
+			));
+			return $parentPrecedence>1 ? '('.$normalized.')' : $normalized;
+		}
+		$andParts=self::splitTopLevelBoolean($expression, 'and');
+		if(count($andParts)>1){
+			$normalized=implode(' and ', array_map(
+				static fn(string $part): string=>self::normalizeBooleanCheckExpression($part, 2),
+				$andParts
+			));
+			return $parentPrecedence>2 ? '('.$normalized.')' : $normalized;
+		}
+		$between=self::topLevelBetweenParts($expression);
+		if($between!==null){
+			[$value, $minimum, $maximum]=$between;
+			return self::normalizeBooleanCheckExpression(
+				$value.'>='.$minimum.' and '.$value.'<='.$maximum,
+				$parentPrecedence
+			);
+		}
+		return self::normalizeMembershipCheckExpression($expression);
+	}
+
+	/**
+	 * PostgreSQL renders an IN list as = ANY (ARRAY[...]) and a NOT IN list as
+	 * <> ALL (ARRAY[...]). The Boolean renderer has isolated one complete leaf
+	 * before this method runs, so a compound left operand cannot consume a
+	 * neighbouring AND/OR branch or erase its grouping.
+	 */
+	private static function normalizeMembershipCheckExpression(string $expression): string {
+		foreach([
+			'=any'=>' in',
+			'<>all'=>' not in',
+		] as $operator=>$replacement){
+			if(preg_match(
+				'/^(.+)'.preg_quote($operator, '/').'\\(array\\s*\\[(.*)\\]\\)$/is',
+				$expression,
+				$match
+			)!==1){
+				continue;
+			}
+			$left=trim($match[1]);
+			$members=trim($match[2]);
+			if($left!=='' && $members!==''){
+				return $left.$replacement.'('.$members.')';
+			}
+		}
+		return $expression;
+	}
+
+	/** @return list<string> */
+	private static function splitTopLevelBoolean(string $expression, string $keyword): array {
+		$parts=[];
+		$start=0;
+		$depth=0;
+		$bracketDepth=0;
+		$quote=null;
+		$betweenPending=false;
+		$length=strlen($expression);
+		for($index=0; $index<$length; $index++){
+			$character=$expression[$index];
+			if($quote!==null){
+				if($character===$quote){
+					if($index+1<$length && $expression[$index+1]===$quote){
+						$index++;
+						continue;
+					}
+					$quote=null;
+				}
+				continue;
+			}
+			if($character==="'" || $character==='"'){
+				$quote=$character;
+				continue;
+			}
+			if($character==='('){
+				$depth++;
+				continue;
+			}
+			if($character===')'){
+				$depth=max(0, $depth-1);
+				continue;
+			}
+			if($character==='['){
+				$bracketDepth++;
+				continue;
+			}
+			if($character===']'){
+				$bracketDepth=max(0, $bracketDepth-1);
+				continue;
+			}
+			if($depth!==0 || $bracketDepth!==0 || !(ctype_alpha($character) || $character==='_')){
+				continue;
+			}
+			$end=$index+1;
+			while($end<$length && (ctype_alnum($expression[$end]) || $expression[$end]==='_')){
+				$end++;
+			}
+			$word=strtolower(substr($expression, $index, $end-$index));
+			if($keyword==='and' && $word==='between'){
+				$betweenPending=true;
+			}elseif($word===$keyword){
+				if($keyword==='and' && $betweenPending){
+					$betweenPending=false;
+				}else{
+					$part=trim(substr($expression, $start, $index-$start));
+					if($part!==''){
+						$parts[]=$part;
+					}
+					$start=$end;
+				}
+			}
+			$index=$end-1;
+		}
+		$part=trim(substr($expression, $start));
+		if($part!==''){
+			$parts[]=$part;
+		}
+		return $parts;
+	}
+
+	/** @return ?array{0:string,1:string,2:string} */
+	private static function topLevelBetweenParts(string $expression): ?array {
+		$betweenStart=null;
+		$betweenEnd=null;
+		$depth=0;
+		$bracketDepth=0;
+		$quote=null;
+		$length=strlen($expression);
+		for($index=0; $index<$length; $index++){
+			$character=$expression[$index];
+			if($quote!==null){
+				if($character===$quote){
+					if($index+1<$length && $expression[$index+1]===$quote){
+						$index++;
+						continue;
+					}
+					$quote=null;
+				}
+				continue;
+			}
+			if($character==="'" || $character==='"'){
+				$quote=$character;
+				continue;
+			}
+			if($character==='('){
+				$depth++;
+				continue;
+			}
+			if($character===')'){
+				$depth=max(0, $depth-1);
+				continue;
+			}
+			if($character==='['){
+				$bracketDepth++;
+				continue;
+			}
+			if($character===']'){
+				$bracketDepth=max(0, $bracketDepth-1);
+				continue;
+			}
+			if($depth!==0 || $bracketDepth!==0 || !(ctype_alpha($character) || $character==='_')){
+				continue;
+			}
+			$end=$index+1;
+			while($end<$length && (ctype_alnum($expression[$end]) || $expression[$end]==='_')){
+				$end++;
+			}
+			$word=strtolower(substr($expression, $index, $end-$index));
+			if($betweenStart===null && $word==='between'){
+				$betweenStart=$index;
+				$betweenEnd=$end;
+			}elseif($betweenStart!==null && $word==='and'){
+				$value=trim(substr($expression, 0, $betweenStart));
+				$minimum=trim(substr($expression, $betweenEnd, $index-$betweenEnd));
+				$maximum=trim(substr($expression, $end));
+				if(
+					preg_match('/\\bnot$/i', $value)===1
+					|| preg_match('/^symmetric\\b/i', $minimum)===1
+				){
+					return null;
+				}
+				if($value!=='' && $minimum!=='' && $maximum!==''){
+					return [$value, $minimum, $maximum];
+				}
+				return null;
+			}
+			$index=$end-1;
+		}
+		return null;
 	}
 
 	private static function normalizeIndexKey(string $key): string {
@@ -1337,7 +1549,28 @@ final class PostgreSqlSchemaInspector {
 			trim($definition),
 			$match
 		);
-		return self::normalizeType((string)($match[1] ?? ''));
+		$type=(string)($match[1] ?? '');
+		return self::serialColumnBaseType($type) ?? self::normalizeType($type);
+	}
+
+	/**
+	 * SERIAL names are migration grammar shorthands, not catalog types. Keep the
+	 * expansion on the expected-schema side: mapping them in normalizeType()
+	 * could falsely equate a real user-defined catalog domain named "serial".
+	 */
+	private static function serialColumnBaseType(string $definition): ?string {
+		if(preg_match(
+			'/^(smallserial|serial2|serial4|serial|bigserial|serial8)(?=\\s|$)/i',
+			trim($definition),
+			$match
+		)!==1){
+			return null;
+		}
+		return match(strtolower($match[1])){
+			'smallserial', 'serial2'=>'smallint',
+			'serial', 'serial4'=>'integer',
+			'bigserial', 'serial8'=>'bigint',
+		};
 	}
 
 	private static function identifier(string $identifier): string {

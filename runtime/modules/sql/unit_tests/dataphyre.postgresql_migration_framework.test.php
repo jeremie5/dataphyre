@@ -2439,6 +2439,7 @@ CREATE TABLE fixture.parent (
 	parent_id TEXT PRIMARY KEY
 );
 CREATE TABLE fixture.items (
+	serial_id BIGSERIAL UNIQUE,
 	item_id TEXT,
 	parent_id TEXT,
 	state TEXT NOT NULL,
@@ -2455,14 +2456,17 @@ CREATE INDEX fixture.items_parent_idx
 	ON fixture.items (parent_id DESC NULLS LAST)
 	WHERE parent_id IS NOT NULL;
 ALTER TABLE fixture.items ADD COLUMN IF NOT EXISTS note VARCHAR(120) NULL;
+ALTER TABLE fixture.items ADD COLUMN IF NOT EXISTS sequence_id SERIAL;
 SQL;
 	$expected=$inspector->expectedSchema([['name'=>'001_fixture', 'sql'=>$sql]]);
 	$t->same(
 		[
+			'serial_id'=>['type'=>'bigint', 'nullable'=>false],
 			'item_id'=>['type'=>'text', 'nullable'=>false],
 			'parent_id'=>['type'=>'text', 'nullable'=>true],
 			'state'=>['type'=>'text', 'nullable'=>false],
 			'note'=>['type'=>'character varying(120)', 'nullable'=>true],
+			'sequence_id'=>['type'=>'integer', 'nullable'=>false],
 		],
 		$expected['tables']['fixture.items']['columns']
 	);
@@ -2487,6 +2491,70 @@ SQL;
 			"(state = ANY (ARRAY['ready'::text, 'done'::text]))"
 		)
 	);
+	foreach([
+		[
+			'length(btrim(source_id)) BETWEEN 1 AND 500',
+			'length(btrim(source_id)) >= 1 AND length(btrim(source_id)) <= 500',
+		],
+		[
+			"(scope_type = 'platform' AND tenant_id IS NULL) OR " .
+				"(scope_type = 'tenant' AND tenant_id IS NOT NULL)",
+			"scope_type = 'platform' AND tenant_id IS NULL OR " .
+				"scope_type = 'tenant' AND tenant_id IS NOT NULL",
+		],
+		[
+			"(actor_type IN ('service', 'system') AND length(btrim(actor_reference)) BETWEEN 1 AND 200)",
+			"(actor_type = ANY (ARRAY['service'::text, 'system'::text])) " .
+				"AND length(btrim(actor_reference)) >= 1 AND length(btrim(actor_reference)) <= 200",
+		],
+		[
+			"mode NOT IN ('through_change', 'scope_snapshot')",
+			"mode <> ALL (ARRAY['through_change'::text, 'scope_snapshot'::text])",
+		],
+		[
+			"jsonb_typeof(target) IN ('array', 'object')",
+			"jsonb_typeof(target) = ANY (ARRAY['array'::text, 'object'::text])",
+		],
+		[
+			"lower(target->>'state') NOT IN ('retired', 'deleted')",
+			"lower(target ->> 'state'::text) <> ALL " .
+				"(ARRAY['retired'::text, 'deleted'::text])",
+		],
+	] as [$migrationExpression, $catalogExpression]){
+		$t->same(
+			PostgreSqlSchemaInspector::normalizeCheckExpression($migrationExpression),
+			PostgreSqlSchemaInspector::normalizeCheckExpression($catalogExpression),
+			$migrationExpression
+		);
+	}
+	$t->same(
+		"enabled and (state='ready' or state='blocked')",
+		PostgreSqlSchemaInspector::normalizeCheckExpression(
+			"enabled AND (state = 'ready' OR state = 'blocked')"
+		),
+		'Boolean normalization must preserve required AND/OR grouping.'
+	);
+	foreach([
+		['x BETWEEN 1 AND 500', 'x >= 1 AND x < 500'],
+		['a AND (b OR c)', '(a AND b) OR c'],
+		["status IN ('ready', 'blocked')", "status IN ('ready', 'failed')"],
+		["jsonb_typeof(target) IN ('array', 'object')", "jsonb_typeof(target) IN ('array', 'string')"],
+		["value::text = '1'", "value = '1'"],
+	] as [$left, $right]){
+		$t->notSame(
+			PostgreSqlSchemaInspector::normalizeCheckExpression($left),
+			PostgreSqlSchemaInspector::normalizeCheckExpression($right),
+			$left.' must remain distinguishable from '.$right
+		);
+	}
+	$t->same(
+		PostgreSqlSchemaInspector::normalizeSqlExpression('value NOT BETWEEN 1 AND 2'),
+		PostgreSqlSchemaInspector::normalizeCheckExpression('value NOT BETWEEN 1 AND 2')
+	);
+	$t->same(
+		PostgreSqlSchemaInspector::normalizeSqlExpression('value BETWEEN SYMMETRIC 1 AND 2'),
+		PostgreSqlSchemaInspector::normalizeCheckExpression('value BETWEEN SYMMETRIC 1 AND 2')
+	);
 	$t->same(
 		"lower(name)||'-'||code",
 		PostgreSqlSchemaInspector::normalizeSqlExpression(" LOWER ( name ) || '-' || code ")
@@ -2506,6 +2574,11 @@ SQL;
 	] as $input=>$output){
 		$t->same($output, PostgreSqlSchemaInspector::normalizeType($input), $input);
 	}
+	$t->same(
+		'serial',
+		PostgreSqlSchemaInspector::normalizeType('serial'),
+		'SERIAL expansion must remain migration-side so a catalog domain cannot be falsely equated.'
+	);
 })->tag('sql', 'migration', 'postgresql', 'schema')->group('framework-coverage');
 
 test('PostgreSQL schema inspection canonicalizes grouped nullability and catalog indexes', static function(Context $t): void {
