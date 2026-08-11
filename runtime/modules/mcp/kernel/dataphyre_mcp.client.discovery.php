@@ -363,6 +363,9 @@ trait dataphyre_mcp_client_discovery_surfaces {
 			foreach(array_values(array_unique($app_modules)) as $module){
 				$description=$this->describe_module($module, 20);
 				foreach($description['files']['documentation'] ?? [] as $path){
+					if($app_builder_task && $this->docs_chunk_builder_skip_path((string)$path)){
+						continue;
+					}
 					$candidates[]=[
 						'kind'=>'documentation',
 						'id'=>(string)$path,

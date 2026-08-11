@@ -73,6 +73,12 @@ manifest tooling use the same pure `sqlSafetyIssues(...)` classification.
 `manifest_public_path` is the release-relative label returned in summaries; it
 does not redirect the filesystem read.
 
+Each manifest entry may declare `"change_kind": "data_only"` when both SQL
+directions intentionally mutate application rows without changing application
+structure. Omitting `change_kind` normalizes to `"schema"`, preserving the
+existing contract for every prior manifest. The only accepted values are
+`schema` and `data_only`; the loader rejects any other classification.
+
 ## Supported schema introspection grammar
 
 Dataphyre's status-time schema contract deliberately models a bounded,
@@ -87,9 +93,11 @@ The final statement in a migration may omit its semicolon. SQL outside this
 grammar can still be valid transactional migration SQL, but it is not silently
 promoted into a schema-drift claim. Views, functions, triggers, policies,
 custom types, privileges, renames, and other specialized objects need
-application-specific verification. A reversible migration whose change is not
-observable by Dataphyre's structural fingerprint fails rollback certification
-instead of being certified from incomplete evidence.
+application-specific verification. A reversible `schema` migration whose
+change is not observable by Dataphyre's structural fingerprint fails rollback
+certification instead of being certified from incomplete evidence. Use
+`data_only` only for row mutation pairs, never to bypass an unsupported schema
+change.
 
 Bootstrap entries are adopted history and are deliberately outside exact
 catalog certification. Dataphyre validates their immutable bytes, replays each
@@ -373,7 +381,12 @@ Before rollback, derive the contiguous applied tail and inspect its declared
 safety. Dataphyre refuses history gaps and checksum drift. Reversible SQL is
 certified inside the runner-owned transaction with a down/up/down sequence:
 
-- structural fingerprints must match after repeated down
+- `schema` migrations must make an observable structural change, reconstruct
+  the original structure after up, and match structural fingerprints after
+  repeated down
+- `data_only` migrations must leave structure unchanged after down, up, and the
+  repeated down; up must restore the exact pre-rollback data fingerprint and
+  both down executions must produce the same data fingerprint
 - `lossless` migrations must preserve row evidence after both down executions
   and reconstruct the original row fingerprints after the intervening up
 - any `PDO::exec(...)` failure aborts certification

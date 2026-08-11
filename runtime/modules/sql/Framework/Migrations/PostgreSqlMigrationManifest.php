@@ -111,8 +111,12 @@ final class PostgreSqlMigrationManifest {
 			$expectedKeys=$down===null
 				? ['description', 'down', 'id', 'irreversible_reason', 'minimum_compatible_release', 'phase', 'up']
 				: ['description', 'down', 'id', 'minimum_compatible_release', 'phase', 'up'];
+			if(array_key_exists('change_kind', $entry)){
+				array_unshift($expectedKeys, 'change_kind');
+			}
 			$id=$entry['id'] ?? null;
 			$phase=$entry['phase'] ?? null;
+			$changeKind=$entry['change_kind'] ?? 'schema';
 			$description=$entry['description'] ?? null;
 			$minimumCompatibleRelease=$entry['minimum_compatible_release'] ?? null;
 			if(
@@ -126,6 +130,12 @@ final class PostgreSqlMigrationManifest {
 				|| trim($description)===''
 			){
 				throw new RuntimeException('PostgreSQL migration manifest entry identity is invalid.');
+			}
+			if(
+				!is_string($changeKind)
+				|| !in_array($changeKind, PostgreSqlMigrationProfile::CHANGE_KINDS, true)
+			){
+				throw new RuntimeException('Migration change kind is invalid: '.$id.'.');
 			}
 			if($phase==='rolling_contract'){
 				if(!PostgreSqlMigrationProfile::validVersion($minimumCompatibleRelease)){
@@ -200,6 +210,7 @@ final class PostgreSqlMigrationManifest {
 			$entries[]=[
 				'id'=>$id,
 				'phase'=>$phase,
+				'change_kind'=>$changeKind,
 				'up'=>$up,
 				'down'=>$normalizedDown,
 				'irreversible_reason'=>$irreversibleReason,

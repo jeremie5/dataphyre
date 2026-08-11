@@ -23,6 +23,7 @@ final class PostgreSqlMigrationProfile implements JsonSerializable {
 	public const MANIFEST_SCHEMA_VERSION=3;
 	public const PHASES=['bootstrap', 'rolling_expand', 'rolling_contract'];
 	public const DOWN_SAFETY=['lossless', 'data_loss'];
+	public const CHANGE_KINDS=['schema', 'data_only'];
 	private const EVENT_FIXED_COLUMNS=[
 		'event_id',
 		'operation_id',
