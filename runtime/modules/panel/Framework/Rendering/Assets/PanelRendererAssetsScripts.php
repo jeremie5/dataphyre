@@ -181,6 +181,20 @@ function dpPanelFieldControls(field){
 	return field.querySelectorAll("input,select,textarea");
 }
 /**
+ * Applies native required validation only to submitted field controls.
+ *
+ * @param {HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement} input Control to update.
+ * @param {boolean} required Whether the owning field is visible and required.
+ * @returns {void}
+ */
+function dpPanelSetFieldControlRequired(input,required){
+	var name=typeof input.name==="string" ? input.name.trim() : "";
+	var searchableAuxiliary=!!(input.hasAttribute&&input.hasAttribute("data-dp-panel-searchable-select-input"));
+	var participates=input.type!=="hidden"&&name!==""&&!searchableAuxiliary;
+	input.required=participates&&required;
+	input.setAttribute("aria-required",participates&&required ? "true" : "false");
+}
+/**
  * Recomputes client-side field visibility and required state from dependencies.
  *
  * The function mutates only DOM state: field visibility classes, disabled flags,
@@ -210,10 +224,7 @@ function dpPanelRefreshDependencies(){
 		field.classList.toggle("dp-panel-field-required",required);
 		dpPanelFieldControls(field).forEach(function(input){
 			input.disabled=!visible;
-			if(input.type!=="hidden"){
-				input.required=visible&&required;
-			}
-			input.setAttribute("aria-required", visible&&required ? "true" : "false");
+			dpPanelSetFieldControlRequired(input,visible&&required);
 		});
 	});
 }
@@ -511,9 +522,8 @@ function dpPanelApplyFieldState(form,field,state,applyErrors){
 	field.classList.toggle("dp-panel-field-required",visible&&required);
 	dpPanelFieldControls(field).forEach(function(input){
 		input.disabled=!visible;
-		if(input.type!=="hidden"){input.required=visible&&required;}
+		dpPanelSetFieldControlRequired(input,visible&&required);
 		if(input.tagName!=="SELECT"&&input.type!=="checkbox"&&input.type!=="radio"&&input.type!=="file"){input.readOnly=readonly;}
-		input.setAttribute("aria-required",visible&&required ? "true" : "false");
 		input.setAttribute("aria-readonly",readonly ? "true" : "false");
 	});
 	if(state.dynamic_options===true&&typeof state.options_html==="string"){
