@@ -24,9 +24,11 @@ an installation enables the corresponding module or integration.
 Consumers must probe the documented methods and fail closed when a required
 capability is absent. Framework releases preserve the existing public facade and
 add these capability methods without requiring applications to adopt a specific
-framework consumer. Applications must not copy framework contract checks from a
-different application; the framework owns its capability documentation and
-tests.
+framework consumer. An installation with no explicit module allow-list retains
+legacy discovery semantics; a non-empty allow-list opts into strict module
+selection, and explicit denies always win. Applications must not copy framework
+contract checks from a different application; the framework owns its capability
+documentation and tests.
 
 The account-isolated Stripe client never stores a secret in process-global
 configuration. The scheduler contract rejects public traffic, binds claims to a

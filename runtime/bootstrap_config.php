@@ -20,7 +20,7 @@ final class bootstrap_config {
 	 * Builds the effective bootstrap configuration for a runtime root.
 	 *
 	 * @param string $runtime_root Dataphyre runtime root directory.
-	 * @return array{project_root:string, bootstrap:array<string,mixed>, application_roots:array<int,string>, modules:array{enabled:array<string,bool>,disabled:array<string,bool>,core_implicit:bool}} Effective bootstrap payload.
+	 * @return array{project_root:string, bootstrap:array<string,mixed>, application_roots:array<int,string>, modules:array{enabled:array<string,bool>,disabled:array<string,bool>,core_implicit:bool,allow_all:bool}} Effective bootstrap payload.
 	 */
 	public static function resolve(string $runtime_root): array {
 		$runtime_root=rtrim($runtime_root, '/\\').'/';
@@ -145,6 +145,9 @@ final class bootstrap_config {
 	 */
 	private static function normalize_modules(mixed $modules): array {
 		$modules=is_array($modules) ? $modules : [];
+		$explicit_enabled=array_key_exists('enabled', $modules)
+			&& is_array($modules['enabled'])
+			&& $modules['enabled']!==[];
 		$enabled=self::normalize_module_set(is_array($modules['enabled'] ?? null) ? $modules['enabled'] : []);
 		$disabled=self::normalize_module_set(is_array($modules['disabled'] ?? null) ? $modules['disabled'] : []);
 		foreach($disabled as $module=>$_){
@@ -156,6 +159,9 @@ final class bootstrap_config {
 			'enabled'=>$enabled,
 			'disabled'=>$disabled,
 			'core_implicit'=>true,
+			// An omitted/empty allow-list preserves the legacy module contract. An
+			// installation opts into a strict allow-list by naming at least one module.
+			'allow_all'=>!$explicit_enabled,
 		];
 	}
 
