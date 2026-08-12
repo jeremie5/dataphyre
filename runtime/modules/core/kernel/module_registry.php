@@ -8,9 +8,11 @@
 namespace dataphyre;
 
 /**
- * Discovers Dataphyre runtime modules and resolves their kernel and framework entrypoints.
+ * Resolves flight-sheet-enabled Dataphyre modules and their entrypoints.
  *
- * The registry scans common and application module directories, merges application overrides over shared definitions, applies configured enabled/disabled lists, and caches normalized definitions for bootstrap callers. Disabled application shadow directories prefixed with "-" suppress shared modules without adding compatibility layers.
+ * The selected application's normalized flight-sheet policy is the sole source
+ * of module enablement. Filesystem inspection happens only after a constant-time
+ * policy lookup permits a module; directories never opt themselves into boot.
  */
 final class module_registry {
 
@@ -55,81 +57,54 @@ final class module_registry {
 	}
 
 	/**
-	 * Lists module directory names discoverable from common and application roots.
+	 * Lists enabled modules that resolve to a usable on-disk definition.
 	 *
-	 * Availability is filesystem-based and does not imply that a module is enabled or has a usable entrypoint. Application and common roots are unioned, dash-prefixed directories are ignored, names are normalized to lowercase, and the result is sorted for deterministic bootstrap order.
+	 * This explicit catalog operation inspects only names already allowed by the
+	 * flight sheet. It never scans module directories for candidates.
 	 *
-	 * @return array<int,string> Sorted normalized module names discovered on disk.
+	 * @return array<int,string> Resolvable module names in flight-sheet order.
 	 */
 	public static function available_modules(): array {
 		if(self::$available_modules_cache!==null){
 			return self::$available_modules_cache;
 		}
-		if(defined('ROOTPATH')===false){
-			return self::$available_modules_cache=[];
-		}
-		$modules=[];
-		foreach([
-			ROOTPATH['common_dataphyre_runtime'].'modules/',
-			ROOTPATH['dataphyre'].'modules/',
-		] as $modules_root){
-			if(!is_dir($modules_root)){
-				continue;
-			}
-			foreach(scandir($modules_root) ?: [] as $entry){
-				if($entry==='.' || $entry==='..'){
-					continue;
-				}
-				$entry=self::normalize_module_name($entry);
-				if($entry==='' || $entry[0]==='-'){
-					continue;
-				}
-				if(!is_dir(rtrim($modules_root, '/\\').'/'.$entry)){
-					continue;
-				}
-				$modules[$entry]=true;
+		$available=[];
+		foreach(self::enabled_modules() as $module){
+			if(self::module_definition($module)!==false){
+				$available[]=$module;
 			}
 		}
-		$names=array_keys($modules);
-		sort($names);
-		return self::$available_modules_cache=$names;
+		return self::$available_modules_cache=$available;
 	}
 
 	/**
-	 * Lists available modules whose resolved definition is enabled.
+	 * Lists module names enabled by the selected application's flight sheet.
 	 *
-	 * Enabled state is derived from module configuration, disabled application shadow directories, and successful definition inspection. Returned names follow available_modules() ordering.
+	 * This is a constant-time read after bootstrap normalization and does not
+	 * inspect the filesystem. An enabled name may still fail to resolve if the
+	 * package is missing, in which case presence/load methods return false.
 	 *
 	 * @return array<int,string> Enabled module names.
 	 */
 	public static function enabled_modules(): array {
-		$enabled=[];
-		foreach(self::available_modules() as $module){
-			$definition=self::module_definition($module);
-			if(is_array($definition) && ($definition['enabled'] ?? false)===true){
-				$enabled[]=$module;
-			}
-		}
-		return $enabled;
+		return array_keys(self::module_config()['enabled']);
 	}
 
 	/**
-	 * Lists modules with valid definitions that are currently disabled.
+	 * Lists module names explicitly disabled by the selected flight sheet.
 	 *
-	 * This reports modules that can be inspected but fail the enabled-state filter. Missing or structurally invalid module directories are not included because no definition can be built for them.
+	 * The result is policy-derived and does not inspect disabled module paths.
 	 *
-	 * @return array<int,string> Sorted disabled module names.
+	 * @return array<int,string> Disabled module names in flight-sheet order.
 	 */
 	public static function disabled_modules(): array {
-		$disabled=array_keys(self::module_definitions(false));
-		sort($disabled);
-		return $disabled;
+		return array_keys(self::module_config()['disabled']);
 	}
 
 	/**
-	 * Checks whether one module resolves to an enabled definition.
+	 * Checks whether one module is allowed by the normalized flight-sheet policy.
 	 *
-	 * Blank names are rejected after normalization. A true return means the module has at least one valid kernel or framework surface and is not filtered by enabled/disabled configuration.
+	 * This hot path is an associative lookup and never touches the filesystem.
 	 *
 	 * @param string $module Module name to normalize and inspect.
 	 * @return bool True when the module is known and enabled.
@@ -139,8 +114,8 @@ final class module_registry {
 		if($module===''){
 			return false;
 		}
-		$definition=self::module_definition($module);
-		return is_array($definition) && ($definition['enabled'] ?? false)===true;
+		$config=self::module_config();
+		return isset($config['enabled'][$module]) && !isset($config['disabled'][$module]);
 	}
 
 	/**
@@ -171,7 +146,9 @@ final class module_registry {
 	/**
 	 * Builds the full resolved definition for one module.
 	 *
-	 * Shared runtime modules provide the base definition; application modules can replace kernel or framework entrypoints and record their own directory. A valid definition must expose at least a kernel entry, a framework bootstrap, or a framework directory. The final enabled flag combines configuration allow/deny lists with application dash-directory suppression.
+	 * Shared runtime modules provide the base definition; application modules can
+	 * replace kernel or framework entrypoints and record their own directory. A
+	 * policy denial returns before any path is inspected.
 	 *
 	 * @param string $module Module name to normalize and inspect.
 	 * @return array<string,mixed>|false Resolved definition with directory and entrypoint metadata, or false when invalid.
@@ -184,11 +161,13 @@ final class module_registry {
 		if(array_key_exists($module, self::$definition_cache)){
 			return self::$definition_cache[$module];
 		}
-		if(defined('ROOTPATH')===false){
+		if(self::module_enabled($module)===false || defined('ROOTPATH')===false){
 			return self::$definition_cache[$module]=false;
 		}
-		$common=self::inspect_module_directory(ROOTPATH['common_dataphyre_runtime'].'modules/'.$module.'/', $module);
-		$app=self::inspect_module_directory(ROOTPATH['dataphyre'].'modules/'.$module.'/', $module);
+		$common_root=rtrim((string)(ROOTPATH['common_dataphyre_runtime'] ?? ''), '/\\');
+		$app_root=rtrim((string)(ROOTPATH['dataphyre'] ?? ''), '/\\');
+		$common=$common_root!=='' ? self::inspect_module_directory($common_root.'/modules/'.$module.'/', $module) : null;
+		$app=$app_root!=='' ? self::inspect_module_directory($app_root.'/modules/'.$module.'/', $module) : null;
 		if($common!==null){
 			$common['common_directory']=$common['directory'];
 		}
@@ -227,33 +206,31 @@ final class module_registry {
 				$definition['directory']=$app['directory'];
 			}
 		}
-		if(
-			($definition['kernel_entry'] ?? null)===null
-			&& ($definition['framework_entry'] ?? null)===null
-			&& ($definition['framework_directory'] ?? null)===null
-		){
-			return self::$definition_cache[$module]=false;
-		}
-		$definition['enabled']=self::is_enabled($module) && self::is_app_disabled($module)===false;
+		// inspect_module_directory() returns a definition only when at least one
+		// kernel or Framework surface exists. The common/app merge above preserves
+		// every discovered surface, so a second no-surface guard here was dead code.
+		$definition['enabled']=true;
 		return self::$definition_cache[$module]=$definition;
 	}
 
 	/**
 	 * Returns resolved module definitions, optionally filtered by enabled state.
 	 *
-	 * Definitions are keyed by normalized module name. Invalid module directories are skipped, and the optional filter compares against the resolved enabled flag after configuration and app-level suppression have been applied.
+	 * Definitions are keyed by normalized module name and are resolved only for
+	 * enabled names. A disabled filter therefore returns an empty catalog; use
+	 * disabled_modules() to inspect the explicit deny set without touching disk.
 	 *
 	 * @param ?bool $enabled Null for all valid definitions, true for enabled only, false for disabled only.
 	 * @return array<string,array<string,mixed>> Definitions keyed by module name.
 	 */
 	public static function module_definitions(?bool $enabled=null): array {
+		if($enabled===false){
+			return [];
+		}
 		$definitions=[];
-		foreach(self::available_modules() as $module){
+		foreach(self::enabled_modules() as $module){
 			$definition=self::module_definition($module);
 			if(!is_array($definition)){
-				continue;
-			}
-			if($enabled!==null && (($definition['enabled'] ?? false)===true)!==$enabled){
 				continue;
 			}
 			$definitions[$module]=$definition;
@@ -262,99 +239,39 @@ final class module_registry {
 	}
 
 	/**
-	 * Loads and merges module enablement configuration from all supported sources.
+	 * Returns the selected application's normalized flight-sheet module policy.
 	 *
-	 * Configuration may be a simple list of enabled modules or an associative payload with enabled and disabled keys. Later sources override the enabled allow-list, while disabled lists accumulate across sources.
+	 * `DATAPHYRE_MODULE_POLICY` is produced once by bootstrap_config. The raw
+	 * bootstrap constant is accepted only as a bootstrap-safe fallback for tools
+	 * that load this class directly. Legacy config/modules.php and APP_MODULES
+	 * are intentionally not consulted.
 	 *
-	 * @return array{enabled:?array<int,string>,disabled:array<int,string>} Normalized module configuration.
+	 * @return array{enabled:array<string,bool>,disabled:array<string,bool>} Module lookup sets.
 	 */
 	private static function module_config(): array {
 		if(self::$module_config!==null){
 			return self::$module_config;
 		}
-		$config=[
-			'enabled'=>null,
-			'disabled'=>[],
+		$policy=[];
+		if(defined('DATAPHYRE_MODULE_POLICY') && is_array(DATAPHYRE_MODULE_POLICY)){
+			$policy=DATAPHYRE_MODULE_POLICY;
+		}
+		elseif(defined('DATAPHYRE_BOOTSTRAP_CONFIG') && is_array(DATAPHYRE_BOOTSTRAP_CONFIG)){
+			$policy=is_array(DATAPHYRE_BOOTSTRAP_CONFIG['modules'] ?? null)
+				? DATAPHYRE_BOOTSTRAP_CONFIG['modules']
+				: [];
+		}
+		$enabled=self::normalize_module_set(is_array($policy['enabled'] ?? null) ? $policy['enabled'] : []);
+		$disabled=self::normalize_module_set(is_array($policy['disabled'] ?? null) ? $policy['disabled'] : []);
+		foreach($disabled as $module=>$_){
+			unset($enabled[$module]);
+		}
+		unset($disabled['core']);
+		$enabled=['core'=>true]+$enabled;
+		return self::$module_config=[
+			'enabled'=>$enabled,
+			'disabled'=>$disabled,
 		];
-		foreach(self::module_config_sources() as $source){
-			if(!is_array($source)){
-				continue;
-			}
-			if(self::is_list($source)){
-				$config['enabled']=self::normalize_module_list($source);
-				continue;
-			}
-			if(array_key_exists('enabled', $source)){
-				$config['enabled']=is_array($source['enabled'])
-					? self::normalize_module_list($source['enabled'])
-					: null;
-			}
-			if(array_key_exists('disabled', $source) && is_array($source['disabled'])){
-				$config['disabled']=array_values(array_unique(array_merge(
-					$config['disabled'],
-					self::normalize_module_list($source['disabled'])
-				)));
-			}
-		}
-		return self::$module_config=$config;
-	}
-
-	/**
-	 * Reads module configuration payloads from common config, application config, and APP_MODULES.
-	 *
-	 * File sources are required directly so they can return PHP arrays. Missing files are ignored, and APP_MODULES is appended last to act as the highest-level runtime override.
-	 *
-	 * @return array<int,mixed> Raw configuration payloads in precedence order.
-	 */
-	private static function module_config_sources(): array {
-		$sources=[];
-		if(defined('ROOTPATH')){
-			foreach([
-				ROOTPATH['common_dataphyre'].'config/modules.php',
-				ROOTPATH['dataphyre'].'config/modules.php',
-			] as $file){
-				if(is_file($file)){
-					$sources[]=(require $file);
-				}
-			}
-		}
-		if(defined('APP_MODULES')){
-			$sources[]=\constant('APP_MODULES');
-		}
-		return $sources;
-	}
-
-	/**
-	 * Applies enabled and disabled configuration lists to a normalized module name.
-	 *
-	 * Disabled entries always win. When an enabled allow-list is present, modules not listed there are disabled even if they exist on disk.
-	 *
-	 * @param string $module Normalized module name.
-	 * @return bool True when configuration permits the module.
-	 */
-	private static function is_enabled(string $module): bool {
-		$config=self::module_config();
-		if(in_array($module, $config['disabled'], true)){
-			return false;
-		}
-		if(is_array($config['enabled']) && !in_array($module, $config['enabled'], true)){
-			return false;
-		}
-		return true;
-	}
-
-	/**
-	 * Checks whether an application dash-prefixed directory disables a shared module.
-	 *
-	 * A directory such as modules/-sql/ lets an application suppress a common runtime module without editing the shared module tree.
-	 *
-	 * @param string $module Normalized module name.
-	 * @return bool True when the application explicitly disables the module.
-	 */
-	private static function is_app_disabled(string $module): bool {
-		return defined('ROOTPATH')
-			&& !empty(ROOTPATH['dataphyre'])
-			&& is_dir(ROOTPATH['dataphyre'].'modules/-'.$module.'/');
 	}
 
 	/**
@@ -417,49 +334,39 @@ final class module_registry {
 	}
 
 	/**
-	 * Normalizes a module list while preserving first-seen order.
+	 * Normalizes a module list or lookup map into a membership set.
 	 *
 	 * Blank names and duplicate normalized names are discarded so configuration lists remain deterministic and safe for membership checks.
 	 *
-	 * @param array<int,mixed> $modules Raw module names from config.
-	 * @return array<int,string> Unique normalized module names.
+	 * @param array<mixed> $modules Raw module names or normalized lookup map.
+	 * @return array<string,bool> Unique normalized module-name set.
 	 */
-	private static function normalize_module_list(array $modules): array {
-		$normalized=[];
-		$seen=[];
-		foreach($modules as $module){
-			$module=self::normalize_module_name((string)$module);
-			if($module==='' || isset($seen[$module])){
+	private static function normalize_module_set(array $modules): array {
+		$set=[];
+		foreach($modules as $key=>$value){
+			$module=is_string($key) ? $key : (string)$value;
+			if(is_string($key) && $value!==true && $value!==1){
 				continue;
 			}
-			$seen[$module]=true;
-			$normalized[]=$module;
+			$module=self::normalize_module_name($module);
+			if($module!==''){
+				$set[$module]=true;
+			}
 		}
-		return $normalized;
+		return $set;
 	}
 
 	/**
 	 * Normalizes a module name for filesystem and configuration comparisons.
 	 *
-	 * Module names are lowercase and trimmed; no namespace or path validation is performed here.
+	 * Names are lowercase, trimmed, and restricted to safe directory segments.
 	 *
 	 * @param string $module Raw module name.
 	 * @return string Normalized module name.
 	 */
 	private static function normalize_module_name(string $module): string {
-		return strtolower(trim($module));
-	}
-
-	/**
-	 * Determines whether an array is a zero-based list.
-	 *
-	 * This compatibility helper identifies simple APP_MODULES-style enabled lists without relying on newer PHP runtime helpers.
-	 *
-	 * @param array<mixed> $value Candidate array.
-	 * @return bool True when the array keys are exactly 0..n-1.
-	 */
-	private static function is_list(array $value): bool {
-		return array_keys($value)===range(0, count($value)-1);
+		$module=strtolower(trim($module));
+		return preg_match('/^[a-z0-9][a-z0-9_-]*$/', $module)===1 ? $module : '';
 	}
 
 	/**

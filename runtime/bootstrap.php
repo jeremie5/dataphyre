@@ -5,6 +5,8 @@
  * Copyright (c) 2025 Shopiro Ltd.
  * SPDX-License-Identifier: MIT
  */
+require_once __DIR__.'/shared_request_keys.php';
+
 try{
 	bootstrap();
 }catch(\Throwable $exception){
@@ -39,6 +41,7 @@ function bootstrap(){
 	$project_root=$bootstrap_state['project_root'];
 	$bootstrap_config=$bootstrap_state['bootstrap'];
 	$bootstrap_application_roots=$bootstrap_state['application_roots'];
+	$bootstrap_module_policy=$bootstrap_state['modules'];
 	$flightdeck_replay=flightdeck_replay_request($bootstrap_config, $project_root);
 	if(($flightdeck_replay['requested'] ?? false)===true){
 		if(!isset($bootstrap_config['flightdeck']) || !is_array($bootstrap_config['flightdeck'])){
@@ -62,6 +65,7 @@ function bootstrap(){
 	define('DATAPHYRE_PROJECT_ROOT', rtrim($project_root, '/\\').'/');
 	define('DATAPHYRE_RUNTIME_ROOT', rtrim(__DIR__, '/\\').'/');
 	define('DATAPHYRE_BOOTSTRAP_CONFIG', $bootstrap_config); // still needed?
+	define('DATAPHYRE_MODULE_POLICY', $bootstrap_module_policy);
 	define('DATAPHYRE_FLIGHTDECK_CONFIG', $GLOBALS['dataphyre_flightdeck_config']);
 	define('DATAPHYRE_APPLICATION_ROOTS', $bootstrap_application_roots);
 	define('IS_PRODUCTION', $bootstrap_config['is_production'] ?? true);
@@ -152,11 +156,11 @@ function bootstrap(){
 			file_put_contents($file, bin2hex(openssl_random_pseudo_bytes(32)));
 		}
 		foreach(['_POST', '_GET', '_COOKIE'] as $source){
-			if(!empty($$source['app_override'])){
-				$key=file_get_contents($project_root.'/app_override_key');
-				$user_app=explode(',', $$source['app_override']);
-				if(($user_app[1] ?? null)===$key){
-					$bootstrap_config['app']=$user_app[0];
+			$request_source=is_array($GLOBALS[$source] ?? null) ? $GLOBALS[$source] : [];
+			if(!empty($request_source['app_override'])){
+				$application=dp_app_override_application((string)$request_source['app_override']);
+				if($application!==false){
+					$bootstrap_config['app']=$application;
 				}
 			}
 		}
