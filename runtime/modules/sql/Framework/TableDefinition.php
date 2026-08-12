@@ -345,6 +345,7 @@ final class TableDefinition {
 		$this->columns[$name]['inline_primary']=true;
 		$this->columns[$name]['cast']='int';
 		$this->casts[$name]='int';
+		$this->primaryColumns=[$name];
 		return $this;
 	}
 
@@ -571,6 +572,19 @@ final class TableDefinition {
 	}
 
 	/**
+	 * Returns the normalized definition metadata for every declared column.
+	 *
+	 * Schema-aware consumers such as Dataphyre Panel can use this read-only
+	 * snapshot to derive field types, defaults, nullability, and generated-column
+	 * behavior without reaching into the SQL builder's private state.
+	 *
+	 * @return array<string, array<string, mixed>> Column definitions keyed by name.
+	 */
+	public function columnDefinitions(): array {
+		return $this->columns;
+	}
+
+	/**
 	 * Returns primary key columns.
 	 *
 	 * @return array<int, string> Primary key columns in configured order.
@@ -601,8 +615,9 @@ final class TableDefinition {
 	 * Executes schema creation queries for this table definition.
 	 *
 	 * Required create-schema/create-table queries must succeed; optional index queries
-	 * are attempted after table creation. The table cluster override is read from
-	 * DP_SQL_CFG.
+	 * are attempted after table creation. An active DataEnvironment cluster takes
+	 * precedence over the table's ordinary DP_SQL_CFG cluster so runtime hydration
+	 * cannot leak schema changes into the live database.
 	 *
 	 * @return bool True when required hydration queries succeed.
 	 */
@@ -611,7 +626,7 @@ final class TableDefinition {
 		if($queries===[]){
 			return false;
 		}
-		$dbmsCluster=\DP_SQL_CFG['tables'][$this->table]['cluster'] ?? \DP_SQL_CFG['default_cluster'];
+		$dbmsCluster=$this->hydrationCluster();
 		foreach($queries as $index=>$query){
 			$required=(bool)($query['_required'] ?? $index===0);
 			$query['dbms_cluster_override']=$dbmsCluster;
@@ -638,7 +653,7 @@ final class TableDefinition {
 		if(!isset($this->columns[$column]) || $this->columns[$column]['inline_primary']===true){
 			return false;
 		}
-		$dbmsCluster=\DP_SQL_CFG['tables'][$this->table]['cluster'] ?? \DP_SQL_CFG['default_cluster'];
+		$dbmsCluster=$this->hydrationCluster();
 		$query=[
 			'mysql'=>'ALTER TABLE '.$this->quoteTable('mysql').' ADD COLUMN '.$this->columnSql($this->columns[$column], 'mysql'),
 			'postgresql'=>'ALTER TABLE '.$this->quoteTable('postgresql').' ADD COLUMN IF NOT EXISTS '.$this->columnSql($this->columns[$column], 'postgresql'),
@@ -656,6 +671,17 @@ final class TableDefinition {
 			return true;
 		}
 		return false;
+	}
+
+	/** Resolve schema hydration against the ambient data environment first. */
+	private function hydrationCluster(): string {
+		$environmentCluster=class_exists(DataEnvironment::class)
+			? DataEnvironment::clusterOverride()
+			: null;
+		if($environmentCluster!==null){
+			return $environmentCluster;
+		}
+		return (string)(\DP_SQL_CFG['tables'][$this->table]['cluster'] ?? \DP_SQL_CFG['default_cluster']);
 	}
 
 	/**

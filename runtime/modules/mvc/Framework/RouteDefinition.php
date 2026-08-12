@@ -31,6 +31,7 @@ final class RouteDefinition implements CompilableRoute {
 	private array $modelBindings=[];
 	private array $constraints=[];
 	private array $defaults=[];
+	private ?array $apiMetadata=null;
 	private ?string $name=null;
 	private ?string $domain=null;
 	private string $namePrefix='';
@@ -167,9 +168,49 @@ final class RouteDefinition implements CompilableRoute {
 		$name=trim($name);
 		if($name!==''){
 			$this->name=$this->namePrefix.$name;
+			if($this->apiMetadata!==null){
+				if(trim((string)($this->apiMetadata['operation_id'] ?? ''))===''){
+					$this->apiMetadata['operation_id']=$this->name;
+				}
+				$aliases=is_array($this->apiMetadata['aliases'] ?? null) ? $this->apiMetadata['aliases'] : [];
+				if(!in_array($this->name, $aliases, true)){
+					$aliases[]=$this->name;
+				}
+				$this->apiMetadata['aliases']=array_values($aliases);
+			}
 			$this->changed();
 		}
 		return $this;
+	}
+
+	/**
+	 * Attaches Dataphyre API endpoint metadata to this MVC route.
+	 *
+	 * MVC keeps controller resolution and middleware ownership while the API
+	 * framework owns authorization, discovery, bindings, caching, and execution.
+	 * One compiled route manifest can therefore serve both frameworks.
+	 *
+	 * @param array<string,mixed> $metadata Compiled Endpoint API metadata.
+	 */
+	public function api(array $metadata): self {
+		$this->apiMetadata=$metadata;
+		if($this->name!==null){
+			if(trim((string)($this->apiMetadata['operation_id'] ?? ''))===''){
+				$this->apiMetadata['operation_id']=$this->name;
+			}
+			$aliases=is_array($this->apiMetadata['aliases'] ?? null) ? $this->apiMetadata['aliases'] : [];
+			if(!in_array($this->name, $aliases, true)){
+				$aliases[]=$this->name;
+			}
+			$this->apiMetadata['aliases']=array_values($aliases);
+		}
+		$this->changed();
+		return $this;
+	}
+
+	/** @return ?array<string,mixed> Attached API metadata, or null for a regular MVC route. */
+	public function apiMetadata(): ?array {
+		return $this->apiMetadata;
 	}
 
 	/**
@@ -511,7 +552,11 @@ final class RouteDefinition implements CompilableRoute {
 		if($this->defaults!==[]){
 			$route->defaults($this->defaults);
 		}
-		return $route->compile();
+		$compiled=$route->compile();
+		if($this->apiMetadata!==null){
+			$compiled['api']=$this->apiMetadata;
+		}
+		return $compiled;
 	}
 
 	/**
