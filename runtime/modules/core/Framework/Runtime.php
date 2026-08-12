@@ -8,14 +8,12 @@
 namespace Dataphyre;
 
 /**
- * Framework-facing methods composed into the canonical Dataphyre runtime class.
+ * Static facade for current Dataphyre runtime state, catalogs, bootstrap plans, client address, and render traces.
  *
- * PHP class names are case-insensitive, so `Dataphyre\Runtime` and the legacy
- * `dataphyre\runtime` spelling necessarily identify one class. The kernel runtime
- * composes this trait so both spellings expose the same discovery, catalog, state,
- * bootstrap, client-address, and render-trace APIs without declaring a duplicate class.
+ * Runtime keeps framework callers away from lower-case kernel classes while preserving the same
+ * discovery order for project roots, applications, modules, bootstraps, and optional SQL/template trace data.
  */
-trait RuntimeFrameworkSurface {
+final class Runtime {
 
 	/**
 	 * Reports whether diagnostic tracing is enabled for the current runtime.
@@ -335,11 +333,4 @@ trait RuntimeFrameworkSurface {
 		}
 		return null;
 	}
-}
-
-// Loading the Framework surface first must still materialize the canonical
-// runtime class. When kernel/runtime.php initiated this include, require_once
-// safely recognizes the in-progress kernel file and lets that declaration resume.
-if(!class_exists('dataphyre\\runtime', false)){
-	require_once dirname(__DIR__).'/kernel/runtime.php';
 }
