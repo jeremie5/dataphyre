@@ -5,6 +5,13 @@ capabilities rather than on another application's release checks. This document
 defines the small, application-neutral runtime surfaces used by modular
 installations and by framework verification.
 
+## Compatibility rule
+
+An installation with no explicit module allow-list retains legacy discovery
+semantics. A non-empty allow-list opts into strict module selection, and explicit
+denies always win. This keeps existing applications compatible while allowing a
+new application to constrain its runtime deliberately.
+
 ## Why these surfaces belong in the framework
 
 | Capability | Framework responsibility | Application responsibility |
@@ -19,14 +26,11 @@ None of these contracts names a product, tenant, catalog, receipt, or business
 workflow. They are useful to any Dataphyre application and remain optional until
 an installation enables the corresponding module or integration.
 
-## Compatibility rules
-
 Consumers must probe the documented methods and fail closed when a required
 capability is absent. Framework releases preserve the existing public facade and
 add these capability methods without requiring applications to adopt a specific
 framework consumer. Applications must not copy framework contract checks from a
-different application; the framework owns its capability documentation and
-tests.
+different application; the framework owns its capability documentation and tests.
 
 The account-isolated Stripe client never stores a secret in process-global
 configuration. The scheduler contract rejects public traffic, binds claims to a
