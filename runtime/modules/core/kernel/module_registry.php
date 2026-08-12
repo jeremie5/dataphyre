@@ -80,13 +80,17 @@ final class module_registry {
 	/**
 	 * Lists module names enabled by the selected application's flight sheet.
 	 *
-	 * This is a constant-time read after bootstrap normalization and does not
-	 * inspect the filesystem. An enabled name may still fail to resolve if the
-	 * package is missing, in which case presence/load methods return false.
+	 * An explicit allow-list is a constant-time policy read. With no allow-list,
+	 * legacy discovery supplies the available module names; a name may still fail
+	 * to resolve if the package is missing.
 	 *
 	 * @return array<int,string> Enabled module names.
 	 */
 	public static function enabled_modules(): array {
+		$config=self::module_config();
+		if(($config['allow_all'] ?? false)===true){
+			return self::filesystem_module_names();
+		}
 		return array_keys(self::module_config()['enabled']);
 	}
 
@@ -115,7 +119,8 @@ final class module_registry {
 			return false;
 		}
 		$config=self::module_config();
-		return isset($config['enabled'][$module]) && !isset($config['disabled'][$module]);
+		if(isset($config['disabled'][$module])) return false;
+		return ($config['allow_all'] ?? false)===true || isset($config['enabled'][$module]);
 	}
 
 	/**
@@ -271,7 +276,29 @@ final class module_registry {
 		return self::$module_config=[
 			'enabled'=>$enabled,
 			'disabled'=>$disabled,
+			'allow_all'=>($policy['allow_all'] ?? false)===true
+				|| !array_key_exists('enabled', $policy)
+				|| !is_array($policy['enabled'])
+				|| $policy['enabled']===[],
 		];
+	}
+
+	/** @return array<int,string> Module names discoverable when no allow-list is configured. */
+	private static function filesystem_module_names(): array {
+		$modules=[];
+		if(!defined('ROOTPATH')) return [];
+		foreach([ROOTPATH['common_dataphyre_runtime'] ?? '', ROOTPATH['dataphyre'] ?? ''] as $root){
+			$root=rtrim((string)$root, '/\\').'/modules';
+			if(!is_dir($root)) continue;
+			foreach(scandir($root) ?: [] as $entry){
+				$module=self::normalize_module_name((string)$entry);
+				if($module==='' || str_starts_with((string)$entry, '-') || !is_dir($root.'/'.$entry)) continue;
+				$modules[$module]=true;
+			}
+		}
+		$names=array_keys($modules);
+		sort($names);
+		return $names;
 	}
 
 	/**

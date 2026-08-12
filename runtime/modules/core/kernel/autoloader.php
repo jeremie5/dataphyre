@@ -102,7 +102,9 @@ final class autoloader {
 	}
 
 	/**
-	 * Registers kernel prefixes only for flight-sheet-enabled module names.
+	 * Registers kernel prefixes for the normalized module policy. With no explicit
+	 * allow-list, the policy preserves legacy discovery and only explicit denies
+	 * suppress a module.
 	 *
 	 * @param string $modules_root Runtime modules directory.
 	 * @return void
