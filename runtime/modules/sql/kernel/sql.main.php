@@ -603,7 +603,12 @@ class sql {
 		$formatted_cluster=htmlspecialchars($cluster, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 		$formatted_query=htmlspecialchars($query);
 		$formatted_vars=!empty($vars) ? json_encode($vars, JSON_PRETTY_PRINT) : "None";
-		$formatted_vars=ellipsis($formatted_vars, 512);
+		/* SQL can be loaded independently of the optional core helper module.
+		 * Keep diagnostics bounded without making that module an implicit
+		 * dependency of the public SQL runtime. */
+		$formatted_vars=function_exists('\\ellipsis')
+			? \ellipsis($formatted_vars, 512)
+			: (mb_strlen($formatted_vars)<=512 ? $formatted_vars : mb_substr($formatted_vars, 0, 512).'...');
 		$formatted_vars=htmlspecialchars($formatted_vars, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 		$error='
 		<div class="alert alert-danger" role="alert">
