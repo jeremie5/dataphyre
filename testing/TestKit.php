@@ -211,6 +211,38 @@ final class Expectation {
 	}
 }
 
+/** Captured result from an isolated PHP subprocess started by the TestKit. */
+final class ProcessResult {
+	public function __construct(
+		private int $exit_code,
+		private string $stdout,
+		private string $stderr,
+	) {}
+
+	public function exitCode(): int {
+		return $this->exit_code;
+	}
+
+	public function stdout(): string {
+		return $this->stdout;
+	}
+
+	public function stderr(): string {
+		return $this->stderr;
+	}
+
+	/** @return mixed */
+	public function json(): mixed {
+		return json_decode(trim($this->stdout), true);
+	}
+
+	/** @return array<string,mixed> */
+	public function stderrJson(): array {
+		$decoded=json_decode(trim($this->stderr), true);
+		return is_array($decoded) ? $decoded : [];
+	}
+}
+
 final class Context {
 
 	/** @var array<string, mixed> */
@@ -298,6 +330,68 @@ final class Context {
 	public function browser(array $options=[]): BrowserProbe {
 		$root=defined('ROOTPATH') && is_array(ROOTPATH) ? (string)(ROOTPATH['common_root'] ?? ROOTPATH['root'] ?? '') : '';
 		return new BrowserProbe($root, $options);
+	}
+
+	/**
+	 * Run a PHP entrypoint without a shell, capturing both output streams.
+	 *
+	 * The argument list starts with the PHP script path; the TestKit supplies
+	 * the current PHP binary. Environment overrides are merged with the parent
+	 * process, and a bounded timeout prevents a hung subprocess from stalling
+	 * an entire test worker.
+	 *
+	 * @param list<string> $arguments
+	 * @param array<string,string|null> $environment
+	 */
+	public function phpProcess(
+		array $arguments,
+		string $input='',
+		?string $cwd=null,
+		array $environment=[],
+		int $timeout_ms=10000,
+	): ProcessResult {
+		if($arguments===[]) throw new \InvalidArgumentException('A PHP script path is required.');
+		if($timeout_ms<1) throw new \InvalidArgumentException('PHP subprocess timeout must be positive.');
+		$command=[PHP_BINARY];
+		foreach($arguments as $argument){
+			if(!is_string($argument)) throw new \InvalidArgumentException('PHP subprocess arguments must be strings.');
+			$command[]=$argument;
+		}
+		$descriptors=[0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']];
+		$parent_environment=getenv();
+		if(!is_array($parent_environment)) $parent_environment=[];
+		foreach($environment as $name=>$value){
+			if($value===null) unset($parent_environment[$name]);
+			else $parent_environment[$name]=(string)$value;
+		}
+		$process=proc_open($command,$descriptors,$pipes,$cwd,$parent_environment);
+		if(!is_resource($process)) throw new \RuntimeException('Unable to start PHP subprocess.');
+		fwrite($pipes[0],$input);
+		fclose($pipes[0]);
+		stream_set_blocking($pipes[1],false);
+		stream_set_blocking($pipes[2],false);
+		$stdout='';
+		$stderr='';
+		$started=microtime(true);
+		$timed_out=false;
+		while(true){
+			$stdout.=stream_get_contents($pipes[1]) ?: '';
+			$stderr.=stream_get_contents($pipes[2]) ?: '';
+			$status=proc_get_status($process);
+			if(($status['running'] ?? false)!==true) break;
+			if((microtime(true)-$started)*1000>$timeout_ms){
+				$timed_out=true;
+				proc_terminate($process,9);
+				break;
+			}
+			usleep(1000);
+		}
+		$stdout.=stream_get_contents($pipes[1]) ?: '';
+		$stderr.=stream_get_contents($pipes[2]) ?: '';
+		fclose($pipes[1]);
+		fclose($pipes[2]);
+		$exit_code=$timed_out ? 124 : proc_close($process);
+		return new ProcessResult((int)$exit_code,$stdout,$stderr);
 	}
 
 	public function dataphyreModules(): DataphyreModuleBridge {

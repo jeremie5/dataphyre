@@ -184,6 +184,27 @@ $dialbacks->assertCalled($t, 'DATAPHYRE_STORAGE_SIGNED_URL', 'framework');
 $reactor->assertDispatched($t, 'product.saved', ['id' => 42]);
 ```
 
+For CLI contracts that must be exercised in a separate PHP process, use the
+framework-owned subprocess helper rather than a shell string:
+
+```php
+$probe=$t->phpProcess(
+    [$projectRoot.'/bin/contract-check.php', '--format=json'],
+    $requestBody,
+    $projectRoot,
+    ['APP_ENV' => 'test'],
+    20000,
+);
+$t->same(0, $probe->exitCode());
+$payload=$probe->json();
+```
+
+The helper prefixes the current PHP binary, passes arguments without shell
+expansion, merges explicit environment overrides, captures stdout/stderr, and
+terminates a hung child with exit code `124` after the bounded timeout. It is
+intended for application-neutral CLI and runtime contract tests; it does not
+grant subprocesses production credentials or bypass test isolation.
+
 The fakes expose common adapter-shaped methods such as storage `read/write`,
 HTTP `get/post/put/delete`, queued mail, rollbackable database tables, delayed
 jobs, scoped hook calls, and permission decisions. They are only loaded by test
