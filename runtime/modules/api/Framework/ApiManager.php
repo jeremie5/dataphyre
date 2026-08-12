@@ -7,6 +7,20 @@
  */
 namespace Dataphyre\Api;
 
+if(!function_exists(__NAMESPACE__.'\\tracelog')){
+	function tracelog(...$arguments): void {
+		if(\function_exists('tracelog')){
+			\tracelog(...$arguments);
+		}
+	}
+}
+
+if(!function_exists(__NAMESPACE__.'\\api_dialback')){
+	function api_dialback(string $event, mixed ...$arguments): mixed {
+		return \dataphyre\core::dialback($event, ...$arguments);
+	}
+}
+
 use Dataphyre\Http\Request;
 use Dataphyre\Http\Response;
 use Dataphyre\Routing\ControllerAction;
@@ -678,9 +692,6 @@ final class ApiManager {
 			(string)($route['path_template'] ?? $route['exact_path'] ?? ($route['api']['path'] ?? '/')),
 			$routeParameters
 		);
-		if($resolvedPath===null){
-			return ['status'=>422, 'message'=>'API alias dispatch could not build a route path.'];
-		}
 
 		$route['parameters']=$routeParameters;
 		$definition['path']=$resolvedPath;
@@ -719,17 +730,7 @@ final class ApiManager {
 		if(($options['trust_auth'] ?? false)===true && is_array($options['auth'] ?? null)){
 			$attributes[self::AUTH_ATTRIBUTE]=$options['auth'];
 		}
-		return Request::create(
-			$definition['method'],
-			$definition['path'],
-			$definition['query'],
-			$definition['body'],
-			$cookies,
-			$server,
-			$headers,
-			$route['parameters'] ?? [],
-			$attributes
-		);
+		return Request::create($definition['method'], $definition['path'], $definition['query'], $definition['body'], $cookies, $server, $headers, $route['parameters'] ?? [], $attributes);
 	}
 
 	/**
@@ -889,7 +890,7 @@ final class ApiManager {
 	private function resolveAliasRouteParameters(array $route, array $definition): ?array {
 		$routeParameters=is_array($definition['route_parameters'] ?? null) ? $definition['route_parameters'] : [];
 		$pathTemplate=(string)($route['path_template'] ?? $route['exact_path'] ?? ($route['api']['path'] ?? '/'));
-		if(preg_match_all('/\{([A-Za-z_][A-Za-z0-9_]*)\}/', $pathTemplate, $matches)!==1){
+		if(preg_match_all('/\{([A-Za-z_][A-Za-z0-9_]*)\}/', $pathTemplate, $matches)<1){
 			return $routeParameters;
 		}
 		foreach($matches[1] as $parameterName){
@@ -918,7 +919,7 @@ final class ApiManager {
 	 */
 	private function interpolateRoutePathTemplate(string $pathTemplate, array $parameters): ?string {
 		$pathTemplate=self::normalizePath($pathTemplate);
-		if(preg_match_all('/\{([A-Za-z_][A-Za-z0-9_]*)\}/', $pathTemplate, $matches)!==1){
+		if(preg_match_all('/\{([A-Za-z_][A-Za-z0-9_]*)\}/', $pathTemplate, $matches)<1){
 			return $pathTemplate;
 		}
 		foreach($matches[1] as $parameterName){
@@ -1032,9 +1033,7 @@ final class ApiManager {
 			return;
 		}
 		if($bootstrap==='core'){
-			if(defined('DP_CORE_LOADED')===false){
-				require_once(ROOTPATH['common_dataphyre_runtime'].'modules/core/kernel/core.main.php');
-			}
+			$this->loadFrameworkModule('core');
 			return;
 		}
 		if(is_string($bootstrap) && is_file($bootstrap)){
@@ -1320,7 +1319,7 @@ final class ApiManager {
 			'route'=>$this->apiRouteTraceDescriptor($route),
 			'extra_count'=>count($extra),
 		];
-		$dialback=\dataphyre\core::dialback('CALL_API_FRAMEWORK_LIFECYCLE_BEFORE_RUN', $payload);
+		$dialback=api_dialback('CALL_API_FRAMEWORK_LIFECYCLE_BEFORE_RUN', $payload);
 		if($dialback instanceof Response){
 			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API lifecycle phase short-circuited before run; phase='.$phase.'; route='.$this->apiRouteTraceLabel($route).'; hooks='.count($hooks).'; status='.$dialback->status, $S=$dialback->status < 400 ? 'info' : 'warning');
 			return $dialback;
@@ -1332,7 +1331,7 @@ final class ApiManager {
 			$result=$this->invokeLifecycleHook($phase, $hook, $context, $request, $route, ...$extra);
 			if($result instanceof Response){
 				tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API lifecycle phase short-circuited by hook; phase='.$phase.'; route='.$this->apiRouteTraceLabel($route).'; hooks='.count($hooks).'; status='.$result->status, $S=$result->status < 400 ? 'info' : 'warning');
-				$dialback=\dataphyre\core::dialback('CALL_API_FRAMEWORK_LIFECYCLE_AFTER_RUN', $payload+['short_circuited'=>true, 'status'=>$result->status]);
+				$dialback=api_dialback('CALL_API_FRAMEWORK_LIFECYCLE_AFTER_RUN', $payload+['short_circuited'=>true, 'status'=>$result->status]);
 				if($dialback instanceof Response){
 					return $dialback;
 				}
@@ -1340,7 +1339,7 @@ final class ApiManager {
 			}
 		}
 		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API lifecycle phase completed; phase='.$phase.'; route='.$this->apiRouteTraceLabel($route).'; hooks='.count($hooks), $S='info');
-		$dialback=\dataphyre\core::dialback('CALL_API_FRAMEWORK_LIFECYCLE_AFTER_RUN', $payload+['short_circuited'=>false]);
+		$dialback=api_dialback('CALL_API_FRAMEWORK_LIFECYCLE_AFTER_RUN', $payload+['short_circuited'=>false]);
 		if($dialback instanceof Response){
 			return $dialback;
 		}
@@ -1381,7 +1380,7 @@ final class ApiManager {
 			'reference'=>isset($hook['reference']) && is_string($hook['reference']) ? trim($hook['reference']) : null,
 			'extra_count'=>count($extra),
 		];
-		$dialback=\dataphyre\core::dialback('CALL_API_FRAMEWORK_LIFECYCLE_BEFORE_INVOKE', $payload);
+		$dialback=api_dialback('CALL_API_FRAMEWORK_LIFECYCLE_BEFORE_INVOKE', $payload);
 		if($dialback instanceof Response){
 			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API lifecycle hook replaced before invoke; phase='.$phase.'; route='.$this->apiRouteTraceLabel($route).'; status='.$dialback->status, $S=$dialback->status < 400 ? 'info' : 'warning');
 			return $dialback;
@@ -1393,7 +1392,7 @@ final class ApiManager {
 		};
 		$result=$this->invokeCallableWithArgs($callable, $args);
 		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API lifecycle hook invoked; phase='.$phase.'; route='.$this->apiRouteTraceLabel($route).'; result_type='.$this->apiValueType($result), $S=$result instanceof Response && $result->status >= 400 ? 'warning' : 'info');
-		$dialback=\dataphyre\core::dialback('CALL_API_FRAMEWORK_LIFECYCLE_AFTER_INVOKE', $payload+[
+		$dialback=api_dialback('CALL_API_FRAMEWORK_LIFECYCLE_AFTER_INVOKE', $payload+[
 			'result_type'=>$this->apiValueType($result),
 			'status'=>$result instanceof Response ? $result->status : null,
 		]);
@@ -1422,9 +1421,11 @@ final class ApiManager {
 				if(class_exists($class)===false){
 					return null;
 				}
-				return [new $class(), $method];
+				$callable=[new $class(), $method];
+				return is_callable($callable) ? $callable : null;
 			}
-			return [$class, $method];
+			$callable=[$class, $method];
+			return is_callable($callable) ? $callable : null;
 		}
 		if($type==='callable'){
 			$reference=trim((string)($execution['reference'] ?? ''));
@@ -1699,20 +1700,11 @@ final class ApiManager {
 			}
 			$bindingContext=$this->bindingContextForApi($context, [], $path, $traceContext, ++$bindingSequence);
 			$binding=$this->bindingFromDefinition($path, $definition);
-			$metadata=$binding instanceof \Dataphyre\Templating\BindingMetadataProvider
-				? $binding->metadata()
-				: [];
+			$metadata=$binding->metadata();
 			$bindingQueryCacheNames=array_merge(
 				$bindingQueryCacheNames,
 				$this->normalizeEndpointCacheNames($metadata['query_cache_names'] ?? [])
 			);
-			if(!$binding instanceof \Dataphyre\Templating\BindingCacheIdentityProvider){
-				if($allowUntrackedBindings!==true){
-					$bindingReason="Binding '{$path}' does not expose cache identity.";
-					break;
-				}
-				continue;
-			}
 			$identity=$this->normalizeBindingCacheIdentity($binding->cacheIdentity($bindingContext));
 			if($identity===null){
 				if($allowUntrackedBindings!==true){
@@ -1760,20 +1752,6 @@ final class ApiManager {
 			'bindings'=>$bindingIdentities!==[] ? $bindingIdentities : null,
 			'identity'=>$extraIdentity,
 		], static fn(mixed $value): bool => $value!==null && $value!==[]);
-
-		if($identity===[]){
-			return [
-				'enabled'=>true,
-				'cacheable'=>false,
-				'state'=>'bypass',
-				'layer'=>'none',
-				'reason'=>'Endpoint cache identity is empty.',
-				'names'=>$this->normalizeEndpointCacheNames(array_merge(
-					$this->normalizeEndpointCacheNames($cacheDefinition['names'] ?? []),
-					$bindingQueryCacheNames
-				)),
-			];
-		}
 
 		$names=$this->normalizeEndpointCacheNames(array_merge(
 			$this->normalizeEndpointCacheNames($cacheDefinition['names'] ?? []),
@@ -2171,7 +2149,9 @@ final class ApiManager {
 		$selected=[];
 		foreach($names as $name){
 			foreach($source as $sourceName=>$value){
-				if(strtolower((string)$sourceName)!==strtolower($name)){
+				$normalizedSourceName=str_replace('-', '_', strtolower((string)$sourceName));
+				$normalizedName=str_replace('-', '_', strtolower($name));
+				if($normalizedSourceName!==$normalizedName){
 					continue;
 				}
 				$selected[$name]=$value;
@@ -2231,7 +2211,10 @@ final class ApiManager {
 	 * @return string Absolute cache root ending with a directory separator.
 	 */
 	private function endpointCacheRoot(): string {
-		return rtrim(ROOTPATH['dataphyre'].'cache/api/endpoints/', '/\\').DIRECTORY_SEPARATOR;
+		$cacheRoot=is_string(ROOTPATH['api_cache'] ?? null) && trim((string)ROOTPATH['api_cache'])!==''
+			? rtrim((string)ROOTPATH['api_cache'], '/\\')
+			: rtrim((string)ROOTPATH['dataphyre'], '/\\').DIRECTORY_SEPARATOR.'cache'.DIRECTORY_SEPARATOR.'api';
+		return $cacheRoot.DIRECTORY_SEPARATOR.'endpoints'.DIRECTORY_SEPARATOR;
 	}
 
 	/**
@@ -2348,9 +2331,7 @@ final class ApiManager {
 			return;
 		}
 		if($bootstrap==='core'){
-			if(defined('DP_CORE_LOADED')===false){
-				require_once(ROOTPATH['common_dataphyre_runtime'].'modules/core/kernel/core.main.php');
-			}
+			$this->loadFrameworkModule('core');
 			return;
 		}
 		if(is_string($bootstrap) && is_file($bootstrap)){
@@ -2435,12 +2416,8 @@ final class ApiManager {
 
 			$bindingContext=$this->bindingContextForApi($context, $resolved, $path, $traceContext, ++$sequence);
 			$binding=$this->bindingFromDefinition($path, $definition);
-			$metadata=$binding instanceof \Dataphyre\Templating\BindingMetadataProvider
-				? $binding->metadata()
-				: [];
-			$identity=$binding instanceof \Dataphyre\Templating\BindingCacheIdentityProvider
-				? $this->normalizeBindingCacheIdentity($binding->cacheIdentity($bindingContext))
-				: null;
+			$metadata=$binding->metadata();
+			$identity=$this->normalizeBindingCacheIdentity($binding->cacheIdentity($bindingContext));
 			$cacheKey=$identity!==null ? sha1(json_encode($identity)) : null;
 			$startedAt=microtime(true);
 			$reused=false;
@@ -2485,11 +2462,11 @@ final class ApiManager {
 	 *
 	 * @param string $path Binding destination path in the API context.
 	 * @param array{type?:string} $definition Compiled binding definition.
-	 * @return \Dataphyre\Templating\DataBinding Runtime binding instance.
+	 * @return \Dataphyre\Templating\DataBinding&\Dataphyre\Templating\BindingMetadataProvider&\Dataphyre\Templating\BindingCacheIdentityProvider Runtime binding instance.
 	 *
 	 * @throws \RuntimeException When the binding type is unsupported.
 	 */
-	private function bindingFromDefinition(string $path, array $definition): \Dataphyre\Templating\DataBinding {
+	private function bindingFromDefinition(string $path, array $definition): \Dataphyre\Templating\DataBinding&\Dataphyre\Templating\BindingMetadataProvider&\Dataphyre\Templating\BindingCacheIdentityProvider {
 		$type=strtolower(trim((string)($definition['type'] ?? '')));
 		return match ($type) {
 			'callable' => $this->callableBindingFromDefinition($path, $definition),
@@ -2890,7 +2867,7 @@ final class ApiManager {
 		foreach($segments as $index=>$segment){
 			if($index===count($segments)-1){
 				$current[$segment]=$value;
-				return;
+				break;
 			}
 			if(!isset($current[$segment]) || !is_array($current[$segment])){
 				$current[$segment]=[];
@@ -3188,7 +3165,7 @@ final class ApiManager {
 			'scope_count'=>count($scopes),
 			'runtime_keys'=>array_values(array_map('strval', array_keys($runtime))),
 		];
-		$dialback=\dataphyre\core::dialback('CALL_API_FRAMEWORK_AUTH_BEFORE_RESOLVER', $payload);
+		$dialback=api_dialback('CALL_API_FRAMEWORK_AUTH_BEFORE_RESOLVER', $payload);
 		if($dialback!==null){
 			$result=$this->normalizeAuthorizationResult($schemeName, $runtime, $dialback);
 			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API auth resolver replaced before invoke; route='.$this->apiRouteTraceLabel($route).'; scheme='.$schemeName.'; authorized='.(($result['authorized'] ?? false)===true ? 'yes' : 'no'), $S=($result['authorized'] ?? false)===true ? 'info' : 'warning');
@@ -3197,7 +3174,7 @@ final class ApiManager {
 		$result=$resolver($credentials, $request, $route, $scopes, $runtime);
 		$normalized=$this->normalizeAuthorizationResult($schemeName, $runtime, $result);
 		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='API auth resolver completed; route='.$this->apiRouteTraceLabel($route).'; scheme='.$schemeName.'; authorized='.(($normalized['authorized'] ?? false)===true ? 'yes' : 'no').'; result_type='.$this->apiValueType($result), $S=($normalized['authorized'] ?? false)===true ? 'info' : 'warning');
-		$dialback=\dataphyre\core::dialback('CALL_API_FRAMEWORK_AUTH_AFTER_RESOLVER', $payload+[
+		$dialback=api_dialback('CALL_API_FRAMEWORK_AUTH_AFTER_RESOLVER', $payload+[
 			'authorized'=>($normalized['authorized'] ?? false)===true,
 			'status'=>$normalized['status'] ?? null,
 			'result_type'=>$this->apiValueType($result),
@@ -3364,18 +3341,32 @@ final class ApiManager {
 		if($definition===null){
 			return ['version'=>1, 'metadata'=>[], 'routes'=>[]];
 		}
-		if(!empty($definition->compiledRoutesFile) && is_file($definition->compiledRoutesFile)){
-			$manifest=require($definition->compiledRoutesFile);
+		if(!empty($definition->compiled_routes_file) && is_file($definition->compiled_routes_file)){
+			$manifest=require($definition->compiled_routes_file);
 			return is_array($manifest) ? $manifest : ['version'=>1, 'metadata'=>[], 'routes'=>[]];
 		}
-		if(!empty($definition->routesFile) && is_file($definition->routesFile)){
+		if(!empty($definition->routes_file) && is_file($definition->routes_file)){
 			if(class_exists('\dataphyre\core', false)){
 				\dataphyre\core::load_framework_module('routing');
 			}
-			return \Dataphyre\Routing\RouteCompiler::compileFile($definition->routesFile, [
+			return \Dataphyre\Routing\RouteCompiler::compileFile($definition->routes_file, [
 				'application'=>$definition->id,
 				'compiled_at'=>gmdate('c'),
 			]);
+		}
+		if(class_exists('\Dataphyre\Mvc\Mvc', false)){
+			try{
+				$manifest=\Dataphyre\Mvc\Mvc::routes($definition->id)->compile([
+					'application'=>$definition->id,
+					'compiled_at'=>gmdate('c'),
+					'source'=>'dataphyre.mvc.api',
+				]);
+				if(is_array($manifest) && is_array($manifest['routes'] ?? null) && $manifest['routes']!==[]){
+					return $manifest;
+				}
+			}catch(\Throwable){
+				// The MVC app may not be registered in CLI-only API discovery contexts.
+			}
 		}
 		return ['version'=>1, 'metadata'=>['application'=>$definition->id], 'routes'=>[]];
 	}
@@ -3416,19 +3407,14 @@ final class ApiManager {
 	 * @return ?string Absolute project root without a trailing separator.
 	 */
 	private function projectRoot(): ?string {
-		if(class_exists('Dataphyre\\Runtime')){
-			$projectRoot=\Dataphyre\Runtime::projectRoot();
-			if(is_string($projectRoot) && trim($projectRoot)!==''){
-				return rtrim($projectRoot, '/\\');
-			}
-		}
 		if(class_exists('\dataphyre\runtime', false)){
 			$projectRoot=\dataphyre\runtime::current_project_root();
 			if(is_string($projectRoot) && trim($projectRoot)!==''){
 				return rtrim($projectRoot, '/\\');
 			}
 		}
-		return null;
+		$projectRoot=defined('ROOTPATH') && is_array(ROOTPATH) ? (ROOTPATH['root'] ?? null) : null;
+		return is_string($projectRoot) && trim($projectRoot)!=='' ? rtrim($projectRoot, '/\\') : null;
 	}
 
 	/**

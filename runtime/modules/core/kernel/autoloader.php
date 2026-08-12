@@ -102,7 +102,7 @@ final class autoloader {
 	}
 
 	/**
-	 * Discovers and registers kernel prefixes for every module below a runtime modules root.
+	 * Registers kernel prefixes only for flight-sheet-enabled module names.
 	 *
 	 * @param string $modules_root Runtime modules directory.
 	 * @return void
@@ -111,8 +111,13 @@ final class autoloader {
 		if(isset(self::$registered_module_roots[$modules_root])){
 			return;
 		}
+		require_once(__DIR__.'/module_registry.php');
 		$prefixes=[];
-		foreach(glob($modules_root.'/*', GLOB_ONLYDIR) ?: [] as $module_directory){
+		foreach(\dataphyre\module_registry::enabled_modules() as $module){
+			$module_directory=$modules_root.'/'.$module;
+			if(!is_dir($module_directory)){
+				continue;
+			}
 			$prefixes=array_merge($prefixes, self::kernel_prefixes($module_directory));
 		}
 		self::register_prefixes($prefixes);
@@ -129,11 +134,12 @@ final class autoloader {
 	 * @return array<int, string> Unique module names whose Framework prefixes were registered.
 	 */
 	public static function register_framework_modules(array|string $modules): array {
+		require_once(__DIR__.'/module_registry.php');
 		$modules=is_array($modules) ? $modules : [$modules];
 		$loaded=[];
 		foreach($modules as $module){
 			$module=strtolower(trim((string)$module));
-			if($module===''){
+			if($module==='' || \dataphyre\module_registry::module_enabled($module)===false){
 				continue;
 			}
 			$prefixes=self::framework_prefixes_for_module($module);
@@ -153,7 +159,9 @@ final class autoloader {
 	 * @return bool `true` when at least one registered module root contains a Framework directory for the module.
 	 */
 	public static function framework_module_available(string $module): bool {
-		return self::framework_prefixes_for_module($module)!==[];
+		require_once(__DIR__.'/module_registry.php');
+		return \dataphyre\module_registry::module_enabled($module)
+			&& self::framework_prefixes_for_module($module)!==[];
 	}
 
 	/**
@@ -163,6 +171,10 @@ final class autoloader {
 	 * @return array<string, string> Namespace prefix to Framework directory map.
 	 */
 	private static function framework_prefixes_for_module(string $module): array {
+		require_once(__DIR__.'/module_registry.php');
+		if(\dataphyre\module_registry::module_enabled($module)===false){
+			return [];
+		}
 		$prefixes=[];
 		foreach(array_keys(self::$registered_module_roots) as $modules_root){
 			$module_directory=rtrim($modules_root, '/\\').'/'.$module;

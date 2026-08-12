@@ -571,6 +571,15 @@ final class TableDefinition {
 	}
 
 	/**
+	 * Returns the normalized definition metadata for every declared column.
+	 *
+	 * @return array<string, array<string, mixed>> Column definitions keyed by name.
+	 */
+	public function columnDefinitions(): array {
+		return $this->columns;
+	}
+
+	/**
 	 * Returns primary key columns.
 	 *
 	 * @return array<int, string> Primary key columns in configured order.
