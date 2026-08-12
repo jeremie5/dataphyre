@@ -27,13 +27,6 @@ class scheduling {
 	private const CACHE_PATH='cache/scheduling/';
 	/** @var ?string Scheduler currently being executed by a task runner route in this process. */
 	private static ?string $active_scheduler_name=null;
-	/** @var ?string Optional embedded-runtime state root override. */
-	private static ?string $state_root=null;
-
-	/** Selects an alternate scheduler state root for embedded and isolated runtimes. */
-	public static function use_state_root(?string $root): void {
-		self::$state_root=$root===null ? null : rtrim($root, '/\\').'/';
-	}
 
     /**
      * Registers a scheduler definition and dispatches it after shutdown when it is due.
@@ -50,10 +43,9 @@ class scheduling {
      * @param string $memory_limit Memory limit stored with the scheduler definition.
      * @param array<int, string> $dependencies Files that must exist before the scheduler is accepted.
      * @param ?string $app_override Application override to preserve in the internal dispatch request.
-     * @param ?callable $shutdown_registrar Optional shutdown registrar used by embedded runtimes and tests.
      * @return bool Whether the scheduler definition was accepted and persisted.
      */
-    public static function run(string $name, string $file_path, float $frequency, float $timeout, string $memory_limit, array $dependencies, ?string $app_override=null, ?callable $shutdown_registrar=null) : bool {
+    public static function run(string $name, string $file_path, float $frequency, float $timeout, string $memory_limit, array $dependencies, ?string $app_override=null) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(!isset($app_override))$app_override=APP;
 		$name=self::normalize_scheduler_name($name);
@@ -75,52 +67,15 @@ class scheduling {
 		}
 		self::persist_scheduler_definition($scheduler);
 		if(self::can_run($scheduler)===true){
-			try{
-				$dispatch_claim=bin2hex(random_bytes(32));
-			}catch(\Throwable $failure){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Failed creating scheduler dispatch claim', $T='warning');
+			core::file_put_contents_forced(self::last_run_file($name), (string)time());
+			if(false!==core::file_put_contents_forced(self::running_lock_file($name), '')){
+				register_shutdown_function([self::class, 'dispatch_registered_scheduler'], $name, $app_override);
+			}
+			else
+			{
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Failed locking scheduler');
 				return false;
 			}
-			if(self::acquire_running_lock($name, $dispatch_claim)!==true){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Failed atomically locking scheduler', $T='warning');
-				return false;
-			}
-			if(core::file_put_contents_forced(self::last_run_file($name), (string)time())===false){
-				@unlink(self::running_lock_file($name));
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Failed recording scheduler dispatch timestamp', $T='warning');
-				return false;
-			}
-			$shutdown_registrar ??= static function(mixed $callback, mixed ...$arguments): void {
-				register_shutdown_function($callback, ...$arguments);
-			};
-			$shutdown_registrar([self::class, 'dispatch_registered_scheduler'], $name, $app_override, $dispatch_claim);
-		}
-		return true;
-	}
-
-	/**
-	 * Creates one pending-dispatch lock without overwriting a concurrent claim.
-	 *
-	 * The exclusive-create filesystem primitive is the scheduler's process boundary:
-	 * only the request that creates the lock receives the claim and may register the
-	 * shutdown dispatch. The task runner later takes an advisory lock on the same
-	 * file, which prevents a valid signed callback from being replayed concurrently.
-	 */
-	private static function acquire_running_lock(string $name, string $dispatch_claim): bool {
-		if(preg_match('/^[a-f0-9]{64}$/D', $dispatch_claim)!==1){
-			return false;
-		}
-		$path=self::running_lock_file($name);
-		$handle=@fopen($path, 'x');
-		if(!is_resource($handle)){
-			return false;
-		}
-		$written=@fwrite($handle, $dispatch_claim);
-		$flushed=$written===strlen($dispatch_claim) && @fflush($handle);
-		@fclose($handle);
-		if($flushed!==true){
-			@unlink($path);
-			return false;
 		}
 		return true;
 	}
@@ -182,8 +137,7 @@ class scheduling {
 	 */
 	public static function scheduler_directory(string $name): string {
 		$name=self::normalize_scheduler_name($name);
-		$root=self::$state_root ?? (string)ROOTPATH['dataphyre'];
-		return rtrim($root, '/\\').'/'.self::CACHE_PATH.($name!=='' ? $name.'/' : '');
+		return ROOTPATH['dataphyre'].self::CACHE_PATH.($name!=='' ? $name.'/' : '');
 	}
 
 	/**
@@ -293,36 +247,16 @@ class scheduling {
 	 *
 	 * @param string $name Scheduler name to dispatch.
 	 * @param string $app_override Application override to include when resolvable.
-	 * @param string $dispatch_claim One-time pending-dispatch claim stored in the scheduler lock.
-	 * @param ?bool $curl_available Optional transport override used by deterministic runtimes.
-	 * @param ?callable $signer Optional scheduler-name and claim signer used by deterministic runtimes.
 	 */
-	private static function dispatch_registered_scheduler(string $name, string $app_override, string $dispatch_claim, ?bool $curl_available=null, ?callable $signer=null): void {
+	private static function dispatch_registered_scheduler(string $name, string $app_override): void {
 		try{
 			$url=self::scheduler_dispatch_url($name, $app_override);
 			if($url===null){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Unable to resolve scheduler dispatch URL', $T='warning');
 				return;
 			}
-			if(preg_match('/^[a-f0-9]{64}$/D', $dispatch_claim)!==1){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Invalid scheduler dispatch claim', $T='warning');
-				return;
-			}
-			$signer ??= function_exists('dp_shared_request_key')
-				? static fn(string $scheduler, string $claim): string|false=>dp_shared_request_key('app_override_key', 'scheduler_dispatch', $scheduler.'|'.$claim)
-				: null;
-			$request_key=is_callable($signer) ? $signer($name, $dispatch_claim) : false;
-			if(!is_string($request_key) || preg_match('/^[a-f0-9]{64}$/D', $request_key)!==1){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Unable to sign internal scheduler dispatch', $T='warning');
-				return;
-			}
-			$headers=[
-				'X-Traffic-Source: internal_traffic',
-				'X-Dataphyre-Scheduler-Claim: '.$dispatch_claim,
-				'X-Dataphyre-Scheduler-Key: '.$request_key,
-			];
-			$curl_available ??= function_exists('curl_init');
-			if($curl_available){
+			$headers=['X-Traffic-Source: internal_traffic'];
+			if(function_exists('curl_init')){
 				$ch=curl_init();
 				curl_setopt($ch, CURLOPT_URL, $url);
 				curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
@@ -383,10 +317,7 @@ class scheduling {
 	 */
 	private static function normalize_scheduler_name(string $name): string {
 		$name=trim($name);
-		if(
-			$name==='' || strlen($name)>128 || in_array($name, ['.', '..'], true)
-			|| preg_match('/^[A-Za-z0-9._-]+$/D', $name)!==1
-		){
+		if($name==='' || preg_match('/^[A-Za-z0-9._-]+$/', $name)!==1){
 			return '';
 		}
 		return $name;
@@ -447,11 +378,7 @@ class scheduling {
 		$file_path=realpath((string)($scheduler['file_path'] ?? '')) ?: (string)($scheduler['file_path'] ?? '');
 		$dependencies=[];
 		foreach((array)($scheduler['dependencies'] ?? []) as $dependency){
-			$dependency=(string)$dependency;
-			if(trim($dependency)===''){
-				continue;
-			}
-			$dependency_path=realpath($dependency) ?: $dependency;
+			$dependency_path=realpath((string)$dependency) ?: (string)$dependency;
 			if($dependency_path!==''){
 				$dependencies[$dependency_path]=true;
 			}
@@ -491,12 +418,11 @@ class scheduling {
 	 * @param string $last_run_file Absolute last_run path.
 	 * @return ?int Positive timestamp, or null when missing or invalid.
 	 */
-	private static function read_last_run_timestamp(string $last_run_file, ?callable $reader=null): ?int {
+	private static function read_last_run_timestamp(string $last_run_file): ?int {
 		if(!is_file($last_run_file)){
 			return null;
 		}
-		$reader ??= static fn(string $path): string|false => @file_get_contents($path);
-		$contents=$reader($last_run_file);
+		$contents=@file_get_contents($last_run_file);
 		if(!is_string($contents)){
 			return null;
 		}

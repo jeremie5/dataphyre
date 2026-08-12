@@ -61,27 +61,17 @@ final class MvcDispatcher {
 					'route_name'=>$route->nameValue(),
 					'app'=>$this->app,
 				]);
-				$authorizationResponse=$this->authorizeApiRoute($match, $request);
-				if($authorizationResponse instanceof Response){
-					return $this->normalizeResponse($authorizationResponse);
-				}
 				$terminable=[];
 				try{
 					$response=$this->normalizeResponse($this->runMiddleware(
 						$this->middlewareStack($match['middleware'] ?? [], $route->excludedMiddlewareDefinitions()),
 						$request,
-						function(Request $request) use ($route, $match, $parameters, &$terminable): Response {
-							$apiResponse=$this->executeApiRoute($match, $request);
-							if($apiResponse instanceof Response){
-								return $this->normalizeResponse($apiResponse);
-							}
-							return $this->normalizeResponse($this->invokeHandler(
-								$route->handler(),
-								$request,
-								new MvcRouteContext($this->app, $route, $match, $parameters),
-								$terminable
-							));
-						},
+						fn(Request $request): Response => $this->normalizeResponse($this->invokeHandler(
+							$route->handler(),
+							$request,
+							new MvcRouteContext($this->app, $route, $match, $parameters),
+							$terminable
+						)),
 						$terminable
 					));
 				}catch(\Throwable $throwable){
@@ -94,56 +84,6 @@ final class MvcDispatcher {
 		}catch(\Throwable $throwable){
 			return $this->handleError($throwable, $request);
 		}
-	}
-
-	/** @param array<string,mixed> $route */
-	private function authorizeApiRoute(array $route, Request $request): ?Response {
-		$api=$route['api'] ?? null;
-		if(!is_array($api)){
-			return null;
-		}
-		$security=$api['security'] ?? [];
-		if(!is_array($security) || $security===[]){
-			return null;
-		}
-		if($this->loadApiBridge('authorizeCompiledRoute')!==true){
-			return $this->apiBridgeUnavailable();
-		}
-		$response=\Dataphyre\Api\Api::authorizeCompiledRoute($route, $request);
-		return $response instanceof Response ? $response : null;
-	}
-
-	/** @param array<string,mixed> $route */
-	private function executeApiRoute(array $route, Request $request): ?Response {
-		if(!is_array($route['api'] ?? null) || !is_array($route['api']['execution'] ?? null)){
-			return null;
-		}
-		if($this->loadApiBridge('executeCompiledRoute')!==true){
-			return $this->apiBridgeUnavailable();
-		}
-		$response=\Dataphyre\Api\Api::executeCompiledRoute($route, $request);
-		return $response instanceof Response ? $response : null;
-	}
-
-	/** Loads the API framework for a declared bridge operation without allowing a security fallback. */
-	private function loadApiBridge(string $method): bool {
-		try{
-			if(class_exists('\dataphyre\core', false)){
-				\dataphyre\core::load_framework_module('api');
-			}
-			return class_exists('\Dataphyre\Api\Api')
-				&& method_exists('\Dataphyre\Api\Api', $method);
-		}catch(\Throwable){
-			return false;
-		}
-	}
-
-	/** Returns a stable fail-closed response when declared API behavior cannot run. */
-	private function apiBridgeUnavailable(): Response {
-		return Response::json([
-			'ok'=>false,
-			'error'=>'API framework is unavailable.',
-		], 503, ['Cache-Control'=>'no-store']);
 	}
 
 	/**
@@ -210,7 +150,7 @@ final class MvcDispatcher {
 		}
 		$manifest=$this->app->routes()->compile([
 			'signature'=>$signature,
-			'route_sources'=>$this->manifestSources(),
+			'route_sources'=>$this->app->routeSources(),
 		]);
 		if($cacheFile!==null){
 			$this->writeManifestCache($cacheFile, $manifest);
@@ -228,15 +168,8 @@ final class MvcDispatcher {
 		return RouteCompiler::manifestSignature([
 			'app'=>$this->app->name(),
 			'revision'=>$revision,
-			'sources'=>$this->manifestSources(),
+			'sources'=>$this->app->routeSources(),
 		]);
-	}
-
-	/** @return array<string,int> Route files plus declared cache dependencies. */
-	private function manifestSources(): array {
-		$sources=array_replace($this->app->routeSources(), $this->app->manifestCacheSources());
-		ksort($sources, SORT_STRING);
-		return $sources;
 	}
 
 	/**
