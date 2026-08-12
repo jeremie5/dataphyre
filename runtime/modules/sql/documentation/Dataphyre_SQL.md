@@ -153,6 +153,17 @@ Core helpers include:
 - `sql_upsert(...)`
 - `sql_define_table(...)`
 
+### PostgreSQL connection options
+
+The PostgreSQL kernel applies the standard UTF-8 and UTC connection defaults
+and also preserves the process-level `PGOPTIONS` value when opening a
+connection. This is an application-neutral libpq contract: deployment tools
+may use `PGOPTIONS` for scoped session settings (for example, a temporary
+migration role) without the kernel silently discarding them when it supplies
+its own connection defaults. The value is appended to the defaults and is
+escaped as one libpq connection option; applications remain responsible for
+choosing safe, bounded options for their process.
+
 These are the lowest-overhead path and fit hot paths or specialized queries.
 
 ## Optional Framework Layer

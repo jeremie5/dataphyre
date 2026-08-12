@@ -119,12 +119,23 @@ class postgresql_query_builder {
 		$port=DP_SQL_CFG['datacenters'][$datacenter]['dbms_clusters'][$dbms_cluster]['dbms_port']??5432;
 		$password=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['password'];
 		$password??=core::get_password($endpoint);
+		// Keep the framework's safe defaults while honoring the process-level
+		// libpq options contract.  An explicit `options=` connection-string
+		// parameter takes precedence over PGOPTIONS, so omitting the latter here
+		// silently discards deployment-scoped settings such as a temporary
+		// migration role.  PGOPTIONS is intentionally appended after the
+		// defaults so callers can override them using normal libpq semantics.
+		$connection_options='--client_encoding=UTF8 --timezone=UTC';
+		$process_options=trim((string)(getenv('PGOPTIONS') ?: ''));
+		if($process_options!==''){
+			$connection_options.=' '.$process_options;
+		}
 		$conn_string='host='.self::conninfo_value((string)$endpoint)
 			.' port='.self::conninfo_value((string)$port)
 			.' dbname='.self::conninfo_value((string)$database)
 			.' user='.self::conninfo_value((string)$username)
 			.' password='.self::conninfo_value((string)$password)
-			.' options='.self::conninfo_value('--client_encoding=UTF8 --timezone=UTC')
+			.' options='.self::conninfo_value($connection_options)
 			.' connect_timeout=1';
 		if(!$conn=pg_connect($conn_string)){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Failed connecting to $endpoint", $S="warning");
