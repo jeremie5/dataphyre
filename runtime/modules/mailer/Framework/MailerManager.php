@@ -514,6 +514,18 @@ final class MailerManager {
 			false
 		);
 		if(!is_array($rows)){
+			// Dataphyre's legacy row-select bridge represents a successful
+			// zero-row PostgreSQL result as `false`, the same value it uses for
+			// a query failure.  An empty outbox is healthy, so disambiguate that
+			// case with the count primitive before reporting the durable boundary
+			// as unavailable.  This keeps the mailer contract application-neutral
+			// and avoids requiring a synthetic message just to pass readiness.
+			if(function_exists('sql_count')){
+				$total=sql_count($this->outboxTable(), '', [], false, null);
+				if($total===0){
+					return ['ok'=>true, 'statuses'=>[]];
+				}
+			}
 			return ['ok'=>false, 'message'=>'Unable to read mailer outbox.', 'statuses'=>[]];
 		}
 		$statuses=[];
