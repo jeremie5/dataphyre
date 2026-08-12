@@ -182,10 +182,41 @@ final class MvcApplication {
 		if(is_array($cache) && isset($cache['file']) && is_string($cache['file']) && trim($cache['file'])!==''){
 			return $cache['file'];
 		}
-		if(defined('ROOTPATH') && !empty(ROOTPATH['dataphyre'])){
-			return rtrim((string)ROOTPATH['dataphyre'], '/\\').'/cache/mvc/'.$this->name.'.routes.php';
+		$dataphyre_root=defined('ROOTPATH') ? (ROOTPATH['dataphyre'] ?? null) : null;
+		return is_string($dataphyre_root) && trim($dataphyre_root)!==''
+			? rtrim($dataphyre_root, '/\\').'/cache/mvc/'.$this->name.'.routes.php'
+			: null;
+	}
+
+	/**
+	 * Returns additional source files that invalidate the compiled route manifest.
+	 *
+	 * Route closures may delegate registration or API metadata to helper classes
+	 * that are not discoverable as route files. Applications can declare those
+	 * dependencies through manifest_cache.sources while keeping the cache target
+	 * in manifest_cache.file.
+	 *
+	 * @return array<string,int> Dependency paths keyed to their current modification time.
+	 */
+	public function manifestCacheSources(): array {
+		$cache=$this->config['manifest_cache'] ?? null;
+		if(!is_array($cache) || !array_key_exists('sources', $cache)){
+			return [];
 		}
-		return null;
+		$sources=$cache['sources'];
+		if(is_string($sources)){
+			$sources=[$sources];
+		}
+		if(!is_array($sources)){
+			throw new \RuntimeException('MVC manifest_cache.sources must be a file path or list of file paths.');
+		}
+		$paths=[];
+		foreach($sources as $source){
+			if(is_string($source) && trim($source)!==''){
+				$paths[]=trim($source);
+			}
+		}
+		return $paths===[] ? [] : RouteCompiler::sourceMtimes($paths);
 	}
 
 	/**
