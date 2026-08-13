@@ -1426,20 +1426,52 @@ final class McpInspectionBoundaryHarness {
 		$invalidCommands=[];
 		$base=$this->preflightPayload();
 		$extraHealthEvidence=$base['checks'];
-		$extraHealthEvidence[2]['evidence']['response_body']='SECRET_HEALTH_BODY_MUST_NOT_LEAK';
+		$extraHealthEvidence[3]['evidence']['response_body']='SECRET_HEALTH_BODY_MUST_NOT_LEAK';
 		$unsafeMissingKeys=$base['checks'];
-		$unsafeMissingKeys[2]['evidence']['missing_environment_keys']=['ZZZ_SECRET','AAA_SECRET'];
+		$unsafeMissingKeys[3]['evidence']['missing_environment_keys']=['ZZZ_SECRET','AAA_SECRET'];
 		$valueBearingMissingKey=$base['checks'];
-		$valueBearingMissingKey[2]['evidence']['missing_environment_keys']=['SERVE_SIGNING_KEY=SECRET_VALUE_MUST_NOT_LEAK'];
+		$valueBearingMissingKey[3]['evidence']['missing_environment_keys']=['SERVE_SIGNING_KEY=SECRET_VALUE_MUST_NOT_LEAK'];
 		$tooManyMissingKeys=$base['checks'];
-		$tooManyMissingKeys[2]['evidence']['missing_environment_keys']=array_map(
+		$tooManyMissingKeys[3]['evidence']['missing_environment_keys']=array_map(
 			static fn(int $index): string=>sprintf('SERVE_KEY_%02d',$index),
 			range(0,64)
 		);
 		$unhealthyPassed=$base['checks'];
-		$unhealthyPassed[2]['evidence']['http_status']=503;
+		$unhealthyPassed[3]['evidence']['http_status']=503;
 		$zeroAttemptPass=$base['checks'];
-		$zeroAttemptPass[2]['evidence']['attempts']=0;
+		$zeroAttemptPass[3]['evidence']['attempts']=0;
+		$databaseRuntimeConnectionSha='sha256:'.str_repeat('d',64);
+		$databaseRuntimeChecks=$base['checks'];
+		$databaseRuntimeChecks[2]=[
+			'id'=>'database_runtime',
+			'status'=>'passed',
+			'evidence'=>[
+				'connection_sha256'=>$databaseRuntimeConnectionSha,
+				'declared'=>true,
+				'purpose'=>'primary',
+			],
+		];
+		$databaseRuntimeFailureChecks=[
+			$base['checks'][0],
+			$base['checks'][1],
+			[
+				'id'=>'database_runtime',
+				'status'=>'failed',
+				'evidence'=>[
+					'connection_sha256'=>null,
+					'declared'=>true,
+					'purpose'=>'primary',
+				],
+			],
+		];
+		$extraDatabaseRuntimeEvidence=$databaseRuntimeChecks;
+		$extraDatabaseRuntimeEvidence[2]['evidence']['dsn']='SECRET_DATABASE_DSN_MUST_NOT_LEAK';
+		$invalidDatabaseRuntimeHash=$databaseRuntimeChecks;
+		$invalidDatabaseRuntimeHash[2]['evidence']['connection_sha256']='postgresql://SECRET_DATABASE_VALUE_MUST_NOT_LEAK';
+		$contradictoryDatabaseRuntimeNotApplicable=$base['checks'];
+		$contradictoryDatabaseRuntimeNotApplicable[2]['evidence']['declared']=true;
+		$failedDatabaseRuntimeHash=$databaseRuntimeFailureChecks;
+		$failedDatabaseRuntimeHash[2]['evidence']['connection_sha256']=$databaseRuntimeConnectionSha;
 		$migrationManifest=[
 			'algorithm'=>'sha256',
 			'bootstrap_cutoff'=>'001_base',
@@ -1627,7 +1659,7 @@ final class McpInspectionBoundaryHarness {
 		$duplicateRollingIssueChecks=$migrationFailureChecks;
 		$duplicateRollingIssueChecks[1]['evidence']['plan']=$duplicateRollingIssuePlan;
 		$healthBootAfterRejectionChecks=$base['checks'];
-		$healthBootAfterRejectionChecks[2]=[
+		$healthBootAfterRejectionChecks[3]=[
 			'id'=>'application_health',
 			'status'=>'failed',
 			'evidence'=>[
@@ -1640,7 +1672,7 @@ final class McpInspectionBoundaryHarness {
 			],
 		];
 		$healthFallbackChecks=$base['checks'];
-		$healthFallbackChecks[2]=[
+		$healthFallbackChecks[3]=[
 			'id'=>'application_health',
 			'status'=>'failed',
 			'evidence'=>[
@@ -1662,6 +1694,20 @@ final class McpInspectionBoundaryHarness {
 			'wrong_write_policy'=>['write_policy'=>'arbitrary_process'],
 			'wrong_claim_boundary'=>['claim_boundary'=>'Unbounded release claim.'],
 			'extra_envelope_field'=>['secret_value'=>'SECRET_ENVELOPE_VALUE_MUST_NOT_LEAK'],
+			'extra_database_runtime_evidence'=>['checks'=>$extraDatabaseRuntimeEvidence],
+			'invalid_database_runtime_hash'=>['checks'=>$invalidDatabaseRuntimeHash],
+			'contradictory_database_runtime_not_applicable'=>['checks'=>$contradictoryDatabaseRuntimeNotApplicable],
+			'failed_database_runtime_hash'=>[
+				'exit_status'=>69,
+				'ok'=>false,
+				'likely_to_deploy'=>false,
+				'checks'=>$failedDatabaseRuntimeHash,
+				'failures'=>[ [
+					'kind'=>'dependency',
+					'code'=>'application_database_identity_failed',
+					'message'=>'The application-resolved managed database identity could not be verified.',
+				] ],
+			],
 			'extra_health_evidence'=>['checks'=>$extraHealthEvidence],
 			'unsafe_missing_keys'=>['checks'=>$unsafeMissingKeys],
 			'value_bearing_missing_key'=>['checks'=>$valueBearingMissingKey],
@@ -1849,6 +1895,7 @@ final class McpInspectionBoundaryHarness {
 				'checks'=>[
 					$base['checks'][0],
 					$base['checks'][1],
+					$base['checks'][2],
 					[
 						'id'=>'application_health',
 						'status'=>'failed',
@@ -1875,6 +1922,7 @@ final class McpInspectionBoundaryHarness {
 				'checks'=>[
 					$base['checks'][0],
 					$base['checks'][1],
+					$base['checks'][2],
 					[
 						'id'=>'application_health',
 						'status'=>'failed',
@@ -1915,6 +1963,7 @@ final class McpInspectionBoundaryHarness {
 			'checks'=>[
 				$base['checks'][0],
 				$base['checks'][1],
+				$base['checks'][2],
 				[
 					'id'=>'application_health',
 					'status'=>'failed',
@@ -1946,6 +1995,26 @@ final class McpInspectionBoundaryHarness {
 				'run_release_check',
 				$args,
 				$this->preflightPayloadRunner($missingEnvironment)
+			),
+			'database_runtime_success'=>$this->kernel->invoke(
+				'run_release_check',
+				$args,
+				$this->preflightPayloadRunner($this->preflightPayload(['checks'=>$databaseRuntimeChecks]))
+			),
+			'database_runtime_failure'=>$this->kernel->invoke(
+				'run_release_check',
+				$args,
+				$this->preflightPayloadRunner($this->preflightPayload([
+					'exit_status'=>69,
+					'ok'=>false,
+					'likely_to_deploy'=>false,
+					'checks'=>$databaseRuntimeFailureChecks,
+					'failures'=>[ [
+						'kind'=>'dependency',
+						'code'=>'application_database_identity_failed',
+						'message'=>'The application-resolved managed database identity could not be verified.',
+					] ],
+				]))
 			),
 			'migration_success'=>$this->kernel->invoke(
 				'run_release_check',
@@ -2180,6 +2249,15 @@ final class McpInspectionBoundaryHarness {
 					'evidence'=>[
 						'declared'=>false,
 						'reason'=>'no_postgresql_migration_profile',
+					],
+				],
+				[
+					'id'=>'database_runtime',
+					'status'=>'not_applicable',
+					'evidence'=>[
+						'connection_sha256'=>null,
+						'declared'=>false,
+						'purpose'=>null,
 					],
 				],
 				[

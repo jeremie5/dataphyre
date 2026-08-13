@@ -29,8 +29,9 @@ trait dataphyre_mcp_inspection_surfaces {
 	 * Executes the fixed application release preflight and returns its boolean verdict.
 	 *
 	 * Callers select only a repository-local project root, application id, and
-	 * environment. The executable owns migration dry-run, application boot, and
-	 * the loopback health probe; arbitrary release commands are never accepted.
+	 * environment. The executable owns migration dry-run, application-resolved
+	 * managed database identity verification, application boot, and the loopback
+	 * health probe; arbitrary release commands are never accepted.
 	 *
 	 * @param array<string,mixed> $args
 	 * @param null|callable(list<string>):array<string,mixed> $runner Test seam for the fixed command.
@@ -145,7 +146,7 @@ trait dataphyre_mcp_inspection_surfaces {
 		$result['maintainer_tool_boundary']=[
 			'tool_scope'=>'application_release_preflight',
 			'app_agent_default'=>'run_before_proposing_or_promoting_an_application_release',
-			'claim_boundary'=>'The boolean predicts from local configuration bootstrap, the native migration dry-run, application startup, and GET /health. Dataphyre Cloud must run the same command inside the exact built candidate and preserve source, image, environment, and traffic identity before promotion.',
+			'claim_boundary'=>'The boolean predicts from local configuration bootstrap, the native migration dry-run, application-resolved managed database identity when declared, application startup, and GET /health. Dataphyre Cloud must run the same command inside the exact built candidate and preserve source, image, environment, and traffic identity before promotion.',
 		];
 		return $result;
 	}
@@ -388,6 +389,7 @@ trait dataphyre_mcp_inspection_surfaces {
 		$applicationMessage='The application bootstrap configuration is incomplete or invalid.';
 		$migrationConfigurationMessage='The PostgreSQL migration profile, manifest, or connection configuration is invalid.';
 		$migrationVerificationMessage='The PostgreSQL migration dry-run found drift or an ineligible migration plan.';
+		$databaseIdentityMessage='The application-resolved managed database identity could not be verified.';
 		$healthMessage='The application did not become healthy through the fixed loopback probe.';
 		$tuples=[
 			'64:invalid_runtime'=>['configuration','Application release preflight is available only through the CLI.'],
@@ -395,6 +397,7 @@ trait dataphyre_mcp_inspection_surfaces {
 			'66:project_unavailable'=>['configuration','The selected application project root is unavailable.'],
 			'69:database_connection_failed'=>['dependency','The configured PostgreSQL dependency could not be verified.'],
 			'69:migration_preflight_failed'=>['dependency','The configured PostgreSQL dependency could not be verified.'],
+			'69:application_database_identity_failed'=>['dependency',$databaseIdentityMessage],
 			'70:migration_failed'=>['verification',$migrationVerificationMessage],
 			'70:migration_plan_ineligible'=>['verification',$migrationVerificationMessage],
 			'70:migration_preflight_failed'=>['verification',$migrationVerificationMessage],
@@ -469,13 +472,18 @@ trait dataphyre_mcp_inspection_surfaces {
 					[78,'migration_preflight_failed'],
 				], true);
 		}
-		return count($checks)===3 && $exitStatus===75;
+		if(count($checks)===3){
+			return $exitStatus===69
+				&& $code==='application_database_identity_failed'
+				&& ($checks[2]['status'] ?? null)==='failed';
+		}
+		return count($checks)===4 && $exitStatus===75;
 	}
 
 	/** @param list<mixed> $checks @param list<mixed> $failures */
 	private function release_preflight_checks_are_valid(array $checks, array $failures, int $exitStatus, bool $ok): bool {
-		if(!array_is_list($checks) || count($checks)>3) return false;
-		$expectedIds=['configuration_bootstrap','database_migrations','application_health'];
+		if(!array_is_list($checks) || count($checks)>4) return false;
+		$expectedIds=['configuration_bootstrap','database_migrations','database_runtime','application_health'];
 		foreach($checks as $index=>$check){
 			if(
 				!is_array($check)
@@ -489,20 +497,29 @@ trait dataphyre_mcp_inspection_surfaces {
 		$failureCode=is_string($failures[0]['code'] ?? null) ? $failures[0]['code'] : '';
 		if(isset($checks[0]) && !$this->release_preflight_configuration_check_is_valid($checks[0])) return false;
 		if(isset($checks[1]) && !$this->release_preflight_database_check_is_valid($checks[1], $failureCode, $exitStatus)) return false;
-		if(isset($checks[2]) && !$this->release_preflight_health_check_is_valid($checks[2], $failureCode)) return false;
+		if(isset($checks[2]) && !$this->release_preflight_database_runtime_check_is_valid($checks[2], $failureCode)) return false;
+		if(isset($checks[3]) && !$this->release_preflight_health_check_is_valid($checks[3], $failureCode)) return false;
 
 		if($ok){
-			return count($checks)===3
+			return count($checks)===4
 				&& in_array($checks[1]['status'], ['passed','not_applicable'], true)
-				&& $checks[2]['status']==='passed';
+				&& in_array($checks[2]['status'], ['passed','not_applicable'], true)
+				&& $checks[3]['status']==='passed';
 		}
 		if($checks===[]) return in_array($exitStatus, [64,66,78], true);
 		if(count($checks)===2){
 			return $checks[1]['status']==='failed' && in_array($exitStatus, [69,70,78], true);
 		}
-		return count($checks)===3
+		if(count($checks)===3){
+			return in_array($checks[1]['status'], ['passed','not_applicable'], true)
+				&& $checks[2]['status']==='failed'
+				&& $failureCode==='application_database_identity_failed'
+				&& $exitStatus===69;
+		}
+		return count($checks)===4
 			&& in_array($checks[1]['status'], ['passed','not_applicable'], true)
-			&& $checks[2]['status']==='failed'
+			&& in_array($checks[2]['status'], ['passed','not_applicable'], true)
+			&& $checks[3]['status']==='failed'
 			&& $exitStatus===75;
 	}
 
@@ -585,6 +602,36 @@ trait dataphyre_mcp_inspection_surfaces {
 					$failureCode
 				))
 			&& $evidence['error_code']===$failureCode;
+	}
+
+	/** @param array<string,mixed> $check */
+	private function release_preflight_database_runtime_check_is_valid(array $check, string $failureCode): bool {
+		$evidence=$check['evidence'];
+		if(
+			!in_array($check['status'], ['passed','failed','not_applicable'], true)
+			|| !$this->release_preflight_exact_object($evidence, [
+				'connection_sha256','declared','purpose',
+			])
+			|| !is_bool($evidence['declared'])
+			|| !(is_null($evidence['purpose']) || is_string($evidence['purpose']))
+			|| !(is_null($evidence['connection_sha256']) || is_string($evidence['connection_sha256']))
+		){
+			return false;
+		}
+		return match($check['status']){
+			'not_applicable'=>$evidence['declared']===false
+				&& $evidence['purpose']===null
+				&& $evidence['connection_sha256']===null,
+			'passed'=>$evidence['declared']===true
+				&& $evidence['purpose']==='primary'
+				&& is_string($evidence['connection_sha256'])
+				&& preg_match('/^sha256:[0-9a-f]{64}$/D', $evidence['connection_sha256'])===1,
+			'failed'=>$evidence['declared']===true
+				&& $evidence['purpose']==='primary'
+				&& $evidence['connection_sha256']===null
+				&& $failureCode==='application_database_identity_failed',
+			default=>false,
+		};
 	}
 
 	private function release_preflight_plan_fits_manifest(array $manifest, array $plan): bool {

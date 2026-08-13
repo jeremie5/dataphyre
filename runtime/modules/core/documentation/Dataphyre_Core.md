@@ -40,8 +40,10 @@ The command validates the existing flight sheet and application definition,
 uses the existing `dataphyre.app.json` name to bind a standalone application
 repository to its Dataphyre application id, runs the native PostgreSQL
 migration command in automatic dry-run mode when a profile and immutable
-manifest are declared, boots through a fixed loopback router, and probes only
-`GET /health`. It does not accept an application release script, command,
+manifest are declared, verifies the application-resolved primary PostgreSQL
+identity when the release platform declares a managed primary binding, boots
+through a fixed loopback router, and probes only `GET /health`. It does not
+accept an application release script, command,
 executable path, health path, or migration mode.
 
 The conventional PostgreSQL profile and manifest are executable migration
@@ -49,6 +51,17 @@ inputs, so they must be present together as readable regular files beneath
 non-symbolic-link directories. One-sided pairs, symbolic links, broken links,
 directories, pipes, and unreadable entries fail closed as invalid migration
 configuration; two absent files mean the migration check is not applicable.
+
+When `DATAPHYRE_CLOUD_DATABASE_BINDING_PRIMARY_SHA256` is present, the fixed
+preflight database child loads the application's ordinary core and SQL config,
+opens its configured default PostgreSQL-compatible cluster, and returns only a
+purpose-bound connection hash derived from the binding marker plus
+`current_database()` and `current_user`. It never returns a DSN, host, user,
+password, config path, or database error. Cloud compares that opaque hash with
+its independent exact-image connection proof before migration and promotion.
+An absent marker makes `database_runtime` not applicable; an invalid marker,
+application config, engine, connection, or response fails closed with exit 69
+and `application_database_identity_failed`.
 
 The application-owned `/health` response must be a JSON object with a top-level
 `missing_environment_keys` list. The list is canonical: sorted, unique, no more

@@ -115,12 +115,13 @@ final class dataphyre_scheduling_task_runner {
 			if(defined('IS_PRODUCTION') && IS_PRODUCTION===false){echo 'Running '.$scheduler['file_path'].'<br>';}
 			require_once $scheduler['file_path'];
 		}catch(\Throwable $failure){
+			http_response_code(500);
 			self::dialback_failure($scheduler);
 			self::pre_init_failure('Fatal error: scheduler task failed ('.$scheduler_name.')',$failure,$runtime);
 			echo 'Execution error';
 		}
 
-		$callback=static fn()=>self::finalize($scheduler_path,$scheduler_name,$runtime,$claim_handle);
+		$callback=static fn()=>self::finalize($scheduler_path,$scheduler_name,$runtime,$claim_handle,$dispatch_claim);
 		if($shutdown_registrar===null){
 			register_shutdown_function($callback);
 		}else{
@@ -129,7 +130,7 @@ final class dataphyre_scheduling_task_runner {
 	}
 
 	/** Performs the lock, timestamp, trace, and active-state shutdown cleanup. */
-	public static function finalize(string $scheduler_path, string $scheduler_name, array $runtime=[], mixed $claim_handle=null): void {
+	public static function finalize(string $scheduler_path, string $scheduler_name, array $runtime=[], mixed $claim_handle=null, string $dispatch_claim=''): void {
 		try{
 			$running_lock_file=\dataphyre\scheduling::running_lock_file($scheduler_name);
 			$last_run_file=\dataphyre\scheduling::last_run_file($scheduler_name);
@@ -143,7 +144,7 @@ final class dataphyre_scheduling_task_runner {
 				if(defined('IS_PRODUCTION') && IS_PRODUCTION===false){echo \dataphyre\tracelog::$tracelog;}
 			}
 			$writer($last_run_file,$runtime['timestamp'] ?? time(),LOCK_EX);
-			if($is_file($running_lock_file)){
+			if($is_file($running_lock_file) && self::claimedPathMatches($running_lock_file,$claim_handle,$dispatch_claim,$runtime)){
 				$unlink($running_lock_file);
 			}
 			if(is_resource($claim_handle)){
@@ -158,6 +159,25 @@ final class dataphyre_scheduling_task_runner {
 			$logger=$runtime['shutdown_logger'] ?? static fn(string $message,\Throwable $exception): mixed => \dataphyre_shutdown_log($message,$exception);
 			$logger('Fatal error on Dataphyre Scheduling (task runner) shutdown callback',$failure);
 		}
+	}
+
+	/** Confirms the pathname still names the exact claim held by this runner. */
+	private static function claimedPathMatches(string $path, mixed $claim_handle, string $dispatch_claim, array $runtime=[]): bool {
+		if(!is_resource($claim_handle) || preg_match('/^[a-f0-9]{64}$/D', $dispatch_claim)!==1){
+			return false;
+		}
+		@rewind($claim_handle);
+		$stored=trim((string)stream_get_contents($claim_handle));
+		$handle_stat=@fstat($claim_handle);
+		$path_stat=isset($runtime['lstat']) && is_callable($runtime['lstat'])
+			? $runtime['lstat']($path)
+			: @lstat($path);
+		return preg_match('/^[a-f0-9]{64}$/D', $stored)===1
+			&& hash_equals($stored, $dispatch_claim)
+			&& is_array($handle_stat)
+			&& is_array($path_stat)
+			&& ($handle_stat['dev'] ?? null)===($path_stat['dev'] ?? null)
+			&& ($handle_stat['ino'] ?? null)===($path_stat['ino'] ?? null);
 	}
 
 	/**

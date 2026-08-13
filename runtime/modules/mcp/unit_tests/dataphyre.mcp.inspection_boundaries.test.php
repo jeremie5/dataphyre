@@ -53,9 +53,17 @@ test('each inspection boundary reads as a release diagnostic contract',static fu
 		],$preflightFields);
 		$t->same('fixed_dataphyre_commands_and_loopback_application_boot',$release['preflight']['execution_boundary']);
 		$t->same('database_dry_run_and_ephemeral_application_boot',$release['preflight']['write_policy']);
-		$t->same('/health',$release['preflight']['checks'][2]['evidence']['path']);
-		$t->same(true,$release['preflight']['checks'][2]['evidence']['response_contract_valid']);
-		$t->same([],$release['preflight']['checks'][2]['evidence']['missing_environment_keys']);
+		$t->same([
+			'configuration_bootstrap','database_migrations','database_runtime','application_health',
+		],array_column($release['preflight']['checks'],'id'));
+		$t->same([
+			'connection_sha256'=>null,
+			'declared'=>false,
+			'purpose'=>null,
+		],$release['preflight']['checks'][2]['evidence']);
+		$t->same('/health',$release['preflight']['checks'][3]['evidence']['path']);
+		$t->same(true,$release['preflight']['checks'][3]['evidence']['response_contract_valid']);
+		$t->same([],$release['preflight']['checks'][3]['evidence']['missing_environment_keys']);
 		$t->contains('exact built candidate',$release['maintainer_tool_boundary']['claim_boundary']);
 		$t->count(1,$contract['commands']);
 		$command=$contract['commands'][0];
@@ -81,6 +89,10 @@ test('each inspection boundary reads as a release diagnostic contract',static fu
 			'wrong_write_policy',
 			'wrong_claim_boundary',
 			'extra_envelope_field',
+			'extra_database_runtime_evidence',
+			'invalid_database_runtime_hash',
+			'contradictory_database_runtime_not_applicable',
+			'failed_database_runtime_hash',
 			'extra_health_evidence',
 			'unsafe_missing_keys',
 			'value_bearing_missing_key',
@@ -121,8 +133,22 @@ test('each inspection boundary reads as a release diagnostic contract',static fu
 		$t->same([
 			'SERVE_SIGNING_KEY',
 			'SERVE_STAFF_SESSION_SECRET',
-		],$missing['preflight']['checks'][2]['evidence']['missing_environment_keys']);
-		$t->same(503,$missing['preflight']['checks'][2]['evidence']['http_status']);
+		],$missing['preflight']['checks'][3]['evidence']['missing_environment_keys']);
+		$t->same(503,$missing['preflight']['checks'][3]['evidence']['http_status']);
+		$databaseRuntime=$contract['database_runtime_success'];
+		$t->isTrue($databaseRuntime['prediction']['likely_to_deploy']);
+		$t->same('passed',$databaseRuntime['preflight']['checks'][2]['status']);
+		$t->matches('/^sha256:[0-9a-f]{64}$/D',$databaseRuntime['preflight']['checks'][2]['evidence']['connection_sha256']);
+		$t->same('primary',$databaseRuntime['preflight']['checks'][2]['evidence']['purpose']);
+		$databaseRuntimeFailure=$contract['database_runtime_failure'];
+		$t->isFalse($databaseRuntimeFailure['prediction']['likely_to_deploy']);
+		$t->same('application_database_identity_failed',$databaseRuntimeFailure['prediction']['reason_code']);
+		$t->same('dependency',$databaseRuntimeFailure['preflight']['failures'][0]['kind']);
+		$t->same([
+			'connection_sha256'=>null,
+			'declared'=>true,
+			'purpose'=>'primary',
+		],$databaseRuntimeFailure['preflight']['checks'][2]['evidence']);
 		$t->isTrue($contract['migration_success']['prediction']['likely_to_deploy']);
 		$t->same('sha256',$contract['migration_success']['preflight']['checks'][1]['evidence']['manifest']['algorithm']);
 		$t->same(true,$contract['migration_success']['preflight']['checks'][1]['evidence']['plan']['eligible']);
@@ -138,7 +164,7 @@ test('each inspection boundary reads as a release diagnostic contract',static fu
 		$t->same(1000,$contract['large_rolling_issues']['preflight']['checks'][1]['evidence']['plan']['rolling_scan']['issue_count']);
 		$t->same(2048,$contract['large_rolling_issues']['preflight']['checks'][1]['evidence']['plan']['rolling_scan']['issues'][999]['statement']);
 		$t->same('application_boot_failed',$contract['health_boot_after_rejection']['prediction']['reason_code']);
-		$t->same(503,$contract['health_boot_after_rejection']['preflight']['checks'][2]['evidence']['http_status']);
+		$t->same(503,$contract['health_boot_after_rejection']['preflight']['checks'][3]['evidence']['http_status']);
 		$t->same('application_health_failed',$contract['health_fallback']['prediction']['reason_code']);
 		$t->same('migration_preflight_failed',$contract['arbitrary_migration_exit']['prediction']['reason_code']);
 		$t->same(42,$contract['arbitrary_migration_exit']['preflight']['checks'][1]['evidence']['exit_status']);

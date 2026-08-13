@@ -38,7 +38,10 @@ final class ApplicationReleasePreflightCommand {
 	private const MAX_HEALTH_BODY_BYTES=65536;
 	private const MAX_MISSING_ENVIRONMENT_KEYS=64;
 	private const MIGRATION_TIMEOUT_MILLISECONDS=180000;
+	private const DATABASE_RUNTIME_TIMEOUT_MILLISECONDS=30000;
 	private const MAX_PROCESS_OUTPUT_BYTES=262144;
+	private const DATABASE_RUNTIME_MARKER='DATAPHYRE_CLOUD_DATABASE_BINDING_PRIMARY_SHA256';
+	private const DATABASE_RUNTIME_CONTRACT='dataphyre.application_database_runtime.v1';
 
 	/**
 	 * Execute through native process/stream functions or explicit test seams.
@@ -203,6 +206,59 @@ final class ApplicationReleasePreflightCommand {
 					'declared'=>false,
 					'reason'=>'no_postgresql_migration_profile',
 				],
+			];
+		}
+
+		$databaseMarker=getenv(self::DATABASE_RUNTIME_MARKER);
+		if(!is_string($databaseMarker) || trim($databaseMarker)===''){
+			$checks[]=[
+				'id'=>'database_runtime',
+				'status'=>'not_applicable',
+				'evidence'=>self::databaseRuntimeEvidence(),
+			];
+		}else{
+			$databaseMarker=trim($databaseMarker);
+			$databaseRunner=$runtime['database_runtime_runner'] ?? [self::class, 'runDatabaseRuntime'];
+			try{
+				$database=self::normalizeProcessResult($databaseRunner(
+					$projectRoot,
+					$application,
+					$environment,
+					self::DATABASE_RUNTIME_TIMEOUT_MILLISECONDS
+				));
+			}catch(Throwable){
+				$database=['exit_code'=>self::EXIT_DEPENDENCY, 'stdout'=>'', 'stderr'=>''];
+			}
+			$databasePayload=self::decodeProcessPayload($database);
+			$connectionSha=$databasePayload['connection_sha256'] ?? null;
+			$databaseValid=preg_match('/^sha256:[0-9a-f]{64}$/D', $databaseMarker)===1
+				&& $database['exit_code']===0
+				&& ($databasePayload['ok'] ?? null)===true
+				&& ($databasePayload['contract'] ?? null)===self::DATABASE_RUNTIME_CONTRACT
+				&& ($databasePayload['purpose'] ?? null)==='primary'
+				&& is_string($connectionSha)
+				&& preg_match('/^sha256:[0-9a-f]{64}$/D', $connectionSha)===1;
+			if($databaseValid!==true){
+				$checks[]=[
+					'id'=>'database_runtime',
+					'status'=>'failed',
+					'evidence'=>self::databaseRuntimeEvidence(true),
+				];
+				return self::emitFailure(
+					$write,
+					self::EXIT_DEPENDENCY,
+					$application,
+					$environment,
+					$checks,
+					'dependency',
+					'application_database_identity_failed',
+					'The application-resolved managed database identity could not be verified.'
+				);
+			}
+			$checks[]=[
+				'id'=>'database_runtime',
+				'status'=>'passed',
+				'evidence'=>self::databaseRuntimeEvidence(true, $connectionSha),
 			];
 		}
 
@@ -463,6 +519,26 @@ final class ApplicationReleasePreflightCommand {
 			'--mode=automatic',
 			'--dry-run',
 		], $applicationRoot, $timeoutMilliseconds);
+	}
+
+	/** @return array<string,mixed> */
+	private static function runDatabaseRuntime(
+		string $projectRoot,
+		string $application,
+		string $environment,
+		int $timeoutMilliseconds
+	): array {
+		$command=dirname(__DIR__).'/kernel/application_release_preflight_database.php';
+		if(!is_file($command)){
+			return ['exit_code'=>self::EXIT_CONFIGURATION, 'stdout'=>'', 'stderr'=>''];
+		}
+		return self::runProcess([
+			self::phpBinary(),
+			$command,
+			'--project-root='.$projectRoot,
+			'--application='.$application,
+			'--environment='.$environment,
+		], $projectRoot, $timeoutMilliseconds);
 	}
 
 	/** @return array<string,mixed> */
@@ -898,6 +974,18 @@ final class ApplicationReleasePreflightCommand {
 			'http_status'=>$statusValid ? $status : null,
 			'response_contract_valid'=>$responseContractValid,
 			'missing_environment_keys'=>$responseContractValid ? $missingEnvironmentKeys : [],
+		];
+	}
+
+	/** @return array{connection_sha256:?string,declared:bool,purpose:?string} */
+	private static function databaseRuntimeEvidence(
+		bool $declared=false,
+		?string $connectionSha256=null
+	): array {
+		return [
+			'connection_sha256'=>$connectionSha256,
+			'declared'=>$declared,
+			'purpose'=>$declared ? 'primary' : null,
 		];
 	}
 

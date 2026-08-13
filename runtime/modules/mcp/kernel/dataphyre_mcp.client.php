@@ -566,7 +566,7 @@ trait dataphyre_mcp_client_surfaces {
 			],
 			'dataphyre_release_check'=>[
 				'audience_scope'=>'application_release_preflight',
-				'claim_boundary'=>'Deterministic local prediction from the fixed configuration, migration dry-run, application boot, and GET /health checks; Cloud must repeat it inside the exact built candidate before promotion.',
+				'claim_boundary'=>'Deterministic local prediction from the fixed configuration, migration dry-run, application-resolved managed database identity, application boot, and GET /health checks; Cloud must repeat it inside the exact built candidate before promotion.',
 				'not_app_behavior_proof'=>true,
 			],
 			'dataphyre_release_triage_summary'=>[
@@ -681,4 +681,3 @@ trait dataphyre_mcp_client_surfaces {
 	}
 
 }
-

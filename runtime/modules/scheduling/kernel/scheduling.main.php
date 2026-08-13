@@ -29,10 +29,68 @@ class scheduling {
 	private static ?string $active_scheduler_name=null;
 	/** @var ?string Optional embedded-runtime state root override. */
 	private static ?string $state_root=null;
+	/** @var ?string Optional deterministic activation-policy override. */
+	private static ?string $activation_mode=null;
 
 	/** Selects an alternate scheduler state root for embedded and isolated runtimes. */
 	public static function use_state_root(?string $root): void {
 		self::$state_root=$root===null ? null : rtrim($root, '/\\').'/';
+	}
+
+	/**
+	 * Selects how registrations are allowed to create dispatch claims.
+	 *
+	 * `default` preserves the historical request-driven scheduler. `record_only`
+	 * persists validated definitions without locks, timestamps, or callbacks.
+	 * `supervisor` permits dispatch only inside the framework-owned scheduler
+	 * loopback pool; ordinary web, health, and preflight requests still record
+	 * definitions but cannot run application tasks.
+	 */
+	public static function use_activation_mode(?string $mode): void {
+		self::$activation_mode=$mode===null ? null : strtolower(trim($mode));
+	}
+
+	/** Returns the normalized scheduler activation mode for this process. */
+	public static function activation_mode(): string {
+		$mode=self::$activation_mode;
+		if($mode===null){
+			$value=getenv('DATAPHYRE_SCHEDULER_ACTIVATION_MODE');
+			$mode=is_string($value) ? strtolower(trim($value)) : '';
+		}
+		return match($mode){
+			'', 'default'=>'default',
+			'record_only'=>'record_only',
+			'supervisor'=>'supervisor',
+			default=>'disabled',
+		};
+	}
+
+	/** Reports whether this process may turn due definitions into callbacks. */
+	public static function dispatch_enabled(): bool {
+		return match(self::activation_mode()){
+			'default'=>true,
+			'supervisor'=>(string)(getenv('DATAPHYRE_RUNTIME_POOL_ROLE') ?: '')==='scheduler',
+			default=>false,
+		};
+	}
+
+	/**
+	 * Resolves the host-owned secret file used for scheduler callback signatures.
+	 *
+	 * Ordinary applications keep the existing project-relative
+	 * `app_override_key`. Isolated runtimes may provide one absolute regular file;
+	 * request data never participates in this choice.
+	 */
+	public static function dispatch_secret_file(): string {
+		$value=getenv('DATAPHYRE_SCHEDULER_DISPATCH_SECRET_FILE');
+		if(!is_string($value) || trim($value)===''){
+			return 'app_override_key';
+		}
+		$value=trim($value);
+		$absolute=$value[0]==='/' || $value[0]==='\\' || preg_match('/^[A-Za-z]:[\\\/]/D', $value)===1;
+		return $absolute && !is_link($value) && is_file($value) && is_readable($value)
+			? $value
+			: 'app_override_key';
 	}
 
     /**
@@ -74,6 +132,9 @@ class scheduling {
 			return false;
 		}
 		self::persist_scheduler_definition($scheduler);
+		if(self::dispatch_enabled()!==true){
+			return true;
+		}
 		if(self::can_run($scheduler)===true){
 			try{
 				$dispatch_claim=bin2hex(random_bytes(32));
@@ -89,6 +150,9 @@ class scheduling {
 				@unlink(self::running_lock_file($name));
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Failed recording scheduler dispatch timestamp', $T='warning');
 				return false;
+			}
+			if(self::activation_mode()==='supervisor'){
+				return self::dispatch_registered_scheduler($name,$app_override,$dispatch_claim);
 			}
 			$shutdown_registrar ??= static function(mixed $callback, mixed ...$arguments): void {
 				register_shutdown_function($callback, ...$arguments);
@@ -182,7 +246,13 @@ class scheduling {
 	 */
 	public static function scheduler_directory(string $name): string {
 		$name=self::normalize_scheduler_name($name);
-		$root=self::$state_root ?? (string)ROOTPATH['dataphyre'];
+		$root=self::$state_root;
+		if($root===null){
+			$environment_root=getenv('DATAPHYRE_SCHEDULER_STATE_ROOT');
+			$root=is_string($environment_root) && trim($environment_root)!==''
+				? trim($environment_root)
+				: (string)ROOTPATH['dataphyre'];
+		}
 		return rtrim($root, '/\\').'/'.self::CACHE_PATH.($name!=='' ? $name.'/' : '');
 	}
 
@@ -297,24 +367,21 @@ class scheduling {
 	 * @param ?bool $curl_available Optional transport override used by deterministic runtimes.
 	 * @param ?callable $signer Optional scheduler-name and claim signer used by deterministic runtimes.
 	 */
-	private static function dispatch_registered_scheduler(string $name, string $app_override, string $dispatch_claim, ?bool $curl_available=null, ?callable $signer=null): void {
+	private static function dispatch_registered_scheduler(string $name, string $app_override, string $dispatch_claim, ?bool $curl_available=null, ?callable $signer=null): bool {
 		try{
 			$url=self::scheduler_dispatch_url($name, $app_override);
 			if($url===null){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Unable to resolve scheduler dispatch URL', $T='warning');
-				return;
+				throw new \RuntimeException('Unable to resolve scheduler dispatch URL');
 			}
 			if(preg_match('/^[a-f0-9]{64}$/D', $dispatch_claim)!==1){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Invalid scheduler dispatch claim', $T='warning');
-				return;
+				throw new \RuntimeException('Invalid scheduler dispatch claim');
 			}
 			$signer ??= function_exists('dp_shared_request_key')
-				? static fn(string $scheduler, string $claim): string|false=>dp_shared_request_key('app_override_key', 'scheduler_dispatch', $scheduler.'|'.$claim)
+				? static fn(string $scheduler, string $claim): string|false=>dp_shared_request_key(self::dispatch_secret_file(), 'scheduler_dispatch', $scheduler.'|'.$claim)
 				: null;
 			$request_key=is_callable($signer) ? $signer($name, $dispatch_claim) : false;
 			if(!is_string($request_key) || preg_match('/^[a-f0-9]{64}$/D', $request_key)!==1){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Unable to sign internal scheduler dispatch', $T='warning');
-				return;
+				throw new \RuntimeException('Unable to sign internal scheduler dispatch');
 			}
 			$headers=[
 				'X-Traffic-Source: internal_traffic',
@@ -330,9 +397,13 @@ class scheduling {
 				curl_setopt($ch, CURLOPT_TIMEOUT_MS, 150);
 				curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS, 150);
 				curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
-				curl_exec($ch);
+				$result=curl_exec($ch);
+				$status=(int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
 				curl_close($ch);
-				return;
+				if($result===false || $status<200 || $status>=300){
+					throw new \RuntimeException('Scheduler callback failed with HTTP status '.($status>0 ? (string)$status : 'unavailable'));
+				}
+				return true;
 			}
 			$context=stream_context_create([
 				'http'=>[
@@ -341,10 +412,54 @@ class scheduling {
 					'header'=>implode("\r\n", $headers)."\r\n",
 				],
 			]);
-			@file_get_contents($url, false, $context);
+			$result=@file_get_contents($url, false, $context);
+			$status=null;
+			foreach(($http_response_header ?? []) as $response_header){
+				if(preg_match('/^HTTP\/\S+\s+(\d{3})\b/i', (string)$response_header, $matches)===1){
+					$status=(int)$matches[1];
+					break;
+				}
+			}
+			if($result===false || $status===null || $status<200 || $status>=300){
+				throw new \RuntimeException('Scheduler callback failed with HTTP status '.($status ?? 'unavailable'));
+			}
+			return true;
 		}catch(\Throwable $exception){
+			self::release_dispatch_claim($name, $dispatch_claim);
 			\dataphyre_shutdown_log('Fatal error on Dataphyre Scheduling shutdown callback', $exception);
+			return false;
 		}
+	}
+
+	/** Removes only the still-pending lock created for this exact failed dispatch. */
+	private static function release_dispatch_claim(string $name, string $dispatch_claim): bool {
+		if(self::valid_scheduler_name($name)!==true || preg_match('/^[a-f0-9]{64}$/D', $dispatch_claim)!==1){
+			return false;
+		}
+		$path=self::running_lock_file($name);
+		$handle=@fopen($path, 'r+');
+		if(!is_resource($handle)){
+			return false;
+		}
+		$locked=@flock($handle, LOCK_EX|LOCK_NB);
+		if($locked!==true){
+			@fclose($handle);
+			return false;
+		}
+		@rewind($handle);
+		$stored=trim((string)stream_get_contents($handle));
+		$handle_stat=@fstat($handle);
+		$path_stat=@lstat($path);
+		$same_file=is_array($handle_stat) && is_array($path_stat)
+			&& ($handle_stat['dev'] ?? null)===($path_stat['dev'] ?? null)
+			&& ($handle_stat['ino'] ?? null)===($path_stat['ino'] ?? null);
+		$removed=$same_file
+			&& preg_match('/^[a-f0-9]{64}$/D', $stored)===1
+			&& hash_equals($stored, $dispatch_claim)
+			&& @unlink($path);
+		@flock($handle, LOCK_UN);
+		@fclose($handle);
+		return $removed;
 	}
 
 	/**
@@ -358,11 +473,20 @@ class scheduling {
 	 * @return ?string Internal scheduler dispatch URL, or null when SELF_ADDR is unavailable.
 	 */
 	private static function scheduler_dispatch_url(string $name, string $app_override): ?string {
-		$self_addr=trim((string)($_SERVER['SELF_ADDR'] ?? ''));
+		$owned_address=getenv('DATAPHYRE_SCHEDULER_SELF_ADDRESS');
+		$self_addr=is_string($owned_address) && trim($owned_address)!==''
+			? trim($owned_address)
+			: trim((string)($_SERVER['SELF_ADDR'] ?? ''));
 		if($self_addr===''){
 			return null;
 		}
-		$scheme=((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS']!=='off') || (($_SERVER['REQUEST_SCHEME'] ?? '')==='https')) ? 'https' : 'http';
+		if(preg_match('/^(?:[A-Za-z0-9.-]+|\[[A-Fa-f0-9:]+\]):[1-9][0-9]{0,4}$/D', $self_addr)!==1){
+			return null;
+		}
+		$owned_scheme=getenv('DATAPHYRE_SCHEDULER_SELF_SCHEME');
+		$scheme=is_string($owned_scheme) && in_array(strtolower(trim($owned_scheme)), ['http','https'], true)
+			? strtolower(trim($owned_scheme))
+			: (((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS']!=='off') || (($_SERVER['REQUEST_SCHEME'] ?? '')==='https')) ? 'https' : 'http');
 		$url=$scheme.'://'.$self_addr.'/dataphyre/scheduler/'.rawurlencode($name);
 		if($app_override!==''){
 			$override_value=core::app_override_request_value($app_override);

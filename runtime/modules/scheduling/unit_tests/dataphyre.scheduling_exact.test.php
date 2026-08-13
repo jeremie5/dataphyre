@@ -21,6 +21,8 @@ final class SchedulingRuntimeProbe {
 	public static array $write_results=[];
 	public static array $curl=[];
 	public static bool $curl_throws=false;
+	public static string|false $curl_result='';
+	public static int $curl_status=204;
 	public static array $shutdown=[];
 	public static mixed $app_override='';
 	public static array $modules=[];
@@ -28,7 +30,8 @@ final class SchedulingRuntimeProbe {
 	public static array $sql_config=[];
 	public static function reset(): void {
 		self::$traces=[]; self::$writes=[]; self::$write_results=[]; self::$curl=[];
-		self::$curl_throws=false; self::$shutdown=[]; self::$app_override='';
+		self::$curl_throws=false; self::$curl_result=''; self::$curl_status=204;
+		self::$shutdown=[]; self::$app_override='';
 		self::$modules=[]; self::$pre_init=[]; self::$sql_config=[];
 	}
 }
@@ -38,7 +41,8 @@ function curl_init(): object {
 	SchedulingRuntimeProbe::$curl[]=['init']; return (object)[];
 }
 function curl_setopt(object $handle,int $option,mixed $value): bool { SchedulingRuntimeProbe::$curl[]=['setopt',$option,$value]; return true; }
-function curl_exec(object $handle): string|false { SchedulingRuntimeProbe::$curl[]=['exec']; return ''; }
+function curl_exec(object $handle): string|false { SchedulingRuntimeProbe::$curl[]=['exec']; return SchedulingRuntimeProbe::$curl_result; }
+function curl_getinfo(object $handle,int $option): int { SchedulingRuntimeProbe::$curl[]=['getinfo',$option]; return SchedulingRuntimeProbe::$curl_status; }
 function curl_close(object $handle): void { SchedulingRuntimeProbe::$curl[]=['close']; }
 if(!class_exists(core::class,false)){
 	final class core {
@@ -227,7 +231,7 @@ test('dispatch URLs and both internal HTTP transports stay local bounded and fai
 	$internals->invoke('dispatch_registered_scheduler','orders','shop',$claim,true,$signer);
 	$server->replace(['SELF_ADDR'=>'127.0.0.1:1']);
 	$internals->invoke('dispatch_registered_scheduler','orders','',$claim,true,$signer);
-	$t->containsRows([['init'],['exec'],['close']],\dataphyre\SchedulingRuntimeProbe::$curl);
+	$t->containsRows([['init'],['exec'],['getinfo',CURLINFO_RESPONSE_CODE],['close']],\dataphyre\SchedulingRuntimeProbe::$curl);
 	$t->containsRows([
 		['setopt',CURLOPT_HTTPHEADER,[
 			'X-Traffic-Source: internal_traffic',
@@ -250,6 +254,19 @@ test('dispatch URLs and both internal HTTP transports stay local bounded and fai
 	\dataphyre\SchedulingRuntimeProbe::$curl_throws=true;
 	$internals->invoke('dispatch_registered_scheduler','orders','',$claim,true,$signer);
 	$t->containsRows([['Fatal error on Dataphyre Scheduling shutdown callback','curl failed']],\dataphyre\SchedulingRuntimeProbe::$shutdown);
+	\dataphyre\SchedulingRuntimeProbe::$curl_throws=false;
+	\dataphyre\SchedulingRuntimeProbe::$curl_status=503;
+	$workspace=$t->workspace('scheduling-dispatch-failure');
+	\dataphyre\scheduling::use_state_root($workspace->root());
+	$workspace->file('cache/scheduling/orders/running_lock',$claim);
+	$internals->invoke('dispatch_registered_scheduler','orders','',$claim,true,$signer);
+	$t->isFalse(is_file(\dataphyre\scheduling::running_lock_file('orders')));
+	$t->containsRows([['Fatal error on Dataphyre Scheduling shutdown callback','Scheduler callback failed with HTTP status 503']],\dataphyre\SchedulingRuntimeProbe::$shutdown);
+	$differentClaim=str_repeat('d',64);
+	$workspace->file('cache/scheduling/orders/running_lock',$differentClaim);
+	$internals->invoke('dispatch_registered_scheduler','orders','',$claim,true,$signer);
+	$t->same($differentClaim,trim((string)file_get_contents(\dataphyre\scheduling::running_lock_file('orders'))));
+	\dataphyre\scheduling::use_state_root(null);
 });
 
 test('task runner rejects unavailable invalid and missing scheduler requests before execution',static function(Context $t): void {

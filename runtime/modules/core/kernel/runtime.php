@@ -164,9 +164,10 @@ final class runtime {
 		};
 		$token=trim((string)($server['HTTP_X_DATAPHYRE_SCHEDULER_KEY'] ?? ''));
 		$dispatch_claim=trim((string)($server['HTTP_X_DATAPHYRE_SCHEDULER_CLAIM'] ?? ''));
+		$dispatchSecret=self::scheduler_dispatch_secret_file();
 		$verify=$runtime['verify'] ?? static fn(string $candidate, string $name, string $claim): bool =>
 			function_exists('dp_verify_shared_request_key')
-			&& dp_verify_shared_request_key($candidate, 'app_override_key', 'scheduler_dispatch', $name.'|'.$claim, 1);
+			&& dp_verify_shared_request_key($candidate, $dispatchSecret, 'scheduler_dispatch', $name.'|'.$claim, 1);
 		$authorized=strtoupper((string)($server['REQUEST_METHOD'] ?? 'GET'))==='GET'
 			&& (string)($server['HTTP_X_TRAFFIC_SOURCE'] ?? '')==='internal_traffic'
 			&& preg_match('/^[a-f0-9]{64}$/D', $dispatch_claim)===1
@@ -236,6 +237,19 @@ final class runtime {
 		}
 		$name=(string)$matches[1];
 		return in_array($name, ['.', '..'], true) ? null : $name;
+	}
+
+	/** Resolves the same host-owned scheduler signature file as the scheduling kernel. */
+	private static function scheduler_dispatch_secret_file(): string {
+		$value=getenv('DATAPHYRE_SCHEDULER_DISPATCH_SECRET_FILE');
+		if(!is_string($value) || trim($value)===''){
+			return 'app_override_key';
+		}
+		$value=trim($value);
+		$absolute=$value[0]==='/' || $value[0]==='\\' || preg_match('/^[A-Za-z]:[\\\/]/D', $value)===1;
+		return $absolute && !is_link($value) && is_file($value) && is_readable($value)
+			? $value
+			: 'app_override_key';
 	}
 
 	/**

@@ -95,7 +95,7 @@ Client configs must use `dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php`
 - `dataphyre_run_panel_field_catalog_check`: wrapper around the route-free Panel field catalog harness.
 - `dataphyre_verification_surface_catalog`: static catalog of JSON unit-test manifests, diagnostic files, route-free checks, regression scripts, and MCP/release helper scripts without executing them; ordinary app agents use it as discovery, not as a release gate.
 - `dataphyre_php_lint`: focused `php -l` checks for repo-local PHP files.
-- `dataphyre_release_check`: executes the fixed application release preflight for `project_root`, `application`, and `environment`. It always returns a boolean `prediction.likely_to_deploy`; failures distinguish invalid configuration, an unavailable dependency, and executable verification failure with actionable codes. The tool preserves only the exact bounded public preflight envelope and fixed per-check evidence schemas. It terminates oversized output and rejects extra fields, contradictory evidence, raw health bodies, arbitrary failure text, and value-bearing nested data instead of returning them to an agent.
+- `dataphyre_release_check`: executes the fixed application release preflight for `project_root`, `application`, and `environment`. It always returns a boolean `prediction.likely_to_deploy`; failures distinguish invalid configuration, an unavailable dependency, and executable verification failure with actionable codes. In Cloud-managed database environments, the fixed preflight verifies the application-resolved primary identity before health and returns only its `sha256:` connection identity, never DSNs, credentials, or raw driver output. The tool preserves only the exact bounded public preflight envelope and fixed per-check evidence schemas. It terminates oversized output and rejects extra fields, contradictory evidence, raw health bodies, arbitrary failure text, and value-bearing nested data instead of returning them to an agent.
 - `dataphyre_release_triage_summary`: executes the same preflight and groups its failures by `configuration`, `dependency`, or `verification` without accepting a caller-selected command or release script.
 - `dataphyre_release_fix_plan`: ordered read-only maintainer repair batches from release-check failures.
 - `dataphyre_mcp_manifest_export`: client-visible manifest of tools, prompts, resources, groups, schemas, protocol, and safety posture.
@@ -550,8 +550,11 @@ boundaries. `dataphyre_release_check` now executes
 `runtime/modules/core/kernel/application_release_preflight.php` with only
 `--project-root`, `--application`, and `--environment`. That public command
 validates configuration bootstrap, runs the native PostgreSQL migration plan in
-automatic dry-run mode when declared, boots the application through a fixed
-loopback router, and probes `GET /health`. Its `likely_to_deploy` field is always
+automatic dry-run mode when declared, verifies the application-resolved managed
+primary database identity when Cloud declares one, boots the application through
+a fixed loopback router, and probes `GET /health`. Managed database evidence is
+an exact `connection_sha256`, `declared`, and `purpose` object; it never contains
+a DSN, credential, query output, or driver error. Its `likely_to_deploy` field is always
 `true` or `false`; missing configuration and an unavailable executable or
 dependency are deterministic failures, never an unknown state. Dataphyre Cloud
 must invoke the same command inside the exact built candidate and separately
@@ -938,6 +941,4 @@ Before publishing MCP surface changes, confirm MCP self-test evidence. Do not tu
 Run live stdio validation through a spawned MCP process:
 
 Use `dataphyre_mcp_live_validate` where available, or collect live validation evidence.
-
-
 

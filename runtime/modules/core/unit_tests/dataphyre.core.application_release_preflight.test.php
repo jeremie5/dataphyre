@@ -120,16 +120,99 @@ test('application release preflight returns one deterministic boolean verdict wi
 	$t->same([
 		'configuration_bootstrap',
 		'database_migrations',
+		'database_runtime',
 		'application_health',
 	], array_column($run['payload']['checks'], 'id'));
-	$t->same(['passed','not_applicable','passed'], array_column($run['payload']['checks'], 'status'));
-	$t->same('/health', $run['payload']['checks'][2]['evidence']['path']);
-	$t->same(204, $run['payload']['checks'][2]['evidence']['http_status']);
-	$t->same(true, $run['payload']['checks'][2]['evidence']['response_contract_valid']);
-	$t->same([], $run['payload']['checks'][2]['evidence']['missing_environment_keys']);
+	$t->same(['passed','not_applicable','not_applicable','passed'], array_column($run['payload']['checks'], 'status'));
+	$t->same([
+		'connection_sha256'=>null,
+		'declared'=>false,
+		'purpose'=>null,
+	], $run['payload']['checks'][2]['evidence']);
+	$t->same('/health', $run['payload']['checks'][3]['evidence']['path']);
+	$t->same(204, $run['payload']['checks'][3]['evidence']['http_status']);
+	$t->same(true, $run['payload']['checks'][3]['evidence']['response_contract_valid']);
+	$t->same([], $run['payload']['checks'][3]['evidence']['missing_environment_keys']);
 	$t->contains('exact candidate image', $run['payload']['claim_boundary']);
 	$t->isFalse(str_contains($run['output'], $workspace->root()));
 })->tag('core','release','preflight','health','cli','security')->group('framework-coverage');
+
+test('application release preflight proves the application-resolved managed primary identity without exposing connection material', static function(Context $t): void {
+	$workspace=dp_application_preflight_fixture($t, 'managed-database-identity');
+	$marker='sha256:'.str_repeat('a', 64);
+	$connection='sha256:'.str_repeat('b', 64);
+	$t->environment(['DATAPHYRE_CLOUD_DATABASE_BINDING_PRIMARY_SHA256'=>$marker]);
+	$databaseCalls=0;
+	$healthCalls=0;
+	$run=dp_application_preflight_run(dp_application_preflight_arguments($workspace), [
+		'database_runtime_runner'=>static function(
+			string $projectRoot,
+			string $application,
+			string $environment,
+			int $timeout
+		) use (&$databaseCalls, $workspace, $connection): array {
+			$databaseCalls++;
+			if($projectRoot!==$workspace->root() || $application!=='fixture' || $environment!=='staging' || $timeout!==30000){
+				throw new RuntimeException('database runtime invocation was not fixed');
+			}
+			return [
+				'exit_code'=>0,
+				'stdout'=>json_encode([
+					'contract'=>'dataphyre.application_database_runtime.v1',
+					'ok'=>true,
+					'purpose'=>'primary',
+					'connection_sha256'=>$connection,
+				], JSON_THROW_ON_ERROR),
+				'stderr'=>'',
+			];
+		},
+		'health_runner'=>static function() use (&$healthCalls): array {
+			$healthCalls++;
+			return [
+				'ok'=>true,
+				'code'=>'healthy',
+				'attempts'=>1,
+				'http_status'=>200,
+				'response_contract_valid'=>true,
+				'missing_environment_keys'=>[],
+			];
+		},
+	]);
+	$t->same(ApplicationReleasePreflightCommand::EXIT_SUCCESS, $run['status']);
+	$t->same(1, $databaseCalls);
+	$t->same(1, $healthCalls);
+	$t->same('passed', $run['payload']['checks'][2]['status']);
+	$t->same([
+		'connection_sha256'=>$connection,
+		'declared'=>true,
+		'purpose'=>'primary',
+	], $run['payload']['checks'][2]['evidence']);
+	$t->isFalse(str_contains($run['output'], $marker));
+
+	$failedHealthCalls=0;
+	$failed=dp_application_preflight_run(dp_application_preflight_arguments($workspace), [
+		'database_runtime_runner'=>static fn(): array=>[
+			'exit_code'=>69,
+			'stdout'=>'',
+			'stderr'=>'DATABASE_PASSWORD=must-never-escape',
+		],
+		'health_runner'=>static function() use (&$failedHealthCalls): array {
+			$failedHealthCalls++;
+			throw new RuntimeException('health must not run after database identity failure');
+		},
+	]);
+	$t->same(ApplicationReleasePreflightCommand::EXIT_DEPENDENCY, $failed['status']);
+	$t->same(false, $failed['payload']['likely_to_deploy']);
+	$t->same(0, $failedHealthCalls);
+	$t->same('application_database_identity_failed', $failed['payload']['failures'][0]['code']);
+	$t->same('failed', $failed['payload']['checks'][2]['status']);
+	$t->same([
+		'connection_sha256'=>null,
+		'declared'=>true,
+		'purpose'=>'primary',
+	], $failed['payload']['checks'][2]['evidence']);
+	$t->isFalse(str_contains($failed['output'], 'must-never-escape'));
+})->tag('core','release','preflight','database','identity','security')->group('framework-coverage');
 
 test('application release preflight fails closed for every non-regular PostgreSQL migration pair', static function(Context $t): void {
 	$healthy=static fn(): array=>[
@@ -284,12 +367,12 @@ test('application release preflight preserves only bounded safe missing environm
 	]);
 	$t->same(ApplicationReleasePreflightCommand::EXIT_HEALTH, $run['status']);
 	$t->same(false, $run['payload']['likely_to_deploy']);
-	$t->same('failed', $run['payload']['checks'][2]['status']);
+	$t->same('failed', $run['payload']['checks'][3]['status']);
 	$t->same([
 		'SERVE_SIGNING_KEY',
 		'SERVE_STAFF_SESSION_SECRET',
-	], $run['payload']['checks'][2]['evidence']['missing_environment_keys']);
-	$t->same(true, $run['payload']['checks'][2]['evidence']['response_contract_valid']);
+	], $run['payload']['checks'][3]['evidence']['missing_environment_keys']);
+	$t->same(true, $run['payload']['checks'][3]['evidence']['response_contract_valid']);
 	$t->isFalse(str_contains($run['output'], 'SECRET_VALUE_MUST_NOT_LEAK'));
 	$twoHundredMissing=dp_application_preflight_run(dp_application_preflight_arguments($workspace), [
 		'health_runner'=>static fn(): array=>[
@@ -304,7 +387,7 @@ test('application release preflight preserves only bounded safe missing environm
 	$t->same(ApplicationReleasePreflightCommand::EXIT_HEALTH, $twoHundredMissing['status']);
 	$t->same(false, $twoHundredMissing['payload']['likely_to_deploy']);
 	$t->same('application_environment_keys_missing', $twoHundredMissing['payload']['failures'][0]['code']);
-	$t->same(['SERVE_SIGNING_KEY'], $twoHundredMissing['payload']['checks'][2]['evidence']['missing_environment_keys']);
+	$t->same(['SERVE_SIGNING_KEY'], $twoHundredMissing['payload']['checks'][3]['evidence']['missing_environment_keys']);
 
 	$validBody=json_encode([
 		'ok'=>false,
@@ -359,8 +442,8 @@ test('application release preflight preserves only bounded safe missing environm
 		$t->same(ApplicationReleasePreflightCommand::EXIT_HEALTH, $failed['status'], $case.' exit');
 		$t->same(false, $failed['payload']['likely_to_deploy'], $case.' verdict');
 		$t->same('application_health_evidence_invalid', $failed['payload']['failures'][0]['code'], $case.' failure');
-		$t->same(false, $failed['payload']['checks'][2]['evidence']['response_contract_valid'], $case.' evidence');
-		$t->same([], $failed['payload']['checks'][2]['evidence']['missing_environment_keys'], $case.' public keys');
+		$t->same(false, $failed['payload']['checks'][3]['evidence']['response_contract_valid'], $case.' evidence');
+		$t->same([], $failed['payload']['checks'][3]['evidence']['missing_environment_keys'], $case.' public keys');
 		$t->isFalse(str_contains($failed['output'], 'secret'), $case.' value secrecy');
 	}
 	$oversizedHeader=dp_application_preflight_read_health_response(
@@ -382,8 +465,8 @@ test('application release preflight preserves only bounded safe missing environm
 	$t->same(ApplicationReleasePreflightCommand::EXIT_HEALTH, $oversizedHeaderFailure['status']);
 	$t->same(false, $oversizedHeaderFailure['payload']['likely_to_deploy']);
 	$t->same('application_health_evidence_invalid', $oversizedHeaderFailure['payload']['failures'][0]['code']);
-	$t->same(false, $oversizedHeaderFailure['payload']['checks'][2]['evidence']['response_contract_valid']);
-	$t->same([], $oversizedHeaderFailure['payload']['checks'][2]['evidence']['missing_environment_keys']);
+	$t->same(false, $oversizedHeaderFailure['payload']['checks'][3]['evidence']['response_contract_valid']);
+	$t->same([], $oversizedHeaderFailure['payload']['checks'][3]['evidence']['missing_environment_keys']);
 	$invalidStatus=dp_application_preflight_read_health_response(
 		$t,
 		"HTTP/1.1 999 Invalid\r\nContent-Type: application/json\r\n\r\n".
@@ -402,8 +485,8 @@ test('application release preflight preserves only bounded safe missing environm
 	]);
 	$t->same(ApplicationReleasePreflightCommand::EXIT_HEALTH, $invalidStatusFailure['status']);
 	$t->same('application_health_evidence_invalid', $invalidStatusFailure['payload']['failures'][0]['code']);
-	$t->same(null, $invalidStatusFailure['payload']['checks'][2]['evidence']['http_status']);
-	$t->same(false, $invalidStatusFailure['payload']['checks'][2]['evidence']['response_contract_valid']);
+	$t->same(null, $invalidStatusFailure['payload']['checks'][3]['evidence']['http_status']);
+	$t->same(false, $invalidStatusFailure['payload']['checks'][3]['evidence']['response_contract_valid']);
 })->tag('core','release','preflight','health','environment','security','boundary')->group('framework-coverage');
 
 test('application release preflight distinguishes configuration dependency and executable failures', static function(Context $t): void {
@@ -547,7 +630,7 @@ test('application release preflight boots an existing standalone application roo
 	$t->same(ApplicationReleasePreflightCommand::EXIT_SUCCESS, $run['status']);
 	$t->same(true, $run['payload']['likely_to_deploy']);
 	$t->same('standalone_application_root', $run['payload']['checks'][0]['evidence']['application_layout']);
-	$t->same('passed', $run['payload']['checks'][2]['status']);
-	$t->same(200, $run['payload']['checks'][2]['evidence']['http_status']);
+	$t->same('passed', $run['payload']['checks'][3]['status']);
+	$t->same(200, $run['payload']['checks'][3]['evidence']['http_status']);
 	$t->isFalse(is_file($workspace->path('caller-selected-php-must-not-run')));
 })->tag('core','release','preflight','standalone','health','integration')->group('framework-coverage');
