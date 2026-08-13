@@ -41,7 +41,7 @@ trait PanelRendererPages {
 			'results'=>$searchResults,
 		]);
 		$navigation=$navigationState->entries();
-		return self::page(PanelConfig::homeLabel(), self::globalSearchHtml($searchQuery, $searchResults).self::widgetsHtml($widgets).self::navigationGroupsHtml($navigationState->groups()), [
+		return self::page(PanelConfig::homeLabel(), self::globalSearchHtml($searchQuery, $searchResults).self::widgetsHtml($widgets, PanelConfig::config('widgets_presentation'), $request, 'dashboard').self::navigationGroupsHtml($navigationState->groups()), [
 			'kind'=>'dashboard',
 			'request'=>$request->toArray(),
 			'widgets'=>$widgets,
@@ -92,7 +92,24 @@ trait PanelRendererPages {
 			'page'=>$panelPage,
 			'request'=>$request,
 		]);
-		$result=$panelPage->render($request, $manager);
+		$pageDefinition=$panelPage->toArray();
+		$pageMeta=is_array($pageDefinition['meta'] ?? null) ? $pageDefinition['meta'] : [];
+		$type=Resource::normalizeName((string)($pageMeta['page_type'] ?? $pageMeta['type'] ?? $pageMeta['kind'] ?? 'custom')) ?: 'custom';
+		$hookContext=['renderer'=>__CLASS__, 'page'=>$pageDefinition, 'meta'=>$pageMeta];
+		if(PanelComponentRegistry::pageTypeHasHook($type, 'authorize') && PanelComponentRegistry::callPageTypeHook($type, 'authorize', $panelPage, $request, $manager, $hookContext)===false){
+			return self::forbidden(null, $request);
+		}
+		$before=PanelComponentRegistry::pageTypeHasHook($type, 'before_render')
+			? PanelComponentRegistry::callPageTypeHook($type, 'before_render', $panelPage, $request, $manager, $hookContext)
+			: null;
+		$result=$before instanceof PanelPageResult || is_array($before) || is_string($before)
+			? $before
+			: PanelComponentRegistry::renderPage($type, $panelPage, $request, $manager, $hookContext);
+		$result ??=$panelPage->render($request, $manager);
+		if(PanelComponentRegistry::pageTypeHasHook($type, 'after_render')){
+			$after=PanelComponentRegistry::callPageTypeHook($type, 'after_render', $panelPage, $result, $request, $manager, $hookContext);
+			if($after instanceof PanelPageResult || is_array($after) || is_string($after)){ $result=$after; }
+		}
 		if($result instanceof PanelPageResult){
 			return $result;
 		}
@@ -117,9 +134,10 @@ trait PanelRendererPages {
 		$pageForms=self::pageScaffoldFormsHtml($panelPage, $request);
 		$pageHasPrimaryForm=self::pageHasPrimaryForm($panelPage);
 		$contentShell=trim($content)==='' && $pageForms!=='' ? '' : self::customPageShell($content);
+		$pagePresentations=$panelPage->presentations();
 		$body=$pageHasPrimaryForm
-			? self::pageActionsHtml($panelPage, $request).$contentShell.$pageForms.self::widgetsHtml($pageWidgets).self::pageTablesHtml($panelPage, $request, $pageTables)
-			: self::pageActionsHtml($panelPage, $request).self::widgetsHtml($pageWidgets).$pageForms.self::pageTablesHtml($panelPage, $request, $pageTables).$contentShell;
+			? self::pageActionsHtml($panelPage, $request).$contentShell.$pageForms.self::widgetsHtml($pageWidgets, $pagePresentations['widgets'] ?? null, $request, 'page.'.$panelPage->name()).self::pageTablesHtml($panelPage, $request, $pageTables)
+			: self::pageActionsHtml($panelPage, $request).self::widgetsHtml($pageWidgets, $pagePresentations['widgets'] ?? null, $request, 'page.'.$panelPage->name()).$pageForms.self::pageTablesHtml($panelPage, $request, $pageTables).$contentShell;
 		return self::page($title, $body, array_replace([
 			'kind'=>'custom_page',
 			'page'=>$panelPage->toArray(),
@@ -290,35 +308,45 @@ trait PanelRendererPages {
 	 */
 	private static function pageActionLifecycleResult(PanelPage $page, Action $action, PanelRequest $request, PanelLifecycleResult $result, PanelActionState $actionState, ?PanelFormState $state=null, array $input=[], ?PanelManager $manager=null): PanelPageResult {
 		$notifications=$result->notifications();
+		$actionMeta=$action->resolvedMeta(null, $request, null);
+		$redirectRequested=$result->redirectTo()!==null;
+		$redirect=$redirectRequested ? self::safeReturnUrl((string)$result->redirectTo()) : null;
 		if($notifications===[] && $result->message()!==''){
 			$notifications[]=PanelNotification::warning($result->message());
 		}
+		if($redirectRequested && $redirect===null){
+			$notifications[]=PanelNotification::warning(self::panelText('action.invalid_redirect', [], 'The requested redirect was blocked.'));
+		}
+		$lifecycle=$result->jsonSerialize();
+		$lifecycle['redirect_to']=$redirect;
 		$data=[
 			'kind'=>'page_action_lifecycle_result',
 			'page'=>$page->toArray(),
-			'action'=>$action->resolvedMeta(null, $request, null),
+			'action'=>$actionMeta,
 			'action_state'=>$actionState->jsonSerialize(),
 			'request'=>$request->toArray(),
 			'input_keys'=>array_keys($input),
 			'form_state'=>$state?->jsonSerialize(),
-			'lifecycle'=>$result->jsonSerialize(),
+			'lifecycle'=>$lifecycle,
+			'effects'=>self::actionEffects($actionMeta),
 		];
 		PanelTrace::record('page_action.lifecycle_result', [
 			'page'=>$page,
 			'action'=>$action,
 			'halted'=>$result->halted(),
-			'redirect'=>$result->redirectTo(),
+			'redirect'=>$redirect,
 			'status'=>$result->status(),
 			'state'=>$actionState,
 		]);
-		if($result->redirectTo()!==null){
+		if($redirect!==null){
 			self::flashNotifications($notifications);
-			return PanelPageResult::redirect($result->redirectTo(), $data, $notifications, $result->status());
+			return PanelPageResult::redirect($redirect, $data, $notifications, $result->status());
 		}
 		$message=$result->message()!=='' ? $result->message() : ($result->halted() ? self::panelText('page.action_stopped') : self::panelText('page.action_lifecycle_completed'));
 		$content='<div class="dp-panel-notice dp-panel-notice-warning"><span>'.self::e($message).'</span></div>'
 			.'<div class="dp-panel-toolbar"><a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(self::pageReturnUrl($page, $request)).'">'.self::e(self::panelText('common.back')).'</a></div>';
-		return self::page($result->halted() ? self::panelText('page.action_stopped_title') : self::panelText('page.action_lifecycle_title'), $content, $data, $result->status(), $notifications);
+		$status=$redirectRequested ? 422 : $result->status();
+		return self::page($result->halted() ? self::panelText('page.action_stopped_title') : self::panelText('page.action_lifecycle_title'), $content, $data, $status, $notifications);
 	}
 
 	/**
@@ -329,10 +357,18 @@ trait PanelRendererPages {
 	 * @return string Toolbar HTML, or an empty string when no actions are visible.
 	 */
 	private static function pageActionsHtml(PanelPage $page, PanelRequest $request): string {
+		$presentations=$page->presentations();
+		$toolbarPresentation=$presentations['toolbar'] ?? $presentations['actions'] ?? null;
 		$actions='';
+		$index=0;
 		foreach($page->actionsList() as $action){
 			if($action instanceof ActionGroup){
-				$actions.=self::pageActionGroupButton($page, $action, $request);
+				$item=self::pageActionGroupButton($page, $action, $request);
+				if($item!==''){
+					$meta=$action->toArray();
+					$actions.=PanelCollectionPresentation::decorateItemHtml($item, $toolbarPresentation, $action->name(), $index, is_array($meta['meta'] ?? null) ? $meta['meta'] : []);
+					$index++;
+				}
 				continue;
 			}
 			if(!$page->shouldShowActionButton($action->name())){
@@ -341,9 +377,15 @@ trait PanelRendererPages {
 			if(!$action->isVisible(null, $request->user(), null, $request) || $action->can(null, $request->user(), null)===false){
 				continue;
 			}
-			$actions.=self::pageActionButton($page, $action, $request);
+			$item=self::pageActionButton($page, $action, $request);
+			if($item!==''){
+				$meta=$action->toArray();
+				$actions.=PanelCollectionPresentation::decorateItemHtml($item, $toolbarPresentation, $action->name(), $index, is_array($meta['meta'] ?? null) ? $meta['meta'] : []);
+				$index++;
+			}
 		}
-		return $actions!=='' ? '<div class="dp-panel-toolbar"><span></span><div class="dp-panel-toolbar-actions">'.$actions.'</div></div>' : '';
+		$toolbarAttributes=$toolbarPresentation===null ? '' : PanelCollectionPresentation::htmlAttributes($toolbarPresentation, 'inline').' data-dp-panel-collection="toolbar"';
+		return $actions!=='' ? '<div class="dp-panel-toolbar"><span></span><div class="dp-panel-toolbar-actions"'.$toolbarAttributes.'>'.$actions.'</div></div>' : '';
 	}
 
 	/**
@@ -384,8 +426,10 @@ trait PanelRendererPages {
 		if(($meta['has_handler'] ?? false)!==true || ($meta['fields']['fields'] ?? [])!==[]){
 			return '<a class="dp-panel-action dp-panel-action-'.$tone.$classSuffix.'" href="'.self::e($url).'"'.$confirm.$modal.$tooltipAttr.$keyBindingAttr.$extraAttr.'>'.$label.'</a>';
 		}
+		$returnUrl=self::actionNavigationReturnUrl($meta, self::pageReturnUrl($page, $request));
 		return '<form class="dp-panel-inline-action" method="post" action="'.self::e($url).'">'
 			.self::csrfInput()
+			.self::returnInputUrl($returnUrl, $request, self::actionNavigationIntentOptions($meta))
 			.'<button class="dp-panel-action dp-panel-action-'.$tone.$classSuffix.'" type="submit" name="__panel_action_confirm" value="1"'.$confirm.$modal.$tooltipAttr.$keyBindingAttr.$extraAttr.'>'.$label.'</button>'
 			.'</form>';
 	}
@@ -402,7 +446,8 @@ trait PanelRendererPages {
 	 */
 	private static function pageActionConfirmationForm(PanelPage $page, Action $action, PanelRequest $request, ?PanelManager $manager=null, int $status=409): PanelPageResult {
 		$actionMeta=$action->resolvedMeta(null, $request, null);
-		$content=self::actionConfirmationContent($actionMeta, self::pageActionUrl($page, (string)$actionMeta['name'], $request), self::pageReturnUrl($page, $request), self::actionConfirmationInput($actionMeta));
+		$returnUrl=self::actionNavigationReturnUrl($actionMeta, self::pageReturnUrl($page, $request));
+		$content=self::actionConfirmationContent($actionMeta, self::pageActionUrl($page, (string)$actionMeta['name'], $request), $returnUrl, self::actionConfirmationInput($actionMeta).self::returnInputUrl($returnUrl, $request, self::actionNavigationIntentOptions($actionMeta)));
 		$actionState=$action->state(null, $request, null, 'page_action', null, [], null, null, ['stage'=>'confirmation', 'page'=>$page->name()]);
 		$data=[
 			'kind'=>'page_action_confirmation',
@@ -529,7 +574,7 @@ trait PanelRendererPages {
 			return '';
 		}
 		uasort($forms, static fn(array $left, array $right): int => [(int)($left['sort'] ?? 100), (string)($left['action'] ?? '')] <=> [(int)($right['sort'] ?? 100), (string)($right['action'] ?? '')]);
-		$html='';
+		$items=[];
 		foreach($forms as $form){
 			$actionName=(string)($form['action'] ?? '');
 			$action=$actionName!=='' ? $page->actionByName($actionName) : null;
@@ -556,12 +601,20 @@ trait PanelRendererPages {
 					.($description!=='' ? '<p>'.self::e($description).'</p>' : '')
 					.'</header>';
 			}
-			$html.='<section class="dp-panel-page-form dp-panel-page-form-'.$placement.' dp-panel-page-form-style-'.$style.' dp-panel-page-form-width-'.$width.'" data-dp-panel-page-form="'.self::e($actionName).'">'
+			$itemHtml='<section class="dp-panel-page-form dp-panel-page-form-'.$placement.' dp-panel-page-form-style-'.$style.' dp-panel-page-form-width-'.$width.'" data-dp-panel-page-form="'.self::e($actionName).'">'
 				.$heading
 				.$content
 				.'</section>';
+			$items[]=['name'=>$actionName,'meta'=>$form,'html'=>$itemHtml];
 		}
-		return $html;
+		$presentation=self::pageCollectionPresentation($page, 'forms', array_map(static fn(array $item): array=>$item['meta'], $items), 'stack');
+		$html='';
+		foreach($items as $index=>$item){
+			$html.=PanelCollectionPresentation::decorateItemHtml($item['html'], $presentation, $item['name'], $index, self::pageCollectionDescriptorMeta($item['meta']));
+		}
+		return $presentation===null || $html===''
+			? $html
+			: '<div class="dp-panel-page-forms"'.PanelCollectionPresentation::htmlAttributes($presentation, 'stack').'>'.$html.'</div>';
 	}
 
 	/**
@@ -604,7 +657,7 @@ trait PanelRendererPages {
 			$section=trim((string)($meta['meta']['section'] ?? ''));
 			$section=$section!=='' ? $section : self::panelText('record.details');
 			$sections[$section] ??=[];
-			$sections[$section][]=self::fieldHtml($name, $meta, $value, $state->fieldErrors($name), !$fieldVisible);
+			$sections[$section][]=['html'=>self::fieldHtml($name, $meta, $value, $state->fieldErrors($name), !$fieldVisible), 'name'=>$name, 'meta'=>is_array($meta['meta'] ?? null) ? $meta['meta'] : []];
 		}
 		$summary='';
 		if($state->invalid()){
@@ -613,17 +666,24 @@ trait PanelRendererPages {
 		}
 		$includeCancel=($options['include_cancel'] ?? false)===true;
 		$cancelUrl=is_string($options['cancel_url'] ?? null) ? (string)$options['cancel_url'] : self::pageReturnUrl($page, $request);
+		$cancelUrl=self::actionNavigationReturnUrl($actionMeta, $cancelUrl);
 		$submitLabel=trim((string)($options['submit_label'] ?? $actionMeta['label'] ?? self::panelText('common.run')));
 		$class=trim('dp-panel-form '.(string)($options['class'] ?? ''));
-		$actions=($includeCancel ? '<a class="dp-panel-button dp-panel-button-secondary" href="'.self::e($cancelUrl).'">'.self::e(self::panelText('common.cancel')).'</a>' : '')
-			.'<button class="dp-panel-button dp-panel-button-primary" type="submit">'.self::e($submitLabel).'</button>';
+		$formPresentations=is_array($actionMeta['fields']['presentation'] ?? null) ? $actionMeta['fields']['presentation'] : [];
+		$toolbarPresentation=$formPresentations['toolbar'] ?? $formPresentations['actions'] ?? null;
+		$actions=$includeCancel
+			? PanelCollectionPresentation::decorateItemHtml('<a class="dp-panel-button dp-panel-button-secondary" href="'.self::e($cancelUrl).'" data-dp-panel-modal-cancel="1">'.self::e(self::panelText('common.cancel')).'</a>', $toolbarPresentation, 'cancel', 0)
+			: '';
+		$actions.=PanelCollectionPresentation::decorateItemHtml('<button class="dp-panel-button dp-panel-button-primary" type="submit">'.self::e($submitLabel).'</button>', $toolbarPresentation, 'submit', $includeCancel ? 1 : 0);
+		$actionAttributes=$toolbarPresentation!==null ? PanelCollectionPresentation::htmlAttributes($toolbarPresentation, 'inline') : '';
 		return '<form class="'.self::e($class).'" method="post"'.self::formEncodingAttr($actionMeta['fields']['fields'] ?? []).' action="'.self::e(self::pageActionUrl($page, (string)$actionMeta['name'], $request)).'"'.self::accessibilityDefaultAttrs(is_array($actionMeta['fields']['meta'] ?? null) ? $actionMeta['fields']['meta'] : []).'>'
 			.self::csrfInput()
 			.'<input type="hidden" name="__panel_action_submit" value="1">'
 			.self::actionConfirmationInput($actionMeta)
+			.self::returnInputUrl($cancelUrl, $request, self::actionNavigationIntentOptions($actionMeta))
 			.$summary
-			.self::formSectionsHtml($sections, self::formColumnsDefinition($actionMeta['fields'] ?? []), $sectionMeta)
-			.'<div class="dp-panel-toolbar dp-panel-page-form-actions"><span></span><div class="dp-panel-toolbar-actions">'.$actions.'</div></div>'
+			.self::formSectionsHtml($sections, self::formColumnsDefinition($actionMeta['fields'] ?? []), $sectionMeta, is_array($actionMeta['fields']['presentation'] ?? null) ? $actionMeta['fields']['presentation'] : [])
+			.'<div class="dp-panel-toolbar dp-panel-page-form-actions"><span></span><div class="dp-panel-toolbar-actions"'.$actionAttributes.'>'.$actions.'</div></div>'
 			.'</form>';
 	}
 
@@ -669,7 +729,7 @@ trait PanelRendererPages {
 		if($tables===[]){
 			return '';
 		}
-		$html='';
+		$items=[];
 		foreach($tables as $tableData){
 			$table=$tableData['table'] ?? null;
 			if(!$table instanceof PageTable){
@@ -724,17 +784,25 @@ trait PanelRendererPages {
 			$filters=self::pageTableFiltersHtml($page, $table, $tableRequest);
 			$summaries=is_array($tableData['summaries'] ?? null) ? $tableData['summaries'] : [];
 			$tableLabel=(string)($meta['label'] ?? self::panelText('table.table'));
-			$html.='<section class="dp-panel-page-table" data-dp-panel-refresh-region="table" data-dp-panel-refresh-key="'.self::e($table->name()).'">'
+			$itemHtml='<section class="dp-panel-page-table" data-dp-panel-refresh-region="table" data-dp-panel-refresh-key="'.self::e($table->name()).'">'
 				.'<header><div><h2>'.self::e($tableLabel).'</h2>'.($description!=='' ? '<p>'.self::e($description).'</p>' : '').'</div><span>'.self::e((string)count($records)).' '.self::e(self::panelText(count($records)===1 ? 'table.row' : 'table.row_plural')).'</span></header>'
 				.$views
 				.$groups
 				.$search
 				.$filters
-				.self::summaryHtml($summaries)
-				.'<div class="dp-panel-table-scroll"><table class="dp-panel-table"><thead>'.$head.'</thead><tbody>'.$body.'</tbody>'.$footer.'</table></div>'
+				.self::summaryHtml($summaries, false, $table->presentationFor('summaries', 'grid'))
+				.'<div class="dp-panel-table-scroll" data-dp-panel-overflow-policy="scroll-x" data-dp-panel-overflow-reason="data-table"><table class="dp-panel-table"><thead>'.$head.'</thead><tbody>'.$body.'</tbody>'.$footer.'</table></div>'
 				.'</section>';
+			$items[]=['name'=>$table->name(),'meta'=>$meta,'html'=>$itemHtml];
 		}
-		return $html;
+		$presentation=self::pageCollectionPresentation($page, 'tables', array_map(static fn(array $item): array=>$item['meta'], $items), 'stack');
+		$html='';
+		foreach($items as $index=>$item){
+			$html.=PanelCollectionPresentation::decorateItemHtml($item['html'], $presentation, $item['name'], $index, self::pageCollectionDescriptorMeta($item['meta']));
+		}
+		return $presentation===null || $html===''
+			? $html
+			: '<div class="dp-panel-page-tables"'.PanelCollectionPresentation::htmlAttributes($presentation, 'stack').'>'.$html.'</div>';
 	}
 
 	/**
@@ -837,14 +905,16 @@ trait PanelRendererPages {
 			return '';
 		}
 		$active=$table->activeViewName($request);
-		$html=self::pageTableViewLink($page, $table, $request, 'all', self::panelText('common.all'), 'neutral', $active==='');
+		$presentation=$table->presentationFor('views', 'segmented');
+		$html=PanelCollectionPresentation::decorateItemHtml(self::pageTableViewLink($page, $table, $request, 'all', self::panelText('common.all'), 'neutral', $active===''), $presentation, 'all', 0);
+		$index=1;
 		foreach($views as $view){
 			if(!$view instanceof TableView){
 				continue;
 			}
 			$meta=$view->toArray();
 			$badge=$view->resolveBadge([], $table->filterRequest($request), Resource::make('__page_table'));
-			$html.=self::pageTableViewLink(
+			$item=self::pageTableViewLink(
 				$page,
 				$table,
 				$request,
@@ -854,8 +924,10 @@ trait PanelRendererPages {
 				$active===$view->name(),
 				$badge
 			);
+			$html.=PanelCollectionPresentation::decorateItemHtml($item, $presentation, $view->name(), $index, is_array($meta['meta'] ?? null) ? $meta['meta'] : []);
+			$index++;
 		}
-		return '<nav class="dp-panel-table-views" aria-label="'.self::e(self::panelText('table.views_aria', ['table'=>(string)($table->toArray()['label'] ?? self::panelText('table.table'))])).'">'.$html.'</nav>';
+		return '<nav class="dp-panel-table-views"'.PanelCollectionPresentation::htmlAttributes($presentation, 'segmented').' aria-label="'.self::e(self::panelText('table.views_aria', ['table'=>(string)($table->toArray()['label'] ?? self::panelText('table.table'))])).'">'.$html.'</nav>';
 	}
 
 	/**
@@ -876,16 +948,20 @@ trait PanelRendererPages {
 		$prefix=$table->filterPrefix();
 		$query[$prefix.'group']='none';
 		$query['page']=1;
-		$html='<a class="dp-panel-table-group'.($active==='' ? ' active' : '').'" href="'.self::e(PanelConfig::url($page->name(), self::filterQueryValues($query))).'"><span>'.self::e(self::panelText('table.ungrouped')).'</span></a>';
+		$presentation=$table->presentationFor('groups', 'segmented');
+		$html=PanelCollectionPresentation::decorateItemHtml('<a class="dp-panel-table-group'.($active==='' ? ' active' : '').'" href="'.self::e(PanelConfig::url($page->name(), self::filterQueryValues($query))).'"><span>'.self::e(self::panelText('table.ungrouped')).'</span></a>', $presentation, 'none', 0);
+		$index=1;
 		foreach($groups as $group){
 			if(!$group instanceof TableGroup){
 				continue;
 			}
 			$meta=$group->toArray();
 			$query[$prefix.'group']=$group->name();
-			$html.='<a class="dp-panel-table-group'.($active===$group->name() ? ' active' : '').'" href="'.self::e(PanelConfig::url($page->name(), self::filterQueryValues($query))).'"'.($active===$group->name() ? ' aria-current="page"' : '').'><span>'.self::e((string)($meta['label'] ?? $group->name())).'</span></a>';
+			$item='<a class="dp-panel-table-group'.($active===$group->name() ? ' active' : '').'" href="'.self::e(PanelConfig::url($page->name(), self::filterQueryValues($query))).'"'.($active===$group->name() ? ' aria-current="page"' : '').'><span>'.self::e((string)($meta['label'] ?? $group->name())).'</span></a>';
+			$html.=PanelCollectionPresentation::decorateItemHtml($item, $presentation, $group->name(), $index, is_array($meta['meta'] ?? null) ? $meta['meta'] : []);
+			$index++;
 		}
-		return '<nav class="dp-panel-table-groups" aria-label="'.self::e(self::panelText('table.grouping_aria', ['table'=>(string)($table->toArray()['label'] ?? self::panelText('table.table'))])).'">'.$html.'</nav>';
+		return '<nav class="dp-panel-table-groups"'.PanelCollectionPresentation::htmlAttributes($presentation, 'segmented').' aria-label="'.self::e(self::panelText('table.grouping_aria', ['table'=>(string)($table->toArray()['label'] ?? self::panelText('table.table'))])).'">'.$html.'</nav>';
 	}
 
 	/**
@@ -965,20 +1041,26 @@ trait PanelRendererPages {
 		}
 		$filterRequest=$table->filterRequest($request);
 		$prefix=$table->filterPrefix();
+		$presentation=$table->presentationFor('filters', 'grid');
 		$controls='';
+		$index=0;
 		foreach($filters as $filter){
 			if($filter instanceof TableFilter && $filter->isVisible($filterRequest, null, $table)){
-				$controls.=self::filterControl($filter, $filterRequest, $prefix);
+				$meta=$filter->toArray();
+				$controls.=PanelCollectionPresentation::decorateItemHtml(self::filterControl($filter, $filterRequest, $prefix), $presentation, $filter->name(), $index, is_array($meta['meta'] ?? null) ? $meta['meta'] : []);
+				$index++;
 			}
 		}
 		if($controls===''){
 			return '';
 		}
-		return '<form class="dp-panel-filters dp-panel-page-table-filters" method="get" action="'.self::e(PanelConfig::url($page->name())).'">'
+		$submit=PanelCollectionPresentation::decorateItemHtml('<button class="dp-panel-button dp-panel-button-secondary" type="submit">'.self::e(self::panelText('client.filter')).'</button>', $presentation, 'submit', $index);
+		$reset=PanelCollectionPresentation::decorateItemHtml('<a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(self::pageTableFilterResetUrl($page, $table, $request)).'">'.self::e(self::panelText('common.reset')).'</a>', $presentation, 'reset', $index+1);
+		return '<form class="dp-panel-filters dp-panel-page-table-filters"'.PanelCollectionPresentation::htmlAttributes($presentation, 'grid').' method="get" action="'.self::e(PanelConfig::url($page->name())).'">'
 			.self::pageTableHiddenInputs($table, $request)
 			.$controls
-			.'<button class="dp-panel-button dp-panel-button-secondary" type="submit">'.self::e(self::panelText('client.filter')).'</button>'
-			.'<a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(self::pageTableFilterResetUrl($page, $table, $request)).'">'.self::e(self::panelText('common.reset')).'</a>'
+			.$submit
+			.$reset
 			.'</form>'
 			.self::pageTableFilterChipsHtml($page, $table, $filterRequest, $request);
 	}
@@ -1106,9 +1188,10 @@ trait PanelRendererPages {
 	 * @param array<int, mixed> $records Source records or current page records when already paginated.
 	 * @param ?int $totalRecords Total record count; inferred from records when omitted.
 	 * @param bool $alreadyPaginated Whether filtering and pagination were already applied by the caller.
+	 * @param array<string,mixed> $dataSource Structured upstream result metadata.
 	 * @return PanelPageResult Resource index page with table state and `kind=index` metadata.
 	 */
-	public static function index(Resource $resource, PanelRequest $request, array $records=[], ?int $totalRecords=null, bool $alreadyPaginated=false): PanelPageResult {
+	public static function index(Resource $resource, PanelRequest $request, array $records=[], ?int $totalRecords=null, bool $alreadyPaginated=false, array $dataSource=[]): PanelPageResult {
 		$request=$resource->requestWithResolvedView($request);
 		$activeView=self::activeTableViewName($resource, $request);
 		$viewCounts=$alreadyPaginated ? [] : self::tableViewCounts($resource, $request, $records);
@@ -1138,7 +1221,7 @@ trait PanelRendererPages {
 			'summary_count'=>count($summaries),
 			'active_view'=>$activeView,
 		]);
-		$tableState=$resource->tableState($request, $summaryRecords, $alreadyPaginated, self::tablePreferences($request));
+		$tableState=$resource->tableState($request, $summaryRecords, $alreadyPaginated, self::tablePreferences($request), $dataSource, $totalRecords);
 		$allColumns=$tableState->allColumns();
 		$columns=$tableState->visibleColumns();
 		PanelTrace::record('table.state', [
@@ -1191,7 +1274,7 @@ trait PanelRendererPages {
 			.$headerControls
 			.$metaControls
 			.'</div>'
-				.'<div class="dp-panel-table-scroll" tabindex="0" role="region" aria-label="'.self::e(self::panelText('table.aria_suffix', ['resource'=>(string)$resource->pluralLabel()])).'">'
+				.'<div class="dp-panel-table-scroll" data-dp-panel-overflow-policy="scroll-x" data-dp-panel-overflow-reason="data-table" tabindex="0" role="region" aria-label="'.self::e(self::panelText('table.aria_suffix', ['resource'=>(string)$resource->pluralLabel()])).'">'
 			.'<table class="dp-panel-table dp-panel-table-'.$density.'"><thead>'.$head.'</thead><tbody>'.$body.'</tbody>'.$footer.'</table>'
 			.'</div></div>';
 		if($hasBulkActions){
@@ -1200,9 +1283,9 @@ trait PanelRendererPages {
 		$content=self::resourceCommandBarHtml($resource, $request, $allColumns)
 			.self::tablePulseHtml($resource, $request, $totalRecords, count($records), $page, $perPage, $activeView, $hasBulkActions, count($summaries), $alreadyPaginated)
 			.self::tableViewsHtml($resource, $request, $activeView, $viewCounts)
-			.self::summaryHtml($summaries, $alreadyPaginated)
+			.self::summaryHtml($summaries, $alreadyPaginated, $resource->resourceTable()->presentationFor('summaries', 'grid'))
 			.$table
-			.self::paginationHtml($resource, $request, $totalRecords, $page, $perPage, $totalPages);
+			.self::paginationHtml($resource, $request, $totalRecords, $page, $perPage, $totalPages, $dataSource);
 		$hookContext=[
 			'kind'=>'index',
 			'resource'=>$resource,
@@ -1213,6 +1296,7 @@ trait PanelRendererPages {
 			'per_page'=>$perPage,
 			'active_view'=>$activeView,
 			'visible_columns'=>array_keys($columns),
+			'data_source'=>$dataSource,
 		];
 		$content=PanelConfig::renderHook('resource.index.before', $hookContext).$content.PanelConfig::renderHook('resource.index.after', $hookContext);
 		return self::page((string)$resource->pluralLabel(), $content, [
@@ -1228,31 +1312,63 @@ trait PanelRendererPages {
 			'active_view'=>$activeView,
 			'views'=>array_map(static fn(TableView $view): array => $view->toArray(), array_values($resource->tableViewsList())),
 			'summaries'=>$summaries,
+			'table_state'=>$tableState->jsonSerialize(),
+			'data_source'=>$dataSource,
 		]);
+	}
+
+	/**
+	 * Resolves an opt-in page-level collection presentation.
+	 *
+	 * @param array<int,array<string,mixed>> $items Item descriptors considered for local metadata.
+	 * @return ?array<string,mixed>
+	 */
+	private static function pageCollectionPresentation(PanelPage $page, string $collection, array $items=[], string $defaultDisplay='stack'): ?array {
+		$key=Resource::normalizeName($collection);
+		$presentations=$page->presentations();
+		if(array_key_exists($key, $presentations)){
+			return PanelCollectionPresentation::normalize($presentations[$key], $defaultDisplay);
+		}
+		foreach($items as $item){
+			if(PanelCollectionItemPresentation::fromMeta(self::pageCollectionDescriptorMeta($item))!==[]){
+				return PanelCollectionPresentation::normalize(null, $defaultDisplay);
+			}
+		}
+		return null;
+	}
+
+	/** @param array<string,mixed> $descriptor
+	 *  @return array<string,mixed>
+	 */
+	private static function pageCollectionDescriptorMeta(array $descriptor): array {
+		$nested=is_array($descriptor['meta'] ?? null) ? $descriptor['meta'] : [];
+		return array_replace($nested, $descriptor);
 	}
 
 	/**
 	 * Renders a transition-aware resource status board.
 	*
-	 * The board is available only when the resource allows board access, supports
-	 * transitions, and defines status views. Records are distributed into view
+	 * The board is available when the resource allows board access and defines
+	 * status views. Records are distributed into view
 	 * columns by the first matching status view, with unmatched records collected
-	 * into an `_other` column. Cards include row actions and transition metadata
-	 * for client-side drag/drop when the resource permits moves.
+	 * into an `_other` column. Read-only boards need no mutation callback; cards
+	 * gain transition metadata for client-side drag/drop only when the resource
+	 * permits moves.
 	*
 	 * @param Resource $resource Resource definition that supplies transition views and policies.
 	 * @param PanelRequest $request Current panel request.
 	 * @param array<int, mixed> $records Source records or already-filtered board records.
 	 * @param ?int $totalRecords Total record count; inferred from records when omitted.
 	 * @param bool $alreadyPaginated Whether the caller already applied filters/search/sort.
+	 * @param array<string,mixed> $dataSource Structured upstream result metadata.
 	 * @return PanelPageResult Board page or a forbidden/unavailable panel response.
 	 */
-	public static function statusBoard(Resource $resource, PanelRequest $request, array $records=[], ?int $totalRecords=null, bool $alreadyPaginated=false): PanelPageResult {
+	public static function statusBoard(Resource $resource, PanelRequest $request, array $records=[], ?int $totalRecords=null, bool $alreadyPaginated=false, array $dataSource=[]): PanelPageResult {
 		if($resource->can('board', null, $request->user())===false){
 			return self::forbidden($resource, $request);
 		}
 		$views=self::statusBoardViews($resource);
-		if($resource->canTransition()===false || $views===[]){
+		if($views===[]){
 			return self::panelEmptyPage('table.board_unavailable', 'transition.unavailable_body', [
 				'kind'=>'board_unavailable',
 				'resource'=>$resource->toArray(),
@@ -1272,6 +1388,7 @@ trait PanelRendererPages {
 				'name'=>$name,
 				'label'=>(string)($meta['label'] ?? self::panelText('field.'.Resource::normalizeName($name), [], ucwords(str_replace(['_', '-', '.'], ' ', $name)))),
 				'tone'=>self::safeTone((string)($meta['tone'] ?? 'neutral')),
+				'meta'=>is_array($meta['meta'] ?? null) ? $meta['meta'] : [],
 				'records'=>[],
 			];
 		}
@@ -1294,17 +1411,30 @@ trait PanelRendererPages {
 				'name'=>'_other',
 				'label'=>self::panelText('table.other'),
 				'tone'=>'neutral',
+				'meta'=>[],
 				'records'=>$otherRecords,
 			];
 		}
+		$presentations=$resource->presentations();
+		$boardColumnPresentation=$presentations['board_columns'] ?? null;
+		if($boardColumnPresentation===null){
+			foreach($columns as $column){
+				if(PanelCollectionItemPresentation::fromMeta(is_array($column['meta'] ?? null) ? $column['meta'] : [])!==[]){
+					$boardColumnPresentation=PanelCollectionPresentation::normalize(null, 'grid');
+					break;
+				}
+			}
+		}
+		$boardCardPresentation=$presentations['board_cards'] ?? null;
 		$returnUrl=self::boardReturnUrl($resource, $request);
 		$board='';
 		$columnData=[];
 		$movableCount=0;
+		$columnIndex=0;
 		foreach($columns as $column){
 			$cards='';
 			$recordKeys=[];
-			foreach($column['records'] as $record){
+			foreach($column['records'] as $cardIndex=>$record){
 				$key=$resource->recordKey($record);
 				$title=$resource->recordTitle($record);
 				$subtitle=$resource->recordSubtitle($record);
@@ -1318,21 +1448,24 @@ trait PanelRendererPages {
 					: '';
 				$actions=self::rowActions($resource, $record, false, $request, $returnUrl);
 				$viewLabel=$title!=='' ? $title : ($key!=='' ? $key : self::panelText('data.record'));
-				$cards.='<article class="dp-panel-board-card"'.$dragAttrs.'>'
+				$card='<article class="dp-panel-board-card"'.$dragAttrs.'>'
 					.'<a class="dp-panel-board-title" href="'.self::e($resource->recordUrl($record, 'show')).'"'.self::resourceModalAttributes('view', self::panelText('data.view_record_title', ['record'=>$viewLabel]), self::panelText('page.board_view_record_body'), 'lg', 'dialog', true).'>'.self::e($viewLabel).'</a>'
 					.($subtitle!=='' ? '<span>'.self::e($subtitle).'</span>' : '')
 					.($key!=='' ? '<small>'.self::e($key).'</small>' : '')
 					.($actions!=='' ? '<div class="dp-panel-actions">'.$actions.'</div>' : '')
 					.'</article>';
+				$cards.=PanelCollectionPresentation::decorateItemHtml($card, $boardCardPresentation, $key, $cardIndex);
 			}
 			if($cards===''){
 				$cards='<p class="dp-panel-board-empty">'.self::e(self::panelText('page.board_no_records')).'</p>';
 			}
 			$count=count($column['records']);
-			$board.='<section class="dp-panel-board-column dp-panel-board-column-'.$column['tone'].'" data-dp-panel-board-column data-dp-panel-board-status="'.self::e((string)$column['name']).'">'
+			$cardAttributes=$boardCardPresentation===null ? '' : PanelCollectionPresentation::htmlAttributes($boardCardPresentation, 'stack');
+			$columnHtml='<section class="dp-panel-board-column dp-panel-board-column-'.$column['tone'].'" data-dp-panel-board-column data-dp-panel-board-status="'.self::e((string)$column['name']).'">'
 				.'<header><div><strong>'.self::e($column['label']).'</strong><small>'.self::e($column['name']==='_other' ? self::panelText('page.board_unmatched_status') : $column['name']).'</small></div><span>'.self::e((string)$count).'</span></header>'
-				.'<div class="dp-panel-board-list">'.$cards.'</div>'
+				.'<div class="dp-panel-board-list"'.$cardAttributes.'>'.$cards.'</div>'
 				.'</section>';
+			$board.=PanelCollectionPresentation::decorateItemHtml($columnHtml, $boardColumnPresentation, (string)$column['name'], $columnIndex, is_array($column['meta'] ?? null) ? $column['meta'] : []);
 			$columnData[]=[
 				'name'=>$column['name'],
 				'label'=>$column['label'],
@@ -1340,6 +1473,7 @@ trait PanelRendererPages {
 				'count'=>$count,
 				'record_keys'=>$recordKeys,
 			];
+			$columnIndex++;
 		}
 		PanelTrace::record('page.board', [
 			'resource'=>$resource,
@@ -1351,11 +1485,11 @@ trait PanelRendererPages {
 		$content='<section class="dp-panel-commandbar dp-panel-commandbar-board" aria-label="'.self::e((string)$resource->pluralLabel()).' board controls" data-dp-panel-commandbar>'
 			.'<div class="dp-panel-commandbar-top">'
 			.'<div class="dp-panel-commandbar-search" data-dp-panel-control-group="search">'.self::boardSearchForm($resource, $request).'</div>'
-			.'<div class="dp-panel-commandbar-primary" data-dp-panel-control-group="primary"><a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(self::tableReturnUrl($resource, $request)).'">'.self::actionTextHtml(self::panelText('table.view_table'), 'table').'</a>'.($resource->can('create', null, $request->user())!==false ? '<a class="dp-panel-button dp-panel-commandbar-create" href="'.self::e(PanelConfig::resourceUrl($resource, 'create')).'"'.self::resourceModalAttributes('create', self::panelText('table.create_resource_title', ['resource'=>$resource->label()]), self::panelText('table.create_resource_body'), 'xl', 'slide_over', true).'>'.self::actionTextHtml(self::panelText('table.create'), 'plus').'</a>' : '').'</div>'
+			.'<div class="dp-panel-commandbar-primary" data-dp-panel-control-group="primary"><a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(self::tableReturnUrl($resource, $request)).'">'.self::actionTextHtml(self::panelText('table.table'), 'table').'</a>'.($resource->can('create', null, $request->user())!==false ? '<a class="dp-panel-button dp-panel-commandbar-create" href="'.self::e(PanelConfig::resourceUrl($resource, 'create')).'"'.self::resourceModalAttributes('create', self::panelText('table.create_resource_title', ['resource'=>$resource->label()]), self::panelText('table.create_resource_body'), 'xl', 'slide_over', true).'>'.self::actionTextHtml(self::panelText('table.create'), 'plus').'</a>' : '').'</div>'
 			.'</div>'
 			.'</section>'
 			.self::boardPulseHtml($resource, $request, $columnData, $totalRecords, $movableCount, $alreadyPaginated)
-			.'<section class="dp-panel-board" data-dp-panel-packed-grid="masonry" data-dp-panel-packed-grid-min="280">'.$board.'</section>';
+			.'<section class="dp-panel-board" data-dp-panel-packed-grid="masonry" data-dp-panel-packed-grid-min="280"'.($boardColumnPresentation===null ? '' : PanelCollectionPresentation::htmlAttributes($boardColumnPresentation, 'grid')).'>'.$board.'</section>';
 		return self::page((string)$resource->label().' Board', $content, [
 			'kind'=>'board',
 			'resource'=>$resource->toArray(),
@@ -1363,6 +1497,7 @@ trait PanelRendererPages {
 			'record_count'=>count($records),
 			'total_count'=>$totalRecords,
 			'columns'=>$columnData,
+			'data_source'=>$dataSource,
 		]);
 	}
 
@@ -1455,12 +1590,12 @@ trait PanelRendererPages {
 			$section=trim((string)($meta['meta']['section'] ?? ''));
 			$section=$section!=='' ? $section : self::panelText('record.details');
 			$sections[$section] ??=[];
-			$sections[$section][]=self::fieldHtml($name, $meta, $value, $state->fieldErrors($name), !$fieldVisible);
+			$sections[$section][]=['html'=>self::fieldHtml($name, $meta, $value, $state->fieldErrors($name), !$fieldVisible), 'name'=>$name, 'meta'=>is_array($meta['meta'] ?? null) ? $meta['meta'] : []];
 		}
 		$formStats['sections']=count($sections);
 		$formStats['error_fields']=count($state->errors());
 		$formStats['issue_count']=array_sum(array_map('count', $state->errors()));
-		$fields=self::formSectionsHtml($sections, self::formColumnsDefinition($formMeta), $sectionMeta);
+		$fields=self::formSectionsHtml($sections, self::formColumnsDefinition($formMeta), $sectionMeta, is_array($formMeta['presentation'] ?? null) ? $formMeta['presentation'] : []);
 		$action=PanelConfig::resourceUrl($resource, $mode==='edit' ? 'update/'.$request->recordKey() : 'store');
 		$summary='';
 		if($state->invalid()){
@@ -1478,6 +1613,11 @@ trait PanelRendererPages {
 			$summary='<div class="dp-panel-alert">'.self::e(self::panelText('action.field_issue_summary', ['count'=>$count, 'issue'=>self::panelText($count===1 ? 'action.issue' : 'action.issues')])).$errorList.'</div>';
 		}
 		$reactiveUrl=PanelConfig::resourceUrl($resource, $mode==='edit' ? 'edit/'.$request->recordKey() : 'create');
+		$formPresentations=is_array($formMeta['presentation'] ?? null) ? $formMeta['presentation'] : [];
+		$toolbarPresentation=$formPresentations['toolbar'] ?? $formPresentations['actions'] ?? null;
+		$actionAttributes=$toolbarPresentation!==null ? PanelCollectionPresentation::htmlAttributes($toolbarPresentation, 'inline') : '';
+		$cancelAction=PanelCollectionPresentation::decorateItemHtml('<a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(self::actionReturnUrl($resource, $request)).'" data-dp-panel-modal-cancel="1">'.self::e(self::panelText('common.cancel')).'</a>', $toolbarPresentation, 'cancel', 0);
+		$saveAction=PanelCollectionPresentation::decorateItemHtml('<button class="dp-panel-button" type="submit">'.self::e(self::panelText('common.save')).'</button>', $toolbarPresentation, 'save', 1);
 		$content='<form class="dp-panel-form" method="post"'.self::formEncodingAttr($formMeta['fields'] ?? []).' action="'.self::e($action).'" data-dp-panel-reactive-url="'.self::e($reactiveUrl).'"'.self::accessibilityDefaultAttrs(is_array($formMeta['meta'] ?? null) ? $formMeta['meta'] : []).'>'
 			.self::csrfInput()
 			.$hiddenFields
@@ -1485,7 +1625,7 @@ trait PanelRendererPages {
 			.self::formPulseHtml($resource, $mode, $formStats, $state)
 			.$summary
 			.$fields
-			.'<div class="dp-panel-toolbar"><button class="dp-panel-button" type="submit">'.self::e(self::panelText('common.save')).'</button></div>'
+			.'<div class="dp-panel-toolbar"'.$actionAttributes.'>'.$cancelAction.$saveAction.'</div>'
 			.'</form>';
 		$content=PanelConfig::renderHook('resource.form.before', [
 			'kind'=>$mode,
@@ -1579,10 +1719,11 @@ trait PanelRendererPages {
 		foreach($infolistState->visibleSections() as $section=>$entries){
 			$sections[$section] ??=[];
 			foreach($entries as $entry){
-				$sections[$section][]=self::showEntryHtml($entry);
+				$entryMeta=is_array($entry['meta'] ?? null) ? $entry['meta'] : (is_array($entry['field']['meta'] ?? null) ? $entry['field']['meta'] : []);
+				$sections[$section][]=['html'=>self::showEntryHtml($entry), 'name'=>(string)($entry['name'] ?? $entry['field']['name'] ?? ''), 'meta'=>$entryMeta];
 			}
 		}
-		$show=self::showSectionsHtml($sections, self::formColumnsDefinition($infolistMeta), $sectionMeta);
+		$show=self::showSectionsHtml($sections, self::formColumnsDefinition($infolistMeta), $sectionMeta, is_array($infolistMeta['presentation'] ?? null) ? $infolistMeta['presentation'] : []);
 		$alerts=$record!==null ? self::alertsHtml($resource, $request, $record) : '';
 		$insights=$record!==null ? self::insightsHtml($resource, $request, $record) : '';
 		$links=$record!==null ? self::linksHtml($resource, $request, $record) : '';
@@ -1651,23 +1792,27 @@ trait PanelRendererPages {
 	 * @return string Command bar HTML, or an empty string when no controls are available.
 	 */
 	private static function resourceCommandBarHtml(Resource $resource, PanelRequest $request, array $allColumns): string {
+		$tablePresentations=$resource->resourceTable()->presentations();
+		$actionsPresentation=$tablePresentations['actions'] ?? null;
+		$actionAttributes=isset($tablePresentations['actions']) ? PanelCollectionPresentation::htmlAttributes($tablePresentations['actions'], 'inline') : '';
 		if(PanelConfig::tableHeaderControlsMode()!=='none'){
 			$actions=self::resourceActions($resource, $request);
 			if($actions===''){
 				return '';
 			}
 			return '<section class="dp-panel-commandbar dp-panel-commandbar-secondary" aria-label="'.self::e((string)$resource->pluralLabel()).' controls" data-dp-panel-commandbar data-dp-panel-commandbar-variant="secondary">'
-				.($actions!=='' ? '<div class="dp-panel-commandbar-primary" data-dp-panel-control-group="primary">'.$actions.'</div>' : '')
+				.($actions!=='' ? '<div class="dp-panel-commandbar-primary"'.$actionAttributes.' data-dp-panel-control-group="primary">'.$actions.'</div>' : '')
 				.'</section>';
 		}
 		$create=$resource->can('create', null, $request->user())!==false ? '<a class="dp-panel-button dp-panel-commandbar-create" href="'.self::e(PanelConfig::resourceUrl($resource, 'create')).'"'.self::resourceModalAttributes('create', self::panelText('table.create_resource_title', ['resource'=>$resource->label()]), self::panelText('table.create_resource_body'), 'xl', 'slide_over', true).'>'.self::actionTextHtml(self::panelText('table.create'), 'plus').'</a>' : '';
+		$create=PanelCollectionPresentation::decorateItemHtml($create, $actionsPresentation, 'create', count($resource->actionsList()));
 		$primaryActions=self::resourceActions($resource, $request).$create;
 		$bottomMode=PanelConfig::commandbarBottomMode();
 		$bottom=$bottomMode==='meta' ? '' : self::resourceCommandBarBottomHtml($resource, $request, $allColumns, 'dp-panel-commandbar-bottom');
 		return '<section class="dp-panel-commandbar" aria-label="'.self::e((string)$resource->pluralLabel()).' controls" data-dp-panel-commandbar data-dp-panel-commandbar-bottom-mode="'.self::e($bottomMode).'">'
 			.'<div class="dp-panel-commandbar-top">'
 			.'<div class="dp-panel-commandbar-search" data-dp-panel-control-group="search">'.self::searchForm($resource, $request).'</div>'
-			.'<div class="dp-panel-commandbar-primary" data-dp-panel-control-group="primary">'.$primaryActions.'</div>'
+			.'<div class="dp-panel-commandbar-primary"'.$actionAttributes.' data-dp-panel-control-group="primary">'.$primaryActions.'</div>'
 			.'</div>'
 			.$bottom
 			.'</section>';
@@ -1684,18 +1829,22 @@ trait PanelRendererPages {
 	 */
 	private static function resourceCommandBarBottomHtml(Resource $resource, PanelRequest $request, array $allColumns, string $class): string {
 		$compact=$class==='dp-panel-table-meta-controls';
-		$viewControls=self::perPageHtml($resource, $request, $compact).self::densityHtml($resource, $request);
 		$groupControls=self::tableGroupsHtml($resource, $request);
-		$tableActions=self::columnVisibilityHtml($resource, $request, $allColumns, $compact).self::statusBoardButtonHtml($resource, $request).self::exportButtonHtml($resource, $request).self::importButtonHtml($resource, $request);
-		if($viewControls==='' && $groupControls==='' && $tableActions===''){
-			return '';
-		}
+		$tablePresentations=$resource->resourceTable()->presentations();
+		$toolsPresentation=$tablePresentations['tools'] ?? $tablePresentations['actions'] ?? null;
+		$viewControls=PanelCollectionPresentation::decorateItemHtml(self::perPageHtml($resource, $request, $compact), $toolsPresentation, 'rows', 0)
+			.PanelCollectionPresentation::decorateItemHtml(self::densityHtml($resource, $request), $toolsPresentation, 'density', 1);
+		$tableActions=PanelCollectionPresentation::decorateItemHtml(self::columnVisibilityHtml($resource, $request, $allColumns, $compact), $toolsPresentation, 'columns', 0)
+			.PanelCollectionPresentation::decorateItemHtml(self::statusBoardButtonHtml($resource, $request), $toolsPresentation, 'board', 1)
+			.PanelCollectionPresentation::decorateItemHtml(self::exportButtonHtml($resource, $request), $toolsPresentation, 'export', 2)
+			.PanelCollectionPresentation::decorateItemHtml(self::importButtonHtml($resource, $request), $toolsPresentation, 'import', 3);
+		$toolAttributes=$toolsPresentation===null ? '' : PanelCollectionPresentation::htmlAttributes($toolsPresentation, 'inline');
 		$bottomMode=PanelConfig::commandbarBottomMode();
 		return '<div class="'.self::e($class).'" data-dp-panel-commandbar-bottom-mode="'.self::e($bottomMode).'">'
-			.'<div class="dp-panel-commandbar-view" data-dp-panel-control-group="view">'.$viewControls.'</div>'
+			.'<div class="dp-panel-commandbar-view"'.$toolAttributes.' data-dp-panel-control-group="view">'.$viewControls.'</div>'
 			.'<div class="dp-panel-commandbar-utility" data-dp-panel-control-group="utility">'
 			.($groupControls!=='' ? '<div class="dp-panel-commandbar-groups" data-dp-panel-control-group="groups">'.$groupControls.'</div>' : '')
-			.($tableActions!=='' ? '<div class="dp-panel-commandbar-actions" data-dp-panel-control-group="actions">'.$tableActions.'</div>' : '')
+			.($tableActions!=='' ? '<div class="dp-panel-commandbar-actions"'.$toolAttributes.' data-dp-panel-control-group="actions">'.$tableActions.'</div>' : '')
 			.'</div>'
 			.'</div>';
 	}
@@ -1711,9 +1860,8 @@ trait PanelRendererPages {
 		$search=self::compactSearchForm($resource, $request);
 		$filters=self::filtersHtml($resource, $request);
 		$create=$resource->can('create', null, $request->user())!==false ? '<a class="dp-panel-button dp-panel-commandbar-create dp-panel-table-header-create" href="'.self::e(PanelConfig::resourceUrl($resource, 'create')).'"'.self::resourceModalAttributes('create', self::panelText('table.create_resource_title', ['resource'=>$resource->label()]), self::panelText('table.create_resource_body'), 'xl', 'slide_over', true).'>'.self::actionTextHtml(self::panelText('table.create'), 'plus').'</a>' : '';
-		if($search==='' && $filters==='' && $create===''){
-			return '';
-		}
+		$tablePresentations=$resource->resourceTable()->presentations();
+		$create=PanelCollectionPresentation::decorateItemHtml($create, $tablePresentations['actions'] ?? null, 'create', count($resource->actionsList()));
 		return '<div class="dp-panel-table-header-controls" data-dp-panel-table-header-controls data-dp-panel-control-group="table-header">'
 			.$search
 			.$filters

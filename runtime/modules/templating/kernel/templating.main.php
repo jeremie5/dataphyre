@@ -848,10 +848,10 @@ class templating {
 	 *
 	 * @param string $template Template source or partially-rendered output.
 	 * @param string $prefix Current placeholder path prefix.
-	 * @param array<string,mixed> $data Nested data below the prefix.
+	 * @param array<string,mixed>|object $data Nested data below the prefix.
 	 * @return string Template after nested placeholder replacement.
 	 */
-    private static function replace_nested_placeholders(string $template, string $prefix, array $data): string {
+    private static function replace_nested_placeholders(string $template, string $prefix, array|object $data): string {
         foreach($data as $key=>$value){
             $full_key=$prefix.'.'.$key;
             if(is_array($value) || is_object($value)){
@@ -1552,15 +1552,18 @@ class templating {
 			}
 			return $normalized;
 		};
+		$required_slots=[];
+		if(is_array($contract['slots'] ?? null)){
+			$required_slots=$contract['slots'];
+		}
+		if(is_array($contract['required_slots'] ?? null)){
+			$required_slots=$contract['required_slots'];
+		}
 
 		return [
 			'required'=>$normalize_keys(is_array($contract['required'] ?? null) ? $contract['required'] : []),
 			'optional'=>$normalize_keys(is_array($contract['optional'] ?? null) ? $contract['optional'] : []),
-			'required_slots'=>$normalize_keys(
-				is_array($contract['required_slots'] ?? null)
-					? $contract['required_slots']
-					: (is_array($contract['slots'] ?? null) ? $contract['slots'] : [])
-			),
+			'required_slots'=>$normalize_keys($required_slots),
 			'optional_slots'=>$normalize_keys(is_array($contract['optional_slots'] ?? null) ? $contract['optional_slots'] : []),
 			'defaults'=>self::normalize_contract_defaults(is_array($contract['defaults'] ?? null) ? $contract['defaults'] : []),
 			'prop_types'=>self::normalize_contract_type_map(
@@ -1866,9 +1869,6 @@ class templating {
 			return;
 		}
 
-		if(!is_object($current)){
-			return;
-		}
 		if($is_last){
 			$current->$segment=$value;
 			return;
@@ -1991,16 +1991,19 @@ class templating {
 	 * @return string Asset type used by tag and preload generation.
 	 */
 	private static function asset_type_from_extension(string $extension, string $hint='asset'): string {
+		$fallback_type='asset';
+		if($hint==='css'){
+			$fallback_type='style';
+		}
+		elseif($hint==='js'){
+			$fallback_type='script';
+		}
 		return match($extension){
 			'css' => 'style',
 			'js', 'mjs' => 'script',
 			'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'ico' => 'image',
 			'woff', 'woff2', 'ttf', 'otf', 'eot' => 'font',
-			default => match($hint){
-				'css' => 'style',
-				'js' => 'script',
-				default => 'asset',
-			},
+			default => $fallback_type,
 		};
 	}
 
@@ -2645,7 +2648,10 @@ class templating {
 	 * @return string Attribute string prefixed with a space, or empty string.
 	 */
 	private static function font_crossorigin_attribute(): string {
-		$crossorigin=self::$asset_policy['fonts']['crossorigin'] ?? 'anonymous';
+		$font_policy=self::$asset_policy['fonts'] ?? [];
+		$crossorigin=is_array($font_policy) && array_key_exists('crossorigin', $font_policy)
+			? $font_policy['crossorigin']
+			: 'anonymous';
 		return is_string($crossorigin) && $crossorigin!==''
 			? " crossorigin='{$crossorigin}'"
 			: '';

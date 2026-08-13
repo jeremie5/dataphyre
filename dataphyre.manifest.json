@@ -2,11 +2,11 @@
   "schema_version": 1,
   "name": "dataphyre",
   "package": "dataphyre/dataphyre",
-  "layout_version": 1,
+  "layout_version": 2,
   "exports": [
     {
       "from": ".",
-      "to": "common/dataphyre",
+      "to": "dataphyre",
       "required": true
     }
   ],
@@ -22,8 +22,11 @@
   "exclude": [
     ".git",
     ".github",
+    ".codex-tmp",
+    ".tmp",
     "cache",
     "dev",
+    "hosttmp",
     "logs",
     "runtime/cache",
     "runtime/logs",
@@ -33,6 +36,7 @@
     "sql_migration/plans",
     "sql_migration/snapshots",
     "sql_migration/table_versions.json",
+    "tmp",
     "tools",
     "vendor",
     "composer.lock"

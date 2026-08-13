@@ -351,7 +351,7 @@ assignments, and audit output.
 booting a request, Panel, or SQL:
 
 ```bash
-php common/dataphyre/runtime/modules/permission/kernel/permission_check.php \
+php dataphyre/runtime/modules/permission/kernel/permission_check.php \
     --manifest=permission-manifest.json \
     --fail-on-warning
 ```
@@ -359,7 +359,7 @@ php common/dataphyre/runtime/modules/permission/kernel/permission_check.php \
 It can also audit standalone role files against a known permission list:
 
 ```bash
-php common/dataphyre/runtime/modules/permission/kernel/permission_check.php \
+php dataphyre/runtime/modules/permission/kernel/permission_check.php \
     --roles=roles.json \
     --known=permission-catalog.json \
     --assignments=assignments.json \
@@ -370,7 +370,7 @@ For promotion workflows, compare a new manifest against the currently deployed
 manifest:
 
 ```bash
-php common/dataphyre/runtime/modules/permission/kernel/permission_check.php \
+php dataphyre/runtime/modules/permission/kernel/permission_check.php \
     --manifest=permission-next.json \
     --against=permission-current.json \
     --fail-on-diff

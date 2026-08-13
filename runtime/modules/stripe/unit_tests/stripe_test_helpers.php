@@ -19,7 +19,7 @@ namespace {
 	if(!function_exists('sql_define_table')){
 		function sql_define_table(...$args): void {}
 	}
-	$GLOBALS['DP_STRIPE_CFG_OVERRIDE']=[
+	dataphyre_dpanel_worker_application_state::replaceGlobal('DP_STRIPE_CFG_OVERRIDE', [
 		'test_mode'=>false,
 		'webhook_secret_key'=>'unit_webhook_secret',
 		'api_secret_key_live'=>'unit_live_secret',
@@ -27,7 +27,7 @@ namespace {
 		'api_secret_key_test_mode'=>'unit_test_secret',
 		'api_publishable_key_test_mode'=>'pk_test_unit',
 		'payment_intent_minimum_amount'=>[],
-	];
+	]);
 }
 
 namespace dataphyre {
@@ -78,22 +78,22 @@ namespace {
 	}
 
 	function dp_stripe_unit_config_state_json(): string {
-		$reflection=new ReflectionClass(\dataphyre\stripe::class);
-		$method=$reflection->getMethod('test_mode');
-		$method->setAccessible(true);
+		$config=dataphyre_dpanel_worker_application_state::globalValue('DP_STRIPE_CFG_OVERRIDE', []);
 		return json_encode([
-			'test_mode'=>$method->invoke(null),
+			'test_mode'=>dataphyre_dpanel_worker_fixture_state::invokeNonPublic(\dataphyre\stripe::class, 'test_mode'),
 			'live_keys_selected'=>\dataphyre\stripe::get_publishable_key()==='pk_live_unit' && \dataphyre\stripe::get_secret_key()==='unit_live_secret',
-			'minimum_amount_configured'=>$GLOBALS['DP_STRIPE_CFG_OVERRIDE']['payment_intent_minimum_amount'],
+			'minimum_amount_configured'=>is_array($config) ? ($config['payment_intent_minimum_amount'] ?? null) : null,
 		], JSON_UNESCAPED_SLASHES);
 	}
 
 	function dp_stripe_unit_config_contract_json(): string {
+		$config=dataphyre_dpanel_worker_application_state::globalValue('DP_STRIPE_CFG_OVERRIDE', []);
+		$config=is_array($config) ? $config : [];
 		return json_encode([
-			'webhook_falls_back_to_false'=>array_key_exists('webhook_secret_key', $GLOBALS['DP_STRIPE_CFG_OVERRIDE']),
+			'webhook_falls_back_to_false'=>array_key_exists('webhook_secret_key', $config),
 			'live_secret_is_string'=>is_string(\dataphyre\stripe::get_secret_key()),
 			'publishable_secret_are_distinct'=>\dataphyre\stripe::get_publishable_key()!==\dataphyre\stripe::get_secret_key(),
-			'minimum_amount_empty_array'=>$GLOBALS['DP_STRIPE_CFG_OVERRIDE']['payment_intent_minimum_amount']===[],
+			'minimum_amount_empty_array'=>($config['payment_intent_minimum_amount'] ?? null)===[],
 		], JSON_UNESCAPED_SLASHES);
 	}
 
@@ -112,13 +112,13 @@ namespace {
 	}
 
 	function dp_stripe_unit_public_api_contract_json(): string {
-		$reflection=new ReflectionClass(\dataphyre\stripe::class);
+		$inventory=dataphyre_dpanel_worker_fixture_state::inventory(\dataphyre\stripe::class);
 		return json_encode([
-			'load_stripe_returns_bool'=>(string)$reflection->getMethod('load_stripe')->getReturnType()==='bool',
-			'publishable_returns_string_or_bool'=>(string)$reflection->getMethod('get_publishable_key')->getReturnType()==='string|bool',
-			'secret_returns_string_or_bool'=>(string)$reflection->getMethod('get_secret_key')->getReturnType()==='string|bool',
-			'test_mode_private'=>$reflection->getMethod('test_mode')->isPrivate(),
-			'handle_new_payment_method_params'=>$reflection->getMethod('handle_new_payment_method')->getNumberOfParameters(),
+			'load_stripe_returns_bool'=>$inventory->methodShape('load_stripe')['return_type']==='bool',
+			'publishable_returns_string_or_bool'=>$inventory->methodShape('get_publishable_key')['return_type']==='string|bool',
+			'secret_returns_string_or_bool'=>$inventory->methodShape('get_secret_key')['return_type']==='string|bool',
+			'test_mode_private'=>$inventory->methodShape('test_mode')['private'],
+			'handle_new_payment_method_params'=>$inventory->methodShape('handle_new_payment_method')['parameters'],
 		], JSON_UNESCAPED_SLASHES);
 	}
 }

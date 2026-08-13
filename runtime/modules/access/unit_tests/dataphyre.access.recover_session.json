@@ -2,7 +2,7 @@
     {
         "function": "dp_access_unit_recover_session",
         "name": "recover_existing_valid_session",
-        "file": "/common/dataphyre/runtime/modules/access/unit_tests/access_session_test_helpers.php",
+        "file": "/dataphyre/runtime/modules/access/unit_tests/access_session_test_helpers.php",
         "dependencies": {
             "class": [
                 "dataphyre\\access"

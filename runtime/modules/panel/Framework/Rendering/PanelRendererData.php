@@ -56,9 +56,10 @@ trait PanelRendererData {
 	 * @param array<string,Column> $columns Visible export columns.
 	 * @param string $filename Download filename.
 	 * @param string $kind Export kind for metadata.
+	 * @param array<string,mixed> $dataSource Structured upstream result metadata.
 	 * @return PanelPageResult JSON download response.
 	 */
-	private static function exportJsonResult(Resource $resource, PanelRequest $request, array $records, array $columns, string $filename, string $kind): PanelPageResult {
+	private static function exportJsonResult(Resource $resource, PanelRequest $request, array $records, array $columns, string $filename, string $kind, array $dataSource=[]): PanelPageResult {
 		$columnMeta=[];
 		foreach($columns as $column){
 			$meta=$column->toArray();
@@ -82,14 +83,14 @@ trait PanelRendererData {
 			'request'=>$request->toArray(),
 			'record_count'=>count($rows),
 			'visible_columns'=>array_keys($columns),
+			'data_source'=>$dataSource,
 		];
 		return PanelPageResult::jsonDownload([
 			'resource'=>$resource->name(),
 			'exported_at'=>date('c'),
 			'record_count'=>count($rows),
 			'columns'=>$columnMeta,
-			'records'=>$rows,
-		], $filename, $data);
+			'records'=>$rows], $filename, $data);
 	}
 
 	/**
@@ -185,9 +186,6 @@ trait PanelRendererData {
 			$options='<option value="__skip"'.($current==='' ? ' selected' : '').'>Skip column</option>';
 			foreach($fields as $field){
 				$name=(string)($field['name'] ?? '');
-				if($name===''){
-					continue;
-				}
 				$label=(string)($field['label'] ?? $name);
 				$options.='<option value="'.self::e($name).'"'.($current===$name ? ' selected' : '').'>'.self::e($label.' ('.$name.')').'</option>';
 			}
@@ -250,7 +248,7 @@ trait PanelRendererData {
 			$body.='<td>'.$status.'</td></tr>';
 		}
 		if(count($rows)>count($previewRows)){
-			$body.='<tr><td colspan="'.(count($columns)+2).'" class="dp-panel-empty">'.self::e(self::panelText('data.preview_limit', ['count'=>count($rows)])).'</td></tr>';
+			$body.='<tr class="dp-panel-empty-row"><td colspan="'.(count($columns)+2).'" class="dp-panel-empty" data-label="">'.self::e(self::panelText('data.preview_limit', ['count'=>count($rows)])).'</td></tr>';
 		}
 		return '<table class="dp-panel-table"><thead><tr>'.$head.'</tr></thead><tbody>'.$body.'</tbody></table>';
 	}
@@ -857,9 +855,6 @@ trait PanelRendererData {
 		}
 		if($includeFilters){
 			foreach($table->filtersList() as $filter){
-				if(!$filter instanceof TableFilter){
-					continue;
-				}
 				$value=$filter->activeValue($request);
 				if($value===null){
 					continue;
@@ -944,15 +939,14 @@ trait PanelRendererData {
 				'dissociate'=>$relation->canDissociate(),
 				'reorder'=>$relation->canReorder(),
 				'update_pivot'=>$relation->canUpdatePivot(),
-				default=>false,
 			};
 			$authorized=$relation->can($name, $record, $request->user(), $resource)!==false;
 			$reason=is_string($entry['disabled_reason'] ?? null) ? trim((string)$entry['disabled_reason']) : '';
 			if(!$authorized){
 				$reason=self::panelText('data.relation_unauthorized');
 			}
-			elseif(!$enabled && $reason===''){
-				$reason=self::panelText('data.relation_unavailable_operation');
+			elseif(!$enabled){
+				$reason=$reason!=='' ? $reason : self::panelText('data.relation_unavailable_operation');
 			}
 			$states[$name]=array_replace($entry, [
 				'name'=>$name,
@@ -979,11 +973,8 @@ trait PanelRendererData {
 	 */
 	private static function relationApplyTableView(array $records, Resource $resource, RelationManager $relation, PanelRequest $request): array {
 		$viewName=$relation->resourceTable()->activeViewName($request);
-		if($viewName===''){
-			return $records;
-		}
-		$view=$relation->resourceTable()->viewsList()[$viewName] ?? null;
-		if(!$view instanceof TableView){
+		$view=$viewName!=='' ? ($relation->resourceTable()->viewsList()[$viewName] ?? null) : null;
+		if($viewName==='' || !$view instanceof TableView){
 			return $records;
 		}
 		return array_values(array_filter($records, static fn(mixed $record): bool => $view->matches($record, $request, $resource)));
@@ -1008,9 +999,6 @@ trait PanelRendererData {
 		}
 		$counts=[''=>count($records)];
 		foreach($views as $view){
-			if(!$view instanceof TableView){
-				continue;
-			}
 			$count=0;
 			foreach($records as $record){
 				if($view->matches($record, $request, $resource)){
@@ -1218,9 +1206,6 @@ trait PanelRendererData {
 		$active=$relation->resourceTable()->activeViewName($relationRequest);
 		$html=self::relationTableViewLink($resource, $relation, $request, $record, $params, 'all', self::panelText('common.all'), 'neutral', $active==='', $counts[''] ?? null);
 		foreach($views as $view){
-			if(!$view instanceof TableView){
-				continue;
-			}
 			$meta=$view->toArray();
 			$badge=$counts[$view->name()] ?? $view->resolveBadge([], $relationRequest, $resource);
 			$html.=self::relationTableViewLink($resource, $relation, $request, $record, $params, $view->name(), (string)($meta['label'] ?? $view->name()), (string)($meta['tone'] ?? 'neutral'), $active===$view->name(), $badge);
@@ -1328,9 +1313,6 @@ trait PanelRendererData {
 	private static function relationActiveFilterChipsHtml(Resource $resource, RelationManager $relation, PanelRequest $request, PanelRequest $relationRequest, mixed $record): string {
 		$chips='';
 		foreach($relation->resourceTable()->filtersList() as $filter){
-			if(!$filter instanceof TableFilter){
-				continue;
-			}
 			if(!$filter->isVisible($relationRequest, $resource, $relation->resourceTable())){
 				continue;
 			}
@@ -1536,7 +1518,7 @@ trait PanelRendererData {
 		$modalLabel=(string)($operation['modal_label'] ?? $label);
 		$form='<form class="dp-panel-form dp-panel-relation-attach-form" method="post" action="'.self::e(self::relationOperationUrl($parentResource, $relation, $request, $parentRecord, self::relationStateParams($relation, $relationRequest, true))).'">'
 			.self::csrfInput()
-			.self::returnInputUrl($returnUrl)
+			.self::returnInputUrl($returnUrl, $request)
 			.'<input type="hidden" name="relation_action" value="'.self::e($action).'">'
 			.'<label class="dp-panel-field"><span>'.self::e(self::panelText('data.record')).'</span><select name="related_key" required>'.($options!=='' ? $options : '<option value="">'.self::e(self::panelText('data.no_records_available')).'</option>').'</select></label>'
 			.'<div class="dp-panel-toolbar"><div class="dp-panel-toolbar-actions"><button class="dp-panel-button" type="submit"'.($options==='' ? ' disabled' : '').'>'.self::e($label).'</button></div></div>'
@@ -1565,7 +1547,7 @@ trait PanelRendererData {
 		$returnUrl=self::relationUrl($parentResource, $relation, $request, $parentRecord, self::relationStateParams($relation, $relationRequest, true));
 		return '<form class="dp-panel-inline-action" method="post" action="'.self::e(self::relationOperationUrl($parentResource, $relation, $request, $parentRecord, self::relationStateParams($relation, $relationRequest, true))).'">'
 			.self::csrfInput()
-			.self::returnInputUrl($returnUrl)
+			.self::returnInputUrl($returnUrl, $request)
 			.'<input type="hidden" name="relation_action" value="detach">'
 			.'<input type="hidden" name="child_key" value="'.self::e($key).'">'
 			.'<button class="dp-panel-action dp-panel-action-danger" type="submit">'.self::e($relation->detachLabelText()).'</button>'
@@ -1615,7 +1597,7 @@ trait PanelRendererData {
 		$tone=$action==='detach' ? 'danger' : 'warning';
 		return '<form class="dp-panel-inline-action" method="post" action="'.self::e(self::relationOperationUrl($parentResource, $relation, $request, $parentRecord, self::relationStateParams($relation, $relationRequest, true))).'">'
 			.self::csrfInput()
-			.self::returnInputUrl($returnUrl)
+			.self::returnInputUrl($returnUrl, $request)
 			.'<input type="hidden" name="relation_action" value="'.self::e($action).'">'
 			.'<input type="hidden" name="child_key" value="'.self::e($key).'">'
 			.'<button class="dp-panel-action dp-panel-action-'.$tone.'" type="submit">'.self::e($label).'</button>'
@@ -1644,25 +1626,16 @@ trait PanelRendererData {
 		$defaultSection=self::panelText('record.details');
 		$sections=[$defaultSection=>[]];
 		foreach($fields as $field){
-			if(!$field instanceof Field){
-				continue;
-			}
 			$meta=self::fieldMeta($field, $childRecord, $request, 'relation_update_pivot');
 			$name=(string)$meta['name'];
-			if($name===''){
-				continue;
-			}
-			$sections[$defaultSection][]=self::fieldHtml($name, $meta, self::recordValue($childRecord, $name, $meta['default'] ?? ''), []);
-		}
-		if($sections[$defaultSection]===[]){
-			return '';
+			$sections[$defaultSection][]=['html'=>self::fieldHtml($name, $meta, self::recordValue($childRecord, $name, $meta['default'] ?? ''), []), 'name'=>$name, 'meta'=>is_array($meta['meta'] ?? null) ? $meta['meta'] : []];
 		}
 		$relationRequest=$relation->resourceTable()->requestWithResolvedView(self::relationScopedRequest($relation, $request));
 		$returnUrl=self::relationUrl($parentResource, $relation, $request, $parentRecord, self::relationStateParams($relation, $relationRequest, true));
 		$label=(string)($operation['label'] ?? self::panelText('data.update_pivot'));
 		$form='<form class="dp-panel-form dp-panel-relation-pivot-form" method="post" action="'.self::e(self::relationOperationUrl($parentResource, $relation, $request, $parentRecord, self::relationStateParams($relation, $relationRequest, true))).'">'
 			.self::csrfInput()
-			.self::returnInputUrl($returnUrl)
+			.self::returnInputUrl($returnUrl, $request)
 			.'<input type="hidden" name="relation_action" value="update_pivot">'
 			.'<input type="hidden" name="child_key" value="'.self::e($key).'">'
 			.self::formSectionsHtml($sections, 1)
@@ -1714,18 +1687,12 @@ trait PanelRendererData {
 		}
 		$foreign=$relation->foreignKeyName();
 		$local=$relation->localKeyName();
-		if($foreign===null || $local===null){
-			return '';
-		}
 		$value=self::recordValue($parentRecord, $local, null);
 		if(!is_scalar($value) && $value!==null){
 			return '';
 		}
 		$returnUrl=self::relationUrl($parentResource, $relation, $request, $parentRecord, self::relationStateParams($relation, $relationRequest, true));
-		$query=[
-			'prefill'=>[$foreign=>$value],
-			'return_to'=>$returnUrl,
-		];
+		$query=['prefill'=>[$foreign=>$value]]+PanelNavigationIntentRuntime::query($returnUrl, $request, ['operation'=>'relation_create','outcome'=>'return']);
 		return '<a class="dp-panel-button" href="'.self::e(PanelConfig::resourceUrl($childResource, 'create', $query)).'"'.self::resourceModalAttributes('create', self::panelText('data.create_record_title', ['resource'=>$childResource->label()]), self::panelText('data.create_record_description'), 'xl', 'slide_over', true).'>'.self::e(self::panelText('data.create_record_title', ['resource'=>$childResource->label()])).'</a>';
 	}
 
@@ -1764,7 +1731,7 @@ trait PanelRendererData {
 		$returnUrl=self::relationUrl($parentResource, $relation, $request, $parentRecord, self::relationStateParams($relation, $relationRequest, true));
 		$form='<form class="dp-panel-form dp-panel-relation-reorder-form" method="post" data-dp-panel-relation-reorder action="'.self::e(self::relationOperationUrl($parentResource, $relation, $request, $parentRecord, self::relationStateParams($relation, $relationRequest, true))).'">'
 			.self::csrfInput()
-			.self::returnInputUrl($returnUrl)
+			.self::returnInputUrl($returnUrl, $request)
 			.'<input type="hidden" name="relation_action" value="reorder">'
 			.'<ol class="dp-panel-relation-reorder-list">'.$items.'</ol>'
 			.'<div class="dp-panel-toolbar"><button class="dp-panel-button" type="submit">'.self::e($label).'</button></div>'
@@ -1959,7 +1926,7 @@ trait PanelRendererData {
 			$body.='</tr>';
 		}
 		if($body===''){
-			$body='<tr><td colspan="'.max(1, count($columns)+($hasRowActions ? 1 : 0)).'" class="dp-panel-empty">'.self::relationEmptyStateHtml($relation, $relationRequest).'</td></tr>';
+			$body='<tr class="dp-panel-empty-row"><td colspan="'.max(1, count($columns)+($hasRowActions ? 1 : 0)).'" class="dp-panel-empty" data-label="">'.self::relationEmptyStateHtml($relation, $relationRequest).'</td></tr>';
 		}
 		$footer=self::tableFooterRowsHtml($columns, $allRecords, false, $hasRowActions, $relationRequest, $resource, $relation);
 		$tools='<div class="dp-panel-toolbar">'
@@ -1972,7 +1939,7 @@ trait PanelRendererData {
 		return '<section class="dp-panel-relation">'
 			.self::relationHeaderHtml($resource, $relation, $request, $relationRequest, $record, $allRecords, $records, $totalRecords)
 			.$tools
-			.'<div class="dp-panel-table-scroll"><table class="dp-panel-table"><thead>'.$head.'</thead><tbody>'.$body.'</tbody>'.$footer.'</table></div>'
+			.'<div class="dp-panel-table-scroll" data-dp-panel-overflow-policy="scroll-x" data-dp-panel-overflow-reason="data-table"><table class="dp-panel-table"><thead>'.$head.'</thead><tbody>'.$body.'</tbody>'.$footer.'</table></div>'
 			.self::relationPaginationHtml($resource, $relation, $request, $relationRequest, $record, $totalRecords, $page, $perPage)
 			.'</section>';
 	}

@@ -224,9 +224,6 @@ final class ProviderRegistry {
 			}
 			return 'callable:'.ltrim((string)$target, '\\').'::'.$method;
 		}
-		if(is_object($provider)){
-			return 'callable:'.spl_object_id($provider);
-		}
-		throw new InvalidArgumentException('MVC service provider must be a provider class name, provider instance, or callable.');
+		return 'callable:'.spl_object_id($provider);
 	}
 }

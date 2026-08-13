@@ -71,7 +71,10 @@ final class SmtpProvider implements MailProvider {
 		$peer=($secure==='ssl' || $secure==='smtps' ? 'ssl://' : '').$host;
 		$errorNumber=0;
 		$errorMessage='';
-		$this->socket=@fsockopen($peer, $port, $errorNumber, $errorMessage, $timeout);
+		$socketFactory=$options['socket_factory'] ?? $this->config['socket_factory'] ?? null;
+		$this->socket=is_callable($socketFactory)
+			? $socketFactory($peer, $port, $errorNumber, $errorMessage, $timeout)
+			: @fsockopen($peer, $port, $errorNumber, $errorMessage, $timeout);
 		if(!is_resource($this->socket)){
 			return SendResult::failure($this->name(), 'Unable to connect to SMTP server: '.$errorMessage, 500, ['error_number'=>$errorNumber]);
 		}
@@ -82,7 +85,11 @@ final class SmtpProvider implements MailProvider {
 			$this->command('EHLO '.$hello, [250]);
 			if($secure==='tls' || $secure==='starttls'){
 				$this->command('STARTTLS', [220]);
-				if(!stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)){
+				$cryptoHandler=$options['crypto_handler'] ?? $this->config['crypto_handler'] ?? null;
+				$cryptoEnabled=is_callable($cryptoHandler)
+					? (bool)$cryptoHandler($this->socket)
+					: stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
+				if(!$cryptoEnabled){
 					throw new \RuntimeException('SMTP STARTTLS negotiation failed.');
 				}
 				$this->command('EHLO '.$hello, [250]);

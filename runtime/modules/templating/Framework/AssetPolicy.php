@@ -240,11 +240,6 @@ final class AssetPolicy {
 	 * @return array{preload:array{styles:bool, scripts:bool, images:bool, fonts:bool}, scripts:array{strategy:string, type:string}, styles:array{media:string}, fonts:array{crossorigin:?string}} Renderer asset loading policy.
 	 */
 	public function toArray(): array {
-		if(($this->definition['fonts']['crossorigin'] ?? null)===null){
-			$definition=$this->definition;
-			$definition['fonts']['crossorigin']='anonymous';
-			return $definition;
-		}
 		return $this->definition;
 	}
 
@@ -259,7 +254,9 @@ final class AssetPolicy {
 			'script_strategy'=>$this->definition['scripts']['strategy'] ?? 'blocking',
 			'script_type'=>$this->definition['scripts']['type'] ?? 'auto',
 			'style_media'=>$this->definition['styles']['media'] ?? 'all',
-			'font_crossorigin'=>$this->definition['fonts']['crossorigin'] ?? 'anonymous',
+			'font_crossorigin'=>array_key_exists('crossorigin', $this->definition['fonts'] ?? [])
+				? $this->definition['fonts']['crossorigin']
+				: 'anonymous',
 		];
 	}
 

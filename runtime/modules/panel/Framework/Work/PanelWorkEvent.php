@@ -1,0 +1,28 @@
+<?php
+/*************************************************************************
+ * Dataphyre
+ *
+ * Copyright (c) 2026 Shopiro Ltd.
+ * SPDX-License-Identifier: MIT
+ */
+declare(strict_types=1);
+
+namespace Dataphyre\Panel;
+
+/** Hash-chained work mutation used for audit, replay, process mining, and undo. */
+final class PanelWorkEvent implements \JsonSerializable {
+	private readonly string $hash;
+	/** @param ?array<string,mixed> $before @param ?array<string,mixed> $after @param array<string,mixed> $details */
+	private function __construct(private readonly string $id,private readonly int $sequence,private readonly string $tenantId,private readonly string $itemId,private readonly string $operation,private readonly string $actorId,private readonly string $occurredAt,private readonly ?array $before,private readonly ?array $after,private readonly array $details,private readonly bool $reversible,private readonly string $correlationId,private readonly string $causationId,private readonly string $previousHash,?string $hash=null){
+		PanelOperationsGuard::identifier($id,'work event id');if($sequence<1){throw new \InvalidArgumentException('Work event sequence must be positive.');}PanelOperationsGuard::identifier($tenantId,'work tenant id');PanelOperationsGuard::identifier($itemId,'work item id');PanelOperationsGuard::name($operation,'work operation');PanelOperationsGuard::identifier($actorId,'work actor id');if(PanelOperationsGuard::instant($occurredAt)!==$occurredAt){throw new \InvalidArgumentException('Work event instant must be canonical UTC.');}PanelOperationsGuard::identifier($correlationId,'work correlation id');PanelOperationsGuard::identifier($causationId,'work causation id');if(preg_match('/^[a-f0-9]{64}$/D',$previousHash)!==1){throw new \InvalidArgumentException('Work event previous hash is invalid.');}$computed=PanelOperationsGuard::digest($this->unsigned());if($hash!==null&&!hash_equals($computed,$hash)){throw new \UnexpectedValueException('Work event hash integrity check failed.');}$this->hash=$computed;
+	}
+
+	/** @param ?array<string,mixed> $before @param ?array<string,mixed> $after @param array<string,mixed> $details */
+	public static function make(int $sequence,string $tenantId,string $itemId,string $operation,string $actorId,string $occurredAt,?array $before,?array $after,array $details,bool $reversible,string $correlationId,string $causationId,string $previousHash):self {$id='evt_'.substr(hash('sha256',implode('|',[$tenantId,$sequence,$itemId,$operation,$correlationId,$causationId])),0,40);return new self($id,$sequence,$tenantId,$itemId,$operation,$actorId,$occurredAt,$before,$after,PanelOperationsGuard::safeMetadata($details,512),$reversible,$correlationId,$causationId,$previousHash);}
+	/** @param array<string,mixed> $payload */
+	public static function restore(array $payload):self {$expected=['id','sequence','tenant_id','item_id','operation','actor_id','occurred_at','before','after','details','reversible','correlation_id','causation_id','previous_hash','hash'];$keys=array_keys($payload);sort($keys,SORT_STRING);sort($expected,SORT_STRING);if($keys!==$expected||!is_string($payload['id'])||!is_int($payload['sequence'])||!is_string($payload['tenant_id'])||!is_string($payload['item_id'])||!is_string($payload['operation'])||!is_string($payload['actor_id'])||!is_string($payload['occurred_at'])||(!is_array($payload['before'])&&$payload['before']!==null)||(!is_array($payload['after'])&&$payload['after']!==null)||!is_array($payload['details'])||!is_bool($payload['reversible'])||!is_string($payload['correlation_id'])||!is_string($payload['causation_id'])||!is_string($payload['previous_hash'])||!is_string($payload['hash'])){throw new \UnexpectedValueException('Stored work event shape is invalid.');}return new self($payload['id'],$payload['sequence'],$payload['tenant_id'],$payload['item_id'],$payload['operation'],$payload['actor_id'],$payload['occurred_at'],$payload['before'],$payload['after'],$payload['details'],$payload['reversible'],$payload['correlation_id'],$payload['causation_id'],$payload['previous_hash'],$payload['hash']);}
+	public function id():string{return$this->id;}public function sequence():int{return$this->sequence;}public function tenantId():string{return$this->tenantId;}public function itemId():string{return$this->itemId;}public function operation():string{return$this->operation;}public function actorId():string{return$this->actorId;}public function occurredAt():string{return$this->occurredAt;}public function reversible():bool{return$this->reversible;}public function correlationId():string{return$this->correlationId;}public function causationId():string{return$this->causationId;}public function previousHash():string{return$this->previousHash;}public function hash():string{return$this->hash;}/** @return ?array<string,mixed> */public function before():?array{return$this->before;}/** @return ?array<string,mixed> */public function after():?array{return$this->after;}/** @return array<string,mixed> */public function details():array{return$this->details;}
+	public function verify():bool{return hash_equals($this->hash,PanelOperationsGuard::digest($this->unsigned()));}
+	public function jsonSerialize():array{return$this->unsigned()+['hash'=>$this->hash];}
+	/** @return array<string,mixed> */ private function unsigned():array{return['id'=>$this->id,'sequence'=>$this->sequence,'tenant_id'=>$this->tenantId,'item_id'=>$this->itemId,'operation'=>$this->operation,'actor_id'=>$this->actorId,'occurred_at'=>$this->occurredAt,'before'=>$this->before,'after'=>$this->after,'details'=>$this->details,'reversible'=>$this->reversible,'correlation_id'=>$this->correlationId,'causation_id'=>$this->causationId,'previous_hash'=>$this->previousHash];}
+}

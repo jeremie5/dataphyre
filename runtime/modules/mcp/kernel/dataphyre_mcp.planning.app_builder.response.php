@@ -469,9 +469,6 @@ trait dataphyre_mcp_planning_app_builder_response_surfaces {
 		$blocking_unmodeled_task_entities=[];
 		foreach($phrase_entities as $entity){
 			$entity=$this->app_builder_normalize_entity_name((string)$entity);
-			if($entity===''){
-				continue;
-			}
 			$task_mentioned_entities[]=$entity;
 			if($provided && !$this->app_builder_has_entity_or_specialization($entities, $entity)){
 				$unmodeled_task_entities[]=$entity;

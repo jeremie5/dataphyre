@@ -95,6 +95,7 @@ final class ActionManifest {
 				'label'=>(string)($resolved['label'] ?? $definition['label'] ?? $action->name()),
 				'icon'=>$resolved['icon'] ?? null,
 				'tone'=>(string)($resolved['tone'] ?? $definition['tone'] ?? 'neutral'),
+				'record_placement'=>(string)($definition['record_placement'] ?? 'auto'),
 				'badge'=>$resolved['badge'] ?? null,
 				'badge_tone'=>(string)($resolved['badge_tone'] ?? $definition['badge_tone'] ?? 'neutral'),
 				'tooltip'=>$resolved['tooltip'] ?? null,
@@ -125,6 +126,9 @@ final class ActionManifest {
 				'modal_width'=>(string)($definition['modal_width'] ?? 'md'),
 				'modal_style'=>(string)($definition['meta']['modal_style'] ?? 'dialog'),
 				'modal_stack'=>(string)($definition['modal_stack'] ?? 'replace'),
+				'modal_stack_explicit'=>($definition['modal_stack_explicit'] ?? false)===true,
+				'modal_exit'=>(string)($definition['modal_exit'] ?? 'auto'),
+				'navigation_intent'=>is_array($definition['navigation_intent'] ?? null) ? $definition['navigation_intent'] : [],
 				'bulk'=>($definition['bulk'] ?? false)===true,
 				'allow_empty_selection'=>($definition['allow_empty_selection'] ?? false)===true,
 				'key_bindings'=>is_array($definition['key_bindings'] ?? null) ? $definition['key_bindings'] : [],
@@ -135,6 +139,7 @@ final class ActionManifest {
 				'events'=>is_array($effects['events'] ?? null) ? array_values($effects['events']) : [],
 				'event_count'=>is_array($effects['events'] ?? null) ? count($effects['events']) : 0,
 				'close_modal'=>array_key_exists('close_modal', $effects) ? (bool)$effects['close_modal'] : null,
+				'modal_navigation'=>$effects['modal_navigation'] ?? null,
 				'success_message'=>$definition['success_message'] ?? null,
 				'redirect_to'=>$definition['redirect_to'] ?? null,
 			],
@@ -163,7 +168,7 @@ final class ActionManifest {
 			'modal'=>$manifest['interaction']['modal'],
 			'effect_count'=>$manifest['effects']['refresh_count'] + $manifest['effects']['event_count'],
 		]);
-		return $manifest;
+		return PanelManifestContract::stamp($manifest);
 	}
 
 	/**
@@ -185,6 +190,7 @@ final class ActionManifest {
 			'label'=>(string)($definition['label'] ?? 'Actions'),
 			'icon'=>$definition['icon'] ?? null,
 			'tone'=>(string)($definition['tone'] ?? 'neutral'),
+			'record_placement'=>(string)($definition['record_placement'] ?? 'auto'),
 			'action_count'=>count($actions),
 			'actions'=>$actions,
 			'permission'=>$this->permissionManifest('action_group', (string)($definition['name'] ?? '')),
@@ -205,7 +211,7 @@ final class ActionManifest {
 			'action_count'=>$manifest['action_count'],
 			'capabilities'=>$manifest['capabilities'],
 		]);
-		return $manifest;
+		return PanelManifestContract::stamp($manifest);
 	}
 
 	/**
@@ -223,6 +229,8 @@ final class ActionManifest {
 				'modal'=>($definition['modal'] ?? false)===true,
 				'slide_over'=>(string)($definition['meta']['modal_style'] ?? '')==='slide_over',
 				'stacked_modal'=>(string)($definition['modal_stack'] ?? '')==='push',
+				'explicit_modal_stack'=>($definition['modal_stack_explicit'] ?? false)===true,
+				'modal_exit_control'=>(string)($definition['modal_exit'] ?? 'auto')!=='auto',
 				'keyboard_shortcut'=>(is_array($definition['key_bindings'] ?? null) && $definition['key_bindings']!==[]),
 				'dynamic_presentation'=>($definition['label_dynamic'] ?? false)===true || ($definition['icon_dynamic'] ?? false)===true || ($definition['tone_dynamic'] ?? false)===true || ($definition['badge_dynamic'] ?? false)===true,
 			],
@@ -237,7 +245,7 @@ final class ActionManifest {
 			'effects'=>[
 				'refresh_targets'=>is_array($effects['refresh'] ?? null) ? count($effects['refresh']) : 0,
 				'browser_events'=>is_array($effects['events'] ?? null) ? count($effects['events']) : 0,
-				'modal_control'=>array_key_exists('close_modal', $effects),
+				'modal_control'=>array_key_exists('close_modal', $effects) || array_key_exists('modal_navigation', $effects),
 				'redirect'=>isset($definition['redirect_to']),
 				'notification'=>isset($definition['success_message']),
 			],

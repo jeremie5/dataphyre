@@ -1,0 +1,4117 @@
+{
+    "schema_version": 1,
+    "generated_by": "dev/tools/panel_static_analysis.php",
+    "targets": {
+        "Dataphyre\\Panel\\Column": {
+            "file": "runtime/modules/panel/Framework/Tables/Column.php",
+            "class_tags": [
+                "@template TRecord = mixed",
+                "@template TValue = mixed"
+            ],
+            "properties": [],
+            "methods": {
+                "align": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "attributes": [
+                    "@param array<string,mixed>|callable(TRecord,TValue=,mixed=,PanelRequest|null=,Resource<TRecord>|null=,ResourceTable<TRecord>|PageTable<TRecord>|null=,self<TRecord,TValue>=):array<string,mixed> $attributes",
+                    "@return self<TRecord,TValue>"
+                ],
+                "average": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "avg": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "badge": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "booleanLabels": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "cellAria": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "cellAttribute": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "cellAttributes": [
+                    "@param array<string, mixed>|callable(TRecord, TValue=, mixed=, PanelRequest|null=, Resource<TRecord>|null=, ResourceTable<TRecord>|PageTable<TRecord>|null=, self<TRecord, TValue>=): array<string, mixed> $attributes",
+                    "@return self<TRecord,TValue>"
+                ],
+                "cellData": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "color": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "colorUsing": [
+                    "@param callable(TRecord, TValue=, mixed=, self<TRecord, TValue>=): string|\\Stringable|null $resolver",
+                    "@return self<TRecord,TValue>"
+                ],
+                "columnGroup": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "copyMessage": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "copyValueUsing": [
+                    "@param callable(TRecord, TValue=, mixed=, self<TRecord, TValue>=): scalar|\\Stringable|null $resolver",
+                    "@return self<TRecord,TValue>"
+                ],
+                "copyable": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "count": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "date": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "datetime": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "description": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "descriptionUsing": [
+                    "@param callable(TRecord, TValue=, mixed=, self<TRecord, TValue>=): string|\\Stringable|null $resolver",
+                    "@return self<TRecord,TValue>"
+                ],
+                "editable": [
+                    "@param array<array-key,mixed>|callable(TRecord,PanelRequest|null=,Resource<TRecord>|null=,ResourceTable<TRecord>|PageTable<TRecord>|null=):array<array-key,mixed>|null $options",
+                    "@return self<TRecord,TValue>"
+                ],
+                "editableOptions": [
+                    "@param array<array-key, mixed>|callable(TRecord, PanelRequest|null=, Resource<TRecord>|null=, ResourceTable<TRecord>|PageTable<TRecord>|null=): array<array-key, mixed> $options",
+                    "@return self<TRecord,TValue>"
+                ],
+                "editableType": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "email": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "exceptOn": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "extraAttributes": [
+                    "@param array<string,mixed>|callable(TRecord,TValue=,mixed=,PanelRequest|null=,Resource<TRecord>|null=,ResourceTable<TRecord>|PageTable<TRecord>|null=,self<TRecord,TValue>=):array<string,mixed> $attributes",
+                    "@return self<TRecord,TValue>"
+                ],
+                "footer": [
+                    "@param string|callable(list<TRecord>,PanelRequest|null=,self<TRecord,TValue>=,Resource<TRecord>|null=,ResourceTable<TRecord>|PageTable<TRecord>|null=):scalar|\\Stringable|array<string,mixed>|null $footer",
+                    "@return self<TRecord,TValue>"
+                ],
+                "footerUsing": [
+                    "@param callable(list<TRecord>, PanelRequest|null=, self<TRecord, TValue>=, Resource<TRecord>|null=, ResourceTable<TRecord>|PageTable<TRecord>|null=): scalar|\\Stringable|array<string, mixed>|null $resolver",
+                    "@return self<TRecord,TValue>"
+                ],
+                "format": [
+                    "@param callable(TValue, TRecord|null=, self<TRecord, TValue>=): mixed $formatter",
+                    "@return self<TRecord,TValue>"
+                ],
+                "formatValue": [
+                    "@param TValue $value",
+                    "@param TRecord|null $record"
+                ],
+                "fromArray": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "group": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "headerAria": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "headerAttribute": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "headerAttributes": [
+                    "@param array<string,mixed>|callable(PanelRequest|null=,self<TRecord,TValue>=,Resource<TRecord>|null=,ResourceTable<TRecord>|PageTable<TRecord>|null=):array<string,mixed> $attributes",
+                    "@return self<TRecord,TValue>"
+                ],
+                "headerData": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "hidden": [
+                    "@param bool|callable(string,TRecord|null=,PanelRequest|null=,self<TRecord,TValue>=):bool $hidden",
+                    "@return self<TRecord,TValue>"
+                ],
+                "hiddenByDefault": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "hiddenOn": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "hiddenUsing": [
+                    "@param callable(string, TRecord|null=, PanelRequest|null=, self<TRecord, TValue>=): bool $callback",
+                    "@return self<TRecord,TValue>"
+                ],
+                "href": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "icon": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "iconUsing": [
+                    "@param callable(TRecord, TValue=, mixed=, self<TRecord, TValue>=): string|\\Stringable|null $resolver",
+                    "@return self<TRecord,TValue>"
+                ],
+                "inlineEditable": [
+                    "@param array<array-key,mixed>|callable(TRecord,PanelRequest|null=,Resource<TRecord>|null=,ResourceTable<TRecord>|PageTable<TRecord>|null=):array<array-key,mixed>|null $options",
+                    "@return self<TRecord,TValue>"
+                ],
+                "label": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "limit": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "linkTo": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "make": [
+                    "@return self<TRecord, TValue>"
+                ],
+                "max": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "meta": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "min": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "money": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "onlyOn": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "openInNewTab": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "resolveCellAttributes": [
+                    "@param TRecord|null $record",
+                    "@param TValue|null $value"
+                ],
+                "resolveColor": [
+                    "@param TRecord|null $record"
+                ],
+                "resolveCopyValue": [
+                    "@param TRecord|null $record",
+                    "@param TValue|null $value"
+                ],
+                "resolveDescription": [
+                    "@param TRecord|null $record",
+                    "@param TValue|null $value"
+                ],
+                "resolveFooter": [
+                    "@param list<mixed> $records"
+                ],
+                "resolveIcon": [
+                    "@param TRecord|null $record",
+                    "@param TValue|null $value"
+                ],
+                "resolveLinkUrl": [
+                    "@param TRecord|null $record"
+                ],
+                "resolveTooltip": [
+                    "@param TRecord|null $record",
+                    "@param TValue|null $value"
+                ],
+                "resolveValue": [
+                    "@param TRecord|null $record",
+                    "@param TValue $default",
+                    "@return TValue"
+                ],
+                "searchUsing": [
+                    "@param callable(TRecord, TValue=, PanelRequest|null=, self<TRecord, TValue>=, Resource<TRecord>|null=, ResourceTable<TRecord>|PageTable<TRecord>|null=): mixed $resolver",
+                    "@return self<TRecord,TValue>"
+                ],
+                "searchable": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "sortUsing": [
+                    "@param callable(TRecord, TValue=, PanelRequest|null=, self<TRecord, TValue>=, Resource<TRecord>|null=, ResourceTable<TRecord>|PageTable<TRecord>|null=): mixed $resolver",
+                    "@return self<TRecord,TValue>"
+                ],
+                "sortable": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "stateUsing": [
+                    "@template TResolvedValue",
+                    "@param callable(TRecord, self<TRecord, TResolvedValue>=): TResolvedValue $resolver",
+                    "@return self<TRecord,TResolvedValue>"
+                ],
+                "sum": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "summarize": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "toggleable": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "tooltip": [
+                    "@param string|callable(TRecord,TValue=,mixed=,self<TRecord,TValue>=):string|\\Stringable|null $tooltip",
+                    "@return self<TRecord,TValue>"
+                ],
+                "tooltipUsing": [
+                    "@param callable(TRecord, TValue=, mixed=, self<TRecord, TValue>=): string|\\Stringable|null $resolver",
+                    "@return self<TRecord,TValue>"
+                ],
+                "truncate": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "type": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "url": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "valueUsing": [
+                    "@template TResolvedValue",
+                    "@param callable(TRecord, self<TRecord, TResolvedValue>=): TResolvedValue $resolver",
+                    "@return self<TRecord,TResolvedValue>"
+                ],
+                "visible": [
+                    "@param bool|callable(string,TRecord|null=,PanelRequest|null=,self<TRecord,TValue>=):bool $visible",
+                    "@return self<TRecord,TValue>"
+                ],
+                "visibleByDefault": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "visibleOn": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "visibleUsing": [
+                    "@param callable(string, TRecord|null=, PanelRequest|null=, self<TRecord, TValue>=): bool $callback",
+                    "@return self<TRecord,TValue>"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\Field": {
+            "file": "runtime/modules/panel/Framework/Forms/Field.php",
+            "class_tags": [
+                "@template TRecord = mixed",
+                "@template TValue = mixed",
+                "@template TState of array<string, mixed> = array<string, mixed>"
+            ],
+            "properties": [],
+            "methods": {
+                "acceptedTypes": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "accessibilityPolicy": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "addItemLabel": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "address": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "alpha": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "alphanumeric": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "append": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "appendButton": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "appendButtons": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "appendIcon": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "appendLabel": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "autoFormat": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "autoResize": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "autocomplete": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "autosize": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "badge": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "belongsTo": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "belongsToMany": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "betweenLength": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "boolean": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "booleanLabels": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "brickOptions": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "builder": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "builderBlock": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "builderBlocks": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "buttonGroup": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "camelCase": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "cardCvc": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "cardExpiry": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "charCounter": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "characterCounter": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "checkbox": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "checkboxList": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "childFields": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "choiceColumns": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "clearButton": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "clearable": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "code": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "codeEditor": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "codeLanguage": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "color": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "colorHex": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "colorSwatch": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "columnSpan": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "columnStart": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "comboBox": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "confirmed": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "content": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "contentType": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "contrastPolicy": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "coordinates": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "copyButton": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "copyNormalizedButton": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "copyable": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "copyableNormalized": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "counter": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "countryCode": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "countrySelect": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "creditCard": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "creditCardExpiry": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "cron": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "cronExpression": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "currency": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "currencyCode": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "currentPassword": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "customUploader": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "cvc": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "cvv": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "datalist": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "dataphyreStorageUpload": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "date": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "dateRange": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "dateTime": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "dateTimeLocal": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "dateTimeRange": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "debounce": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "decimal": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "decrementButton": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "default": [
+                    "@template TDefault",
+                    "@return self<TRecord,TDefault,TState>"
+                ],
+                "dehydrate": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "dehydrateUsing": [
+                    "@param callable(TValue, TRecord|null=, PanelRequest|null=, self<TRecord, TValue, TState>=): TValue $callback",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "dehydrateValue": [
+                    "@param TValue $value",
+                    "@param TRecord|null $record",
+                    "@param TState $values",
+                    "@return TValue"
+                ],
+                "dehydrated": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "deleteEndpoint": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "dependsOn": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "description": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "different": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "digits": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "disable": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "disabled": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "disabledOption": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "displayOnly": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "displayUsing": [
+                    "@param callable(TValue, TRecord|null=, PanelRequest|null=, self<TRecord, TValue, TState>=): mixed $callback",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "displayValue": [
+                    "@param TValue $value",
+                    "@param TRecord|null $record"
+                ],
+                "domain": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "dragDropUpload": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "editor": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "editorNormalizer": [
+                    "@param PanelEditorNormalizer|callable(string,PanelEditorContext=):PanelEditorContentResult|string|\\Stringable $normalizer"
+                ],
+                "editorValidator": [
+                    "@param PanelEditorValidator|callable(string,PanelEditorContext=):bool|string|\\Stringable|list<string>|null $validator"
+                ],
+                "ein": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "email": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "emailAddress": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "emptyLabel": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "endsWith": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "enum": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "exactLength": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "exceptOn": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "fieldGroup": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "fieldset": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "file": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "fileUpload": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "float": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "format": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "formatButton": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "formatCountry": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "formatCountryField": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "formatLocaleFields": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "formatOn": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "formatPlaceholder": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "formatRule": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "formatSubdivision": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "formatSubdivisionField": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "fromArray": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "fromField": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "fullWidth": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "group": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "groupField": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "help": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "helperText": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hexColor": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hidden": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hiddenField": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hiddenInput": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hiddenOn": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hiddenValue": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hiddenWhen": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hideColorSwatch": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hideFormatPlaceholder": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hideMaskPlaceholder": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hideSliderValue": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hint": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hintIcon": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hostname": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "html": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "htmlContent": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "htmlEditor": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hydrateUsing": [
+                    "@template THydrated",
+                    "@param callable(THydrated, TRecord|null=, PanelRequest|null=, self<TRecord, THydrated, TState>=): THydrated $callback",
+                    "@return self<TRecord,THydrated,TState>"
+                ],
+                "hydrateValue": [
+                    "@param TValue $value",
+                    "@param TRecord|null $record",
+                    "@return TValue"
+                ],
+                "iban": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "icon": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "image": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "imageUpload": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "incrementButton": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "inheritAccessibilityPolicy": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "inlineChoices": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "inputIcon": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "inputMode": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "integer": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "internationalPhone": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "ip": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "ipAddress": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "ipv4": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "ipv6": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "isoCountry": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "isoCurrency": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "isoLanguage": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "json": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "jsonText": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "kebabCase": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "keyAttribute": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "keyValue": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "keyValuePairs": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "keyValueSeparators": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "label": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "languageCode": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "latLng": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "latitude": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "length": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "lengthBetween": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "live": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "lngLat": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "locale": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "longText": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "longitude": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "lowercase": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "lowercaseButton": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "mac": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "macAddress": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "make": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "mapUrl": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "mapsUrl": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "markdown": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "mask": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "maskOn": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "maskPlaceholder": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "max": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "maxAdornmentRatio": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "maxDate": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "maxDateTime": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "maxFileSize": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "maxFiles": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "maxItems": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "maxLabelRatio": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "maxLength": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "maxPairs": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "maxTags": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "maxTime": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "maxValue": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "mediaCollection": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "mediaVariants": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "meta": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "mimeType": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "min": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "minDate": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "minDateTime": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "minFiles": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "minItems": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "minLength": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "minPairs": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "minTags": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "minTime": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "minTouchTarget": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "minUsableCharacters": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "minUsableWidth": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "minValue": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "money": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "month": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "multiRelationship": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "multiSelect": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "multiple": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "native": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "newPassword": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "noAccessibilityPolicy": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "noResultsText": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "nowButton": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "nullable": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "number": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "numeric": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "offLabel": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "onLabel": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "oneTimeCode": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "onlyOn": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "option": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "optionGroup": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "options": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "optionsDependOn": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "optionsDisplay": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "optionsFor": [
+                    "@param TRecord|null $record"
+                ],
+                "optionsPresentation": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "optionsUsing": [
+                    "@param callable(TRecord|null=, PanelRequest|null=, string=, self<TRecord, TValue, TState>=): array<array-key, mixed> $callback",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "otp": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "password": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "passwordConfirmation": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "passwordReveal": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "pattern": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "percent": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "percentage": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "phone": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "phoneCa": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "phoneCountryField": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "phoneForCountry": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "phoneNumber": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "phoneUs": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "pinCode": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "placeholder": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "placeholderField": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "postalCode": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "postalCodeCountryField": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "postalCodeForCountry": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "postalCodeLocaleFields": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "postalCodeSubdivisionField": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "prefix": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "prefixIcon": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "prepend": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "prependButton": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "prependButtons": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "prependIcon": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "prependLabel": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "preview": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "radio": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "range": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "rangeInput": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "rangeSlider": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "rating": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "reactive": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "readonly": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "regex": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "regionCode": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "relatedResource": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "relationship": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "repeater": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "repeaterField": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "repeaterFields": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "required": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "requiredIf": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "requiredUnless": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "requiredWhen": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "revealButton": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "revealable": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "richEditor": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "richText": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "rowSpan": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "rows": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "rules": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "same": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "search": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "searchPlaceholder": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "searchable": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "section": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "segmentedControl": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "select": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "semanticVersion": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "semver": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "sentenceCase": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "setButton": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "showSliderValue": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "sideButton": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "slider": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "sliderValueDisplay": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "slug": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "slugFrom": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "snakeCase": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "sourceField": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "ssn": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "stackedChoices": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "startsWith": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "stateFor": [
+                    "@param TState $values",
+                    "@param TValue|null $value",
+                    "@param TRecord|null $record"
+                ],
+                "stateUsing": [
+                    "@param callable(TValue, TState=, TRecord|null=, PanelRequest|null=, self<TRecord, TValue, TState>=, string=): TValue|array<string, mixed> $callback",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "step": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "stepValue": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "stepperButtons": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "storageUploader": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "subdivisionCode": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "subdivisionCodeCountryField": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "subdivisionCodeForCountry": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "subdivisionSelect": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "submitFormatted": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "submitMasked": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "submitNormalized": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "submitUnmasked": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "suffix": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "suffixIcon": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "suggestions": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "tagSeparator": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "tags": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "tagsInput": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "text": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "textInput": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "textarea": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "time": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "timeRange": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "timezone": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "titleAttribute": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "titleCase": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "titleCaseButton": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "todayButton": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "toggle": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "toggleButtons": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "trimButton": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "trimmed": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "trustedHtmlContent": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "type": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "ulid": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "updateStateUsing": [
+                    "@param callable(TValue, TState=, TRecord|null=, PanelRequest|null=, self<TRecord, TValue, TState>=, string=): TValue|array<string, mixed> $callback",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "upload": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "uploadChunkSize": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "uploadConcurrency": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "uploadCsrf": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "uploadDeleteEndpoint": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "uploadEndpoint": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "uploadField": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "uploadFields": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "uploadHeader": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "uploadHeaders": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "uploadLabel": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "uploadLabels": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "uploadMaxFiles": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "uploadMinFiles": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "uploadRetries": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "uppercase": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "uppercaseButton": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "url": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "urlAddress": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "uuid": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "validateUsing": [
+                    "@param callable(TValue, TState=, TRecord|null=, PanelRequest|null=, self<TRecord, TValue, TState>=):(bool|string|list<string>|null) $callback",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "validateValue": [
+                    "@param TValue $value",
+                    "@param TState $values",
+                    "@param TRecord|null $record",
+                    "@return list<string>"
+                ],
+                "verificationCode": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "viewField": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "visibleOn": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "visibleUsing": [
+                    "@param callable(string, TRecord|null=, PanelRequest|null=, self<TRecord, TValue, TState>=): bool $callback",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "visibleWhen": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "week": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "withoutAccessibilityPolicy": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "zipCode": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "zipCodeCountryField": [
+                    "@return self<TRecord,TValue,TState>"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\FormSection": {
+            "file": "runtime/modules/panel/Framework/Forms/FormSection.php",
+            "class_tags": [
+                "@template TRecord = mixed",
+                "@template TState of array<string, mixed> = array<string, mixed>"
+            ],
+            "properties": [],
+            "methods": {
+                "accessibilityPolicy": [
+                    "@return self<TRecord,TState>"
+                ],
+                "collapsed": [
+                    "@return self<TRecord,TState>"
+                ],
+                "collapsible": [
+                    "@return self<TRecord,TState>"
+                ],
+                "columnSpan": [
+                    "@return self<TRecord,TState>"
+                ],
+                "columnStart": [
+                    "@return self<TRecord,TState>"
+                ],
+                "columns": [
+                    "@return self<TRecord,TState>"
+                ],
+                "contrastPolicy": [
+                    "@return self<TRecord,TState>"
+                ],
+                "description": [
+                    "@return self<TRecord,TState>"
+                ],
+                "fromArray": [
+                    "@return self<TRecord,TState>"
+                ],
+                "label": [
+                    "@return self<TRecord,TState>"
+                ],
+                "make": [
+                    "@return self<TRecord,TState>"
+                ],
+                "maxAdornmentRatio": [
+                    "@return self<TRecord,TState>"
+                ],
+                "maxLabelRatio": [
+                    "@return self<TRecord,TState>"
+                ],
+                "meta": [
+                    "@return self<TRecord,TState>"
+                ],
+                "minTouchTarget": [
+                    "@return self<TRecord,TState>"
+                ],
+                "minUsableCharacters": [
+                    "@return self<TRecord,TState>"
+                ],
+                "minUsableWidth": [
+                    "@return self<TRecord,TState>"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\Infolist": {
+            "file": "runtime/modules/panel/Framework/Infolists/Infolist.php",
+            "class_tags": [
+                "@template TRecord = mixed",
+                "@template TState of array<string, mixed> = array<string, mixed>"
+            ],
+            "properties": {
+                "schema": [
+                    "@var Schema<TRecord, TState>"
+                ]
+            },
+            "methods": {
+                "columns": [
+                    "@return self<TRecord,TState>"
+                ],
+                "component": [
+                    "@return self<TRecord,TState>"
+                ],
+                "components": [
+                    "@return self<TRecord,TState>"
+                ],
+                "entry": [
+                    "@template TEntryValue",
+                    "@param Field<TRecord,TEntryValue,TState>|InfolistEntry<TRecord,TEntryValue,TState>|array<string,mixed>|string $entry",
+                    "@return self<TRecord,TState>"
+                ],
+                "from": [
+                    "@return self<TRecord, TState>|null"
+                ],
+                "fromSchema": [
+                    "@param Schema<TRecord, TState> $schema",
+                    "@return self<TRecord, TState>"
+                ],
+                "group": [
+                    "@return self<TRecord,TState>"
+                ],
+                "make": [
+                    "@param array<int, SchemaComponent<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|FormSection<TRecord, TState>|InfolistEntry<TRecord, mixed, TState>|array<string, mixed>|string> $components",
+                    "@return self<TRecord, TState>"
+                ],
+                "meta": [
+                    "@return self<TRecord,TState>"
+                ],
+                "schema": [
+                    "@return Schema<TRecord, TState>"
+                ],
+                "section": [
+                    "@param FormSection<TRecord, TState>|array<string, mixed>|string $section",
+                    "@param array<int, SchemaComponent<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|FormSection<TRecord, TState>|InfolistEntry<TRecord, mixed, TState>|array<string, mixed>|string> $entries",
+                    "@return self<TRecord,TState>"
+                ],
+                "step": [
+                    "@return self<TRecord,TState>"
+                ],
+                "tab": [
+                    "@return self<TRecord,TState>"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\InfolistEntry": {
+            "file": "runtime/modules/panel/Framework/Infolists/InfolistEntry.php",
+            "class_tags": [
+                "@template TRecord = mixed",
+                "@template TValue = mixed",
+                "@template TState of array<string, mixed> = array<string, mixed>"
+            ],
+            "properties": {
+                "field": [
+                    "@var Field<TRecord, TValue, TState>"
+                ]
+            },
+            "methods": {
+                "badge": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "columnSpan": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "columnStart": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "copyable": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "description": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "displayUsing": [
+                    "@param callable(TValue, TRecord|null=, PanelRequest|null=, Field<TRecord, TValue, TState>=): mixed $callback",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "emptyLabel": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "field": [
+                    "@return Field<TRecord, TValue, TState>"
+                ],
+                "from": [
+                    "@param Field<TRecord, TValue, TState>|array<string, mixed>|string|self<TRecord, TValue, TState> $entry",
+                    "@return self<TRecord, TValue, TState>"
+                ],
+                "fullWidth": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hiddenOn": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "html": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "icon": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "label": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "make": [
+                    "@return self<TRecord, TValue, TState>"
+                ],
+                "meta": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "options": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "optionsUsing": [
+                    "@param callable(TRecord|null=, PanelRequest|null=, string=, Field<TRecord, TValue, TState>=): array<array-key, mixed> $callback",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "prefix": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "rowSpan": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "section": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "suffix": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "trustedHtml": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "type": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "visibleOn": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "visibleUsing": [
+                    "@param callable(string, TRecord|null=, PanelRequest|null=, Field<TRecord, TValue, TState>=): bool $callback",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "withField": [
+                    "@return self<TRecord,TValue,TState>"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\NavigationCluster": {
+            "file": "runtime/modules/panel/Framework/Navigation/NavigationCluster.php",
+            "class_tags": [],
+            "properties": [],
+            "methods": {
+                "badge": [
+                    "@param scalar|\\Stringable|array<array-key,mixed>|null|callable(?PanelRequest,self,?PanelManager):mixed $badge"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\NavigationItem": {
+            "file": "runtime/modules/panel/Framework/Navigation/NavigationItem.php",
+            "class_tags": [],
+            "properties": {
+                "children": [
+                    "@var list<NavigationItem>"
+                ]
+            },
+            "methods": {
+                "badge": [
+                    "@param scalar|\\Stringable|array<array-key,mixed>|null|callable(?PanelRequest,self,?PanelManager):mixed $badge"
+                ],
+                "badgeUsing": [
+                    "@param callable(?PanelRequest,self,?PanelManager):mixed $resolver"
+                ],
+                "visibleUsing": [
+                    "@param callable(?PanelRequest,self,?PanelManager):bool $resolver"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\PageTable": {
+            "file": "runtime/modules/panel/Framework/Tables/PageTable.php",
+            "class_tags": [
+                "@template TRecord = mixed",
+                "@template TState of array<string, mixed> = array<string, mixed>"
+            ],
+            "properties": {
+                "columns": [
+                    "@var array<string, Column<TRecord, mixed>>"
+                ],
+                "filters": [
+                    "@var array<string, TableFilter<TRecord, mixed, TState>>"
+                ],
+                "groups": [
+                    "@var array<string, TableGroup<TRecord, mixed>>"
+                ],
+                "records": [
+                    "@var list<TRecord>"
+                ],
+                "summaries": [
+                    "@var array<string, TableSummary<TRecord, mixed>>"
+                ],
+                "views": [
+                    "@var array<string, TableView<TRecord, TState>>"
+                ]
+            },
+            "methods": {
+                "column": [
+                    "@template TColumnValue",
+                    "@param Column<TRecord,TColumnValue>|array<string,mixed>|string $column",
+                    "@return self<TRecord,TState>"
+                ],
+                "columns": [
+                    "@param array<int, Column<TRecord, mixed>|array<string, mixed>|string> $columns",
+                    "@return self<TRecord,TState>"
+                ],
+                "columnsList": [
+                    "@return array<string, Column<TRecord, mixed>>"
+                ],
+                "defaultSort": [
+                    "@return self<TRecord,TState>"
+                ],
+                "description": [
+                    "@return self<TRecord,TState>"
+                ],
+                "emptyMessage": [
+                    "@return self<TRecord,TState>"
+                ],
+                "filter": [
+                    "@template TFilterValue",
+                    "@param TableFilter<TRecord,TFilterValue,TState>|array<string,mixed>|string $filter",
+                    "@return self<TRecord,TState>"
+                ],
+                "filters": [
+                    "@param array<int, TableFilter<TRecord, mixed, TState>|array<string, mixed>|string> $filters",
+                    "@return self<TRecord,TState>"
+                ],
+                "filtersList": [
+                    "@return array<string, TableFilter<TRecord, mixed, TState>>"
+                ],
+                "fromArray": [
+                    "@return self<TRecord,TState>"
+                ],
+                "group": [
+                    "@template TGroupKey",
+                    "@param TableGroup<TRecord,TGroupKey>|array<string,mixed>|string $group",
+                    "@return self<TRecord,TState>"
+                ],
+                "groups": [
+                    "@param array<int, TableGroup<TRecord, mixed>|array<string, mixed>|string> $groups",
+                    "@return self<TRecord,TState>"
+                ],
+                "groupsList": [
+                    "@return array<string, TableGroup<TRecord, mixed>>"
+                ],
+                "label": [
+                    "@return self<TRecord,TState>"
+                ],
+                "limit": [
+                    "@return self<TRecord,TState>"
+                ],
+                "make": [
+                    "@return self<TRecord, TState>"
+                ],
+                "meta": [
+                    "@return self<TRecord,TState>"
+                ],
+                "queryUsing": [
+                    "@param callable(PanelRequest|null=,self<TRecord,TState>=,PanelPage|null=):iterable<TRecord>|PanelDataResult|object $resolver",
+                    "@return self<TRecord,TState>"
+                ],
+                "records": [
+                    "@template TPageRecord",
+                    "@param list<TPageRecord> $records",
+                    "@return self<TPageRecord,TState>"
+                ],
+                "recordsUsing": [
+                    "@param callable(PanelRequest|null=,self<TRecord,TState>=,PanelPage|null=):iterable<TRecord>|PanelDataResult|object $resolver",
+                    "@return self<TRecord,TState>"
+                ],
+                "resolvedRecords": [
+                    "@return list<TRecord>"
+                ],
+                "sort": [
+                    "@return self<TRecord,TState>"
+                ],
+                "summaries": [
+                    "@param array<int, TableSummary<TRecord, mixed>|array<string, mixed>|string> $summaries",
+                    "@return self<TRecord,TState>"
+                ],
+                "summariesList": [
+                    "@return array<string, TableSummary<TRecord, mixed>>"
+                ],
+                "summary": [
+                    "@template TSummaryValue",
+                    "@param TableSummary<TRecord,TSummaryValue>|array<string,mixed>|string $summary",
+                    "@return self<TRecord,TState>"
+                ],
+                "view": [
+                    "@param TableView<TRecord, TState>|array<string, mixed>|string $view",
+                    "@return self<TRecord,TState>"
+                ],
+                "views": [
+                    "@param array<int, TableView<TRecord, TState>|array<string, mixed>|string> $views",
+                    "@return self<TRecord,TState>"
+                ],
+                "viewsList": [
+                    "@return array<string, TableView<TRecord, TState>>"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\PanelCommand": {
+            "file": "runtime/modules/panel/Framework/Navigation/PanelCommand.php",
+            "class_tags": [],
+            "properties": [],
+            "methods": {
+                "url": [
+                    "@param string|callable(?PanelRequest,self,?PanelManager):(string|\\Stringable|null) $url"
+                ],
+                "visibleUsing": [
+                    "@param callable(?PanelRequest,self,?PanelManager):bool $resolver"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\PanelComponentRegistry": {
+            "file": "runtime/modules/panel/Framework/Support/PanelComponentRegistry.php",
+            "class_tags": [],
+            "properties": [],
+            "methods": {
+                "registerActionType": [
+                    "@param (callable(mixed...):mixed)|null $handler"
+                ],
+                "registerBulkOperationType": [
+                    "@template TRecord",
+                    "@template TState of array<string,mixed>",
+                    "@param (callable(array<string,mixed>,Resource<TRecord,TState>,PanelRequest,array<string,mixed>):(?string))|null $renderer"
+                ],
+                "registerColumnType": [
+                    "@template TRecord",
+                    "@template TValue",
+                    "@param (callable(Column<TRecord,TValue>,TRecord,TValue,string,array<string,mixed>,array<string,mixed>):(?string))|null $renderer"
+                ],
+                "registerExportType": [
+                    "@template TRecord",
+                    "@template TState of array<string,mixed>",
+                    "@param array<string,mixed>|callable(Resource<TRecord,TState>,PanelRequest|null=):iterable<TRecord> $definition"
+                ],
+                "registerFieldType": [
+                    "@param (callable(string,array<string,mixed>,mixed,array<string,mixed>):(?string))|null $renderer"
+                ],
+                "registerFilterType": [
+                    "@template TRecord",
+                    "@template TValue",
+                    "@template TState of array<string,mixed>",
+                    "@param (callable(TableFilter<TRecord,TValue,TState>,PanelRequest,array<string,mixed>,TValue,array<string,mixed>):(?string))|null $renderer"
+                ],
+                "registerImportType": [
+                    "@template TRecord",
+                    "@template TState of array<string,mixed>",
+                    "@param array<string,mixed>|callable(Resource<TRecord,TState>,PanelRequest|null=):mixed $definition"
+                ],
+                "registerNavigationType": [
+                    "@param (callable(array<string,mixed>,array<string,mixed>):(?string))|null $renderer"
+                ],
+                "registerPageType": [
+                    "@param (callable(PanelPage,PanelRequest,?PanelManager,array<string,mixed>):mixed)|null $renderer"
+                ],
+                "registerRelationType": [
+                    "@template TParentRecord",
+                    "@template TRelatedRecord",
+                    "@template TState of array<string,mixed>",
+                    "@param (callable(RelationManager<TParentRecord,TRelatedRecord,TState>,Resource<TParentRecord,TState>,PanelRequest,TParentRecord,array<string,mixed>):(?string))|null $renderer"
+                ],
+                "registerResourceType": [
+                    "@template TRecord",
+                    "@template TState of array<string,mixed>",
+                    "@param array<string,mixed>|callable(Resource<TRecord,TState>,PanelRequest|null=):mixed $definition"
+                ],
+                "registerSchemaKind": [
+                    "@param array<string,mixed>|callable(SchemaComponent,array<string,mixed>):(?string) $definition"
+                ],
+                "registerSummaryType": [
+                    "@param (callable(array<string,mixed>,array<string,mixed>):(?string))|null $renderer"
+                ],
+                "registerViewType": [
+                    "@template TRecord",
+                    "@template TState of array<string,mixed>",
+                    "@param (callable(TableView<TRecord,TState>,array<string,mixed>,array<string,mixed>):(?string))|null $renderer"
+                ],
+                "registerWidgetType": [
+                    "@param (callable(array<string,mixed>,array<string,mixed>):(?string))|null $renderer"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\PanelExtensible": {
+            "file": "runtime/modules/panel/Framework/Support/PanelExtensible.php",
+            "class_tags": [],
+            "properties": {
+                "panelConfigurators": [
+                    "@var list<callable(static):mixed>"
+                ],
+                "panelImportantConfigurators": [
+                    "@var list<callable(static):mixed>"
+                ],
+                "panelMacros": [
+                    "@var array<string,callable(mixed...):mixed>"
+                ]
+            },
+            "methods": {
+                "configureUsing": [
+                    "@param callable(static):mixed $callback"
+                ],
+                "macro": [
+                    "@param callable(mixed...):mixed $macro"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\PanelInstanceExtensionRegistry": {
+            "file": "runtime/modules/panel/Framework/Support/PanelInstanceExtensionRegistry.php",
+            "class_tags": [],
+            "properties": {
+                "componentLayers": [
+                    "@var array<string,array<string,list<array{owner:string,value:array<string,mixed>,revision:int,meta:array<string,mixed>}>>>"
+                ],
+                "configuratorLayers": [
+                    "@var array<string,list<array{owner:string,value:callable,important:bool,revision:int,meta:array<string,mixed>}>>"
+                ],
+                "contributors": [
+                    "@var list<array{id:string,permissions:list<string>,meta:array<string,mixed>}>"
+                ],
+                "macroLayers": [
+                    "@var array<string,array<string,list<array{owner:string,value:callable,revision:int,meta:array<string,mixed>}>>>"
+                ],
+                "themeLayers": [
+                    "@var array{presets:array<string,list<array{owner:string,value:PanelThemePreset,revision:int,meta:array<string,mixed>}>>,themes:array<string,list<array{owner:string,value:PanelTheme,revision:int,meta:array<string,mixed>}>>}"
+                ]
+            },
+            "methods": {
+                "configurators": [
+                    "@template TBuilder of object",
+                    "@param class-string<TBuilder> $class",
+                    "@return list<callable(TBuilder):mixed>"
+                ],
+                "contributorPermissions": [
+                    "@return list<string>"
+                ],
+                "flushConfigurators": [
+                    "@param class-string<object>|string $class"
+                ],
+                "flushMacros": [
+                    "@param class-string<object>|string $class"
+                ],
+                "hasMacro": [
+                    "@param class-string<object>|string $class"
+                ],
+                "liveInstances": [
+                    "@return list<self>"
+                ],
+                "macro": [
+                    "@template TBuilder of object",
+                    "@param class-string<TBuilder> $class",
+                    "@return (callable(TBuilder,mixed...):mixed)|null"
+                ],
+                "normalizePermissions": [
+                    "@param array<int|string,mixed> $permissions"
+                ],
+                "permissionMatches": [
+                    "@param list<string> $permissions"
+                ],
+                "provenance": [
+                    "@return list<array<string,mixed>>"
+                ],
+                "registerConfigurator": [
+                    "@template TBuilder of object",
+                    "@param class-string<TBuilder> $class",
+                    "@param callable(TBuilder):mixed $callback"
+                ],
+                "registerMacro": [
+                    "@template TBuilder of object",
+                    "@param class-string<TBuilder> $class",
+                    "@param callable(TBuilder,mixed...):mixed $macro"
+                ],
+                "runAs": [
+                    "@template TResult",
+                    "@param list<string> $permissions",
+                    "@param callable():TResult $callback",
+                    "@return TResult"
+                ],
+                "uniqueUnscopedConfigurators": [
+                    "@template TBuilder of object",
+                    "@param class-string<TBuilder> $class",
+                    "@return array{0:self,1:list<callable(TBuilder):mixed>}|null"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\PanelMenuItem": {
+            "file": "runtime/modules/panel/Framework/Navigation/PanelMenuItem.php",
+            "class_tags": [],
+            "properties": [],
+            "methods": {
+                "url": [
+                    "@param string|callable(?PanelRequest,self,?PanelManager):(string|\\Stringable|null) $url"
+                ],
+                "visibleUsing": [
+                    "@param callable(?PanelRequest,self,?PanelManager):bool $resolver"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\PanelPage": {
+            "file": "runtime/modules/panel/Framework/Core/PanelPage.php",
+            "class_tags": [
+                "@template TContent = mixed",
+                "@template TRecord = mixed",
+                "@template TState of array<string,mixed> = array<string,mixed>"
+            ],
+            "properties": {
+                "authorizer": [
+                    "@var (\\Closure(string,mixed,?PanelRequest,self<TContent,TRecord,TState>):bool)|null"
+                ],
+                "navigationBadgeResolver": [
+                    "@var (\\Closure(?PanelRequest,self<TContent,TRecord,TState>,?PanelManager):mixed)|null"
+                ],
+                "renderer": [
+                    "@var (\\Closure(PanelRequest,self<TContent,TRecord,TState>,?PanelManager):TContent)|null"
+                ],
+                "tables": [
+                    "@var array<string, PageTable<TRecord,TState>>"
+                ],
+                "widgets": [
+                    "@var array<string, Widget<TRecord,mixed,TState>>"
+                ]
+            },
+            "methods": {
+                "action": [
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "actionGroup": [
+                    "@param list<Action|array<string,mixed>|string> $actions",
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "actions": [
+                    "@param list<Action|ActionGroup|array<string,mixed>|string> $actions",
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "authorize": [
+                    "@param callable(string,mixed,?PanelRequest,self<TContent,TRecord,TState>=):bool $authorizer",
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "content": [
+                    "@template TPageContent",
+                    "@param TPageContent|callable(PanelRequest,self<TPageContent,TRecord,TState>=,?PanelManager=):TPageContent $content",
+                    "@return self<TPageContent,TRecord,TState>"
+                ],
+                "embeddedForm": [
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "folder": [
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "form": [
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "formPage": [
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "forms": [
+                    "@param list<array<string,mixed>> $forms",
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "fromArray": [
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "group": [
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "hideFromNavigation": [
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "icon": [
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "make": [
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "meta": [
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "navigationBadge": [
+                    "@param scalar|\\Stringable|array<array-key,mixed>|null|callable(?PanelRequest,self<TContent,TRecord,TState>,?PanelManager):mixed $badge",
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "navigationBadgeTone": [
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "navigationBadgeUsing": [
+                    "@param callable(?PanelRequest,self<TContent,TRecord,TState>,?PanelManager):mixed $resolver",
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "navigationDescription": [
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "navigationParent": [
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "primaryForm": [
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "renderUsing": [
+                    "@template TPageContent",
+                    "@param callable(PanelRequest,self<TPageContent,TRecord,TState>=,?PanelManager=):TPageContent $renderer",
+                    "@return self<TPageContent,TRecord,TState>"
+                ],
+                "resolvedTables": [
+                    "@return list<array{table:PageTable<TRecord,TState>,meta:array<string,mixed>,request:?PanelRequest,records:list<TRecord>,summaries:list<array<string,mixed>>}>"
+                ],
+                "resolvedWidgets": [
+                    "@return list<array<string,mixed>>"
+                ],
+                "sort": [
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "table": [
+                    "@param PageTable<TRecord,TState>|array<string,mixed>|string $table",
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "tables": [
+                    "@param list<PageTable<TRecord,TState>|array<string,mixed>|string> $tables",
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "tablesList": [
+                    "@return array<string, PageTable<TRecord,TState>>"
+                ],
+                "url": [
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "widget": [
+                    "@template TWidgetValue",
+                    "@param Widget<TRecord,TWidgetValue,TState>|array<string,mixed>|string $widget",
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "widgetStates": [
+                    "@return list<PanelWidgetState>"
+                ],
+                "widgets": [
+                    "@param list<Widget<TRecord,mixed,TState>|array<string,mixed>|string> $widgets",
+                    "@return self<TContent,TRecord,TState>"
+                ],
+                "widgetsList": [
+                    "@return array<string, Widget<TRecord,mixed,TState>>"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\PanelSearchProvider": {
+            "file": "runtime/modules/panel/Framework/Support/PanelSearchProvider.php",
+            "class_tags": [
+                "@template TResult of PanelSearchResult|array<string, mixed> = PanelSearchResult|array<string, mixed>",
+                "@template TCursor of string|array<string, mixed>|null = string|array<string, mixed>|null"
+            ],
+            "properties": {
+                "authorizationResolver": [
+                    "@var (\\Closure(mixed,PanelRequest,self<TResult,TCursor>,?PanelManager,string|int|null):bool)|null"
+                ],
+                "dedupeResolver": [
+                    "@var (\\Closure(PanelSearchResult,string,PanelRequest,self<TResult,TCursor>,?PanelManager,PanelSearchContext):(scalar|null))|null"
+                ],
+                "scoreResolver": [
+                    "@var (\\Closure(PanelSearchResult,string,PanelRequest,self<TResult,TCursor>,?PanelManager,PanelSearchContext):(int|float))|null"
+                ],
+                "searchHandler": [
+                    "@var (\\Closure(string,PanelRequest,self<TResult,TCursor>,int,?PanelManager,PanelSearchContext):(PanelSearchPage|iterable<TResult>|array<string,mixed>))|null"
+                ],
+                "visibilityResolver": [
+                    "@var (\\Closure(?PanelRequest,self<TResult,TCursor>,?PanelManager):bool)|null"
+                ]
+            },
+            "methods": {
+                "authorizeUsing": [
+                    "@param callable(mixed,PanelRequest,self<TResult,TCursor>,?PanelManager,string|int|null):bool $resolver"
+                ],
+                "deduplicateUsing": [
+                    "@param callable(PanelSearchResult,string,PanelRequest,self<TResult,TCursor>,?PanelManager,PanelSearchContext):(scalar|null) $resolver"
+                ],
+                "pageUsing": [
+                    "@template TSearchResult of PanelSearchResult|array<string,mixed>",
+                    "@param callable(string,PanelRequest,self<TSearchResult,TCursor>,int,?PanelManager,PanelSearchContext):(PanelSearchPage|iterable<TSearchResult>|array<string,mixed>) $handler",
+                    "@return self<TSearchResult,TCursor>"
+                ],
+                "rankUsing": [
+                    "@param callable(PanelSearchResult,string,PanelRequest,self<TResult,TCursor>,?PanelManager,PanelSearchContext):(int|float) $resolver"
+                ],
+                "scoreUsing": [
+                    "@param callable(PanelSearchResult,string,PanelRequest,self<TResult,TCursor>,?PanelManager,PanelSearchContext):(int|float) $resolver"
+                ],
+                "search": [
+                    "@return list<array<string,mixed>>"
+                ],
+                "searchAuthorizedPage": [
+                    "@param TCursor $cursor"
+                ],
+                "searchPage": [
+                    "@param TCursor $cursor"
+                ],
+                "searchUsing": [
+                    "@template TSearchResult of PanelSearchResult|array<string,mixed>",
+                    "@param callable(string,PanelRequest,self<TSearchResult,TCursor>,int,?PanelManager,PanelSearchContext):(PanelSearchPage|iterable<TSearchResult>|array<string,mixed>) $handler",
+                    "@return self<TSearchResult,TCursor>"
+                ],
+                "visibleUsing": [
+                    "@param callable(?PanelRequest,self<TResult,TCursor>,?PanelManager):bool $resolver"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\PanelTenant": {
+            "file": "runtime/modules/panel/Framework/Navigation/PanelTenant.php",
+            "class_tags": [],
+            "properties": [],
+            "methods": {
+                "badge": [
+                    "@param scalar|\\Stringable|array<array-key,mixed>|null|callable(?PanelRequest,self,?PanelManager):mixed $badge"
+                ],
+                "current": [
+                    "@param bool|callable(?PanelRequest,self,?PanelManager):bool $current"
+                ],
+                "url": [
+                    "@param string|callable(?PanelRequest,self,?PanelManager):(string|\\Stringable|null) $url"
+                ],
+                "visibleUsing": [
+                    "@param callable(?PanelRequest,self,?PanelManager):bool $resolver"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\RelationManager": {
+            "file": "runtime/modules/panel/Framework/Resources/RelationManager.php",
+            "class_tags": [
+                "@template TParentRecord = mixed",
+                "@template TRelatedRecord = mixed",
+                "@template TState of array<string, mixed> = array<string, mixed>"
+            ],
+            "properties": {
+                "facts": [
+                    "@var array<string, TableSummary<TRelatedRecord, mixed>>"
+                ],
+                "resourceTable": [
+                    "@var ResourceTable<TRelatedRecord, TState>"
+                ]
+            },
+            "methods": {
+                "associate": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "associateLabel": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "associateUsing": [
+                    "@param callable(TParentRecord, mixed, PanelRequest=, Resource<TParentRecord, TState>=, self<TParentRecord, TRelatedRecord, TState>=): mixed $handler",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "attach": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "attachLabel": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "attachUsing": [
+                    "@param callable(TParentRecord, mixed, PanelRequest=, Resource<TParentRecord, TState>=, self<TParentRecord, TRelatedRecord, TState>=): mixed $handler",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "attachableRecords": [
+                    "@param Resource<TParentRecord, TState> $parentResource",
+                    "@param TParentRecord $parentRecord",
+                    "@return list<TRelatedRecord>"
+                ],
+                "attachableRecordsUsing": [
+                    "@param callable(TParentRecord, Resource<TParentRecord, TState>=, PanelRequest|null=, self<TParentRecord, TRelatedRecord, TState>=): iterable<TRelatedRecord> $handler",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "authorize": [
+                    "@param callable(string, TParentRecord|null=, mixed=, Resource<TParentRecord, TState>|null=, self<TParentRecord, TRelatedRecord, TState>=): bool $authorizer",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "badge": [
+                    "@param string|int|float|null|callable(list<TRelatedRecord>, TParentRecord|null=, PanelRequest|null=, Resource<TParentRecord, TState>|null=, self<TParentRecord, TRelatedRecord, TState>=): scalar|\\Stringable|null $badge",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "badgeUsing": [
+                    "@param callable(list<TRelatedRecord>, TParentRecord|null=, PanelRequest|null=, Resource<TParentRecord, TState>|null=, self<TParentRecord, TRelatedRecord, TState>=): scalar|\\Stringable|null $resolver",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "column": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "columns": [
+                    "@param array<int, Column<TRelatedRecord, mixed>|array<string,mixed>|string> $columns",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "create": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "defaultSort": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "description": [
+                    "@param string|callable(TParentRecord|null=, Resource<TParentRecord, TState>|null=, PanelRequest|null=, self<TParentRecord, TRelatedRecord, TState>=, list<TRelatedRecord>=): string|null $description",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "detach": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "detachLabel": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "detachUsing": [
+                    "@param callable(TParentRecord, mixed, PanelRequest=, Resource<TParentRecord, TState>=, self<TParentRecord, TRelatedRecord, TState>=): mixed $handler",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "dissociate": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "dissociateLabel": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "dissociateUsing": [
+                    "@param callable(TParentRecord, mixed, PanelRequest=, Resource<TParentRecord, TState>=, self<TParentRecord, TRelatedRecord, TState>=): mixed $handler",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "emptyState": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "fact": [
+                    "@param TableSummary<TRelatedRecord, mixed>|array<string, mixed>|string $fact",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "facts": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "filter": [
+                    "@param TableFilter<TRelatedRecord, mixed, TState>|array<string, mixed>|string $filter",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "filters": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "foreignKey": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "fromArray": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "localKey": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "make": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "meta": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "parentTitle": [
+                    "@param string|callable(TParentRecord|null=, Resource<TParentRecord, TState>|null=, PanelRequest|null=, self<TParentRecord, TRelatedRecord, TState>=, list<TRelatedRecord>=): string|null $title",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "parentTitleUsing": [
+                    "@param callable(TParentRecord|null=, Resource<TParentRecord, TState>|null=, PanelRequest|null=, self<TParentRecord, TRelatedRecord, TState>=, list<TRelatedRecord>=): string|null $resolver",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "perPage": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "perPageOptions": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "pivotField": [
+                    "@param Field<TRelatedRecord, mixed, TState>|array<string, mixed>|string $field",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "pivotFields": [
+                    "@param array<int, Field<TRelatedRecord, mixed, TState>|array<string,mixed>|string> $fields",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "queryUsing": [
+                    "@template TResolvedRelatedRecord",
+                    "@param callable(TParentRecord, Resource<TParentRecord, TState>=, PanelRequest|null=, self<TParentRecord, TResolvedRelatedRecord, TState>=): PanelDataQuery|PanelDataSource|iterable<TResolvedRelatedRecord>|object|null $queryFactory",
+                    "@return self<TParentRecord,TResolvedRelatedRecord,TState>"
+                ],
+                "readOnly": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "records": [
+                    "@param Resource<TParentRecord, TState> $parentResource",
+                    "@param TParentRecord $parentRecord",
+                    "@return list<TRelatedRecord>"
+                ],
+                "relatedResource": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "reorderLabel": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "reorderUsing": [
+                    "@param callable(TParentRecord, list<mixed>, PanelRequest=, Resource<TParentRecord, TState>=, self<TParentRecord, TRelatedRecord, TState>=): mixed $handler",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "reorderable": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "resolveDescription": [
+                    "@param TParentRecord|null $parentRecord",
+                    "@param Resource<TParentRecord, TState>|null $parentResource"
+                ],
+                "resourceTable": [
+                    "@return ResourceTable<TRelatedRecord, TState>"
+                ],
+                "summaries": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "summary": [
+                    "@param TableSummary<TRelatedRecord, mixed>|array<string, mixed>|string $summary",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "table": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "updatePivotUsing": [
+                    "@param callable(TParentRecord, mixed, TState, PanelRequest=, Resource<TParentRecord, TState>=, self<TParentRecord, TRelatedRecord, TState>=): mixed $handler",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "view": [
+                    "@param TableView<TRelatedRecord, TState>|array<string, mixed>|string $view",
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "views": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "withoutAssociate": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "withoutAttach": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "withoutCreate": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "withoutDetach": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ],
+                "withoutDissociate": [
+                    "@return self<TParentRecord,TRelatedRecord,TState>"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\Resource": {
+            "file": "runtime/modules/panel/Framework/Resources/Resource.php",
+            "class_tags": [
+                "@template TRecord = mixed",
+                "@template TState of array<string, mixed> = array<string, mixed>",
+                "@phpstan-type PanelRecordResolver callable(TRecord, PanelRequest=, self<TRecord, TState>=): mixed",
+                "@psalm-type PanelRecordResolver = callable(TRecord, PanelRequest=, self<TRecord, TState>=): mixed",
+                "@phpstan-type PanelRecordMutation callable(TRecord, mixed=, PanelRequest=, self<TRecord, TState>=): mixed",
+                "@psalm-type PanelRecordMutation = callable(TRecord, mixed=, PanelRequest=, self<TRecord, TState>=): mixed",
+                "@phpstan-type PanelDataMutator callable(TState, TRecord|null=, string=, mixed=, self<TRecord, TState>=): TState",
+                "@psalm-type PanelDataMutator = callable(TState, TRecord|null=, string=, mixed=, self<TRecord, TState>=): TState"
+            ],
+            "properties": {
+                "bulkUpdateForm": [
+                    "@var ResourceForm<TRecord, TState>"
+                ],
+                "form": [
+                    "@var ResourceForm<TRecord, TState>"
+                ],
+                "infolistSchema": [
+                    "@var Schema<TRecord, TState>|Infolist<TRecord, TState>|null"
+                ],
+                "model": [
+                    "@var class-string<TRecord>|null"
+                ],
+                "relations": [
+                    "@var array<string, RelationManager<TRecord, mixed, TState>>"
+                ],
+                "resourceTable": [
+                    "@var ResourceTable<TRecord, TState>"
+                ]
+            },
+            "methods": {
+                "action": [
+                    "@return self<TRecord,TState>"
+                ],
+                "actionFit": [
+                    "@return self<TRecord,TState>"
+                ],
+                "actionGroup": [
+                    "@return self<TRecord,TState>"
+                ],
+                "actions": [
+                    "@return self<TRecord,TState>"
+                ],
+                "activityUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "addNoteUsing": [
+                    "@param PanelRecordMutation $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "addTaskUsing": [
+                    "@param PanelRecordMutation $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "afterFillUsing": [
+                    "@param callable(PanelFormState, TRecord|null=, string=, mixed=, self<TRecord, TState>=): PanelFormState|null $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "afterSaveUsing": [
+                    "@param callable(mixed, TState=, TRecord|null=, string=, mixed=, self<TRecord, TState>=): mixed $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "afterValidateUsing": [
+                    "@param callable(PanelFormState, TRecord|null=, string=, mixed=, self<TRecord, TState>=): PanelFormState|PanelLifecycleResult|array<string, mixed>|bool|null $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "alertsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "approvalUsing": [
+                    "@param PanelRecordMutation $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "approvalsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "attachUsing": [
+                    "@param PanelRecordMutation $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "attachmentsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "authorize": [
+                    "@param callable(string, TRecord|null=, mixed=, self<TRecord, TState>=): bool $authorizer",
+                    "@return self<TRecord,TState>"
+                ],
+                "beforeFillUsing": [
+                    "@param callable(TRecord|null, string=, mixed=, self<TRecord, TState>=): mixed $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "beforeSaveUsing": [
+                    "@param callable(TState, TRecord|null=, string=, mixed=, self<TRecord, TState>=): TState|PanelLifecycleResult|array<string, mixed>|bool|null $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "beforeValidateUsing": [
+                    "@param callable(TRecord|null, string=, mixed=, self<TRecord, TState>=): PanelLifecycleResult|array<string, mixed>|bool|null $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "bulkField": [
+                    "@param Field<TRecord, mixed, TState>|array<string, mixed>|string $field",
+                    "@return self<TRecord,TState>"
+                ],
+                "bulkFields": [
+                    "@param array<int, Field<TRecord, mixed, TState>|array<string,mixed>|string> $fields",
+                    "@return self<TRecord,TState>"
+                ],
+                "bulkForm": [
+                    "@param ResourceForm<TRecord, TState>|null $form",
+                    "@return ($form is not null ? self<TRecord,TState> : ResourceForm<TRecord,TState>)"
+                ],
+                "bulkSchema": [
+                    "@return self<TRecord,TState>"
+                ],
+                "bulkUpdateUsing": [
+                    "@param callable(TState,list<TRecord>,mixed=,self<TRecord,TState>=):mixed $bulkUpdateHandler",
+                    "@return self<TRecord,TState>"
+                ],
+                "changesUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "clickableRows": [
+                    "@param bool|string|callable(TRecord,PanelRequest|null=,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=,string=):string|array<string,mixed>|null $target",
+                    "@return self<TRecord,TState>"
+                ],
+                "column": [
+                    "@param Column<TRecord, mixed>|array<string, mixed>|string $column",
+                    "@return self<TRecord,TState>"
+                ],
+                "columns": [
+                    "@return self<TRecord,TState>"
+                ],
+                "contactsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "createTaskUsing": [
+                    "@param PanelRecordMutation $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "defaultSort": [
+                    "@return self<TRecord,TState>"
+                ],
+                "deleteUsing": [
+                    "@param callable(TRecord,mixed=,self<TRecord,TState>=):mixed $deleteHandler",
+                    "@return self<TRecord,TState>"
+                ],
+                "duplicateUsing": [
+                    "@param callable(TRecord,mixed=,self<TRecord,TState>=):mixed $duplicateHandler",
+                    "@return self<TRecord,TState>"
+                ],
+                "emptyState": [
+                    "@param string|array<string,mixed>|callable(PanelRequest,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=,bool=):scalar|\\Stringable|array<string,mixed>|null $heading",
+                    "@param string|callable(PanelRequest,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=,bool=):scalar|\\Stringable|null $actionUrl",
+                    "@return self<TRecord,TState>"
+                ],
+                "emptyStateAction": [
+                    "@param string|callable(PanelRequest,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=,bool=):scalar|\\Stringable|null $url",
+                    "@return self<TRecord,TState>"
+                ],
+                "field": [
+                    "@param Field<TRecord, mixed, TState>|array<string, mixed>|string $field",
+                    "@return self<TRecord,TState>"
+                ],
+                "fields": [
+                    "@return self<TRecord,TState>"
+                ],
+                "filter": [
+                    "@param TableFilter<TRecord, mixed, TState>|array<string, mixed>|string $filter",
+                    "@return self<TRecord,TState>"
+                ],
+                "filteredEmptyState": [
+                    "@param string|array<string,mixed>|callable(PanelRequest,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=,bool=):scalar|\\Stringable|array<string,mixed>|null $heading",
+                    "@param string|callable(PanelRequest,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=,bool=):scalar|\\Stringable|null $actionUrl",
+                    "@return self<TRecord,TState>"
+                ],
+                "filteredEmptyStateAction": [
+                    "@param string|callable(PanelRequest,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=,bool=):scalar|\\Stringable|null $url",
+                    "@return self<TRecord,TState>"
+                ],
+                "filters": [
+                    "@return self<TRecord,TState>"
+                ],
+                "folder": [
+                    "@return self<TRecord,TState>"
+                ],
+                "forceDeleteUsing": [
+                    "@param callable(TRecord,mixed=,self<TRecord,TState>=):mixed $forceDeleteHandler",
+                    "@return self<TRecord,TState>"
+                ],
+                "form": [
+                    "@param ResourceForm<TRecord, TState>|null $form",
+                    "@return ResourceForm<TRecord, TState>|self<TRecord, TState>"
+                ],
+                "formColumns": [
+                    "@return self<TRecord,TState>"
+                ],
+                "formSection": [
+                    "@param FormSection<TRecord, TState>|array<string, mixed>|string $section",
+                    "@param array<int, Field<TRecord, mixed, TState>|array<string,mixed>|string>|null $fields",
+                    "@return self<TRecord,TState>"
+                ],
+                "formSections": [
+                    "@param array<int, FormSection<TRecord, TState>|array<string,mixed>|string> $sections",
+                    "@return self<TRecord,TState>"
+                ],
+                "fromArray": [
+                    "@return self<TRecord,TState>"
+                ],
+                "globalSearch": [
+                    "@return self<TRecord,TState>"
+                ],
+                "globalSearchColumns": [
+                    "@return self<TRecord,TState>"
+                ],
+                "globalSearchSubtitleUsing": [
+                    "@param callable(TRecord, self<TRecord, TState>=): string|null $resolver",
+                    "@return self<TRecord,TState>"
+                ],
+                "globalSearchTitleUsing": [
+                    "@param callable(TRecord, self<TRecord, TState>=): string $resolver",
+                    "@return self<TRecord,TState>"
+                ],
+                "globalSearchUsing": [
+                    "@param callable(string, PanelRequest=, self<TRecord, TState>=): iterable<array<string, mixed>|PanelSearchResult> $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "globalSearchable": [
+                    "@return self<TRecord,TState>"
+                ],
+                "group": [
+                    "@return self<TRecord,TState>"
+                ],
+                "hideFromNavigation": [
+                    "@return self<TRecord,TState>"
+                ],
+                "icon": [
+                    "@return self<TRecord,TState>"
+                ],
+                "importRecords": [
+                    "@param list<TState> $rows"
+                ],
+                "importUsing": [
+                    "@param callable(list<TState>,mixed=,self<TRecord,TState>=):mixed $importHandler",
+                    "@return self<TRecord,TState>"
+                ],
+                "infolist": [
+                    "@param Schema<TRecord, TState>|Infolist<TRecord, TState>|array<string, mixed>|null $schema",
+                    "@return ($schema is not null ? self<TRecord,TState> : Schema<TRecord,TState>|Infolist<TRecord,TState>)"
+                ],
+                "infolistEntries": [
+                    "@return self<TRecord,TState>"
+                ],
+                "infolistEntry": [
+                    "@return self<TRecord,TState>"
+                ],
+                "insightsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "itemsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "linksUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "locationsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "make": [
+                    "@return self<TRecord,TState>"
+                ],
+                "messageUsing": [
+                    "@param PanelRecordMutation $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "messagesUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "model": [
+                    "@template TModel of object",
+                    "@param class-string<TModel> $class",
+                    "@return self<TModel, TState>"
+                ],
+                "mutateCreateDataUsing": [
+                    "@param PanelDataMutator $mutator",
+                    "@return self<TRecord,TState>"
+                ],
+                "mutateCreateFillDataUsing": [
+                    "@param PanelDataMutator $mutator",
+                    "@return self<TRecord,TState>"
+                ],
+                "mutateCreateFormDataBeforeFillUsing": [
+                    "@param PanelDataMutator $mutator",
+                    "@return self<TRecord,TState>"
+                ],
+                "mutateEditFillDataUsing": [
+                    "@param PanelDataMutator $mutator",
+                    "@return self<TRecord,TState>"
+                ],
+                "mutateEditFormDataBeforeFillUsing": [
+                    "@param PanelDataMutator $mutator",
+                    "@return self<TRecord,TState>"
+                ],
+                "mutateFillDataUsing": [
+                    "@param PanelDataMutator $mutator",
+                    "@return self<TRecord,TState>"
+                ],
+                "mutateFormDataBeforeFillUsing": [
+                    "@param PanelDataMutator $mutator",
+                    "@return self<TRecord,TState>"
+                ],
+                "mutateFormDataUsing": [
+                    "@param PanelDataMutator $mutator",
+                    "@return self<TRecord,TState>"
+                ],
+                "mutateUpdateDataUsing": [
+                    "@param PanelDataMutator $mutator",
+                    "@return self<TRecord,TState>"
+                ],
+                "navigationBadge": [
+                    "@return self<TRecord,TState>"
+                ],
+                "navigationBadgeTone": [
+                    "@return self<TRecord,TState>"
+                ],
+                "navigationBadgeUsing": [
+                    "@param callable(PanelRequest|null=,self<TRecord,TState>=,PanelManager|null=):mixed $resolver",
+                    "@return self<TRecord,TState>"
+                ],
+                "navigationDescription": [
+                    "@return self<TRecord,TState>"
+                ],
+                "navigationParent": [
+                    "@return self<TRecord,TState>"
+                ],
+                "noteUsing": [
+                    "@param PanelRecordMutation $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "notesUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "paymentsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "perPage": [
+                    "@return self<TRecord,TState>"
+                ],
+                "perPageOptions": [
+                    "@return self<TRecord,TState>"
+                ],
+                "policy": [
+                    "@return self<TRecord,TState>"
+                ],
+                "previewAction": [
+                    "@return self<TRecord,TState>"
+                ],
+                "previewFields": [
+                    "@param array<int|string,mixed>|callable(TRecord,PanelRequest|null=,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=):array<int|string,mixed> $fields",
+                    "@return self<TRecord,TState>"
+                ],
+                "previewable": [
+                    "@return self<TRecord,TState>"
+                ],
+                "queryUsing": [
+                    "@param callable(PanelRequest|null=, self<TRecord, TState>=): PanelDataQuery|PanelDataSource|iterable<TRecord>|object|null $queryFactory",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordAction": [
+                    "@return self<TRecord,TState>"
+                ],
+                "recordAlertsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordApprovalsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordAttributes": [
+                    "@param array<string,mixed>|callable(TRecord,PanelRequest|null=,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=):array<string,mixed> $attributes",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordChangesUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordContactsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordInsightsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordItemsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordKey": [
+                    "@param TRecord $record"
+                ],
+                "recordKeyUsing": [
+                    "@param (callable(TRecord, self<TRecord, TState>=): string|int|float|bool|null)|string $resolver",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordLinksUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordLocationsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordMessagesUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordPaymentsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordShipmentsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordSubtitle": [
+                    "@param TRecord $record"
+                ],
+                "recordSubtitleUsing": [
+                    "@param (callable(TRecord, self<TRecord, TState>=): string|int|float|bool|null)|string $resolver",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordTagsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordTitle": [
+                    "@param TRecord $record"
+                ],
+                "recordTitleUsing": [
+                    "@param (callable(TRecord, self<TRecord, TState>=): string|int|float|bool|null)|string $resolver",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordTotalsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "recordUrl": [
+                    "@param TRecord $record"
+                ],
+                "recordUrlUsing": [
+                    "@param callable(TRecord, string=, self<TRecord, TState>=): string $resolver",
+                    "@return self<TRecord,TState>"
+                ],
+                "relation": [
+                    "@template TRelated",
+                    "@template TRelationState of array<string,mixed>",
+                    "@param RelationManager<TRecord,TRelated,TRelationState>|array<string,mixed>|string $relation",
+                    "@return self<TRecord,TState>"
+                ],
+                "relations": [
+                    "@return self<TRecord,TState>"
+                ],
+                "repository": [
+                    "@return self<TRecord,TState>"
+                ],
+                "resolveApprovalUsing": [
+                    "@param PanelRecordMutation $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "resourceTable": [
+                    "@param ResourceTable<TRecord, TState>|null $table",
+                    "@return ($table is not null ? self<TRecord,TState> : ResourceTable<TRecord,TState>)"
+                ],
+                "restoreUsing": [
+                    "@param callable(TRecord,mixed=,self<TRecord,TState>=):mixed $restoreHandler",
+                    "@return self<TRecord,TState>"
+                ],
+                "rowAction": [
+                    "@return self<TRecord,TState>"
+                ],
+                "rowAria": [
+                    "@return self<TRecord,TState>"
+                ],
+                "rowAttribute": [
+                    "@return self<TRecord,TState>"
+                ],
+                "rowAttributes": [
+                    "@param array<string,mixed>|callable(TRecord,PanelRequest|null=,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=):array<string,mixed> $attributes",
+                    "@return self<TRecord,TState>"
+                ],
+                "rowClick": [
+                    "@param bool|string|callable(TRecord,PanelRequest|null=,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=,string=):string|array<string,mixed>|null $target",
+                    "@return self<TRecord,TState>"
+                ],
+                "rowData": [
+                    "@return self<TRecord,TState>"
+                ],
+                "rowPreview": [
+                    "@return self<TRecord,TState>"
+                ],
+                "rowUrl": [
+                    "@param callable(TRecord,PanelRequest|null=,self<TRecord,TState>|null=,ResourceTable<TRecord,TState>|null=,string=):(?string) $resolver",
+                    "@return self<TRecord,TState>"
+                ],
+                "saveUsing": [
+                    "@param callable(TState, TRecord|null=, string=, mixed=, self<TRecord, TState>=): mixed $saveHandler",
+                    "@return self<TRecord,TState>"
+                ],
+                "schema": [
+                    "@param Schema<TRecord, TState> $schema",
+                    "@return self<TRecord,TState>"
+                ],
+                "sendMessageUsing": [
+                    "@param PanelRecordMutation $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "shipmentsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "sort": [
+                    "@return self<TRecord,TState>"
+                ],
+                "statusBoardColumn": [
+                    "@return self<TRecord,TState>"
+                ],
+                "statusBoardColumns": [
+                    "@return self<TRecord,TState>"
+                ],
+                "statusField": [
+                    "@return self<TRecord,TState>"
+                ],
+                "statusTransitions": [
+                    "@return self<TRecord,TState>"
+                ],
+                "statusWidgets": [
+                    "@return self<TRecord,TState>"
+                ],
+                "stretchActions": [
+                    "@return self<TRecord,TState>"
+                ],
+                "summaries": [
+                    "@return self<TRecord,TState>"
+                ],
+                "summary": [
+                    "@param TableSummary<TRecord, mixed>|array<string, mixed>|string $summary",
+                    "@return self<TRecord,TState>"
+                ],
+                "table": [
+                    "@return self<TRecord,TState>"
+                ],
+                "tableGroup": [
+                    "@param TableGroup<TRecord, mixed>|array<string, mixed>|string $group",
+                    "@return self<TRecord,TState>"
+                ],
+                "tableGroups": [
+                    "@param array<int, TableGroup<TRecord, mixed>|array<string,mixed>|string> $groups",
+                    "@return self<TRecord,TState>"
+                ],
+                "tableGroupsList": [
+                    "@return array<string, TableGroup<TRecord, mixed>>"
+                ],
+                "tagUsing": [
+                    "@param PanelRecordMutation $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "tagsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "taskUsing": [
+                    "@param PanelRecordMutation $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "tasksUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "tenantRequired": [
+                    "@return self<TRecord,TState>"
+                ],
+                "tenantScopeUsing": [
+                    "@param callable(mixed, string|int|null=, self<TRecord, TState>=): mixed $scope",
+                    "@return self<TRecord,TState>"
+                ],
+                "tenantScoped": [
+                    "@return self<TRecord,TState>"
+                ],
+                "tenantUsing": [
+                    "@param callable(self<TRecord, TState>=): string|int|null $resolver",
+                    "@return self<TRecord,TState>"
+                ],
+                "totalsUsing": [
+                    "@param PanelRecordResolver $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "transitionUsing": [
+                    "@param callable(string,TRecord,mixed=,self<TRecord,TState>=):mixed $transitionHandler",
+                    "@return self<TRecord,TState>"
+                ],
+                "updateTagUsing": [
+                    "@param PanelRecordMutation $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "updateTaskUsing": [
+                    "@param PanelRecordMutation $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "uploadAttachmentUsing": [
+                    "@param PanelRecordMutation $handler",
+                    "@return self<TRecord,TState>"
+                ],
+                "url": [
+                    "@return self<TRecord,TState>"
+                ],
+                "view": [
+                    "@param TableView<TRecord, TState>|array<string, mixed>|string $view",
+                    "@return self<TRecord,TState>"
+                ],
+                "views": [
+                    "@return self<TRecord,TState>"
+                ],
+                "withoutTenantScope": [
+                    "@return self<TRecord,TState>"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\ResourceForm": {
+            "file": "runtime/modules/panel/Framework/Resources/ResourceForm.php",
+            "class_tags": [
+                "@template TRecord = mixed",
+                "@template TState of array<string, mixed> = array<string, mixed>"
+            ],
+            "properties": {
+                "fields": [
+                    "@var array<string, Field<TRecord, mixed, TState>>"
+                ],
+                "sections": [
+                    "@var array<string, FormSection<TRecord, TState>>"
+                ]
+            },
+            "methods": {
+                "accessibilityPolicy": [
+                    "@return self<TRecord,TState>"
+                ],
+                "columns": [
+                    "@return self<TRecord,TState>"
+                ],
+                "contrastPolicy": [
+                    "@return self<TRecord,TState>"
+                ],
+                "dehydrate": [
+                    "@param TRecord|null $record"
+                ],
+                "field": [
+                    "@template TFieldValue",
+                    "@param Field<TRecord,TFieldValue,TState>|array<string,mixed>|string $field",
+                    "@return self<TRecord,TState>"
+                ],
+                "fields": [
+                    "@param array<int|string, Field<TRecord, mixed, TState>|array<string, mixed>|string> $fields",
+                    "@return self<TRecord,TState>"
+                ],
+                "fieldsList": [
+                    "@return array<string, Field<TRecord, mixed, TState>>"
+                ],
+                "hydrate": [
+                    "@param TRecord|null $record"
+                ],
+                "lifecycle": [
+                    "@return SchemaLifecycle<TRecord, TState>"
+                ],
+                "make": [
+                    "@return self<TRecord, TState>"
+                ],
+                "maxAdornmentRatio": [
+                    "@return self<TRecord,TState>"
+                ],
+                "maxLabelRatio": [
+                    "@return self<TRecord,TState>"
+                ],
+                "meta": [
+                    "@return self<TRecord,TState>"
+                ],
+                "minTouchTarget": [
+                    "@return self<TRecord,TState>"
+                ],
+                "minUsableCharacters": [
+                    "@return self<TRecord,TState>"
+                ],
+                "minUsableWidth": [
+                    "@return self<TRecord,TState>"
+                ],
+                "resolveLiveState": [
+                    "@param TState $values",
+                    "@param TRecord|null $record"
+                ],
+                "schema": [
+                    "@param Schema<TRecord, TState>|null $schema",
+                    "@return ($schema is not null ? self<TRecord,TState> : Schema<TRecord,TState>)"
+                ],
+                "section": [
+                    "@template TFieldValue",
+                    "@param FormSection<TRecord,TState>|array<string,mixed>|string $section",
+                    "@param array<int|string,Field<TRecord,TFieldValue,TState>|array<string,mixed>|string>|null $fields",
+                    "@return self<TRecord,TState>"
+                ],
+                "sections": [
+                    "@param array<int|string, FormSection<TRecord, TState>|array<string, mixed>|string> $sections",
+                    "@return self<TRecord,TState>"
+                ],
+                "sectionsList": [
+                    "@return array<string, FormSection<TRecord, TState>>"
+                ],
+                "state": [
+                    "@param TRecord|null $record",
+                    "@param TState $input"
+                ],
+                "toArray": [
+                    "@return array{columns: int, schema: array<string, mixed>, fields: list<array<string, mixed>>, sections: list<array<string, mixed>>, meta: array<string, mixed>}"
+                ],
+                "validate": [
+                    "@param TState $values",
+                    "@param TRecord|null $record"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\ResourceTable": {
+            "file": "runtime/modules/panel/Framework/Resources/ResourceTable.php",
+            "class_tags": [
+                "@template TRecord = mixed",
+                "@template TState of array<string, mixed> = array<string, mixed>"
+            ],
+            "properties": {
+                "columns": [
+                    "@var array<string, Column<TRecord, mixed>>"
+                ],
+                "filters": [
+                    "@var array<string, TableFilter<TRecord, mixed, TState>>"
+                ],
+                "groups": [
+                    "@var array<string, TableGroup<TRecord, mixed>>"
+                ],
+                "summaries": [
+                    "@var array<string, TableSummary<TRecord, mixed>>"
+                ],
+                "views": [
+                    "@var array<string, TableView<TRecord, TState>>"
+                ]
+            },
+            "methods": {
+                "clickableRows": [
+                    "@param bool|string|callable(TRecord,PanelRequest|null=,Resource<TRecord,TState>|null=,self<TRecord,TState>=,string=):string|array<string,mixed>|null $target",
+                    "@return self<TRecord,TState>"
+                ],
+                "column": [
+                    "@template TColumnValue",
+                    "@param Column<TRecord,TColumnValue>|array<string,mixed>|string $column",
+                    "@return self<TRecord,TState>"
+                ],
+                "columns": [
+                    "@param array<int, Column<TRecord, mixed>|array<string, mixed>|string> $columns",
+                    "@return self<TRecord,TState>"
+                ],
+                "columnsFor": [
+                    "@param Resource<TRecord, TState>|null $resource",
+                    "@return array<string, Column<TRecord, mixed>>"
+                ],
+                "columnsList": [
+                    "@return array<string, Column<TRecord, mixed>>"
+                ],
+                "defaultSort": [
+                    "@return self<TRecord,TState>"
+                ],
+                "emptyState": [
+                    "@param string|array<string,mixed>|callable(PanelRequest,Resource<TRecord,TState>|null=,self<TRecord,TState>=,bool=):scalar|\\Stringable|array<string,mixed>|null $heading",
+                    "@param string|callable(PanelRequest,Resource<TRecord,TState>|null=,self<TRecord,TState>=,bool=):scalar|\\Stringable|null $actionUrl",
+                    "@return self<TRecord,TState>"
+                ],
+                "emptyStateAction": [
+                    "@param string|callable(PanelRequest,Resource<TRecord,TState>|null=,self<TRecord,TState>=,bool=):scalar|\\Stringable|null $url",
+                    "@return self<TRecord,TState>"
+                ],
+                "filter": [
+                    "@template TFilterValue",
+                    "@param TableFilter<TRecord,TFilterValue,TState>|array<string,mixed>|string $filter",
+                    "@return self<TRecord,TState>"
+                ],
+                "filteredEmptyState": [
+                    "@param string|array<string,mixed>|callable(PanelRequest,Resource<TRecord,TState>|null=,self<TRecord,TState>=,bool=):scalar|\\Stringable|array<string,mixed>|null $heading",
+                    "@param string|callable(PanelRequest,Resource<TRecord,TState>|null=,self<TRecord,TState>=,bool=):scalar|\\Stringable|null $actionUrl",
+                    "@return self<TRecord,TState>"
+                ],
+                "filteredEmptyStateAction": [
+                    "@param string|callable(PanelRequest,Resource<TRecord,TState>|null=,self<TRecord,TState>=,bool=):scalar|\\Stringable|null $url",
+                    "@return self<TRecord,TState>"
+                ],
+                "filters": [
+                    "@param array<int, TableFilter<TRecord, mixed, TState>|array<string, mixed>|string> $filters",
+                    "@return self<TRecord,TState>"
+                ],
+                "filtersList": [
+                    "@return array<string, TableFilter<TRecord, mixed, TState>>"
+                ],
+                "group": [
+                    "@template TGroupKey",
+                    "@param TableGroup<TRecord,TGroupKey>|array<string,mixed>|string $group",
+                    "@return self<TRecord,TState>"
+                ],
+                "groups": [
+                    "@param array<int, TableGroup<TRecord, mixed>|array<string, mixed>|string> $groups",
+                    "@return self<TRecord,TState>"
+                ],
+                "groupsList": [
+                    "@return array<string, TableGroup<TRecord, mixed>>"
+                ],
+                "make": [
+                    "@return self<TRecord,TState>"
+                ],
+                "meta": [
+                    "@return self<TRecord,TState>"
+                ],
+                "perPage": [
+                    "@return self<TRecord,TState>"
+                ],
+                "perPageOptions": [
+                    "@return self<TRecord,TState>"
+                ],
+                "previewAction": [
+                    "@return self<TRecord,TState>"
+                ],
+                "previewFields": [
+                    "@param array<int|string, mixed>|callable(TRecord, PanelRequest|null=, Resource<TRecord, TState>|null=, self<TRecord, TState>=): array<int|string, mixed> $fields",
+                    "@return self<TRecord,TState>"
+                ],
+                "previewable": [
+                    "@return self<TRecord,TState>"
+                ],
+                "recordAction": [
+                    "@return self<TRecord,TState>"
+                ],
+                "recordAttributes": [
+                    "@param array<string,mixed>|callable(TRecord,PanelRequest|null=,Resource<TRecord,TState>|null=,self<TRecord,TState>=):array<string,mixed> $attributes",
+                    "@return self<TRecord,TState>"
+                ],
+                "resolveRowAttributes": [
+                    "@param TRecord|null $record",
+                    "@param Resource<TRecord, TState>|null $resource"
+                ],
+                "resolveRowClick": [
+                    "@param TRecord|null $record",
+                    "@param Resource<TRecord, TState>|null $resource"
+                ],
+                "resolveRowPreviewFields": [
+                    "@param TRecord|null $record",
+                    "@param Resource<TRecord, TState>|null $resource"
+                ],
+                "rowAction": [
+                    "@return self<TRecord,TState>"
+                ],
+                "rowAria": [
+                    "@return self<TRecord,TState>"
+                ],
+                "rowAttribute": [
+                    "@return self<TRecord,TState>"
+                ],
+                "rowAttributes": [
+                    "@param array<string, mixed>|callable(TRecord, PanelRequest|null=, Resource<TRecord, TState>|null=, self<TRecord, TState>=): array<string, mixed> $attributes",
+                    "@return self<TRecord,TState>"
+                ],
+                "rowClick": [
+                    "@param bool|string|callable(TRecord, PanelRequest|null=, Resource<TRecord, TState>|null=, self<TRecord, TState>=, string=): string|array<string, mixed>|null $target",
+                    "@return self<TRecord,TState>"
+                ],
+                "rowData": [
+                    "@return self<TRecord,TState>"
+                ],
+                "rowPreview": [
+                    "@return self<TRecord,TState>"
+                ],
+                "rowUrl": [
+                    "@param callable(TRecord, PanelRequest|null=, Resource<TRecord, TState>|null=, self<TRecord, TState>=, string=): string|null $resolver",
+                    "@return self<TRecord,TState>"
+                ],
+                "state": [
+                    "@param list<TRecord> $records",
+                    "@param Resource<TRecord, TState>|null $resource"
+                ],
+                "summaries": [
+                    "@param array<int, TableSummary<TRecord, mixed>|array<string, mixed>|string> $summaries",
+                    "@return self<TRecord,TState>"
+                ],
+                "summariesList": [
+                    "@return array<string, TableSummary<TRecord, mixed>>"
+                ],
+                "summary": [
+                    "@template TSummaryValue",
+                    "@param TableSummary<TRecord,TSummaryValue>|array<string,mixed>|string $summary",
+                    "@return self<TRecord,TState>"
+                ],
+                "view": [
+                    "@param TableView<TRecord,TState>|array<string,mixed>|string $view",
+                    "@return self<TRecord,TState>"
+                ],
+                "views": [
+                    "@param array<int, TableView<TRecord, TState>|array<string, mixed>|string> $views",
+                    "@return self<TRecord,TState>"
+                ],
+                "viewsList": [
+                    "@return array<string, TableView<TRecord, TState>>"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\Schema": {
+            "file": "runtime/modules/panel/Framework/Schemas/Schema.php",
+            "class_tags": [
+                "@template TRecord = mixed",
+                "@template TState of array<string, mixed> = array<string, mixed>"
+            ],
+            "properties": {
+                "components": [
+                    "@var list<SchemaComponent<TRecord, mixed, TState>>"
+                ]
+            },
+            "methods": {
+                "columns": [
+                    "@return self<TRecord,TState>"
+                ],
+                "component": [
+                    "@param SchemaComponent<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|FormSection<TRecord, TState>|InfolistEntry<TRecord, mixed, TState>|array<string, mixed>|string $component",
+                    "@return self<TRecord,TState>"
+                ],
+                "components": [
+                    "@param list<SchemaComponent<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|array<string,mixed>|string> $components",
+                    "@return self<TRecord,TState>"
+                ],
+                "componentsList": [
+                    "@return list<SchemaComponent<TRecord, mixed, TState>>"
+                ],
+                "dehydrate": [
+                    "@param TRecord|null $record"
+                ],
+                "entry": [
+                    "@param Field<TRecord, mixed, TState>|InfolistEntry<TRecord, mixed, TState>|array<string, mixed>|string $field",
+                    "@return self<TRecord,TState>"
+                ],
+                "field": [
+                    "@param Field<TRecord, mixed, TState>|InfolistEntry<TRecord, mixed, TState>|array<string, mixed>|string $field",
+                    "@return self<TRecord,TState>"
+                ],
+                "fieldsList": [
+                    "@return array<string, Field<TRecord, mixed, TState>>"
+                ],
+                "from": [
+                    "@return self<TRecord, TState>|null"
+                ],
+                "fromForm": [
+                    "@param ResourceForm<TRecord, TState> $form",
+                    "@return self<TRecord, TState>"
+                ],
+                "group": [
+                    "@param list<SchemaComponent|Field|array<string,mixed>|string> $children",
+                    "@return self<TRecord,TState>"
+                ],
+                "hydrate": [
+                    "@param TRecord|null $record"
+                ],
+                "lifecycle": [
+                    "@return SchemaLifecycle<TRecord, TState>"
+                ],
+                "make": [
+                    "@param list<SchemaComponent<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|array<string,mixed>|string> $components",
+                    "@return self<TRecord, TState>"
+                ],
+                "meta": [
+                    "@return self<TRecord,TState>"
+                ],
+                "section": [
+                    "@param FormSection<TRecord, TState>|array<string, mixed>|string $section",
+                    "@param list<SchemaComponent<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|array<string,mixed>|string> $fields",
+                    "@return self<TRecord,TState>"
+                ],
+                "sectionsList": [
+                    "@return array<string, FormSection<TRecord, TState>>"
+                ],
+                "state": [
+                    "@param TState $input"
+                ],
+                "step": [
+                    "@param list<SchemaComponent|Field|array<string,mixed>|string> $children",
+                    "@return self<TRecord,TState>"
+                ],
+                "submit": [
+                    "@param TRecord|null $record"
+                ],
+                "tab": [
+                    "@param list<SchemaComponent|Field|array<string,mixed>|string> $children",
+                    "@return self<TRecord,TState>"
+                ],
+                "toArray": [
+                    "@return array{type:string,columns:int,components:list<array<string,mixed>>,fields:list<array<string,mixed>>,sections:list<array<string,mixed>>,meta:array<string,mixed>}"
+                ],
+                "validate": [
+                    "@param TState $values",
+                    "@param TRecord|null $record"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\SchemaComponent": {
+            "file": "runtime/modules/panel/Framework/Schemas/SchemaComponent.php",
+            "class_tags": [
+                "@template TRecord = mixed",
+                "@template TValue = mixed",
+                "@template TState of array<string, mixed> = array<string, mixed>"
+            ],
+            "properties": {
+                "children": [
+                    "@var list<self<TRecord, mixed, TState>>"
+                ],
+                "field": [
+                    "@var Field<TRecord, TValue, TState>|null"
+                ],
+                "section": [
+                    "@var FormSection<TRecord, TState>|null"
+                ]
+            },
+            "methods": {
+                "child": [
+                    "@param self<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|FormSection<TRecord, TState>|InfolistEntry<TRecord, mixed, TState>|array<string, mixed>|string $child",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "children": [
+                    "@param list<self<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|FormSection<TRecord, TState>|InfolistEntry<TRecord, mixed, TState>|array<string, mixed>|string> $children",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "childrenList": [
+                    "@return list<self<TRecord, mixed, TState>>"
+                ],
+                "field": [
+                    "@param Field<TRecord, TValue, TState>|InfolistEntry<TRecord, TValue, TState>|array<string, mixed>|string $field",
+                    "@return self<TRecord, TValue, TState>"
+                ],
+                "fieldDefinition": [
+                    "@return Field<TRecord, TValue, TState>|null"
+                ],
+                "fieldsList": [
+                    "@return array<string, Field<TRecord, mixed, TState>>"
+                ],
+                "from": [
+                    "@return self<TRecord, TValue, TState>|null"
+                ],
+                "group": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "label": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "make": [
+                    "@return self<TRecord, TValue, TState>"
+                ],
+                "meta": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "section": [
+                    "@param FormSection<TRecord, TState>|array<string, mixed>|string $section",
+                    "@param list<self<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|FormSection<TRecord, TState>|InfolistEntry<TRecord, mixed, TState>|array<string, mixed>|string> $children",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "sectionDefinition": [
+                    "@return FormSection<TRecord, TState>|null"
+                ],
+                "sectionsList": [
+                    "@return array<string, FormSection<TRecord, TState>>"
+                ],
+                "step": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "tab": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "withStep": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "withTab": [
+                    "@return self<TRecord,TValue,TState>"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\SchemaLifecycle": {
+            "file": "runtime/modules/panel/Framework/Schemas/SchemaLifecycle.php",
+            "class_tags": [
+                "@template TRecord = mixed",
+                "@template TState of array<string, mixed> = array<string, mixed>"
+            ],
+            "properties": [],
+            "methods": {
+                "__construct": [
+                    "@param array<string, Field<TRecord, mixed, TState>> $fields"
+                ],
+                "dehydrate": [
+                    "@param TRecord|null $record"
+                ],
+                "fields": [
+                    "@return array<string, Field<TRecord, mixed, TState>>"
+                ],
+                "fromForm": [
+                    "@param ResourceForm<TRecord, TState> $form",
+                    "@return self<TRecord, TState>"
+                ],
+                "fromSchema": [
+                    "@param Schema<TRecord, TState> $schema",
+                    "@return self<TRecord, TState>"
+                ],
+                "hydrate": [
+                    "@param TRecord|null $record"
+                ],
+                "make": [
+                    "@param array<int|string, Field<TRecord, mixed, TState>> $fields",
+                    "@return self<TRecord, TState>"
+                ],
+                "validate": [
+                    "@param TState $values",
+                    "@param TRecord|null $record"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\TableFilter": {
+            "file": "runtime/modules/panel/Framework/Tables/TableFilter.php",
+            "class_tags": [
+                "@template TRecord = mixed",
+                "@template TValue = mixed",
+                "@template TState of array<string, mixed> = array<string, mixed>"
+            ],
+            "properties": [],
+            "methods": {
+                "column": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "dateRange": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "default": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "exceptOn": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "fromArray": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hidden": [
+                    "@param bool|callable(string,PanelRequest|null=,self<TRecord,TValue,TState>=,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>|PageTable<TRecord,TState>|null=):bool $hidden",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hiddenOn": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "hiddenUsing": [
+                    "@param callable(string, PanelRequest|null=, self<TRecord, TValue, TState>=, Resource<TRecord, TState>|null=, ResourceTable<TRecord, TState>|PageTable<TRecord, TState>|null=): bool $callback",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "indicator": [
+                    "@param string|callable(TValue|null,PanelRequest=,self<TRecord,TValue,TState>=):string|array<string,mixed>|list<array<string,mixed>>|false|null $indicator",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "indicatorTone": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "indicatorUsing": [
+                    "@param callable(TValue|null, PanelRequest=, self<TRecord, TValue, TState>=): string|array<string, mixed>|list<array<string, mixed>>|false|null $indicator",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "indicators": [
+                    "@return list<array{filter:string,label:string,value:string,tone:string,clear:array<int,string>}>"
+                ],
+                "label": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "make": [
+                    "@return self<TRecord, TValue, TState>"
+                ],
+                "matches": [
+                    "@param TRecord $record"
+                ],
+                "meta": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "normalizeIndicators": [
+                    "@return list<array{filter:string,label:string,value:string,tone:string,clear:array<int,string>}>"
+                ],
+                "numberRange": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "onlyOn": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "options": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "optionsUsing": [
+                    "@param callable(PanelRequest, self<TRecord, TValue, TState>=, Resource<TRecord, TState>|null=, ResourceTable<TRecord, TState>|PageTable<TRecord, TState>|null=): array<array-key, mixed> $callback",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "range": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "type": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "visible": [
+                    "@param bool|callable(string,PanelRequest|null=,self<TRecord,TValue,TState>=,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>|PageTable<TRecord,TState>|null=):bool $visible",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "visibleOn": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "visibleUsing": [
+                    "@param callable(string, PanelRequest|null=, self<TRecord, TValue, TState>=, Resource<TRecord, TState>|null=, ResourceTable<TRecord, TState>|PageTable<TRecord, TState>|null=): bool $callback",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "where": [
+                    "@template TFilterRecord",
+                    "@template TFilterValue",
+                    "@param callable(TFilterRecord, TFilterValue|null, PanelRequest=, self<TFilterRecord, TFilterValue, TState>=): bool $predicate",
+                    "@return self<TFilterRecord,TFilterValue,TState>"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\TableGroup": {
+            "file": "runtime/modules/panel/Framework/Tables/TableGroup.php",
+            "class_tags": [
+                "@template TRecord = mixed",
+                "@template TKey = mixed"
+            ],
+            "properties": [],
+            "methods": {
+                "action": [
+                    "@param string|callable(string,list<TRecord>=,Resource<TRecord>|null=,PanelRequest|null=,self<TRecord,TKey>=,PageTable<TRecord>|ResourceTable<TRecord>|null=):scalar|\\Stringable|null $url",
+                    "@return self<TRecord,TKey>"
+                ],
+                "actions": [
+                    "@return self<TRecord,TKey>"
+                ],
+                "collapsed": [
+                    "@return self<TRecord,TKey>"
+                ],
+                "collapsible": [
+                    "@return self<TRecord,TKey>"
+                ],
+                "default": [
+                    "@return self<TRecord,TKey>"
+                ],
+                "description": [
+                    "@return self<TRecord,TKey>"
+                ],
+                "descriptionUsing": [
+                    "@param callable(string, list<TRecord>=, Resource<TRecord>|null=, PanelRequest|null=, self<TRecord, TKey>=, PageTable<TRecord>|ResourceTable<TRecord>|null=): string|\\Stringable|null $resolver",
+                    "@return self<TRecord,TKey>"
+                ],
+                "direction": [
+                    "@return self<TRecord,TKey>"
+                ],
+                "fromArray": [
+                    "@return self<TRecord,TKey>"
+                ],
+                "label": [
+                    "@return self<TRecord,TKey>"
+                ],
+                "labelUsing": [
+                    "@param callable(string, list<TRecord>=, Resource<TRecord>|null=, PanelRequest|null=, self<TRecord, TKey>=, PageTable<TRecord>|ResourceTable<TRecord>|null=): string|\\Stringable|null $resolver",
+                    "@return self<TRecord,TKey>"
+                ],
+                "make": [
+                    "@return self<TRecord, TKey>"
+                ],
+                "meta": [
+                    "@return self<TRecord,TKey>"
+                ],
+                "resolveActions": [
+                    "@param list<TRecord> $records",
+                    "@param Resource<TRecord>|null $resource",
+                    "@param PageTable<TRecord>|ResourceTable<TRecord>|null $table"
+                ],
+                "resolveDescription": [
+                    "@param list<TRecord> $records",
+                    "@param Resource<TRecord>|null $resource",
+                    "@param PageTable<TRecord>|ResourceTable<TRecord>|null $table"
+                ],
+                "resolveKey": [
+                    "@param TRecord $record",
+                    "@param Resource<TRecord>|null $resource",
+                    "@param PageTable<TRecord>|ResourceTable<TRecord>|null $table"
+                ],
+                "resolveLabel": [
+                    "@param list<TRecord> $records",
+                    "@param Resource<TRecord>|null $resource",
+                    "@param PageTable<TRecord>|ResourceTable<TRecord>|null $table"
+                ],
+                "resolveSummaries": [
+                    "@param list<TRecord> $records",
+                    "@param Resource<TRecord>|null $resource",
+                    "@param PageTable<TRecord>|ResourceTable<TRecord>|null $table"
+                ],
+                "stateUsing": [
+                    "@template TResolvedKey",
+                    "@param callable(TRecord, Resource<TRecord>|null=, PanelRequest|null=, self<TRecord, TResolvedKey>=, PageTable<TRecord>|ResourceTable<TRecord>|null=): TResolvedKey $resolver",
+                    "@return self<TRecord,TResolvedKey>"
+                ],
+                "summaries": [
+                    "@param array<int, TableSummary<TRecord, mixed>|array<string, mixed>|string> $summaries",
+                    "@return self<TRecord,TKey>"
+                ],
+                "summary": [
+                    "@param TableSummary<TRecord, mixed>|array<string, mixed>|string $summary",
+                    "@return self<TRecord,TKey>"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\TableSummary": {
+            "file": "runtime/modules/panel/Framework/Tables/TableSummary.php",
+            "class_tags": [
+                "@template TRecord = mixed",
+                "@template TValue = mixed"
+            ],
+            "properties": [],
+            "methods": {
+                "aggregate": [
+                    "@param list<mixed> $records"
+                ],
+                "avg": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "column": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "count": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "format": [
+                    "@param callable(TValue, list<TRecord>=, Resource<TRecord>|null=, PanelRequest|null=, self<TRecord, TValue>=): scalar|\\Stringable|array<array-key, mixed>|null $formatter",
+                    "@return self<TRecord,TValue>"
+                ],
+                "formatValue": [
+                    "@param list<mixed> $records"
+                ],
+                "fromArray": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "label": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "make": [
+                    "@return self<TRecord, TValue>"
+                ],
+                "max": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "meta": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "min": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "money": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "numericValues": [
+                    "@param list<mixed> $records"
+                ],
+                "percent": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "resolve": [
+                    "@param list<TRecord> $records",
+                    "@param Resource<TRecord> $resource"
+                ],
+                "sum": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "tone": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "type": [
+                    "@return self<TRecord,TValue>"
+                ],
+                "valueUsing": [
+                    "@template TResolvedValue",
+                    "@param callable(list<TRecord>, Resource<TRecord>=, PanelRequest|null=, self<TRecord, TResolvedValue>=): TResolvedValue $resolver",
+                    "@return self<TRecord,TResolvedValue>"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\TableView": {
+            "file": "runtime/modules/panel/Framework/Tables/TableView.php",
+            "class_tags": [
+                "@template TRecord = mixed",
+                "@template TState of array<string, mixed> = array<string, mixed>"
+            ],
+            "properties": [],
+            "methods": {
+                "badge": [
+                    "@param scalar|\\Stringable|array<array-key, mixed>|null|callable(list<TRecord>, PanelRequest=, Resource<TRecord, TState>=, self<TRecord, TState>=): mixed $badge",
+                    "@return self<TRecord,TState>"
+                ],
+                "columns": [
+                    "@return self<TRecord,TState>"
+                ],
+                "default": [
+                    "@return self<TRecord,TState>"
+                ],
+                "density": [
+                    "@return self<TRecord,TState>"
+                ],
+                "filter": [
+                    "@param (callable(TRecord, PanelRequest=, Resource<TRecord, TState>=, self<TRecord, TState>=): bool)|string $predicate",
+                    "@return self<TRecord,TState>"
+                ],
+                "filterValue": [
+                    "@return self<TRecord,TState>"
+                ],
+                "filters": [
+                    "@return self<TRecord,TState>"
+                ],
+                "fromArray": [
+                    "@return self<TRecord,TState>"
+                ],
+                "label": [
+                    "@return self<TRecord,TState>"
+                ],
+                "make": [
+                    "@return self<TRecord, TState>"
+                ],
+                "matches": [
+                    "@param TRecord $record",
+                    "@param Resource<TRecord, TState> $resource"
+                ],
+                "meta": [
+                    "@return self<TRecord,TState>"
+                ],
+                "perPage": [
+                    "@return self<TRecord,TState>"
+                ],
+                "preset": [
+                    "@return self<TRecord,TState>"
+                ],
+                "query": [
+                    "@return self<TRecord,TState>"
+                ],
+                "queryDefault": [
+                    "@return self<TRecord,TState>"
+                ],
+                "range": [
+                    "@return self<TRecord,TState>"
+                ],
+                "resolveBadge": [
+                    "@param list<TRecord> $records",
+                    "@param Resource<TRecord, TState> $resource"
+                ],
+                "search": [
+                    "@return self<TRecord,TState>"
+                ],
+                "sort": [
+                    "@return self<TRecord,TState>"
+                ],
+                "tone": [
+                    "@return self<TRecord,TState>"
+                ],
+                "visibleColumns": [
+                    "@return self<TRecord,TState>"
+                ],
+                "where": [
+                    "@template TViewRecord",
+                    "@param callable(TViewRecord, PanelRequest=, Resource<TViewRecord, TState>=, self<TViewRecord, TState>=): bool $predicate",
+                    "@return self<TViewRecord,TState>"
+                ]
+            }
+        },
+        "Dataphyre\\Panel\\Widget": {
+            "file": "runtime/modules/panel/Framework/Widgets/Widget.php",
+            "class_tags": [
+                "@template TRecord = mixed",
+                "@template TValue = mixed",
+                "@template TState of array<string, mixed> = array<string, mixed>"
+            ],
+            "properties": [],
+            "methods": {
+                "chart": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "data": [
+                    "@param array<array-key, mixed>|callable(PanelRequest|null=, self<TRecord, TValue, TState>=): array<array-key, mixed> $data",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "dataset": [
+                    "@param array<array-key, mixed>|callable(PanelRequest|null=, self<TRecord, TValue, TState>=): array<array-key, mixed> $values",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "description": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "fromArray": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "group": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "height": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "icon": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "interactionAction": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "interactionActions": [
+                    "@param array<string,string> $actions"
+                ],
+                "interactionRefresh": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "interactionRetryLimit": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "interactive": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "label": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "labels": [
+                    "@param array<array-key, scalar|\\Stringable|null>|callable(PanelRequest|null=, self<TRecord, TValue, TState>=): array<array-key, scalar|\\Stringable|null> $labels",
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "make": [
+                    "@return self<TRecord, TValue, TState>"
+                ],
+                "meta": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "resolve": [
+                    "@return TState"
+                ],
+                "sort": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "tone": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "type": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "unit": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "url": [
+                    "@return self<TRecord,TValue,TState>"
+                ],
+                "value": [
+                    "@template TWidgetValue",
+                    "@param TWidgetValue|callable(PanelRequest|null=, self<TRecord, TWidgetValue, TState>=): TWidgetValue $value",
+                    "@return self<TRecord,TWidgetValue,TState>"
+                ],
+                "withoutInteraction": [
+                    "@return self<TRecord,TValue,TState>"
+                ]
+            }
+        }
+    }
+}

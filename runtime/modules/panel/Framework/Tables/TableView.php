@@ -15,9 +15,13 @@ namespace Dataphyre\Panel;
  * predicate, badge value/resolver, and renderer metadata. Panel clients use the
  * serialized view to offer operator shortcuts without mutating the resource table
  * definition itself.
+ *
+ * @template TRecord = mixed
+ * @template TState of array<string, mixed> = array<string, mixed>
  */
 final class TableView {
 	use PanelExtensible;
+	use HasCollectionItemPresentation;
 
 	private string $name;
 	private string $label;
@@ -43,7 +47,7 @@ final class TableView {
 	 * Creates a configured table view.
 	 *
 	 * @param string $name View identifier.
-	 * @return self New table view builder.
+	 * @return self<TRecord, TState> New table view builder.
 	 */
 	public static function make(string $name): self {
 		return self::configured(new self($name));
@@ -56,7 +60,7 @@ final class TableView {
 	 * columns/visible_columns, filters, sort, per_page, density, and meta.
 	 *
 	 * @param array<string, mixed> $definition Serialized view definition.
-	 * @return self Rehydrated table view builder.
+	 * @return self<TRecord,TState> Rehydrated table view builder.
 	 */
 	public static function fromArray(array $definition): self {
 		$view=self::make((string)($definition['name'] ?? ''));
@@ -115,7 +119,7 @@ final class TableView {
 	 * Sets the operator-facing view label.
 	 *
 	 * @param string $label Label displayed in table view selectors.
-	 * @return self Cloned view with updated label.
+	 * @return self<TRecord,TState> Cloned view with updated label.
 	 */
 	public function label(string $label): self {
 		$clone=clone $this;
@@ -127,7 +131,7 @@ final class TableView {
 	 * Marks whether this view is the table's default preset.
 	 *
 	 * @param bool $default Whether this view should be selected by default.
-	 * @return self Cloned view with default flag.
+	 * @return self<TRecord,TState> Cloned view with default flag.
 	 */
 	public function default(bool $default=true): self {
 		$clone=clone $this;
@@ -141,7 +145,7 @@ final class TableView {
 	 * Unsupported tones fall back to neutral.
 	 *
 	 * @param string $tone neutral, primary, success, warning, danger, or info.
-	 * @return self Cloned view with normalized tone.
+	 * @return self<TRecord,TState> Cloned view with normalized tone.
 	 */
 	public function tone(string $tone): self {
 		$tone=Resource::normalizeName($tone);
@@ -156,8 +160,8 @@ final class TableView {
 	 * Callable badges are evaluated by resolveBadge() with records, request,
 	 * resource, and view context. Non-callable values are serialized directly.
 	 *
-	 * @param mixed $badge Static badge value or callable resolver.
-	 * @return self Cloned view with badge metadata.
+	 * @param scalar|\Stringable|array<array-key, mixed>|null|callable(list<TRecord>, PanelRequest=, Resource<TRecord, TState>=, self<TRecord, TState>=): mixed $badge Static badge value or callable resolver.
+	 * @return self<TRecord,TState> Cloned view with badge metadata.
 	 */
 	public function badge(mixed $badge): self {
 		$clone=clone $this;
@@ -177,7 +181,7 @@ final class TableView {
 	 * Keys are normalized to request-safe names. Empty keys are skipped.
 	 *
 	 * @param array<string|int, mixed> $query Query default map.
-	 * @return self Cloned view with merged query defaults.
+	 * @return self<TRecord,TState> Cloned view with merged query defaults.
 	 */
 	public function query(array $query): self {
 		$clone=clone $this;
@@ -196,7 +200,7 @@ final class TableView {
 	 *
 	 * @param string $key Query key.
 	 * @param mixed $value Default value for that key.
-	 * @return self Cloned view with the query default applied.
+	 * @return self<TRecord,TState> Cloned view with the query default applied.
 	 */
 	public function queryDefault(string $key, mixed $value): self {
 		return $this->query([$key=>$value]);
@@ -207,7 +211,7 @@ final class TableView {
 	 *
 	 * @param string $key Query key.
 	 * @param mixed $value Default value for that key.
-	 * @return self Cloned view with the preset applied.
+	 * @return self<TRecord,TState> Cloned view with the preset applied.
 	 */
 	public function preset(string $key, mixed $value): self {
 		return $this->queryDefault($key, $value);
@@ -217,7 +221,7 @@ final class TableView {
 	 * Sets the table search query default.
 	 *
 	 * @param string $query Search text.
-	 * @return self Cloned view with q query default.
+	 * @return self<TRecord,TState> Cloned view with q query default.
 	 */
 	public function search(string $query): self {
 		return $this->query(['q'=>trim($query)]);
@@ -227,7 +231,7 @@ final class TableView {
 	 * Alias for visibleColumns().
 	 *
 	 * @param array|string ...$columns Column names, arrays, or comma-separated strings.
-	 * @return self Cloned view with visible column defaults.
+	 * @return self<TRecord,TState> Cloned view with visible column defaults.
 	 */
 	public function columns(array|string ...$columns): self {
 		return $this->visibleColumns(...$columns);
@@ -240,7 +244,7 @@ final class TableView {
 	 * de-duplicated before being stored under visible_columns.
 	 *
 	 * @param array|string ...$columns Column names, arrays, or comma-separated strings.
-	 * @return self Cloned view with visible column defaults.
+	 * @return self<TRecord,TState> Cloned view with visible column defaults.
 	 */
 	public function visibleColumns(array|string ...$columns): self {
 		$flat=[];
@@ -265,7 +269,7 @@ final class TableView {
 	 * Filter names are normalized and empty names are ignored.
 	 *
 	 * @param array<string|int, mixed> $filters Filter default map.
-	 * @return self Cloned view with filter query defaults.
+	 * @return self<TRecord,TState> Cloned view with filter query defaults.
 	 */
 	public function filters(array $filters): self {
 		$defaults=[];
@@ -284,9 +288,9 @@ final class TableView {
 	 * A callable with no explicit value becomes a where() predicate. String/value
 	 * input becomes a query filter default.
 	 *
-	 * @param callable|string $predicate Predicate callback or filter name.
+	 * @param (callable(TRecord, PanelRequest=, Resource<TRecord, TState>=, self<TRecord, TState>=): bool)|string $predicate Predicate callback or filter name.
 	 * @param mixed $value Filter value.
-	 * @return self Cloned view with predicate or filter default.
+	 * @return self<TRecord,TState> Cloned view with predicate or filter default.
 	 */
 	public function filter(callable|string $predicate, mixed $value=null): self {
 		if($value===null && is_callable($predicate)){
@@ -300,7 +304,7 @@ final class TableView {
 	 *
 	 * @param string $name Filter name.
 	 * @param mixed $value Filter value.
-	 * @return self Cloned view with filter default applied.
+	 * @return self<TRecord,TState> Cloned view with filter default applied.
 	 */
 	public function filterValue(string $name, mixed $value): self {
 		$name=Resource::normalizeName($name);
@@ -315,7 +319,7 @@ final class TableView {
 	 * @param string $name Range filter base name.
 	 * @param mixed $from Lower bound.
 	 * @param mixed $to Upper bound.
-	 * @return self Cloned view with range defaults.
+	 * @return self<TRecord,TState> Cloned view with range defaults.
 	 */
 	public function range(string $name, mixed $from=null, mixed $to=null): self {
 		$name=Resource::normalizeName($name);
@@ -335,7 +339,7 @@ final class TableView {
 	 *
 	 * @param string $column Sortable column name.
 	 * @param string $direction Sort direction.
-	 * @return self Cloned view with sort defaults.
+	 * @return self<TRecord,TState> Cloned view with sort defaults.
 	 */
 	public function sort(string $column, string $direction='asc'): self {
 		return $this->query([
@@ -350,7 +354,7 @@ final class TableView {
 	 * Values are clamped from 1 to 250 to keep table requests bounded.
 	 *
 	 * @param int $rows Requested rows per page.
-	 * @return self Cloned view with per-page default.
+	 * @return self<TRecord,TState> Cloned view with per-page default.
 	 */
 	public function perPage(int $rows): self {
 		return $this->query(['per_page'=>max(1, min(250, $rows))]);
@@ -362,7 +366,7 @@ final class TableView {
 	 * Unsupported density names are ignored.
 	 *
 	 * @param string $density compact, normal, or comfortable.
-	 * @return self Cloned view when valid, otherwise the current view.
+	 * @return self<TRecord,TState> Cloned view when valid, otherwise the current view.
 	 */
 	public function density(string $density): self {
 		$density=Resource::normalizeName($density);
@@ -372,8 +376,9 @@ final class TableView {
 	/**
 	 * Sets a runtime predicate used to test records against this view.
 	 *
-	 * @param callable $predicate Callback evaluated with record, request, resource, and view context.
-	 * @return self Cloned view with predicate.
+	 * @template TViewRecord
+	 * @param callable(TViewRecord, PanelRequest=, Resource<TViewRecord, TState>=, self<TViewRecord, TState>=): bool $predicate Callback evaluated with record, request, resource, and view context.
+	 * @return self<TViewRecord,TState>
 	 */
 	public function where(callable $predicate): self {
 		$clone=clone $this;
@@ -385,7 +390,7 @@ final class TableView {
 	 * Merges renderer metadata into the view.
 	 *
 	 * @param array<string, mixed> $meta Metadata consumed by table renderers.
-	 * @return self Cloned view with merged metadata.
+	 * @return self<TRecord,TState> Cloned view with merged metadata.
 	 */
 	public function meta(array $meta): self {
 		$clone=clone $this;
@@ -399,9 +404,9 @@ final class TableView {
 	 * Views without predicates match every record. Predicate callbacks are resolved
 	 * with named panel context so closures can opt into only the arguments they need.
 	 *
-	 * @param mixed $record Resource record being tested.
+	 * @param TRecord $record Resource record being tested.
 	 * @param PanelRequest $request Current panel request.
-	 * @param Resource $resource Resource that owns the table.
+	 * @param Resource<TRecord, TState> $resource Resource that owns the table.
 	 * @return bool True when the record matches this view.
 	 */
 	public function matches(mixed $record, PanelRequest $request, Resource $resource): bool {
@@ -422,9 +427,9 @@ final class TableView {
 	 * Static badges are returned as-is. Callable badges receive records, request,
 	 * resource, and view context.
 	 *
-	 * @param array<int, mixed> $records Records currently represented by the view.
+	 * @param list<TRecord> $records Records currently represented by the view.
 	 * @param PanelRequest $request Current panel request.
-	 * @param Resource $resource Resource that owns the table.
+	 * @param Resource<TRecord, TState> $resource Resource that owns the table.
 	 * @return mixed static badge value, or callback-produced badge value for the current view context.
 	 */
 	public function resolveBadge(array $records, PanelRequest $request, Resource $resource): mixed {

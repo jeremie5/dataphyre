@@ -209,13 +209,13 @@ final class MvcManager {
 	/**
 	 * Detects whether an array should be treated as an ordered list for config merging.
 	 *
-	 * Empty arrays count as lists here, matching PHP's `range(0, -1)` comparison
-	 * behavior and causing empty override lists to replace inherited list values.
+	 * Empty arrays count as lists, causing empty override lists to replace inherited
+	 * list values instead of silently retaining the global list.
 	 *
 	 * @param array<string|int, mixed> $value Candidate configuration array.
 	 * @return bool `true` when keys are exactly `0..n-1` in order.
 	 */
 	private static function isList(array $value): bool {
-		return array_keys($value)===range(0, count($value)-1);
+		return array_is_list($value);
 	}
 }

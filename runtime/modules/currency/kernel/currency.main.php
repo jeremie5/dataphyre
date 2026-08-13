@@ -92,6 +92,7 @@ class currency{
 
 	protected static $exchange_rate_callbacks=[];
 	protected static $exchange_rate_callbacks_loaded=false;
+	protected static ?bool $bcmath_available_override=null;
 
 	function __construct(string $base, string $currency, array $available, string $language, string $country){
 		currency::$base_currency=$base;
@@ -527,8 +528,7 @@ class currency{
 	}
 
 	protected static function bcmath_available(): bool {
-		static $available=null;
-		return $available ??= function_exists('bcdiv');
+		return self::$bcmath_available_override ?? function_exists('bcdiv');
 	}
 
 	protected static function decimal_string(float|int|string $value): string {
@@ -539,7 +539,7 @@ class currency{
 			$value=trim($value);
 			if($value!=='' && is_numeric($value) && stripos($value, 'e')===false){
 				$value=ltrim($value, '+');
-				return rtrim(rtrim($value, '0'), '.') ?: '0';
+				return str_contains($value, '.') ? (rtrim(rtrim($value, '0'), '.') ?: '0') : $value;
 			}
 		}
 		$value=sprintf('%.14F', (float)$value);
@@ -677,10 +677,14 @@ class currency{
 	public static function allocate_amount(float|int|string|null $amount, string $currency, array $ratios, bool $cash=false): array {
 		$prepared=[];
 		foreach($ratios as $key=>$ratio){
-			if(!is_numeric($ratio) || (float)$ratio<=0){
+			if(!is_numeric($ratio)){
 				continue;
 			}
-			$prepared[$key]=(float)$ratio;
+			$ratio=(float)$ratio;
+			if(!is_finite($ratio) || $ratio<=0){
+				continue;
+			}
+			$prepared[$key]=$ratio;
 		}
 		if(empty($prepared)){
 			return [];
@@ -689,7 +693,7 @@ class currency{
 		$sign=$total_units<0 ? -1 : 1;
 		$total_units=abs($total_units);
 		$ratio_sum=array_sum($prepared);
-		if($ratio_sum<=0){
+		if(!is_finite($ratio_sum) || $ratio_sum<=0){
 			return [];
 		}
 		$unit_allocations=[];
@@ -730,10 +734,14 @@ class currency{
 	public static function allocate_minor_units(int $minor_amount, string $currency, array $ratios, bool $cash=false): array {
 		$prepared=[];
 		foreach($ratios as $key=>$ratio){
-			if(!is_numeric($ratio) || (float)$ratio<=0){
+			if(!is_numeric($ratio)){
 				continue;
 			}
-			$prepared[$key]=(float)$ratio;
+			$ratio=(float)$ratio;
+			if(!is_finite($ratio) || $ratio<=0){
+				continue;
+			}
+			$prepared[$key]=$ratio;
 		}
 		if(empty($prepared)){
 			return [];
@@ -747,7 +755,7 @@ class currency{
 			$total_units++;
 		}
 		$ratio_sum=array_sum($prepared);
-		if($ratio_sum<=0){
+		if(!is_finite($ratio_sum) || $ratio_sum<=0){
 			return [];
 		}
 		$unit_allocations=[];
@@ -860,7 +868,7 @@ class currency{
 				continue;
 			}
 			$rate=(float)$rate;
-			if($rate<=0){
+			if(!is_finite($rate) || $rate<=0){
 				continue;
 			}
 			$currency=mb_strtoupper(trim($currency));

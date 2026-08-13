@@ -13,9 +13,14 @@ namespace Dataphyre\Panel;
  * Sections group form fields under a label/description, optional collapsible
  * state, responsive grid metadata, and accessibility constraints that renderers
  * can use to keep controls readable, touchable, and contrast-compliant.
+ *
+ * @template TRecord = mixed
+ * @template TState of array<string, mixed> = array<string, mixed>
  */
 final class FormSection {
 	use PanelExtensible;
+	use HasCollectionPresentations;
+	use HasCollectionItemPresentation;
 
 	private string $name;
 	private string $label;
@@ -39,7 +44,7 @@ final class FormSection {
 	 * Starts a configured form section definition.
 	*
 	 * @param string $name Stable section name; normalized with `Resource::normalizeName()`.
-	 * @return self New section after panel extension hooks are applied.
+	 * @return self<TRecord,TState> New section after panel extension hooks are applied.
 	 */
 	public static function make(string $name): self {
 		return self::configured(new self($name));
@@ -53,7 +58,7 @@ final class FormSection {
 	 * shortcuts, `contrast_policy`, and `meta`.
 	 *
 	 * @param array<string, mixed> $definition Section schema definition.
-	 * @return self Configured form section.
+	 * @return self<TRecord,TState> Configured form section.
 	 */
 	public static function fromArray(array $definition): self {
 		$section=self::make((string)($definition['name'] ?? $definition['label'] ?? ''));
@@ -99,6 +104,14 @@ final class FormSection {
 		if(isset($definition['meta']) && is_array($definition['meta'])){
 			$section=$section->meta($definition['meta']);
 		}
+		if(isset($definition['presentation']) && is_array($definition['presentation'])){
+			$section=isset($definition['presentation']['display']) || isset($definition['presentation']['layout'])
+				? $section->fieldsPresentation($definition['presentation'])
+				: $section->collectionPresentations($definition['presentation']);
+		}
+		if(isset($definition['fields_presentation']) && (is_array($definition['fields_presentation']) || is_string($definition['fields_presentation']))){
+			$section=$section->fieldsPresentation($definition['fields_presentation']);
+		}
 		return $section;
 	}
 
@@ -115,7 +128,7 @@ final class FormSection {
 	 * Returns a clone with the section label replaced.
 	*
 	 * @param string $label Display label; empty values fall back to the humanized name.
-	 * @return self Cloned section with updated label.
+	 * @return self<TRecord,TState> Cloned section with updated label.
 	 */
 	public function label(string $label): self {
 		$clone=clone $this;
@@ -127,7 +140,7 @@ final class FormSection {
 	 * Returns a clone with optional section help text replaced.
 	*
 	 * @param string $description Help text; empty values clear the description.
-	 * @return self Cloned section with updated description.
+	 * @return self<TRecord,TState> Cloned section with updated description.
 	 */
 	public function description(string $description): self {
 		$clone=clone $this;
@@ -143,7 +156,7 @@ final class FormSection {
 	 * set to the largest responsive column count for simple renderers.
 	 *
 	 * @param int|array<string, int> $columns Fixed column count or responsive breakpoint map.
-	 * @return self Cloned section with grid metadata.
+	 * @return self<TRecord,TState> Cloned section with grid metadata.
 	 */
 	public function columns(int|array $columns): self {
 		$clone=clone $this;
@@ -164,7 +177,7 @@ final class FormSection {
 	 * to let renderers stretch a section across the full grid.
 	 *
 	 * @param int|string|array<string, int|string> $span Fixed or responsive span.
-	 * @return self Cloned section with `meta.column_span`.
+	 * @return self<TRecord,TState> Cloned section with `meta.column_span`.
 	 */
 	public function columnSpan(int|string|array $span): self {
 		return $this->meta(['column_span'=>self::normalizeGridSpan($span)]);
@@ -174,7 +187,7 @@ final class FormSection {
 	 * Returns a clone with responsive grid-start metadata.
 	*
 	 * @param int|string|array<string, int|string> $start Fixed or responsive grid start value.
-	 * @return self Cloned section with `meta.column_start`.
+	 * @return self<TRecord,TState> Cloned section with `meta.column_start`.
 	 */
 	public function columnStart(int|string|array $start): self {
 		return $this->meta(['column_start'=>self::normalizeGridStart($start)]);
@@ -184,7 +197,7 @@ final class FormSection {
 	 * Returns a clone with collapsible rendering enabled or disabled.
 	*
 	 * @param bool $collapsible Whether the renderer may collapse this section.
-	 * @return self Cloned section with collapsible state.
+	 * @return self<TRecord,TState> Cloned section with collapsible state.
 	 */
 	public function collapsible(bool $collapsible=true): self {
 		$clone=clone $this;
@@ -199,7 +212,7 @@ final class FormSection {
 	 * have a control to reopen it.
 	 *
 	 * @param bool $collapsed Whether the section should start collapsed.
-	 * @return self Cloned section with initial collapsed state.
+	 * @return self<TRecord,TState> Cloned section with initial collapsed state.
 	 */
 	public function collapsed(bool $collapsed=true): self {
 		$clone=clone $this;
@@ -214,7 +227,7 @@ final class FormSection {
 	 * Returns a clone with arbitrary metadata merged into the section.
 	*
 	 * @param array<string, mixed> $meta Renderer or extension metadata.
-	 * @return self Cloned section with merged metadata.
+	 * @return self<TRecord,TState> Cloned section with merged metadata.
 	 */
 	public function meta(array $meta): self {
 		$clone=clone $this;
@@ -230,7 +243,7 @@ final class FormSection {
 	 * ranges renderers can meaningfully enforce.
 	 *
 	 * @param array<string, mixed> $policy Accessibility constraints.
-	 * @return self Cloned section with merged `meta.accessibility`.
+	 * @return self<TRecord,TState> Cloned section with merged `meta.accessibility`.
 	 */
 	public function accessibilityPolicy(array $policy): self {
 		return $this->meta(['accessibility'=>self::mergeAccessibilityPolicy(is_array($this->meta['accessibility'] ?? null) ? $this->meta['accessibility'] : [], $policy)]);
@@ -241,7 +254,7 @@ final class FormSection {
 	*
 	 * @param int $width Minimum width value.
 	 * @param string $unit Supported units are normalized later to `px` or `ch`.
-	 * @return self Cloned section with updated accessibility policy.
+	 * @return self<TRecord,TState> Cloned section with updated accessibility policy.
 	 */
 	public function minUsableWidth(int $width, string $unit='px'): self {
 		return $this->accessibilityPolicy([
@@ -254,7 +267,7 @@ final class FormSection {
 	 * Adds a minimum character capacity constraint for text controls.
 	*
 	 * @param int $characters Minimum visible character count.
-	 * @return self Cloned section with updated accessibility policy.
+	 * @return self<TRecord,TState> Cloned section with updated accessibility policy.
 	 */
 	public function minUsableCharacters(int $characters): self {
 		return $this->accessibilityPolicy(['min_usable_chars'=>$characters]);
@@ -264,7 +277,7 @@ final class FormSection {
 	 * Adds a minimum touch target size constraint for interactive controls.
 	*
 	 * @param int $pixels Minimum target size in pixels.
-	 * @return self Cloned section with updated accessibility policy.
+	 * @return self<TRecord,TState> Cloned section with updated accessibility policy.
 	 */
 	public function minTouchTarget(int $pixels=44): self {
 		return $this->accessibilityPolicy(['min_touch_target'=>$pixels]);
@@ -274,7 +287,7 @@ final class FormSection {
 	 * Adds a maximum adornment-to-control ratio constraint.
 	*
 	 * @param float $ratio Ratio clamped to `0.0..1.0` during policy normalization.
-	 * @return self Cloned section with updated accessibility policy.
+	 * @return self<TRecord,TState> Cloned section with updated accessibility policy.
 	 */
 	public function maxAdornmentRatio(float $ratio=0.45): self {
 		return $this->accessibilityPolicy(['max_adornment_ratio'=>$ratio]);
@@ -284,7 +297,7 @@ final class FormSection {
 	 * Adds a maximum label-to-control ratio constraint.
 	*
 	 * @param float $ratio Ratio clamped to `0.0..1.0` during policy normalization.
-	 * @return self Cloned section with updated accessibility policy.
+	 * @return self<TRecord,TState> Cloned section with updated accessibility policy.
 	 */
 	public function maxLabelRatio(float $ratio=0.55): self {
 		return $this->accessibilityPolicy(['max_label_ratio'=>$ratio]);
@@ -299,7 +312,7 @@ final class FormSection {
 	 *
 	 * @param array<string, mixed>|float $policy Contrast policy or minimum ratio.
 	 * @param ?string $scope Optional policy scope override.
-	 * @return self Cloned section with updated contrast policy.
+	 * @return self<TRecord,TState> Cloned section with updated contrast policy.
 	 */
 	public function contrastPolicy(array|float $policy=4.5, ?string $scope=null): self {
 		if(is_float($policy) || is_int($policy)){
@@ -324,6 +337,7 @@ final class FormSection {
 			'columns'=>$this->columns,
 			'collapsible'=>$this->collapsible,
 			'collapsed'=>$this->collapsed,
+			'presentation'=>$this->presentations(),
 			'meta'=>$this->meta,
 		];
 	}

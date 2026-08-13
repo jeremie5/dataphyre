@@ -1,4 +1,4 @@
-﻿# Configuration Reference
+# Configuration Reference
 
 Dataphyre has three main configuration layers:
 
@@ -20,8 +20,8 @@ or reusable modules before proposing Dataphyre runtime-internal edits.
 ## Flight Sheet
 
 `flight_sheet.php` lives in the Dataphyre project root. For source or standalone
-installs that is the directory beside `runtime/`. For embedded
-`common/dataphyre` installs it is the directory above `common`. For Composer
+installs that is the directory beside `runtime/`. For canonical embedded
+installs it is the parent of `<project>/dataphyre`. For Composer
 vendor installs, the entrypoint can set `$_SERVER['DATAPHYRE_PROJECT_ROOT']` so
 the project root is the consumer project directory instead of
 `vendor/dataphyre/dataphyre`.
@@ -37,6 +37,10 @@ return [
         'is_production' => true,
         'application_roots' => [
             __DIR__.'/examples/minimal/applications',
+        ],
+        'modules' => [
+            'enabled' => ['http', 'mvc', 'routing'],
+            'disabled' => ['flightdeck'],
         ],
     ],
 ];
@@ -54,7 +58,9 @@ defaults.
 | `allow_app_override` | `true` | Allows app switching with a generated `app_override_key`. Public templates set this to `false`. |
 | `is_production` | `true` | Controls production behavior such as whether bootstrap exceptions are shown directly. |
 | `max_execution_time` | `30` | Passed to PHP's `set_time_limit()` during bootstrap. |
-| `application_roots` | `[]` | Extra application root directories. Relative paths are resolved from Dataphyre's project root: the install root for standalone installs, the directory above `common` for embedded `common/dataphyre` installs, or the explicit `$_SERVER['DATAPHYRE_PROJECT_ROOT']` for Composer vendor installs. |
+| `application_roots` | `[]` | Extra application root directories. Relative paths are resolved from Dataphyre's project root: the install root for standalone installs, the parent of `<project>/dataphyre` for embedded installs, or the explicit `$_SERVER['DATAPHYRE_PROJECT_ROOT']` for Composer vendor installs. |
+| `modules.enabled` | `[]` | Authoritative allow-list for the selected application. Omitted names stay disabled even when their module directories exist. |
+| `modules.disabled` | `[]` | Explicit deny-list. Denials override matching enabled entries. |
 | `public_ip_address` | `null` | Optional server address override for proxy or tunnel deployments. |
 | `web_server_port` | `null` | Optional port paired with `public_ip_address`. |
 | `license` | `false` | Install-provided license metadata. Dataphyre itself is MIT; this is install metadata. |
@@ -81,6 +87,23 @@ including `runtime/bootstrap.php`.
 | `debugbar.memory_limit` | `null` | Optional higher PHP memory limit, such as `128M`, applied only to authenticated debugbar requests. |
 
 Public templates disable Flightdeck by default.
+
+## Module Enablement
+
+`bootstrap.modules` is normalized once while the selected flight sheet is
+loaded. Enabled and disabled names are stored as associative lookup sets, so
+kernel presence checks and Framework loading can reject omitted or disabled
+modules before reading module paths.
+
+The enabled list is authoritative and the disabled list wins. There are no
+implicit runtime or debug overrides. `config/modules.php`, `APP_MODULES`, and
+dash-prefixed application module directories no longer enable or disable
+modules. `core` is the sole exception: it is a reserved bootstrap dependency
+and is implicitly enabled so Dataphyre can enforce the rest of the policy.
+
+Directory presence only makes an already-enabled module resolvable. If an
+enabled module is missing its kernel or Framework surface, the corresponding
+presence/load check still returns false.
 
 ## Install Plan
 
@@ -121,6 +144,26 @@ Common array keys:
 
 If `app.php` is missing, Dataphyre falls back to conventions described in
 [ARCHITECTURE.md](ARCHITECTURE.md).
+
+### Legacy ROOTPATH Mapping
+
+Applications that still provide `rootpaths.php` should point the historical
+shared-root keys at the canonical embedded directory:
+
+```php
+define('ROOTPATH', [
+    'root' => __DIR__.'/',
+    'common_root' => DATAPHYRE_PROJECT_ROOT,
+    'common_dataphyre' => DATAPHYRE_PROJECT_ROOT.'dataphyre/',
+    'common_dataphyre_runtime' => DATAPHYRE_PROJECT_ROOT.'dataphyre/runtime/',
+    'dataphyre' => __DIR__.'/backend/dataphyre/',
+    'applications' => DATAPHYRE_PROJECT_ROOT.'applications/',
+]);
+```
+
+The `common_dataphyre*` key names remain part of the legacy runtime API; they no
+longer imply a physical `common/` directory. New path construction must not
+insert `common` between the project root and `dataphyre`.
 
 ## Module Config
 

@@ -7,7 +7,7 @@
  */
 if(dataphyre\datadoc::logged_in()!==true){
 	require_once(__DIR__."/login.php");
-	exit();
+	return;
 }
 
 ini_set('memory_limit', '512M');
@@ -30,19 +30,19 @@ require_once(__DIR__.'/assets_support.php');
 			$projects=[];
 		}
 
-		foreach ($projects as $project) {
-			$project_panel_id=$project['id'] ?? md5($project['name']);
-			$is_active = (\dataphyre\routing::$bindings['project'] ?? '') === $project['name'];
+		foreach ($projects as $sidebar_project) {
+			$project_panel_id=$sidebar_project['id'] ?? md5($sidebar_project['name']);
+			$is_active = (\dataphyre\routing::$bindings['project'] ?? '') === $sidebar_project['name'];
 			$panel_heading_active = $is_active ? 'show' : '';
 			$aria_expanded = $is_active ? 'true' : 'false';
 			$collapse_show = $is_active ? 'show' : '';
-			$project_route=rawurlencode($project['name']);
-			$manual_root_id='collapseManual'.substr(hash('sha256', $project['name'].'|manual|root'), 0, 16);
-			$dynamic_root_id='collapseDynamic'.substr(hash('sha256', $project['name'].'|dynamic|root'), 0, 16);
+			$project_route=rawurlencode($sidebar_project['name']);
+			$manual_root_id='collapseManual'.substr(hash('sha256', $sidebar_project['name'].'|manual|root'), 0, 16);
+			$dynamic_root_id='collapseDynamic'.substr(hash('sha256', $sidebar_project['name'].'|dynamic|root'), 0, 16);
 		?>
 			<div class="panel-heading <?= $panel_heading_active ?>" role="tab" id="heading_dynadoc<?= $project_panel_id ?>">
 				<a class="collapsed" style="color:black;" role="button" data-toggle="collapse" data-parent="#mainAccordion" href="#collapse_dynadoc<?= $project_panel_id ?>" aria-expanded="<?= $aria_expanded ?>" aria-controls="collapse_dynadoc<?= $project_panel_id ?>">
-					<?= htmlspecialchars((($project['title'] ?? '') ?: $project['name'])) ?>
+					<?= htmlspecialchars((($sidebar_project['title'] ?? '') ?: $sidebar_project['name'])) ?>
 				</a>
 			</div>
 			<div id="collapse_dynadoc<?= $project_panel_id ?>" class="panel-collapse collapse <?= $collapse_show ?>" role="tabpanel" aria-labelledby="heading_dynadoc<?= $project_panel_id ?>">
@@ -52,13 +52,13 @@ require_once(__DIR__.'/assets_support.php');
 						<a href="<?= rtrim(\dataphyre\core::url_self(), '/') ?>/dataphyre/datadoc/<?= $project_route ?>/settings" style="color:black;"><i class="far fa-cogs"></i> Project settings</a>
 						<div class="main-menu">
 							<div class="menu-item">
-								<a class="collapsed datadoc-menu-toggle" style="color:black;" role="button" data-toggle="collapse" href="#<?= $manual_root_id ?>" aria-expanded="false" data-datadoc-project="<?= htmlspecialchars($project['name'], ENT_QUOTES, 'UTF-8') ?>" data-datadoc-kind="manual" data-datadoc-path="[]" data-datadoc-depth="1">
+								<a class="collapsed datadoc-menu-toggle" style="color:black;" role="button" data-toggle="collapse" href="#<?= $manual_root_id ?>" aria-expanded="false" data-datadoc-project="<?= htmlspecialchars($sidebar_project['name'], ENT_QUOTES, 'UTF-8') ?>" data-datadoc-kind="manual" data-datadoc-path="[]" data-datadoc-depth="1">
 									<span style="color:black; font-weight:bold;"><i class="far fa-book"></i> Manual documentation</span>
 								</a>
 								<div id="<?= $manual_root_id ?>" class="panel-collapse collapse datadoc-lazy-branch" role="tabpanel" data-datadoc-loaded="0"></div>
 							</div>
 							<div class="menu-item">
-								<a class="collapsed datadoc-menu-toggle" style="color:black;" role="button" data-toggle="collapse" href="#<?= $dynamic_root_id ?>" aria-expanded="false" data-datadoc-project="<?= htmlspecialchars($project['name'], ENT_QUOTES, 'UTF-8') ?>" data-datadoc-kind="dynamic" data-datadoc-path="[]" data-datadoc-depth="1">
+								<a class="collapsed datadoc-menu-toggle" style="color:black;" role="button" data-toggle="collapse" href="#<?= $dynamic_root_id ?>" aria-expanded="false" data-datadoc-project="<?= htmlspecialchars($sidebar_project['name'], ENT_QUOTES, 'UTF-8') ?>" data-datadoc-kind="dynamic" data-datadoc-path="[]" data-datadoc-depth="1">
 									<span style="color:black; font-weight:bold;"><i class="far fa-robot"></i> Dynamic code documentation</span>
 								</a>
 								<div id="<?= $dynamic_root_id ?>" class="panel-collapse collapse datadoc-lazy-branch" role="tabpanel" data-datadoc-loaded="0"></div>

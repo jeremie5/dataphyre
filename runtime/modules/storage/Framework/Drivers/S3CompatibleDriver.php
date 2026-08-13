@@ -32,7 +32,9 @@ final class S3CompatibleDriver implements StorageDriver {
 	 * Creates a driver with S3 endpoint and credential configuration.
 	 *
 	 * Expected configuration keys are interpreted by AwsSignatureV4 and objectUrl(), including
-	 * endpoint, bucket, region, credentials, style, and optional public_url. Credentials remain
+	 * endpoint, bucket, region, credentials, style, and optional public_url. An optional
+	 * http_handler callable may provide a normalized response for custom transports and tests.
+	 * Credentials remain
 	 * in memory on the driver instance and are used only to sign outgoing requests or presigned
 	 * URLs; they are not persisted by this driver.
 	 *
@@ -343,13 +345,30 @@ final class S3CompatibleDriver implements StorageDriver {
 	 * @param string $body Request body used for signing and PUT/POST uploads.
 	 * @param array<string, string> $headers Request headers to include in the signature.
 	 * @param string $query Raw query string appended to the object URL.
+	 * The optional http_handler receives a request array containing method, normalized path,
+	 * body, headers, query, and resolved URL, and returns status, headers, and body fields.
 	 * @return array{status:int, headers:array<string, string>, body:string} Normalized HTTP response.
 	 */
 	private function request(string $method, string $path, string $body='', array $headers=[], string $query=''): array {
-		if(!function_exists('curl_init')){
-			return ['status'=>0, 'body'=>'', 'headers'=>[]];
-		}
 		$url=$this->objectUrl($path, $query);
+		$handler=$this->config['http_handler'] ?? null;
+		if(is_callable($handler)){
+			$response=$handler([
+				'method'=>$method,
+				'path'=>Path::normalize($path),
+				'body'=>$body,
+				'headers'=>$headers,
+				'query'=>$query,
+				'url'=>$url,
+			]);
+			if(!is_array($response)){ return ['status'=>0, 'body'=>'', 'headers'=>[]]; }
+			return [
+				'status'=>(int)($response['status'] ?? 0),
+				'headers'=>is_array($response['headers'] ?? null) ? $response['headers'] : [],
+				'body'=>(string)($response['body'] ?? ''),
+			];
+		}
+		if(!function_exists('curl_init')){ return ['status'=>0, 'body'=>'', 'headers'=>[]]; }
 		$curl=curl_init($url);
 		$requestHeaders=AwsSignatureV4::headers($method, $url, $this->config, $body, $headers);
 		curl_setopt_array($curl, [

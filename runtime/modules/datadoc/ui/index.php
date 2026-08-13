@@ -7,10 +7,13 @@
  */
 if(dataphyre\datadoc::logged_in()!==true){
 	require_once(__DIR__."/login.php");
-	exit();
+	return;
 }
 
-require_once(__DIR__."/header.php");
+$datadoc_header_ready=require __DIR__."/header.php";
+if($datadoc_header_ready===false){
+	return;
+}
 ?>
 <div class="row main-row">
 	<div class="col p-0 navigation-col">

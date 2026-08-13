@@ -39,54 +39,81 @@ class migration {
      */
     public static function run_all(bool $interactive=false): void {
         tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-        if(file_exists(self::$lock_file)){
-            core::unavailable(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $D='Schema migration in progress', 'maintenance');
+        $lock_handle=@fopen(self::$lock_file, 'x');
+        if($lock_handle===false){
+            \dataphyre\core::unavailable(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $D='Schema migration in progress', 'maintenance');
+            return;
         }
-        file_put_contents(self::$lock_file, '');
-        $versions=file_exists(self::$version_file) ? json_decode(file_get_contents(self::$version_file), true) : [];
-        $dbms=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][DP_SQL_CFG['default_cluster']]['dbms'];
-        foreach(self::$migration_roots as $scope=>$dir){
-            $plans=glob($dir.'*.yaml');
-            sort($plans);
-            foreach($plans as $plan_path){
-                $plan=self::parse_yaml($plan_path);
-                $table=$plan['table'] ?? null;
-                $migrations=$plan['migrations'] ?? [];
-                if(!$table || empty($migrations)) continue;
-                $table_key=$scope.':'.$table;
-                $current_version=$versions[$table_key]['current_version'] ?? 0;
-                foreach($migrations as $migration){
-                    $version=$migration['version'];
-                    if($version<=$current_version) continue;
-                    $sql=is_array($migration['up'] ?? null) ? ($migration['up'][$dbms] ?? null) : trim($migration['up'] ?? '');
-                    if(!$sql) continue;
-                    try {
-                        sql::query($sql);
-                        $versions[$table_key]['current_version']=$version;
-                        $versions[$table_key]['log'][]=[
-                            'version'=>$version,
-                            'timestamp'=>date('c'),
-                            'desc'=>$migration['description'] ?? '',
-                        ];
-                        if($interactive){
-                            echo "[OK] {$scope}/{$table} migrated to version {$version}\n";
+        fclose($lock_handle);
+        try {
+            $versions=file_exists(self::$version_file) ? json_decode(file_get_contents(self::$version_file), true) : [];
+            $versions=is_array($versions) ? $versions : [];
+            $dbms=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][DP_SQL_CFG['default_cluster']]['dbms'];
+            foreach(self::$migration_roots as $scope=>$dir){
+                $plans=glob($dir.'*.yaml');
+                sort($plans);
+                foreach($plans as $plan_path){
+                    $plan=self::parse_yaml($plan_path);
+                    $table=$plan['table'] ?? null;
+                    $migrations=$plan['migrations'] ?? [];
+                    if(!$table || empty($migrations)) continue;
+                    $table_key=$scope.':'.$table;
+                    $current_version=$versions[$table_key]['current_version'] ?? 0;
+                    foreach($migrations as $migration){
+                        $version=$migration['version'];
+                        if($version<=$current_version) continue;
+                        $sql=is_array($migration['up'] ?? null) ? ($migration['up'][$dbms] ?? null) : trim($migration['up'] ?? '');
+                        if(!$sql) continue;
+                        try {
+                            $result=\dataphyre\sql::query($sql);
+                            if($result===false){
+                                throw new \RuntimeException('Migration query returned failure.');
+                            }
+                            $versions[$table_key]['current_version']=$version;
+                            $versions[$table_key]['log'][]=[
+                                'version'=>$version,
+                                'timestamp'=>date('c'),
+                                'desc'=>$migration['description'] ?? '',
+                            ];
+                            self::persist_versions($versions);
+                            if($interactive){
+                                echo "[OK] {$scope}/{$table} migrated to version {$version}\n";
+                            }
+                        } catch(\Throwable $e){
+                            \dataphyre\core::log(__FILE__, __LINE__, __CLASS__, __FUNCTION__, 'error', [
+                                'msg'=>'Migration failed',
+                                'table'=>$table,
+                                'version'=>$version,
+                                'scope'=>$scope,
+                                'error'=>$e->getMessage()
+                            ]);
+                            \dataphyre\core::unavailable(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $D='Migration failed: '.$e->getMessage(), 'error');
                         }
-                    } catch(\Throwable $e){
-                        core::log(__FILE__, __LINE__, __CLASS__, __FUNCTION__, 'error', [
-                            'msg'=>'Migration failed',
-                            'table'=>$table,
-                            'version'=>$version,
-                            'scope'=>$scope,
-                            'error'=>$e->getMessage()
-                        ]);
-                        unlink(self::$lock_file);
-                        core::unavailable(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $D='Migration failed: '.$e->getMessage(), 'error');
                     }
                 }
             }
+            self::persist_versions($versions);
         }
-        file_put_contents(self::$version_file, json_encode($versions, JSON_PRETTY_PRINT));
-        unlink(self::$lock_file);
+        finally {
+            if(file_exists(self::$lock_file)){
+                @unlink(self::$lock_file);
+            }
+        }
+    }
+
+    /**
+     * Persists the applied-version registry before a later migration can run.
+     *
+     * @param array<string, mixed> $versions Applied table versions and audit log.
+     * @return void
+     */
+    private static function persist_versions(array $versions): void {
+        $encoded_versions=json_encode($versions, JSON_PRETTY_PRINT);
+        if(!is_string($encoded_versions)
+            || file_put_contents(self::$version_file, $encoded_versions, LOCK_EX)===false
+        ){
+            throw new \RuntimeException('Migration version registry could not be persisted.');
+        }
     }
 
     /**
@@ -160,17 +187,17 @@ class migration {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
         $dbms=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][DP_SQL_CFG['default_cluster']]['dbms'];
         $snapshot_file=self::$snapshot_dir.$scope.'.'.$table.'.json';
-        $current=sql::select('*', [
+        $current=\dataphyre\sql::select('*', [
             'mysql'=>"SHOW COLUMNS FROM `$table`",
             'postgresql'=>"SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_name=$1",
             'sqlite'=>"PRAGMA table_info('$table')"
         ], null, ['postgresql'=>[$table]], true);
-        $indexes=sql::select('*', [
+        $indexes=\dataphyre\sql::select('*', [
             'mysql'=>"SHOW INDEXES FROM `$table`",
             'postgresql'=>"SELECT indexname, indexdef FROM pg_indexes WHERE tablename=$1",
             'sqlite'=>"PRAGMA index_list('$table')"
         ], null, ['postgresql'=>[$table]], true);
-        $permissions=sql::select('*', [
+        $permissions=\dataphyre\sql::select('*', [
             'postgresql'=>"SELECT grantee, privilege_type FROM information_schema.role_table_grants WHERE table_name=$1",
             'mysql'=>"SHOW GRANTS FOR CURRENT_USER"
         ], null, ['postgresql'=>[$table]], true);

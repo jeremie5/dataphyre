@@ -1,7 +1,7 @@
 [
   {
     "name": "translate_date_returns_english_input_without_locale_files",
-    "file": "/common/dataphyre/runtime/modules/date_translation/kernel/date_translation.main.php",
+    "file": "/dataphyre/runtime/modules/date_translation/kernel/date_translation.main.php",
     "class": "dataphyre\\date_translation",
     "static_method": true,
     "function": "translate_date",
@@ -11,7 +11,7 @@
   },
   {
     "name": "translate_date_returns_regional_english_input_without_locale_files",
-    "file": "/common/dataphyre/runtime/modules/date_translation/kernel/date_translation.main.php",
+    "file": "/dataphyre/runtime/modules/date_translation/kernel/date_translation.main.php",
     "class": "dataphyre\\date_translation",
     "static_method": true,
     "function": "translate_date",

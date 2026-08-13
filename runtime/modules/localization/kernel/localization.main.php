@@ -520,14 +520,14 @@ class localization{
 	 *
 	 * @return ?string Repository path or null when none can be found.
 	 */
-	protected static function source_repository_path(): ?string {
+	protected static function source_repository_path(?string $search_start=null): ?string {
 		$configured=self::normalize_source_value(self::$source_repository_path);
 		if($configured!==null){
 			return realpath($configured) ?: $configured;
 		}
-		$start=defined('ROOTPATH') && is_array(ROOTPATH) && isset(ROOTPATH['dataphyre'])
+		$start=$search_start ?? (defined('ROOTPATH') && is_array(ROOTPATH) && isset(ROOTPATH['dataphyre'])
 			? ROOTPATH['dataphyre']
-			: __DIR__;
+			: __DIR__);
 		$path=realpath((string)$start) ?: realpath(__DIR__);
 		for($i=0; $i<10 && is_string($path) && $path!==''; $i++){
 			if(is_dir($path.DIRECTORY_SEPARATOR.'.git')){
@@ -872,6 +872,7 @@ class localization{
 					$unknown_locales=array_merge($unknown_locales, $string_data);
 					if(false===self::persist_unknown_locales_data($unknown_locales)){
 						\dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D="Can't write to unknown locale file", "safemode");
+						return false;
 					}
 					return true;
 				}
@@ -1295,13 +1296,14 @@ class localization{
 	 *
 	 * @return array<string,array<string,mixed>> Unknown locale records keyed by locale name.
 	 */
-	protected static function read_unknown_locales_data(): array {
+	protected static function read_unknown_locales_data(?callable $reader=null): array {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(!file_exists(self::$unknown_locales_file)){
 			return [];
 		}
+		$reader??=static fn(string $path): string|false=>file_get_contents($path);
 		$file='[]';
-		if(false===($unknown_locale_data=file_get_contents(self::$unknown_locales_file))){
+		if(false===($unknown_locale_data=$reader(self::$unknown_locales_file))){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S="Unable to read unknown locales file", "warning");
 		}
 		else
@@ -2088,7 +2090,16 @@ class localization{
 			$lang=array_keys(self::$available_languages);
 		}
 		if(in_array("*", $theme)){
-			$theme=self::$available_themes;
+			$theme=[];
+			if(is_array(self::$available_themes)){
+				foreach(self::$available_themes as $theme_key=>$theme_value){
+					$theme_identifier=is_string($theme_key) ? $theme_key : (string)$theme_value;
+					if($theme_identifier!==''){
+						$theme[]=$theme_identifier;
+					}
+				}
+			}
+			$theme=array_values(array_unique($theme));
 		}
 		if(!empty($lang)){
 			foreach($lang as $language){

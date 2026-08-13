@@ -13,9 +13,14 @@ namespace Dataphyre\Panel;
  * A filter owns its query key, display label, input type, source column, static or dynamic options,
  * default value, optional predicate, visibility rules, active-state indicators, and manifest metadata.
  * Mutators clone the definition so table builders can safely reuse configured filters.
+ *
+ * @template TRecord = mixed
+ * @template TValue = mixed
+ * @template TState of array<string, mixed> = array<string, mixed>
  */
 final class TableFilter {
 	use PanelExtensible;
+	use HasCollectionItemPresentation;
 
 	private string $name;
 	private string $type;
@@ -55,7 +60,7 @@ final class TableFilter {
 	 *
 	 * @param string $name Query-string key and default source column.
 	 * @param string $type Filter input type, defaulting to text.
-	 * @return self New filter after PanelExtensible configuration hooks run.
+	 * @return self<TRecord, TValue, TState> New filter after PanelExtensible configuration hooks run.
 	 */
 	public static function make(string $name, string $type='text'): self {
 		return self::configured(new self($name, $type));
@@ -69,7 +74,7 @@ final class TableFilter {
 	 * and dynamic options must be registered through the fluent API.
 	 *
 	 * @param array<string,mixed> $definition Serialized filter definition.
-	 * @return self Filter rebuilt from the supplied definition.
+	 * @return self<TRecord,TValue,TState> Filter rebuilt from the supplied definition.
 	 */
 	public static function fromArray(array $definition): self {
 		$filter=self::make((string)($definition['name'] ?? ''), (string)($definition['type'] ?? 'text'));
@@ -119,7 +124,7 @@ final class TableFilter {
 	 * Sets the human-readable label shown in filter controls and indicators.
 	 *
 	 * @param string $label Label text.
-	 * @return self Cloned filter with updated label.
+	 * @return self<TRecord,TValue,TState> Cloned filter with updated label.
 	 */
 	public function label(string $label): self {
 		$clone=clone $this;
@@ -133,7 +138,7 @@ final class TableFilter {
 	 * Type names are normalized. Empty values fall back to `text`.
 	 *
 	 * @param string $type Type token such as text, select, boolean, date, range, date_range, or number_range.
-	 * @return self Cloned filter with normalized type.
+	 * @return self<TRecord,TValue,TState> Cloned filter with normalized type.
 	 */
 	public function type(string $type): self {
 		$clone=clone $this;
@@ -147,7 +152,7 @@ final class TableFilter {
 	 * Range filters read `<name>_from` and `<name>_to` from the request instead of a single query key.
 	 *
 	 * @param string $type Range type token.
-	 * @return self Cloned filter with range type.
+	 * @return self<TRecord,TValue,TState> Cloned filter with range type.
 	 */
 	public function range(string $type='range'): self {
 		return $this->type($type);
@@ -156,7 +161,7 @@ final class TableFilter {
 	/**
 	 * Sets the filter type to date_range.
 	 *
-	 * @return self Cloned date-range filter.
+	 * @return self<TRecord,TValue,TState> Cloned date-range filter.
 	 */
 	public function dateRange(): self {
 		return $this->type('date_range');
@@ -165,7 +170,7 @@ final class TableFilter {
 	/**
 	 * Sets the filter type to number_range.
 	 *
-	 * @return self Cloned numeric-range filter.
+	 * @return self<TRecord,TValue,TState> Cloned numeric-range filter.
 	 */
 	public function numberRange(): self {
 		return $this->type('number_range');
@@ -177,7 +182,7 @@ final class TableFilter {
 	 * Empty normalized columns fall back to the filter name.
 	 *
 	 * @param string $column Record key, property, or getter-derived field name.
-	 * @return self Cloned filter with updated source column.
+	 * @return self<TRecord,TValue,TState> Cloned filter with updated source column.
 	 */
 	public function column(string $column): self {
 		$clone=clone $this;
@@ -192,7 +197,7 @@ final class TableFilter {
 	 * option structures containing nested options.
 	 *
 	 * @param array<int|string,mixed> $options Option definitions used by the panel UI and select validation.
-	 * @return self Cloned filter with static options.
+	 * @return self<TRecord,TValue,TState> Cloned filter with static options.
 	 */
 	public function options(array $options): self {
 		$clone=clone $this;
@@ -205,8 +210,8 @@ final class TableFilter {
 	 *
 	 * The callback is evaluated with request and filter context and must return an option array.
 	 *
-	 * @param callable $callback Dynamic options resolver.
-	 * @return self Cloned filter with dynamic options resolver.
+	 * @param callable(PanelRequest, self<TRecord, TValue, TState>=, Resource<TRecord, TState>|null=, ResourceTable<TRecord, TState>|PageTable<TRecord, TState>|null=): array<array-key, mixed> $callback Dynamic options resolver.
+	 * @return self<TRecord,TValue,TState> Cloned filter with dynamic options resolver.
 	 */
 	public function optionsUsing(callable $callback): self {
 		$clone=clone $this;
@@ -218,7 +223,7 @@ final class TableFilter {
 	 * Sets the default active value when the request does not provide one.
 	 *
 	 * @param mixed $value Default filter value.
-	 * @return self Cloned filter with default value.
+	 * @return self<TRecord,TValue,TState> Cloned filter with default value.
 	 */
 	public function default(mixed $value): self {
 		$clone=clone $this;
@@ -231,8 +236,10 @@ final class TableFilter {
 	 *
 	 * The predicate receives record, value, request, and filter context through PanelUtilityResolver.
 	 *
-	 * @param callable $predicate Predicate returning true when a record matches the active filter value.
-	 * @return self Cloned filter with custom predicate.
+	 * @template TFilterRecord
+	 * @template TFilterValue
+	 * @param callable(TFilterRecord, TFilterValue|null, PanelRequest=, self<TFilterRecord, TFilterValue, TState>=): bool $predicate Predicate returning true when a record matches the active filter value.
+	 * @return self<TFilterRecord,TFilterValue,TState>
 	 */
 	public function where(callable $predicate): self {
 		$clone=clone $this;
@@ -245,8 +252,8 @@ final class TableFilter {
 	 *
 	 * Boolean false hides the filter immediately; callable values are evaluated by isVisible().
 	 *
-	 * @param bool|callable $visible Static visibility flag or callback.
-	 * @return self Cloned filter with visibility rule.
+	 * @param bool|callable(string,PanelRequest|null=,self<TRecord,TValue,TState>=,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>|PageTable<TRecord,TState>|null=):bool $visible Static visibility flag or callback.
+	 * @return self<TRecord,TValue,TState> Cloned filter with visibility rule.
 	 */
 	public function visible(bool|callable $visible=true): self {
 		if(is_callable($visible) && !is_bool($visible)){
@@ -262,8 +269,8 @@ final class TableFilter {
 	 *
 	 * Callable values are evaluated by isVisible(); true means the filter is hidden.
 	 *
-	 * @param bool|callable $hidden Static hidden flag or callback.
-	 * @return self Cloned filter with hidden rule.
+	 * @param bool|callable(string,PanelRequest|null=,self<TRecord,TValue,TState>=,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>|PageTable<TRecord,TState>|null=):bool $hidden Static hidden flag or callback.
+	 * @return self<TRecord,TValue,TState> Cloned filter with hidden rule.
 	 */
 	public function hidden(bool|callable $hidden=true): self {
 		if(is_callable($hidden) && !is_bool($hidden)){
@@ -277,8 +284,8 @@ final class TableFilter {
 	/**
 	 * Registers a callback that must return true for the filter to be visible.
 	 *
-	 * @param callable $callback Visibility callback.
-	 * @return self Cloned filter with visibility callback.
+	 * @param callable(string, PanelRequest|null=, self<TRecord, TValue, TState>=, Resource<TRecord, TState>|null=, ResourceTable<TRecord, TState>|PageTable<TRecord, TState>|null=): bool $callback Visibility callback.
+	 * @return self<TRecord,TValue,TState> Cloned filter with visibility callback.
 	 */
 	public function visibleUsing(callable $callback): self {
 		$clone=clone $this;
@@ -289,8 +296,8 @@ final class TableFilter {
 	/**
 	 * Registers a callback that hides the filter when it returns true.
 	 *
-	 * @param callable $callback Hidden callback.
-	 * @return self Cloned filter with hidden callback.
+	 * @param callable(string, PanelRequest|null=, self<TRecord, TValue, TState>=, Resource<TRecord, TState>|null=, ResourceTable<TRecord, TState>|PageTable<TRecord, TState>|null=): bool $callback Hidden callback.
+	 * @return self<TRecord,TValue,TState> Cloned filter with hidden callback.
 	 */
 	public function hiddenUsing(callable $callback): self {
 		$clone=clone $this;
@@ -304,7 +311,7 @@ final class TableFilter {
 	 * Operation names are normalized and may be passed as variadic strings or arrays.
 	 *
 	 * @param array|string ...$operations Operations where the filter should be visible.
-	 * @return self Cloned filter with visible operation allow-list.
+	 * @return self<TRecord,TValue,TState> Cloned filter with visible operation allow-list.
 	 */
 	public function visibleOn(array|string ...$operations): self {
 		$clone=clone $this;
@@ -316,7 +323,7 @@ final class TableFilter {
 	 * Alias for visibleOn().
 	 *
 	 * @param array|string ...$operations Operations where the filter should be visible.
-	 * @return self Cloned filter with visible operation allow-list.
+	 * @return self<TRecord,TValue,TState> Cloned filter with visible operation allow-list.
 	 */
 	public function onlyOn(array|string ...$operations): self {
 		return $this->visibleOn(...$operations);
@@ -326,7 +333,7 @@ final class TableFilter {
 	 * Hides the filter on specific panel operations.
 	 *
 	 * @param array|string ...$operations Operations where the filter should be hidden.
-	 * @return self Cloned filter with hidden operation list.
+	 * @return self<TRecord,TValue,TState> Cloned filter with hidden operation list.
 	 */
 	public function hiddenOn(array|string ...$operations): self {
 		$clone=clone $this;
@@ -338,7 +345,7 @@ final class TableFilter {
 	 * Alias for hiddenOn().
 	 *
 	 * @param array|string ...$operations Operations where the filter should be hidden.
-	 * @return self Cloned filter with hidden operation list.
+	 * @return self<TRecord,TValue,TState> Cloned filter with hidden operation list.
 	 */
 	public function exceptOn(array|string ...$operations): self {
 		return $this->hiddenOn(...$operations);
@@ -349,8 +356,8 @@ final class TableFilter {
 	 *
 	 * Null disables custom indicator labeling and lets indicators() use the filter label.
 	 *
-	 * @param string|callable|null $indicator Static label, resolver callback, or null.
-	 * @return self Cloned filter with indicator configuration.
+	 * @param string|callable(TValue|null,PanelRequest=,self<TRecord,TValue,TState>=):string|array<string,mixed>|list<array<string,mixed>>|false|null $indicator Static label, resolver callback, or null.
+	 * @return self<TRecord,TValue,TState> Cloned filter with indicator configuration.
 	 */
 	public function indicator(string|callable|null $indicator): self {
 		$clone=clone $this;
@@ -361,8 +368,8 @@ final class TableFilter {
 	/**
 	 * Registers a dynamic active-filter indicator resolver.
 	 *
-	 * @param callable $indicator Callback returning an indicator string, record, list, null, or false.
-	 * @return self Cloned filter with dynamic indicator resolver.
+	 * @param callable(TValue|null, PanelRequest=, self<TRecord, TValue, TState>=): string|array<string, mixed>|list<array<string, mixed>>|false|null $indicator Callback returning an indicator string, record, list, null, or false.
+	 * @return self<TRecord,TValue,TState> Cloned filter with dynamic indicator resolver.
 	 */
 	public function indicatorUsing(callable $indicator): self {
 		return $this->indicator($indicator);
@@ -372,7 +379,7 @@ final class TableFilter {
 	 * Sets the semantic tone for generated active-filter indicators.
 	 *
 	 * @param string $tone Tone token used by the panel UI.
-	 * @return self Cloned filter with normalized indicator tone.
+	 * @return self<TRecord,TValue,TState> Cloned filter with normalized indicator tone.
 	 */
 	public function indicatorTone(string $tone): self {
 		$clone=clone $this;
@@ -385,7 +392,7 @@ final class TableFilter {
 	 * Merges arbitrary metadata into the filter manifest.
 	 *
 	 * @param array<string,mixed> $meta Metadata consumed by panel renderers or extensions.
-	 * @return self Cloned filter with merged metadata.
+	 * @return self<TRecord,TValue,TState> Cloned filter with merged metadata.
 	 */
 	public function meta(array $meta): self {
 		$clone=clone $this;
@@ -429,7 +436,7 @@ final class TableFilter {
 	 * Invisible or inactive filters match all records. Custom predicates receive record, value,
 	 * request, and filter context; otherwise built-in matching is based on filter type.
 	 *
-	 * @param mixed $record Record array or object to inspect.
+	 * @param TRecord $record Record array or object to inspect.
 	 * @param PanelRequest $request Current panel request.
 	 * @return bool True when the record should remain in the filtered table.
 	 */
@@ -571,7 +578,7 @@ final class TableFilter {
 	 * treated as no options so downstream validation can stay predictable.
 	 *
 	 * @param PanelRequest $request Current panel request.
-	 * @return array Option definitions for this request.
+	 * @return array<array-key, mixed> Option definitions for this request.
 	 */
 	public function optionsFor(PanelRequest $request): array {
 		if($this->optionsCallback===null){
@@ -638,7 +645,7 @@ final class TableFilter {
 			return $value;
 		}
 		if(is_int($value) || is_float($value)){
-			return $value!==0;
+			return (float)$value!==0.0;
 		}
 		if(is_string($value)){
 			return in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'on'], true);

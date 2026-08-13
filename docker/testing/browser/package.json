@@ -1,0 +1,12 @@
+{
+  "name": "dataphyre-testing-browser-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Pinned browser dependencies for Dataphyre's hermetic test image",
+  "license": "MIT",
+  "dependencies": {
+    "axe-core": "4.12.1",
+    "pngjs": "7.0.0",
+    "puppeteer-core": "24.43.1"
+  }
+}

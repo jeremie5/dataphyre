@@ -18,6 +18,23 @@ namespace Dataphyre\Reactor;
  */
 final class ReactorRequest {
 
+	/** @var null|callable(int):string Process-local request body reader override. */
+	private static $inputReader=null;
+
+	/**
+	 * Overrides the request body reader used by JSON capture.
+	 *
+	 * Passing null restores the native `php://input` reader. The callback receives
+	 * the maximum number of bytes Reactor intends to read, which lets embedded
+	 * transports and deterministic tests supply the same bounded body semantics.
+	 *
+	 * @param null|callable(int):string $reader Request body reader, or null for the native stream.
+	 * @return void
+	 */
+	public static function useInputReader(?callable $reader): void {
+		self::$inputReader=$reader;
+	}
+
 	/**
 	 * Stores a normalized Reactor request after all ingress parsing has completed.
 	 *
@@ -39,8 +56,11 @@ final class ReactorRequest {
 		private readonly array $state,
 		private readonly array $params,
 		private readonly ?ReactorSnapshot $snapshot,
-		private readonly array $uploads=[],
-		private readonly array $headers=[]
+		private readonly array $uploads,
+		private readonly array $headers,
+		private readonly ReactorSecurityContext $securityContext,
+		private readonly bool $snapshotSupplied,
+		private readonly bool $snapshotMalformed
 	){}
 
 	/**
@@ -53,7 +73,7 @@ final class ReactorRequest {
 	*
 	 * @return self Request envelope for the current HTTP interaction.
 	 */
-	public static function capture(): self {
+	public static function capture(ReactorSecurityContext|array|null $securityContext=null): self {
 		$input=self::jsonInput();
 		$data=array_replace($_GET, $_POST, $input);
 		$state=self::arrayValue($data['state'] ?? []);
@@ -70,7 +90,7 @@ final class ReactorRequest {
 			'snapshot'=>$data['snapshot'] ?? null,
 			'uploads'=>$uploads,
 			'headers'=>self::headers(),
-		]);
+		], $securityContext);
 	}
 
 	/**
@@ -82,20 +102,20 @@ final class ReactorRequest {
 	*
 	 * @return array<int, self> Ordered Reactor request envelopes ready for dispatch.
 	 */
-	public static function captureBatch(): array {
+	public static function captureBatch(ReactorSecurityContext|array|null $securityContext=null): array {
 		$input=self::jsonInput();
 		$batch=is_array($input['batch'] ?? null) ? $input['batch'] : [];
 		if($batch===[]){
-			return [self::capture()];
+			return [self::capture($securityContext)];
 		}
 		$requests=[];
 		foreach($batch as $item){
 			if(!is_array($item)){
 				continue;
 			}
-			$requests[]=self::fromArray($item);
+			$requests[]=self::fromArray($item, $securityContext);
 		}
-		return $requests!==[] ? $requests : [self::capture()];
+		return $requests!==[] ? $requests : [self::capture($securityContext)];
 	}
 
 	/**
@@ -108,14 +128,14 @@ final class ReactorRequest {
 	 * @param ReactorRequest|array<string, mixed>|null $request Request instance, raw request shape, or current-request sentinel.
 	 * @return self Normalized request envelope.
 	 */
-	public static function from(ReactorRequest|array|null $request): self {
+	public static function from(ReactorRequest|array|null $request, ReactorSecurityContext|array|null $securityContext=null): self {
 		if($request instanceof self){
-			return $request;
+			return $securityContext===null ? $request : $request->withTrustedSecurityContext($securityContext);
 		}
 		if(is_array($request)){
-			return self::fromArray($request);
+			return self::fromArray($request, $securityContext);
 		}
-		return self::capture();
+		return self::capture($securityContext);
 	}
 
 	/**
@@ -129,11 +149,11 @@ final class ReactorRequest {
 	 * @param array<string, mixed> $data Raw request payload.
 	 * @return self Normalized request envelope with trace metadata recorded.
 	 */
-	public static function fromArray(array $data): self {
+	public static function fromArray(array $data, ReactorSecurityContext|array|null $securityContext=null): self {
 		$snapshot=null;
-		if($data['snapshot'] ?? null){
-			$snapshot=ReactorSnapshot::from($data['snapshot']);
-		}
+		$snapshotSupplied=array_key_exists('snapshot', $data) && $data['snapshot']!==null && $data['snapshot']!=='';
+		if($snapshotSupplied){ $snapshot=ReactorSnapshot::from($data['snapshot']); }
+		$snapshotMalformed=$snapshotSupplied && !$snapshot instanceof ReactorSnapshot;
 		$request=new self(
 			ReactorName::normalize((string)($data['component'] ?? $data['name'] ?? '')),
 			isset($data['action']) && trim((string)$data['action'])!=='' ? ReactorName::normalize((string)$data['action']) : null,
@@ -141,15 +161,20 @@ final class ReactorRequest {
 			self::arrayValue($data['params'] ?? []),
 			$snapshot,
 			self::arrayValue($data['uploads'] ?? []),
-			is_array($data['headers'] ?? null) ? $data['headers'] : []
+			is_array($data['headers'] ?? null) ? $data['headers'] : [],
+			ReactorSecurityContext::fromTrusted($securityContext),
+			$snapshotSupplied,
+			$snapshotMalformed
 		);
 		ReactorTrace::record('request.created', [
 			'component'=>$request->component,
 			'action'=>$request->action,
-			'state_keys'=>array_keys($request->state),
-			'param_keys'=>array_keys($request->params),
+			'state_field_count'=>count($request->state),
+			'param_field_count'=>count($request->params),
 			'uploads'=>count($request->uploads),
 			'signed_snapshot'=>$request->snapshot instanceof ReactorSnapshot,
+			'malformed_snapshot'=>$request->snapshotMalformed,
+			'host_scope_bound'=>$request->securityContext->isBound(),
 		]);
 		return $request;
 	}
@@ -208,6 +233,22 @@ final class ReactorRequest {
 		return $this->snapshot;
 	}
 
+	/** Whether a non-empty snapshot field was supplied on the untrusted envelope. */
+	public function snapshotSupplied(): bool { return $this->snapshotSupplied; }
+
+	/** Whether a supplied snapshot failed strict envelope decoding. */
+	public function snapshotMalformed(): bool { return $this->snapshotMalformed; }
+
+	/** Returns host-owned security context; request payload fields never populate it. */
+	public function securityContext(): ReactorSecurityContext {
+		return $this->securityContext;
+	}
+
+	/** Attaches context supplied explicitly by a trusted host boundary. */
+	public function withTrustedSecurityContext(ReactorSecurityContext|array $securityContext): self {
+		return new self($this->component, $this->action, $this->state, $this->params, $this->snapshot, $this->uploads, $this->headers, ReactorSecurityContext::fromTrusted($securityContext), $this->snapshotSupplied, $this->snapshotMalformed);
+	}
+
 	/**
 	 * Identifies requests that were sent by the Reactor client transport.
 	*
@@ -236,8 +277,12 @@ final class ReactorRequest {
 		if(!str_contains(strtolower($contentType), 'application/json')){
 			return [];
 		}
-		$max=(int)Reactor::config('max_payload_bytes', 262144);
-		$raw=(string)file_get_contents('php://input', false, null, 0, max(1, $max+1));
+		$max=Reactor::config('max_payload_bytes', 262144);
+		if(!is_int($max) || $max<1 || $max>16777216){ return []; }
+		$length=max(1, $max+1);
+		$raw=self::$inputReader!==null
+			? (string)(self::$inputReader)($length)
+			: (string)file_get_contents('php://input', false, null, 0, $length);
 		if(strlen($raw)>$max){
 			return [];
 		}

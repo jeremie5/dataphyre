@@ -164,7 +164,7 @@ final class Date {
 	 * Normalizes an arbitrary timezone into a valid PHP timezone identifier.
 	 *
 	 * Valid input is returned unchanged. Invalid input falls back to PHP's current
-	 * default timezone when that value is valid; otherwise UTC is returned.
+	 * default timezone, which PHP guarantees is a valid identifier.
 	 *
 	 * @param ?string $timezone Candidate timezone identifier.
 	 * @return string Valid PHP timezone identifier.
@@ -174,11 +174,7 @@ final class Date {
 		if($timezone!=='' && in_array($timezone, timezone_identifiers_list(), true)){
 			return $timezone;
 		}
-		$fallback=date_default_timezone_get();
-		if(is_string($fallback) && $fallback!=='' && in_array($fallback, timezone_identifiers_list(), true)){
-			return $fallback;
-		}
-		return 'UTC';
+		return date_default_timezone_get();
 	}
 
 	/**

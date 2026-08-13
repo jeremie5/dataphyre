@@ -15,6 +15,8 @@ namespace dataphyre {
 	if(!class_exists(__NAMESPACE__.'\\core', false)){
 		class core{
 			public static function dialback(...$args): mixed { return null; }
+			public static function load_framework_module(string $module): void {}
+			public static function load_framework_modules(array $modules): void {}
 		}
 	}
 }

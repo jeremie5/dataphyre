@@ -105,8 +105,11 @@ class time_machine{
 				}
 			}
 			if($userid===$change['userid']){
-				$change_data=core::decrypt_data($change['data'], array($change['userid'], $changeid));
-				$change_data=json_decode($change['data'],true);
+				$decrypted_change_data=core::decrypt_data($change['data'], array($change['userid'], $changeid));
+				$change_data=json_decode((string)$decrypted_change_data, true);
+				if(!is_array($change_data)){
+					return false;
+				}
 				if($change['rollback_type']==='USER_PARAMETER'){
 					if(false!==$userdata=\user::get($userid)){
 						$user_preferences=$userdata['preferences'];

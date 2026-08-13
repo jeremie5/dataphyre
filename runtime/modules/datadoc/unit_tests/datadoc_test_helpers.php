@@ -31,7 +31,7 @@ function dp_datadoc_unit_load_facade(): void {
 		define('ROOTPATH', [
 			'common_dataphyre_runtime'=>dirname(__DIR__, 2).'/',
 			'common_dataphyre'=>dirname(__DIR__, 4).'/',
-			'dataphyre'=>sys_get_temp_dir().'/',
+			'dataphyre'=>dirname(__DIR__, 4).'/',
 		]);
 	}
 	if(!function_exists('dp_module_required')){
@@ -74,34 +74,7 @@ function dp_datadoc_unit_load_facade(): void {
  * @internal Datadoc unit-test surface.
  */
 function dp_datadoc_unit_tokenize_sample(): array {
-	$source=<<<'PHP'
-<?php
-namespace Example\Docs;
-
-/**
- * Greets a person.
- * @param string $name
- */
-final class Greeter {
-	private $message;
-
-	public static function hello(string $name): string {
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='hello');
-		return "Hello ".$name;
-	}
-}
-PHP;
-	$file=tempnam(sys_get_temp_dir(), 'dp_datadoc_unit_');
-	if(!is_string($file)){
-		return [];
-	}
-	file_put_contents($file, $source);
-	try{
-		$tokens=\dataphyre\datadoc\tokenizer::tokenize($file);
-	}
-	finally{
-		@unlink($file);
-	}
+	$tokens=\dataphyre\datadoc\tokenizer::tokenize(__DIR__.'/fixtures/tokenize_sample.fixture');
 	if(!is_array($tokens)){
 		return [];
 	}
@@ -166,42 +139,7 @@ function dp_datadoc_unit_highlighter_break_split_summary_json(): string {
  * @internal Datadoc unit-test surface.
  */
 function dp_datadoc_unit_tokenize_bracketed_namespace_summary_json(): string {
-	$source=<<<'PHP'
-<?php
-namespace First\Area {
-	/**
-	 * Handles visible code.
-	 * @return void
-	 * continues here
-	 */
-	class Visible {
-		public function run() {
-			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='run');
-		}
-	}
-}
-?>
-<script>
-class Ignored {
-	public function ignored() {}
-}
-</script>
-<?php
-class GlobalThing {
-	private $flag;
-}
-PHP;
-	$file=tempnam(sys_get_temp_dir(), 'dp_datadoc_unit_');
-	if(!is_string($file)){
-		return '{}';
-	}
-	file_put_contents($file, $source);
-	try{
-		$tokens=\dataphyre\datadoc\tokenizer::tokenize($file);
-	}
-	finally{
-		@unlink($file);
-	}
+	$tokens=\dataphyre\datadoc\tokenizer::tokenize(__DIR__.'/fixtures/tokenize_bracketed_namespace.fixture');
 	$summary=[];
 	foreach(is_array($tokens) ? $tokens : [] as $token){
 		$summary[]=[
@@ -250,20 +188,20 @@ function dp_datadoc_unit_linkify_mixed_tokens_summary_json(): string {
  */
 function dp_datadoc_unit_nested_dynadoc_menu_summary_json(): string {
 	dp_datadoc_unit_load_facade();
-	$previous_get=$_GET;
-	$_GET=[
+	$previous_get=dataphyre_dpanel_worker_application_state::query();
+	dataphyre_dpanel_worker_application_state::replaceQuery([
 		'namespace'=>'Acme',
 		'class'=>'Tools',
 		'type'=>'function',
 		'function'=>'build',
-	];
+	]);
 	$warnings=[];
 	set_error_handler(static function(int $severity, string $message) use (&$warnings): bool {
 		$warnings[]=$message;
 		return true;
 	});
 	$level=ob_get_level();
-	ob_start();
+	ob_start(); // dataphyre-test-architecture: exempt[raw-output-buffer] reason="Legacy JSON worker helper has no Context and captures renderer output at its compatibility boundary."
 	try{
 		\dataphyre\datadoc::dynadoc_output_nested_structure(
 			['name'=>'docs'],
@@ -287,7 +225,7 @@ function dp_datadoc_unit_nested_dynadoc_menu_summary_json(): string {
 	}
 	finally{
 		restore_error_handler();
-		$_GET=$previous_get;
+		dataphyre_dpanel_worker_application_state::replaceQuery($previous_get);
 		while(ob_get_level()>$level){
 			ob_end_clean();
 		}
@@ -307,31 +245,21 @@ function dp_datadoc_unit_nested_dynadoc_menu_summary_json(): string {
  */
 function dp_datadoc_unit_manudoc_boundary_summary_json(): string {
 	dp_datadoc_unit_load_facade();
-	$base=rtrim((string)ROOTPATH['dataphyre'], '/\\').'/doc/docs';
+	$workspace=dataphyre_dpanel_worker_workspace::active();
+	$base=$workspace->directory('doc/docs');
 	$manual_root=$base.'/manudocs/guides';
-	@mkdir($manual_root, 0777, true);
-	file_put_contents($manual_root.'/intro.md.json', json_encode(['title'=>'Intro', 'content'=>'Welcome'], JSON_UNESCAPED_SLASHES));
-	@mkdir($base, 0777, true);
-	file_put_contents($base.'/outside.md.json', json_encode(['title'=>'Outside', 'content'=>'Nope'], JSON_UNESCAPED_SLASHES));
-	try{
-		$valid=\dataphyre\datadoc::get_manudoc('docs', 'guides/intro');
-		$traversal=\dataphyre\datadoc::get_manudoc('docs', 'guides/../../outside');
-		$deleted_traversal=\dataphyre\datadoc::delete_manudoc('docs', 'guides/../../outside');
-		$project_traversal=\dataphyre\datadoc::get_manudoc('../docs', 'guides/intro');
-		$project_branch=\dataphyre\datadoc::get_manudoc_branch('../docs');
-		$project_structure=\dataphyre\datadoc::get_manudoc_structure('../docs');
-		$outside_still_exists=is_file($base.'/outside.md.json');
-		$deleted_valid=\dataphyre\datadoc::delete_manudoc('docs', 'guides/intro');
-		$valid_removed=!is_file($manual_root.'/intro.md.json');
-	}
-	finally{
-		@unlink($manual_root.'/intro.md.json');
-		@unlink($base.'/outside.md.json');
-		@rmdir($manual_root);
-		@rmdir(dirname($manual_root));
-		@rmdir($base.'/manudocs');
-		@rmdir($base);
-	}
+	$workspace->directory('doc/docs/manudocs/guides');
+	$workspace->file('doc/docs/manudocs/guides/intro.md.json', json_encode(['title'=>'Intro', 'content'=>'Welcome'], JSON_UNESCAPED_SLASHES));
+	$workspace->file('doc/docs/outside.md.json', json_encode(['title'=>'Outside', 'content'=>'Nope'], JSON_UNESCAPED_SLASHES));
+	$valid=\dataphyre\datadoc::get_manudoc('docs', 'guides/intro');
+	$traversal=\dataphyre\datadoc::get_manudoc('docs', 'guides/../../outside');
+	$deleted_traversal=\dataphyre\datadoc::delete_manudoc('docs', 'guides/../../outside');
+	$project_traversal=\dataphyre\datadoc::get_manudoc('../docs', 'guides/intro');
+	$project_branch=\dataphyre\datadoc::get_manudoc_branch('../docs');
+	$project_structure=\dataphyre\datadoc::get_manudoc_structure('../docs');
+	$outside_still_exists=is_file($base.'/outside.md.json');
+	$deleted_valid=\dataphyre\datadoc::delete_manudoc('docs', 'guides/intro');
+	$valid_removed=!is_file($manual_root.'/intro.md.json');
 	return json_encode([
 		'loads_valid'=>is_array($valid) && ($valid['title'] ?? '')==='Intro',
 		'blocks_traversal'=>$traversal===null,
@@ -349,10 +277,11 @@ function dp_datadoc_unit_manudoc_boundary_summary_json(): string {
  */
 function dp_datadoc_unit_manudoc_sidebar_escaping_summary_json(): string {
 	dp_datadoc_unit_load_facade();
-	$previous_project=$GLOBALS['project'] ?? null;
-	$GLOBALS['project']=['name'=>'docs'];
+	$had_project=dataphyre_dpanel_worker_application_state::hasGlobal('project');
+	$previous_project=dataphyre_dpanel_worker_application_state::globalValue('project');
+	dataphyre_dpanel_worker_application_state::replaceGlobal('project', ['name'=>'docs']);
 	$level=ob_get_level();
-	ob_start();
+	ob_start(); // dataphyre-test-architecture: exempt[raw-output-buffer] reason="Legacy JSON worker helper has no Context and captures sidebar output at its compatibility boundary."
 	try{
 		\dataphyre\datadoc::manudoc_output_nested_structure_from_fs([
 			'<script>alert(1)</script>'=>[
@@ -375,12 +304,12 @@ function dp_datadoc_unit_manudoc_sidebar_escaping_summary_json(): string {
 		while(ob_get_level()>$level){
 			ob_end_clean();
 		}
-		if($previous_project===null){
-			unset($GLOBALS['project']);
+		if(!$had_project){
+			dataphyre_dpanel_worker_application_state::forgetGlobal('project');
 		}
 		else
 		{
-			$GLOBALS['project']=$previous_project;
+			dataphyre_dpanel_worker_application_state::replaceGlobal('project', $previous_project);
 		}
 	}
 	return json_encode([
@@ -398,30 +327,7 @@ function dp_datadoc_unit_manudoc_sidebar_escaping_summary_json(): string {
  * @internal Datadoc unit-test surface.
  */
 function dp_datadoc_unit_repeated_phpdoc_tags_summary_json(): string {
-	$source=<<<'PHP'
-<?php
-/**
- * Combines two values.
- *
- * @param string $left Left value.
- * @param string $right Right value.
- * @return string Combined value.
- */
-function combine_values(string $left, string $right): string {
-	return $left.$right;
-}
-PHP;
-	$file=tempnam(sys_get_temp_dir(), 'dp_datadoc_unit_');
-	if(!is_string($file)){
-		return '{}';
-	}
-	file_put_contents($file, $source);
-	try{
-		$tokens=\dataphyre\datadoc\tokenizer::tokenize($file);
-	}
-	finally{
-		@unlink($file);
-	}
+	$tokens=\dataphyre\datadoc\tokenizer::tokenize(__DIR__.'/fixtures/repeated_phpdoc_tags.fixture');
 	foreach(is_array($tokens) ? $tokens : [] as $token){
 		if(($token['function'] ?? '')==='combine_values'){
 			return json_encode([

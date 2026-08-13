@@ -20,10 +20,7 @@ trait dataphyre_mcp_client_workflow_start_pack_surfaces {
 	 */
 	private function mcp_task_start_pack_export(array $args): array {
 		$task=trim((string)($args['task'] ?? ''));
-		$target=strtolower(trim((string)($args['target'] ?? 'generic')));
-		if(!in_array($target, ['codex', 'claude', 'cursor', 'generic'], true)){
-			$target='generic';
-		}
+		$target=$this->mcp_client_target($args['target'] ?? 'generic');
 		$limit=max(1, min(8, (int)($args['limit'] ?? 4)));
 		$include_frames=($args['include_frames'] ?? false)===true;
 		$proportional_guidance=$this->mcp_task_proportional_guidance($task);
@@ -42,9 +39,7 @@ trait dataphyre_mcp_client_workflow_start_pack_surfaces {
 		$app_builder_task=$this->mcp_task_implies_app_builder($task);
 		$app_builder_lane=$this->app_builder_lane($task, $args);
 		$builder_start=$this->mcp_app_builder_start_summary($app_builder_lane);
-		$builder_write_readiness=is_array($builder_start['write_readiness'] ?? null) && $builder_start['write_readiness']!==[]
-			? $builder_start['write_readiness']
-			: $this->app_builder_write_readiness($builder_start['scaffold_completion_summary'] ?? $this->mcp_app_builder_scaffold_completion_summary($app_builder_lane['entity_planning'] ?? []), $builder_start['prewrite_checklist'] ?? []);
+		$builder_write_readiness=$this->mcp_app_builder_resolved_write_readiness($builder_start, $app_builder_lane['entity_planning'] ?? []);
 		$builder_governance_notes=is_array($builder_start['governance_notes'] ?? null)
 			? $builder_start['governance_notes']
 			: 'none triggered';
@@ -527,6 +522,25 @@ trait dataphyre_mcp_client_workflow_start_pack_surfaces {
 	}
 
 	/**
+	 * Resolves the canonical write-readiness handoff without duplicating fallback rules.
+	 *
+	 * @param array<string,mixed> $source Builder start summary or full builder plan.
+	 * @param mixed $entity_planning Entity planning used when no completion summary exists.
+	 * @return array<string,mixed> Existing or derived write-readiness handoff.
+	 */
+	private function mcp_app_builder_resolved_write_readiness(array $source, mixed $entity_planning=[]): array {
+		$existing=$source['write_readiness'] ?? null;
+		if(is_array($existing) && $existing!==[]){
+			return $existing;
+		}
+		$completion=is_array($source['scaffold_completion_summary'] ?? null)
+			? $source['scaffold_completion_summary']
+			: $this->mcp_app_builder_scaffold_completion_summary($entity_planning);
+		$checklist=is_array($source['prewrite_checklist'] ?? null) ? $source['prewrite_checklist'] : [];
+		return $this->app_builder_write_readiness($completion, $checklist);
+	}
+
+	/**
 	 * Chooses the one detail page most likely to unblock the current builder phase.
 	 *
 	 * @param array<string,mixed> $next_action Compact next-action payload.
@@ -925,9 +939,7 @@ trait dataphyre_mcp_client_workflow_start_pack_surfaces {
 		$all_verification_evidence=is_array($plan['verification_plan']['evidence_to_collect'] ?? null) ? $plan['verification_plan']['evidence_to_collect'] : [];
 		$verification_evidence_preview=array_values(array_slice($all_verification_evidence, 0, 8));
 		$verification_todo_preview=array_values(array_slice(is_array($plan['verification_plan']['verification_todo'] ?? null) ? $plan['verification_plan']['verification_todo'] : [], 0, 8));
-		$write_readiness=is_array($plan['write_readiness'] ?? null) && $plan['write_readiness']!==[]
-			? $plan['write_readiness']
-			: $this->app_builder_write_readiness(is_array($plan['scaffold_completion_summary'] ?? null) ? $plan['scaffold_completion_summary'] : [], is_array($plan['prewrite_checklist'] ?? null) ? $plan['prewrite_checklist'] : []);
+		$write_readiness=$this->mcp_app_builder_resolved_write_readiness($plan, $lane['entity_planning'] ?? []);
 		$models=is_array($lane['data_model'] ?? null) ? $lane['data_model'] : [];
 		$model_summary=[];
 		foreach(array_slice($models, 0, 6) as $model){
@@ -1034,13 +1046,10 @@ trait dataphyre_mcp_client_workflow_start_pack_surfaces {
 			return $files;
 		}
 		$resource_files=array_values(array_filter($files, static fn(string $file): bool => str_contains($file, '/panel/resources/')));
+		$file_indexes=array_flip($files);
 		$preview=[];
 		foreach(array_slice($resource_files, 0, 4) as $resource_file){
-			$index=array_search($resource_file, $files, true);
-			if(!is_int($index)){
-				continue;
-			}
-			foreach(array_slice($files, $index, 3) as $file){
+			foreach(array_slice($files, (int)$file_indexes[$resource_file], 3) as $file){
 				$preview[]=$file;
 			}
 		}
@@ -1305,11 +1314,62 @@ trait dataphyre_mcp_client_workflow_start_pack_surfaces {
 	 */
 	private function mcp_workflow_recommendation_summary(array $recommendation, string $task, bool $include_frames): array {
 		$top=is_array($recommendation['recommendations'][0] ?? null) ? $recommendation['recommendations'][0] : [];
-		$app_builder_next_action=is_array($recommendation['app_builder_next_action'] ?? null)
-			? $this->mcp_workflow_compact_app_builder_next_action_ref($recommendation['app_builder_next_action'])
-			: ($recommendation['app_builder_next_action'] ?? null);
+		return [
+			'export_type'=>'dataphyre_mcp_workflow_recommendation_handoff_summary',
+			'write_policy'=>$recommendation['write_policy'] ?? 'read_only',
+			'execution'=>$recommendation['execution'] ?? 'not_executed',
+			'protocol'=>$recommendation['protocol'] ?? '2025-11-25',
+			'task'=>$task,
+			'selected_workflow'=>(string)($top['workflow'] ?? 'generic'),
+			'selected_score'=>(int)($top['score'] ?? 0),
+			'ready_to_run'=>($top['ready'] ?? false)===true,
+			'include_frames'=>$include_frames,
+			'full_handoff_computed'=>false,
+			'app_builder_entrypoint'=>$recommendation['app_builder_entrypoint'] ?? null,
+			'app_builder_next_action'=>$this->mcp_workflow_compact_app_builder_next_action($recommendation['app_builder_next_action'] ?? null),
+			'recommendations'=>$this->mcp_workflow_compact_recommendations($recommendation['recommendations'] ?? []),
+			'fetch_tools'=>$this->mcp_workflow_summary_fetch_tools(),
+			'next_read'=>'For ordinary app work, use builder_first_read and app_builder_next_action first; fetch the full workflow handoff only when ready to run preflight workflow messages.',
+		];
+	}
+
+	/**
+	 * Keeps ordinary task start packs small while preserving the workflow handoff entrypoint.
+	 *
+	 * @param array<string,mixed> $handoff Full workflow recommendation handoff payload.
+	 * @return array<string,mixed> Compact workflow summary safe for default app-builder startup.
+	 */
+	private function mcp_workflow_handoff_summary(array $handoff): array {
+		return [
+			'export_type'=>'dataphyre_mcp_workflow_recommendation_handoff_summary',
+			'write_policy'=>$handoff['write_policy'] ?? 'read_only',
+			'execution'=>$handoff['execution'] ?? 'not_executed',
+			'protocol'=>$handoff['protocol'] ?? '2025-11-25',
+			'task'=>(string)($handoff['task'] ?? ''),
+			'selected_workflow'=>(string)($handoff['selected_workflow'] ?? 'generic'),
+			'selected_score'=>(int)($handoff['selected_score'] ?? 0),
+			'ready_to_run'=>($handoff['handoff_pack']['ready_to_run'] ?? false)===true,
+			'include_frames'=>($handoff['include_frames'] ?? false)===true,
+			'app_builder_entrypoint'=>$handoff['recommendation']['app_builder_entrypoint'] ?? null,
+			'app_builder_next_action'=>$this->mcp_workflow_compact_app_builder_next_action(
+				$handoff['app_builder_next_action'] ?? null,
+				$handoff['recommendation']['app_builder_next_action'] ?? null
+			),
+			'recommendations'=>$this->mcp_workflow_compact_recommendations($handoff['recommendation']['recommendations'] ?? []),
+			'fetch_tools'=>$this->mcp_workflow_summary_fetch_tools(),
+			'next_read'=>'For ordinary app work, use builder_first_read and app_builder_next_action first; fetch the full workflow handoff only when ready to run preflight workflow messages.',
+		];
+	}
+
+	/**
+	 * Normalizes recommendation rows for every compact workflow handoff surface.
+	 *
+	 * @param mixed $items Recommendation rows from a workflow response.
+	 * @return array<int,array<string,mixed>> At most four valid compact recommendations.
+	 */
+	private function mcp_workflow_compact_recommendations(mixed $items): array {
 		$recommendations=[];
-		foreach(array_slice(is_array($recommendation['recommendations'] ?? null) ? $recommendation['recommendations'] : [], 0, 4) as $item){
+		foreach(array_slice(is_array($items) ? $items : [], 0, 4) as $item){
 			if(!is_array($item)){
 				continue;
 			}
@@ -1323,74 +1383,26 @@ trait dataphyre_mcp_client_workflow_start_pack_surfaces {
 				'recommended_arguments'=>is_array($item['recommended_arguments'] ?? null) ? $item['recommended_arguments'] : [],
 			];
 		}
-		return [
-			'export_type'=>'dataphyre_mcp_workflow_recommendation_handoff_summary',
-			'write_policy'=>$recommendation['write_policy'] ?? 'read_only',
-			'execution'=>$recommendation['execution'] ?? 'not_executed',
-			'protocol'=>$recommendation['protocol'] ?? '2025-11-25',
-			'task'=>$task,
-			'selected_workflow'=>(string)($top['workflow'] ?? 'generic'),
-			'selected_score'=>(int)($top['score'] ?? 0),
-			'ready_to_run'=>($top['ready'] ?? false)===true,
-			'include_frames'=>$include_frames,
-			'full_handoff_computed'=>false,
-			'app_builder_entrypoint'=>$recommendation['app_builder_entrypoint'] ?? null,
-			'app_builder_next_action'=>$app_builder_next_action,
-			'recommendations'=>$recommendations,
-			'fetch_tools'=>[
-				'full_recommendation_handoff'=>'dataphyre_mcp_workflow_recommendation_handoff_export',
-				'workflow_handoff_pack'=>'dataphyre_mcp_workflow_handoff_pack_export',
-				'workflow_session'=>'dataphyre_mcp_workflow_session_export',
-				'transcript_schema'=>'dataphyre_mcp_workflow_transcript_schema_export',
-			],
-			'next_read'=>'For ordinary app work, use builder_first_read and app_builder_next_action first; fetch the full workflow handoff only when ready to run preflight workflow messages.',
-		];
+		return $recommendations;
 	}
 
 	/**
-	 * Keeps ordinary task start packs small while preserving the workflow handoff entrypoint.
+	 * Chooses and compacts the first available app-builder next-action handoff.
 	 *
-	 * @param array<string,mixed> $handoff Full workflow recommendation handoff payload.
-	 * @return array<string,mixed> Compact workflow summary safe for default app-builder startup.
+	 * @return mixed Compact next-action reference or the original scalar marker.
 	 */
-	private function mcp_workflow_handoff_summary(array $handoff): array {
-		$recommendations=[];
-		foreach(array_slice(is_array($handoff['recommendation']['recommendations'] ?? null) ? $handoff['recommendation']['recommendations'] : [], 0, 4) as $recommendation){
-			if(!is_array($recommendation)){
-				continue;
-			}
-			$recommendations[]=[
-				'workflow'=>(string)($recommendation['workflow'] ?? ''),
-				'title'=>(string)($recommendation['title'] ?? ''),
-				'score'=>(int)($recommendation['score'] ?? 0),
-				'ready'=>($recommendation['ready'] ?? false)===true,
-				'matched_terms'=>array_values(array_map('strval', is_array($recommendation['matched_terms'] ?? null) ? $recommendation['matched_terms'] : [])),
-				'recommended_tool'=>(string)($recommendation['recommended_tool'] ?? 'dataphyre_mcp_workflow_handoff_pack_export'),
-				'recommended_arguments'=>is_array($recommendation['recommended_arguments'] ?? null) ? $recommendation['recommended_arguments'] : [],
-			];
-		}
+	private function mcp_workflow_compact_app_builder_next_action(mixed $primary, mixed $fallback=null): mixed {
+		$candidate=$primary!==null ? $primary : $fallback;
+		return is_array($candidate) ? $this->mcp_workflow_compact_app_builder_next_action_ref($candidate) : $candidate;
+	}
+
+	/** @return array<string,string> Stable fetch pointers shared by compact workflow summaries. */
+	private function mcp_workflow_summary_fetch_tools(): array {
 		return [
-			'export_type'=>'dataphyre_mcp_workflow_recommendation_handoff_summary',
-			'write_policy'=>$handoff['write_policy'] ?? 'read_only',
-			'execution'=>$handoff['execution'] ?? 'not_executed',
-			'protocol'=>$handoff['protocol'] ?? '2025-11-25',
-			'task'=>(string)($handoff['task'] ?? ''),
-			'selected_workflow'=>(string)($handoff['selected_workflow'] ?? 'generic'),
-			'selected_score'=>(int)($handoff['selected_score'] ?? 0),
-			'ready_to_run'=>($handoff['handoff_pack']['ready_to_run'] ?? false)===true,
-			'include_frames'=>($handoff['include_frames'] ?? false)===true,
-			'app_builder_entrypoint'=>$handoff['recommendation']['app_builder_entrypoint'] ?? null,
-			'app_builder_next_action'=>is_array($handoff['app_builder_next_action'] ?? null)
-				? $this->mcp_workflow_compact_app_builder_next_action_ref($handoff['app_builder_next_action'])
-				: (is_array($handoff['recommendation']['app_builder_next_action'] ?? null) ? $this->mcp_workflow_compact_app_builder_next_action_ref($handoff['recommendation']['app_builder_next_action']) : ($handoff['recommendation']['app_builder_next_action'] ?? null)),
-			'recommendations'=>$recommendations,
-			'fetch_tools'=>[
-				'full_recommendation_handoff'=>'dataphyre_mcp_workflow_recommendation_handoff_export',
-				'workflow_handoff_pack'=>'dataphyre_mcp_workflow_handoff_pack_export',
-				'workflow_session'=>'dataphyre_mcp_workflow_session_export',
-				'transcript_schema'=>'dataphyre_mcp_workflow_transcript_schema_export',
-			],
-			'next_read'=>'For ordinary app work, use builder_first_read and app_builder_next_action first; fetch the full workflow handoff only when ready to run preflight workflow messages.',
+			'full_recommendation_handoff'=>'dataphyre_mcp_workflow_recommendation_handoff_export',
+			'workflow_handoff_pack'=>'dataphyre_mcp_workflow_handoff_pack_export',
+			'workflow_session'=>'dataphyre_mcp_workflow_session_export',
+			'transcript_schema'=>'dataphyre_mcp_workflow_transcript_schema_export',
 		];
 	}
 

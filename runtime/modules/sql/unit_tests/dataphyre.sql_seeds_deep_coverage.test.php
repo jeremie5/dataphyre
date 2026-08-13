@@ -47,7 +47,18 @@ namespace dataphyre;
 
 final class sql {
 	public static function query(mixed ...$arguments): mixed {
-		return \Dataphyre\Test\TestState::channel('sql.seed-native')->get('sql_result', true);
+		$state=\Dataphyre\Test\TestState::channel('sql.seed-native');
+		$state->append('sql_calls', $arguments);
+		return $state->get('sql_result', true);
+	}
+
+	public static function query_write_targets(string $query, bool $registeredOnly=false): array {
+		return \Dataphyre\Test\TestState::channel('sql.seed-native')->get('write_targets', []);
+	}
+
+	public static function invalidate_cache(array|string $targets): bool {
+		\Dataphyre\Test\TestState::channel('sql.seed-native')->append('invalidations', $targets);
+		return true;
 	}
 
 	public static function last_query_error(): mixed {
@@ -105,6 +116,9 @@ test('SQL seed value objects expose every validation and native context outcome'
 	$native=$t->state('sql.seed-native', [
 		'sql_result'=>false,
 		'sql_error'=>['message'=>'native failure'],
+		'sql_calls'=>[],
+		'write_targets'=>[],
+		'invalidations'=>[],
 	]);
 	dp_seed_define_sql_facade();
 	$t->throws(
@@ -114,6 +128,14 @@ test('SQL seed value objects expose every validation and native context outcome'
 	);
 	$native->put('sql_result', [['ok'=>true]]);
 	$t->same([['ok'=>true]], (new SeedContext())->query('SELECT 1'));
+	$native->put('write_targets', ['serve.orders']);
+	$t->same([['ok'=>true]], (new SeedContext())->query('UPDATE serve.orders SET status=?', ['paid']));
+	$calls=$native->get('sql_calls');
+	$t->same(['serve.orders'], $calls[array_key_last($calls)][5] ?? null);
+	(new SeedContext(static fn()=>true))->query('UPDATE serve.orders SET status=?', ['paid']);
+	$t->same([['serve.orders']], $native->get('invalidations'));
+	(new SeedContext(static fn()=>true))->query('UPDATE serve.orders SET status=?', ['paid'], false, false);
+	$t->same([['serve.orders']], $native->get('invalidations'));
 
 	if(!defined('DP_CORE_CFG')) define('DP_CORE_CFG', ['datacenter'=>'coverage']);
 	if(!defined('DP_SQL_CFG')) define('DP_SQL_CFG', [
@@ -383,3 +405,10 @@ test('SQL seed boot completes when the runtime module provides its SQL facade', 
 	dp_sql_seed_boot_sql($runtime);
 	$t->isTrue(class_exists('dataphyre\\sql', false));
 })->tag('sql','seeds','cli','bootstrap')->maxMillis(5000);
+
+test('SQL seed boot loads the optional cache kernel for shared invalidation', static function(Context $t): void {
+	$runtime=SeedRuntimeFixture::withSqlAndCache($t->workspace('sql-seed-runtime-with-cache'));
+	dp_sql_seed_boot_sql($runtime);
+	$t->isTrue(class_exists('dataphyre\\sql', false));
+	$t->isTrue(class_exists('dataphyre\\cache', false));
+})->tag('sql','seeds','cli','bootstrap','cache','invalidation')->maxMillis(5000);

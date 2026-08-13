@@ -8,6 +8,8 @@ the reusable runtime and points the bootstrap at that app root.
 
 ```text
 examples/minimal/
+  compose.dev.yaml
+  dev_router.php
   flight_sheet.example.php
   index.example.php
   applications/
@@ -17,6 +19,23 @@ examples/minimal/
 ```
 
 ## Try It Locally
+
+The zero-host-dependency path requires only Docker Compose:
+
+```sh
+docker compose -f examples/minimal/compose.dev.yaml up -d --build
+curl -fsS http://127.0.0.1:18080/
+```
+
+The example owns its loopback port and generated state. A normal shutdown keeps
+the generated application key and matching verification marker together:
+
+```sh
+docker compose -f examples/minimal/compose.dev.yaml down
+```
+
+Do not add `--volumes` unless resetting the local example identity is
+intentional.
 
 From a Dataphyre install root:
 
@@ -49,4 +68,5 @@ bootstrap, install config, dialbacks, callbacks, plugins, MCP metadata,
 application-owned adapters, or reusable modules before proposing Dataphyre
 runtime-internal edits.
 
-For the broader install flow, see [Getting started](../../docs/GETTING_STARTED.md).
+For the broader install flow, see [Getting started](../../docs/GETTING_STARTED.md)
+and [local application development](../../docs/LOCAL_DEVELOPMENT.md).

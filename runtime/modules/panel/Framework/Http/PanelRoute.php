@@ -51,7 +51,7 @@ final class PanelRoute {
 		if($target!==''){
 			$segments=self::canonicalSegments(array_values(array_filter(explode('/', $target), static fn(string $segment): bool => $segment!=='')));
 			if($segments!==[]){
-				$path.='/'.implode('/', array_map(static fn(string $segment): string => rawurlencode(rawurldecode($segment)), $segments));
+				$path=self::joinPrefix($prefix, implode('/', array_map(static fn(string $segment): string => rawurlencode(rawurldecode($segment)), $segments)));
 			}
 		}
 		if($segments!==[]){
@@ -75,7 +75,7 @@ final class PanelRoute {
 		$prefix=self::prefix($prefix);
 		$asset=basename(str_replace('\\', '/', trim($asset)));
 		$version=class_exists(PanelRenderer::class) ? PanelRenderer::assetVersion($asset) : 'missing';
-		return $prefix.'/assets/'.rawurlencode($asset).'?v='.rawurlencode($version);
+		return self::joinPrefix($prefix, 'assets/'.rawurlencode($asset)).'?v='.rawurlencode($version);
 	}
 
 	/**
@@ -85,7 +85,7 @@ final class PanelRoute {
 	 * @return string Upload URL path.
 	 */
 	public static function uploadUrl(string $prefix='/panel'): string {
-		return self::prefix($prefix).'/upload';
+		return self::joinPrefix(self::prefix($prefix), 'upload');
 	}
 
 	/**
@@ -118,9 +118,9 @@ final class PanelRoute {
 			],
 			'routes'=>[
 				'page'=>$prefix,
-				'catch_all'=>$prefix.'/{...panel_segments}',
-				'assets'=>$prefix.'/assets/{asset}',
-				'upload'=>$prefix.'/upload',
+				'catch_all'=>self::joinPrefix($prefix, '{...panel_segments}'),
+				'assets'=>self::joinPrefix($prefix, 'assets/{asset}'),
+				'upload'=>self::joinPrefix($prefix, 'upload'),
 			],
 			'urls'=>[
 				'home'=>self::url($prefix),
@@ -209,39 +209,7 @@ final class PanelRoute {
 	 * @return array<string, string> Identity keys such as resource, record, operation, action, and relation.
 	 */
 	private static function routeIdentity(array $segments): array {
-		$segments=array_values(array_filter(array_map(static fn(mixed $segment): string => rawurldecode(trim((string)$segment, '/')), $segments), static fn(string $segment): bool => $segment!==''));
-		$resource=(string)($segments[0] ?? '');
-		if($resource===''){
-			return [];
-		}
-		$second=(string)($segments[1] ?? '');
-		$third=(string)($segments[2] ?? '');
-		$fourth=(string)($segments[3] ?? '');
-		$identity=['resource'=>$resource];
-		if($second===''){
-			$identity['operation']='index';
-			return $identity;
-		}
-		$secondOperation=Resource::normalizeName($second);
-		$thirdOperation=Resource::normalizeName($third);
-		$operationNames=['index', 'create', 'store', 'show', 'edit', 'update', 'delete', 'destroy', 'force_delete', 'restore', 'duplicate', 'import', 'export', 'board', 'action', 'bulk_action', 'relation', 'transition', 'inline_update'];
-		if($thirdOperation==='action'){
-			return $identity+['record'=>$second, 'operation'=>'action', 'action'=>$fourth];
-		}
-		if($thirdOperation==='relation'){
-			return $identity+['record'=>$second, 'operation'=>'relation', 'relation'=>$fourth];
-		}
-		if(in_array($thirdOperation, ['edit', 'update', 'delete', 'destroy', 'force_delete', 'restore', 'duplicate', 'transition', 'inline_update'], true)){
-			return $identity+['record'=>$second, 'operation'=>$thirdOperation];
-		}
-		if(in_array($secondOperation, $operationNames, true)){
-			$identity['operation']=$secondOperation;
-			if($third!==''){
-				$identity['record']=$third;
-			}
-			return $identity;
-		}
-		return $identity+['record'=>$second, 'operation'=>'show'];
+		return PanelRouteParser::infer($segments);
 	}
 
 	/**
@@ -266,7 +234,7 @@ final class PanelRoute {
 		]);
 		$routes=[
 			\Dataphyre\Routing\Route::any($prefix, $handler)->defaults($defaults),
-			\Dataphyre\Routing\Route::any($prefix.'/{...panel_segments}', $handler)->defaults($defaults),
+			\Dataphyre\Routing\Route::any(self::joinPrefix($prefix, '{...panel_segments}'), $handler)->defaults($defaults),
 		];
 		if(isset($options['name']) && is_string($options['name']) && trim($options['name'])!==''){
 			$routes[0]->name(trim($options['name']));
@@ -296,7 +264,7 @@ final class PanelRoute {
 		$handler=\Dataphyre\Routing\ControllerAction::static(PanelAssetController::class, 'handle', [
 			'bootstrap'=>$options['bootstrap'] ?? dirname(__DIR__).'/Bootstrap.php',
 		]);
-		$route=\Dataphyre\Routing\Route::get($prefix.'/assets/{asset}', $handler)
+		$route=\Dataphyre\Routing\Route::get(self::joinPrefix($prefix, 'assets/{asset}'), $handler)
 			->where('asset', '[A-Za-z0-9_.-]+');
 		if(isset($options['name']) && is_string($options['name']) && trim($options['name'])!==''){
 			$route->name(trim($options['name']));
@@ -322,7 +290,7 @@ final class PanelRoute {
 		$handler=\Dataphyre\Routing\ControllerAction::static(PanelUploadController::class, 'handle', [
 			'bootstrap'=>$options['bootstrap'] ?? dirname(__DIR__).'/Bootstrap.php',
 		]);
-		$route=\Dataphyre\Routing\Route::post($prefix.'/upload', $handler);
+		$route=\Dataphyre\Routing\Route::post(self::joinPrefix($prefix, 'upload'), $handler);
 		if(isset($options['name']) && is_string($options['name']) && trim($options['name'])!==''){
 			$route->name(trim($options['name']));
 		}
@@ -374,7 +342,7 @@ final class PanelRoute {
 		if(isset($catchOptions['name']) && is_string($catchOptions['name']) && trim($catchOptions['name'])!==''){
 			$catchOptions['name']=trim($catchOptions['name']).'.catch_all';
 		}
-		$catch=$routes->any($prefix.'/{...panel_segments}', $handler, $catchOptions);
+		$catch=$routes->any(self::joinPrefix($prefix, '{...panel_segments}'), $handler, $catchOptions);
 		return [$exact, $catch];
 	}
 
@@ -390,7 +358,7 @@ final class PanelRoute {
 		$prefix=self::prefix($prefix);
 		$routeOptions=self::mvcEndpointOptions($options);
 		$routeOptions['where']=array_replace((array)($routeOptions['where'] ?? []), ['asset'=>'[A-Za-z0-9_.-]+']);
-		$route=$routes->get($prefix.'/assets/{asset}', PanelAssetController::class, $routeOptions);
+		$route=$routes->get(self::joinPrefix($prefix, 'assets/{asset}'), PanelAssetController::class, $routeOptions);
 		return [$route];
 	}
 
@@ -404,7 +372,7 @@ final class PanelRoute {
 	 */
 	public static function mvcUploads(\Dataphyre\Mvc\RouteCollection $routes, string $prefix='/panel', array $options=[]): array {
 		$prefix=self::prefix($prefix);
-		$route=$routes->post($prefix.'/upload', PanelUploadController::class, self::mvcEndpointOptions($options));
+		$route=$routes->post(self::joinPrefix($prefix, 'upload'), PanelUploadController::class, self::mvcEndpointOptions($options));
 		return [$route];
 	}
 
@@ -432,8 +400,19 @@ final class PanelRoute {
 	 * @return string Normalized prefix, with "/" preserved for root mounts.
 	 */
 	private static function prefix(string $prefix): string {
-		$prefix='/'.trim($prefix, '/');
+		$prefix='/'.trim(trim($prefix), '/');
 		return $prefix==='/' ? '/' : rtrim($prefix, '/');
+	}
+
+	/**
+	 * Appends a relative route path without producing protocol-relative URLs for root mounts.
+	 *
+	 * @param string $prefix Normalized panel mount prefix.
+	 * @param string $path Relative route path.
+	 * @return string Joined absolute path.
+	 */
+	private static function joinPrefix(string $prefix, string $path): string {
+		return ($prefix==='/' ? '/' : $prefix.'/').ltrim($path, '/');
 	}
 
 	/**
@@ -445,9 +424,6 @@ final class PanelRoute {
 	private static function filterQuery(array $query): array {
 		$filtered=[];
 		foreach($query as $key=>$value){
-			if(!is_string($key) && !is_int($key)){
-				continue;
-			}
 			if(is_array($value)){
 				$value=self::filterQuery($value);
 				if($value!==[]){

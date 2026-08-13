@@ -159,11 +159,11 @@ trait dataphyre_mcp_planning_surfaces {
 		return [
 			'summary'=>'Plan a route-free Panel resource backed by schema metadata and regression coverage.',
 			'recommended_docs'=>[
-				'common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md',
-				'common/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md',
+				'dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md',
+				'dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md',
 			],
 			'optional_guidance_docs'=>[
-				'common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
+				'dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
 			],
 			'proposed_files'=>[
 				$root.'/panel/resources/'.$class.'Resource.php',
@@ -194,12 +194,12 @@ trait dataphyre_mcp_planning_surfaces {
 	 * than dispatching handlers from MCP.
 	 */
 	private function routing_controller_scaffold_plan(string $name, string $class, string $slug, string $module): array {
-		$owner=$module!=='' ? 'common/dataphyre/runtime/modules/'.$module : 'applications/<app>/backend/dataphyre';
+		$owner=$module!=='' ? 'dataphyre/runtime/modules/'.$module : 'applications/<app>/backend/dataphyre';
 		return [
 			'summary'=>'Plan a controller/action and route manifest change without dispatching handlers from MCP.',
 			'recommended_docs'=>[
-				'common/dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md',
-				'common/dataphyre/runtime/modules/http/documentation/Dataphyre_HTTP.md',
+				'dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md',
+				'dataphyre/runtime/modules/http/documentation/Dataphyre_HTTP.md',
 			],
 			'proposed_files'=>[
 				$owner.'/controllers/'.$class.'Controller.php',
@@ -229,14 +229,14 @@ trait dataphyre_mcp_planning_surfaces {
 	 * avoiding live database access.
 	 */
 	private function sql_table_scaffold_plan(string $name, string $table, string $module, array $fields): array {
-		$owner=$module!=='' ? 'common/dataphyre/runtime/modules/'.$module.'/kernel' : 'applications/<app>/backend/dataphyre/sql';
+		$owner=$module!=='' ? 'dataphyre/runtime/modules/'.$module.'/kernel' : 'applications/<app>/backend/dataphyre/sql';
 		return [
 			'summary'=>'Plan a SQL table definition using TableDefinition/TableSchema metadata without executing queries.',
 			'recommended_docs'=>[
-				'common/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md',
+				'dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md',
 			],
 			'optional_guidance_docs'=>[
-				'common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
+				'dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
 			],
 			'proposed_files'=>[
 				$owner.'/'.$table.'.tables.php',
@@ -270,9 +270,9 @@ trait dataphyre_mcp_planning_surfaces {
 		return [
 			'summary'=>'Plan an MVC controller/view workflow that composes HTTP, Routing, Templating, and SQL surfaces.',
 			'recommended_docs'=>[
-				'common/dataphyre/runtime/modules/mvc/documentation/Dataphyre_MVC.md',
-				'common/dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md',
-				'common/dataphyre/runtime/modules/templating/documentation/Dataphyre_Templating.md',
+				'dataphyre/runtime/modules/mvc/documentation/Dataphyre_MVC.md',
+				'dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md',
+				'dataphyre/runtime/modules/templating/documentation/Dataphyre_Templating.md',
 			],
 			'proposed_files'=>[
 				'applications/<app>/backend/dataphyre/mvc/controllers/'.$class.'Controller.php',
@@ -304,15 +304,15 @@ trait dataphyre_mcp_planning_surfaces {
 		return [
 			'summary'=>'Plan a reusable Dataphyre runtime module with docs, kernel bootstrap, optional Framework classes, and release hygiene.',
 			'recommended_docs'=>[
-				'common/dataphyre/runtime/README.md',
-				'common/dataphyre/docs/MODULES.md',
-				'common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
+				'dataphyre/runtime/README.md',
+				'dataphyre/docs/MODULES.md',
+				'dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
 			],
 			'proposed_files'=>[
-				'common/dataphyre/runtime/modules/'.$slug.'/documentation/Dataphyre_'.$this->studly_name($name).'.md',
-				'common/dataphyre/runtime/modules/'.$slug.'/kernel/'.$slug.'.main.php',
-				'common/dataphyre/runtime/modules/'.$slug.'/version',
-				'common/dataphyre/runtime/modules/'.$slug.'/unit_tests/dataphyre.'.$slug.'.json',
+				'dataphyre/runtime/modules/'.$slug.'/documentation/Dataphyre_'.$this->studly_name($name).'.md',
+				'dataphyre/runtime/modules/'.$slug.'/kernel/'.$slug.'.main.php',
+				'dataphyre/runtime/modules/'.$slug.'/version',
+				'dataphyre/runtime/modules/'.$slug.'/unit_tests/dataphyre.'.$slug.'.json',
 			],
 			'steps'=>[
 				'Define whether the module owns Framework contracts, kernel bootstrap hooks, config, SQL tables, routes, or diagnostics.',
@@ -338,6 +338,16 @@ trait dataphyre_mcp_planning_surfaces {
 			'surface'=>$surface,
 			'classification'=>'panel_static_metadata_only',
 			'application_default'=>'safe_for_panel_application_planning_without_generation_or_runtime_execution',
+			'primary_capability_surfaces'=>[
+				'dataphyre_panel_capability_catalog',
+				'dataphyre_panel_capability_describe',
+				'dataphyre_panel_surface_graph',
+				'dataphyre_panel_recipe_plan',
+				'dataphyre_panel_integration_plan',
+				'dataphyre_panel_verification_plan',
+				'dataphyre://panel',
+			],
+			'specialized_snapshot_policy'=>'This helper is a narrow compatibility-oriented source summary. Use the source-derived Panel capability surfaces for current cross-domain contracts, providers, dependencies, and executable evidence.',
 			'application_agent_operating_contract'=>$this->mcp_application_agent_operating_contract('panel_'.$surface),
 			'ordinary_app_work'=>$this->mcp_ordinary_app_work_contract('panel_'.$surface),
 			'allowed_for_app_agents'=>[
@@ -369,8 +379,16 @@ trait dataphyre_mcp_planning_surfaces {
 	 */
 	private function panel_scaffold_catalog(): array {
 		$description=$this->describe_module('panel', 250);
+		$module_root=$this->common_root.'/dataphyre/runtime/modules/panel';
 		$files=array_values(array_filter(
-			array_merge($description['files']['framework'] ?? [], $description['files']['kernel'] ?? [], $description['files']['documentation'] ?? []),
+			array_values(array_unique(array_merge(
+				$this->files_under($module_root.'/Framework/Scaffolding', ['php'], 250),
+				$this->files_under($module_root.'/Framework/Packages', ['php'], 250),
+				$this->files_under($module_root.'/Framework/Testing', ['php'], 250),
+				$this->files_under($module_root.'/Framework/Agents/Testing', ['php'], 250),
+				$description['files']['kernel'] ?? [],
+				$description['files']['documentation'] ?? []
+			))),
 			static fn(string $path): bool => str_contains($path, '/Scaffolding/')
 				|| str_contains($path, '/Packages/')
 				|| str_contains($path, '/Testing/')
@@ -623,18 +641,26 @@ trait dataphyre_mcp_planning_surfaces {
 	 * files or transforming binary assets.
 	 */
 	private function panel_media_manifest_summary(): array {
-		$files=[
-			'common/dataphyre/runtime/modules/panel/Framework/Media/PanelMediaLibrary.php',
-			'common/dataphyre/runtime/modules/panel/Framework/Media/PanelMediaCollection.php',
-			'common/dataphyre/runtime/modules/panel/Framework/Media/PanelMediaItem.php',
-			'common/dataphyre/runtime/modules/panel/Framework/Uploads/PanelStorageUploadEndpoint.php',
-			'common/dataphyre/runtime/modules/panel/Framework/Http/PanelUploadController.php',
-			'common/dataphyre/runtime/modules/panel/Framework/Http/PanelRoute.php',
-			'common/dataphyre/runtime/modules/panel/Framework/Core/Panel.php',
-			'common/dataphyre/runtime/modules/panel/Framework/Core/PanelInstance.php',
-			'common/dataphyre/runtime/modules/panel/Framework/Forms/Field.php',
-			'common/dataphyre/runtime/modules/panel/Framework/Resources/Resource.php',
-		];
+		$files=array_values(array_unique(array_merge(
+			$this->files_under($this->common_root.'/dataphyre/runtime/modules/panel/Framework/Media', ['php'], 250),
+			[
+			'dataphyre/runtime/modules/panel/Framework/Media/PanelMediaLibrary.php',
+			'dataphyre/runtime/modules/panel/Framework/Media/PanelMediaCollection.php',
+			'dataphyre/runtime/modules/panel/Framework/Media/PanelMediaItem.php',
+			'dataphyre/runtime/modules/panel/Framework/Uploads/PanelStorageUploadEndpoint.php',
+			'dataphyre/runtime/modules/panel/Framework/Http/PanelUploadController.php',
+			'dataphyre/runtime/modules/panel/Framework/Http/PanelRoute.php',
+			'dataphyre/runtime/modules/panel/Framework/Core/Panel.php',
+			'dataphyre/runtime/modules/panel/Framework/Core/PanelInstance.php',
+			'dataphyre/runtime/modules/panel/Framework/Forms/Field.php',
+			'dataphyre/runtime/modules/panel/Framework/Resources/Resource.php',
+			'dataphyre/runtime/modules/panel/Framework/Notifications/PanelSnapshotStore.php',
+			'dataphyre/runtime/modules/panel/Framework/Notifications/PanelAtomicSnapshotStore.php',
+			'dataphyre/runtime/modules/panel/Framework/Notifications/PanelPdoSnapshotStore.php',
+			'dataphyre/runtime/modules/panel/Framework/Notifications/PanelSnapshotStorageException.php',
+			]
+		)));
+		sort($files,SORT_STRING);
 		$existing=[];
 		$classes=[];
 		foreach($files as $relative){
@@ -699,6 +725,9 @@ trait dataphyre_mcp_planning_surfaces {
 				'resource'=>'Resource attachment hooks expose record attachment listing and upload attachment handlers.',
 				'upload_endpoint'=>'PanelStorageUploadEndpoint handles chunk assembly, Storage persistence, metadata, temporary URLs, and delete requests at runtime.',
 				'http_route'=>'PanelRoute and PanelUploadController expose upload routes/controllers for applications that opt in.',
+				'manager'=>'PanelMediaManager composes typed media disks and catalog snapshot stores without claiming capabilities its adapters do not provide.',
+				'disks'=>'PanelMediaDisk, PanelLocalMediaDisk, and PanelDataphyreStorageMediaDisk expose honest local or Storage-backed byte operations with bounded paths and verification.',
+				'snapshots'=>'PanelSnapshotStore, PanelAtomicSnapshotStore, and PanelPdoSnapshotStore provide local and shared-SQL catalog snapshots, retained changes, integrity, scope isolation, and explicit initialization.',
 			],
 			'storage_operations_not_run'=>['Storage::putFile', 'Storage::metadata', 'Storage::temporaryUrl', 'Storage::delete', 'move_uploaded_file', 'rename', 'copy', 'file_put_contents'],
 			'safety_notes'=>[

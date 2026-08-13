@@ -18,6 +18,17 @@ namespace Dataphyre\Http;
 final class UploadedFile implements \JsonSerializable {
 
 	private ?string $clientExtension=null;
+	private static $uploadedFileDetector=null;
+
+	/**
+	 * Installs a process-local uploaded-file detector.
+	 *
+	 * Passing null restores PHP's native is_uploaded_file() check. Alternate
+	 * runtimes and tests may supply a callable receiving the temporary path.
+	 */
+	public static function useUploadedFileDetector(?callable $detector): void {
+		self::$uploadedFileDetector=$detector;
+	}
 
 	/**
 	 * Captures uploaded-file metadata from PHP request state.
@@ -141,7 +152,10 @@ final class UploadedFile implements \JsonSerializable {
 		if($directory!=='' && !is_dir($directory) && !@mkdir($directory, 0775, true) && !is_dir($directory)){
 			return false;
 		}
-		if(is_uploaded_file($this->tmpName)){
+		$isUploaded=self::$uploadedFileDetector!==null
+			? (bool)(self::$uploadedFileDetector)($this->tmpName)
+			: is_uploaded_file($this->tmpName);
+		if($isUploaded){
 			return move_uploaded_file($this->tmpName, $target);
 		}
 		return @rename($this->tmpName, $target);

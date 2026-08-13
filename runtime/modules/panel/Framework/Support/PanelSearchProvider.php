@@ -8,67 +8,48 @@
 namespace Dataphyre\Panel;
 
 /**
- * Clone-on-write definition for one panel global-search source.
+ * Clone-on-write definition for an engine-neutral global-search source.
  *
- * A search provider describes how an operator-facing search surface should
- * label a source, decide visibility for the current request, execute a lazy
- * search callback, and normalize provider-specific rows into a shared result
- * payload for panel clients.
+ * Provider callbacks may return a bounded iterable of result-like arrays or a
+ * PanelSearchPage from a cursor-aware index adapter. Panel never waits on
+ * promises/futures: truly asynchronous transports should resolve outside the
+ * request and expose a synchronous page adapter here.
+ *
+ * @template TResult of PanelSearchResult|array<string, mixed> = PanelSearchResult|array<string, mixed>
+ * @template TCursor of string|array<string, mixed>|null = string|array<string, mixed>|null
  */
 final class PanelSearchProvider {
 
-	/** @var string Normalized provider key used as result source/resource identifier. */
 	private string $name;
-	/** @var string Human-readable source label shown in search UI. */
 	private string $label;
-	/** @var ?string Optional provider description for catalogs or empty states. */
 	private ?string $description=null;
-	/** @var ?string Optional icon identifier inherited by results without their own icon. */
 	private ?string $icon=null;
-	/** @var int Sort weight used when ordering providers. */
 	private int $sort=100;
-	/** @var int Maximum result count requested from the provider callback. */
 	private int $limit=5;
-	/** @var bool True when the provider is hard-hidden before lazy visibility checks. */
 	private bool $hidden=false;
-	/** @var array<string, mixed> Provider metadata emitted to search clients. */
+	private bool $tenantScoped=false;
+	private bool $tenantRequired=false;
+	/** @var array<string,mixed> */
 	private array $meta=[];
-	/** @var ?\Closure Lazy search callback receiving query, request, provider, limit, and manager. */
+	/** @var (\Closure(string,PanelRequest,self<TResult,TCursor>,int,?PanelManager,PanelSearchContext):(PanelSearchPage|iterable<TResult>|array<string,mixed>))|null */
 	private ?\Closure $searchHandler=null;
-	/** @var ?\Closure Lazy visibility callback receiving request, provider, and manager. */
+	/** @var (\Closure(?PanelRequest,self<TResult,TCursor>,?PanelManager):bool)|null */
 	private ?\Closure $visibilityResolver=null;
+	/** @var (\Closure(mixed,PanelRequest,self<TResult,TCursor>,?PanelManager,string|int|null):bool)|null */
+	private ?\Closure $authorizationResolver=null;
+	/** @var (\Closure(PanelSearchResult,string,PanelRequest,self<TResult,TCursor>,?PanelManager,PanelSearchContext):(int|float))|null */
+	private ?\Closure $scoreResolver=null;
+	/** @var (\Closure(PanelSearchResult,string,PanelRequest,self<TResult,TCursor>,?PanelManager,PanelSearchContext):(scalar|null))|null */
+	private ?\Closure $dedupeResolver=null;
 
-	/**
-	 * Creates a provider with normalized identity and default label.
-	 *
-	 * @param string $name Provider name before panel resource normalization.
-	 */
 	private function __construct(string $name) {
 		$this->name=Resource::normalizeName($name);
 		$this->label=self::humanize($this->name);
 	}
 
-	/**
-	 * Starts a search provider definition.
-	 *
-	 * @param string $name Provider name used for source identity and default label generation.
-	 * @return self Provider definition with normalized name.
-	 */
-	public static function make(string $name): self {
-		return new self($name);
-	}
+	public static function make(string $name): self { return new self($name); }
 
-	/**
-	 * Builds a provider from an associative definition array.
-	 *
-	 * Supported keys are `name`, `label`, `description`, `icon`, `sort`, `limit`,
-	 * `handler` or `search`, `hidden`, and `meta`. Callable search declarations
-	 * are wrapped through {@see searchUsing()} so array and fluent definitions
-	 * share callback semantics.
-	 *
-	 * @param array<string, mixed> $definition Provider definition payload.
-	 * @return self Provider definition built from supported keys.
-	 */
+	/** @param array<string,mixed> $definition */
 	public static function fromArray(array $definition): self {
 		$provider=self::make((string)($definition['name'] ?? ''));
 		foreach(['label', 'description', 'icon'] as $key){
@@ -76,97 +57,49 @@ final class PanelSearchProvider {
 				$provider=$provider->{$key}($definition[$key]);
 			}
 		}
-		if(isset($definition['sort'])){
-			$provider=$provider->sort((int)$definition['sort']);
-		}
-		if(isset($definition['limit'])){
-			$provider=$provider->limit((int)$definition['limit']);
-		}
-		if(isset($definition['handler']) && is_callable($definition['handler'])){
-			$provider=$provider->searchUsing($definition['handler']);
-		}
-		if(isset($definition['search']) && is_callable($definition['search'])){
-			$provider=$provider->searchUsing($definition['search']);
-		}
-		if(!empty($definition['hidden'])){
-			$provider=$provider->hide();
-		}
-		if(isset($definition['meta']) && is_array($definition['meta'])){
-			$provider=$provider->meta($definition['meta']);
-		}
+		if(isset($definition['sort'])){ $provider=$provider->sort((int)$definition['sort']); }
+		if(isset($definition['limit'])){ $provider=$provider->limit((int)$definition['limit']); }
+		if(isset($definition['tenant_scoped'])){ $provider=$provider->tenantScoped((bool)$definition['tenant_scoped'], (bool)($definition['tenant_required'] ?? true)); }
+		if(isset($definition['handler']) && is_callable($definition['handler'])){ $provider=$provider->searchUsing($definition['handler']); }
+		if(isset($definition['search']) && is_callable($definition['search'])){ $provider=$provider->searchUsing($definition['search']); }
+		if(isset($definition['visible']) && is_callable($definition['visible'])){ $provider=$provider->visibleUsing($definition['visible']); }
+		if(isset($definition['authorize']) && is_callable($definition['authorize'])){ $provider=$provider->authorizeUsing($definition['authorize']); }
+		if(isset($definition['score']) && is_callable($definition['score'])){ $provider=$provider->scoreUsing($definition['score']); }
+		if(isset($definition['rank']) && is_callable($definition['rank'])){ $provider=$provider->scoreUsing($definition['rank']); }
+		if(isset($definition['dedupe']) && is_callable($definition['dedupe'])){ $provider=$provider->deduplicateUsing($definition['dedupe']); }
+		if(!empty($definition['hidden'])){ $provider=$provider->hide(); }
+		if(isset($definition['meta']) && is_array($definition['meta'])){ $provider=$provider->meta($definition['meta']); }
 		return $provider;
 	}
 
-	/**
-	 * Reads the normalized provider name.
-	 *
-	 * @return string Provider key used as result source/resource identity.
-	 */
-	public function name(): string {
-		return $this->name;
-	}
+	public function name(): string { return $this->name; }
+	public function sortOrder(): int { return $this->sort; }
+	public function resultLimit(): int { return $this->limit; }
 
-	/**
-	 * Returns a copy with a custom display label.
-	 *
-	 *
-	 * @param string $label Human-readable label for this search source.
-	 * @return self Cloned provider with updated label.
-	 */
 	public function label(string $label): self {
 		$clone=clone $this;
-		$clone->label=trim($label);
+		$clone->label=self::text($label);
 		return $clone;
 	}
 
-	/**
-	 * Returns a copy with optional provider description text.
-	 *
-	 *
-	 * @param string $description Description for provider catalogs or search UI.
-	 * @return self Cloned provider with trimmed description or null when blank.
-	 */
 	public function description(string $description): self {
 		$clone=clone $this;
-		$clone->description=trim($description) ?: null;
+		$clone->description=self::text($description) ?: null;
 		return $clone;
 	}
 
-	/**
-	 * Returns a copy with an icon identifier.
-	 *
-	 *
-	 * @param string $icon Icon identifier inherited by normalized results without their own icon.
-	 * @return self Cloned provider with trimmed icon or null when blank.
-	 */
 	public function icon(string $icon): self {
 		$clone=clone $this;
-		$clone->icon=trim($icon) ?: null;
+		$clone->icon=self::text($icon) ?: null;
 		return $clone;
 	}
 
-	/**
-	 * Returns a copy with provider ordering weight.
-	 *
-	 *
-	 * @param int $sort Sort weight used by provider catalogs.
-	 * @return self Cloned provider with updated sort weight.
-	 */
 	public function sort(int $sort): self {
 		$clone=clone $this;
 		$clone->sort=$sort;
 		return $clone;
 	}
 
-	/**
-	 * Returns a copy with a per-provider result limit.
-	 *
-	 * Limits are clamped to the inclusive range 1..50 so provider callbacks and
-	 * clients share a bounded result contract.
-	 *
-	 * @param int $limit Desired result limit.
-	 * @return self Cloned provider with clamped limit.
-	 */
 	public function limit(int $limit): self {
 		$clone=clone $this;
 		$clone->limit=max(1, min(50, $limit));
@@ -174,14 +107,12 @@ final class PanelSearchProvider {
 	}
 
 	/**
-	 * Returns a copy with a lazy search callback.
+	 * Callback signature is `(query, request, provider, limit, manager, context)`.
+	 * Existing five-argument callbacks remain compatible.
 	 *
-	 * The callback receives `(string $query, PanelRequest $request,
-	 * PanelSearchProvider $provider, int $limit, ?PanelManager $manager)` and
-	 * should return an array of result-like arrays.
-	 *
-	 * @param callable $handler Provider search callback.
-	 * @return self Cloned provider with search handler attached.
+	 * @template TSearchResult of PanelSearchResult|array<string,mixed>
+	 * @param callable(string,PanelRequest,self<TSearchResult,TCursor>,int,?PanelManager,PanelSearchContext):(PanelSearchPage|iterable<TSearchResult>|array<string,mixed>) $handler
+	 * @return self<TSearchResult,TCursor>
 	 */
 	public function searchUsing(callable $handler): self {
 		$clone=clone $this;
@@ -190,13 +121,14 @@ final class PanelSearchProvider {
 	}
 
 	/**
-	 * Returns a copy with hard-hidden state toggled.
+	 * Cursor-aware readability alias for searchUsing().
 	 *
-	 * Hidden providers never invoke their lazy visibility resolver.
-	 *
-	 * @param bool $hidden True to hide the provider from search catalogs.
-	 * @return self Cloned provider with hidden state updated.
+	 * @template TSearchResult of PanelSearchResult|array<string,mixed>
+	 * @param callable(string,PanelRequest,self<TSearchResult,TCursor>,int,?PanelManager,PanelSearchContext):(PanelSearchPage|iterable<TSearchResult>|array<string,mixed>) $handler
+	 * @return self<TSearchResult,TCursor>
 	 */
+	public function pageUsing(callable $handler): self { return $this->searchUsing($handler); }
+
 	public function hide(bool $hidden=true): self {
 		$clone=clone $this;
 		$clone->hidden=$hidden;
@@ -204,14 +136,19 @@ final class PanelSearchProvider {
 	}
 
 	/**
-	 * Returns a copy with a lazy visibility resolver.
+	 * Declares and enforces tenant-aware provider execution.
 	 *
-	 * Resolver exceptions are traced and treated as not visible so operator
-	 * search surfaces degrade safely.
-	 *
-	 * @param callable $resolver Callback receiving request, provider, and manager.
-	 * @return self Cloned provider with visibility resolver attached.
+	 * Required tenant providers are denied before their authorization/search
+	 * callbacks run when the request has no tenant key.
 	 */
+	public function tenantScoped(bool $scoped=true, bool $required=true): self {
+		$clone=clone $this;
+		$clone->tenantScoped=$scoped;
+		$clone->tenantRequired=$scoped && $required;
+		return $clone;
+	}
+
+	/** @param callable(?PanelRequest,self<TResult,TCursor>,?PanelManager):bool $resolver */
 	public function visibleUsing(callable $resolver): self {
 		$clone=clone $this;
 		$clone->visibilityResolver=\Closure::fromCallable($resolver);
@@ -219,90 +156,219 @@ final class PanelSearchProvider {
 	}
 
 	/**
-	 * Returns a copy with merged provider metadata.
+	 * Installs a request/tenant-aware provider authorization rule.
 	 *
-	 * Metadata is shallow-merged so later calls replace existing keys while
-	 * preserving unrelated metadata.
-	 *
-	 * @param array<string, mixed> $meta Provider metadata to merge.
-	 * @return self Cloned provider with merged metadata.
+	 * @param callable(mixed,PanelRequest,self<TResult,TCursor>,?PanelManager,string|int|null):bool $resolver
 	 */
-	public function meta(array $meta): self {
+	public function authorizeUsing(callable $resolver): self {
 		$clone=clone $this;
-		$clone->meta=array_replace($clone->meta, $meta);
+		$clone->authorizationResolver=\Closure::fromCallable($resolver);
 		return $clone;
 	}
 
 	/**
-	 * Determines whether this provider should be available for a request.
+	 * Installs a stable score resolver for normalized results.
 	 *
-	 * Hard-hidden providers are rejected immediately. Providers without a lazy
-	 * resolver are visible by default. Resolver failures are recorded to
-	 * {@see PanelTrace} and return false.
-	 *
-	 * @param ?PanelRequest $request Current panel request, when available.
-	 * @param ?PanelManager $manager Panel manager supplying runtime context.
-	 * @return bool True when the provider should appear in search.
+	 * @param callable(PanelSearchResult,string,PanelRequest,self<TResult,TCursor>,?PanelManager,PanelSearchContext):(int|float) $resolver
 	 */
+	public function scoreUsing(callable $resolver): self {
+		$clone=clone $this;
+		$clone->scoreResolver=\Closure::fromCallable($resolver);
+		return $clone;
+	}
+
+	/**
+	 * Alias emphasizing ranking intent.
+	 *
+	 * @param callable(PanelSearchResult,string,PanelRequest,self<TResult,TCursor>,?PanelManager,PanelSearchContext):(int|float) $resolver
+	 */
+	public function rankUsing(callable $resolver): self { return $this->scoreUsing($resolver); }
+
+	/**
+	 * Installs a cross-provider deduplication identity resolver.
+	 *
+	 * @param callable(PanelSearchResult,string,PanelRequest,self<TResult,TCursor>,?PanelManager,PanelSearchContext):(scalar|null) $resolver
+	 */
+	public function deduplicateUsing(callable $resolver): self {
+		$clone=clone $this;
+		$clone->dedupeResolver=\Closure::fromCallable($resolver);
+		return $clone;
+	}
+
+	/** @param array<string,mixed> $meta */
+	public function meta(array $meta): self {
+		$clone=clone $this;
+		$clone->meta=PanelSearchSanitizer::map(array_replace($clone->meta, $meta));
+		return $clone;
+	}
+
 	public function isVisible(?PanelRequest $request=null, ?PanelManager $manager=null): bool {
-		if($this->hidden){
-			return false;
-		}
-		if($this->visibilityResolver===null){
-			return true;
-		}
+		if($this->hidden){ return false; }
+		if($this->visibilityResolver===null){ return true; }
 		try{
 			return (bool)($this->visibilityResolver)($request, $this, $manager);
 		}
 		catch(\Throwable $exception){
-			PanelTrace::record('search_provider.visibility_error', [
-				'provider'=>$this->name,
-				'message'=>$exception->getMessage(),
-			]);
+			PanelTrace::record('search_provider.visibility_error', ['provider'=>$this->name, 'exception'=>$exception::class]);
+			return false;
+		}
+	}
+
+	/** Authorization exceptions fail closed and are traced. */
+	public function isAuthorized(PanelRequest $request, ?PanelManager $manager=null): bool {
+		if($this->tenantRequired && $request->tenantKey()===null){
+			PanelTrace::record('search_provider.tenant_missing', ['provider'=>$this->name]);
+			return false;
+		}
+		if($this->authorizationResolver===null){ return true; }
+		try{
+			return (bool)($this->authorizationResolver)($request->user(), $request, $this, $manager, $request->tenantKey());
+		}
+		catch(\Throwable $exception){
+			PanelTrace::record('search_provider.authorization_error', ['provider'=>$this->name, 'exception'=>$exception::class]);
 			return false;
 		}
 	}
 
 	/**
-	 * Executes the provider search callback and normalizes result rows.
+	 * Guarded direct execution for callers outside PanelManager orchestration.
+	 * The legacy search()/searchPage() methods remain raw adapter primitives for
+	 * backward compatibility; application-facing calls should use this method or
+	 * PanelManager::globalSearchPage().
 	 *
-	 * Blank queries and providers without callbacks return no results. Callback
-	 * exceptions are traced and converted to an empty result list to keep the
-	 * operator search response usable.
-	 *
-	 * @param string $query Operator search query.
-	 * @param PanelRequest $request Current panel request.
-	 * @param ?PanelManager $manager Panel manager supplying runtime context.
-	 * @param ?int $limit Optional per-call result limit overriding the provider default.
-	 * @return array<int, array<string, mixed>> Normalized search results capped by limit.
+	 * @param TCursor $cursor
 	 */
-	public function search(string $query, PanelRequest $request, ?PanelManager $manager=null, ?int $limit=null): array {
-		$query=trim($query);
-		if($query==='' || $this->searchHandler===null){
-			return [];
+	public function searchAuthorizedPage(string $query, PanelRequest $request, PanelManager $manager, ?int $limit=null, string|array|null $cursor=null, ?int $globalLimit=null): PanelSearchPage {
+		if(!$manager->allowsSearchProvider($this, $request)){
+			return PanelSearchPage::make(meta:['provider'=>$this->name, 'authorized'=>false]);
 		}
-		$limit=max(1, min(50, $limit ?? $this->limit));
-		try{
-			$results=($this->searchHandler)($query, $request, $this, $limit, $manager);
-			return $this->normalizeResults(is_array($results) ? $results : [], $limit);
-		}
-		catch(\Throwable $exception){
-			PanelTrace::record('search_provider.error', [
-				'provider'=>$this->name,
-				'message'=>$exception->getMessage(),
-			]);
-			return [];
-		}
+		return $this->searchPage($query, $request, $manager, $limit, $cursor, $globalLimit);
 	}
 
 	/**
-	 * Serializes provider configuration without executing lazy callbacks.
+	 * Executes and normalizes one bounded provider page.
 	 *
-	 * `visible_lazy` and `search_lazy` expose whether callbacks are attached
-	 * without serializing executable closures.
+	 * Scalar/future-like responses are rejected instead of being polled or
+	 * blocked. Failures become partial diagnostics and trace events.
 	 *
-	 * @return array{name: string, label: string, description: ?string, icon: ?string, sort: int, limit: int, hidden: bool, visible_lazy: bool, search_lazy: bool, meta: array<string, mixed>} Provider descriptor.
+	 * @param TCursor $cursor
 	 */
+	public function searchPage(string $query, PanelRequest $request, ?PanelManager $manager=null, ?int $limit=null, string|array|null $cursor=null, ?int $globalLimit=null): PanelSearchPage {
+		$query=self::text($query);
+		$limit=max(1, min(50, $limit ?? $this->limit));
+		$context=PanelSearchContext::make($query, $request, $limit, $globalLimit ?? $limit, $cursor, ['provider'=>$this->name]);
+		if($query==='' || $this->searchHandler===null){
+			return PanelSearchPage::make(meta:['provider'=>$this->name]);
+		}
+		try{
+			$response=($this->searchHandler)($query, $request, $this, $limit, $manager, $context);
+		}
+		catch(\Throwable $exception){
+			PanelTrace::record('search_provider.error', ['provider'=>$this->name, 'exception'=>$exception::class]);
+			return PanelSearchPage::make(partial:true, diagnostics:[self::diagnostic('provider_error', $this->name, 'Provider search failed.', $exception)], meta:['provider'=>$this->name]);
+		}
+
+		$page=$response instanceof PanelSearchPage ? $response : null;
+		if($page===null && is_array($response) && !array_is_list($response) && (array_key_exists('results', $response) || array_key_exists('items', $response))){
+			$page=PanelSearchPage::fromArray($response);
+		}
+		$rows=$page?->results() ?? (is_iterable($response) ? $response : null);
+		if($rows===null){
+			PanelTrace::record('search_provider.invalid_response', ['provider'=>$this->name, 'response_type'=>get_debug_type($response)]);
+			return PanelSearchPage::make(partial:true, diagnostics:[self::diagnostic('invalid_response', $this->name, 'Provider returned an unsupported response type.')], meta:['provider'=>$this->name]);
+		}
+
+		$normalized=[];
+		$diagnostics=$page?->diagnostics() ?? [];
+		$partial=$page?->isPartial() ?? false;
+		$complete=$page?->isComplete() ?? true;
+		$inputBudget=min(200, max(20, $limit*4));
+		$inspected=0;
+		$inputBudgetExhausted=false;
+		$knownCount=$page!==null
+			? count($page)
+			: (is_array($response) && array_is_list($response) ? count($response) : null);
+		try{
+			foreach($rows as $row){
+				if($inspected++>=$inputBudget){
+					$inputBudgetExhausted=true;
+					break;
+				}
+				if(count($normalized)>=$limit){ break; }
+				if(is_array($row)){
+					$row=array_replace($row, ['provider'=>$this->name, 'source'=>$this->name, 'resource'=>$this->name]);
+					$result=PanelSearchResult::fromArray($row, $this->name, $this->label, $this->icon);
+				}
+				else {
+					$result=$row instanceof PanelSearchResult ? $row->forProvider($this->name, $this->label, $this->icon) : null;
+				}
+				if(!$result instanceof PanelSearchResult){ continue; }
+				if($this->scoreResolver!==null){
+					try{
+						$score=($this->scoreResolver)($result, $query, $request, $this, $manager, $context);
+						if(!is_numeric($score) || !is_finite((float)$score)){ throw new \UnexpectedValueException('Search score must be finite and numeric.'); }
+						$result=$result->withScore((float)$score);
+					}
+					catch(\Throwable $exception){
+						$partial=true;
+						$diagnostics[]=self::diagnostic('score_error', $this->name, 'Provider score resolver failed.', $exception);
+						PanelTrace::record('search_provider.score_error', ['provider'=>$this->name, 'exception'=>$exception::class]);
+					}
+				}
+				if($this->dedupeResolver!==null){
+					try{
+						$key=($this->dedupeResolver)($result, $query, $request, $this, $manager, $context);
+						if(!is_scalar($key) && $key!==null){ throw new \UnexpectedValueException('Search dedupe key must be scalar or null.'); }
+						if(trim((string)$key)!==''){ $result=$result->withDedupeKey((string)$key); }
+					}
+					catch(\Throwable $exception){
+						$partial=true;
+						$diagnostics[]=self::diagnostic('dedupe_error', $this->name, 'Provider dedupe resolver failed.', $exception);
+						PanelTrace::record('search_provider.dedupe_error', ['provider'=>$this->name, 'exception'=>$exception::class]);
+					}
+				}
+				$normalized[]=$result;
+			}
+		}
+		catch(\Throwable $exception){
+			$complete=false;
+			$partial=true;
+			$diagnostics[]=self::diagnostic('provider_iteration_error', $this->name, 'Provider result iteration failed.', $exception);
+			PanelTrace::record('search_provider.iteration_error', ['provider'=>$this->name, 'exception'=>$exception::class]);
+		}
+		if(($knownCount!==null && $knownCount>$limit) || ($knownCount===null && count($normalized)>=$limit)){
+			$complete=false;
+		}
+		if($inputBudgetExhausted){
+			$complete=false;
+			$partial=true;
+			$diagnostics[]=self::diagnostic('input_budget_exhausted', $this->name, 'Provider input budget was exhausted.');
+			PanelTrace::record('search_provider.input_budget_exhausted', ['provider'=>$this->name, 'input_limit'=>$inputBudget]);
+		}
+		$diagnostics=array_map(
+			fn(array $diagnostic): array=>array_replace($diagnostic, ['provider'=>$this->name]),
+			array_values(array_filter($diagnostics, 'is_array'))
+		);
+		return PanelSearchPage::make(
+			$normalized,
+			$page?->nextCursor(),
+			$complete,
+			$partial,
+			$diagnostics,
+			array_replace($page?->meta() ?? [], ['provider'=>$this->name, 'tenant'=>$request->tenantKey()])
+		);
+	}
+
+	/**
+	 * Backward-compatible array-returning provider API.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	public function search(string $query, PanelRequest $request, ?PanelManager $manager=null, ?int $limit=null): array {
+		return array_map(static fn(PanelSearchResult $result): array=>$result->toArray(), $this->searchPage($query, $request, $manager, $limit)->results());
+	}
+
+	/** @return array<string,mixed> */
 	public function toArray(): array {
 		return [
 			'name'=>$this->name,
@@ -312,60 +378,34 @@ final class PanelSearchProvider {
 			'sort'=>$this->sort,
 			'limit'=>$this->limit,
 			'hidden'=>$this->hidden,
+			'tenant_scoped'=>$this->tenantScoped,
+			'tenant_required'=>$this->tenantRequired,
 			'visible_lazy'=>$this->visibilityResolver!==null,
+			'authorization_lazy'=>$this->authorizationResolver!==null,
 			'search_lazy'=>$this->searchHandler!==null,
+			'score_lazy'=>$this->scoreResolver!==null,
+			'dedupe_lazy'=>$this->dedupeResolver!==null,
+			'page_results'=>true,
+			'iterable_results'=>true,
+			'cursor_aware'=>true,
 			'meta'=>$this->meta,
 		];
 	}
 
-	/**
-	 * Normalizes provider-specific result rows into the shared panel shape.
-	 *
-	 * Rows without a title or label are ignored. Each result receives provider
-	 * identity, source labels, display text, record key, URL, icon, and metadata
-	 * fields expected by panel clients.
-	 *
-	 * @param array<int|string, mixed> $results Raw callback results.
-	 * @param int $limit Maximum normalized rows to emit.
-	 * @return array<int, array{resource: string, resource_label: string, source: string, source_label: string, title: string, subtitle: string, record_key: string, url: string, icon: string, meta: array<string, mixed>}> Normalized result rows.
-	 */
-	private function normalizeResults(array $results, int $limit): array {
-		$normalized=[];
-		foreach($results as $result){
-			if(!is_array($result)){
-				continue;
-			}
-			$title=trim((string)($result['title'] ?? $result['label'] ?? ''));
-			if($title===''){
-				continue;
-			}
-			$normalized[]=[
-				'resource'=>$this->name,
-				'resource_label'=>(string)($result['resource_label'] ?? $result['source_label'] ?? $this->label),
-				'source'=>$this->name,
-				'source_label'=>(string)($result['source_label'] ?? $result['resource_label'] ?? $this->label),
-				'title'=>$title,
-				'subtitle'=>(string)($result['subtitle'] ?? $result['description'] ?? ''),
-				'record_key'=>trim((string)($result['record_key'] ?? $result['key'] ?? '')),
-				'url'=>trim((string)($result['url'] ?? $result['href'] ?? '')),
-				'icon'=>(string)($result['icon'] ?? $this->icon ?? ''),
-				'meta'=>is_array($result['meta'] ?? null) ? $result['meta'] : [],
-			];
-			if(count($normalized)>=$limit){
-				break;
-			}
-		}
-		return $normalized;
+	/** @return array<string,mixed> */
+	private static function diagnostic(string $code, string $provider, string $message, ?\Throwable $exception=null): array {
+		$diagnostic=['code'=>$code, 'provider'=>$provider, 'message'=>$message, 'severity'=>'error'];
+		if($exception!==null){ $diagnostic['exception']=$exception::class; }
+		return $diagnostic;
 	}
 
-	/**
-	 * Converts a normalized provider key into a default display label.
-	 *
-	 * @param string $value Provider key to humanize.
-	 * @return string Title-cased label with separators converted to spaces.
-	 */
 	private static function humanize(string $value): string {
 		$value=trim(str_replace(['_', '-', '.'], ' ', $value));
 		return $value==='' ? '' : ucwords($value);
+	}
+
+	private static function text(string $value): string {
+		$value=PanelSearchSanitizer::value(trim($value));
+		return is_string($value) ? $value : '';
 	}
 }

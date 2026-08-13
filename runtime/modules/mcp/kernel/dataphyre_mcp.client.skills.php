@@ -20,15 +20,16 @@ trait dataphyre_mcp_client_skill_surfaces {
 				'description'=>'Build ordinary Dataphyre applications through the app-builder planner, module docs, app-owned files, and focused verification before broader governance context.',
 				'targets'=>['codex', 'claude', 'cursor', 'generic'],
 				'theme'=>'app_builder',
-				'related_tools'=>['dataphyre_app_builder_plan_generate', 'dataphyre_task_pack_generate', 'dataphyre_mcp_task_start_pack_export', 'dataphyre_mcp_resource_finder', 'dataphyre_php_lint', 'dataphyre_run_panel_regression', 'dataphyre_run_panel_field_catalog_check'],
+				'related_tools'=>['dataphyre_app_builder_plan_generate', 'dataphyre_panel_capability_catalog', 'dataphyre_panel_recipe_plan', 'dataphyre_panel_verification_plan', 'dataphyre_task_pack_generate', 'dataphyre_mcp_task_start_pack_export', 'dataphyre_mcp_resource_finder', 'dataphyre_php_lint', 'dataphyre_run_panel_regression', 'dataphyre_run_panel_field_catalog_check'],
 				'related_prompts'=>['dataphyre_feature_plan', 'dataphyre_panel_workflow'],
 				'related_resources'=>[
-					'dataphyre://doc/common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md',
-					'dataphyre://doc/common/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md',
+					'dataphyre://panel',
+					'dataphyre://doc/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md',
+					'dataphyre://doc/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md',
 					'dataphyre://module-index',
 				],
 				'instructions'=>[
-					'Start ordinary app creation with dataphyre_app_builder_plan_generate payload_profile=compact and read builder_response.first_read first, especially builder_response.first_read.next_action, next_detail_page, files_summary, schema_summary, naming_contract, write_readiness, scaffold_completion_summary, and verification_handoff. Treat open_details as the backing pointer map for builder_response.first_read.next_detail_page, not as default reading. Treat the agent overhead budget as part of the contract: keep status/safety/enterprise/publication validation collapsed until explicitly requested for an escalation decision.',
+					'For Panel work, catalog and describe the affected Panel domain or Framework area before selecting implementation classes; use a Panel recipe when the task crosses domains and a Panel verification plan after changed paths are known. Start ordinary app creation with dataphyre_app_builder_plan_generate payload_profile=compact and read builder_response.first_read first, especially builder_response.first_read.next_action, next_detail_page, files_summary, schema_summary, naming_contract, write_readiness, scaffold_completion_summary, and verification_handoff. Treat open_details as the backing pointer map for builder_response.first_read.next_detail_page, not as default reading. Treat the agent overhead budget as part of the contract: keep status/safety/enterprise/publication validation collapsed until explicitly requested for an escalation decision.',
 					'For large app scaffolds, follow builder_response.first_read.scaffold_completion_summary.next_continuation or entity_planning.continuation_calls until deferred_entities is empty; preserve dependency_context/dependency_summary and pass explicit entities, fields, and max_entities when the task already names them, using foreign_key_target for relationships, not_foreign_key for external ids, and json/jsonb for structured columns.',
 					'Open detail pages only for the current phase: planning details for files/schema/relations, implementation details for local_convention_probe and implementation_recipe, verification details after app-owned writes, and controls details for sensitivity or policy decisions. No governance or release validation is needed for ordinary app work.',
 					'Across continuations and handoffs, preserve the compact first-read fields plus the referenced detail page or continuation arguments rather than copying every app-builder field into the default context.',
@@ -42,18 +43,61 @@ trait dataphyre_mcp_client_skill_surfaces {
 					'Open governance, enterprise audit, release checks, or hot-path benchmark evidence only when the task matches escalation triggers: '.$this->mcp_escalation_trigger_summary().'.',
 				],
 			],
+			'dataphyre-panel-builder'=>[
+				'name'=>'dataphyre-panel-builder',
+				'title'=>'Dataphyre Panel Builder',
+				'description'=>'Discover and compose every current Panel domain through source-derived contracts, provider-aware integration plans, and focused executable proof.',
+				'targets'=>['codex', 'claude', 'cursor', 'generic'],
+				'theme'=>'panel',
+				'related_tools'=>[
+					'dataphyre_panel_capability_catalog',
+					'dataphyre_panel_capability_describe',
+					'dataphyre_panel_surface_graph',
+					'dataphyre_panel_recipe_plan',
+					'dataphyre_panel_integration_plan',
+					'dataphyre_panel_verification_plan',
+					'dataphyre_contract_catalog',
+					'dataphyre_app_builder_plan_generate',
+					'dataphyre_run_panel_regression',
+					'dataphyre_run_panel_field_catalog_check',
+				],
+				'related_prompts'=>[
+					'dataphyre_panel_workflow',
+					'dataphyre_panel_platform_workflow',
+					'dataphyre_panel_operations_workflow',
+					'dataphyre_panel_studio_workflow',
+					'dataphyre_panel_realtime_workflow',
+					'dataphyre_panel_adapter_workflow',
+				],
+				'related_resources'=>[
+					'dataphyre://panel',
+					'dataphyre://contracts',
+					'dataphyre://doc/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md',
+				],
+				'instructions'=>[
+					'Start with dataphyre_panel_capability_catalog. Filter by query, category, or kind so the first read contains only the affected platform domains and Framework areas.',
+					'Describe each selected domain or area and choose the contracts, integration, verification, security, or complete view needed for the current phase.',
+					'Graph domain dependencies before composing platform services. A domain name in the manifest proves static availability only, never host configuration, provider readiness, durability, or successful activation.',
+					'Use dataphyre_panel_recipe_plan for cross-domain application, platform, Operations OS, Studio, realtime, migration, or adapter tasks. Keep the returned phases and boundaries in implementation order.',
+					'Use dataphyre_panel_integration_plan for callback, PDO, Redis, Dataphyre Storage, filesystem, memory, or custom providers. Keep clients, connections, callbacks, and credentials host-owned and require explicit initialization.',
+					'Preserve typed interfaces, tenant/scope authority, canonical payloads, bounded inputs, signed intents, transaction or compensation semantics, rollback, and secret-free manifests.',
+					'After writes, pass the actual changed paths and intended claim to dataphyre_panel_verification_plan. Run the returned focused TestKit, exact-coverage, static, and browser lanes; a plan is not proof.',
+					'For ordinary CRUD/resources, continue from capability discovery into dataphyre_app_builder_plan_generate payload_profile=compact. For shared runtime or provider work, stay in the Panel integration and contract lanes.',
+				],
+			],
 			'dataphyre-runtime-guidelines'=>[
 				'name'=>'dataphyre-runtime-guidelines',
 				'title'=>'Dataphyre Runtime Guidelines',
 				'description'=>'Load baseline Dataphyre runtime editing rules, safety posture, and verification expectations before code changes.',
 				'targets'=>['codex', 'claude', 'cursor', 'generic'],
 				'theme'=>'runtime',
-				'related_tools'=>['dataphyre_agent_context_generate', 'dataphyre_mcp_resource_finder', 'dataphyre_mcp_safety_boundary_report', 'dataphyre_mcp_enterprise_adoption_audit', 'dataphyre_verification_surface_catalog'],
-				'related_prompts'=>['dataphyre_runtime_guidelines', 'dataphyre_feature_plan'],
-				'related_resources'=>['dataphyre://ai-guidelines', 'dataphyre://agentic-enterprise', 'dataphyre://runtime-readme', 'dataphyre://mcp-capabilities'],
+				'related_tools'=>['dataphyre_agent_context_generate', 'dataphyre_contract_catalog', 'dataphyre_contract_describe', 'dataphyre_unit_tests_list', 'dataphyre_mcp_resource_finder', 'dataphyre_mcp_safety_boundary_report', 'dataphyre_mcp_enterprise_adoption_audit', 'dataphyre_verification_surface_catalog'],
+				'related_prompts'=>['dataphyre_runtime_guidelines', 'dataphyre_feature_plan', 'dataphyre_contract_workflow'],
+				'related_resources'=>['dataphyre://ai-guidelines', 'dataphyre://agentic-enterprise', 'dataphyre://runtime-readme', 'dataphyre://mcp-capabilities', 'dataphyre://contracts', 'dataphyre://panel'],
 				'instructions'=>[
 					'Start by reading Dataphyre AI guidelines, the agentic enterprise contract, and runtime README resources.',
 					'Follow the Application-Agent Default Lane for app work: read-only metadata first, app-owned extension points, and focused app or module checks.',
+					'Before changing a shared interface, serialized payload, or source-declared behavior, scope dataphyre_contract_catalog to the affected module, describe the stable contract id, and select its focused TestKit evidence without executing source during discovery.',
 					'Run the enterprise adoption audit before agent-first, corporate-ready, public, or release-facing claims.',
 					'Prefer static inspection and dry-run planning before edits.',
 					'Use focused application or module verification for app behavior; use aggregate MCP verification only before MCP/release-surface claims.',
@@ -104,6 +148,35 @@ trait dataphyre_mcp_client_skill_surfaces {
 					'Review the query runner contract before proposing any future unsafe-gated adapter.',
 				],
 			],
+			'dataphyre-sql-migrations'=>[
+				'name'=>'dataphyre-sql-migrations',
+				'title'=>'Dataphyre PostgreSQL Migrations',
+				'description'=>'Discover, validate, and plan application-neutral PostgreSQL migrations, including maintenance expand/contract and exact SemVer compatibility floors, through immutable manifest-v3 contracts and no-write MCP tooling.',
+				'targets'=>['codex', 'claude', 'cursor', 'generic'],
+				'theme'=>'sql_migrations',
+				'related_tools'=>[
+					'dataphyre_sql_migration_catalog',
+					'dataphyre_sql_migration_describe',
+					'dataphyre_sql_migration_manifest_validate',
+					'dataphyre_sql_migration_scaffold_plan',
+					'dataphyre_mcp_safety_boundary_report',
+				],
+				'related_prompts'=>['dataphyre_sql_migration_workflow'],
+				'related_resources'=>[
+					'dataphyre://sql-migrations',
+					'dataphyre://sql-migrations/manifest-v3-schema',
+					'dataphyre://doc/dataphyre/runtime/modules/sql/documentation/Dataphyre_PostgreSQL_Migrations.md',
+				],
+				'instructions'=>[
+					'Catalog and describe the migration contract before adapting application release tooling.',
+					'Use the scaffold plan to derive exact filenames, SHA-256 values, manifest entry shape, and rolling-expansion issues; it does not write files.',
+					'Validate the completed repo-local database directory before any database connection is opened.',
+					'Read maintenance as a transactional runtime mode for the pending post-cutoff rolling_expand and rolling_contract suffix, not as MCP authority to execute it.',
+					'For each pending rolling_contract, require application release code to supply a caller-verified minimum active release meeting the manifest minimum_compatible_release under exact SemVer precedence; ignore +build metadata for precedence.',
+					'Keep application-specific release names and identity translation in the application adapter.',
+					'Leave connections, verified fleet-floor derivation, apply/rollback authorization, drain/barrier completion, backups, and rollout coordination to application-owned release code.',
+				],
+			],
 			'dataphyre-workflow-continuity'=>[
 				'name'=>'dataphyre-workflow-continuity',
 				'title'=>'Dataphyre Workflow Continuity',
@@ -138,6 +211,11 @@ trait dataphyre_mcp_client_skill_surfaces {
 		if(!in_array($target, ['codex', 'claude', 'cursor', 'generic', 'all'], true)){
 			$target='all';
 		}
+		return [$target,$this->mcp_select_skill_definitions($definitions,$names,$target),array_keys($definitions)];
+	}
+
+	/** @param array<string,array<string,mixed>> $definitions @param list<mixed> $names @return list<array<string,mixed>> */
+	private function mcp_select_skill_definitions(array $definitions,array $names,string $target): array {
 		$selected=[];
 		foreach($names as $name){
 			$name=(string)$name;
@@ -150,7 +228,7 @@ trait dataphyre_mcp_client_skill_surfaces {
 			}
 			$selected[]=$skill;
 		}
-		return [$target, $selected, array_keys($definitions)];
+		return $selected;
 	}
 
 	/**
@@ -256,40 +334,9 @@ trait dataphyre_mcp_client_skill_surfaces {
 		$findings=[];
 		$audits=[];
 		foreach($skills as $skill){
-			$missing_tools=array_values(array_diff($skill['related_tools'] ?? [], $tool_names));
-			$missing_prompts=array_values(array_diff($skill['related_prompts'] ?? [], $prompt_names));
-			$missing_resources=array_values(array_diff($skill['related_resources'] ?? [], $resource_uris));
-			$serialized=json_encode($skill, JSON_UNESCAPED_SLASHES) ?: '';
-			$coupling=[];
-			foreach(['applications/', 'app/', 'tools/', '.local/', 'localhost:', '127.0.0.1:'] as $needle){
-				if(str_contains($serialized, $needle)){
-					$coupling[]=$needle;
-				}
-			}
-			if($missing_tools!==[]){
-				$findings[]=['severity'=>'error', 'skill'=>$skill['name'], 'code'=>'missing_tools', 'items'=>$missing_tools];
-			}
-			if($missing_prompts!==[]){
-				$findings[]=['severity'=>'error', 'skill'=>$skill['name'], 'code'=>'missing_prompts', 'items'=>$missing_prompts];
-			}
-			if($missing_resources!==[]){
-				$findings[]=['severity'=>'error', 'skill'=>$skill['name'], 'code'=>'missing_resources', 'items'=>$missing_resources];
-			}
-			if($coupling!==[]){
-				$findings[]=['severity'=>'error', 'skill'=>$skill['name'], 'code'=>'product_local_coupling', 'items'=>array_values(array_unique($coupling))];
-			}
-			$audits[]=[
-				'name'=>$skill['name'],
-				'targets'=>$skill['targets'],
-				'tool_count'=>count($skill['related_tools'] ?? []),
-				'prompt_count'=>count($skill['related_prompts'] ?? []),
-				'resource_count'=>count($skill['related_resources'] ?? []),
-				'missing_tools'=>$missing_tools,
-				'missing_prompts'=>$missing_prompts,
-				'missing_resources'=>$missing_resources,
-				'product_local_coupling'=>$coupling,
-				'ready'=>$missing_tools===[] && $missing_prompts===[] && $missing_resources===[] && $coupling===[],
-			];
+			$entry=$this->mcp_skill_registration_entry($skill,$tool_names,$prompt_names,$resource_uris);
+			array_push($findings,...$entry['findings']);
+			$audits[]=$entry['audit'];
 		}
 		$error_count=count(array_filter($findings, static fn(array $finding): bool => ($finding['severity'] ?? '')==='error'));
 		return [
@@ -316,16 +363,53 @@ trait dataphyre_mcp_client_skill_surfaces {
 	}
 
 	/**
+	 * Audits one independently supplied skill against explicit registry snapshots.
+	 *
+	 * @param list<string> $tool_names
+	 * @param list<string> $prompt_names
+	 * @param list<string> $resource_uris
+	 * @return array{findings:list<array<string,mixed>>,audit:array<string,mixed>}
+	 */
+	private function mcp_skill_registration_entry(array $skill,array $tool_names,array $prompt_names,array $resource_uris): array {
+		$name=(string)($skill['name'] ?? '');
+		$missing_tools=array_values(array_diff(is_array($skill['related_tools'] ?? null) ? $skill['related_tools'] : [],$tool_names));
+		$missing_prompts=array_values(array_diff(is_array($skill['related_prompts'] ?? null) ? $skill['related_prompts'] : [],$prompt_names));
+		$missing_resources=array_values(array_diff(is_array($skill['related_resources'] ?? null) ? $skill['related_resources'] : [],$resource_uris));
+		$serialized=json_encode($skill,JSON_UNESCAPED_SLASHES) ?: '';
+		$coupling=[];
+		foreach(['applications/','app/','tools/','.local/','localhost:','127.0.0.1:'] as $needle){
+			if(str_contains($serialized,$needle)){$coupling[]=$needle;}
+		}
+		$coupling=array_values(array_unique($coupling));
+		$findings=[];
+		foreach(['missing_tools'=>$missing_tools,'missing_prompts'=>$missing_prompts,'missing_resources'=>$missing_resources,'product_local_coupling'=>$coupling] as $code=>$items){
+			if($items!==[]){$findings[]=['severity'=>'error','skill'=>$name,'code'=>$code,'items'=>$items];}
+		}
+		return [
+			'findings'=>$findings,
+			'audit'=>[
+				'name'=>$name,
+				'targets'=>is_array($skill['targets'] ?? null) ? $skill['targets'] : [],
+				'tool_count'=>count(is_array($skill['related_tools'] ?? null) ? $skill['related_tools'] : []),
+				'prompt_count'=>count(is_array($skill['related_prompts'] ?? null) ? $skill['related_prompts'] : []),
+				'resource_count'=>count(is_array($skill['related_resources'] ?? null) ? $skill['related_resources'] : []),
+				'missing_tools'=>$missing_tools,
+				'missing_prompts'=>$missing_prompts,
+				'missing_resources'=>$missing_resources,
+				'product_local_coupling'=>$coupling,
+				'ready'=>$findings===[],
+				],
+			];
+	}
+
+	/**
 	 * Exports selected MCP skills as a client-consumable pack.
 	 *
 	 * @param array<string,mixed> $args Skill selection and pack options.
 	 * @return array Skill pack payload.
 	 */
 	private function mcp_skill_pack_export(array $args): array {
-		$target=strtolower(trim((string)($args['target'] ?? 'generic')));
-		if(!in_array($target, ['codex', 'claude', 'cursor', 'generic'], true)){
-			$target='generic';
-		}
+		$target=$this->mcp_client_target($args['target'] ?? 'generic');
 		$args['target']=$target;
 		[$resolved_target, $skills, $available]=$this->mcp_select_skills($args);
 		$audit=$this->mcp_skill_registration_audit(['names'=>array_map(static fn(array $skill): string => $skill['name'], $skills), 'target'=>$resolved_target]);
@@ -385,10 +469,7 @@ trait dataphyre_mcp_client_skill_surfaces {
 	 * @return array Skill install plan payload.
 	 */
 	private function mcp_skill_install_plan(array $args): array {
-		$target=strtolower(trim((string)($args['target'] ?? 'generic')));
-		if(!in_array($target, ['codex', 'claude', 'cursor', 'generic'], true)){
-			$target='generic';
-		}
+		$target=$this->mcp_client_target($args['target'] ?? 'generic');
 		$args['target']=$target;
 		[$resolved_target, $skills, $available]=$this->mcp_select_skills($args);
 		$pack=$this->mcp_skill_pack_export(['names'=>array_map(static fn(array $skill): string => $skill['name'], $skills), 'target'=>$resolved_target]);
@@ -491,10 +572,7 @@ trait dataphyre_mcp_client_skill_surfaces {
 	 * @return array Skill file install plan payload.
 	 */
 	private function mcp_skill_file_install_plan(array $args): array {
-		$target=strtolower(trim((string)($args['target'] ?? 'generic')));
-		if(!in_array($target, ['codex', 'claude', 'cursor', 'generic'], true)){
-			$target='generic';
-		}
+		$target=$this->mcp_client_target($args['target'] ?? 'generic');
 		$skill_root=trim((string)($args['skill_root'] ?? ''));
 		if($skill_root===''){
 			$skill_root=match($target){
@@ -513,9 +591,6 @@ trait dataphyre_mcp_client_skill_surfaces {
 		$proposed_writes=[];
 		foreach($install_plan['plans'] ?? [] as $plan){
 			$name=(string)($plan['name'] ?? '');
-			if($name===''){
-				continue;
-			}
 			$proposed_writes[]=[
 				'path'=>$skill_root.'/'.$name.'/SKILL.md',
 				'owner'=>'caller_owned_skill_file',

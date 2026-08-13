@@ -1,0 +1,23 @@
+<?php
+namespace First\Area {
+	/**
+	 * Handles visible code.
+	 * @return void
+	 * continues here
+	 */
+	class Visible {
+		public function run() {
+			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='run');
+		}
+	}
+}
+?>
+<script>
+class Ignored {
+	public function ignored() {}
+}
+</script>
+<?php
+class GlobalThing {
+	private $flag;
+}

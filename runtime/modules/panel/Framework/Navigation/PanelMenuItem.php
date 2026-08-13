@@ -37,9 +37,9 @@ final class PanelMenuItem {
 	private string $tone='neutral';
 	/** @var array<string, mixed> Additional metadata emitted with the menu payload. */
 	private array $meta=[];
-	/** @var ?\Closure Lazy visibility callback receiving request, item, and manager. */
+	/** @var (\Closure(?PanelRequest,self,?PanelManager):bool)|null Lazy visibility callback receiving request, item, and manager. */
 	private ?\Closure $visibilityResolver=null;
-	/** @var ?\Closure Lazy URL callback receiving request, item, and manager. */
+	/** @var (\Closure(?PanelRequest,self,?PanelManager):(string|\Stringable|null))|null Lazy URL callback receiving request, item, and manager. */
 	private ?\Closure $urlResolver=null;
 
 	/**
@@ -149,7 +149,7 @@ final class PanelMenuItem {
 	 * closures and evaluated during serialization with request, item, and manager
 	 * context.
 	 *
-	 * @param string|callable $url Static URL or resolver callback.
+	 * @param string|callable(?PanelRequest,self,?PanelManager):(string|\Stringable|null) $url Static URL or resolver callback.
 	 * @return self Cloned item with URL source updated.
 	 */
 	public function url(string|callable $url): self {
@@ -226,7 +226,7 @@ final class PanelMenuItem {
 	 * Resolver exceptions are traced and treated as hidden so navigation payloads
 	 * remain safe to render.
 	 *
-	 * @param callable $resolver Callback receiving request, item, and manager.
+	 * @param callable(?PanelRequest,self,?PanelManager):bool $resolver Callback receiving request, item, and manager.
 	 * @return self Cloned item with visibility resolver attached.
 	 */
 	public function visibleUsing(callable $resolver): self {

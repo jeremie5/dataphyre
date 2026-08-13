@@ -3,6 +3,11 @@
 /.phpunit.cache/
 /.php-cs-fixer.cache
 /composer.lock
+/.codex-tmp/
+/.tmp/
+/hosttmp/
+/tmp/
+/workspace/
 
 # Local install bootstrap
 /flight_sheet.php
@@ -37,6 +42,7 @@
 /logs/*
 !/logs/.gitkeep
 /runtime/cache/
+/runtime/modules/core/unit_tests/fixtures/core-functions-unavailable-missing/cache/
 /runtime/logs/
 /runtime/modcache.php
 /runtime/sql_migration/plans/

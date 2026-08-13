@@ -108,9 +108,8 @@ final class PanelTrace {
 	 *
 	 * Events include an id, timestamp, normalized event name, sanitized context,
 	 * and current memory usage. The in-memory buffer and session mirror are both
-	 * capped to `LIMIT` entries. Context sanitization bounds size and object shape,
-	 * but callers should still avoid passing secrets because scalar strings remain
-	 * visible until truncated.
+	 * capped to `LIMIT` entries. Context sanitization bounds size and object shape
+	 * and recursively redacts recognized credentials from keys and string fragments.
 	 *
 	 * @param string $event Event name.
 	 * @param array<string, mixed> $context Context sanitized before storage.
@@ -207,6 +206,15 @@ final class PanelTrace {
 		foreach(self::$events as $event){
 			$events[]=$event;
 		}
+		$events=array_values(array_filter(array_map(static function(mixed $event):?array{
+			if(!is_array($event)){return null;}
+			$clean=PanelSensitiveDataSanitizer::sanitize($event,[
+				'max_depth'=>10,
+				'max_items'=>100,
+				'max_string_bytes'=>500,
+			]);
+			return is_array($clean)?$clean:null;
+		},$events)));
 		$events=self::dedupe($events);
 		if(count($events)>self::LIMIT){
 			$events=array_slice($events, -self::LIMIT);
@@ -278,7 +286,12 @@ final class PanelTrace {
 			if(!is_string($key)){
 				continue;
 			}
-			$clean[$key]=self::sanitizeValue($value);
+			$clean[$key]=PanelSensitiveDataSanitizer::sanitize(self::sanitizeValue($value), [
+				'root_key'=>$key,
+				'max_depth'=>8,
+				'max_items'=>25,
+				'max_string_bytes'=>500,
+			]);
 		}
 		return $clean;
 	}
@@ -294,7 +307,10 @@ final class PanelTrace {
 	 * @param mixed $value Raw context value.
 	 * @return mixed Sanitized scalar, array, or compact summary.
 	 */
-	private static function sanitizeValue(mixed $value): mixed {
+	private static function sanitizeValue(mixed $value, int $depth=0): mixed {
+		if($depth>8){
+			return ['type'=>get_debug_type($value), 'truncated'=>'depth'];
+		}
 		if($value instanceof Resource){
 			return $value->name();
 		}
@@ -403,16 +419,17 @@ final class PanelTrace {
 					'keys'=>array_slice(array_keys($value), 0, 25),
 				];
 			}
-			return array_map([self::class, 'sanitizeValue'], $value);
+			$clean=[];
+			foreach($value as $key=>$item){
+				$clean[$key]=self::sanitizeValue($item, $depth+1);
+			}
+			return $clean;
 		}
 		if(is_object($value)){
 			return [
 				'type'=>'object',
 				'class'=>$value::class,
 			];
-		}
-		if(is_string($value) && strlen($value)>500){
-			return substr($value, 0, 500).'...';
 		}
 		return $value;
 	}

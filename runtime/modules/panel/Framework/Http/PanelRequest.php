@@ -137,20 +137,28 @@ final class PanelRequest {
 		$route=is_array($route) ? $route : [];
 		$segments=self::routeSegments($route, $options);
 		$inferred=self::inferRouteSegments($segments);
-		$resource=self::firstRouteValue($route, $options['resource_parameters'] ?? ['panel_resource', 'resource'], $query['resource'] ?? null);
-		$operation=self::firstRouteValue($route, $options['operation_parameters'] ?? ['panel_operation', 'operation'], $query['operation'] ?? null);
-		$record=self::firstRouteValue($route, $options['record_parameters'] ?? ['panel_record', 'record', 'record_key', 'id', 'key', 'slug', 'uuid', 'employeeDocument', 'document', 'user'], $query['record'] ?? null);
-		$relation=self::firstRouteValue($route, $options['relation_parameters'] ?? ['panel_relation', 'relation'], $query['relation'] ?? null);
-		$action=self::firstRouteValue($route, $options['action_parameters'] ?? ['panel_action', 'action'], $query['action'] ?? null);
-		if(($options['infer_segments'] ?? true)===true){
+		$resource=self::firstRouteValue($route, $options['resource_parameters'] ?? ['panel_resource', 'resource']);
+		$operation=self::firstRouteValue($route, $options['operation_parameters'] ?? ['panel_operation', 'operation']);
+		$record=self::firstRouteValue($route, $options['record_parameters'] ?? ['panel_record', 'record', 'record_key', 'id', 'key', 'slug', 'uuid', 'employeeDocument', 'document', 'user']);
+		$relation=self::firstRouteValue($route, $options['relation_parameters'] ?? ['panel_relation', 'relation']);
+		$action=self::firstRouteValue($route, $options['action_parameters'] ?? ['panel_action', 'action']);
+		$inferSegments=($options['infer_segments'] ?? true)===true;
+		if($inferSegments){
 			$resource=$resource ?: ($inferred['resource'] ?? null);
 			$operation=$operation ?: ($inferred['operation'] ?? null);
 			$record=$record ?: ($inferred['record'] ?? null);
 			$relation=$relation ?: ($inferred['relation'] ?? null);
 			$action=$action ?: ($inferred['action'] ?? null);
 		}
+		if(!$inferSegments || $inferred===[]){
+			$resource=$resource ?: ($query['resource'] ?? null);
+			$operation=$operation ?: ($query['operation'] ?? null);
+			$record=$record ?: ($query['record'] ?? null);
+			$relation=$relation ?: ($query['relation'] ?? null);
+			$action=$action ?: ($query['action'] ?? null);
+		}
 		return self::fromArray([
-			'method'=>method_exists($request, 'effective_method') ? $request->effectiveMethod() : $request->method(),
+			'method'=>method_exists($request, 'effectiveMethod') ? $request->effectiveMethod() : $request->method(),
 			'resource'=>$resource,
 			'operation'=>$operation ?: (strtoupper($request->method())==='POST' ? 'store' : 'index'),
 			'record'=>$record,
@@ -665,46 +673,7 @@ final class PanelRequest {
 	 * @return array<string, string|null> Inferred resource, operation, record, relation, and action values.
 	 */
 	private static function inferRouteSegments(array $segments): array {
-		$segments=array_values(array_filter(array_map(static fn(mixed $segment): string => trim((string)$segment), $segments), static fn(string $segment): bool => $segment!==''));
-		if($segments===[]){
-			return [];
-		}
-		$resource=$segments[0] ?? null;
-		$second=$segments[1] ?? null;
-		$third=$segments[2] ?? null;
-		$fourth=$segments[3] ?? null;
-		$operationNames=['index', 'create', 'store', 'show', 'edit', 'update', 'delete', 'destroy', 'force_delete', 'restore', 'duplicate', 'import', 'export', 'board', 'action', 'bulk_action', 'relation', 'transition', 'inline_update'];
-		if($second!==null && in_array(self::normalizeOperation($second), $operationNames, true)){
-			return [
-				'resource'=>$resource,
-				'operation'=>$second,
-				'record'=>$third,
-				'action'=>self::normalizeOperation($second)==='action' ? $third : null,
-			];
-		}
-		if($second!==null && $third!==null && self::normalizeOperation($third)==='action'){
-			return [
-				'resource'=>$resource,
-				'record'=>$second,
-				'operation'=>'action',
-				'action'=>$fourth,
-			];
-		}
-		if($second!==null && $third!==null && self::normalizeOperation($third)==='relation'){
-			return [
-				'resource'=>$resource,
-				'record'=>$second,
-				'operation'=>'relation',
-				'relation'=>$fourth,
-			];
-		}
-		return [
-			'resource'=>$resource,
-			'record'=>$second,
-			'operation'=>$third ?? ($second!==null ? 'show' : 'index'),
-			'action'=>self::normalizeOperation((string)$third)==='action' ? $fourth : null,
-			'relation'=>self::normalizeOperation((string)$third)==='relation' ? $fourth : null,
-		];
+		return PanelRouteParser::infer($segments);
 	}
 
 	/**

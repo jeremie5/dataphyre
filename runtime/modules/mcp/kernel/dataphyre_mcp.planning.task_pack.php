@@ -409,7 +409,7 @@ trait dataphyre_mcp_planning_task_pack_surfaces {
 				'future_runner_must_enforce_extension_boundary'=>true,
 			],
 			'runtime_internal_write_gate'=>[
-				'applies_when'=>'proposed_files include common/dataphyre/runtime internals, kernel, Framework, or shared hot-path files',
+				'applies_when'=>'proposed_files include dataphyre/runtime internals, kernel, Framework, or shared hot-path files',
 				'required_review'=>'Confirm app code, config, dialbacks, callbacks, plugins, MCP metadata, or an application-owned adapter cannot carry the behavior.',
 				'maintainer_gate'=>'Use dataphyre_mcp_enterprise_adoption_audit for Dataphyre-internal, release-facing, corporate-ready, or shared hot-path work before any write-capable workflow.',
 				'application_rule'=>'Do not modify Dataphyre internals just to make one application work.',
@@ -586,10 +586,7 @@ trait dataphyre_mcp_planning_task_pack_surfaces {
 	 * beyond safe repository path checks.
 	 */
 	private function apply_audit_file_entry(string $file): array {
-		$normalized=ltrim(trim(str_replace('\\', '/', $file)), '/');
-		while(str_contains($normalized, '//')){
-			$normalized=str_replace('//', '/', $normalized);
-		}
+		$normalized=$this->apply_audit_normalized_path($file);
 		$scope_path=$this->apply_audit_scope_path($normalized);
 		$entry=[
 			'path'=>$normalized,
@@ -622,22 +619,26 @@ trait dataphyre_mcp_planning_task_pack_surfaces {
 		return $entry;
 	}
 
+	/** Normalizes separators and duplicate slashes for every apply-audit path seam. */
+	private function apply_audit_normalized_path(string $path): string {
+		$normalized=ltrim(trim(str_replace('\\','/',$path)),'/');
+		while(str_contains($normalized,'//')){$normalized=str_replace('//','/',$normalized);}
+		return $normalized;
+	}
+
 	/**
 	 * Normalizes common Dataphyre package prefixes for scope classification.
 	 *
 	 * caller paths are preserved in output, but internal routing uses a package
-	 * relative path so common/dataphyre/runtime, dataphyre/runtime, and runtime
+	 * relative path so dataphyre/runtime, dataphyre/runtime, and runtime
 	 * classify consistently.
 	 */
 	private function apply_audit_scope_path(string $path): string {
-		$normalized=ltrim(trim(str_replace('\\', '/', $path)), '/');
-		while(str_contains($normalized, '//')){
-			$normalized=str_replace('//', '/', $normalized);
-		}
+		$normalized=$this->apply_audit_normalized_path($path);
 		while(str_starts_with($normalized, './')){
 			$normalized=substr($normalized, 2);
 		}
-		foreach(['common/dataphyre/', 'dataphyre/'] as $prefix){
+		foreach(['dataphyre/', 'common/dataphyre/'] as $prefix){
 			if(str_starts_with($normalized, $prefix)){
 				return substr($normalized, strlen($prefix));
 			}

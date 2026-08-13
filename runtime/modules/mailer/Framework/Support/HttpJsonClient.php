@@ -17,6 +17,34 @@ namespace Dataphyre\Mailer\Support;
  * surfaced or retried.
  */
 final class HttpJsonClient {
+	private static $handler=null;
+	private static ?string $transport=null;
+
+	/**
+	 * Installs an optional process-local transport adapter.
+	 *
+	 * Queue workers and tests can supply a callable that receives the same request
+	 * arguments as request(). Passing null restores the native cURL/stream transport.
+	 */
+	public static function useHandler(?callable $handler): void {
+		self::$handler=$handler;
+	}
+
+	/**
+	 * Selects the native transport used by this process.
+	 *
+	 * Passing null restores automatic cURL-first selection. Explicit selection is
+	 * useful for minimal-runtime diagnostics and deterministic fallback tests.
+	 */
+	public static function useTransport(?string $transport): void {
+		if($transport!==null){
+			$transport=strtolower(trim($transport));
+			if(!in_array($transport, ['curl', 'stream'], true)){
+				throw new \InvalidArgumentException('Mailer HTTP transport must be curl, stream, or null.');
+			}
+		}
+		self::$transport=$transport;
+	}
 
 	/**
 	 * Sends an HTTP request and returns a normalized response array.
@@ -37,10 +65,17 @@ final class HttpJsonClient {
 	 * @return array{ok: bool, status: int, headers: array<int, string>, body: string, json: ?array, error: string}
 	 */
 	public static function request(string $method, string $url, array|string|null $payload=null, array $headers=[], int $timeout=15): array {
+		if(self::$handler!==null){
+			$response=(self::$handler)($method, $url, $payload, $headers, $timeout);
+			if(!is_array($response)){
+				throw new \UnexpectedValueException('Mailer HTTP handlers must return a response array.');
+			}
+			return $response;
+		}
 		$method=strtoupper(trim($method));
 		$body=is_array($payload) ? (json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}') : (string)($payload ?? '');
 		$headerLines=self::headers($headers, $body!=='' && !self::hasHeader($headers, 'content-type') ? ['Content-Type'=>'application/json'] : []);
-		if(function_exists('curl_init')){
+		if(self::$transport!=='stream' && function_exists('curl_init')){
 			$ch=curl_init($url);
 			curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
 			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -73,13 +108,26 @@ final class HttpJsonClient {
 			],
 		]);
 		$response=@file_get_contents($url, false, $context);
+		$responseHeaders=$http_response_header ?? [];
+		$status=self::status($responseHeaders);
+		return self::response($status, is_string($response) ? $response : '', is_string($response) ? '' : 'HTTP request failed', $responseHeaders);
+	}
+
+	/**
+	 * Returns the final HTTP status found in a stream response header list.
+	 *
+	 * Stream redirects may contribute several status lines, so the last one wins.
+	 *
+	 * @param array<int, string> $headers Response header lines.
+	 */
+	private static function status(array $headers): int {
 		$status=0;
-		foreach($httpResponseHeader ?? [] as $line){
+		foreach($headers as $line){
 			if(preg_match('/^HTTP\/\S+\s+(\d+)/', $line, $match)===1){
 				$status=(int)$match[1];
 			}
 		}
-		return self::response($status, is_string($response) ? $response : '', is_string($response) ? '' : 'HTTP request failed', $httpResponseHeader ?? []);
+		return $status;
 	}
 
 	/**

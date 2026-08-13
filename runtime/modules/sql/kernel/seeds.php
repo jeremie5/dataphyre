@@ -252,6 +252,7 @@ function dp_sql_seed_bootstrap_path(string $project_root, string $app, ?string $
 
 function dp_sql_seed_boot_sql(string $runtime_root): void {
 	if(class_exists('\dataphyre\sql', false)){
+		dp_sql_seed_boot_cache($runtime_root);
 		return;
 	}
 	if(!defined('RUN_MODE')) define('RUN_MODE', 'migration');
@@ -282,6 +283,32 @@ function dp_sql_seed_boot_sql(string $runtime_root): void {
 	}
 	if(!class_exists('\dataphyre\sql', false)){
 		throw new RuntimeException('Dataphyre SQL could not be booted for seed management.');
+	}
+	dp_sql_seed_boot_cache($runtime_root);
+}
+
+/**
+ * Loads the optional cache kernel selected by the host module policy.
+ *
+ * SQL seeding boots outside the ordinary request flight, so framework-only SQL
+ * loading does not otherwise expose the cache facade. Loading the policy-approved
+ * kernel here lets inferred seed writes advance the same shared table generations
+ * as web and worker processes. A missing or disabled cache module remains optional.
+ */
+function dp_sql_seed_boot_cache(string $runtime_root): void {
+	if(class_exists('\dataphyre\cache', false)) return;
+	$present=false;
+	if(function_exists('dp_module_present')){
+		$present=dp_module_present('cache');
+	}elseif(class_exists('\dataphyre\module_registry', false)){
+		$present=\dataphyre\module_registry::kernel_module_present('cache');
+	}
+	if(!is_array($present)) return;
+	$entry=$present[0] ?? null;
+	if(!is_string($entry) || !is_file($entry)) return;
+	require_once $entry;
+	if(!class_exists('\dataphyre\cache', false)){
+		throw new RuntimeException('Dataphyre cache could not be booted for SQL seed invalidation.');
 	}
 }
 

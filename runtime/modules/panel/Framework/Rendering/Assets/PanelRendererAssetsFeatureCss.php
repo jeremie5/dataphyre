@@ -36,11 +36,11 @@ trait PanelRendererAssetsFeatureCss {
 	box-shadow:0 22px 60px rgba(15,23,42,.12);
 }
 .dp-panel-auth-card .dp-panel-heading-row{
-	display:grid!important;
+	display:grid;
 	gap:5px;
-	align-items:start!important;
-	padding:0!important;
-	background:transparent!important;
+	align-items:start;
+	padding:0;
+	background:transparent;
 }
 .dp-panel-auth-card h2{
 	margin:0;
@@ -126,17 +126,17 @@ body[data-dp-theme-mode="dark"] .dp-panel-auth-links a{
 	color:#b9d3ff;
 }
 body[data-dp-theme-effects~="glass"] .dp-panel-auth-card{
-	background:var(--dp-glass_surface_bg)!important;
-	border-color:var(--dp-glass_border)!important;
-	box-shadow:var(--dp-glass_shadow)!important;
-	backdrop-filter:var(--dp-glass_blur)!important;
-	-webkit-backdrop-filter:var(--dp-glass_blur)!important;
+	background:var(--dp-glass_surface_bg);
+	border-color:var(--dp-glass_border);
+	box-shadow:var(--dp-glass_shadow);
+	backdrop-filter:var(--dp-glass_blur);
+	-webkit-backdrop-filter:var(--dp-glass_blur);
 }
 body[data-dp-theme-effects~="brutalist"] .dp-panel-auth-card,
 body[data-dp-theme-effects~="brutalist"] .dp-panel-auth-check,
 body[data-dp-theme-effects~="brutalist"] .dp-panel-auth-links a{
-	border-radius:0!important;
-	box-shadow:5px 5px 0 var(--dp-brutalist-shadow,#111)!important;
+	border-radius:0;
+	box-shadow:5px 5px 0 var(--dp-brutalist-shadow,#111);
 }
 @media(max-width:640px){
 	.dp-panel-auth-card{
@@ -175,12 +175,12 @@ CSS;
 	 */
 	private static function tableKeyboardCss(): string {
 		return <<<'CSS'
-.dp-panel-table [data-dp-panel-row]{outline:0}.dp-panel-table [data-dp-panel-row]:focus-visible td,.dp-panel-table .dp-panel-row-focused td{background:color-mix(in srgb,var(--dp-primary-50,#eff6ff) 62%,var(--dp-surface))!important;box-shadow:inset 0 1px 0 color-mix(in srgb,var(--dp-primary-600,#2563eb) 14%,transparent),inset 0 -1px 0 color-mix(in srgb,var(--dp-primary-600,#2563eb) 14%,transparent)}.dp-panel-table [data-dp-panel-row]:focus-visible td:first-child,.dp-panel-table .dp-panel-row-focused td:first-child{border-left-color:var(--dp-primary-600,#2563eb)!important;box-shadow:inset 3px 0 0 var(--dp-primary-600,#2563eb)}.dp-panel-table [data-dp-panel-row]{cursor:default}.dp-panel-table [data-dp-panel-row][data-dp-panel-row-url],.dp-panel-table [data-dp-panel-row]:has(.dp-panel-row-link[href],.dp-panel-cell-link[href]){cursor:pointer}.dp-panel-table [data-dp-panel-row] :is(a[href],button,summary,[role="button"],[role="link"],.dp-panel-action,.dp-panel-row-link,.dp-panel-cell-copy,[data-dp-panel-copy-entry]){cursor:pointer!important}.dp-panel-table [data-dp-panel-row] input[type="checkbox"],.dp-panel-table [data-dp-panel-row] input[type="radio"],.dp-panel-table [data-dp-panel-row] select{cursor:pointer!important}.dp-panel-table [data-dp-panel-row] input:not([type="checkbox"]):not([type="radio"]),.dp-panel-table [data-dp-panel-row] textarea{cursor:text}.dp-panel-column-resizer{position:absolute;top:0;right:0;bottom:0;z-index:9;width:10px;cursor:col-resize;touch-action:none}.dp-panel-column-resizer:after{content:"";position:absolute;top:9px;right:3px;bottom:9px;width:2px;border-radius:999px;background:transparent;transition:background .12s ease,box-shadow .12s ease}.dp-panel-table th:hover>.dp-panel-column-resizer:after,.dp-panel-column-resizer:hover:after,body.dp-panel-column-resizing .dp-panel-column-resizer:after{background:color-mix(in srgb,var(--dp-primary-600,#2563eb) 72%,transparent);box-shadow:0 0 0 3px color-mix(in srgb,var(--dp-primary-600,#2563eb) 10%,transparent)}body.dp-panel-column-resizing{cursor:col-resize!important;user-select:none}body.dp-panel-column-resizing *{cursor:col-resize!important}body[data-dp-theme-mode="dark"] .dp-panel-table [data-dp-panel-row]:focus-visible td,body[data-dp-theme-mode="dark"] .dp-panel-table .dp-panel-row-focused td{background:color-mix(in srgb,var(--dp-primary-600,#2563eb) 18%,var(--dp-surface))!important}@media(max-width:900px){.dp-panel-table [data-dp-panel-row]:focus-visible,.dp-panel-table .dp-panel-row-focused{box-shadow:0 0 0 3px color-mix(in srgb,var(--dp-primary-600,#2563eb) 22%,transparent)!important}.dp-panel-column-resizer{display:none}}
-.dp-panel-table .dp-panel-row-focused .dp-panel-actions:before{content:none!important;display:none!important}body[data-dp-theme-mode="dark"] .dp-panel-table .dp-panel-row-focused .dp-panel-actions:before{content:none!important;display:none!important}@media(prefers-color-scheme:dark){body[data-dp-theme-mode="system"] .dp-panel-table [data-dp-panel-row]:focus-visible td,body[data-dp-theme-mode="system"] .dp-panel-table .dp-panel-row-focused td{background:color-mix(in srgb,var(--dp-primary-600,#2563eb) 18%,var(--dp-surface))!important}body[data-dp-theme-mode="system"] .dp-panel-table .dp-panel-row-focused .dp-panel-actions:before{content:none!important;display:none!important}}@media(max-width:900px){.dp-panel-table .dp-panel-row-focused .dp-panel-actions:before{content:none!important;display:none!important}}
+.dp-panel-table [data-dp-panel-row]{outline:0}.dp-panel-table [data-dp-panel-row]:focus-visible td,.dp-panel-table .dp-panel-row-focused td{background:color-mix(in srgb,var(--dp-primary-50,#eff6ff) 62%,var(--dp-surface));box-shadow:inset 0 1px 0 color-mix(in srgb,var(--dp-primary-600,#2563eb) 14%,transparent),inset 0 -1px 0 color-mix(in srgb,var(--dp-primary-600,#2563eb) 14%,transparent)}.dp-panel-table [data-dp-panel-row]:focus-visible td:first-child,.dp-panel-table .dp-panel-row-focused td:first-child{border-left-color:var(--dp-primary-600,#2563eb);box-shadow:inset 3px 0 0 var(--dp-primary-600,#2563eb)}.dp-panel-table [data-dp-panel-row]{cursor:default}.dp-panel-table [data-dp-panel-row][data-dp-panel-row-url],.dp-panel-table [data-dp-panel-row]:has(.dp-panel-row-link[href],.dp-panel-cell-link[href]){cursor:pointer}.dp-panel-table [data-dp-panel-row] :is(a[href],button,summary,[role="button"],[role="link"],.dp-panel-action,.dp-panel-row-link,.dp-panel-cell-copy,[data-dp-panel-copy-entry]){cursor:pointer}.dp-panel-table [data-dp-panel-row] input[type="checkbox"],.dp-panel-table [data-dp-panel-row] input[type="radio"],.dp-panel-table [data-dp-panel-row] select{cursor:pointer}.dp-panel-table [data-dp-panel-row] input:not([type="checkbox"]):not([type="radio"]),.dp-panel-table [data-dp-panel-row] textarea{cursor:text}.dp-panel-column-resizer{position:absolute;top:0;right:0;bottom:0;z-index:9;width:10px;cursor:col-resize;touch-action:none}.dp-panel-column-resizer:after{content:"";position:absolute;top:9px;right:3px;bottom:9px;width:2px;border-radius:999px;background:transparent;transition:background .12s ease,box-shadow .12s ease}.dp-panel-table th:hover>.dp-panel-column-resizer:after,.dp-panel-column-resizer:hover:after,body.dp-panel-column-resizing .dp-panel-column-resizer:after{background:color-mix(in srgb,var(--dp-primary-600,#2563eb) 72%,transparent);box-shadow:0 0 0 3px color-mix(in srgb,var(--dp-primary-600,#2563eb) 10%,transparent)}body.dp-panel-column-resizing{cursor:col-resize;user-select:none}body.dp-panel-column-resizing *{cursor:col-resize}body[data-dp-theme-mode="dark"] .dp-panel-table [data-dp-panel-row]:focus-visible td,body[data-dp-theme-mode="dark"] .dp-panel-table .dp-panel-row-focused td{background:color-mix(in srgb,var(--dp-primary-600,#2563eb) 18%,var(--dp-surface))}@media(max-width:900px){.dp-panel-table [data-dp-panel-row]:focus-visible,.dp-panel-table .dp-panel-row-focused{box-shadow:0 0 0 3px color-mix(in srgb,var(--dp-primary-600,#2563eb) 22%,transparent)}.dp-panel-column-resizer{display:none}}
+body[data-dp-theme-mode="dark"] .dp-panel-table .dp-panel-row-focused .dp-panel-actions:before{content:none;display:none}@media(prefers-color-scheme:dark){body[data-dp-theme-mode="system"] .dp-panel-table [data-dp-panel-row]:focus-visible td,body[data-dp-theme-mode="system"] .dp-panel-table .dp-panel-row-focused td{background:color-mix(in srgb,var(--dp-primary-600,#2563eb) 18%,var(--dp-surface))}body[data-dp-theme-mode="system"] .dp-panel-table .dp-panel-row-focused .dp-panel-actions:before{content:none;display:none}}@media(max-width:900px){.dp-panel-table .dp-panel-row-focused .dp-panel-actions:before{content:none;display:none}}
 .dp-panel-refresh-controls{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}.dp-panel-refresh-controls>[data-dp-panel-refresh-status]{display:inline-flex;align-items:center;min-height:32px;border:1px solid var(--dp-border_soft,rgba(226,232,240,.9));border-radius:999px;background:var(--dp-neutral_bg,#eef2f7);color:var(--dp-text_muted,#667085);padding:5px 10px;font-size:11px;font-weight:900}.dp-panel-refresh-controls[data-dp-panel-refresh-tone=syncing]>[data-dp-panel-refresh-status]{color:var(--dp-info-700,#026aa2)}.dp-panel-refresh-controls[data-dp-panel-refresh-tone=success]>[data-dp-panel-refresh-status]{color:var(--dp-success-700,#067647)}.dp-panel-refresh-controls[data-dp-panel-refresh-tone=error]>[data-dp-panel-refresh-status]{color:var(--dp-danger-700,#b42318)}.dp-panel-refresh-controls-paused>[data-dp-panel-refresh-status]{background:var(--dp-warning-100,#fef0c7);color:var(--dp-warning-800,#93370d)}@media(max-width:760px){.dp-panel-refresh-controls{width:100%}}
 .dp-panel-lazy-placeholder{position:relative;min-height:180px;overflow:hidden}.dp-panel-lazy-placeholder h2,.dp-panel-lazy-placeholder p,.dp-panel-lazy-placeholder .dp-panel-button{position:relative;z-index:1}.dp-panel-lazy-placeholder p{color:var(--dp-text_muted);font-weight:750}.dp-panel-lazy-placeholder .dp-panel-button{justify-self:start}.dp-panel-lazy-shimmer{position:absolute;inset:0;background:linear-gradient(110deg,transparent 0,color-mix(in srgb,var(--dp-primary-50,#eff6ff) 58%,transparent) 42%,transparent 74%);animation:dp-panel-lazy-shimmer 1.6s ease-in-out infinite;opacity:.88}@keyframes dp-panel-lazy-shimmer{0%{transform:translateX(-64%)}100%{transform:translateX(64%)}}body[data-dp-theme-mode="dark"] .dp-panel-lazy-shimmer{background:linear-gradient(110deg,transparent 0,color-mix(in srgb,var(--dp-primary-600,#2563eb) 18%,transparent) 42%,transparent 74%)}@media(prefers-color-scheme:dark){body[data-dp-theme-mode="system"] .dp-panel-lazy-shimmer{background:linear-gradient(110deg,transparent 0,color-mix(in srgb,var(--dp-primary-600,#2563eb) 18%,transparent) 42%,transparent 74%)}}
-.dp-panel-shortcuts{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}.dp-panel-shortcut-group{display:grid;gap:10px;border:1px solid var(--dp-border_soft);border-radius:14px;background:var(--dp-surface);padding:14px}.dp-panel-shortcut-group h3{margin:0;font-size:13px;color:var(--dp-text);font-weight:900}.dp-panel-shortcut-group dl{display:grid;gap:7px;margin:0}.dp-panel-shortcut-group div{display:grid;grid-template-columns:minmax(96px,auto) minmax(0,1fr);gap:10px;align-items:center}.dp-panel-shortcut-group dt{display:inline-flex;align-items:center;justify-content:center;min-height:28px;border:1px solid var(--dp-border);border-radius:9px;background:var(--dp-neutral_bg);color:var(--dp-neutral_text);padding:4px 8px;font-size:12px;font-weight:900;white-space:nowrap}.dp-panel-shortcut-group dd{margin:0;color:var(--dp-text_muted);font-size:13px;font-weight:750}.dp-panel-row-preview{display:grid;gap:12px}.dp-panel-row-preview-nav{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;margin-bottom:2px}.dp-panel-row-preview-nav span{justify-self:center;color:var(--dp-text_muted);font-size:12px;font-weight:900}.dp-panel-row-preview-nav button[disabled]{opacity:.45;pointer-events:none}.dp-panel-row-preview-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.dp-panel-row-preview-tools .dp-panel-button{min-height:34px!important}.dp-panel-row-preview dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:0}.dp-panel-row-preview dl div{display:grid;gap:5px;border:1px solid var(--dp-border_soft);border-radius:13px;background:var(--dp-surface);padding:11px}.dp-panel-row-preview dt{color:var(--dp-text_muted);font-size:10px;font-weight:900;letter-spacing:.06em;text-transform:uppercase}.dp-panel-row-preview dd{margin:0;color:var(--dp-text);font-size:14px;font-weight:760;overflow-wrap:anywhere}.dp-panel-row-preview-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--dp-border_soft)}.dp-panel-row-preview-actions .dp-panel-inline-action{display:inline-flex}.dp-panel-row-preview-actions .dp-panel-row-more{display:inline-grid}.dp-panel-row-preview-actions .dp-panel-action,.dp-panel-row-preview-actions .dp-panel-row-link{min-height:38px!important}@media(max-width:560px){.dp-panel-row-preview-nav{grid-template-columns:1fr}.dp-panel-row-preview-nav span{order:-1}}
-.dp-panel-relation-reorder-form{display:grid;gap:12px}.dp-panel-relation-reorder-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}.dp-panel-relation-reorder-item{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;border:1px solid var(--dp-border_soft);border-radius:8px;background:var(--dp-surface_muted);padding:9px}.dp-panel-relation-reorder-item span{min-width:0;color:var(--dp-text);font-weight:850;overflow-wrap:anywhere}.dp-panel-relation-pivot-form .dp-panel-form-section{margin:0}.dp-panel-actions .dp-panel-inline-action{display:inline-flex}.dp-panel-actions .dp-panel-action-neutral{border-color:var(--dp-border_soft);background:var(--dp-surface_muted);color:var(--dp-text)}@media(max-width:560px){.dp-panel-relation-reorder-item{grid-template-columns:1fr 1fr}.dp-panel-relation-reorder-item span{grid-column:1/-1}}
+.dp-panel-shortcuts{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}.dp-panel-shortcut-group{display:grid;gap:10px;border:1px solid var(--dp-border_soft);border-radius:14px;background:var(--dp-surface);padding:14px}.dp-panel-shortcut-group h3{margin:0;font-size:13px;color:var(--dp-text);font-weight:900}.dp-panel-shortcut-group dl{display:grid;gap:7px;margin:0}.dp-panel-shortcut-group div{display:grid;grid-template-columns:minmax(96px,auto) minmax(0,1fr);gap:10px;align-items:center}.dp-panel-shortcut-group dt{display:inline-flex;align-items:center;justify-content:center;min-height:28px;border:1px solid var(--dp-border);border-radius:9px;background:var(--dp-neutral_bg);color:var(--dp-neutral_text);padding:4px 8px;font-size:12px;font-weight:900;white-space:nowrap}.dp-panel-shortcut-group dd{margin:0;color:var(--dp-text_muted);font-size:13px;font-weight:750}.dp-panel-row-preview{display:grid;gap:12px}.dp-panel-row-preview-nav{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;margin-bottom:2px}.dp-panel-row-preview-nav span{justify-self:center;color:var(--dp-text_muted);font-size:12px;font-weight:900}.dp-panel-row-preview-nav button[disabled]{opacity:.45;pointer-events:none}.dp-panel-row-preview-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.dp-panel-row-preview-tools .dp-panel-button{min-height:34px}.dp-panel-row-preview dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:0}.dp-panel-row-preview dl div{display:grid;gap:5px;border:1px solid var(--dp-border_soft);border-radius:13px;background:var(--dp-surface);padding:11px}.dp-panel-row-preview dt{color:var(--dp-text_muted);font-size:10px;font-weight:900;letter-spacing:.06em;text-transform:uppercase}.dp-panel-row-preview dd{margin:0;color:var(--dp-text);font-size:14px;font-weight:760;overflow-wrap:anywhere}.dp-panel-row-preview-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--dp-border_soft)}.dp-panel-row-preview-actions .dp-panel-inline-action{display:inline-flex}.dp-panel-row-preview-actions .dp-panel-row-more{display:inline-grid}.dp-panel-row-preview-actions .dp-panel-action,.dp-panel-row-preview-actions .dp-panel-row-link{min-height:38px}@media(max-width:560px){.dp-panel-row-preview-nav{grid-template-columns:1fr}.dp-panel-row-preview-nav span{order:-1}}
+	.dp-panel-relation-reorder-form{display:grid;gap:12px}.dp-panel-relation-reorder-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}.dp-panel-relation-reorder-item{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;border:1px solid var(--dp-border_soft);border-radius:8px;background:var(--dp-surface_muted);padding:9px}.dp-panel-relation-reorder-item span{min-width:0;color:var(--dp-text);font-weight:850;overflow-wrap:anywhere}.dp-panel-relation-pivot-form .dp-panel-form-section{margin:0}.dp-panel-actions>.dp-panel-inline-action{display:inline-flex}.dp-panel-actions .dp-panel-action-neutral{border-color:var(--dp-border_soft);background:var(--dp-surface_muted);color:var(--dp-text)}@media(max-width:560px){.dp-panel-relation-reorder-item{grid-template-columns:1fr 1fr}.dp-panel-relation-reorder-item span{grid-column:1/-1}}
 CSS;
 	}
 
@@ -205,10 +205,53 @@ CSS;
 	 */
 	private static function modalScript(): string {
 		return <<<'JS'
-var dpPanelModalLastFocus=null;
-var dpPanelModalDiscardArmedUntil=0;
-var dpPanelModalStack=[];
-var dpPanelModalTriggerCounter=0;
+var dpPanelModalState=(window.DataphyrePanel=window.DataphyrePanel||{}).modalState;
+if(!dpPanelModalState){
+	dpPanelModalState={lastFocus:null,lastFocusContext:null,currentTrigger:null,discardArmedUntil:0,stack:[],triggerCounter:0,requestSequence:0,activeRequest:null,historyDepth:0,suppressPopstate:0,pageUrl:""};
+	window.DataphyrePanel.modalState=dpPanelModalState;
+}
+else{
+	dpPanelModalState.historyDepth=Math.max(0,Number(dpPanelModalState.historyDepth||0));
+	dpPanelModalState.suppressPopstate=Math.max(0,Number(dpPanelModalState.suppressPopstate||0));
+	dpPanelModalState.pageUrl=String(dpPanelModalState.pageUrl||"");
+	dpPanelModalState.requestSequence+=1;
+	if(dpPanelModalState.activeRequest&&dpPanelModalState.activeRequest.controller){
+		try{dpPanelModalState.activeRequest.controller.abort();}catch(error){}
+	}
+	dpPanelModalState.activeRequest=null;
+}
+/** Adds a same-document guard entry for one visible modal level. */
+function dpPanelModalHistoryPush(){
+	if(!window.history||typeof history.pushState!=="function"){return false;}
+	var panel=document.querySelector("main.dp-panel");
+	if(!dpPanelModalState.pageUrl){dpPanelModalState.pageUrl=panel&&panel.dataset.dpPanelCurrentUrl ? panel.dataset.dpPanelCurrentUrl : location.href;}
+	try{
+		var state=Object.assign({},history.state||{},{dataphyrePanel:true,dataphyrePanelModal:true,modalDepth:dpPanelModalState.historyDepth});
+		history.pushState(state,document.title,dpPanelModalState.pageUrl);
+		dpPanelModalState.historyDepth+=1;
+		return true;
+	}
+	catch(error){return false;}
+}
+/** Removes guard entries after an explicit Back, close, or successful save. */
+function dpPanelModalHistoryDrop(count){
+	count=Math.min(dpPanelModalState.historyDepth,Math.max(0,Number(count||0)));
+	if(count<1||!window.history||typeof history.go!=="function"){return false;}
+	dpPanelModalState.historyDepth-=count;
+	dpPanelModalState.suppressPopstate+=1;
+	history.go(-count);
+	return true;
+}
+/** Consumes browser Back while a modal flow owns the current workspace. */
+function dpPanelHandleModalPopstate(){
+	if(dpPanelModalState.suppressPopstate>0){dpPanelModalState.suppressPopstate-=1;return true;}
+	var root=document.querySelector(".dp-panel-modal-root");
+	if(!root||root.hidden||dpPanelModalState.historyDepth<1){return false;}
+	dpPanelModalState.historyDepth-=1;
+	var accepted=dpPanelModalState.stack.length>0 ? dpPanelRequestBackModal(false,true) : dpPanelExitModal(false,true);
+	if(!accepted){dpPanelModalHistoryPush();}
+	return true;
+}
 /**
  * Escapes modal-injected text for HTML fragments.
  *
@@ -228,7 +271,22 @@ function dpPanelModalControlValue(control){
 	if(!control||control.disabled||control.type==="button"||control.type==="submit"||control.type==="reset"){return "";}
 	if(control.type==="checkbox"||control.type==="radio"){return control.checked?"1":"0";}
 	if(control.type==="file"){return control.files&&control.files.length ? "files:"+control.files.length : "";}
+	if(control.tagName==="SELECT"&&control.multiple){
+		return JSON.stringify(Array.prototype.slice.call(control.options).filter(function(option){return option.selected;}).map(function(option){return String(option.value||"");}));
+	}
 	return String(control.value||"");
+}
+/** Returns the markup-defined value for a control that was added after baseline capture. */
+function dpPanelModalDefaultControlValue(control){
+	if(!control||control.disabled||control.type==="button"||control.type==="submit"||control.type==="reset"){return "";}
+	if(control.type==="checkbox"||control.type==="radio"){return control.defaultChecked?"1":"0";}
+	if(control.type==="file"){return "";}
+	if(control.tagName==="SELECT"){
+		var defaults=Array.prototype.slice.call(control.options).filter(function(option){return option.defaultSelected;}).map(function(option){return String(option.value||"");});
+		if(control.multiple){return JSON.stringify(defaults);}
+		return defaults.length ? defaults[0] : (control.options.length ? String(control.options[0].value||"") : "");
+	}
+	return String(control.defaultValue||"");
 }
 /**
  * Stores initial modal form values for dirty-state detection.
@@ -251,12 +309,22 @@ function dpPanelRememberModalFormState(scope){
 function dpPanelModalHasDirtyForm(){
 	var root=document.querySelector(".dp-panel-modal-root");
 	if(!root||root.hidden){return false;}
+	if(root.dataset.dpPanelModalValidationDirty==="1"||root.dataset.dpPanelModalStructuralDirty==="1"){return true;}
 	var dirty=false;
 	root.querySelectorAll(".dp-panel-modal-body form input,.dp-panel-modal-body form select,.dp-panel-modal-body form textarea").forEach(function(control){
-		if(dirty||control.dataset.dpPanelModalInitial===undefined){return;}
-		if(dpPanelModalControlValue(control)!==control.dataset.dpPanelModalInitial){dirty=true;}
+		if(dirty){return;}
+		var baseline=control.dataset.dpPanelModalInitial;
+		if(baseline===undefined){baseline=dpPanelModalDefaultControlValue(control);}
+		if(dpPanelModalControlValue(control)!==baseline){dirty=true;}
 	});
 	return dirty;
+}
+/** Clears dirty markers after a new modal level opens or a stay-in-place save succeeds. */
+function dpPanelResetModalDirtyState(root){
+	if(!root){return;}
+	delete root.dataset.dpPanelModalValidationDirty;
+	delete root.dataset.dpPanelModalStructuralDirty;
+	dpPanelModalState.discardArmedUntil=0;
 }
 /**
  * Requests modal closure with busy and dirty-form safeguards.
@@ -268,8 +336,8 @@ function dpPanelRequestCloseModal(force){
 	var root=document.querySelector(".dp-panel-modal-root");
 	if(!root){return true;}
 	if(root.classList.contains("dp-panel-modal-busy")){return false;}
-	if(!force&&dpPanelModalHasDirtyForm()&&Date.now()>dpPanelModalDiscardArmedUntil){
-		dpPanelModalDiscardArmedUntil=Date.now()+3200;
+	if(!force&&dpPanelModalHasDirtyForm()&&Date.now()>dpPanelModalState.discardArmedUntil){
+		dpPanelModalState.discardArmedUntil=Date.now()+3200;
 		root.classList.add("dp-panel-modal-discard-warn");
 		if(typeof dpPanelToast==="function"){dpPanelToast(typeof dpPanelText==="function" ? dpPanelText("modal.unsaved_close","Unsaved modal changes. Close again to discard.") : "Unsaved modal changes. Close again to discard.","warning");}
 		setTimeout(function(){root.classList.remove("dp-panel-modal-discard-warn");},340);
@@ -291,10 +359,21 @@ function dpPanelModalRoot(){
 	root=document.createElement("div");
 	root.className="dp-panel-modal-root";
 	root.hidden=true;
-	root.innerHTML="<section class=\"dp-panel-modal dp-panel-modal-md\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dp-panel-modal-title\" aria-describedby=\"dp-panel-modal-description\"><header class=\"dp-panel-modal-header\"><div class=\"dp-panel-modal-title\"><h2 id=\"dp-panel-modal-title\"></h2><p id=\"dp-panel-modal-description\"></p></div><div class=\"dp-panel-modal-header-actions\"><button class=\"dp-panel-modal-back\" type=\"button\" hidden>"+dpPanelEscape(typeof dpPanelText==="function" ? dpPanelText("modal.back","Back") : "Back")+"</button><a class=\"dp-panel-modal-open-full\" href=\"#\" hidden>"+dpPanelEscape(typeof dpPanelText==="function" ? dpPanelText("modal.open_full_page","Open full page") : "Open full page")+"</a><button class=\"dp-panel-modal-copy-link\" type=\"button\" hidden>"+dpPanelEscape(typeof dpPanelText==="function" ? dpPanelText("modal.copy_link","Copy link") : "Copy link")+"</button><button class=\"dp-panel-modal-refresh\" type=\"button\" hidden>"+dpPanelEscape(typeof dpPanelText==="function" ? dpPanelText("common.refresh","Refresh") : "Refresh")+"</button><button class=\"dp-panel-modal-expand\" type=\"button\" aria-pressed=\"false\">"+dpPanelEscape(typeof dpPanelText==="function" ? dpPanelText("modal.expand","Expand") : "Expand")+"</button><button class=\"dp-panel-modal-close\" type=\"button\" aria-label=\""+dpPanelEscape(typeof dpPanelText==="function" ? dpPanelText("common.close","Close") : "Close")+"\">&times;</button></div></header><div class=\"dp-panel-modal-body\"></div></section>";
+	root.setAttribute("aria-hidden","true");
+	root.innerHTML="<section class=\"dp-panel-modal dp-panel-modal-md\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dp-panel-modal-title\" aria-describedby=\"dp-panel-modal-description\"><header class=\"dp-panel-modal-header\"><div class=\"dp-panel-modal-title\"><h2 id=\"dp-panel-modal-title\" dir=\"auto\"></h2><p id=\"dp-panel-modal-description\" dir=\"auto\"></p></div><div class=\"dp-panel-modal-header-actions\"><button class=\"dp-panel-modal-back\" type=\"button\" hidden>"+dpPanelEscape(typeof dpPanelText==="function" ? dpPanelText("modal.back","Back") : "Back")+"</button><a class=\"dp-panel-modal-open-full\" href=\"#\" hidden>"+dpPanelEscape(typeof dpPanelText==="function" ? dpPanelText("modal.open_full_page","Open full page") : "Open full page")+"</a><button class=\"dp-panel-modal-copy-link\" type=\"button\" hidden>"+dpPanelEscape(typeof dpPanelText==="function" ? dpPanelText("modal.copy_link","Copy link") : "Copy link")+"</button><button class=\"dp-panel-modal-refresh\" type=\"button\" hidden>"+dpPanelEscape(typeof dpPanelText==="function" ? dpPanelText("common.refresh","Refresh") : "Refresh")+"</button><button class=\"dp-panel-modal-expand\" type=\"button\" aria-pressed=\"false\">"+dpPanelEscape(typeof dpPanelText==="function" ? dpPanelText("modal.expand","Expand") : "Expand")+"</button><button class=\"dp-panel-modal-close\" type=\"button\" aria-label=\""+dpPanelEscape(typeof dpPanelText==="function" ? dpPanelText("common.close","Close") : "Close")+"\">&times;</button></div></header><div class=\"dp-panel-modal-body\"></div></section>";
 	document.body.appendChild(root);
-	root.addEventListener("click",function(event){
+	dpPanelBindModalRoot(root);
+	return root;
+}
+/** Replaces the singleton root delegate when the runtime is hot-reloaded. */
+function dpPanelBindModalRoot(root){
+	if(!root){return null;}
+	if(root.dpPanelModalClickHandler){root.removeEventListener("click",root.dpPanelModalClickHandler);}
+	var handler=function(event){
 		if(root.classList.contains("dp-panel-modal-busy")){return;}
+		if(event.target.closest("[data-dp-panel-repeater-add],[data-dp-panel-repeater-remove]")){
+			root.dataset.dpPanelModalStructuralDirty="1";
+		}
 		if(event.target.closest(".dp-panel-modal-back")){
 			dpPanelRequestBackModal(false);
 			return;
@@ -305,7 +384,7 @@ function dpPanelModalRoot(){
 			return;
 		}
 		if(event.target.closest(".dp-panel-modal-refresh")){
-			if(dpPanelModalLastFocus){dpPanelFetchAction(dpPanelModalLastFocus);}
+			if(dpPanelModalState.currentTrigger){dpPanelFetchAction(dpPanelModalState.currentTrigger);}
 			return;
 		}
 		if(event.target.closest(".dp-panel-modal-expand")){
@@ -319,11 +398,36 @@ function dpPanelModalRoot(){
 			dpPanelUpdateModalScrollState(root.querySelector(".dp-panel-modal-body"));
 			return;
 		}
-		if(event.target===root||event.target.closest(".dp-panel-modal-close")){
-			dpPanelRequestCloseModal(false);
-		}
-	});
+		if(event.target===root||event.target.closest(".dp-panel-modal-close")){dpPanelExitModal(false);}
+	};
+	root.addEventListener("click",handler);
+	root.dpPanelModalClickHandler=handler;
 	return root;
+}
+/** Releases request UI left behind when panel.js is replaced during an active modal mutation. */
+function dpPanelReleaseOrphanedModalUi(root){
+	if(!root){return;}
+	root.classList.remove("dp-panel-modal-busy","dp-panel-modal-discard-warn");
+	root.querySelectorAll(".dp-panel-form-submitting").forEach(function(form){
+		if(typeof dpPanelReleaseSubmitLoading==="function"){dpPanelReleaseSubmitLoading(form);}
+	});
+	root.querySelectorAll(".dp-panel-form-loading").forEach(function(form){
+		form.classList.remove("dp-panel-form-loading");
+		form.querySelectorAll("button,input[type='submit']").forEach(function(control){
+			if(control.dataset.dpPanelModalPreviousDisabled!=="1"){control.disabled=false;}
+			delete control.dataset.dpPanelModalPreviousDisabled;
+		});
+	});
+	root.querySelectorAll(".dp-panel-action-loading").forEach(function(button){
+		button.classList.remove("dp-panel-action-loading");
+		button.disabled=false;
+	});
+	if(root.dataset.dpPanelModalStatus==="working"){dpPanelClearModalStatus();}
+}
+var dpPanelExistingModalRoot=document.querySelector(".dp-panel-modal-root");
+if(dpPanelExistingModalRoot){
+	dpPanelBindModalRoot(dpPanelExistingModalRoot);
+	dpPanelReleaseOrphanedModalUi(dpPanelExistingModalRoot);
 }
 /**
  * Assigns a stable token to a modal trigger element.
@@ -334,10 +438,81 @@ function dpPanelModalRoot(){
 function dpPanelModalTriggerToken(trigger){
 	if(!trigger){return "";}
 	if(!trigger.dataset.dpPanelModalTriggerToken){
-		dpPanelModalTriggerCounter+=1;
-		trigger.dataset.dpPanelModalTriggerToken="modal-trigger-"+dpPanelModalTriggerCounter;
+		dpPanelModalState.triggerCounter+=1;
+		trigger.dataset.dpPanelModalTriggerToken="modal-trigger-"+dpPanelModalState.triggerCounter;
 	}
 	return trigger.dataset.dpPanelModalTriggerToken;
+}
+/** Captures stable and live trigger identity for focus and stack restoration. */
+function dpPanelModalTriggerContext(trigger){
+	if(!trigger){return null;}
+	return {
+		node:trigger,
+		id:trigger.id ? String(trigger.id) : "",
+		token:dpPanelModalTriggerToken(trigger),
+		name:trigger.dataset ? String(trigger.dataset.dpPanelActionName||"") : "",
+		url:dpPanelActionUrl(trigger)
+	};
+}
+/** Resolves a trigger after live DOM or Ajax replacement. */
+function dpPanelResolveModalTrigger(context){
+	if(!context){return null;}
+	if(context.node&&document.contains(context.node)){return context.node;}
+	if(context.id){
+		var identified=document.getElementById(context.id);
+		if(identified){return identified;}
+	}
+	var candidates=document.querySelectorAll("[data-dp-panel-action-modal='1']");
+	for(var index=0;index<candidates.length;index++){
+		if(context.token&&candidates[index].dataset.dpPanelModalTriggerToken===context.token){return candidates[index];}
+	}
+	if(!context.name&&!context.url){return null;}
+	for(var fallbackIndex=0;fallbackIndex<candidates.length;fallbackIndex++){
+		var candidate=candidates[fallbackIndex];
+		var sameName=!context.name||candidate.dataset.dpPanelActionName===context.name;
+		var sameUrl=!context.url||dpPanelActionUrl(candidate)===context.url;
+		if(sameName&&sameUrl){return candidate;}
+	}
+	return null;
+}
+/** Resolves the declared X, backdrop, Escape, and Cancel behavior. */
+function dpPanelModalExitStrategy(trigger){
+	var root=document.querySelector(".dp-panel-modal-root");
+	var declared=trigger&&trigger.dataset ? trigger.dataset.dpPanelModalExit : (root&&root.dataset ? root.dataset.dpPanelModalExit : "");
+	var strategy=String(declared||"auto").toLowerCase().replace(/[^a-z_]/g,"");
+	return ["auto","back","close","stay"].indexOf(strategy)!==-1 ? strategy : "auto";
+}
+/** Invalidates and aborts any direct modal request owned by the old flow. */
+function dpPanelCancelModalRequest(){
+	dpPanelModalState.requestSequence+=1;
+	if(dpPanelModalState.activeRequest&&dpPanelModalState.activeRequest.controller){
+		try{dpPanelModalState.activeRequest.controller.abort();}catch(error){}
+	}
+	dpPanelModalState.activeRequest=null;
+}
+/** Starts an owned modal request and returns its stale-response token. */
+function dpPanelBeginModalRequest(metadata){
+	dpPanelCancelModalRequest();
+	dpPanelModalState.requestSequence+=1;
+	var controller=typeof AbortController==="function" ? new AbortController() : null;
+	metadata=metadata&&typeof metadata==="object" ? metadata : {};
+	var request={id:dpPanelModalState.requestSequence,controller:controller,signal:controller?controller.signal:undefined,method:String(metadata.method||"").toUpperCase(),kind:String(metadata.kind||"")};
+	dpPanelModalState.activeRequest=request;
+	return request;
+}
+/** Reports whether a direct modal request still owns the active flow. */
+function dpPanelModalRequestIsCurrent(request){
+	return !!request&&request.id===dpPanelModalState.requestSequence&&!(request.controller&&request.controller.signal.aborted);
+}
+/** Releases request ownership without invalidating a newer request. */
+function dpPanelFinishModalRequest(request){
+	if(dpPanelModalRequestIsCurrent(request)){dpPanelModalState.activeRequest=null;}
+}
+/** Reports whether the active request may mutate server state. */
+function dpPanelModalMutationInFlight(){
+	var request=dpPanelModalState.activeRequest;
+	if(!request){return false;}
+	return request.method!=="GET"&&request.method!=="HEAD";
 }
 /**
  * Reports whether a trigger opts into modal back-stack behavior.
@@ -415,8 +590,8 @@ function dpPanelUpdateModalBackButton(root){
 	if(!root){return;}
 	var back=root.querySelector(".dp-panel-modal-back");
 	if(back){
-		back.hidden=dpPanelModalStack.length<1;
-		back.textContent=dpPanelModalStack.length>1 ? (typeof dpPanelText==="function" ? dpPanelText("modal.back","Back") : "Back")+" ("+dpPanelModalStack.length+")" : (typeof dpPanelText==="function" ? dpPanelText("modal.back","Back") : "Back");
+		back.hidden=dpPanelModalState.stack.length<1;
+		back.textContent=dpPanelModalState.stack.length>1 ? (typeof dpPanelText==="function" ? dpPanelText("modal.back","Back") : "Back")+" ("+dpPanelModalState.stack.length+")" : (typeof dpPanelText==="function" ? dpPanelText("modal.back","Back") : "Back");
 	}
 }
 /**
@@ -436,6 +611,10 @@ function dpPanelSnapshotModal(root){
 	var refresh=root.querySelector(".dp-panel-modal-refresh");
 	var expand=root.querySelector(".dp-panel-modal-expand");
 	if(!modal||!title||!description||!body){return null;}
+	var focused=root.contains(document.activeElement) ? document.activeElement : null;
+	var scrollTop=body.scrollTop||0;
+	var fragment=document.createDocumentFragment();
+	while(body.firstChild){fragment.appendChild(body.firstChild);}
 	return {
 		modalClass:modal.className,
 		style:root.dataset.dpPanelModalStyle||"dialog",
@@ -444,12 +623,17 @@ function dpPanelSnapshotModal(root){
 		expanded:root.dataset.dpPanelModalExpanded||"0",
 		url:root.dataset.dpPanelModalUrl||"",
 		stack:root.dataset.dpPanelModalStack||"replace",
+		exit:root.dataset.dpPanelModalExit||"auto",
+		validationDirty:root.dataset.dpPanelModalValidationDirty||"0",
+		structuralDirty:root.dataset.dpPanelModalStructuralDirty||"0",
 		triggerToken:root.dataset.dpPanelModalTriggerToken||"",
+		triggerContext:dpPanelModalTriggerContext(dpPanelModalState.currentTrigger),
+		focusedElement:focused,
 		title:title.textContent||"",
 		description:description.textContent||"",
 		descriptionHidden:description.hidden,
-		bodyHtml:body.innerHTML,
-		scrollTop:body.scrollTop||0,
+		bodyFragment:fragment,
+		scrollTop:scrollTop,
 		openFullHidden:openFull ? openFull.hidden : true,
 		openFullHref:openFull ? openFull.getAttribute("href")||"" : "",
 		copyHidden:copyLink ? copyLink.hidden : true,
@@ -483,13 +667,19 @@ function dpPanelRestoreModalSnapshot(snapshot){
 	root.dataset.dpPanelModalTone=snapshot.tone||"";
 	root.dataset.dpPanelModalExpanded=snapshot.expanded||"0";
 	root.dataset.dpPanelModalTriggerToken=snapshot.triggerToken||"";
+	root.dataset.dpPanelModalExit=snapshot.exit||"auto";
+	if(snapshot.validationDirty==="1"){root.dataset.dpPanelModalValidationDirty="1";}else{delete root.dataset.dpPanelModalValidationDirty;}
+	if(snapshot.structuralDirty==="1"){root.dataset.dpPanelModalStructuralDirty="1";}else{delete root.dataset.dpPanelModalStructuralDirty;}
+	dpPanelModalState.discardArmedUntil=0;
 	if(snapshot.content){root.dataset.dpPanelModalContent=snapshot.content;}else{delete root.dataset.dpPanelModalContent;}
 	if(snapshot.url){root.dataset.dpPanelModalUrl=snapshot.url;}else{delete root.dataset.dpPanelModalUrl;}
 	root.dataset.dpPanelModalStack=snapshot.stack||"replace";
 	title.textContent=snapshot.title||(typeof dpPanelText==="function" ? dpPanelText("modal.action","Action") : "Action");
 	description.textContent=snapshot.description||"";
 	description.hidden=!!snapshot.descriptionHidden;
-	body.innerHTML=snapshot.bodyHtml||"";
+	while(body.firstChild){body.removeChild(body.firstChild);}
+	if(snapshot.bodyFragment){body.appendChild(snapshot.bodyFragment);}
+	dpPanelModalState.currentTrigger=dpPanelResolveModalTrigger(snapshot.triggerContext)||(snapshot.triggerContext&&snapshot.triggerContext.node)||null;
 	if(openFull){
 		openFull.hidden=!!snapshot.openFullHidden;
 		if(snapshot.openFullHref){openFull.href=snapshot.openFullHref;}else{openFull.removeAttribute("href");}
@@ -505,21 +695,20 @@ function dpPanelRestoreModalSnapshot(snapshot){
 	dpPanelClassifyModalContent(body);
 	body.onscroll=function(){dpPanelUpdateModalScrollState(body);};
 	root.hidden=false;
+	root.setAttribute("aria-hidden","false");
 	document.body.classList.add("dp-panel-modal-open");
 	setTimeout(function(){
-		body.scrollTop=snapshot.scrollTop||0;
-		body.querySelectorAll("form").forEach(function(form){
-			if(form.dataset.dpPanelModalPrepared==="1"){delete form.dataset.dpPanelModalPrepared;}
-			var fallback=document.querySelector("[data-dp-panel-action-modal=\"1\"]")||root.querySelector(".dp-panel-modal-close");
-			dpPanelPrepareModalForm(fallback,form);
-		});
-		if(typeof dpPanelInitTabs==="function"){dpPanelInitTabs();}
-		if(typeof dpPanelInitSteps==="function"){dpPanelInitSteps();}
-		if(typeof dpPanelInitRepeaters==="function"){dpPanelInitRepeaters();}
-		if(typeof dpPanelRefreshPanelUi==="function"){dpPanelRefreshPanelUi();}
-		else if(typeof dpPanelRefreshDependencies==="function"){dpPanelRefreshDependencies();}
-		dpPanelRememberModalFormState(body);
+		var restoredScroll=snapshot.scrollTop||0;
+		var focus=snapshot.focusedElement&&document.contains(snapshot.focusedElement) ? snapshot.focusedElement : dpPanelResolveModalTrigger(snapshot.triggerContext);
+		if(!focus){focus=body.querySelector("input,select,textarea,button,a[href]")||root.querySelector(".dp-panel-modal-close");}
+		if(focus&&typeof focus.focus==="function"){
+			try{focus.focus({preventScroll:true});}catch(error){focus.focus();}
+		}
+		body.scrollTop=restoredScroll;
 		dpPanelUpdateModalScrollState(body);
+		if(typeof requestAnimationFrame==="function"){
+			requestAnimationFrame(function(){body.scrollTop=restoredScroll;dpPanelUpdateModalScrollState(body);});
+		}
 	},0);
 	return true;
 }
@@ -529,19 +718,51 @@ function dpPanelRestoreModalSnapshot(snapshot){
  * back navigation honors dirty-form protection unless forced, then
  * restores the previous snapshot and refreshes stack-dependent controls.
  */
-function dpPanelRequestBackModal(force){
+function dpPanelRequestBackModal(force,historyDriven){
 	var root=document.querySelector(".dp-panel-modal-root");
-	if(!root||root.classList.contains("dp-panel-modal-busy")||dpPanelModalStack.length<1){return false;}
-	if(!force&&dpPanelModalHasDirtyForm()&&Date.now()>dpPanelModalDiscardArmedUntil){
-		dpPanelModalDiscardArmedUntil=Date.now()+3200;
+	if(!root||root.classList.contains("dp-panel-modal-busy")||dpPanelModalState.stack.length<1){return false;}
+	if(!force&&dpPanelModalHasDirtyForm()&&Date.now()>dpPanelModalState.discardArmedUntil){
+		dpPanelModalState.discardArmedUntil=Date.now()+3200;
 		root.classList.add("dp-panel-modal-discard-warn");
 		if(typeof dpPanelToast==="function"){dpPanelToast(typeof dpPanelText==="function" ? dpPanelText("modal.unsaved_back","Unsaved modal changes. Back again to discard.") : "Unsaved modal changes. Back again to discard.","warning");}
 		setTimeout(function(){root.classList.remove("dp-panel-modal-discard-warn");},340);
 		return false;
 	}
-	var snapshot=dpPanelModalStack.pop();
-	dpPanelModalDiscardArmedUntil=0;
-	return dpPanelRestoreModalSnapshot(snapshot);
+	dpPanelCancelModalRequest();
+	var snapshot=dpPanelModalState.stack.pop();
+	dpPanelModalState.discardArmedUntil=0;
+	var restored=dpPanelRestoreModalSnapshot(snapshot);
+	if(restored&&!historyDriven){dpPanelModalHistoryDrop(1);}
+	return restored;
+}
+/**
+ * Exits the current modal level without discarding its parent flow.
+ *
+ * Daughter dialogs navigate back through the snapshot stack; top-level dialogs
+ * close normally. Both paths retain the existing dirty-form safeguards.
+ */
+function dpPanelExitModal(force,historyDriven){
+	var root=document.querySelector(".dp-panel-modal-root");
+	if(!root||root.hidden){return true;}
+	var strategy=dpPanelModalExitStrategy(dpPanelModalState.currentTrigger);
+	if(strategy==="stay"){return false;}
+	if(strategy==="close"){return dpPanelRequestCloseModal(force===true);}
+	if(strategy==="back"){
+		if(dpPanelModalState.stack.length>0){return dpPanelRequestBackModal(force===true,historyDriven===true);}
+		return dpPanelRequestCloseModal(force===true);
+	}
+	if(dpPanelModalState.stack.length>0){return dpPanelRequestBackModal(force===true,historyDriven===true);}
+	return dpPanelRequestCloseModal(force===true);
+}
+/** Applies a successful action's declared modal navigation strategy. */
+function dpPanelApplyModalNavigation(strategy){
+	strategy=String(strategy||"close").toLowerCase().replace(/[^a-z_]/g,"");
+	if(strategy==="stay"){return true;}
+	if(strategy==="back"){
+		if(dpPanelRequestBackModal(true)){return true;}
+	}
+	dpPanelCloseModal();
+	return true;
 }
 /**
  * Closes the active modal and restores document focus/state.
@@ -552,24 +773,37 @@ function dpPanelRequestBackModal(force){
 function dpPanelCloseModal(){
 	var root=document.querySelector(".dp-panel-modal-root");
 	if(!root){return;}
+	dpPanelCancelModalRequest();
 	root.classList.remove("dp-panel-modal-busy");
 	root.classList.remove("dp-panel-modal-discard-warn");
 	root.hidden=true;
+	root.setAttribute("aria-hidden","true");
 	delete root.dataset.dpPanelModalTone;
 	delete root.dataset.dpPanelModalContent;
 	delete root.dataset.dpPanelModalExpanded;
 	delete root.dataset.dpPanelModalUrl;
 	delete root.dataset.dpPanelModalTriggerToken;
 	delete root.dataset.dpPanelModalStack;
-	dpPanelModalStack=[];
+	delete root.dataset.dpPanelModalExit;
+	delete root.dataset.dpPanelModalValidationDirty;
+	delete root.dataset.dpPanelModalStructuralDirty;
+	var historyDepth=dpPanelModalState.historyDepth;
+	dpPanelModalState.stack=[];
 	dpPanelUpdateModalBackButton(root);
-	dpPanelModalDiscardArmedUntil=0;
+	dpPanelModalState.discardArmedUntil=0;
 	document.body.classList.remove("dp-panel-modal-open");
 	root.querySelector(".dp-panel-modal-body").innerHTML="";
-	if(dpPanelModalLastFocus&&document.contains(dpPanelModalLastFocus)){
-		dpPanelModalLastFocus.focus();
+	var focus=dpPanelModalState.lastFocus&&document.contains(dpPanelModalState.lastFocus) ? dpPanelModalState.lastFocus : dpPanelResolveModalTrigger(dpPanelModalState.lastFocusContext);
+	if(focus&&!dpPanelCommandElementVisible(focus)){
+		var rowMore=focus.closest(".dp-panel-row-more");
+		if(rowMore){focus=rowMore.querySelector(":scope>summary");}
 	}
-	dpPanelModalLastFocus=null;
+	if(focus&&typeof focus.focus==="function"){focus.focus();}
+	dpPanelModalState.lastFocus=null;
+	dpPanelModalState.lastFocusContext=null;
+	dpPanelModalState.currentTrigger=null;
+	if(historyDepth>0){dpPanelModalHistoryDrop(historyDepth);}
+	dpPanelModalState.pageUrl="";
 }
 /**
  * Classifies modal body content for layout and affordance decisions.
@@ -618,6 +852,7 @@ function dpPanelModalStatus(message,type){
 		status=document.createElement("div");
 		status.className="dp-panel-modal-status";
 		status.dataset.dpPanelModalStatus="";
+		status.dir="auto";
 		body.prepend(status);
 	}
 	status.className="dp-panel-modal-status dp-panel-modal-status-"+type;
@@ -644,6 +879,8 @@ function dpPanelClearModalStatus(){
  */
 function dpPanelOpenModal(trigger,content){
 	var root=dpPanelModalRoot();
+	var rootWasHidden=root.hidden;
+	var focusOrigin=document.activeElement instanceof HTMLElement ? document.activeElement : trigger;
 	var modal=root.querySelector(".dp-panel-modal");
 	var title=root.querySelector(".dp-panel-modal-title h2");
 	var description=root.querySelector(".dp-panel-modal-title p");
@@ -659,17 +896,29 @@ function dpPanelOpenModal(trigger,content){
 	var actionMethod=dpPanelActionMethod(trigger);
 	var triggerToken=dpPanelModalTriggerToken(trigger);
 	var stackStrategy=dpPanelModalStackStrategy(trigger);
-	if(stackStrategy==="clear"){dpPanelModalStack=[];}
+	if(!root.hidden&&root.classList.contains("dp-panel-modal-busy")&&root.dataset.dpPanelModalTriggerToken&&root.dataset.dpPanelModalTriggerToken!==triggerToken&&dpPanelModalMutationInFlight()){return false;}
+	if(!root.hidden&&root.dataset.dpPanelModalTriggerToken&&root.dataset.dpPanelModalTriggerToken!==triggerToken){
+		dpPanelCancelModalRequest();
+	}
+	if(stackStrategy==="replace"&&!root.hidden&&trigger.closest&&trigger.closest(".dp-panel-modal-root")&&trigger.dataset.dpPanelModalStackExplicit!=="1"){
+		stackStrategy="push";
+	}
+	if(stackStrategy==="clear"){dpPanelModalState.stack=[];}
 	if(stackStrategy==="push"&&!root.hidden&&root.dataset.dpPanelModalTriggerToken!==triggerToken){
 		var snapshot=dpPanelSnapshotModal(root);
-		if(snapshot){dpPanelModalStack.push(snapshot);}
+		if(snapshot){dpPanelModalState.stack.push(snapshot);dpPanelModalHistoryPush();}
 	}
+	dpPanelResetModalDirtyState(root);
+	if(typeof dpPanelCloseCommandPalette==="function"){dpPanelCloseCommandPalette();}
+	if(typeof dpPanelCloseTransientPanels==="function"){dpPanelCloseTransientPanels(null);}
 	root.dataset.dpPanelModalStack=stackStrategy;
 	modal.className="dp-panel-modal dp-panel-modal-"+(width||"md")+(style==="slide_over"?" dp-panel-modal-slide_over":"");
 	root.dataset.dpPanelModalStyle=style==="slide_over"?"slide_over":"dialog";
 	root.dataset.dpPanelModalTone=tone;
 	root.dataset.dpPanelModalExpanded="0";
 	root.dataset.dpPanelModalTriggerToken=triggerToken;
+	root.dataset.dpPanelModalExit=dpPanelModalExitStrategy(trigger);
+	dpPanelModalState.currentTrigger=trigger;
 	var panel=trigger&&trigger.closest ? trigger.closest(".dp-panel[data-dp-panel-production]") : null;
 	root.dataset.dpPanelProduction=(panel&&panel.dataset ? panel.dataset.dpPanelProduction : (document.querySelector(".dp-panel[data-dp-panel-production='0']") ? "0" : "1"));
 	root.classList.remove("dp-panel-modal-busy");
@@ -709,15 +958,22 @@ function dpPanelOpenModal(trigger,content){
 	dpPanelUpdateModalScrollState(body);
 	body.onscroll=function(){dpPanelUpdateModalScrollState(body);};
 	root.hidden=false;
+	root.setAttribute("aria-hidden","false");
 	document.body.classList.add("dp-panel-modal-open");
-	dpPanelModalLastFocus=trigger;
+	if(rootWasHidden){
+		var currentPanel=document.querySelector("main.dp-panel");
+		dpPanelModalState.pageUrl=currentPanel&&currentPanel.dataset.dpPanelCurrentUrl ? currentPanel.dataset.dpPanelCurrentUrl : location.href;
+		dpPanelModalState.historyDepth=0;
+		dpPanelModalHistoryPush();
+		dpPanelModalState.lastFocus=focusOrigin;
+		dpPanelModalState.lastFocusContext=dpPanelModalTriggerContext(focusOrigin);
+	}
 	setTimeout(function(){
 		var focus=body.querySelector("input,select,textarea,button:not(.dp-panel-modal-close),a[href]")||root.querySelector(".dp-panel-modal-close");
 		if(focus){focus.focus();}
 		body.querySelectorAll("form").forEach(function(form){
-			dpPanelPrepareModalForm(trigger,form);
+			if(form.dataset.dpPanelModalLocalForm!=="1"){dpPanelPrepareModalForm(trigger,form);}
 		});
-		dpPanelRememberModalFormState(body);
 		if(typeof dpPanelInitTabs==="function"){dpPanelInitTabs();}
 		if(typeof dpPanelInitSteps==="function"){dpPanelInitSteps();}
 		if(typeof dpPanelInitRepeaters==="function"){dpPanelInitRepeaters();}
@@ -725,8 +981,10 @@ function dpPanelOpenModal(trigger,content){
 		else if(typeof dpPanelRefreshDependencies==="function"){dpPanelRefreshDependencies();}
 		if(typeof dpPanelInitFieldEnhancements==="function"){dpPanelInitFieldEnhancements(body);}
 		else if(typeof dpPanelApplyAccessibilityPolicies==="function"){dpPanelApplyAccessibilityPolicies(body);}
+		dpPanelRememberModalFormState(body);
 		dpPanelUpdateModalScrollState(body);
 	},0);
+	return true;
 }
 /**
  * Resolves the URL associated with a modal action trigger.
@@ -788,16 +1046,18 @@ function dpPanelPrepareModalForm(trigger,form){
 	if(form.dataset.dpPanelModalPrepared==="1"){return form;}
 	form.dataset.dpPanelModalPrepared="1";
 	var root=dpPanelModalRoot();
+	var cancelLabels=[
+		trigger&&trigger.dataset ? String(trigger.dataset.dpPanelActionCancelLabel||"").trim().toLowerCase() : "",
+		typeof dpPanelText==="function" ? String(dpPanelText("common.cancel","Cancel")).trim().toLowerCase() : "cancel",
+		typeof dpPanelText==="function" ? String(dpPanelText("modal.back","Back")).trim().toLowerCase() : "back"
+	].filter(Boolean);
 	form.querySelectorAll(".dp-panel-toolbar a").forEach(function(link){
-		link.addEventListener("click",function(event){
-			var label=(link.textContent||"").trim().toLowerCase();
-			if(label!=="cancel"&&label!=="back"&&link.dataset.dpPanelModalCancel!=="1"){return;}
-			event.preventDefault();
-			dpPanelRequestCloseModal(false);
-		});
+		var label=(link.textContent||"").trim().toLowerCase();
+		if(link.dataset.dpPanelModalCancel==="1"||cancelLabels.indexOf(label)!==-1){link.dataset.dpPanelModalCancel="1";}
 	});
 	form.addEventListener("submit",function(event){
 		event.preventDefault();
+		if(root.classList.contains("dp-panel-modal-busy")){return;}
 		var submitter=event.submitter;
 		var action=(submitter&&submitter.getAttribute("formaction"))||form.action;
 		var method=((submitter&&submitter.formMethod)||form.method||"POST").toUpperCase();
@@ -807,8 +1067,12 @@ function dpPanelPrepareModalForm(trigger,form){
 			delete control.dataset.dpPanelStepDisabled;
 		});
 		var body=new FormData(form);
-		body.delete("return_to");
-		body.append("return_to",dpPanelModalReturnUrl(trigger,action));
+		var signedIntent=form.querySelector("[data-dp-panel-navigation-intent='1']");
+		var signedReturn=body.get("return_to");
+		if(!signedIntent||!signedIntent.name||!signedIntent.value||typeof signedReturn!=="string"||!signedReturn){
+			body.delete("return_to");
+			body.append("return_to",dpPanelModalReturnUrl(trigger,action));
+		}
 		if(submitter&&submitter.name){
 			body.append(submitter.name, submitter.value);
 		}
@@ -829,30 +1093,45 @@ function dpPanelPrepareModalForm(trigger,form){
 		form.classList.add("dp-panel-form-loading");
 		root.classList.add("dp-panel-modal-busy");
 		dpPanelModalStatus(typeof dpPanelText==="function" ? dpPanelText("modal.saving_changes","Saving changes...") : "Saving changes...", "working");
+		var request=dpPanelBeginModalRequest({method:method,kind:"form"});
+		var released=false;
+		var releaseRequest=function(){
+			if(released){return;}
+			released=true;
+			form.classList.remove("dp-panel-form-loading");
+			if(dpPanelModalRequestIsCurrent(request)){
+				root.classList.remove("dp-panel-modal-busy");
+				if(!root.hidden&&root.dataset.dpPanelModalStatus==="working"){dpPanelClearModalStatus();}
+			}
+			controls.forEach(function(control){
+				if(control.dataset.dpPanelModalPreviousDisabled!=="1"){control.disabled=false;}
+				delete control.dataset.dpPanelModalPreviousDisabled;
+			});
+			dpPanelFinishModalRequest(request);
+		};
+		request.dpPanelRelease=releaseRequest;
 		fetch(requestUrl,{
 			method:method,
 			body:method==="GET"?null:body,
+			signal:request.signal,
 			credentials:"same-origin",
 			headers:{
 				"Accept":"application/json",
 				"X-Requested-With":"DataphyrePanelModal"
 			}
 		}).then(function(response){
+			if(!dpPanelModalRequestIsCurrent(request)){return null;}
 			return dpPanelFragmentPayload(response);
 		}).then(function(payload){
-			if(!dpPanelHandleModalPayload(trigger,payload,action)){
+			if(!dpPanelModalRequestIsCurrent(request)){return;}
+			if(!dpPanelHandleModalPayload(trigger,payload,action,request)){
 				dpPanelModalStatus(typeof dpPanelText==="function" ? dpPanelText("modal.unexpected_response_retry","The action returned an unexpected response. Please retry or open the full page.") : "The action returned an unexpected response. Please retry or open the full page.", "error");
 			}
-		}).catch(function(){
+		}).catch(function(error){
+			if(!dpPanelModalRequestIsCurrent(request)||(error&&error.name==="AbortError")){return;}
 			dpPanelModalStatus(typeof dpPanelText==="function" ? dpPanelText("modal.submit_failed_retry","The action could not complete in the dialog. Please retry or open the full page.") : "The action could not complete in the dialog. Please retry or open the full page.", "error");
 		}).finally(function(){
-			form.classList.remove("dp-panel-form-loading");
-			root.classList.remove("dp-panel-modal-busy");
-			if(!root.hidden){dpPanelClearModalStatus();}
-			controls.forEach(function(control){
-				if(control.dataset.dpPanelModalPreviousDisabled!=="1"){control.disabled=false;}
-				delete control.dataset.dpPanelModalPreviousDisabled;
-			});
+			if(request.dpPanelDeferredRelease!==true){releaseRequest();}
 		});
 	});
 	return form;
@@ -864,13 +1143,52 @@ function dpPanelPrepareModalForm(trigger,form){
  * dialog based on effect policy, refreshes workspace fragments, reopens invalid
  * forms for correction, and reports unexpected responses as recoverable failures.
  */
-function dpPanelHandleModalPayload(trigger,payload,action){
-	if(!payload){return false;}
+function dpPanelHandleModalPayload(trigger,payload,action,request){
+	if(!payload||(request&&!dpPanelModalRequestIsCurrent(request))){return false;}
+	var status=Number(payload.status===undefined?200:payload.status);
+	var doc=payload.html ? dpPanelPayloadDoc(payload) : null;
+	if(status>=400){
+		var invalidForm=doc ? doc.querySelector(".dp-panel-form") : null;
+		if(invalidForm){
+			dpPanelPrepareModalForm(trigger,invalidForm);
+			dpPanelOpenModal(trigger,invalidForm);
+			var invalidRoot=document.querySelector(".dp-panel-modal-root");
+			if(invalidRoot){invalidRoot.dataset.dpPanelModalValidationDirty="1";}
+		}
+		var errorMessage=status>=500
+			? (typeof dpPanelText==="function" ? dpPanelText("modal.submit_failed_retry","The action could not complete in the dialog. Please retry or open the full page.") : "The action could not complete in the dialog. Please retry or open the full page.")
+			: (typeof dpPanelText==="function" ? dpPanelText("modal.review_highlighted","Review the highlighted fields and try again.") : "Review the highlighted fields and try again.");
+		dpPanelModalStatus(errorMessage,status>=500?"error":"warning");
+		return true;
+	}
+	if(doc&&!doc.querySelector("main.dp-panel")){
+		var nextForm=doc.querySelector(".dp-panel-form");
+		if(nextForm){
+			dpPanelPrepareModalForm(trigger,nextForm);
+			dpPanelOpenModal(trigger,nextForm);
+			dpPanelModalStatus(typeof dpPanelText==="function" ? dpPanelText("modal.review_highlighted","Review the highlighted fields and try again.") : "Review the highlighted fields and try again.", "warning");
+			return true;
+		}
+	}
 	var effects=typeof dpPanelDispatchEffects==="function" ? dpPanelDispatchEffects(payload,"modal") : {};
-	var shouldClose=typeof dpPanelEffectCloseModal==="function" ? dpPanelEffectCloseModal(effects,true) : true;
+	var modalNavigation=typeof dpPanelEffectModalNavigation==="function" ? dpPanelEffectModalNavigation(effects,true) : (typeof dpPanelEffectCloseModal==="function"&&dpPanelEffectCloseModal(effects,true)===false ? "stay" : "close");
+	var completeNavigation=function(){
+		try{
+			if(!request||dpPanelModalRequestIsCurrent(request)){
+				if(modalNavigation==="stay"){
+					var activeRoot=document.querySelector(".dp-panel-modal-root:not([hidden])");
+					if(activeRoot){dpPanelRememberModalFormState(activeRoot.querySelector(".dp-panel-modal-body"));dpPanelResetModalDirtyState(activeRoot);}
+				}
+				dpPanelApplyModalNavigation(modalNavigation);
+			}
+		}
+		finally{
+			if(request&&typeof request.dpPanelRelease==="function"){request.dpPanelRelease();}
+		}
+	};
 	if(payload.redirect_to){
+		if(request){request.dpPanelDeferredRelease=true;}
 		dpPanelModalStatus(typeof dpPanelText==="function" ? dpPanelText("modal.done_refreshing_workspace","Done. Refreshing the workspace...") : "Done. Refreshing the workspace...", "success");
-		if(shouldClose){setTimeout(function(){dpPanelCloseModal();},120);}
 		dpPanelAjaxLoad(payload.redirect_to,{
 			replace:true,
 			preserveScroll:false,
@@ -878,26 +1196,22 @@ function dpPanelHandleModalPayload(trigger,payload,action){
 			allowDuringMutation:true,
 			targetedRefresh:false,
 			refreshTargets:[],
-			suppressEffects:true
+			suppressEffects:true,
+			onApplied:function(){setTimeout(completeNavigation,120);},
+			onFailed:function(){setTimeout(completeNavigation,120);}
 		});
 		return true;
 	}
-	if(!payload.html){return false;}
-	var doc=dpPanelPayloadDoc(payload);
-	if(!doc){return false;}
+	if(!payload.html||!doc){return false;}
 	var main=doc.querySelector("main.dp-panel");
 	if(main&&document.querySelector("main.dp-panel")){
 		dpPanelModalStatus(typeof dpPanelText==="function" ? dpPanelText("modal.done_updating_workspace","Done. Updating the workspace...") : "Done. Updating the workspace...", "success");
 		var applied=dpPanelAjaxApply(payload,action,{replace:true,preserveScroll:true,suppressEffects:true});
-		if(applied&&shouldClose){setTimeout(function(){dpPanelCloseModal();},120);}
+		if(applied){
+			if(request){request.dpPanelDeferredRelease=true;}
+			setTimeout(completeNavigation,120);
+		}
 		return applied;
-	}
-	var nextForm=doc.querySelector(".dp-panel-form");
-	if(nextForm){
-		dpPanelPrepareModalForm(trigger,nextForm);
-		dpPanelOpenModal(trigger,nextForm);
-		dpPanelModalStatus(typeof dpPanelText==="function" ? dpPanelText("modal.review_highlighted","Review the highlighted fields and try again.") : "Review the highlighted fields and try again.", "warning");
-		return true;
 	}
 	var notice=doc.querySelector(".dp-panel-notice,.dp-panel-alert,.dp-panel-empty,p");
 	if(notice){
@@ -917,8 +1231,10 @@ function dpPanelHandleModalPayload(trigger,payload,action){
  * fall back to full-page navigation when the modal contract is unavailable.
  */
 function dpPanelFetchAction(trigger){
+	var activeRoot=document.querySelector(".dp-panel-modal-root:not([hidden])");
+	if(activeRoot&&activeRoot.classList.contains("dp-panel-modal-busy")&&dpPanelModalMutationInFlight()){return false;}
 	var url=dpPanelActionUrl(trigger);
-	if(!url){return;}
+	if(!url){return false;}
 	dpPanelOpenModal(trigger,"<div class=\"dp-panel-modal-loading\"><span></span><strong>"+dpPanelEscape(typeof dpPanelText==="function" ? dpPanelText("modal.loading_action","Loading action") : "Loading action")+"</strong><small>"+dpPanelEscape(typeof dpPanelText==="function" ? dpPanelText("modal.loading_action_context","Preparing the form and current record context.") : "Preparing the form and current record context.")+"</small></div>");
 	dpPanelModalRoot().classList.add("dp-panel-modal-busy");
 	var method=dpPanelActionMethod(trigger);
@@ -928,19 +1244,23 @@ function dpPanelFetchAction(trigger){
 	}
 	var requestUrl=new URL(url,window.location.href);
 	requestUrl.searchParams.set("__panel_partial","modal");
-	var options={method:method,credentials:"same-origin",headers:{"X-Requested-With":"DataphyrePanelModal"}};
+	if(method==="GET"){requestUrl.searchParams.set("return_to",dpPanelModalReturnUrl(trigger,url));}
+	var request=dpPanelBeginModalRequest({method:method,kind:"fetch"});
+	var options={method:method,credentials:"same-origin",headers:{"X-Requested-With":"DataphyrePanelModal"},signal:request.signal};
 	if(options.method!=="GET"){
 		options.body=trigger.form?new FormData(trigger.form):new FormData();
 		options.body.append("__panel_partial","modal");
 	}
 	fetch(requestUrl.toString(),options).then(function(response){
+		if(!dpPanelModalRequestIsCurrent(request)){return null;}
 		if(response.redirected){
 			window.location.href=response.url;
-			return "";
+			return null;
 		}
+		if(!response.ok){throw new Error("Modal action request failed with status "+response.status);}
 		return response.text();
 	}).then(function(html){
-		if(!html){return;}
+		if(!html||!dpPanelModalRequestIsCurrent(request)){return;}
 		var doc=new DOMParser().parseFromString(html,"text/html");
 		var form=doc.querySelector(".dp-panel-form");
 		if(form){
@@ -952,13 +1272,18 @@ function dpPanelFetchAction(trigger){
 			dpPanelOpenModal(trigger,surface);
 			return;
 		}
-		window.location.href=url;
-	}).catch(function(){
-		window.location.href=url;
+		if(dpPanelModalRequestIsCurrent(request)){window.location.href=url;}
+	}).catch(function(error){
+		if(!dpPanelModalRequestIsCurrent(request)||(error&&error.name==="AbortError")){return;}
+		dpPanelModalStatus(typeof dpPanelText==="function" ? dpPanelText("modal.load_failed_retry","The action could not load in the dialog. Please retry or open the full page.") : "The action could not load in the dialog. Please retry or open the full page.", "error");
 	}).finally(function(){
-		var root=document.querySelector(".dp-panel-modal-root");
-		if(root){root.classList.remove("dp-panel-modal-busy");}
+		if(dpPanelModalRequestIsCurrent(request)){
+			var root=document.querySelector(".dp-panel-modal-root");
+			if(root){root.classList.remove("dp-panel-modal-busy");}
+		}
+		dpPanelFinishModalRequest(request);
 	});
+	return true;
 }
 /**
  * Extracts record or panel surfaces from a fetched document.
@@ -978,23 +1303,75 @@ function dpPanelModalSurfaceFromDoc(doc){
 	return wrap;
 }
 /**
- * Executes a confirmed modal action.
+ * Runs a confirmed action through the modal-owned request pipeline.
  *
- * confirmed actions choose between Ajax fragment mutation, native form
- * submission, link navigation, and full-page fallback based on method, action URL,
- * form ownership, and Ajax eligibility.
+ * The flow token, AbortController, HTTP status gate, and modal payload handler
+ * prevent stale mutations from applying success navigation to a newer dialog.
  */
+function dpPanelRunOwnedModalAction(trigger,button,url,method,body,form){
+	var root=dpPanelModalRoot();
+	var request=dpPanelBeginModalRequest({method:method,kind:"action"});
+	var requestUrl=dpPanelAjaxFragmentUrl(url);
+	method=String(method||"POST").toUpperCase();
+	if(body&&method!=="GET"&&method!=="HEAD"){
+		body.delete("__panel_partial");
+		body.append("__panel_partial","fragment");
+	}
+	root.classList.add("dp-panel-modal-busy");
+	dpPanelModalStatus(typeof dpPanelText==="function" ? dpPanelText("modal.running_action","Running action...") : "Running action...", "working");
+	var released=false;
+	var releaseRequest=function(){
+		if(released){return;}
+		released=true;
+		if(form&&typeof dpPanelReleaseSubmitLoading==="function"){dpPanelReleaseSubmitLoading(form);}
+		if(dpPanelModalRequestIsCurrent(request)){
+			root.classList.remove("dp-panel-modal-busy");
+			if(!root.hidden&&root.dataset.dpPanelModalStatus==="working"){dpPanelClearModalStatus();}
+			if(button&&document.contains(button)){
+				button.disabled=false;
+				button.classList.remove("dp-panel-action-loading");
+			}
+		}
+		dpPanelFinishModalRequest(request);
+	};
+	request.dpPanelRelease=releaseRequest;
+	fetch(requestUrl,{
+		method:method,
+		body:method==="GET"||method==="HEAD"?null:body,
+		credentials:"same-origin",
+		signal:request.signal,
+		headers:{
+			"Accept":"application/json",
+			"X-Requested-With":"DataphyrePanelModal"
+		}
+	}).then(function(response){
+		if(!dpPanelModalRequestIsCurrent(request)){return null;}
+		return dpPanelFragmentPayload(response);
+	}).then(function(payload){
+		if(!dpPanelModalRequestIsCurrent(request)){return;}
+		if(!dpPanelHandleModalPayload(trigger,payload,url,request)){
+			dpPanelModalStatus(typeof dpPanelText==="function" ? dpPanelText("modal.unexpected_response_retry","The action returned an unexpected response. Please retry or open the full page.") : "The action returned an unexpected response. Please retry or open the full page.", "error");
+		}
+	}).catch(function(error){
+		if(!dpPanelModalRequestIsCurrent(request)||(error&&error.name==="AbortError")){return;}
+		dpPanelModalStatus(typeof dpPanelText==="function" ? dpPanelText("modal.submit_failed_retry","The action could not complete in the dialog. Please retry or open the full page.") : "The action could not complete in the dialog. Please retry or open the full page.", "error");
+	}).finally(function(){
+		if(request.dpPanelDeferredRelease!==true){releaseRequest();}
+	});
+	return true;
+}
+
+
 function dpPanelRunConfirmedAction(trigger,button){
 	var url=dpPanelActionUrl(trigger);
 	if(!url){return false;}
 	var method=dpPanelActionMethod(trigger);
 	if(trigger.tagName==="A"){
+		if(method==="GET"&&dpPanelAjaxEnabled()&&dpPanelAjaxAllowedUrl(url)){
+			return dpPanelRunOwnedModalAction(trigger,button,url,method,null,null);
+		}
 		dpPanelModalStatus(typeof dpPanelText==="function" ? dpPanelText("modal.opening","Opening...") : "Opening...", "working");
 		setTimeout(function(){dpPanelCloseModal();},80);
-		if(method==="GET"&&dpPanelAjaxEnabled()&&dpPanelAjaxAllowedUrl(url)){
-			dpPanelAjaxLoad(url);
-			return true;
-		}
 		window.location.href=url;
 		return true;
 	}
@@ -1004,16 +1381,7 @@ function dpPanelRunConfirmedAction(trigger,button){
 		if(method!=="GET"&&dpPanelAjaxEnabled()&&dpPanelAjaxAllowedUrl(url)){
 			var body=new FormData();
 			body.append("__panel_action_confirm","1");
-			body.append("__panel_partial","fragment");
-			dpPanelAjaxLoad(url,{
-				method:method,
-				body:body,
-				replace:true,
-				preserveScroll:false,
-				onApplied:function(payload){dpPanelModalStatus(typeof dpPanelText==="function" ? dpPanelText("modal.done_refreshing_workspace","Done. Refreshing the workspace...") : "Done. Refreshing the workspace...", "success");if(typeof dpPanelEffectCloseModal!=="function"||dpPanelEffectCloseModal(dpPanelPayloadEffects(payload),true)){setTimeout(function(){dpPanelCloseModal();},120);}},
-				onFailed:function(){dpPanelModalStatus(typeof dpPanelText==="function" ? dpPanelText("modal.refresh_failed","The action could not refresh in place.") : "The action could not refresh in place.", "error");}
-			});
-			return true;
+			return dpPanelRunOwnedModalAction(trigger,button,url,method,body,null);
 		}
 		setTimeout(function(){dpPanelCloseModal();},80);
 		window.location.href=url;
@@ -1030,19 +1398,8 @@ function dpPanelRunConfirmedAction(trigger,button){
 	if(trigger.name){
 		body.append(trigger.name,trigger.value||"");
 	}
-	body.append("__panel_partial","fragment");
 	dpPanelSetSubmitLoading(form,trigger);
-	dpPanelModalStatus(typeof dpPanelText==="function" ? dpPanelText("modal.running_action","Running action...") : "Running action...", "working");
-	dpPanelAjaxLoad(url,{
-		method:method,
-		body:body,
-		replace:true,
-		preserveScroll:false,
-		form:form,
-		onApplied:function(payload){dpPanelModalStatus(typeof dpPanelText==="function" ? dpPanelText("modal.done_refreshing_workspace","Done. Refreshing the workspace...") : "Done. Refreshing the workspace...", "success");if(typeof dpPanelEffectCloseModal!=="function"||dpPanelEffectCloseModal(dpPanelPayloadEffects(payload),true)){setTimeout(function(){dpPanelCloseModal();},120);}},
-		onFailed:function(){dpPanelModalStatus(typeof dpPanelText==="function" ? dpPanelText("modal.refresh_failed","The action could not refresh in place.") : "The action could not refresh in place.", "error");}
-	});
-	return true;
+	return dpPanelRunOwnedModalAction(trigger,button,url,method,body,form);
 }
 /**
  * Infers confirmation tone from trigger data, classes, and action copy.
@@ -1084,19 +1441,21 @@ function dpPanelModalToneIcon(tone){
  * to the confirmed-action executor.
  */
 function dpPanelConfirmAction(trigger){
+	var activeRoot=document.querySelector(".dp-panel-modal-root:not([hidden])");
+	if(activeRoot&&activeRoot.classList.contains("dp-panel-modal-busy")&&dpPanelModalMutationInFlight()){return false;}
 	var wrap=document.createElement("div");
 	var message=trigger.dataset.confirm||trigger.dataset.dpPanelActionDescription||(typeof dpPanelText==="function" ? dpPanelText("modal.run_action","Run this action?") : "Run this action?");
 	var tone=dpPanelModalActionTone(trigger);
 	var submitClass=tone==="neutral" ? "dp-panel-button" : "dp-panel-button dp-panel-action dp-panel-action-"+tone;
 	wrap.className="dp-panel-modal-confirmation dp-panel-modal-confirmation-tone-"+tone;
-	wrap.innerHTML="<div class=\"dp-panel-modal-confirmation-icon\">"+dpPanelEscape(dpPanelModalToneIcon(tone))+"</div><div class=\"dp-panel-modal-confirmation-copy\"><strong>"+dpPanelEscape(trigger.dataset.dpPanelActionHeading||(typeof dpPanelText==="function" ? dpPanelText("modal.confirm_action","Confirm action") : "Confirm action"))+"</strong><p>"+dpPanelEscape(message)+"</p></div><div class=\"dp-panel-modal-actions\"><button class=\"dp-panel-button dp-panel-button-secondary\" type=\"button\" data-dp-panel-modal-cancel>"+dpPanelEscape(trigger.dataset.dpPanelActionCancelLabel||(typeof dpPanelText==="function" ? dpPanelText("common.cancel","Cancel") : "Cancel"))+"</button><button class=\""+submitClass+"\" type=\"button\" data-dp-panel-modal-submit>"+dpPanelEscape(trigger.dataset.dpPanelActionSubmitLabel||trigger.textContent.trim()||(typeof dpPanelText==="function" ? dpPanelText("common.run","Run") : "Run"))+"</button></div>";
-	wrap.querySelector("[data-dp-panel-modal-cancel]").addEventListener("click",dpPanelCloseModal);
+	wrap.innerHTML="<div class=\"dp-panel-modal-confirmation-icon\">"+dpPanelEscape(dpPanelModalToneIcon(tone))+"</div><div class=\"dp-panel-modal-confirmation-copy\"><strong dir=\"auto\">"+dpPanelEscape(trigger.dataset.dpPanelActionHeading||(typeof dpPanelText==="function" ? dpPanelText("modal.confirm_action","Confirm action") : "Confirm action"))+"</strong><p dir=\"auto\">"+dpPanelEscape(message)+"</p></div><div class=\"dp-panel-modal-actions\"><button class=\"dp-panel-button dp-panel-button-secondary\" type=\"button\" data-dp-panel-modal-cancel>"+dpPanelEscape(trigger.dataset.dpPanelActionCancelLabel||(typeof dpPanelText==="function" ? dpPanelText("common.cancel","Cancel") : "Cancel"))+"</button><button class=\""+submitClass+"\" type=\"button\" data-dp-panel-modal-submit>"+dpPanelEscape(trigger.dataset.dpPanelActionSubmitLabel||trigger.textContent.trim()||(typeof dpPanelText==="function" ? dpPanelText("common.run","Run") : "Run"))+"</button></div>";
 	wrap.querySelector("[data-dp-panel-modal-submit]").addEventListener("click",function(){
 		this.disabled=true;
 		this.classList.add("dp-panel-action-loading");
 		dpPanelRunConfirmedAction(trigger,this);
 	});
 	dpPanelOpenModal(trigger,wrap);
+	return true;
 }
 /**
  * Opens a table filter template inside the modal shell.
@@ -1106,6 +1465,8 @@ function dpPanelConfirmAction(trigger){
  * local to the dialog until the form submits.
  */
 function dpPanelOpenFilterModal(trigger){
+	var activeRoot=document.querySelector(".dp-panel-modal-root:not([hidden])");
+	if(activeRoot&&activeRoot.classList.contains("dp-panel-modal-busy")&&dpPanelModalMutationInFlight()){return false;}
 	var templateId=trigger.dataset.dpPanelFilterTemplate||"";
 	var template=templateId?document.getElementById(templateId):null;
 	if(!template){return false;}
@@ -1120,22 +1481,30 @@ function dpPanelOpenFilterModal(trigger){
 	dpPanelOpenModal(trigger,wrap);
 	return true;
 }
-document.addEventListener("click",function(event){
-	if(event.target.closest("[data-dp-panel-modal-cancel]")){
-		event.preventDefault();
+dpPanelListen(document,"click",function(event){
+	var modalCancel=event.target.closest("[data-dp-panel-modal-cancel]");
+	if(modalCancel){
 		var root=document.querySelector(".dp-panel-modal-root");
+		if(!root||root.hidden){return;}
+		event.preventDefault();
 		if(root&&root.classList.contains("dp-panel-modal-busy")){return;}
-		dpPanelRequestCloseModal(false);
+		dpPanelExitModal(false);
 		return;
 	}
 	var filterTrigger=event.target.closest("[data-dp-panel-filter-modal]");
 	if(filterTrigger){
+		var filterRoot=filterTrigger.closest(".dp-panel-modal-root");
+		var activeFilterRoot=document.querySelector(".dp-panel-modal-root:not([hidden])");
+		if((filterRoot&&filterRoot.classList.contains("dp-panel-modal-busy"))||(activeFilterRoot&&activeFilterRoot.classList.contains("dp-panel-modal-busy")&&dpPanelModalMutationInFlight())){event.preventDefault();return;}
 		event.preventDefault();
 		dpPanelOpenFilterModal(filterTrigger);
 		return;
 	}
 	var trigger=event.target.closest("[data-dp-panel-action-modal=\"1\"]");
 	if(!trigger){return;}
+	var triggerRoot=trigger.closest(".dp-panel-modal-root");
+	var activeActionRoot=document.querySelector(".dp-panel-modal-root:not([hidden])");
+	if((triggerRoot&&triggerRoot.classList.contains("dp-panel-modal-busy"))||(activeActionRoot&&activeActionRoot.classList.contains("dp-panel-modal-busy")&&dpPanelModalMutationInFlight())){event.preventDefault();return;}
 	if(trigger.matches&&trigger.matches("[data-dp-panel-row]")&&typeof dpPanelRowActivationBlockedByEvent==="function"&&dpPanelRowActivationBlockedByEvent(event,trigger)){
 		return;
 	}
@@ -1154,7 +1523,7 @@ document.addEventListener("click",function(event){
 	}
 	dpPanelConfirmAction(trigger);
 });
-document.addEventListener("keydown",function(event){
+dpPanelListen(document,"keydown",function(event){
 	var root=document.querySelector(".dp-panel-modal-root");
 	if(root&&!root.hidden&&dpPanelTrapFocus(root,event)){return;}
 	if(root&&!root.hidden&&event.altKey&&event.key==="Enter"){
@@ -1163,7 +1532,7 @@ document.addEventListener("keydown",function(event){
 		if(expand){expand.click();}
 		return;
 	}
-	if(event.key==="Escape"&&(!root||!root.classList.contains("dp-panel-modal-busy"))){dpPanelRequestCloseModal(false);}
+	if(event.key==="Escape"&&!event.defaultPrevented&&(!root||!root.classList.contains("dp-panel-modal-busy"))){dpPanelExitModal(false);}
 });
 JS;
 	}
@@ -1177,7 +1546,7 @@ JS;
 	 * confirmation modal path when a transition requires confirmation.
 	 */
 	private static function boardScript(): string {
-		return 'function dpPanelBoardTransitions(card){try{return JSON.parse(card.dataset.dpPanelBoardTransitions||"{}")||{};}catch(error){return {};}}function dpPanelBoardTransitionForm(card,transition){var forms=card.querySelectorAll("form");for(var index=0;index<forms.length;index++){var input=forms[index].querySelector("input[name=\"transition\"]");if(input&&input.value===transition){return forms[index];}}return null;}function dpPanelBoardClearDrops(){document.querySelectorAll(".dp-panel-board-drop,.dp-panel-board-drop-blocked").forEach(function(column){column.classList.remove("dp-panel-board-drop","dp-panel-board-drop-blocked");});}function dpPanelBoardPackedGrid(card){return card&&card.closest ? card.closest(".dp-panel-board[data-dp-panel-packed-grid]") : null;}var dpPanelDraggedBoardCard=null;document.addEventListener("dragstart",function(event){var card=event.target.closest("[data-dp-panel-board-card]");if(!card){return;}dpPanelDraggedBoardCard=card;var grid=dpPanelBoardPackedGrid(card);if(grid){grid.dataset.dpPanelBoardDragging="1";}card.classList.add("dp-panel-board-dragging");if(event.dataTransfer){event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("text/plain","dataphyre-panel-board-card");}});document.addEventListener("dragend",function(){var grid=dpPanelBoardPackedGrid(dpPanelDraggedBoardCard);if(dpPanelDraggedBoardCard){dpPanelDraggedBoardCard.classList.remove("dp-panel-board-dragging");}if(grid){delete grid.dataset.dpPanelBoardDragging;if(typeof dpPanelSchedulePackedGrid==="function"){dpPanelSchedulePackedGrid(grid);}}dpPanelDraggedBoardCard=null;dpPanelBoardClearDrops();});document.addEventListener("dragover",function(event){var column=event.target.closest("[data-dp-panel-board-column]");if(!column||!dpPanelDraggedBoardCard){return;}var transitions=dpPanelBoardTransitions(dpPanelDraggedBoardCard);var transition=transitions[column.dataset.dpPanelBoardStatus||""];if(transition){event.preventDefault();if(event.dataTransfer){event.dataTransfer.dropEffect="move";}column.classList.add("dp-panel-board-drop");column.classList.remove("dp-panel-board-drop-blocked");}else{column.classList.add("dp-panel-board-drop-blocked");column.classList.remove("dp-panel-board-drop");}});document.addEventListener("dragleave",function(event){var column=event.target.closest("[data-dp-panel-board-column]");if(column&&!column.contains(event.relatedTarget)){column.classList.remove("dp-panel-board-drop","dp-panel-board-drop-blocked");}});document.addEventListener("drop",function(event){var column=event.target.closest("[data-dp-panel-board-column]");if(!column||!dpPanelDraggedBoardCard){return;}var transitions=dpPanelBoardTransitions(dpPanelDraggedBoardCard);var transition=transitions[column.dataset.dpPanelBoardStatus||""];dpPanelBoardClearDrops();if(!transition){return;}event.preventDefault();var form=dpPanelBoardTransitionForm(dpPanelDraggedBoardCard,transition);if(!form){return;}var button=form.querySelector("[data-confirm]");if(button&&button.dataset.confirm){dpPanelConfirmAction(button);return;}if(form.requestSubmit){form.requestSubmit();}else{form.submit();}});';
+		return 'function dpPanelBoardTransitions(card){try{return JSON.parse(card.dataset.dpPanelBoardTransitions||"{}")||{};}catch(error){return {};}}function dpPanelBoardTransitionForm(card,transition){var forms=card.querySelectorAll("form");for(var index=0;index<forms.length;index++){var input=forms[index].querySelector("input[name=\"transition\"]");if(input&&input.value===transition){return forms[index];}}return null;}function dpPanelBoardClearDrops(){document.querySelectorAll(".dp-panel-board-drop,.dp-panel-board-drop-blocked").forEach(function(column){column.classList.remove("dp-panel-board-drop","dp-panel-board-drop-blocked");});}function dpPanelBoardPackedGrid(card){return card&&card.closest ? card.closest(".dp-panel-board[data-dp-panel-packed-grid]") : null;}var dpPanelDraggedBoardCard=null;dpPanelListen(document,"dragstart",function(event){var card=event.target.closest("[data-dp-panel-board-card]");if(!card){return;}dpPanelDraggedBoardCard=card;var grid=dpPanelBoardPackedGrid(card);if(grid){grid.dataset.dpPanelBoardDragging="1";}card.classList.add("dp-panel-board-dragging");if(event.dataTransfer){event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("text/plain","dataphyre-panel-board-card");}});dpPanelListen(document,"dragend",function(){var grid=dpPanelBoardPackedGrid(dpPanelDraggedBoardCard);if(dpPanelDraggedBoardCard){dpPanelDraggedBoardCard.classList.remove("dp-panel-board-dragging");}if(grid){delete grid.dataset.dpPanelBoardDragging;if(typeof dpPanelSchedulePackedGrid==="function"){dpPanelSchedulePackedGrid(grid);}}dpPanelDraggedBoardCard=null;dpPanelBoardClearDrops();});dpPanelListen(document,"dragover",function(event){var column=event.target.closest("[data-dp-panel-board-column]");if(!column||!dpPanelDraggedBoardCard){return;}var transitions=dpPanelBoardTransitions(dpPanelDraggedBoardCard);var transition=transitions[column.dataset.dpPanelBoardStatus||""];if(transition){event.preventDefault();if(event.dataTransfer){event.dataTransfer.dropEffect="move";}column.classList.add("dp-panel-board-drop");column.classList.remove("dp-panel-board-drop-blocked");}else{column.classList.add("dp-panel-board-drop-blocked");column.classList.remove("dp-panel-board-drop");}});dpPanelListen(document,"dragleave",function(event){var column=event.target.closest("[data-dp-panel-board-column]");if(column&&!column.contains(event.relatedTarget)){column.classList.remove("dp-panel-board-drop","dp-panel-board-drop-blocked");}});dpPanelListen(document,"drop",function(event){var column=event.target.closest("[data-dp-panel-board-column]");if(!column||!dpPanelDraggedBoardCard){return;}var transitions=dpPanelBoardTransitions(dpPanelDraggedBoardCard);var transition=transitions[column.dataset.dpPanelBoardStatus||""];dpPanelBoardClearDrops();if(!transition){return;}event.preventDefault();var form=dpPanelBoardTransitionForm(dpPanelDraggedBoardCard,transition);if(!form){return;}var button=form.querySelector("[data-confirm]");if(button&&button.dataset.confirm){dpPanelConfirmAction(button);return;}if(form.requestSubmit){form.requestSubmit();}else{form.submit();}});';
 	}
 
 }

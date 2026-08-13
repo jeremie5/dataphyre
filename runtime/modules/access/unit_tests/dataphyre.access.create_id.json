@@ -1,17 +1,24 @@
 [
-	{
-		"name": "create_id returns 64-character string",
-		"function": "create_id",
-		"class": "dataphyre\\access",
-		"static_method": true,
-		"args": [],
-		"expected": {
-			"custom_script": "return is_string($result) && preg_match('/^[A-Z0-9]{4}_[A-Za-z0-9_-]{43}_[a-f0-9]{8}$/', $result) === 1;"
-		},
-		"dependencies": {
-			"class": ["dataphyre\\access"],
-			"function": ["dataphyre\\access::create_id"]
-		},
-		"max_millis": 10
-	}
+    {
+        "name": "create_id returns 64-character string",
+        "function": "create_id",
+        "class": "dataphyre\\access",
+        "static_method": true,
+        "args": [],
+        "expected": {
+            "assert": {
+                "type": "string",
+                "matches": "/^[A-Z0-9]{4}_[A-Za-z0-9_-]{43}_[a-f0-9]{8}$/"
+            }
+        },
+        "dependencies": {
+            "class": [
+                "dataphyre\\access"
+            ],
+            "function": [
+                "dataphyre\\access::create_id"
+            ]
+        },
+        "max_millis": 10
+    }
 ]

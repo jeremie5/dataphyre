@@ -69,7 +69,7 @@ trait PanelRendererShell {
 		}
 		$hookContext=self::pageHookContext($title, $data, $theme);
 		$content=PanelConfig::renderHook('content.before', $hookContext).$content.PanelConfig::renderHook('content.after', $hookContext);
-		$favicon=$theme->faviconUrl();
+		$favicon=self::safeWidgetUrl((string)$theme->faviconUrl());
 		$themeMode=self::themeMode($theme);
 		$liveInterval=self::liveRefreshInterval($data);
 		$navigationLayout=self::navigationLayout();
@@ -95,6 +95,28 @@ trait PanelRendererShell {
 		$pageWidth=self::pageWidthMode($navigationLayout, $navigationMode);
 		$pageKind=Resource::normalizeName((string)($data['kind'] ?? 'page'));
 		$pageKind=$pageKind!=='' ? $pageKind : 'page';
+		$assetCapabilities=self::pageAssetCapabilities($content, $data, $pageKind, $navigationLayout);
+		$data['asset_capabilities_detected']=$assetCapabilities;
+		$assetMode=(string)($data['asset_mode'] ?? PanelConfig::config('asset_mode', 'capability'));
+		$assetOptions=[];
+		foreach(['asset_nonce'=>'nonce', 'asset_integrity'=>'integrity', 'asset_attributes'=>'attributes', 'asset_capability_urls'=>'capability_urls'] as $source=>$target){
+			if(array_key_exists($source, $data)){
+				$assetOptions[$target]=$data[$source];
+			}
+		}
+		try{
+			$assetManifest=self::assetManifest($assetCapabilities, $assetMode, $assetOptions);
+		}
+		catch(\Throwable $exception){
+			PanelTrace::record('asset.manifest_error', ['message'=>$exception->getMessage(), 'mode'=>$assetMode]);
+			$assetManifest=self::assetManifest($assetCapabilities, 'full', $assetOptions);
+		}
+		$data['asset_manifest']=$assetManifest;
+		$assetCapabilities=is_array($assetManifest['capabilities'] ?? null) ? array_values($assetManifest['capabilities']) : $assetCapabilities;
+		$data['asset_capabilities']=$assetCapabilities;
+		foreach(is_array($assetManifest['missing_capabilities'] ?? null) ? $assetManifest['missing_capabilities'] : [] as $missingCapability){
+			PanelTrace::record('asset.capability_missing', ['capability'=>(string)$missingCapability, 'kind'=>$pageKind]);
+		}
 		$resourceName=is_array($data['resource'] ?? null) ? Resource::normalizeName((string)($data['resource']['name'] ?? '')) : '';
 		$pageName=is_array($data['page'] ?? null) ? Resource::normalizeName((string)($data['page']['name'] ?? '')) : '';
 		$mainClass='dp-panel dp-panel-kind-'.$pageKind.' dp-panel-page-width-'.$pageWidth.' dp-panel-header-mode-'.$headerMode.' dp-panel-footer-mode-'.$footerMode.' dp-panel-content-spacing-'.$contentSpacing.' dp-panel-custom-page-layout-'.$customPageLayout.($navigationChrome!=='' ? ' dp-panel-with-navigation dp-panel-nav-'.$navigationLayout.' dp-panel-nav-mode-'.$navigationMode : '');
@@ -103,7 +125,7 @@ trait PanelRendererShell {
 			$mainClass.=' dp-panel-with-sidebar';
 		}
 		$mainStyle='--dp-panel-sidebar-animation-duration:'.((int)$sidebarAnimation['duration']).'ms;--dp-panel-sidebar-animation-easing:'.(string)$sidebarAnimation['easing'].';';
-		$mainAttrs=' class="'.self::e($mainClass).'" style="'.self::e($mainStyle).'" data-dp-panel-kind="'.self::e($pageKind).'" data-dp-panel-navigation-layout="'.self::e($navigationLayout).'" data-dp-panel-navigation-mode="'.self::e($navigationMode).'" data-dp-panel-header-mode="'.self::e($headerMode).'" data-dp-panel-footer-mode="'.self::e($footerMode).'" data-dp-panel-content-spacing="'.self::e($contentSpacing).'" data-dp-panel-custom-page-layout="'.self::e($customPageLayout).'" data-dp-panel-navigation-search="'.($navigationSearch ? '1' : '0').'" data-dp-panel-recent-navigation="'.($recentNavigation ? '1' : '0').'" data-dp-panel-pinned-navigation="'.($pinnedNavigation ? '1' : '0').'" data-dp-panel-navigation-collapse="'.($collapsibleNavigation ? '1' : '0').'" data-dp-panel-navigation-collapse-exclusive="'.($exclusiveNavigationCollapse ? '1' : '0').'" data-dp-panel-modal-expand="'.self::e($modalExpandMode).'" data-dp-panel-modal-actions="'.self::e(implode(' ', $modalChromeActions)).'" data-dp-panel-sidebar-animation="'.self::e((string)$sidebarAnimation['type']).'" data-dp-panel-mobile-navigation="'.self::e($mobileNavigationMode).'" data-dp-panel-mobile-sidebar-layout="'.self::e($mobileSidebarLayout).'" data-dp-panel-page-width="'.self::e($pageWidth).'" data-dp-panel-production="'.((defined('IS_PRODUCTION') && IS_PRODUCTION===true) ? '1' : '0').'"';
+		$mainAttrs=' class="'.self::e($mainClass).'" style="'.self::e($mainStyle).'" data-dp-panel-kind="'.self::e($pageKind).'" data-dp-panel-assets="'.self::e(implode(' ', $assetCapabilities)).'" data-dp-panel-navigation-layout="'.self::e($navigationLayout).'" data-dp-panel-navigation-mode="'.self::e($navigationMode).'" data-dp-panel-header-mode="'.self::e($headerMode).'" data-dp-panel-footer-mode="'.self::e($footerMode).'" data-dp-panel-content-spacing="'.self::e($contentSpacing).'" data-dp-panel-custom-page-layout="'.self::e($customPageLayout).'" data-dp-panel-navigation-search="'.($navigationSearch ? '1' : '0').'" data-dp-panel-recent-navigation="'.($recentNavigation ? '1' : '0').'" data-dp-panel-pinned-navigation="'.($pinnedNavigation ? '1' : '0').'" data-dp-panel-navigation-collapse="'.($collapsibleNavigation ? '1' : '0').'" data-dp-panel-navigation-collapse-exclusive="'.($exclusiveNavigationCollapse ? '1' : '0').'" data-dp-panel-modal-expand="'.self::e($modalExpandMode).'" data-dp-panel-modal-actions="'.self::e(implode(' ', $modalChromeActions)).'" data-dp-panel-sidebar-animation="'.self::e((string)$sidebarAnimation['type']).'" data-dp-panel-mobile-navigation="'.self::e($mobileNavigationMode).'" data-dp-panel-mobile-sidebar-layout="'.self::e($mobileSidebarLayout).'" data-dp-panel-page-width="'.self::e($pageWidth).'" data-dp-panel-production="'.((defined('IS_PRODUCTION') && IS_PRODUCTION===true) ? '1' : '0').'"';
 		if($navigationSticky){
 			$mainAttrs.=' data-dp-panel-navigation-sticky="1"';
 		}
@@ -164,8 +186,10 @@ trait PanelRendererShell {
 		$documentLocale=str_replace('_', '-', PanelLocalization::from(PanelConfig::config('localization'))->locale());
 		$documentLocale=trim($documentLocale)!=='' ? trim($documentLocale) : 'en';
 		$headingTools=self::headingToolsHtml($theme, $themeMode, $liveInterval);
-		$panelCssUrl=self::assetUrl('panel.css');
-		$panelJsUrl=self::assetUrl('panel.js');
+		$panelStyleTags=self::assetTags($assetManifest, 'style');
+		$panelScriptTags=self::assetTags($assetManifest, 'script');
+		$assetNonce=self::safeAssetAttributeValue($assetOptions['nonce'] ?? PanelConfig::config('asset_nonce', ''));
+		$assetNonceAttribute=$assetNonce!=='' ? ' nonce="'.self::e($assetNonce).'"' : '';
 		$mobileNavigationToggle=$navigationLayout==='sidebar' && $navigationChrome!=='' && $mobileNavigationMode==='drawer'
 			? '<button type="button" class="dp-panel-mobile-nav-toggle" data-dp-panel-mobile-nav-toggle aria-label="'.self::e(self::panelText('nav.open_navigation')).'" aria-expanded="false" aria-controls="dp-panel-sidebar-navigation"><span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span></button>'
 			: '';
@@ -176,14 +200,109 @@ trait PanelRendererShell {
 			: '';
 		$bodyClass=($navigationSticky || $headerSticky || $footerSticky) ? ' class="dp-panel-has-sticky-chrome"' : '';
 		$html='<!doctype html><html lang="'.self::e($documentLocale).'"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
-			.'<title>'.self::e($title).'</title>'.self::themeHeadScript($theme, $themeMode).($favicon!==null ? '<link rel="icon" href="'.self::e($favicon).'">' : '').'<style>'.$theme->styleVariables().'</style><link rel="stylesheet" href="'.self::e($panelCssUrl).'">'.self::themeCssAssets($theme).PanelConfig::renderHook('head.end', $hookContext).'</head><body'.$bodyClass.' data-dp-theme="'.self::e($theme->name()).'" data-dp-theme-mode="'.self::e($themeMode).'"'.($themeEffects!=='' ? ' data-dp-theme-effects="'.self::e($themeEffects).'"' : '').'>'
-			.PanelConfig::renderHook('body.start', $hookContext).'<script type="application/json" data-dp-panel-command-state>'.$commandStateJson.'</script><script type="application/json" data-dp-panel-surface-state>'.$surfaceStateJson.'</script><script type="application/json" data-dp-panel-localization>'.$localizationJson.'</script><main'.$mainAttrs.'>'.($navigationLayout==='sidebar' ? $navigationChrome.$mobileNavigationBackdrop : '').'<div class="dp-panel-main-region"><header class="dp-panel-header" data-dp-panel-header data-dp-panel-header-mode="'.self::e($headerMode).'">'.$header.'</header>'.($navigationLayout==='horizontal' ? $navigationChrome : '').PanelConfig::renderHook('page.before', $hookContext).$content.PanelConfig::renderHook('page.after', $hookContext).$footer.'</div></main>'
-			.'<script src="'.self::e($panelJsUrl).'" defer></script>'
+			.'<title>'.self::e($title).'</title>'.self::themeHeadScript($theme, $themeMode, $assetNonce).($favicon!=='' ? '<link rel="icon" href="'.self::e($favicon).'">' : '<link rel="icon" href="data:,">').'<style'.$assetNonceAttribute.'>'.$theme->styleVariables().'</style>'.$panelStyleTags.self::themeCssAssets($theme).PanelConfig::renderHook('head.end', $hookContext).'</head><body'.$bodyClass.' data-dp-theme="'.self::e($theme->name()).'" data-dp-theme-mode="'.self::e($themeMode).'" data-dp-theme-dark-mode="'.($theme->darkModeEnabled() ? 'enabled' : 'disabled').'"'.($themeEffects!=='' ? ' data-dp-theme-effects="'.self::e($themeEffects).'"' : '').'>'
+			.PanelConfig::renderHook('body.start', $hookContext).'<script type="application/json" data-dp-panel-command-state'.$assetNonceAttribute.'>'.$commandStateJson.'</script><script type="application/json" data-dp-panel-surface-state'.$assetNonceAttribute.'>'.$surfaceStateJson.'</script><script type="application/json" data-dp-panel-localization'.$assetNonceAttribute.'>'.$localizationJson.'</script><main'.$mainAttrs.'>'.($navigationLayout==='sidebar' ? $navigationChrome.$mobileNavigationBackdrop : '').'<div class="dp-panel-main-region"><header class="dp-panel-header" data-dp-panel-header data-dp-panel-header-mode="'.self::e($headerMode).'">'.$header.'</header>'.($navigationLayout==='horizontal' ? $navigationChrome : '').PanelConfig::renderHook('page.before', $hookContext).$content.PanelConfig::renderHook('page.after', $hookContext).$footer.'</div></main>'
+			.$panelScriptTags
 			.PanelConfig::renderHook('body.end', $hookContext).'</body></html>';
 		if(class_exists('\Dataphyre\Templating\Templating') && class_exists('\dataphyre\templating', false)){
 			$html=\Dataphyre\Templating\Templating::renderString($html, [], [], [], 'dataphyre.panel.page.tpl')->content();
 		}
 		return PanelPageResult::html($html, $status, $data, $notifications);
+	}
+
+	/**
+	 * Discovers the browser capabilities required by a rendered surface.
+	 *
+	 * Detection is intentionally additive: generated markup supplies reliable
+	 * feature markers, while pages and extensions may declare extra normalized
+	 * capabilities through `asset_capabilities`. A declaration cannot suppress a
+	 * capability required by rendered content.
+	 *
+	 * @param string $content Fully rendered page content.
+	 * @param array<string,mixed> $data Page render state.
+	 * @param string $pageKind Normalized surface kind.
+	 * @param string $navigationLayout Active navigation layout.
+	 * @return list<string> Sorted capability names used by the shell asset loader.
+	 */
+	private static function pageAssetCapabilities(string $content, array $data, string $pageKind, string $navigationLayout): array {
+		$capabilities=['shell'=>true];
+		if($navigationLayout!=='none'){
+			$capabilities['navigation']=true;
+		}
+		$kindCapabilities=[
+			'index'=>['table'],
+			'board'=>['table', 'board'],
+			'create'=>['form'],
+			'store'=>['form'],
+			'edit'=>['form'],
+			'update'=>['form'],
+			'action_form'=>['form', 'modal'],
+			'page_action_form'=>['form', 'modal'],
+			'action_confirmation'=>['modal'],
+			'page_action_confirmation'=>['modal'],
+			'task_create'=>['form', 'modal'],
+			'import'=>['form', 'upload'],
+			'import_preview'=>['table', 'form'],
+			'show'=>['record'],
+			'login'=>['auth', 'form'],
+			'authentication'=>['auth', 'form'],
+		];
+		foreach($kindCapabilities[$pageKind] ?? [] as $capability){
+			$capabilities[$capability]=true;
+		}
+		$markers=[
+			'table'=>['dp-panel-table', 'data-dp-panel-table'],
+			'form'=>['dp-panel-form', 'data-dp-panel-form'],
+			'record'=>['dp-panel-show', 'dp-panel-infolist', 'dp-panel-relation-manager', 'data-dp-panel-record'],
+			'editor'=>['data-dp-panel-editor'],
+			'editor-assets'=>['data-dp-panel-editor-assets-trigger', 'data-dp-panel-editor-assets-host'],
+			'studio-editor'=>['data-dp-studio-editor'],
+			'upload'=>['data-dp-panel-uploader', 'type="file"'],
+			'board'=>['dp-panel-board', 'data-dp-panel-board'],
+			'chart'=>['dp-panel-chart', 'data-dp-panel-chart'],
+			'widget-runtime'=>['data-dp-widget-island'],
+			'data-surface'=>['data-dp-data-surface', 'dp-data-surface'],
+			'modal'=>['dp-panel-modal', 'data-dp-panel-modal'],
+			'collaboration'=>['data-dp-panel-collaboration'],
+			'media'=>['data-dp-panel-media'],
+			'reactor'=>['data-dp-reactor', 'data-dp-panel-reactor'],
+			'auth'=>['dp-panel-auth', 'data-dp-panel-auth'],
+			'extensions'=>['data-dp-panel-extension'],
+			'platform'=>['data-dp-panel-platform'],
+			'quality-client'=>['data-dp-panel-quality-client'],
+		];
+		foreach($markers as $capability=>$needles){
+			foreach($needles as $needle){
+				if(str_contains($content, $needle)){
+					$capabilities[$capability]=true;
+					break;
+				}
+			}
+		}
+		$collectionOwners=['form','record','table','board','widget-runtime'];
+		$ownsCollectionLayout=array_filter($collectionOwners, static fn(string $capability): bool=>isset($capabilities[$capability]))!==[];
+		if(str_contains($content, 'data-dp-item-responsive=') || (!$ownsCollectionLayout && (str_contains($content, 'data-dp-display=') || str_contains($content, 'data-dp-item-layout=')))){
+			$capabilities['collection-layout']=true;
+		}
+		$declared=$data['asset_capabilities'] ?? [];
+		if(is_string($declared)){
+			$declared=preg_split('/[\s,]+/', $declared, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+		}
+		if(is_array($declared)){
+			foreach($declared as $key=>$value){
+				$raw=is_string($key) ? $key : (is_scalar($value) ? (string)$value : '');
+				if(is_string($key) && $value===false){
+					continue;
+				}
+				$capability=Resource::normalizeName($raw);
+				if($capability!==''){
+					$capabilities[$capability]=true;
+				}
+			}
+		}
+		$names=array_keys($capabilities);
+		sort($names, SORT_STRING);
+		return array_values($names);
 	}
 
 	/**
@@ -473,10 +592,13 @@ trait PanelRendererShell {
 		$search=PanelConfig::navigationSearchEnabled()
 			? '<div class="dp-panel-sidebar-search"><input type="search" placeholder="'.self::e(self::panelText('nav.find')).'" aria-label="'.self::e(self::panelText('nav.find_aria')).'" data-dp-panel-sidebar-search><span data-dp-panel-sidebar-search-count></span></div>'
 			: '';
+		$tenantSwitcher=self::tenantSwitcherHtml(is_array($navigationState->meta()['tenant_switcher'] ?? null) ? $navigationState->meta()['tenant_switcher'] : [], 'sidebar');
 		return '<aside class="dp-panel-sidebar" id="dp-panel-sidebar-navigation" data-dp-panel-sidebar data-dp-panel-navigation-mode="'.self::e($mode).'" data-dp-panel-refresh-region="navigation" aria-label="'.self::e(self::panelText('nav.panel_navigation')).'">'
 			.'<div class="dp-panel-sidebar-top">'
 			.'<a class="dp-panel-sidebar-brand" href="'.self::e($homeUrl).'"><span>'.self::e(self::navigationIconToken('panel', $brandName)).'</span><strong>'.self::e($brandName).'</strong><small>'.self::e($tagline).'</small></a>'
+			.'<button type="button" class="dp-panel-mobile-nav-dismiss" data-dp-panel-mobile-nav-backdrop aria-label="'.self::e(self::panelText('nav.close_navigation')).'"><span aria-hidden="true"></span></button>'
 			.'</div>'
+			.$tenantSwitcher
 			.$search
 			.'<div class="dp-panel-sidebar-context"><span>'.self::e(self::panelText('nav.current')).'</span><strong>'.self::e($activeLabel).'</strong>'.($activeGroup!=='' ? '<small>'.self::e($activeGroup).'</small>' : '').'</div>'
 			.PanelConfig::renderHook('navigation.sidebar.after_context', $navigationContext)
@@ -520,10 +642,46 @@ trait PanelRendererShell {
 			$groups.='<details class="dp-panel-horizontal-group'.(!empty($group['active']) ? ' active' : '').'"><summary><span>'.self::e($label).'</span><b>'.self::e((string)$count).'</b></summary><div>'.$links.'</div></details>';
 		}
 		$brandName=PanelConfig::brandName();
+		$tenantSwitcher=self::tenantSwitcherHtml(is_array($navigationState->meta()['tenant_switcher'] ?? null) ? $navigationState->meta()['tenant_switcher'] : [], 'horizontal');
 		return '<nav class="dp-panel-horizontal-nav" data-dp-panel-horizontal-nav data-dp-panel-navigation-mode="'.self::e($mode).'" data-dp-panel-refresh-region="navigation" aria-label="Panel navigation">'
 			.'<a class="dp-panel-horizontal-brand" href="'.self::e($homeUrl).'"><span>'.self::e(self::navigationIconToken('panel', $brandName)).'</span><strong>'.self::e($brandName).'</strong></a>'
-			.'<div class="dp-panel-horizontal-track">'.$home.$groups.'</div>'
+			.'<div class="dp-panel-horizontal-track">'.$tenantSwitcher.$home.$groups.'</div>'
 			.'</nav>';
+	}
+
+	/** Renders only manager-authorized, visible tenant choices supplied by navigation state. */
+	private static function tenantSwitcherHtml(array $tenants, string $layout='sidebar'): string {
+		$layout=Resource::normalizeName($layout)==='horizontal' ? 'horizontal' : 'sidebar';
+		$options='';
+		$currentLabel='Tenant';
+		$count=0;
+		foreach($tenants as $tenant){
+			if(!is_array($tenant) || ($tenant['authorized'] ?? false)!==true){ continue; }
+			$label=PanelTenantSanitizer::text($tenant['label'] ?? '', 300);
+			if($label===''){ continue; }
+			$url=self::safeWidgetUrl((string)($tenant['url'] ?? ''));
+			$current=($tenant['current'] ?? false)===true;
+			$badge=PanelTenantSanitizer::badge($tenant['badge'] ?? null);
+			if($layout==='horizontal'){
+				$badgeHtml=$badge!==null && $badge!=='' ? '<em>'.self::e((string)$badge).'</em>' : '';
+				$copy='<span>'.self::e(self::navigationIconToken('tenant', $label)).'</span><strong>'.self::e($label).'</strong>'.$badgeHtml;
+				$optionClass=' class="dp-panel-horizontal-item"';
+			}
+			else {
+				$badgeHtml=$badge!==null && $badge!=='' ? '<small>'.self::e((string)$badge).'</small>' : '';
+				$copy='<span>'.self::e($label).'</span>'.$badgeHtml;
+				$optionClass=' class="dp-panel-tenant-switcher-option"';
+			}
+			$options.=$url!==''
+				? '<a'.$optionClass.' href="'.self::e($url).'"'.($current ? ' aria-current="true"' : '').'>'.$copy.'</a>'
+				: ($current ? '<span'.$optionClass.' aria-current="true">'.$copy.'</span>' : '');
+			if($current){ $currentLabel=$label; }
+			$count++;
+		}
+		if($count===0 || $options===''){ return ''; }
+		return '<details class="dp-panel-tenant-switcher dp-panel-tenant-switcher-'.$layout.($layout==='horizontal' ? ' dp-panel-horizontal-group' : '').'" data-dp-panel-tenant-switcher>'
+			.'<summary><span>'.self::e($currentLabel).'</span><b>'.self::e((string)$count).'</b></summary>'
+			.'<div>'.$options.'</div></details>';
 	}
 
 	/**
@@ -537,7 +695,7 @@ trait PanelRendererShell {
 	 */
 	private static function horizontalNavigationLinkHtml(array $entry): string {
 		$label=trim((string)($entry['label'] ?? ''));
-		$url=trim((string)($entry['url'] ?? ''));
+		$url=self::safeWidgetUrl((string)($entry['url'] ?? ''));
 		$children=array_values(array_filter(is_array($entry['children'] ?? null) ? $entry['children'] : [], static fn(mixed $child): bool => is_array($child)));
 		if($label==='' || ($url==='' && $children===[])){
 			return '';
@@ -605,7 +763,7 @@ trait PanelRendererShell {
 			.'<i aria-hidden="true"></i>'
 			.'</summary>';
 		$parentLink='';
-		$url=trim((string)($entry['url'] ?? ''));
+		$url=self::safeWidgetUrl((string)($entry['url'] ?? ''));
 		if($url!==''){
 			$parentLink=self::sidebarNavigationLinkHtml(array_replace($entry, [
 				'label'=>self::panelText('nav.open', ['label'=>$label]),
@@ -652,7 +810,7 @@ trait PanelRendererShell {
 			if(!is_array($entry)){
 				continue;
 			}
-			$url=trim((string)($entry['url'] ?? ''));
+			$url=self::safeWidgetUrl((string)($entry['url'] ?? ''));
 			if($url!==''){
 				return $url;
 			}
@@ -678,7 +836,7 @@ trait PanelRendererShell {
 	 */
 	private static function sidebarNavigationLinkHtml(array $entry, array $data, int $depth=0, string $extraClass=''): string {
 		$label=trim((string)($entry['label'] ?? ''));
-		$url=trim((string)($entry['url'] ?? ''));
+		$url=self::safeWidgetUrl((string)($entry['url'] ?? ''));
 		if($label==='' || $url===''){
 			return '';
 		}
@@ -726,7 +884,8 @@ trait PanelRendererShell {
 		if($kind==='page' && $page!==null && Resource::normalizeName((string)($page['name'] ?? ''))===$name){
 			return true;
 		}
-		return self::normalizedNavigationUrl((string)($entry['url'] ?? ''))===self::normalizedNavigationUrl((string)($_SERVER['REQUEST_URI'] ?? ''));
+		$url=self::safeWidgetUrl((string)($entry['url'] ?? ''));
+		return $url!=='' && self::normalizedNavigationUrl($url)===self::normalizedNavigationUrl((string)($_SERVER['REQUEST_URI'] ?? ''));
 	}
 
 	/**
@@ -833,7 +992,7 @@ trait PanelRendererShell {
 			return 0;
 		}
 		$kind=Resource::normalizeName((string)($data['kind'] ?? 'dashboard'));
-		if(!in_array($kind, ['dashboard', 'index', 'board', 'show', 'relation'], true)){
+		if(!in_array($kind, ['dashboard', 'custom_page', 'index', 'board', 'show', 'relation'], true)){
 			return 0;
 		}
 		$interval=(int)PanelConfig::config('live_update_interval_ms', 15000);
@@ -912,12 +1071,32 @@ trait PanelRendererShell {
 	 * @param string $mode Resolved theme mode.
 	 * @return string Script tag HTML or empty string.
 	 */
-	private static function themeHeadScript(PanelTheme $theme, string $mode): string {
+	private static function themeHeadScript(PanelTheme $theme, string $mode, string $nonce=''): string {
 		if(!$theme->darkModeEnabled()){
 			return '';
 		}
+		$src=self::assetUrl('panel-head.js');
+		if($src===''){
+			return '';
+		}
+		$configured=PanelConfig::config('asset_attributes', []);
+		$configured=is_array($configured) ? $configured : [];
+		$attributes=self::configuredAssetAttributes('script', 'panel-head.js', $configured);
+		$nonce=self::safeAssetAttributeValue($nonce!=='' ? $nonce : PanelConfig::config('asset_nonce', ''));
+		if($nonce!==''){ $attributes['nonce']=$nonce; }
+		if(self::assetOptionBool(PanelConfig::config('asset_integrity', false))){
+			$integrity=self::assetIntegrity('panel-head.js');
+			if($integrity!==''){
+				$attributes['integrity']=$integrity;
+				$attributes['crossorigin']=$attributes['crossorigin'] ?? 'anonymous';
+			}
+		}
+		$attributeHtml='';
+		foreach(self::sanitizeAssetAttributes('script', $attributes) as $name=>$value){
+			$attributeHtml.=' '.$name.'="'.self::e($value).'"';
+		}
 		$mode=self::e($mode);
-		return '<script src="'.self::e(self::assetUrl('panel-head.js')).'" data-dp-panel-theme-mode="'.$mode.'"></script>';
+		return '<script src="'.self::e($src).'" data-dp-panel-theme-mode="'.$mode.'"'.$attributeHtml.'></script>';
 	}
 
 	/**
@@ -1008,9 +1187,6 @@ trait PanelRendererShell {
 	private static function themePresetSelectorHiddenInputs(array $query, array $exclude, string $prefix=''): string {
 		$html='';
 		foreach($query as $key=>$value){
-			if(!is_string($key) && !is_int($key)){
-				continue;
-			}
 			$key=(string)$key;
 			if($prefix==='' && isset($exclude[$key])){
 				continue;
@@ -1053,7 +1229,7 @@ trait PanelRendererShell {
 	 * @return string JavaScript source embedded by the shell when theme controls are enabled.
 	 */
 	private static function themeModeRuntimeScript(): string {
-		return 'function dpPanelCurrentThemeMode(){var mode=document.documentElement.dataset.dpThemeMode||"system";try{mode=localStorage.getItem("dataphyre_panel_theme_mode")||mode;}catch(error){}return ["light","dark","system"].indexOf(mode)===-1?"system":mode;}function dpPanelSetThemeMode(mode){if(["light","dark","system"].indexOf(mode)===-1){mode="system";}document.documentElement.dataset.dpThemeMode=mode;if(document.body){document.body.dataset.dpThemeMode=mode;}try{localStorage.setItem("dataphyre_panel_theme_mode",mode);document.cookie="dataphyre_panel_theme_mode="+mode+"; path=/; max-age=31536000; SameSite=Lax";}catch(error){}document.querySelectorAll("[data-dp-theme-mode-choice]").forEach(function(button){button.setAttribute("aria-pressed",button.dataset.dpThemeModeChoice===mode?"true":"false");});}function dpPanelRefreshThemeModeControls(){dpPanelSetThemeMode(dpPanelCurrentThemeMode());}function dpPanelPersistThemePreset(value){value=(value||"").replace(/[^a-z0-9_\\-]/gi,"").toLowerCase();try{if(value){localStorage.setItem("dataphyre_panel_theme_preset",value);document.cookie="dataphyre_panel_theme_preset="+encodeURIComponent(value)+"; path=/; max-age=31536000; SameSite=Lax";}else{localStorage.removeItem("dataphyre_panel_theme_preset");document.cookie="dataphyre_panel_theme_preset=; path=/; max-age=0; SameSite=Lax";}}catch(error){}}function dpPanelRefreshThemePresetControls(){document.querySelectorAll("[data-dp-panel-theme-select] select").forEach(function(select){if(select.value){dpPanelPersistThemePreset(select.value);}});}document.addEventListener("change",function(event){var select=event.target&&event.target.closest&&event.target.closest("[data-dp-panel-theme-select] select");if(!select){return;}dpPanelPersistThemePreset(select.value||"");});document.addEventListener("click",function(event){var button=event.target.closest&&event.target.closest("[data-dp-theme-mode-choice]");if(!button){return;}event.preventDefault();dpPanelSetThemeMode(button.dataset.dpThemeModeChoice||"system");});document.addEventListener("DOMContentLoaded",function(){dpPanelRefreshThemeModeControls();dpPanelRefreshThemePresetControls();});';
+		return 'function dpPanelThemeModeLocked(){return !!(document.body&&document.body.dataset.dpThemeDarkMode==="disabled");}function dpPanelCurrentThemeMode(){if(dpPanelThemeModeLocked()){return "light";}var mode=document.documentElement.dataset.dpThemeMode||"system";try{mode=localStorage.getItem("dataphyre_panel_theme_mode")||mode;}catch(error){}return ["light","dark","system"].indexOf(mode)===-1?"system":mode;}function dpPanelSetThemeMode(mode){var locked=dpPanelThemeModeLocked();if(locked){mode="light";}else if(["light","dark","system"].indexOf(mode)===-1){mode="system";}document.documentElement.dataset.dpThemeMode=mode;if(document.body){document.body.dataset.dpThemeMode=mode;}if(!locked){try{localStorage.setItem("dataphyre_panel_theme_mode",mode);document.cookie="dataphyre_panel_theme_mode="+mode+"; path=/; max-age=31536000; SameSite=Lax";}catch(error){}}document.querySelectorAll("[data-dp-theme-mode-choice]").forEach(function(button){button.setAttribute("aria-pressed",button.dataset.dpThemeModeChoice===mode?"true":"false");});}function dpPanelRefreshThemeModeControls(){dpPanelSetThemeMode(dpPanelCurrentThemeMode());}function dpPanelPersistThemePreset(value){value=(value||"").replace(/[^a-z0-9_\\-]/gi,"").toLowerCase();try{if(value){localStorage.setItem("dataphyre_panel_theme_preset",value);document.cookie="dataphyre_panel_theme_preset="+encodeURIComponent(value)+"; path=/; max-age=31536000; SameSite=Lax";}else{localStorage.removeItem("dataphyre_panel_theme_preset");document.cookie="dataphyre_panel_theme_preset=; path=/; max-age=0; SameSite=Lax";}}catch(error){}}function dpPanelRefreshThemePresetControls(){document.querySelectorAll("[data-dp-panel-theme-select] select").forEach(function(select){if(select.value){dpPanelPersistThemePreset(select.value);}});}dpPanelListen(document,"change",function(event){var select=event.target&&event.target.closest&&event.target.closest("[data-dp-panel-theme-select] select");if(!select){return;}dpPanelPersistThemePreset(select.value||"");});dpPanelListen(document,"click",function(event){var button=event.target.closest&&event.target.closest("[data-dp-theme-mode-choice]");if(!button){return;}event.preventDefault();dpPanelSetThemeMode(button.dataset.dpThemeModeChoice||"system");});dpPanelListen(document,"DOMContentLoaded",function(){dpPanelRefreshThemeModeControls();dpPanelRefreshThemePresetControls();});';
 	}
 
 	/**
@@ -1068,12 +1244,12 @@ trait PanelRendererShell {
 	private static function themeCssAssets(PanelTheme $theme): string {
 		$html='';
 		foreach($theme->stylesheetAssets() as $asset){
-			$url=trim((string)($asset['href'] ?? ''));
-			if($url!=='' && !str_contains($url, "\n") && !str_contains($url, "\r")){
+			$url=self::safeWidgetUrl((string)($asset['href'] ?? ''));
+			if($url!==''){
 				$attributes=' rel="stylesheet" href="'.self::e($url).'"';
 				foreach(is_array($asset['attributes'] ?? null) ? $asset['attributes'] : [] as $name=>$value){
-					$name=Resource::normalizeName((string)$name);
-					if($name!=='' && $value!==null && trim((string)$value)!==''){
+					$name=strtolower(trim((string)$name));
+					if(in_array($name, ['media', 'integrity', 'crossorigin', 'referrerpolicy', 'fetchpriority', 'nonce', 'title'], true) && $value!==null && trim((string)$value)!==''){
 						$attributes.=' '.$name.'="'.self::e((string)$value).'"';
 					}
 				}
@@ -1094,14 +1270,25 @@ trait PanelRendererShell {
 	 */
 	private static function brandHtml(PanelTheme $theme): string {
 		$brand=$theme->brand();
-		$logo=trim((string)($brand['logo'] ?? ''));
+		$logo=self::safeWidgetUrl((string)($brand['logo'] ?? ''));
 		if($logo===''){
 			return '';
 		}
-		$darkLogo=trim((string)($brand['dark_logo'] ?? ''));
-		$height=trim((string)($brand['logo_height'] ?? ''));
+		$darkLogo=self::safeWidgetUrl((string)($brand['dark_logo'] ?? ''));
+		$height=self::safeLogoHeight((string)($brand['logo_height'] ?? ''));
 		$style=$height!=='' ? ' style="height:'.self::e($height).'"' : '';
 		return '<div class="dp-panel-brand">'.($darkLogo!=='' ? '<img class="dp-panel-brand-logo-dark" src="'.self::e($darkLogo).'" alt="'.self::e(PanelConfig::brandName()).'"'.$style.'>' : '').'<img class="dp-panel-brand-logo" src="'.self::e($logo).'" alt="'.self::e(PanelConfig::brandName()).'"'.$style.'></div>';
+	}
+
+	/**
+	 * Restricts the inline brand-logo height to one numeric CSS length.
+	 *
+	 * @param string $height Candidate CSS height.
+	 * @return string Safe height or an empty string when invalid.
+	 */
+	private static function safeLogoHeight(string $height): string {
+		$height=strtolower(trim($height));
+		return preg_match('/\A(?:0|(?:\d+(?:\.\d+)?|\.\d+)(?:px|rem|em|%|vh|vw|dvh|svh|lvh))\z/', $height)===1 ? $height : '';
 	}
 
 	/**
@@ -1330,7 +1517,7 @@ trait PanelRendererShell {
 			if($label===''){
 				continue;
 			}
-			$url=(string)($item['url'] ?? '');
+			$url=self::safeWidgetUrl((string)($item['url'] ?? ''));
 			$current=($item['current'] ?? false)===true;
 			$html.=$current || $url==='' ? '<span>'.$label.'</span>' : '<a href="'.self::e($url).'">'.$label.'</a>';
 		}
@@ -1373,17 +1560,45 @@ trait PanelRendererShell {
 	 * @param array<int, mixed> $widgets Widget configuration entries.
 	 * @return string Widget section HTML or empty string.
 	 */
-	private static function widgetsHtml(array $widgets): string {
+	private static function widgetsHtml(array $widgets, array|string|null $presentation=null, ?PanelRequest $request=null, string $surface='widgets'): string {
 		if($widgets===[]){
 			return '';
 		}
 		$html='';
+		$index=0;
 		foreach($widgets as $widget){
 			if(!is_array($widget)){
 				continue;
 			}
-			if(in_array(Resource::normalizeName((string)($widget['type'] ?? 'stat')), ['chart', 'trend'], true)){
-				$html.=self::chartWidgetHtml($widget);
+			$type=Resource::normalizeName((string)($widget['type'] ?? 'stat')) ?: 'stat';
+			$widgetObject=Widget::fromArray($widget);
+			$hookContext=['renderer'=>__CLASS__, 'presentation'=>$presentation, 'index'=>$index];
+			if(PanelComponentRegistry::widgetTypeHasHook($type, 'authorize') && PanelComponentRegistry::callWidgetTypeHook($type, 'authorize', $widgetObject, $widget, $hookContext)===false){
+				continue;
+			}
+			if(PanelComponentRegistry::widgetTypeHasHook($type, 'data')){
+				$resolved=PanelComponentRegistry::callWidgetTypeHook($type, 'data', $widgetObject, $widget, $hookContext);
+				if(is_array($resolved)){ $widget=array_replace($widget, $resolved); $widgetObject=Widget::fromArray($widget); }
+			}
+			$before=PanelComponentRegistry::widgetTypeHasHook($type, 'before_render')
+				? PanelComponentRegistry::callWidgetTypeHook($type, 'before_render', $widgetObject, $widget, $hookContext)
+				: null;
+			$custom=PanelComponentRegistry::renderWidget($type, $widget, $hookContext);
+			if($custom!==null){
+				$item=(is_string($before) ? $before : '').$custom;
+				$after=PanelComponentRegistry::widgetTypeHasHook($type, 'after_render')
+					? PanelComponentRegistry::callWidgetTypeHook($type, 'after_render', $widgetObject, $item, $widget, $hookContext)
+					: null;
+				if(is_string($after)){ $item=$after; }
+				$item=self::widgetIslandHtml($item, $widget, $request, $surface, $index);
+				$html.=PanelCollectionPresentation::decorateItemHtml($item, $presentation, (string)($widget['name'] ?? ''), $index, is_array($widget['meta'] ?? null) ? $widget['meta'] : []);
+				$index++;
+				continue;
+			}
+			if(in_array($type, ['chart', 'trend'], true)){
+				$item=self::widgetIslandHtml(self::chartWidgetHtml($widget), $widget, $request, $surface, $index);
+				$html.=PanelCollectionPresentation::decorateItemHtml($item, $presentation, (string)($widget['name'] ?? ''), $index, is_array($widget['meta'] ?? null) ? $widget['meta'] : []);
+				$index++;
 				continue;
 			}
 			$tone=self::safeTone((string)($widget['tone'] ?? 'neutral'));
@@ -1391,19 +1606,64 @@ trait PanelRendererShell {
 			$value=self::e(self::stringValue($widget['value'] ?? ''));
 			$description=trim((string)($widget['description'] ?? ''));
 			$icon=trim((string)($widget['icon'] ?? ''));
-			$url=trim((string)($widget['url'] ?? ''));
+			$url=self::safeWidgetUrl((string)($widget['url'] ?? ''));
 			$body=($icon!=='' ? '<span class="dp-panel-widget-icon" data-dp-panel-icon="'.self::e(Resource::normalizeName($icon)).'" aria-hidden="true"></span>' : '')
 				.'<span class="dp-panel-widget-label">'.$label.'</span>'
-				.'<strong>'.$value.'</strong>'
+				.'<strong data-dp-widget-bind="value">'.$value.'</strong>'
 				.($description!=='' ? '<small>'.self::e($description).'</small>' : '');
-			if($url!=='' && self::safeWidgetUrl($url)!==''){
-				$html.='<a class="dp-panel-widget dp-panel-widget-'.$tone.'" href="'.self::e($url).'">'.$body.'</a>';
-			}
-			else {
-				$html.='<article class="dp-panel-widget dp-panel-widget-'.$tone.'">'.$body.'</article>';
-			}
+			$item=$url!==''
+				? '<a class="dp-panel-widget dp-panel-widget-'.$tone.'" href="'.self::e($url).'">'.$body.'</a>'
+				: '<article class="dp-panel-widget dp-panel-widget-'.$tone.'">'.$body.'</article>';
+			$item=self::widgetIslandHtml($item, $widget, $request, $surface, $index);
+			$html.=PanelCollectionPresentation::decorateItemHtml($item, $presentation, (string)($widget['name'] ?? ''), $index, is_array($widget['meta'] ?? null) ? $widget['meta'] : []);
+			$index++;
 		}
-		return '<section class="dp-panel-widgets" data-dp-panel-refresh-region="widgets">'.$html.'</section>';
+		$attributes=$presentation===null ? '' : PanelCollectionPresentation::htmlAttributes($presentation, 'grid');
+		return '<section class="dp-panel-widgets" data-dp-panel-refresh-region="widgets"'.$attributes.'>'.$html.'</section>';
+	}
+
+	/**
+	 * Wraps a static widget in an accessible, adapter-issued enhancement island.
+	 *
+	 * The static card remains the primary content. Endpoint, snapshot, binding,
+	 * and initial live state are emitted only after an active instance registry
+	 * returns a trusted result. Missing adapters and denied scopes degrade to an
+	 * operator-safe status without hiding the original widget.
+	 *
+	 * @param array<string,mixed> $widget
+	 */
+	private static function widgetIslandHtml(string $fallbackHtml, array $widget, ?PanelRequest $request, string $surface, int $index): string {
+		$interaction=$widget['interaction'] ?? null;
+		if(!is_array($interaction)){ return $fallbackHtml; }
+		try{ $definition=PanelWidgetInteractionDefinition::fromArray($interaction); }
+		catch(\Throwable){ return $fallbackHtml; }
+		$panel=PanelContext::config('__panel_instance');
+		$registry=PanelContext::config('__panel_widget_runtime_registry');
+		$panelName=$panel instanceof PanelInstance ? $panel->name() : 'panel';
+		$islandId='dpwi-'.substr(hash('sha256', $panelName."\0".$surface."\0".(string)($widget['name'] ?? '')."\0".$index."\0".$definition->fingerprint()), 0, 32);
+		$result=null;
+		if($request instanceof PanelRequest && $panel instanceof PanelInstance && $registry instanceof PanelWidgetRuntimeRegistry){
+			$result=$registry->mount($definition, $panel, $request, $surface, $islandId);
+		}
+		$state=$result?->state() ?? PanelWidgetInteractionState::unavailable();
+		$statusId=$islandId.'-status';
+		$attributes=' id="'.self::e($islandId).'" class="dp-panel-widget-island" data-dp-widget-island="1" data-dp-widget-adapter="'.self::e($definition->adapter()).'" data-dp-widget-component="'.self::e($definition->component()).'" data-dp-widget-version="'.$state->version().'" data-dp-widget-retry-limit="'.$definition->retryLimitValue().'" data-dp-widget-refresh="'.self::e($definition->refreshMode()).'" data-dp-widget-refresh-interval="'.$definition->refreshIntervalMs().'" aria-describedby="'.self::e($statusId).'"';
+		if($result instanceof PanelWidgetInteractionResult && $result->successful() && $result->endpoint()!==null && $result->snapshot()!==null && $result->bindingTag()!==null){
+			$attributes.=' data-dp-widget-endpoint="'.self::e($result->endpoint()).'" data-dp-widget-snapshot="'.self::e($result->snapshot()).'" data-dp-widget-binding="'.self::e($result->bindingTag()).'"';
+		}
+		$controls='';
+		foreach($definition->namedActions() as $name=>$label){
+			$controls.='<button type="button" class="dp-panel-widget-action" data-dp-widget-action="'.self::e($name).'" hidden disabled>'.self::e($label).'</button>';
+		}
+		if($definition->refreshMode()!=='none'){
+			$controls.='<button type="button" class="dp-panel-widget-action" data-dp-widget-refresh-action="1" hidden disabled>'.self::e(self::panelText('common.refresh')).'</button>';
+		}
+		$stateJson=json_encode($state->toArray(), JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR);
+		$message=$state->successful() ? '' : ($state->message() ?? 'Interactive updates are unavailable.');
+		return '<div'.$attributes.'><div class="dp-panel-widget-fallback" data-dp-widget-content>'.$fallbackHtml.'</div>'
+			.'<div class="dp-panel-widget-actions" data-dp-widget-actions hidden>'.$controls.'</div>'
+			.'<p id="'.self::e($statusId).'" class="dp-panel-widget-status" role="status" aria-live="polite" aria-atomic="true"'.($message==='' ? ' hidden' : '').'>'.self::e($message).'</p>'
+			.'<script type="application/json" data-dp-widget-state>'.$stateJson.'</script></div>';
 	}
 
 	/**
@@ -1421,7 +1681,7 @@ trait PanelRendererShell {
 		$value=trim(self::stringValue($widget['value'] ?? ''));
 		$description=trim((string)($widget['description'] ?? ''));
 		$icon=trim((string)($widget['icon'] ?? ''));
-		$url=trim((string)($widget['url'] ?? ''));
+		$url=self::safeWidgetUrl((string)($widget['url'] ?? ''));
 		$meta=is_array($widget['meta'] ?? null) ? $widget['meta'] : [];
 		$chart=self::chartSvgHtml($meta, $tone, $label);
 		$body=($icon!=='' ? '<span class="dp-panel-widget-icon" data-dp-panel-icon="'.self::e(Resource::normalizeName($icon)).'" aria-hidden="true"></span>' : '')
@@ -1430,7 +1690,7 @@ trait PanelRendererShell {
 			.($description!=='' ? '<small>'.self::e($description).'</small>' : '')
 			.$chart;
 		$class='dp-panel-widget dp-panel-widget-chart dp-panel-widget-'.$tone;
-		if($url!=='' && self::safeWidgetUrl($url)!==''){
+		if($url!==''){
 			return '<a class="'.$class.'" href="'.self::e($url).'">'.$body.'</a>';
 		}
 		return '<article class="'.$class.'">'.$body.'</article>';
@@ -1582,9 +1842,6 @@ trait PanelRendererShell {
 		}
 		$min=min(0.0, ...$all);
 		$max=max(1.0, ...$all);
-		if($max===$min){
-			$max=$min+1;
-		}
 		$grid='';
 		for($i=0;$i<=3;$i++){
 			$y=$paddingTop+($plotHeight/3*$i);
@@ -2220,9 +2477,16 @@ trait PanelRendererShell {
 			$modalStack=$modalBack ? 'push' : 'replace';
 		}
 		$attrs.=' data-dp-panel-modal-stack="'.self::e($modalStack).'"';
+		$modalStackExplicit=$meta['modal_stack_explicit'] ?? $meta['meta']['modal_stack_explicit'] ?? false;
+		if(in_array($modalStackExplicit, [true, 1, '1'], true)){
+			$attrs.=' data-dp-panel-modal-stack-explicit="1"';
+		}
 		if($modalStack==='push'){
 			$attrs.=' data-dp-panel-modal-back="1"';
 		}
+		$modalExit=Resource::normalizeName((string)($meta['modal_exit'] ?? $meta['meta']['modal_exit'] ?? 'auto'));
+		if(!in_array($modalExit, ['auto', 'back', 'close', 'stay'], true)){ $modalExit='auto'; }
+		$attrs.=' data-dp-panel-modal-exit="'.self::e($modalExit).'"';
 		if($content!==null){
 			$attrs.=' data-dp-panel-action-content="'.self::e($content).'"';
 		}
@@ -2518,7 +2782,7 @@ trait PanelRendererShell {
 	/**
 	 * Wraps primary cell HTML in an action link when the URL is allow-listed.
 	 *
-	 * only root-relative and http(s) URLs pass through safeWidgetUrl(); new-tab links receive
+	 * local relative URLs and explicitly allow-listed schemes pass through safeWidgetUrl(); new-tab links receive
 	 * noopener/noreferrer protection.
 	 *
 	 * @param string $primary Primary cell HTML.
@@ -2630,7 +2894,7 @@ trait PanelRendererShell {
 	/**
 	 * Allow-lists URLs used by widgets, search results, navigation cards, and cell action links.
 	 *
-	 * only root-relative and absolute http(s) URLs are emitted; empty values and other schemes are
+	 * local relative URLs and http(s), mailto, or tel destinations are emitted; empty values and other schemes are
 	 * rejected so caller-provided links cannot introduce script or protocol surprises.
 	 *
 	 * @param string $url Candidate URL.
@@ -2638,12 +2902,17 @@ trait PanelRendererShell {
 	 */
 	private static function safeWidgetUrl(string $url): string {
 		$url=trim($url);
-		if($url===''){
+		if(
+			$url===''
+			|| preg_match('/[\x00-\x1F\x7F]/', $url)===1
+			|| str_starts_with($url, '//')
+			|| str_starts_with($url, '\\')
+		){
 			return '';
 		}
-		if(str_starts_with($url, '/') || preg_match('/^https?:\/\//i', $url)===1){
-			return $url;
+		if(preg_match('/\A([A-Za-z][A-Za-z0-9+.-]*):/', $url, $match)===1){
+			return in_array(strtolower($match[1]), ['http', 'https', 'mailto', 'tel'], true) ? $url : '';
 		}
-		return '';
+		return $url;
 	}
 }

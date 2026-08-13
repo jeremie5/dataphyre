@@ -517,9 +517,6 @@ final class ApiContext {
 				'server' => $this->request->server(),
 				default => [],
 			};
-			if(is_array($sourceData)===false){
-				continue;
-			}
 			$merged=array_replace_recursive($merged, $sourceData);
 		}
 		return $merged;

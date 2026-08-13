@@ -12,6 +12,7 @@ The public classes are:
 - `PostgreSqlMigrationManifest`
 - `PostgreSqlSchemaInspector`
 - `PostgreSqlMigrationRunner`
+- `PostgreSqlMigrationCommand`
 
 They live in `Dataphyre\Database\Migrations`.
 
@@ -23,12 +24,18 @@ They live in `Dataphyre\Database\Migrations`.
 | `PostgreSqlMigrationManifest` | `load(...)`, `entries()`, `publicSummary()`, `sqlSafetyIssues(...)` | Load, confine, checksum, and normalize immutable migration history; classify transaction-incompatible SQL through a pure shared contract. |
 | `PostgreSqlMigrationRunner` | `status(...)`, `deploymentEvidence(...)`, `apply(...)`, `rollback(...)` | Inspect and mutate one PostgreSQL schema under a PostgreSQL advisory lock with mode-appropriate transaction boundaries. |
 | `PostgreSqlSchemaInspector` | `expectedSchema(...)`, `schemaIssues(...)`, fingerprint and certification methods | Derive the supported schema model, inspect catalogs, and certify reversible SQL. |
+| `PostgreSqlMigrationCommand` | `main(...)` | Apply upward migrations from fixed typed CLI inputs without booting application PHP or accepting executable paths. |
 
 The runner also exposes pure helpers for rolling-SQL classification, journal
 projection, rollback-tail selection, and rollback-safety checks. Normal
 application mutation should go through `apply(...)` and `rollback(...)`;
 directly calling inspector certification requires the caller to own the
 surrounding PostgreSQL transaction.
+
+Rolling compatibility inspection is deliberately bounded at 8 MiB and 2,048
+executable statements per migration. Inputs beyond either limit fail closed
+before issue evidence is emitted. This keeps the public producer and release
+consumers on one predictable resource and evidence boundary.
 
 Invalid profile or method arguments raise `InvalidArgumentException`. Invalid
 manifests, drift, ineligible deployment state, failed SQL, and failed
@@ -43,6 +50,7 @@ An application passes its `database` directory to
 ```text
 database/
 └── postgresql/
+    ├── profile.json
     ├── manifest.json
     ├── 001_schema_baseline.sql
     ├── 002_add_job_priority.up.sql
@@ -73,6 +81,12 @@ manifest tooling use the same pure `sqlSafetyIssues(...)` classification.
 `manifest_public_path` is the release-relative label returned in summaries; it
 does not redirect the filesystem read.
 
+Each manifest entry may declare `"change_kind": "data_only"` when both SQL
+directions intentionally mutate application rows without changing application
+structure. Omitting `change_kind` normalizes to `"schema"`, preserving the
+existing contract for every prior manifest. The only accepted values are
+`schema` and `data_only`; the loader rejects any other classification.
+
 ## Supported schema introspection grammar
 
 Dataphyre's status-time schema contract deliberately models a bounded,
@@ -87,9 +101,11 @@ The final statement in a migration may omit its semicolon. SQL outside this
 grammar can still be valid transactional migration SQL, but it is not silently
 promoted into a schema-drift claim. Views, functions, triggers, policies,
 custom types, privileges, renames, and other specialized objects need
-application-specific verification. A reversible migration whose change is not
-observable by Dataphyre's structural fingerprint fails rollback certification
-instead of being certified from incomplete evidence.
+application-specific verification. A reversible `schema` migration whose
+change is not observable by Dataphyre's structural fingerprint fails rollback
+certification instead of being certified from incomplete evidence. Use
+`data_only` only for row mutation pairs, never to bypass an unsupported schema
+change.
 
 Bootstrap entries are adopted history and are deliberately outside exact
 catalog certification. Dataphyre validates their immutable bytes, replays each
@@ -116,13 +132,15 @@ also declares a rollout phase and rollback safety; a `down` file is not treated
 as proof that mixed-release operation or rollback is operationally safe.
 
 As with Laravel, application code still owns its domain schema and migration
-content. Unlike a typical `migrate` command, this framework does not choose a
-connection, discover application classes, infer a maintenance window, or
-authorize a production rollout.
+content. The low-level API does not choose a connection, discover application
+classes, infer a maintenance window, or authorize a production rollout. The
+fixed CLI adapter described below deliberately selects only the connection
+injected into its current process and delegates all migration decisions to the
+same profile, manifest, and runner.
 
 ## Profile
 
-Create one immutable profile in application-owned release code:
+Create one immutable profile in application-owned release policy:
 
 ```php
 use Dataphyre\Database\Migrations\PostgreSqlMigrationProfile;
@@ -158,6 +176,69 @@ with the event journal's fixed columns: `event_id`, `operation_id`,
 
 The profile implements `JsonSerializable`; `json_encode($profile)` returns the
 same normalized public configuration as `jsonSerialize()`.
+
+For the fixed CLI entrypoint, store that exact JSON object at
+`database/postgresql/profile.json`. This file contains identifiers, timeouts,
+and the immutable bootstrap boundary; it must not contain credentials. A
+separate path option is intentionally unavailable, and `manifest_public_path`
+must be exactly `database/postgresql/manifest.json` for this command.
+
+## Fixed release command
+
+Dataphyre provides one shell-free upward-migration entrypoint for application
+platforms:
+
+```text
+php vendor/dataphyre/dataphyre/runtime/modules/sql/kernel/postgresql_migrate.php --project-root=/workspace --app=example_app --environment=production --mode=rolling --release-version=2.4.0 --release-sha256=<64-lowercase-hex>
+```
+
+Embedded installs use the same command under their fixed Dataphyre package
+directory. `--project-root`, `--app`, `--environment`, and `--mode` are
+required. Mode is exactly `bootstrap`, `rolling`, or `maintenance`. Optional
+`--dry-run` performs the runner's transactional rehearsal. Release version and
+digest must be supplied together. Maintenance may additionally receive
+`--verified-minimum-active-release=<semver>`; that option is rejected in other
+modes.
+
+The command reads only these fixed project files:
+
+- `database/postgresql/profile.json`
+- `database/postgresql/manifest.json` and its checksummed SQL siblings
+
+It never boots `app.php`, a framework bootstrap, a release script, or another
+caller-selected PHP file. Positional arguments, unknown or duplicated options,
+and options such as `--script`, `--command`, `--path`, or `--bootstrap` fail
+before database access. Rollback is deliberately not exposed through this
+automatic release boundary.
+
+The current deployment environment supplies the connection through
+`DATAPHYRE_DATABASE_DSN` (which must begin with `pgsql:`), with optional
+`DATAPHYRE_DATABASE_USER` and `DATAPHYRE_DATABASE_PASSWORD`. Credentials never
+belong in argv, the profile, the manifest, success output, or failure output.
+When `DATAPHYRE_ENVIRONMENT` is present, it must exactly match the typed
+`--environment` value.
+
+Every invocation emits one canonical JSON envelope with a stable key order and
+field allowlist. Success is written to stdout; failure is written to stderr.
+Failure messages are fixed and never include PDO, SQL, environment-variable,
+or exception text. Exit status is stable:
+
+| Status | Meaning |
+|---:|---|
+| `0` | Selected migrations applied, or dry-run transaction completed and rolled back. |
+| `64` | Invalid runtime or invocation. |
+| `65` | Invalid immutable manifest or migration files. |
+| `66` | Project root unavailable. |
+| `69` | PostgreSQL connection failed. |
+| `70` | Native migration runner failed. |
+| `78` | Profile or database environment configuration invalid. |
+
+This belongs in the public framework for the same reason a Laravel-equivalent
+framework owns `migrate`: every hosted Dataphyre application needs one stable
+adapter from deployment argv to the framework's native migration lifecycle.
+The command contains no Dataphyre Cloud vocabulary or application policy. It
+only removes repeated, unsafe application release wrappers around public
+profile, manifest, locking, drift, transaction, and journal behavior.
 
 ## Manifest v3
 
@@ -373,7 +454,12 @@ Before rollback, derive the contiguous applied tail and inspect its declared
 safety. Dataphyre refuses history gaps and checksum drift. Reversible SQL is
 certified inside the runner-owned transaction with a down/up/down sequence:
 
-- structural fingerprints must match after repeated down
+- `schema` migrations must make an observable structural change, reconstruct
+  the original structure after up, and match structural fingerprints after
+  repeated down
+- `data_only` migrations must leave structure unchanged after down, up, and the
+  repeated down; up must restore the exact pre-rollback data fingerprint and
+  both down executions must produce the same data fingerprint
 - `lossless` migrations must preserve row evidence after both down executions
   and reconstruct the original row fingerprints after the intervening up
 - any `PDO::exec(...)` failure aborts certification

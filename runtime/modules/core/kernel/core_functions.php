@@ -119,14 +119,16 @@ class core {
 			return self::$framework_modules_loaded[$module];
 		}
 		self::ensure_framework_loader_dependencies();
+		if(\dataphyre\module_registry::module_enabled($module)===false){
+			return self::$framework_modules_loaded[$module]=false;
+		}
 		if(defined('ROOTPATH')){
 			foreach(['common_dataphyre_runtime', 'common_dataphyre', 'dataphyre'] as $root_key){
-				if(empty(ROOTPATH[$root_key])){
-					continue;
-				}
-				$modules_root=rtrim((string)ROOTPATH[$root_key], '/\\').'/modules';
-				if(is_dir($modules_root)){
-					\dataphyre\autoloader::register($modules_root);
+				if(!empty(ROOTPATH[$root_key])){
+					$modules_root=rtrim((string)ROOTPATH[$root_key], '/\\').'/modules';
+					if(is_dir($modules_root)){
+						\dataphyre\autoloader::register($modules_root);
+					}
 				}
 			}
 		}
@@ -403,16 +405,12 @@ class core {
 	 * 3. New framework-facing events should use `CALL_<MODULE>_<ACTION>` names.
 	 */
 	public static function register_dialback(string $event_name, callable $dialback_function){
-		if(is_callable($dialback_function)){
-			if(!isset(core::$dialbacks[$event_name])){
-				core::$dialbacks[$event_name]=array($dialback_function);
-				return true;
-			}
-			core::$dialbacks[$event_name][]=$dialback_function;
+		if(!isset(core::$dialbacks[$event_name])){
+			core::$dialbacks[$event_name]=array($dialback_function);
 			return true;
 		}
-		log_error("Dialback function $dialback_function does not exist");
-		core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D="Dialback function does not exist.", $T="safemode");
+		core::$dialbacks[$event_name][]=$dialback_function;
+		return true;
 	}
 	
 	/**
@@ -478,7 +476,12 @@ class core {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		if(null!==$early_return=self::dialback("CALL_CORE_GET_SERVER_LOAD_LEVEL", ...func_get_args())) return $early_return;
 		if(self::$server_load_level!==null) return self::$server_load_level;
-		$cache_file=ROOTPATH['common_dataphyre'].'cache/load_level.php';
+		// Deployments and tests can keep mutable Core state outside an immutable
+		// framework package. Legacy installs continue to use Dataphyre's cache/.
+		$cache_root=is_string(ROOTPATH['core_cache'] ?? null) && trim((string)ROOTPATH['core_cache'])!==''
+			? rtrim((string)ROOTPATH['core_cache'], '/\\')
+			: rtrim((string)ROOTPATH['common_dataphyre'], '/\\').'/cache';
+		$cache_file=$cache_root.'/load_level.php';
 		if(file_exists($cache_file) && is_readable($cache_file)){
 			$cache=include($cache_file);
 			if(is_array($cache) && isset($cache['level'], $cache['timestamp'], $cache['bottleneck'])){
@@ -505,20 +508,7 @@ class core {
 			$used=$meminfo['MemTotal']-$meminfo['MemAvailable'];
 			$memory_usage=round(($used/$meminfo['MemTotal'])*100, 1);
 		}
-		if($cpu_load>=85){
-			$level=5;
-			$bottleneck='cpu';
-		}
-		elseif($memory_usage>=85){
-			$level=5;
-			$bottleneck='memory';
-		}
-		else
-		{
-			$collective_average=($memory_usage+$cpu_load) / 2;
-			$level=round(($collective_average*5) / 100);
-			$bottleneck='balanced';
-		}
+		if($cpu_load>=85){ $level=5; $bottleneck='cpu'; } elseif($memory_usage>=85){ $level=5; $bottleneck='memory'; } else { $collective_average=($memory_usage+$cpu_load) / 2; $level=round(($collective_average*5) / 100); $bottleneck='balanced'; }
 		self::$server_load_level=$level;
 		self::$server_load_bottleneck=$bottleneck;
 		$tracelog="Level: $level | Bottleneck: $bottleneck | CPU: ".round($cpu_load,1)." % | Memory: ".round($memory_usage,1)." %";
@@ -576,7 +566,6 @@ class core {
 		}
 		if(is_file(ROOTPATH['dataphyre']."delaying_lock")){
 			core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D="Delaying lock is active", $T="maintenance");
-			core::unavailable("DPE-004", "safemode");
 		}
 	}
 	
@@ -664,13 +653,13 @@ class core {
 				$datetime=DateTime::createFromFormat('U.u', microtime(true));
 				$datetime->setTimezone(new DateTimeZone($server_timezone));
 				return substr($datetime->format($format), 0, -3);
-			}catch(Exception $e){
-				core::unavailable("DPE-025", "safemode");
+			}catch(\Throwable $e){
+				return core::unavailable(__FILE__, (string)__LINE__, __CLASS__, __FUNCTION__, 'DPE-025', 'safemode', $e);
 			}
 		}
 		else
 		{
-			core::unavailable("DPE-024", "safemode");
+			return core::unavailable(__FILE__, (string)__LINE__, __CLASS__, __FUNCTION__, 'DPE-024', 'safemode');
 		}
 	}
 	
@@ -769,8 +758,9 @@ class core {
 				}
 			}
 			try{
-				if(is_numeric($date))$date=date('Y-m-d H:i:s', $date);
-				$datetime=new DateTime($date, new DateTimeZone($server_timezone));
+				$datetime=is_numeric($date)
+					? new DateTime('@'.(int)$date)
+					: new DateTime((string)$date, new DateTimeZone($server_timezone));
 				$datetime->setTimezone(new DateTimeZone($user_timezone));
 				$result=$datetime->format($format);
 				if($translation===true){
@@ -779,13 +769,13 @@ class core {
 					}
 				}
 				return $result;
-			} catch(Exception $e){
-				core::unavailable("DPE-025", "safemode");
+			} catch(\Throwable $e){
+				return core::unavailable(__FILE__, (string)__LINE__, __CLASS__, __FUNCTION__, 'DPE-025', 'safemode', $e);
 			}
 		}
 		else
 		{
-			core::unavailable("DPE-024", "safemode");
+			return core::unavailable(__FILE__, (string)__LINE__, __CLASS__, __FUNCTION__, 'DPE-024', 'safemode');
 		}
 	}
 
@@ -832,17 +822,18 @@ class core {
 				}
 			}
 			try{
-				if(is_numeric($date))$date=date('Y-m-d H:i:s', $date);
-				$datetime=new DateTime($date, new DateTimeZone($user_timezone));
+				$datetime=is_numeric($date)
+					? new DateTime('@'.(int)$date)
+					: new DateTime((string)$date, new DateTimeZone($user_timezone));
 				$datetime->setTimezone(new DateTimeZone($server_timezone));
 				return $datetime->format($format);
-			} catch(Exception $e){
-				core::unavailable("DPE-025", "safemode");
+			} catch(\Throwable $e){
+				return core::unavailable(__FILE__, (string)__LINE__, __CLASS__, __FUNCTION__, 'DPE-025', 'safemode', $e);
 			}
 		}
 		else
 		{
-			core::unavailable("DPE-024", "safemode");
+			return core::unavailable(__FILE__, (string)__LINE__, __CLASS__, __FUNCTION__, 'DPE-024', 'safemode');
 		}
 	}
 	
@@ -953,7 +944,8 @@ class core {
 	 * - Be cautious when specifying nested configurations; an incorrect path will return null.
 	 */
 	public static function get_config(string $index): mixed {
-		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
+		$core_config=defined('DP_CORE_CFG') && is_array(DP_CORE_CFG) ? DP_CORE_CFG : [];
+		if(($core_config['trace_config_reads'] ?? false)===true && function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		}
 		if(null!==$early_return=core::dialback('CALL_CORE_GET_CONFIG',...func_get_args())) return $early_return;
@@ -1092,9 +1084,7 @@ class core {
 		$g=rand($green_range[0], $green_range[1]);
 		$b=rand($blue_range[0], $blue_range[1]);
 		$c=($r<<16)+($g<< 8)+$b;
-		if($add_dash===true){
-			$hex='#';
-		}
+		$hex=$add_dash===true ? '#' : '';
 		$hex.=dechex($c);
 		return $hex;
 	}
@@ -1136,7 +1126,7 @@ class core {
 			if(class_exists('dataphyre\tracelog')){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="<h1>Service unavailability: $error_code ($error_type): $error_description</h1>", $S="fatal");
 			}
-			exit();
+			self::terminate_unavailable();
 		}
 		if(RUN_MODE!=='request'){
 			if(class_exists('dataphyre\tracelog')){
@@ -1186,7 +1176,20 @@ class core {
 				pre_init_error("Unavailability: ".$error_description, $exception ?? new \Exception(json_encode(func_get_args())), true);
 			}
 		}
-		exit();
+		self::terminate_unavailable(); }
+
+	/**
+	 * Terminates an unavailable response after an optional host test hook.
+	 *
+	 * Production keeps the historical process exit. Tests and embedded hosts may
+	 * register CALL_CORE_UNAVAILABLE_TERMINATE and return a throwing callable so
+	 * the already-built response can be inspected without killing the worker.
+	 *
+	 * @return never
+	 */
+	private static function terminate_unavailable(): never {
+		$terminator=self::dialback('CALL_CORE_UNAVAILABLE_TERMINATE');
+		if(is_callable($terminator)){ $terminator(); } exit();
 	}
 	
 		/**
@@ -1454,13 +1457,11 @@ class core {
 		if($string==='')return'';
 		if(empty($salting_data))$salting_data=['arbitrary_value'];
 		$latest_version=DP_CORE_CFG['encryption_version'] ?? 0;
-		if($latest_version===0){
-			$iv=bin2hex(openssl_random_pseudo_bytes(2));
-			$result='0:'.(count(dpvks())-1).':'.$iv.openssl_encrypt($string, "AES-256-CBC", dpvk(), 0, substr(md5(implode('',$salting_data).$iv), 0, 16));
+		if($latest_version!==0){
+			return DP_CORE_CFG['encryption_fallback'] ?? '[EncryptFail]';
 		}
-		elseif($latest_version===1){
-			// Future proofing
-		}
+		$iv=bin2hex(openssl_random_pseudo_bytes(2));
+		$result='0:'.(count(dpvks())-1).':'.$iv.openssl_encrypt($string, "AES-256-CBC", dpvk(), 0, substr(md5(implode('',$salting_data).$iv), 0, 16));
 		return $result;
 	}
 
@@ -1552,7 +1553,7 @@ class core {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__,$T=null,$S="function_call",$A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_CORE_CSRF",...func_get_args()))return$early_return;
 		if(!isset($_SESSION['token'][$form_name]) && $token===null){
-			$_SESSION['token'][$form_name]=bin2hex(openssl_random_pseudo_bytes(16));
+			$_SESSION['token'][$form_name]=bin2hex(random_bytes(16));
 		}
 		if($token!==null){
 			if(isset($_SESSION['token'][$form_name]) && hash_equals($_SESSION['token'][$form_name], $token)){
@@ -1706,7 +1707,7 @@ class core {
 		$trusted_headers=$core_config['trusted_ip_headers'] ?? [];
 		$ip_to_binary=function($ip) {
 			$packed=@inet_pton($ip);
-			return $packed===false?null:unpack('A*', $packed)[1];
+			return $packed===false ? null : $packed;
 		};
 		$cidr_match=function($ip, $cidr)use($ip_to_binary){
 			[$subnet, $bits]=explode('/', $cidr);

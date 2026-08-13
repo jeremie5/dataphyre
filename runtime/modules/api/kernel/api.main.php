@@ -9,12 +9,25 @@ namespace dataphyre;
 
 tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Module initialization');
 
-if(file_exists($filepath=ROOTPATH['common_dataphyre'].'config/api.php')){
-	require_once($filepath);
+/**
+ * Loads shared and application API configuration files from a root map.
+ *
+ * @param array<string,mixed> $rootPath Dataphyre root paths keyed by common_dataphyre and dataphyre.
+ */
+function api_bootstrap_config(array $rootPath): void {
+	foreach(['common_dataphyre', 'dataphyre'] as $rootKey){
+		$root=$rootPath[$rootKey] ?? null;
+		if(!is_string($root) || trim($root)===''){
+			continue;
+		}
+		$filepath=rtrim($root, '/\\').'/config/api.php';
+		if(file_exists($filepath)){
+			require_once($filepath);
+		}
+	}
 }
-if(file_exists($filepath=ROOTPATH['dataphyre'].'config/api.php')){
-	require_once($filepath);
-}
+
+api_bootstrap_config(defined('ROOTPATH') && is_array(ROOTPATH) ? ROOTPATH : []);
 
 /**
  * Kernel marker for the API module after configuration bootstrap.

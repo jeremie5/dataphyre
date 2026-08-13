@@ -25,9 +25,13 @@ final class PanelTenant {
 	private bool $hidden=false;
 	private int $sort=100;
 	private array $meta=[];
+	/** @var (\Closure(?PanelRequest,self,?PanelManager):bool)|null */
 	private ?\Closure $visibilityResolver=null;
+	/** @var (\Closure(?PanelRequest,self,?PanelManager):(string|\Stringable|null))|null */
 	private ?\Closure $urlResolver=null;
+	/** @var (\Closure(?PanelRequest,self,?PanelManager):bool)|null */
 	private ?\Closure $currentResolver=null;
+	/** @var (\Closure(?PanelRequest,self,?PanelManager):mixed)|null */
 	private ?\Closure $badgeResolver=null;
 
 	/**
@@ -36,7 +40,7 @@ final class PanelTenant {
 	 * @param string $name Tenant identifier supplied by the caller.
 	 */
 	private function __construct(string $name) {
-		$this->name=Resource::normalizeName($name);
+		$this->name=PanelTenantSanitizer::tenantKey($name) ?? '';
 		$this->label=self::humanize($this->name);
 	}
 
@@ -61,7 +65,7 @@ final class PanelTenant {
 	 * @return self Tenant configured from the definition.
 	 */
 	public static function fromArray(array $definition): self {
-		$tenant=self::make((string)($definition['name'] ?? ''));
+		$tenant=self::make(PanelTenantSanitizer::text($definition['name'] ?? '', 100));
 		foreach(['label', 'description', 'icon', 'url'] as $key){
 			if(isset($definition[$key]) && is_string($definition[$key])){
 				$tenant=$tenant->{$key}($definition[$key]);
@@ -105,7 +109,7 @@ final class PanelTenant {
 	 */
 	public function label(string $label): self {
 		$clone=clone $this;
-		$clone->label=trim($label);
+		$clone->label=PanelTenantSanitizer::text($label, 300);
 		return $clone;
 	}
 
@@ -119,7 +123,7 @@ final class PanelTenant {
 	 */
 	public function description(string $description): self {
 		$clone=clone $this;
-		$clone->description=trim($description) ?: null;
+		$clone->description=PanelTenantSanitizer::text($description, 1000) ?: null;
 		return $clone;
 	}
 
@@ -133,7 +137,7 @@ final class PanelTenant {
 	 */
 	public function icon(string $icon): self {
 		$clone=clone $this;
-		$clone->icon=trim($icon) ?: null;
+		$clone->icon=PanelTenantSanitizer::text($icon, 200) ?: null;
 		return $clone;
 	}
 
@@ -142,7 +146,7 @@ final class PanelTenant {
 	 *
 	 * Static URLs are trimmed and stored directly. Callable URLs are evaluated during toArray() with the request, tenant, and manager; resolver failures are traced and serialized as null URLs.
 	 *
-	 * @param string|callable $url Static URL or URL resolver callback.
+	 * @param string|callable(?PanelRequest,self,?PanelManager):(string|\Stringable|null) $url Static URL or URL resolver callback.
 	 * @return self Cloned tenant with URL behavior updated.
 	 */
 	public function url(string|callable $url): self {
@@ -152,7 +156,7 @@ final class PanelTenant {
 			$clone->url=null;
 			return $clone;
 		}
-		$clone->url=trim($url);
+		$clone->url=PanelTenantSanitizer::url($url);
 		$clone->urlResolver=null;
 		return $clone;
 	}
@@ -162,7 +166,7 @@ final class PanelTenant {
 	 *
 	 * Badges may be any scalar or renderable value expected by the panel UI. Callable badges are evaluated during serialization; resolver failures are traced and serialized as null badges.
 	 *
-	 * @param mixed $badge Static badge value or lazy badge resolver.
+	 * @param scalar|\Stringable|array<array-key,mixed>|null|callable(?PanelRequest,self,?PanelManager):mixed $badge Static badge value or lazy badge resolver.
 	 * @return self Cloned tenant with badge behavior updated.
 	 */
 	public function badge(mixed $badge): self {
@@ -172,7 +176,7 @@ final class PanelTenant {
 			$clone->badge=null;
 			return $clone;
 		}
-		$clone->badge=$badge;
+		$clone->badge=PanelTenantSanitizer::badge($badge);
 		$clone->badgeResolver=null;
 		return $clone;
 	}
@@ -197,7 +201,7 @@ final class PanelTenant {
 	 *
 	 * Static booleans mark the tenant directly. Callable resolvers are evaluated during toArray() with the request, tenant, and manager; resolver failures are traced and treated as not current.
 	 *
-	 * @param bool|callable $current Current.
+	 * @param bool|callable(?PanelRequest,self,?PanelManager):bool $current Current.
 	 * @return self Cloned tenant with current-state behavior updated.
 	 */
 	public function current(bool|callable $current=true): self {
@@ -243,7 +247,7 @@ final class PanelTenant {
 	 *
 	 * Resolvers receive the current request, tenant, and manager. Exceptions are caught in isVisible(), recorded through PanelTrace, and treated as invisible.
 	 *
-	 * @param callable $resolver Callback that decides tenant visibility from request, tenant, and manager context.
+	 * @param callable(?PanelRequest,self,?PanelManager):bool $resolver Callback that decides tenant visibility from request, tenant, and manager context.
 	 * @return self Cloned tenant with lazy visibility attached.
 	 */
 	public function visibleUsing(callable $resolver): self {
@@ -262,7 +266,7 @@ final class PanelTenant {
 	 */
 	public function meta(array $meta): self {
 		$clone=clone $this;
-		$clone->meta=array_replace($clone->meta, $meta);
+		$clone->meta=PanelTenantSanitizer::map(array_replace($clone->meta, $meta));
 		return $clone;
 	}
 
@@ -287,8 +291,8 @@ final class PanelTenant {
 		}
 		catch(\Throwable $exception){
 			PanelTrace::record('tenant.visibility_error', [
-				'tenant'=>$this->name,
-				'message'=>$exception->getMessage(),
+				'tenant_hash'=>hash('sha256', $this->name),
+				'exception'=>$exception::class,
 			]);
 			return false;
 		}
@@ -307,12 +311,12 @@ final class PanelTenant {
 		$url=$this->url;
 		if($this->urlResolver!==null){
 			try{
-				$url=(string)($this->urlResolver)($request, $this, $manager);
+				$url=PanelTenantSanitizer::url(($this->urlResolver)($request, $this, $manager));
 			}
 			catch(\Throwable $exception){
 				PanelTrace::record('tenant.url_error', [
-					'tenant'=>$this->name,
-					'message'=>$exception->getMessage(),
+					'tenant_hash'=>hash('sha256', $this->name),
+					'exception'=>$exception::class,
 				]);
 				$url=null;
 			}
@@ -324,8 +328,8 @@ final class PanelTenant {
 			}
 			catch(\Throwable $exception){
 				PanelTrace::record('tenant.current_error', [
-					'tenant'=>$this->name,
-					'message'=>$exception->getMessage(),
+					'tenant_hash'=>hash('sha256', $this->name),
+					'exception'=>$exception::class,
 				]);
 				$current=false;
 			}
@@ -333,12 +337,12 @@ final class PanelTenant {
 		$badge=$this->badge;
 		if($this->badgeResolver!==null){
 			try{
-				$badge=($this->badgeResolver)($request, $this, $manager);
+				$badge=PanelTenantSanitizer::badge(($this->badgeResolver)($request, $this, $manager));
 			}
 			catch(\Throwable $exception){
 				PanelTrace::record('tenant.badge_error', [
-					'tenant'=>$this->name,
-					'message'=>$exception->getMessage(),
+					'tenant_hash'=>hash('sha256', $this->name),
+					'exception'=>$exception::class,
 				]);
 				$badge=null;
 			}
@@ -352,6 +356,27 @@ final class PanelTenant {
 			'badge'=>$badge,
 			'badge_tone'=>$this->badgeTone,
 			'current'=>$current,
+			'sort'=>$this->sort,
+			'hidden'=>$this->hidden,
+			'visible_lazy'=>$this->visibilityResolver!==null,
+			'url_lazy'=>$this->urlResolver!==null,
+			'current_lazy'=>$this->currentResolver!==null,
+			'badge_lazy'=>$this->badgeResolver!==null,
+			'meta'=>$this->meta,
+		];
+	}
+
+	/** Returns static, sanitized registry metadata without executing lazy callbacks. */
+	public function definition(): array {
+		return [
+			'name'=>$this->name,
+			'label'=>$this->label,
+			'description'=>$this->description,
+			'icon'=>$this->icon,
+			'url'=>$this->url,
+			'badge'=>$this->badge,
+			'badge_tone'=>$this->badgeTone,
+			'current'=>$this->current,
 			'sort'=>$this->sort,
 			'hidden'=>$this->hidden,
 			'visible_lazy'=>$this->visibilityResolver!==null,

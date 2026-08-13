@@ -29,36 +29,9 @@ trait dataphyre_mcp_inspection_mvc_surfaces {
 				$roots[]=(string)$path;
 			}
 		}else{
-			$roots[]='common/dataphyre/runtime/modules/mvc';
+			$roots[]='dataphyre/runtime/modules/mvc';
 		}
-		$files=[];
-		foreach($roots as $root){
-			$safe=$this->safe_repo_path($root);
-			if(is_file($safe)){
-				if(strtolower(pathinfo($safe, PATHINFO_EXTENSION))==='php'){
-					$files[]=$safe;
-				}
-				continue;
-			}
-			if(is_dir($safe)){
-				foreach($this->all_files($safe, $limit * 8) as $file){
-					if(strtolower(pathinfo($file, PATHINFO_EXTENSION))!=='php'){
-						continue;
-					}
-					$relative=strtolower(str_replace('\\', '/', $this->relative_path($file)));
-					if(str_contains($relative, '/documentation/') || str_contains($relative, '/vendor/')){
-						continue;
-					}
-					$files[]=$file;
-					if(count($files)>=$limit){
-						break 2;
-					}
-				}
-			}
-			if(count($files)>=$limit){
-				break;
-			}
-		}
+		$files=$this->bounded_php_source_files($roots,$limit);
 		$controllers=[];
 		$handler_references=[];
 		foreach(array_slice(array_values(array_unique($files)), 0, $limit) as $file){
@@ -75,9 +48,6 @@ trait dataphyre_mcp_inspection_mvc_surfaces {
 						continue;
 					}
 					$method_name=(string)($method['name'] ?? '');
-					if($method_name===''){
-						continue;
-					}
 					$actions[]=[
 						'name'=>$method_name,
 						'line'=>$method['line'] ?? null,
@@ -125,9 +95,7 @@ trait dataphyre_mcp_inspection_mvc_surfaces {
 	 */
 	private function controller_handler_references_from_text(string $text, string $path): array {
 		$references=[];
-		if(preg_match_all('/([\'"])([A-Za-z_\\\\][A-Za-z0-9_\\\\]*Controller)(?:@([A-Za-z_][A-Za-z0-9_]*))?\1/', $text, $matches, PREG_OFFSET_CAPTURE)===false){
-			return [];
-		}
+		preg_match_all('/([\'"])([A-Za-z_\\\\][A-Za-z0-9_\\\\]*Controller)(?:@([A-Za-z_][A-Za-z0-9_]*))?\1/', $text, $matches, PREG_OFFSET_CAPTURE);
 		foreach($matches[2] ?? [] as $index=>$match){
 			$class=(string)$match[0];
 			$method=(string)($matches[3][$index][0] ?? '');
@@ -160,37 +128,10 @@ trait dataphyre_mcp_inspection_mvc_surfaces {
 				$roots[]=(string)$path;
 			}
 		}else{
-			$roots[]='common/dataphyre/runtime/modules/mvc';
-			$roots[]='common/dataphyre/runtime/modules/routing';
+			$roots[]='dataphyre/runtime/modules/mvc';
+			$roots[]='dataphyre/runtime/modules/routing';
 		}
-		$files=[];
-		foreach($roots as $root){
-			$safe=$this->safe_repo_path($root);
-			if(is_file($safe)){
-				if(strtolower(pathinfo($safe, PATHINFO_EXTENSION))==='php'){
-					$files[]=$safe;
-				}
-				continue;
-			}
-			if(is_dir($safe)){
-				foreach($this->all_files($safe, $limit * 8) as $file){
-					if(strtolower(pathinfo($file, PATHINFO_EXTENSION))!=='php'){
-						continue;
-					}
-					$relative=strtolower(str_replace('\\', '/', $this->relative_path($file)));
-					if(str_contains($relative, '/documentation/') || str_contains($relative, '/vendor/')){
-						continue;
-					}
-					$files[]=$file;
-					if(count($files)>=$limit){
-						break 2;
-					}
-				}
-			}
-			if(count($files)>=$limit){
-				break;
-			}
-		}
+		$files=$this->bounded_php_source_files($roots,$limit);
 		$middleware_classes=[];
 		$declarations=[];
 		$config_surfaces=[];
@@ -298,9 +239,7 @@ trait dataphyre_mcp_inspection_mvc_surfaces {
 	private function middleware_config_surfaces_from_text(string $text, string $path): array {
 		$surfaces=[];
 		foreach(['middleware', 'middleware_stack', 'global_middleware', 'middleware_groups'] as $key){
-			if(preg_match_all('/[\'"]'.preg_quote($key, '/').'[\'"]\s*=>/', $text, $matches, PREG_OFFSET_CAPTURE)===false){
-				continue;
-			}
+			preg_match_all('/[\'"]'.preg_quote($key, '/').'[\'"]\s*=>/', $text, $matches, PREG_OFFSET_CAPTURE);
 			foreach($matches[0] ?? [] as $match){
 				$surfaces[]=[
 					'file'=>$this->relative_path($path),
@@ -346,15 +285,15 @@ trait dataphyre_mcp_inspection_mvc_surfaces {
 	 */
 	private function mvc_config_static_summary(): array {
 		$files=[
-			'common/dataphyre/runtime/modules/mvc/Framework/Mvc.php',
-			'common/dataphyre/runtime/modules/mvc/Framework/MvcManager.php',
-			'common/dataphyre/runtime/modules/mvc/Framework/MvcApplication.php',
-			'common/dataphyre/runtime/modules/mvc/Framework/MvcDispatcher.php',
-			'common/dataphyre/runtime/modules/mvc/Framework/RouteCollection.php',
-			'common/dataphyre/runtime/modules/mvc/Framework/RouteDefinition.php',
-			'common/dataphyre/runtime/modules/mvc/kernel/cache_routes.php',
-			'common/dataphyre/runtime/modules/mvc/kernel/clear_cached_routes.php',
-			'common/dataphyre/runtime/modules/mvc/kernel/route_list.php',
+			'dataphyre/runtime/modules/mvc/Framework/Mvc.php',
+			'dataphyre/runtime/modules/mvc/Framework/MvcManager.php',
+			'dataphyre/runtime/modules/mvc/Framework/MvcApplication.php',
+			'dataphyre/runtime/modules/mvc/Framework/MvcDispatcher.php',
+			'dataphyre/runtime/modules/mvc/Framework/RouteCollection.php',
+			'dataphyre/runtime/modules/mvc/Framework/RouteDefinition.php',
+			'dataphyre/runtime/modules/mvc/kernel/cache_routes.php',
+			'dataphyre/runtime/modules/mvc/kernel/clear_cached_routes.php',
+			'dataphyre/runtime/modules/mvc/kernel/route_list.php',
 		];
 		$classes=[];
 		$existing=[];
@@ -403,7 +342,7 @@ trait dataphyre_mcp_inspection_mvc_surfaces {
 				'view_keys'=>['views.path'],
 				'route_source_forms'=>['closure', 'route_file', 'route_directory', 'single_route_array', 'route_array_list', 'RouteDefinition instance', 'callable returning route data'],
 				'route_array_keys'=>['path', 'method', 'methods', 'handler', 'view', 'template', 'redirect', 'location', 'redirect_route', 'to_route', 'parameters', 'query', 'status', 'name', 'middleware', 'where', 'defaults'],
-				'manifest_cache_forms'=>['false_or_null_disabled', 'true_default_cache_path', 'string_cache_file', 'array_file_key'],
+				'manifest_cache_forms'=>['false_or_null_disabled', 'true_default_cache_path', 'string_cache_file', 'array_file_key', 'array_file_and_sources_keys'],
 				'secret_keys_redacted'=>['signed_url_secret'],
 			],
 			'middleware_defaults'=>[
@@ -442,9 +381,9 @@ trait dataphyre_mcp_inspection_mvc_surfaces {
 	 */
 	private function mvc_route_cache_summary(): array {
 		$scripts=[
-			'list'=>'common/dataphyre/runtime/modules/mvc/kernel/route_list.php',
-			'cache'=>'common/dataphyre/runtime/modules/mvc/kernel/cache_routes.php',
-			'clear'=>'common/dataphyre/runtime/modules/mvc/kernel/clear_cached_routes.php',
+			'list'=>'dataphyre/runtime/modules/mvc/kernel/route_list.php',
+			'cache'=>'dataphyre/runtime/modules/mvc/kernel/cache_routes.php',
+			'clear'=>'dataphyre/runtime/modules/mvc/kernel/clear_cached_routes.php',
 		];
 		$script_summaries=[];
 		foreach($scripts as $name=>$path){
@@ -455,7 +394,7 @@ trait dataphyre_mcp_inspection_mvc_surfaces {
 				'cli_only'=>str_contains($text, "PHP_SAPI!=='cli'"),
 				'options'=>$this->mvc_route_cache_script_options($text),
 				'writes_cache'=>str_contains($text, 'try_write_manifest_file') || str_contains($text, 'tryWriteManifestFile'),
-				'deletes_cache'=>str_contains($text, 'unlink($cache_file)'),
+				'deletes_cache'=>str_contains($text, 'unlink($cache_file)') || str_contains($text, '$unlinkFile($cache_file)'),
 				'lists_routes'=>str_contains($text, 'routeList') || str_contains($text, 'routes()->list()'),
 			];
 		}
@@ -466,17 +405,17 @@ trait dataphyre_mcp_inspection_mvc_surfaces {
 			'route_safety'=>$this->route_safety_contract('mvc_route_cache_summary'),
 			'scripts'=>$script_summaries,
 			'commands'=>[
-				'list_table'=>'php common/dataphyre/runtime/modules/mvc/kernel/route_list.php --app=default',
-				'list_json'=>'php common/dataphyre/runtime/modules/mvc/kernel/route_list.php --app=default --json',
-				'list_with_config'=>'php common/dataphyre/runtime/modules/mvc/kernel/route_list.php --config=common/dataphyre/config/mvc.example.php --app=default --json',
-				'cache'=>'php common/dataphyre/runtime/modules/mvc/kernel/cache_routes.php --config=common/dataphyre/config/mvc.example.php --app=default',
-				'clear'=>'php common/dataphyre/runtime/modules/mvc/kernel/clear_cached_routes.php --config=common/dataphyre/config/mvc.example.php --app=default',
+				'list_table'=>'php dataphyre/runtime/modules/mvc/kernel/route_list.php --app=default',
+				'list_json'=>'php dataphyre/runtime/modules/mvc/kernel/route_list.php --app=default --json',
+				'list_with_config'=>'php dataphyre/runtime/modules/mvc/kernel/route_list.php --config=dataphyre/config/mvc.example.php --app=default --json',
+				'cache'=>'php dataphyre/runtime/modules/mvc/kernel/cache_routes.php --config=dataphyre/config/mvc.example.php --app=default',
+				'clear'=>'php dataphyre/runtime/modules/mvc/kernel/clear_cached_routes.php --config=dataphyre/config/mvc.example.php --app=default',
 			],
 			'manifest_cache_contract'=>[
 				'config_key'=>'manifest_cache',
 				'enabled_when'=>'MvcApplication::manifestCacheFile() returns a non-null cache file.',
-				'forms'=>['true uses default cache path when ROOTPATH is available', 'string path', 'array with file key', 'false/null disabled'],
-				'signature_inputs'=>['app name', 'route collection revision', 'route source mtimes'],
+				'forms'=>['true uses default cache path when ROOTPATH is available', 'string path', 'array with file key and optional dependency sources', 'false/null disabled'],
+				'signature_inputs'=>['app name', 'route collection revision', 'route source mtimes', 'manifest_cache.sources dependency mtimes'],
 				'exportability_rule'=>'RouteCompiler::try_write_manifest_file skips non-exportable manifests, including closures that cannot be safely exported.',
 			],
 			'safety_notes'=>[

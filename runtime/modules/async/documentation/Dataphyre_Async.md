@@ -56,7 +56,7 @@ Framework loading is explicit:
 
 Kernel config is loaded from:
 
-- `common/dataphyre/config/async.php`
+- `dataphyre/config/async.php`
 - `applications/<app>/backend/dataphyre/config/async.php`
 
 The owning kernel exposes the merged readonly config as `DP_ASYNC_CFG`.

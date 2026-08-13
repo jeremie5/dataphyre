@@ -6,7 +6,9 @@
  * SPDX-License-Identifier: MIT
  */
 
-$bootstrap=dirname(__DIR__).'/Framework/Bootstrap.php';
+$bootstrap=defined('DATAPHYRE_REACTOR_BOOTSTRAP_FILE')
+	? (string)constant('DATAPHYRE_REACTOR_BOOTSTRAP_FILE')
+	: dirname(__DIR__).'/Framework/Bootstrap.php';
 if(is_file($bootstrap)!==true){
 	http_response_code(404);
 	header('Content-Type: text/plain; charset=utf-8');

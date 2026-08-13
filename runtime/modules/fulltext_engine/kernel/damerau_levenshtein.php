@@ -33,6 +33,7 @@ class damerau_levenshtein{
 		$len2=mb_strlen($str2);
 		if($len1===0||$len2===0)return max($len1,$len2);
 		$previous_row=range(0,$len2);
+		$before_previous_row=[];
 		$current_row=[];
 		for($i=1;$i<=$len1;$i++){
 			$current_row[0]=$i;
@@ -46,10 +47,11 @@ class damerau_levenshtein{
 				if($i>1&&$j>1&&mb_substr($str1,$i-1,1)===mb_substr($str2,$j-2,1)&&mb_substr($str1,$i-2,1)===mb_substr($str2,$j-1,1)){
 					$current_row[$j]=min(
 						$current_row[$j],
-						$previous_row[$j-2]+$cost
+						$before_previous_row[$j-2]+$cost
 					);
 				}
 			}
+			$before_previous_row=$previous_row;
 			$previous_row=$current_row;
 		}
 		return $current_row[$len2];

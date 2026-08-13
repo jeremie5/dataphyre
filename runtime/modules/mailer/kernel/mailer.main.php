@@ -161,14 +161,7 @@ dp_define_module_config('mailer', 'DP_MAILER_CFG', [
 ]);
 
 if(function_exists('sql_define_table')){
-	$outbox_table=(string)(DP_MAILER_CFG['outbox']['table'] ?? 'dataphyre.mailer_outbox');
-	$events_table=(string)(DP_MAILER_CFG['outbox']['events_table'] ?? 'dataphyre.mailer_events');
-	$suppressions_table=(string)(DP_MAILER_CFG['suppression']['table'] ?? 'dataphyre.mailer_suppressions');
-	$webhook_events_table=(string)(DP_MAILER_CFG['webhooks']['events_table'] ?? 'dataphyre.mailer_webhook_events');
-	sql_define_table($outbox_table, __DIR__.'/mailer.tables.php', 'outbox');
-	sql_define_table($events_table, __DIR__.'/mailer.tables.php', 'events');
-	sql_define_table($suppressions_table, __DIR__.'/mailer.tables.php', 'suppressions');
-	sql_define_table($webhook_events_table, __DIR__.'/mailer.tables.php', 'webhook_events');
+	mailer::register_tables();
 }
 
 /**
@@ -181,6 +174,40 @@ if(function_exists('sql_define_table')){
  * cannot be loaded.
  */
 class mailer {
+	/**
+	 * Registers every SQL manifest through one table-name mapping.
+	 *
+	 * @param ?callable $define SQL table registration callback.
+	 * @param ?array<string,mixed> $config Mailer configuration override.
+	 * @return array<string,string> Definition id to configured table name.
+	 */
+	public static function register_tables(?callable $define=null, ?array $config=null): array {
+		$config??=defined('DP_MAILER_CFG') && is_array(DP_MAILER_CFG) ? DP_MAILER_CFG : [];
+		$tables=[
+			'outbox'=>(string)($config['outbox']['table'] ?? 'dataphyre.mailer_outbox'),
+			'events'=>(string)($config['outbox']['events_table'] ?? 'dataphyre.mailer_events'),
+			'suppressions'=>(string)($config['suppression']['table'] ?? 'dataphyre.mailer_suppressions'),
+			'webhook_events'=>(string)($config['webhooks']['events_table'] ?? 'dataphyre.mailer_webhook_events'),
+		];
+		$define??='sql_define_table';
+		foreach($tables as $definition=>$table){
+			$define($table, __DIR__.'/mailer.tables.php', $definition);
+		}
+		return $tables;
+	}
+
+	/** @param array<int,mixed> $arguments */
+	private static function framework_call(string $method, array $arguments, mixed $fallback, string $shape='raw'): mixed {
+		if(core::load_framework_module('mailer')!==true || class_exists('\\Dataphyre\\Mailer\\Mailer')!==true){
+			return $fallback;
+		}
+		$result=\Dataphyre\Mailer\Mailer::$method(...$arguments);
+		return match($shape){
+			'result'=>$result->toArray(),
+			'results'=>array_map(static fn($item): array=>$item->toArray(), $result),
+			default=>$result,
+		};
+	}
 
 	/**
 	 * Reads mailer configuration with dot-path support over DP_MAILER_CFG.
@@ -222,15 +249,9 @@ class mailer {
 	 * @return array<string,mixed> Structured mailer result with status, provider, message, queue, suppression, or error fields.
 	 */
 	public static function send(array $message, ?string $provider=null, array $options=[]): array {
-		if(core::load_framework_module('mailer')!==true || class_exists('\Dataphyre\Mailer\Mailer')!==true){
-			return [
-				'ok'=>false,
-				'provider'=>$provider,
-				'status'=>500,
-				'message'=>'Mailer framework is unavailable.',
-			];
-		}
-		return \Dataphyre\Mailer\Mailer::send($message, $provider, $options)->toArray();
+		return self::framework_call('send', [$message, $provider, $options], [
+			'ok'=>false, 'provider'=>$provider, 'status'=>500, 'message'=>'Mailer framework is unavailable.',
+		], 'result');
 	}
 
 	/**
@@ -245,15 +266,9 @@ class mailer {
 	 * @return list<array<string,mixed>> Per-message structured mailer results.
 	 */
 	public static function send_batch(array $messages, ?string $provider=null, array $options=[]): array {
-		if(core::load_framework_module('mailer')!==true || class_exists('\Dataphyre\Mailer\Mailer')!==true){
-			return [[
-				'ok'=>false,
-				'provider'=>$provider,
-				'status'=>500,
-				'message'=>'Mailer framework is unavailable.',
-			]];
-		}
-		return array_map(static fn($result): array => $result->toArray(), \Dataphyre\Mailer\Mailer::send_batch($messages, $provider, $options));
+		return self::framework_call('sendBatch', [$messages, $provider, $options], [[
+			'ok'=>false, 'provider'=>$provider, 'status'=>500, 'message'=>'Mailer framework is unavailable.',
+		]], 'results');
 	}
 
 	/**
@@ -268,15 +283,9 @@ class mailer {
 	 * @return array<string,mixed> Structured queue result with outbox metadata or error details.
 	 */
 	public static function queue(array $message, ?string $provider=null, array $options=[]): array {
-		if(core::load_framework_module('mailer')!==true || class_exists('\Dataphyre\Mailer\Mailer')!==true){
-			return [
-				'ok'=>false,
-				'provider'=>$provider,
-				'status'=>500,
-				'message'=>'Mailer framework is unavailable.',
-			];
-		}
-		return \Dataphyre\Mailer\Mailer::queue($message, $provider, $options)->toArray();
+		return self::framework_call('queue', [$message, $provider, $options], [
+			'ok'=>false, 'provider'=>$provider, 'status'=>500, 'message'=>'Mailer framework is unavailable.',
+		], 'result');
 	}
 
 	/**
@@ -289,14 +298,9 @@ class mailer {
 	 * @return array<string,mixed> Flush summary with processed counts and delivery results.
 	 */
 	public static function flush(int $limit=25): array {
-		if(core::load_framework_module('mailer')!==true || class_exists('\Dataphyre\Mailer\Mailer')!==true){
-			return [
-				'ok'=>false,
-				'processed'=>0,
-				'message'=>'Mailer framework is unavailable.',
-			];
-		}
-		return \Dataphyre\Mailer\Mailer::flush($limit);
+		return self::framework_call('flush', [$limit], [
+			'ok'=>false, 'processed'=>0, 'message'=>'Mailer framework is unavailable.',
+		]);
 	}
 
 	/**
@@ -311,14 +315,9 @@ class mailer {
 	 * @return array{subject?:string,html?:string,text?:string}|array<string,mixed> Rendered mail fragments and template metadata.
 	 */
 	public static function render(string $template, array $data=[], array $options=[]): array {
-		if(core::load_framework_module('mailer')!==true || class_exists('\Dataphyre\Mailer\Mailer')!==true){
-			return [
-				'subject'=>'',
-				'html'=>'',
-				'text'=>'',
-			];
-		}
-		return \Dataphyre\Mailer\Mailer::render($template, $data, $options);
+		return self::framework_call('render', [$template, $data, $options], [
+			'subject'=>'', 'html'=>'', 'text'=>'',
+		]);
 	}
 
 	/**
@@ -330,14 +329,9 @@ class mailer {
 	 * @return array<string,mixed> Outbox summary grouped by status, provider, priority, and retry readiness.
 	 */
 	public static function outbox_summary(): array {
-		if(core::load_framework_module('mailer')!==true || class_exists('\Dataphyre\Mailer\Mailer')!==true){
-			return [
-				'ok'=>false,
-				'message'=>'Mailer framework is unavailable.',
-				'statuses'=>[],
-			];
-		}
-		return \Dataphyre\Mailer\Mailer::outbox_summary();
+		return self::framework_call('outboxSummary', [], [
+			'ok'=>false, 'message'=>'Mailer framework is unavailable.', 'statuses'=>[],
+		]);
 	}
 
 	/**
@@ -350,14 +344,9 @@ class mailer {
 	 * @return array<string,mixed> Prune report keyed by retained or deleted storage section.
 	 */
 	public static function prune(array $options=[]): array {
-		if(core::load_framework_module('mailer')!==true || class_exists('\Dataphyre\Mailer\Mailer')!==true){
-			return [
-				'ok'=>false,
-				'message'=>'Mailer framework is unavailable.',
-				'sections'=>[],
-			];
-		}
-		return \Dataphyre\Mailer\Mailer::prune($options);
+		return self::framework_call('prune', [$options], [
+			'ok'=>false, 'message'=>'Mailer framework is unavailable.', 'sections'=>[],
+		]);
 	}
 
 	/**
@@ -370,16 +359,9 @@ class mailer {
 	 * @return array<string,mixed> Campaign metrics grouped by status, provider, and event type.
 	 */
 	public static function campaign_summary(array $filters=[]): array {
-		if(core::load_framework_module('mailer')!==true || class_exists('\Dataphyre\Mailer\Mailer')!==true){
-			return [
-				'ok'=>false,
-				'message'=>'Mailer framework is unavailable.',
-				'matches'=>0,
-				'statuses'=>[],
-				'events'=>[],
-			];
-		}
-		return \Dataphyre\Mailer\Mailer::campaign_summary($filters);
+		return self::framework_call('campaignSummary', [$filters], [
+			'ok'=>false, 'message'=>'Mailer framework is unavailable.', 'matches'=>0, 'statuses'=>[], 'events'=>[],
+		]);
 	}
 
 	/**
@@ -394,10 +376,7 @@ class mailer {
 	 * @return bool True when the suppression row was inserted or updated.
 	 */
 	public static function suppress(string $email, string $reason='manual', array $options=[]): bool {
-		if(core::load_framework_module('mailer')!==true || class_exists('\Dataphyre\Mailer\Mailer')!==true){
-			return false;
-		}
-		return \Dataphyre\Mailer\Mailer::suppress($email, $reason, $options);
+		return self::framework_call('suppress', [$email, $reason, $options], false);
 	}
 
 	/**
@@ -409,10 +388,7 @@ class mailer {
 	 * @return bool True when a matching suppression row was removed.
 	 */
 	public static function unsuppress(string $email): bool {
-		if(core::load_framework_module('mailer')!==true || class_exists('\Dataphyre\Mailer\Mailer')!==true){
-			return false;
-		}
-		return \Dataphyre\Mailer\Mailer::unsuppress($email);
+		return self::framework_call('unsuppress', [$email], false);
 	}
 
 	/**
@@ -424,10 +400,7 @@ class mailer {
 	 * @return bool True when the address is actively suppressed.
 	 */
 	public static function is_suppressed(string $email): bool {
-		if(core::load_framework_module('mailer')!==true || class_exists('\Dataphyre\Mailer\Mailer')!==true){
-			return false;
-		}
-		return \Dataphyre\Mailer\Mailer::is_suppressed($email);
+		return self::framework_call('isSuppressed', [$email], false);
 	}
 
 	/**
@@ -442,15 +415,9 @@ class mailer {
 	 * @return array<string,mixed> Delivery-event ingest result with normalized recipients, suppression count, and event metadata.
 	 */
 	public static function ingest_delivery_event(string $provider, array $payload, ?string $event=null): array {
-		if(core::load_framework_module('mailer')!==true || class_exists('\Dataphyre\Mailer\Mailer')!==true){
-			return [
-				'ok'=>false,
-				'message'=>'Mailer framework is unavailable.',
-				'suppressed'=>0,
-				'recipients'=>[],
-			];
-		}
-		return \Dataphyre\Mailer\Mailer::ingest_delivery_event($provider, $payload, $event);
+		return self::framework_call('ingestDeliveryEvent', [$provider, $payload, $event], [
+			'ok'=>false, 'message'=>'Mailer framework is unavailable.', 'suppressed'=>0, 'recipients'=>[],
+		]);
 	}
 
 	/**
@@ -465,16 +432,9 @@ class mailer {
 	 * @return array<string,mixed> Batch ingest summary with processed counts, suppressions, and normalized events.
 	 */
 	public static function ingest_delivery_events(string $provider, array $payloads, ?string $event=null): array {
-		if(core::load_framework_module('mailer')!==true || class_exists('\Dataphyre\Mailer\Mailer')!==true){
-			return [
-				'ok'=>false,
-				'message'=>'Mailer framework is unavailable.',
-				'processed'=>0,
-				'suppressed'=>0,
-				'events'=>[],
-			];
-		}
-		return \Dataphyre\Mailer\Mailer::ingest_delivery_events($provider, $payloads, $event);
+		return self::framework_call('ingestDeliveryEvents', [$provider, $payloads, $event], [
+			'ok'=>false, 'message'=>'Mailer framework is unavailable.', 'processed'=>0, 'suppressed'=>0, 'events'=>[],
+		]);
 	}
 
 	/**
@@ -490,16 +450,9 @@ class mailer {
 	 * @return array<string,mixed> Webhook ingest summary with signature, dedupe, processed, and suppression details.
 	 */
 	public static function ingest_delivery_webhook(string $provider, string $body, array $headers=[], ?string $event=null): array {
-		if(core::load_framework_module('mailer')!==true || class_exists('\Dataphyre\Mailer\Mailer')!==true){
-			return [
-				'ok'=>false,
-				'message'=>'Mailer framework is unavailable.',
-				'processed'=>0,
-				'suppressed'=>0,
-				'events'=>[],
-			];
-		}
-		return \Dataphyre\Mailer\Mailer::ingest_delivery_webhook($provider, $body, $headers, $event);
+		return self::framework_call('ingestDeliveryWebhook', [$provider, $body, $headers, $event], [
+			'ok'=>false, 'message'=>'Mailer framework is unavailable.', 'processed'=>0, 'suppressed'=>0, 'events'=>[],
+		]);
 	}
 
 	/**
@@ -512,13 +465,9 @@ class mailer {
 	 * @return array<string,mixed> Health report across outbox, provider, suppression, and event activity.
 	 */
 	public static function health(int $window_hours=24): array {
-		if(core::load_framework_module('mailer')!==true || class_exists('\Dataphyre\Mailer\Mailer')!==true){
-			return [
-				'ok'=>false,
-				'message'=>'Mailer framework is unavailable.',
-			];
-		}
-		return \Dataphyre\Mailer\Mailer::health($window_hours);
+		return self::framework_call('health', [$window_hours], [
+			'ok'=>false, 'message'=>'Mailer framework is unavailable.',
+		]);
 	}
 
 	/**
@@ -531,14 +480,9 @@ class mailer {
 	 * @return array<string,mixed> Trace data with message id, outbox attempts, delivery events, and framework-load errors when unavailable.
 	 */
 	public static function trace(string $message_id): array {
-		if(core::load_framework_module('mailer')!==true || class_exists('\Dataphyre\Mailer\Mailer')!==true){
-			return [
-				'ok'=>false,
-				'message'=>'Mailer framework is unavailable.',
-				'message_id'=>$message_id,
-			];
-		}
-		return \Dataphyre\Mailer\Mailer::trace($message_id);
+		return self::framework_call('trace', [$message_id], [
+			'ok'=>false, 'message'=>'Mailer framework is unavailable.', 'message_id'=>$message_id,
+		]);
 	}
 
 	/**
@@ -549,16 +493,27 @@ class mailer {
 	 *
 	 * @return bool True when the scheduler runner was accepted by the scheduling module.
 	 */
-	public static function schedule(): bool {
-		if(empty(DP_MAILER_CFG['scheduler']['enabled']) || !function_exists('dp_module_present') || dp_module_present('scheduling')===false){
+	public static function schedule(
+		?array $scheduler=null,
+		?callable $modulePresent=null,
+		?callable $fileExists=null,
+		?callable $run=null
+	): bool {
+		$scheduler??=(array)(DP_MAILER_CFG['scheduler'] ?? []);
+		if(empty($scheduler['enabled'])){
 			return false;
 		}
-		$scheduler=DP_MAILER_CFG['scheduler'];
+		$modulePresent??=function_exists('dp_module_present') ? 'dp_module_present' : static fn(): bool=>false;
+		if($modulePresent('scheduling')===false){
+			return false;
+		}
 		$file=__DIR__.'/mailer.scheduler.php';
-		if(!is_file($file)){
+		$fileExists??='is_file';
+		if(!$fileExists($file)){
 			return false;
 		}
-		return scheduling::run(
+		$run??=[scheduling::class, 'run'];
+		return (bool)$run(
 			(string)($scheduler['name'] ?? 'dataphyre_mailer_outbox'),
 			$file,
 			(float)($scheduler['frequency'] ?? 60.0),

@@ -133,12 +133,12 @@ trait dataphyre_mcp_inspection_routing_surfaces {
 	 * @throws InvalidArgumentException When the route name is missing or the optional base URL is invalid.
 	 */
 	private function preview_route_url(array $args): array {
-		$this->bootstrap_routing();
 		$path=$this->safe_repo_path((string)($args['manifest_path'] ?? ''));
 		$name=trim((string)($args['name'] ?? ''));
 		if($name===''){
 			throw new InvalidArgumentException('name is required.');
 		}
+		$this->bootstrap_routing();
 		$manifest=\Dataphyre\Routing\RouteCompiler::readManifestFile($path);
 		$parameters=is_array($args['parameters'] ?? null) ? $args['parameters'] : [];
 		$query=is_array($args['query'] ?? null) ? $args['query'] : [];
@@ -212,12 +212,12 @@ trait dataphyre_mcp_inspection_routing_surfaces {
 	 * @throws InvalidArgumentException When the request path is missing.
 	 */
 	private function preview_route_match(array $args): array {
-		$this->bootstrap_routing();
 		$path=$this->safe_repo_path((string)($args['manifest_path'] ?? ''));
 		$request_path=trim((string)($args['path'] ?? ''));
 		if($request_path===''){
 			throw new InvalidArgumentException('path is required.');
 		}
+		$this->bootstrap_routing();
 		$manifest=\Dataphyre\Routing\RouteCompiler::readManifestFile($path);
 		$routes=is_array($manifest['routes'] ?? null) ? $manifest['routes'] : [];
 		$route=\dataphyre\routing\compiled_route_dispatcher::match_routes_for_request(
@@ -271,38 +271,10 @@ trait dataphyre_mcp_inspection_routing_surfaces {
 				$roots[]=(string)$path;
 			}
 		}else{
-			$roots[]='common/dataphyre/runtime/modules/routing';
-			$roots[]='common/dataphyre/runtime/modules/mvc';
+			$roots[]='dataphyre/runtime/modules/routing';
+			$roots[]='dataphyre/runtime/modules/mvc';
 		}
-		$files=[];
-		foreach($roots as $root){
-			$safe=$this->safe_repo_path($root);
-			if(is_file($safe)){
-				if(strtolower(pathinfo($safe, PATHINFO_EXTENSION))==='php'){
-					$files[]=$safe;
-				}
-				continue;
-			}
-			if(is_dir($safe)){
-				foreach($this->all_files($safe, $limit * 8) as $file){
-					if(strtolower(pathinfo($file, PATHINFO_EXTENSION))!=='php'){
-						continue;
-					}
-					$relative=strtolower(str_replace('\\', '/', $this->relative_path($file)));
-					if(str_contains($relative, '/documentation/') || str_contains($relative, '/vendor/')){
-						continue;
-					}
-					$files[]=$file;
-					if(count($files)>=$limit){
-						break 2;
-					}
-				}
-			}
-			if(count($files)>=$limit){
-				break;
-			}
-		}
-		$files=array_slice(array_values(array_unique($files)), 0, $limit);
+		$files=$this->bounded_php_source_files($roots,$limit);
 		$declarations=[];
 		$surfaces=[];
 		foreach($files as $file){
@@ -437,37 +409,10 @@ trait dataphyre_mcp_inspection_routing_surfaces {
 				$roots[]=(string)$path;
 			}
 		}else{
-			$roots[]='common/dataphyre/runtime/modules/routing';
-			$roots[]='common/dataphyre/runtime/modules/mvc';
+			$roots[]='dataphyre/runtime/modules/routing';
+			$roots[]='dataphyre/runtime/modules/mvc';
 		}
-		$files=[];
-		foreach($roots as $root){
-			$safe=$this->safe_repo_path($root);
-			if(is_file($safe)){
-				if(strtolower(pathinfo($safe, PATHINFO_EXTENSION))==='php'){
-					$files[]=$safe;
-				}
-				continue;
-			}
-			if(is_dir($safe)){
-				foreach($this->all_files($safe, $limit * 8) as $file){
-					if(strtolower(pathinfo($file, PATHINFO_EXTENSION))!=='php'){
-						continue;
-					}
-					$relative=strtolower(str_replace('\\', '/', $this->relative_path($file)));
-					if(str_contains($relative, '/documentation/') || str_contains($relative, '/vendor/')){
-						continue;
-					}
-					$files[]=$file;
-					if(count($files)>=$limit){
-						break 2;
-					}
-				}
-			}
-			if(count($files)>=$limit){
-				break;
-			}
-		}
+		$files=$this->bounded_php_source_files($roots,$limit);
 		$issues=[];
 		foreach(array_slice(array_values(array_unique($files)), 0, $limit) as $file){
 			$issues=array_merge($issues, $this->route_ambiguities_from_file($file));

@@ -150,7 +150,7 @@ class promise {
 				return;
 			}
 			foreach($promises as $i=>$promise){
-				$promise->finally(function()use(&$results, $i, &$remaining, $promise){
+				$promise->finally(function()use(&$results, $i, &$remaining, $promise, $resolve){
 					$results[$i]=[
 						'status'=>$promise->state,
 						'value'=>$promise->value

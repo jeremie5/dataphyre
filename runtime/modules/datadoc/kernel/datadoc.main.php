@@ -106,6 +106,7 @@ if(class_exists(__NAMESPACE__.'\datadoc', false)!==true){
  */
 class datadoc{
 
+	private const DYNADOC_MENU_ARTIFACT_VALUES=['BIGINT','BOOLEAN','DATE','DATETIME','DECIMAL','DOUBLE','FLOAT','INT','INTEGER','JSON','JSONB','NUMERIC','REAL','SERIAL','TEXT','TIME','TIMESTAMP','UUID','VARCHAR'];
 	protected static $flightdeck_auth_loaded=null;
 	private static string $last_error='';
 	private static bool $index_storage_ready=false;
@@ -283,7 +284,10 @@ class datadoc{
 	 *
 	 * Reads the Flightdeck auth PHP file from the shared runtime path if the auth class is not already loaded.
 	 */
-	protected static function ensure_flightdeck_auth_loaded(): bool {
+	protected static function ensure_flightdeck_auth_loaded(?callable $availability=null): bool {
+		if($availability!==null){
+			return (bool)$availability();
+		}
 		if(self::$flightdeck_auth_loaded!==null){
 			return self::$flightdeck_auth_loaded;
 		}
@@ -347,10 +351,10 @@ class datadoc{
 	 *
 	 * Returns `false` when the Flightdeck auth helper cannot be loaded.
 	 */
-	public static function logout(): bool {
+	public static function logout(?callable $auth_loader=null): bool {
 		unset($_SESSION['dp_datadoc_attempts']);
 		unset($_SESSION['dp_datadoc_logged_in']);
-		if(self::ensure_flightdeck_auth_loaded()===true){
+		if(self::ensure_flightdeck_auth_loaded($auth_loader)===true){
 			$was_logged_in=\dataphyre_flightdeck_auth::authenticated();
 			\dataphyre_flightdeck_auth::logout();
 			return $was_logged_in;
@@ -365,8 +369,8 @@ class datadoc{
 	 *
 	 * @deprecated Datadoc browser access is Flightdeck-only.
 	 */
-	public static function login($password){
-		if(self::ensure_flightdeck_auth_loaded()===true){
+	public static function login($password, ?callable $auth_loader=null){
+		if(self::ensure_flightdeck_auth_loaded($auth_loader)===true){
 			return \dataphyre_flightdeck_auth::login((string)$password);
 		}
 		return false;
@@ -1042,7 +1046,7 @@ class datadoc{
 		$current_class=(string)($scope['class'] ?? '');
 		$current_function=(string)($scope['function'] ?? '');
 		$current_bucket=(string)($scope['bucket'] ?? '');
-		if($current_namespace!=='' || $current_class!=='' || $current_function!==''){
+		if($current_function!==''){
 			return;
 		}
 		if($current_namespace==='' && $current_class==='' && $current_function==='' && $current_bucket===''){
@@ -1269,27 +1273,7 @@ class datadoc{
 	 */
 	protected static function is_dynadoc_menu_artifact_value(string $value): bool {
 		$value=strtoupper(trim($value));
-		return in_array($value, [
-			'BIGINT',
-			'BOOLEAN',
-			'DATE',
-			'DATETIME',
-			'DECIMAL',
-			'DOUBLE',
-			'FLOAT',
-			'INT',
-			'INTEGER',
-			'JSON',
-			'JSONB',
-			'NUMERIC',
-			'REAL',
-			'SERIAL',
-			'TEXT',
-			'TIME',
-			'TIMESTAMP',
-			'UUID',
-			'VARCHAR',
-		], true);
+		return in_array($value, self::DYNADOC_MENU_ARTIFACT_VALUES, true);
 	}
 
 	/**
@@ -1426,13 +1410,14 @@ class datadoc{
 	 *
 	 * @return array{path:string,title:string,content:string,mtime:int}|null
 	 */
-	public static function get_manudoc(string $project, string $path): ?array {
-		$filepath=self::manual_document_filepath($project, $path);
+	public static function get_manudoc(string $project, string $path, ?callable $reader=null, ?callable $path_resolver=null): ?array {
+		$path_resolver ??= [self::class, 'manual_document_filepath'];
+		$filepath=$path_resolver($project, $path);
 		if($filepath===null){
 			return null;
 		}
 		if(!file_exists($filepath)) return null;
-		$contents=file_get_contents($filepath);
+		$contents=($reader ?? static fn(string $file): string|false=>file_get_contents($file))($filepath);
 		if($contents===false){
 			return null;
 		}
@@ -1476,16 +1461,18 @@ class datadoc{
 	 * filesystem. The resolved root must stay below `ROOTPATH['dataphyre']/doc`
 	 * so project names cannot escape into sibling directories.
 	 */
-	protected static function manual_project_root(string $project): ?string {
+	protected static function manual_project_root(string $project, ?callable $realpath_resolver=null, ?callable $directory_checker=null): ?string {
 		if(preg_match('/^[A-Za-z0-9_-]+$/', $project)!==1){
 			return null;
 		}
-		$doc_root=realpath(ROOTPATH['dataphyre'].'doc');
-		if($doc_root===false || !is_dir($doc_root)){
+		$realpath_resolver ??= static fn(string $path): string|false=>realpath($path);
+		$directory_checker ??= static fn(string $path): bool=>is_dir($path);
+		$doc_root=$realpath_resolver(ROOTPATH['dataphyre'].'doc');
+		if($doc_root===false || !$directory_checker($doc_root)){
 			return null;
 		}
-		$manual_root=realpath($doc_root.DIRECTORY_SEPARATOR.$project.DIRECTORY_SEPARATOR.'manudocs');
-		if($manual_root===false || !is_dir($manual_root)){
+		$manual_root=$realpath_resolver($doc_root.DIRECTORY_SEPARATOR.$project.DIRECTORY_SEPARATOR.'manudocs');
+		if($manual_root===false || !$directory_checker($manual_root)){
 			return null;
 		}
 		$doc_prefix=rtrim($doc_root, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR;
@@ -1509,9 +1496,6 @@ class datadoc{
 		foreach($rii as $file){
 			if(!$file->isFile() || !str_ends_with($file->getFilename(), '.md.json')) continue;
 			$pathname=self::normalize_filesystem_path($file->getPathname());
-			if(!str_starts_with($pathname, $root_dir)){
-				continue;
-			}
 			$relative_path=substr($pathname, strlen($root_dir));
 			$path_parts=explode('/', $relative_path);
 			$doc_name=str_replace('.md.json', '', array_pop($path_parts));
@@ -1706,8 +1690,9 @@ class datadoc{
 	 * @param array{scanned:int,registered:int,skipped:int,failed:int,last_cursor:string,has_more:bool,error?:string} $stats Mutable discovery counters and cursor state.
 	 * @return bool True when traversal completed, false when the batch limit stopped traversal.
 	 */
-	private static function discover_files_to_project_walk(string $dirpath, string $project, int $limit, string $after, array &$stats): bool {
-		$entries=scandir($dirpath);
+	private static function discover_files_to_project_walk(string $dirpath, string $project, int $limit, string $after, array &$stats, ?callable $directory_reader=null): bool {
+		$directory_reader ??= static fn(string $path): array|false=>scandir($path);
+		$entries=$directory_reader($dirpath);
 		if(!is_array($entries)){
 			$stats['failed']++;
 			return true;
@@ -1723,7 +1708,7 @@ class datadoc{
 					$stats['skipped']++;
 					continue;
 				}
-				if(self::discover_files_to_project_walk($filepath, $project, $limit, $after, $stats)===false){
+				if(self::discover_files_to_project_walk($filepath, $project, $limit, $after, $stats, $directory_reader)===false){
 					return false;
 				}
 				continue;
@@ -1795,7 +1780,7 @@ class datadoc{
 	private static function excluded_index_path_patterns(): array {
 		$patterns=[
 			'%/unit_tests/%',
-			'%/common/dataphyre/runtime/modules/stripe/src/lib/%',
+			'%/dataphyre/runtime/modules/stripe/src/lib/%',
 		];
 		$configured=defined('DATAPHYRE_DATADOC_EXCLUDED_INDEX_PATH_PATTERNS')
 			? constant('DATAPHYRE_DATADOC_EXCLUDED_INDEX_PATH_PATTERNS')
@@ -2098,10 +2083,11 @@ class datadoc{
 	 * @param positive-int|float $max_seconds Approximate request-time budget in seconds.
 	 * @return array{synced:int,skipped:int,failed:int,processed:int,remaining:int,stopped_by:?string,error:?string}
 	 */
-	public static function sync_project_batch(string $project='', int $limit=25, float $max_seconds=4.0): array {
+	public static function sync_project_batch(string $project='', int $limit=25, float $max_seconds=4.0, ?callable $clock=null): array {
 		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null);
 		$limit=max(1, min(250, $limit));
-		$deadline=microtime(true)+max(0.5, $max_seconds);
+		$clock ??= static fn(): float=>microtime(true);
+		$deadline=$clock()+max(0.5, $max_seconds);
 		$stats=[
 			'synced'=>0,
 			'skipped'=>0,
@@ -2133,7 +2119,7 @@ class datadoc{
 			return $stats;
 		}
 		foreach($rows as $row){
-			if(microtime(true)>=$deadline){
+			if($clock()>=$deadline){
 				$stats['stopped_by']='time';
 				break;
 			}
@@ -2338,13 +2324,14 @@ class datadoc{
 	 *
 	 * Tokenizes PHP symbols, deletes previous records for that file/project, writes namespace/class/function rows to `dataphyre.datadoc_data`, and updates file-state metadata.
 	 */
-	public static function sync_file(string $file, string $project=''): bool {
+	public static function sync_file(string $file, string $project='', ?callable $tokenizer=null): bool {
 		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$file=self::normalize_filesystem_path($file);
 		if(!file_exists($file) || self::should_exclude_index_file($file)){
 			return false;
 		}
-		$tokens=\dataphyre\datadoc\tokenizer::tokenize($file);
+		$tokenizer ??= static fn(string $path): array|false=>\dataphyre\datadoc\tokenizer::tokenize($path);
+		$tokens=$tokenizer($file);
 		if($tokens===false){
 			return false;
 		}

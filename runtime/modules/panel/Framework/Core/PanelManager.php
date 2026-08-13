@@ -28,6 +28,9 @@ final class PanelManager {
 	private array $navigationItems=[];
 	/** @var array<string, PanelCommand> */
 	private array $commands=[];
+	/** @var array<string, PanelSearchProvider> */
+	private array $searchProviders=[];
+	private ?PanelTenantRegistry $tenantRegistry=null;
 	private ?PanelTheme $theme=null;
 	private ?\Closure $authorizer=null;
 
@@ -51,6 +54,82 @@ final class PanelManager {
 	 */
 	public static function flush(): void {
 		self::$instance=null;
+	}
+
+	/**
+	 * Captures the manager-owned contribution state used by plugin registration.
+	 *
+	 * This is an internal lifecycle primitive rather than a persistence format:
+	 * object instances already registered before the checkpoint retain their
+	 * identity, while mutable tenant/theme containers are cloned so additions or
+	 * token mutations made by a failing plugin cannot leak through a rollback.
+	 *
+	 * @return array{
+	 *     resources:array<string,Resource>,
+	 *     pages:array<string,PanelPage>,
+	 *     widgets:array<string,Widget>,
+	 *     navigation_items:array<string,NavigationItem>,
+	 *     commands:array<string,PanelCommand>,
+	 *     search_providers:array<string,PanelSearchProvider>,
+	 *     tenant_registry:?PanelTenantRegistry,
+	 *     theme:?PanelTheme,
+	 *     authorizer:?\Closure
+	 * }
+	 */
+	public function contributionCheckpoint(): array {
+		return [
+			'resources'=>$this->resources,
+			'pages'=>$this->pages,
+			'widgets'=>$this->widgets,
+			'navigation_items'=>$this->navigationItems,
+			'commands'=>$this->commands,
+			'search_providers'=>$this->searchProviders,
+			'tenant_registry'=>$this->tenantRegistry instanceof PanelTenantRegistry ? clone $this->tenantRegistry : null,
+			'theme'=>$this->theme instanceof PanelTheme ? clone $this->theme : null,
+			'authorizer'=>$this->authorizer,
+		];
+	}
+
+	/**
+	 * Restores a contribution checkpoint without replacing this manager object.
+	 *
+	 * Keeping the manager identity stable is important because resources,
+	 * providers, tenant registries, and host integrations may already hold it.
+	 * The shape is validated before any state changes so malformed checkpoints
+	 * cannot partially reset a live surface.
+	 *
+	 * @param array<string,mixed> $checkpoint Value returned by contributionCheckpoint().
+	 */
+	public function restoreContributionCheckpoint(array $checkpoint): self {
+		$required=['resources','pages','widgets','navigation_items','commands','search_providers','tenant_registry','theme','authorizer'];
+		foreach($required as $key){
+			if(!array_key_exists($key, $checkpoint)){
+				throw new \InvalidArgumentException('Invalid Panel manager contribution checkpoint.');
+			}
+		}
+		if(!is_array($checkpoint['resources']) || !is_array($checkpoint['pages']) || !is_array($checkpoint['widgets']) || !is_array($checkpoint['navigation_items']) || !is_array($checkpoint['commands']) || !is_array($checkpoint['search_providers'])){
+			throw new \InvalidArgumentException('Invalid Panel manager contribution checkpoint.');
+		}
+		if($checkpoint['tenant_registry']!==null && !$checkpoint['tenant_registry'] instanceof PanelTenantRegistry){
+			throw new \InvalidArgumentException('Invalid Panel manager contribution checkpoint.');
+		}
+		if($checkpoint['theme']!==null && !$checkpoint['theme'] instanceof PanelTheme){
+			throw new \InvalidArgumentException('Invalid Panel manager contribution checkpoint.');
+		}
+		if($checkpoint['authorizer']!==null && !$checkpoint['authorizer'] instanceof \Closure){
+			throw new \InvalidArgumentException('Invalid Panel manager contribution checkpoint.');
+		}
+
+		$this->resources=$checkpoint['resources'];
+		$this->pages=$checkpoint['pages'];
+		$this->widgets=$checkpoint['widgets'];
+		$this->navigationItems=$checkpoint['navigation_items'];
+		$this->commands=$checkpoint['commands'];
+		$this->searchProviders=$checkpoint['search_providers'];
+		$this->tenantRegistry=$checkpoint['tenant_registry'];
+		$this->theme=$checkpoint['theme'];
+		$this->authorizer=$checkpoint['authorizer'];
+		return $this;
 	}
 
 	/**
@@ -248,6 +327,69 @@ final class PanelManager {
 		return $registered;
 	}
 
+	/** Registers one custom global-search provider. */
+	public function registerSearchProvider(PanelSearchProvider|array $provider): PanelSearchProvider {
+		$provider=$provider instanceof PanelSearchProvider ? $provider : PanelSearchProvider::fromArray($provider);
+		if($provider->name()===''){
+			throw new \InvalidArgumentException('Panel search providers require a stable name.');
+		}
+		$this->searchProviders[$provider->name()]=$provider;
+		PanelTrace::record('search_provider.registered', ['provider'=>$provider->name()]);
+		return $provider;
+	}
+
+	/**
+	 * @param list<PanelSearchProvider|array<string,mixed>> $providers
+	 * @return list<PanelSearchProvider>
+	 */
+	public function registerSearchProviders(array $providers): array {
+		$registered=[];
+		foreach($providers as $provider){
+			if($provider instanceof PanelSearchProvider || is_array($provider)){
+				$registered[]=$this->registerSearchProvider($provider);
+			}
+		}
+		return $registered;
+	}
+
+	/** Returns the tenant registry owned exclusively by this manager. */
+	public function tenantRegistry(): PanelTenantRegistry {
+		return $this->tenantRegistry ??= new PanelTenantRegistry($this);
+	}
+
+	public function hasTenantRegistry(): bool {
+		return $this->tenantRegistry instanceof PanelTenantRegistry && $this->tenantRegistry->all()!==[];
+	}
+
+	public function registerTenant(PanelTenant|array $tenant): PanelTenant {
+		return $this->tenantRegistry()->register($tenant);
+	}
+
+	/** @param list<PanelTenant|array<string,mixed>> $tenants @return list<PanelTenant> */
+	public function registerTenants(array $tenants): array { return $this->tenantRegistry()->registerMany($tenants); }
+
+	public function tenant(string $name): ?PanelTenant { return $this->tenantRegistry?->tenant($name); }
+	public function hasTenant(string $name): bool { return $this->tenant($name) instanceof PanelTenant; }
+	/** @return array<string,PanelTenant> */
+	public function tenants(): array { return $this->tenantRegistry?->all() ?? []; }
+
+	public function tenantMembershipsUsing(callable $resolver): self { $this->tenantRegistry()->membershipsUsing($resolver); return $this; }
+	public function tenantAuthorizationUsing(callable $resolver): self { $this->tenantRegistry()->authorizeUsing($resolver); return $this; }
+	public function tenantActiveUsing(callable $resolver): self { $this->tenantRegistry()->activeUsing($resolver); return $this; }
+	public function tenantPersistenceUsing(callable $resolver): self { $this->tenantRegistry()->persistUsing($resolver); return $this; }
+	public function tenantEntitlementUsing(callable $resolver): self { $this->tenantRegistry()->entitlementUsing($resolver); return $this; }
+	public function tenantOnboardingStep(string $name, callable $apply, ?callable $rollback=null): self { $this->tenantRegistry()->onboardingStep($name,$apply,$rollback); return $this; }
+
+	/** @return array<string,PanelTenantMembership> */
+	public function tenantMemberships(PanelRequest $request): array { return $this->tenantRegistry()->memberships($request); }
+	public function tenantContext(PanelRequest $request): PanelTenantContext { return $this->tenantRegistry()->context($request); }
+	public function switchTenant(string $tenant, PanelRequest $request): PanelTenantSwitchResult { return $this->tenantRegistry()->switch($tenant,$request); }
+	/** @return list<array<string,mixed>> */
+	public function tenantSwitcher(PanelRequest $request): array { return $this->tenantRegistry?->switcher($request) ?? []; }
+	public function onboardTenant(PanelTenant|array $tenant, PanelRequest $request, string $idempotencyKey): PanelTenantOnboardingResult { return $this->tenantRegistry()->onboard($tenant,$request,$idempotencyKey); }
+	/** @param string|list<string> $namespace */
+	public function tenantStorageScope(string $tenant, string|array $namespace, PanelRequest $request): PanelTenantStorageScope { return $this->tenantRegistry()->storageScope($tenant,$namespace,$request); }
+
 	/**
 	 * Reads or replaces the active PanelTheme from theme objects, presets, arrays, or string names.
 	 *
@@ -354,6 +496,30 @@ final class PanelManager {
 		return $this->resources;
 	}
 
+	/** Returns a custom provider by normalized name. */
+	public function searchProvider(string $name): ?PanelSearchProvider {
+		return $this->searchProviders[Resource::normalizeName($name)] ?? null;
+	}
+
+	public function hasSearchProvider(string $name): bool {
+		return $this->searchProvider($name) instanceof PanelSearchProvider;
+	}
+
+	/**
+	 * Returns registered custom providers, optionally filtered through request
+	 * visibility and authorization without exposing denied provider identities.
+	 *
+	 * @return array<string,PanelSearchProvider>
+	 */
+	public function searchProviders(?PanelRequest $request=null, bool $visibleOnly=false): array {
+		if(!$visibleOnly){ return $this->searchProviders; }
+		$request ??= PanelRequest::fromArray([]);
+		return array_filter($this->searchProviders, fn(PanelSearchProvider $provider): bool=>$this->allowsSearchProvider($provider, $request));
+	}
+
+	/** @return array<string,PanelSearchProvider> */
+	public function registeredSearchProviders(): array { return $this->searchProviders; }
+
 	/** @return array<string, PanelPage> */
 	/**
 	 * Returns normalized registry snapshots for rendering, manifests, and tests.
@@ -439,49 +605,64 @@ final class PanelManager {
 	}
 
 	/**
-	 * Searches registered resources and pages for the panel command/search surface.
+	 * Searches authorized resource and custom providers through the bounded coordinator.
 	 *
 	 * PanelManager is the central runtime registry for operator UI: resources, pages, widgets, navigation, commands, theme, authorization, search, and dispatch all pass through this normalized surface.
 	 *
 	 * @param string $query Search string or query array for panel navigation/commands/global search.
 	 * @param PanelRequest $request HTTP/API or Panel request carrying route, query, body, headers, cookies, and server data.
 	 * @param int $limit Maximum number of search results returned.
-	 * @return array Registry snapshot, search results, command entries, navigation payload, manifest data, or record list.
+	 * @return list<array<string,mixed>> Backward-compatible normalized search rows.
 	 */
 	public function globalSearch(string $query, PanelRequest $request, int $limit=12): array {
-		$query=trim($query);
-		$limit=max(1, min(50, $limit));
-		if($query===''){
-			return [];
+		return $this->globalSearchPage($query, $request, $limit)->toArray()['results'];
+	}
+
+	/** Executes deterministic, diagnostic global search and returns its page contract. */
+	public function globalSearchPage(string $query, PanelRequest $request, int $limit=12, string|array|null $cursor=null): PanelSearchPage {
+		$request=$this->resolvedTenantRequest($request);
+		if(!$request instanceof PanelRequest){
+			return PanelSearchPage::make(meta:['tenant_context'=>'denied','tenant_registry'=>true]);
 		}
-		$results=[];
-		$perResource=max(3, (int)ceil($limit / max(1, count($this->resources))));
-		foreach($this->resources as $resource){
-			if(!$resource->isGlobalSearchable() || $resource->can('global_search', null, $request->user())===false){
-				continue;
-			}
-			try{
-				foreach($resource->globalSearchResults($query, $request, $perResource) as $result){
-					if(is_array($result)){
-						$results[]=$result;
-					}
-					if(count($results)>=$limit){
-						break 2;
-					}
-				}
-			}
-			catch(\Throwable $exception){
-				PanelTrace::record('global_search.resource_error', [
-					'resource'=>$resource,
-					'message'=>$exception->getMessage(),
-				]);
-			}
+		return $this->searchCoordinator()->search($query, $request, $limit, $cursor);
+	}
+
+	public function searchCoordinator(): PanelSearchCoordinator {
+		return new PanelSearchCoordinator($this);
+	}
+
+	/** Security boundary used by the coordinator for custom providers. */
+	public function allowsSearchProvider(PanelSearchProvider $provider, PanelRequest $request): bool {
+		$request=$this->resolvedTenantRequest($request);
+		if(!$request instanceof PanelRequest){
+			PanelTrace::record('global_search.provider_authorized', ['provider'=>$provider->name(), 'allowed'=>false, 'tenant_context'=>'denied']);
+			return false;
 		}
-		PanelTrace::record('global_search.completed', [
-			'query'=>$query,
-			'result_count'=>count($results),
-		]);
-		return $results;
+		if(!$this->canAccess('global_search', null, $request)){
+			PanelTrace::record('global_search.provider_authorized', ['provider'=>$provider->name(), 'allowed'=>false]+self::tenantTraceContext($request->tenantKey()));
+			return false;
+		}
+		if(!$provider->isVisible($request, $this)){
+			PanelTrace::record('global_search.provider_hidden', ['provider'=>$provider->name()]);
+			return false;
+		}
+		$allowed=$provider->isAuthorized($request, $this);
+		PanelTrace::record('global_search.provider_authorized', ['provider'=>$provider->name(), 'allowed'=>$allowed]+self::tenantTraceContext($request->tenantKey()));
+		return $allowed;
+	}
+
+	/** Security boundary used by the coordinator for resource-backed providers. */
+	public function allowsSearchResource(Resource $resource, PanelRequest $request): bool {
+		$request=$this->resolvedTenantRequest($request);
+		if(!$request instanceof PanelRequest){
+			PanelTrace::record('global_search.resource_authorized', ['resource'=>$resource->name(), 'allowed'=>false, 'tenant_context'=>'denied']);
+			return false;
+		}
+		$allowed=$resource->isGlobalSearchable()
+			&& $this->canAccess('global_search', $resource, $request)
+			&& $resource->can('global_search', null, $request->user())!==false;
+		PanelTrace::record('global_search.resource_authorized', ['resource'=>$resource->name(), 'allowed'=>$allowed]+self::tenantTraceContext($request->tenantKey()));
+		return $allowed;
 	}
 
 	/**
@@ -494,6 +675,19 @@ final class PanelManager {
 	 * @return PanelNavigationState Panel manager object described by the native return type.
 	 */
 	public function navigationState(?PanelRequest $request=null, array $search=[]): PanelNavigationState {
+		$request ??= PanelRequest::fromArray([]);
+		$switcher=$this->tenantSwitcher($request);
+		$resolvedRequest=$this->resolvedTenantRequest($request);
+		if(!$resolvedRequest instanceof PanelRequest){
+			return PanelNavigationState::make([], $request->withTenant(null), $search, [
+				'resources'=>count($this->resources),
+				'pages'=>count($this->pages),
+				'custom_items'=>count($this->navigationItems),
+				'tenant_context'=>'denied',
+				'tenant_switcher'=>$switcher,
+			]);
+		}
+		$request=$resolvedRequest;
 		$entries=[];
 		foreach($this->resources as $resource){
 			if($resource->isHiddenFromNavigation()){
@@ -525,6 +719,7 @@ final class PanelManager {
 			'resources'=>count($this->resources),
 			'pages'=>count($this->pages),
 			'custom_items'=>count($this->navigationItems),
+			'tenant_switcher'=>$switcher,
 		]);
 		PanelTrace::record('navigation.state', [
 			'state'=>$state,
@@ -555,12 +750,15 @@ final class PanelManager {
 	 */
 	public function commandState(?PanelRequest $request=null, ?string $query=null): PanelCommandState {
 		$request=$request ?? PanelRequest::fromArray([]);
-		$commands=$this->commandEntries($request);
+		$resolvedRequest=$this->resolvedTenantRequest($request);
+		$commands=$resolvedRequest instanceof PanelRequest ? $this->commandEntries($resolvedRequest) : [];
+		$request=$resolvedRequest ?? $request->withTenant(null);
 		$state=PanelCommandState::make($commands, $request, $query, [
 			'registered_commands'=>count($this->commands),
 			'resources'=>count($this->resources),
 			'pages'=>count($this->pages),
 			'navigation_items'=>count($this->navigationItems),
+			'tenant_context'=>$resolvedRequest instanceof PanelRequest ? 'authorized' : 'denied',
 		]);
 		PanelTrace::record('commands.state', [
 			'state'=>$state,
@@ -598,6 +796,18 @@ final class PanelManager {
 				static fn(Resource $resource): string => $resource->name(),
 				array_filter($this->resources, static fn(Resource $resource): bool => $resource->isGlobalSearchable())
 			)),
+			'search_providers'=>array_map(
+				static fn(PanelSearchProvider $provider): array=>$provider->toArray(),
+				array_values($this->searchProviders)
+			),
+			'search_provider_count'=>count($this->searchProviders),
+			'tenant_registry'=>$this->tenantRegistry?->describe() ?? [
+				'tenant_count'=>0,
+				'tenants'=>[],
+				'visible_tenants'=>[],
+				'implicit_io'=>false,
+			],
+			'tenant_count'=>count($this->tenantRegistry?->all() ?? []),
 			'widgets'=>array_map(
 				static fn(Widget $widget): array => $widget->toArray(),
 				array_values($this->widgets)
@@ -630,6 +840,12 @@ final class PanelManager {
 		$request=$request instanceof PanelRequest
 			? $request
 			: (is_array($request) ? PanelRequest::fromArray($request) : PanelRequest::capture());
+		$resolvedTenantRequest=$this->resolvedTenantRequest($request);
+		if(!$resolvedTenantRequest instanceof PanelRequest){
+			PanelTrace::record('request.tenant_denied', ['has_tenant'=>$request->tenantKey()!==null]);
+			return PanelPageResult::json(['error'=>'tenant_context_denied'], 403);
+		}
+		$request=$resolvedTenantRequest;
 		$span=PanelTrace::begin('request.dispatch', [
 			'request'=>$request,
 		]);
@@ -649,7 +865,20 @@ final class PanelManager {
 					$resource=null;
 				}
 			}
-			if($this->canAccess($request->operation(), $resource, $request)===false){
+			$navigationBlocked=null;
+			if(PanelNavigationIntentRuntime::privileged($request) && (is_string($request->input('return_to')) || is_string($request->query('return_to')))){
+				$navigation=PanelNavigationIntentRuntime::resolve($request, true, true, self::navigationIntentExpected($request, $resource, $page));
+				if($navigation->blocked()){
+					$navigationBlocked=PanelPageResult::json([
+						'error'=>'navigation_intent_rejected',
+						'code'=>$navigation->verification()->code(),
+					], 422);
+				}
+			}
+			if($navigationBlocked instanceof PanelPageResult){
+				$result=$navigationBlocked;
+			}
+			elseif($this->canAccess($request->operation(), $resource, $request)===false){
 				$result=PanelRenderer::forbidden($resource, $request);
 			}
 			elseif($page instanceof PanelPage){
@@ -665,9 +894,17 @@ final class PanelManager {
 				}
 			}
 			elseif($resource===null){
-				$result=$request->resourceName()===null
-					? PanelRenderer::dashboard($this, $request)
-					: PanelRenderer::notFound($request);
+				if($request->resourceName()!==null){
+					$result=PanelRenderer::notFound($request);
+				}
+				elseif(($home=$this->configuredHomePage()) instanceof PanelPage){
+					$result=$home->can($request->operation(), $request->user(), $request)
+						? PanelRenderer::customPage($home, $request, $this)
+						: PanelRenderer::forbidden(null, $request);
+				}
+				else{
+					$result=PanelRenderer::dashboard($this, $request);
+				}
 			}
 			else
 			{
@@ -741,6 +978,21 @@ final class PanelManager {
 		}
 	}
 
+	/** @return array<string,string> */
+	private static function navigationIntentExpected(PanelRequest $request, ?Resource $resource=null, ?PanelPage $page=null): array {
+		$expected=['operation'=>'return','outcome'=>'complete'];
+		if($request->operation()!=='action' || $request->actionName()===null){ return $expected; }
+		$action=$resource?->actionByName($request->actionName()) ?? $page?->actionByName($request->actionName());
+		if(!$action instanceof Action){ return $expected; }
+		$definition=$action->toArray();
+		$intent=is_array($definition['navigation_intent'] ?? null) ? $definition['navigation_intent'] : [];
+		if(($intent['enabled'] ?? true)!==true){ return $expected; }
+		$expected['operation']=(string)($intent['operation'] ?? 'return');
+		$expected['outcome']=(string)($intent['outcome'] ?? 'complete');
+		if(is_string($intent['audience'] ?? null) && $intent['audience']!==''){ $expected['audience']=$intent['audience']; }
+		return $expected;
+	}
+
 	/**
 	 * Renders a resource operation into a PanelPageResult without a live HTTP cycle.
 	 *
@@ -759,8 +1011,15 @@ final class PanelManager {
 		]);
 		if($resource===null){
 			$request=PanelRequest::fromArray($context);
+			$request=$this->resolvedTenantRequest($request);
+			if(!$request instanceof PanelRequest){ return PanelPageResult::json(['error'=>'tenant_context_denied'], 403); }
 			if($this->canAccess($request->operation(), null, $request)===false){
 				return PanelRenderer::forbidden(null, $request);
+			}
+			if(($home=$this->configuredHomePage()) instanceof PanelPage){
+				return $home->can($request->operation(), $request->user(), $request)
+					? PanelRenderer::customPage($home, $request, $this)
+					: PanelRenderer::forbidden(null, $request);
 			}
 			return PanelRenderer::dashboard($this, $request);
 		}
@@ -775,6 +1034,8 @@ final class PanelManager {
 					'resource'=>$page->name(),
 					'operation'=>$operation,
 				]));
+				$request=$this->resolvedTenantRequest($request);
+				if(!$request instanceof PanelRequest){ return PanelPageResult::json(['error'=>'tenant_context_denied'], 403); }
 				if($this->canAccess($request->operation(), null, $request)===false || $page->can($request->operation(), $request->user(), $request)===false){
 					return PanelRenderer::forbidden(null, $request);
 				}
@@ -789,6 +1050,8 @@ final class PanelManager {
 			'resource'=>$resource->name(),
 			'operation'=>$operation,
 		]));
+		$request=$this->resolvedTenantRequest($request);
+		if(!$request instanceof PanelRequest){ return PanelPageResult::json(['error'=>'tenant_context_denied'], 403); }
 		if($this->canAccess($request->operation(), $resource, $request)===false){
 			return PanelRenderer::forbidden($resource, $request);
 		}
@@ -841,14 +1104,18 @@ final class PanelManager {
 	 * @param bool $preferAll Whether collection methods should be preferred over
 	 *     pagination methods, as in export workflows.
 	 *
-	 * @return array{0: array, 1: ?int, 2: bool} Records, optional total count,
-	 *     and whether the source query paginated the result.
+	 * @return array{0: array, 1: ?int, 2: bool, 3?: array<string,mixed>}
+	 *     Records, optional total count, whether the source query paginated the
+	 *     result, and optional structured data-source metadata.
 	 */
 	private function records(Resource $resource, PanelRequest $request, bool $preferAll=false): array {
 		$request=$this->requestWithResolvedResourceState($resource, $request);
 		$query=$resource->makeQuery($request);
 		if($query===null){
 			return [[], null, false];
+		}
+		if($query instanceof PanelDataResult){
+			return self::dataResultRecords($query);
 		}
 		if(is_array($query)){
 			return [$query, null, false];
@@ -863,6 +1130,9 @@ final class PanelManager {
 			$result=$method==='paginateRecords' || $method==='paginate'
 				? $query->{$method}($request->page(), $request->perPage($resource->resourceTable()->defaultPerPage()))
 				: $query->{$method}();
+			if($result instanceof PanelDataResult){
+				return self::dataResultRecords($result);
+			}
 			$total=null;
 			foreach(['total', 'totalRecords', 'count'] as $counter){
 				if(is_object($result) && method_exists($result, $counter)){
@@ -877,6 +1147,29 @@ final class PanelManager {
 			return [$records, $total, $method==='paginateRecords' || $method==='paginate'];
 		}
 		return [[], null, false];
+	}
+
+	/**
+	 * Converts a canonical data-source result into the renderer tuple without
+	 * discarding its total, cursors, aggregates, inclusions, or adapter metadata.
+	 *
+	 * @return array{0:list<mixed>,1:?int,2:true,3:array<string,mixed>}
+	 */
+	private static function dataResultRecords(PanelDataResult $result): array {
+		$page=$result->page();
+		return [
+			$result->items(),
+			$page->total(),
+			true,
+			[
+				'type'=>'panel_data_result',
+				'source'=>$result->source(),
+				'page'=>$page->jsonSerialize(),
+				'aggregates'=>$result->aggregates(),
+				'included'=>$result->included(),
+				'metadata'=>$result->metadata(),
+			],
+		];
 	}
 
 	/**
@@ -1120,6 +1413,25 @@ final class PanelManager {
 	 *
 	 * @return bool True when no authorizer exists or the authorizer allows access.
 	 */
+	/** Resolves registry-backed tenant context without mutating process-global state. */
+	private function resolvedTenantRequest(PanelRequest $request): ?PanelRequest {
+		if(!$this->hasTenantRegistry()){ return $request; }
+		$context=$this->tenantRegistry()->context($request);
+		return $context->isAuthorized() ? $context->request() : null;
+	}
+
+	/** Resolves the configured root page only from this manager's page registry. */
+	private function configuredHomePage(): ?PanelPage {
+		$name=PanelConfig::homePage();
+		return $name!==null ? $this->getPage($name) : null;
+	}
+
+	/** @return array{has_tenant:bool,tenant_hash?:string,tenant_length?:int} */
+	private static function tenantTraceContext(?string $tenant): array {
+		if($tenant===null || $tenant===''){ return ['has_tenant'=>false]; }
+		return ['has_tenant'=>true,'tenant_hash'=>hash('sha256',$tenant),'tenant_length'=>strlen($tenant)];
+	}
+
 	private function canAccess(string $ability, ?Resource $resource, PanelRequest $request): bool {
 		$authorizer=$this->authorizer ?? self::configuredAuthorizer();
 		if($authorizer===null){
@@ -1156,8 +1468,7 @@ final class PanelManager {
 	 * @return bool True when the operation should use a record policy.
 	 */
 	private static function operationUsesRecordPolicy(string $operation): bool {
-		return in_array(Resource::normalizeName($operation), [
-			'show',
+		return in_array(Resource::normalizeName($operation), ['show',
 			'edit',
 			'update',
 			'inline_update',

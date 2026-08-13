@@ -16,27 +16,70 @@ use Dataphyre\Panel\PanelLocalization;
 use Dataphyre\Panel\PanelNotification;
 use Dataphyre\Panel\PanelPage;
 use Dataphyre\Panel\PanelPageResult;
+use Dataphyre\Panel\PanelPageTemplate;
 use Dataphyre\Panel\PanelRegressionSuite;
 use Dataphyre\Panel\PanelRequest;
+use Dataphyre\Panel\PanelResponseEmitter;
 use Dataphyre\Panel\PanelRenderer;
 use Dataphyre\Panel\PanelRoute;
 use Dataphyre\Panel\PanelRouteController;
+use Dataphyre\Panel\PanelStorageUploadEndpoint;
 use Dataphyre\Panel\PanelTestHarness;
+use Dataphyre\Panel\PanelTheme;
 use Dataphyre\Panel\PanelTrace;
 use Dataphyre\Panel\PanelUploadController;
+use Dataphyre\Test\Context as TestContext;
+
+/** @return array<string,int> Canonical limits shared by PHP and Node asset gates. */
+function dp_panel_asset_budgets(): array {
+	static $budgets=null;
+	if(is_array($budgets)){
+		return $budgets;
+	}
+	$path=dirname(__DIR__).'/testing/panel_asset_budgets.json';
+	$decoded=json_decode((string)file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
+	if(!is_array($decoded)){
+		throw new RuntimeException('Panel asset budget manifest must decode to an object.');
+	}
+	return $budgets=array_map('intval', $decoded);
+}
 
 if(!function_exists('dp_panel_unit_test_bootstrap')){
 	function dp_panel_unit_test_bootstrap(): void {
+		if(!defined('DATAPHYRE_MODULE_POLICY')){
+			define('DATAPHYRE_MODULE_POLICY', [
+				'enabled'=>[
+					'core'=>true,
+					'datadoc'=>true,
+					'http'=>true,
+					'mvc'=>true,
+					'panel'=>true,
+					'permission'=>true,
+					'routing'=>true,
+				],
+				'disabled'=>[],
+				'core_implicit'=>true,
+			]);
+		}
 		$modules_root=dirname(__DIR__, 2);
+		if(!class_exists(TestContext::class, false)){
+			require_once $modules_root.'/testing/tooling/bootstrap.php';
+		}
 		$autoloader=$modules_root.'/core/kernel/autoloader.php';
 		if(is_file($autoloader)){
 			require_once $autoloader;
 			if(class_exists('dataphyre\\autoloader', false)){
 				\dataphyre\autoloader::register($modules_root);
-				\dataphyre\autoloader::register_framework_modules(['panel', 'permission']);
+				\dataphyre\autoloader::register_framework_modules(['datadoc', 'panel', 'permission']);
 			}
 		}
 	}
+}
+
+function dp_panel_test_harness_context(): TestContext {
+	static $context=null;
+	dp_panel_unit_test_bootstrap();
+	return $context ??= new TestContext('panel-json-harness', '', __FILE__, 'panel');
 }
 
 function dp_panel_test_harness_result_assertions(): bool {
@@ -65,6 +108,172 @@ function dp_panel_test_harness_redirect_assertion(): bool {
 	PanelTestHarness::assertRedirect(PanelPageResult::redirect('/admin/orders'), '/admin/orders');
 
 	return true;
+}
+
+function dp_panel_upload_boundary_summary_json(): string {
+	dp_panel_unit_test_bootstrap();
+
+	$files=['file'=>[
+		'name'=>'report.txt',
+		'type'=>'text/plain',
+		'tmp_name'=>__FILE__,
+		'error'=>UPLOAD_ERR_OK,
+		'size'=>1,
+	]];
+	$unsafe_id=PanelStorageUploadEndpoint::handle([
+		'upload_id'=>'..',
+		'filename'=>'report.txt',
+	], $files);
+	$partial_count=PanelStorageUploadEndpoint::handle([
+		'upload_id'=>'upload-123',
+		'filename'=>'report.txt',
+		'chunks'=>'2oops',
+	], $files);
+	$out_of_range=PanelStorageUploadEndpoint::handle([
+		'upload_id'=>'upload-123',
+		'filename'=>'report.txt',
+		'chunks'=>2,
+		'chunk_index'=>2,
+	], $files);
+	$upload_endpoint=dp_panel_test_harness_context()->nonPublic(PanelStorageUploadEndpoint::class);
+	$traversal_path=$upload_endpoint->invoke('storagePath', '../escape/{filename}', 'report.txt', 'upload-123', 'document', 'default');
+	$safe_path=$upload_endpoint->invoke('storagePath', 'panel_uploads/{field}/{filename}', 'report.txt', 'upload-123', 'document', 'default');
+	$manifest=[
+		'upload_id'=>'upload-123', 'filename'=>'report.txt', 'size'=>42, 'mime'=>'text/plain',
+		'chunks'=>2, 'disk'=>'local', 'path'=>'panel_uploads/report.txt', 'visibility'=>'private',
+	];
+
+	return json_encode([
+		'unsafe_id_error'=>$unsafe_id['error'] ?? null,
+		'partial_count_error'=>$partial_count['error'] ?? null,
+		'out_of_range_error'=>$out_of_range['error'] ?? null,
+		'traversal_path_rejected'=>$traversal_path==='',
+		'safe_path_is_relative'=>is_string($safe_path) && str_starts_with($safe_path, 'panel_uploads/document/') && !str_contains($safe_path, '..'),
+		'same_manifest_accepted'=>$upload_endpoint->invoke('manifestMatches', $manifest, $manifest),
+		'changed_route_rejected'=>!$upload_endpoint->invoke('manifestMatches', $manifest, array_replace($manifest, ['disk'=>'private'])),
+		'changed_chunk_count_rejected'=>!$upload_endpoint->invoke('manifestMatches', $manifest, array_replace($manifest, ['chunks'=>1])),
+		'mime_parameters_removed'=>$upload_endpoint->invoke('mimeType', 'Text/Plain; charset=UTF-8')==='text/plain',
+		'multiline_mime_rejected'=>$upload_endpoint->invoke('mimeType', "text/plain\r\nX-Test: yes")==='application/octet-stream',
+		'default_delete_prefix_allowed'=>$upload_endpoint->invoke('deletePathAllowed', 'panel_uploads/2026/report.pdf'),
+		'unrelated_delete_prefix_rejected'=>!$upload_endpoint->invoke('deletePathAllowed', 'private/customer-export.csv'),
+	], JSON_UNESCAPED_SLASHES);
+}
+
+function dp_panel_responsive_asset_summary_json(): string {
+	dp_panel_unit_test_bootstrap();
+
+	$asset=PanelRenderer::assetContent('panel.css');
+	$css=(string)($asset['content'] ?? '');
+
+	return json_encode([
+		'content_type'=>$asset['content_type'] ?? null,
+		'uses_dynamic_viewport'=>str_contains($css, '100dvh'),
+		'has_no_legacy_viewport_units'=>!str_contains($css, '100vh'),
+		'hides_mobile_nav_scrollbar'=>str_contains($css, '.dp-panel-sidebar-nav::-webkit-scrollbar{display:none'),
+		'guards_mobile_action_targets'=>str_contains($css, '@media(max-width:760px)') && str_contains($css, '.dp-panel :where(.dp-panel-button,.dp-panel-action,.dp-panel-filter-trigger,.dp-panel-row-link') && str_contains($css, 'min-height:var(--dp-vs-control-md)'),
+		'enlarges_mobile_row_selectors'=>str_contains($css, '.dp-panel-checkbox input[type="checkbox"]') && str_contains($css, 'width:22px;height:22px;min-width:22px;min-height:22px'),
+	], JSON_UNESCAPED_SLASHES);
+}
+
+function dp_panel_response_boundary_summary_json(): string {
+	dp_panel_unit_test_bootstrap();
+
+	$redirect=PanelPageResult::redirect("/admin/orders\r\nX-Injected: yes");
+	$unsafe_redirect=PanelPageResult::redirect('javascript:alert(1)');
+	$response_emitter=dp_panel_test_harness_context()->nonPublic(PanelResponseEmitter::class);
+
+	return json_encode([
+		'redirect_to'=>$redirect->redirectTo(),
+		'location'=>$redirect->headers()['Location'] ?? null,
+		'content_has_injected_header'=>str_contains($redirect->content(), 'X-Injected'),
+		'filtered_values'=>$response_emitter->invoke('headerValues', ['safe', "bad\r\nInjected: yes", 3, null]),
+		'valid_name'=>$response_emitter->invoke('headerName', 'X-Panel-Trace'),
+		'invalid_name_rejected'=>$response_emitter->invoke('headerName', "X-Test\r\nInjected")==='',
+		'script_redirect_rejected'=>$unsafe_redirect->redirectTo()==='#' && !str_contains($unsafe_redirect->content(), 'javascript:'),
+	], JSON_UNESCAPED_SLASHES);
+}
+
+function dp_panel_template_url_boundary_summary_json(): string {
+	dp_panel_unit_test_bootstrap();
+
+	$template=PanelPageTemplate::make([
+		[
+			'type'=>'hero',
+			'title'=>'URL boundary',
+			'actions'=>[
+				['label'=>'Unsafe', 'url'=>'javascript:alert(1)'],
+				['label'=>'Safe', 'url'=>'/admin/orders'],
+			],
+		],
+		[
+			'type'=>'form',
+			'title'=>'Unsafe form',
+			'action'=>'data:text/html,unsafe',
+			'actions'=>[['label'=>'Submit']],
+		],
+		[
+			'type'=>'realtime_client',
+			'client'=>'unsafe',
+			'script'=>'javascript:alert(2)',
+		],
+		[
+			'type'=>'realtime_client',
+			'client'=>'safe',
+			'script'=>'/assets/realtime.js',
+			'script_only'=>true,
+		],
+	]);
+	$html=(string)$template;
+	$renderer=dp_panel_test_harness_context()->nonPublic(PanelRenderer::class);
+	$theme=PanelTheme::make('url_boundary')
+		->stylesheet('/assets/safe.css', 'safe', ['media'=>'screen', 'onload'=>'alert(3)'])
+		->stylesheet('javascript:alert(4)', 'unsafe');
+	$theme_assets=(string)$renderer->invoke('themeCssAssets', $theme);
+	$button_html=(string)$renderer->invoke('inputButtonHtml', 'append', [
+		'label'=>'Unsafe button',
+		'url'=>'javascript:alert(5)',
+		'attributes'=>[
+			'data-safe'=>'yes',
+			'data-x" onmouseover="'=>'alert(6)',
+		],
+	]);
+	$notification_html=(string)$renderer->invoke('notificationsHtml', [[
+		'message'=>'Unsafe notification action',
+		'action_label'=>'Open',
+		'action_url'=>'javascript:alert(7)',
+	]]);
+	$group_action_html=(string)$renderer->invoke('groupActionsHtml', [[
+		'label'=>'Unsafe group action',
+		'url'=>'data:text/html,unsafe',
+		'target'=>'popup" onload="alert(8)',
+	]]);
+	$empty_html=(string)$renderer->invoke('tableEmptyStateHtml', [
+		'heading'=>'Empty',
+		'action_label'=>'Unsafe empty action',
+		'action_url'=>'javascript:alert(9)',
+	]);
+	$unsafe_outcome=$renderer->invoke('outcome', ['redirect'=>'https://evil.example/phish'], 'Done');
+	$safe_outcome=$renderer->invoke('outcome', ['redirect'=>PanelConfig::url()], 'Done');
+
+	return json_encode([
+		'unsafe_link_replaced'=>!str_contains($html, 'javascript:alert') && str_contains($html, 'href="#"'),
+		'unsafe_form_replaced'=>!str_contains($html, 'data:text/html') && str_contains($html, 'action="#"'),
+		'unsafe_script_omitted'=>!str_contains($html, 'alert(2)'),
+		'safe_link_preserved'=>str_contains($html, 'href="/admin/orders"'),
+		'safe_script_preserved'=>str_contains($html, 'src="/assets/realtime.js"'),
+		'protocol_relative_widget_rejected'=>$renderer->invoke('safeWidgetUrl', '//evil.example/path')==='',
+		'theme_event_attribute_rejected'=>!str_contains($theme_assets, 'onload='),
+		'theme_safe_attribute_preserved'=>str_contains($theme_assets, 'media="screen"'),
+		'unsafe_theme_url_omitted'=>!str_contains($theme_assets, 'javascript:'),
+		'unsafe_field_button_url_rejected'=>!str_contains($button_html, 'javascript:'),
+		'unsafe_field_button_attribute_rejected'=>!str_contains($button_html, 'onmouseover'),
+		'safe_field_button_attribute_preserved'=>str_contains($button_html, 'data-safe="yes"'),
+		'unsafe_notification_action_rejected'=>!str_contains($notification_html, 'javascript:'),
+		'unsafe_group_action_rejected'=>!str_contains($group_action_html, 'data:text/html'),
+		'unsafe_empty_action_rejected'=>!str_contains($empty_html, 'javascript:'),
+		'external_action_redirect_rejected'=>($unsafe_outcome['redirect'] ?? null)===null,
+		'local_action_redirect_preserved'=>($safe_outcome['redirect'] ?? null)===PanelConfig::url(),
+	], JSON_UNESCAPED_SLASHES);
 }
 
 function dp_panel_permission_bridge_summary_json(): string {

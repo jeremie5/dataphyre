@@ -8,6 +8,22 @@ Dataphyre supports two explicit CLI test shapes:
 Neither shape is loaded during normal web requests. Tests are discovered and run
 by project tooling or CI.
 
+The canonical TestKit and isolated PHP worker live under
+`runtime/modules/testing/tooling/`. The module intentionally exposes no runtime
+entrypoint, and module-specific tests stay with their owners rather than in a
+central test directory. See the [TestKit guide](../runtime/modules/testing/documentation/Dataphyre_Testing.md)
+for suites, framework setup, managed state, non-public seams, and semantic
+assertions.
+
+`tooling/bootstrap.php` is the sole test entrypoint. TestKit types are
+one-per-file and lazily loaded from `tooling/TestKit/`; the concrete `Context`
+extends a lifecycle base and assembles named capability traits under the
+aggregate `Contracts\TestContext` interface. The former monolithic
+`TestKit.php` path does not exist and is not retained as a compatibility layer.
+The runner likewise resolves only the module-owned `tooling/code_worker.php`
+and module `unit_tests/` roots; retired root-level worker and test locations are
+not probed or forwarded.
+
 ## Code-Defined Tests
 
 Place PHP tests in a `unit_tests` folder with the `*.test.php` suffix:
@@ -25,10 +41,7 @@ tests, and lets the runner execute each expanded case in a bounded worker.
 declare(strict_types=1);
 
 use Dataphyre\Test\Context;
-use Dataphyre\Test\Dataset;
-use Dataphyre\Test\Generators;
 use function Dataphyre\Test\dataset;
-use function Dataphyre\Test\fixture;
 use function Dataphyre\Test\test;
 use function Dataphyre\Test\todo;
 
@@ -37,29 +50,40 @@ dataset('money values', [
     'cad' => [1299, '12.99'],
 ]);
 
-fixture('temp_file', static function(): string {
-    $path=sys_get_temp_dir().'/dataphyre-test-'.bin2hex(random_bytes(4));
-    touch($path);
-    return $path;
-}, static function(string $path): void {
-    if(is_file($path)){
-        unlink($path);
-    }
-});
-
 test('formats minor units', static function(Context $t, int $minor, string $expected): void {
     $amount=sprintf('%d.%02d', intdiv($minor, 100), $minor % 100);
     $t->expect($amount)->toBe($expected);
 })->with('money values')->tag('money');
 
-test('uses isolated fixtures', static function(Context $t): void {
-    $path=$t->fixture('temp_file');
+test('uses an automatically cleaned workspace', static function(Context $t): void {
+    $path=$t->workspace('billing')->file('result.txt');
     file_put_contents($path, 'ok');
     $t->expect(file_get_contents($path))->toBe('ok');
-})->uses('temp_file')->tag('filesystem');
+})->tag('filesystem');
 
 todo('documents future billing edge', 'waiting on provider fixture');
 ```
+
+### Files, cases, workers, and assertions
+
+These are deliberately different counts. A `*.test.php` file is a discoverable
+manifest owned by one module. Each `test()` call declares a named behavioral
+contract. A dataset expands that contract into independently addressable named
+cases, and repeat/property runs may expand it further. Workers are bounded PHP
+processes used to execute those cases; assertions are the individual facts the
+cases prove. Consequently, a repository can have thousands of visible cases
+without—and should not have—thousands of tiny test files.
+
+Use the catalog to see the exact expanded contracts rather than inferring them
+from a summary count:
+
+```powershell
+php bin/dataphyre-test list --scope=framework --cases
+php bin/dataphyre-test list --owner=panel --path=data_surface --cases --json
+```
+
+Every entry includes its source file, line, stable case ID, dataset label,
+suite, tags, lifecycle/isolation policy, and declared contract metadata.
 
 ## Assertions
 
@@ -151,6 +175,80 @@ Set `DATAPHYRE_UPDATE_SNAPSHOTS=1` only when intentionally refreshing those
 expected files. Snapshot failures include a compact unified diff in the worker
 result.
 
+### Managed state and implementation seams
+
+Use test-owned state handles instead of editing superglobals, rebuilding nested
+arrays between assertions, calling reflection directly, or managing temporary
+paths by hand:
+
+```php
+$session=$t->globalMap('_SESSION');
+$session->putPath(['oauth','state'], 'expected-state');
+$t->same('expected-state', $session->getPath(['oauth','state']));
+
+$provider=$t->nonPublic($provider);
+$t->same('client-one', $provider->readProperty('clientId'));
+$authentication=$provider->capture(
+    'clientAuthHeadersAndPayload',
+    payload: [],
+    configKey: 'token_auth_method',
+);
+$t->hasKey('Authorization', $authentication->result());
+$t->same('client-one', $authentication->argument('payload')['client_id']);
+
+$workspace=$t->workspace('oauth-discovery');
+$workspace->file('response.json', '{"authorization_endpoint":"https://example.test/authorize"}');
+```
+
+Every handle records the original value or owns its resource and restores it at
+case teardown, including exceptional exits. `getPath()` and `putPath()` reject
+invalid paths and scalar/map collisions so fixture setup fails where the intent
+becomes ambiguous. `NonPublicAccess` also preserves by-reference arguments,
+which keeps tests declarative without weakening production visibility.
+
+### Output, JSON artifacts, and subprocesses
+
+Use one named probe instead of interleaving output buffers, JSON transforms,
+temporary log files, and process plumbing between assertions:
+
+```php
+$captured=$t->captureOutput(static function(): int {
+    echo 'indexed';
+    return 42;
+});
+$t->same('indexed', $captured->output());
+$t->same(42, $captured->unwrap());
+
+$artifact=$t->workspace('indexer')->file('result.json', '{"count":42}');
+$t->same(['count'=>42], $t->readJsonArray($artifact));
+
+$process=$t->phpProcess(
+    ['bin/index.php', '--json'],
+    stdin: '{"tenant":"demo"}',
+    environment: ['APP_ENV'=>'testing'],
+    timeout_millis:5000,
+);
+$t->isTrue($process->succeeded());
+$t->same(42, $process->json()['count']);
+```
+
+`captureOutput()` restores nested buffers and preserves normal exception
+propagation; use `captureExecution()` only when the throwable itself is the
+contract. `decodeJson()`, `jsonArray()`, `tryJsonArray()`, `readJson()`, and
+`readJsonArray()` use exception-based decoding and make the expected JSON shape
+explicit. `tryJsonArray()` returns `null` when a command intentionally
+alternates between human-readable and machine output. `process()` accepts a command argument list and never invokes a
+shell; `phpProcess()` additionally selects the ordinary PHP CLI when coverage
+is running under phpdbg. Both capture stdout and stderr in managed files so
+Windows cannot deadlock on supposedly non-blocking pipes, and expose command,
+exit, timeout, duration, text, and decoded JSON through `ProcessResult`.
+Use `startProcess()` or `startPhpProcess()` when a concurrency contract needs
+several children alive together, then call `wait()` on each handle; unfinished
+children are terminated automatically during case cleanup.
+The repository architecture gate rejects new test-side `ob_start()` and
+`proc_open()` plumbing. A typed, line-scoped exemption is permitted only when
+the native buffer or process primitive itself is the contract under test.
+
 ## Test Fakes
 
 The test kit includes small in-memory fakes for common app boundaries:
@@ -190,6 +288,26 @@ jobs, scoped hook calls, and permission decisions. They are only loaded by test
 workers and help application tests cover service code without touching real
 databases, mail providers, remote HTTP services, object storage, queues, or
 sessions.
+
+For a production adapter that specifically accepts `PDO`, use the scripted PDO
+protocol double when the test is about prepared-statement behavior rather than
+SQL engine semantics:
+
+```php
+$pdo=$t->scriptedPdo('pgsql')
+    ->queueRows([['id'=>1]])
+    ->queueScalar(1);
+
+$adapter=new ProductPdoAdapter($pdo);
+$t->same([['id'=>1]], $adapter->all());
+$t->same(1, $adapter->count());
+$t->same(PDO::PARAM_INT, $pdo->statements()[0]->bindings()[':p1']['type']);
+```
+
+`ScriptedPdo` subclasses the real PDO protocol but needs no installed database
+driver. It records prepare/bind/execute/fetch/close calls and can script misses,
+false execution results, and exceptions. Use a real engine separately when SQL
+syntax, query planning, transactions, or database behavior is the contract.
 
 For live database checks, wrap a test PDO connection:
 
@@ -428,37 +546,494 @@ test('repository uses schema', static function(Context $t): void {
 ```
 
 Dependency-bearing code tests run in order so a failed prerequisite can skip the
-dependent case instead of producing noisy follow-on failures.
+dependent case instead of producing noisy follow-on failures. Unrelated tests
+remain eligible for the normal parallel worker pool.
 
 ## Running Tests
 
-Dataphyre ships the test kit and worker contracts; the consuming project owns
-the actual runner command. A project runner should be able to list tests, run
-framework/module tests, run application tests, select code-defined tests, emit
-CI reports, and expose machine-readable output.
+Dataphyre ships the test kit, worker contracts, and the standalone
+`php bin/dataphyre-test` runner. Embedded consuming projects can wrap the same
+runner contract to add application discovery while retaining the framework
+filters, CI reports, and machine-readable output.
 
 Useful filters:
 
 - `--scope=framework|apps|all`
 - `--app=<name>` for application tests
 - `--owner=<module-or-app>` for a single module or app owner
+- `--path=<substring>` to prefilter files before code-case discovery
+- `--changed[=<base>]` for tests affected by working-tree or base-branch changes
+- `--why-selected` to print the owner, path, changed-file, or watch declaration
+  responsible for every selected test
 - `--kind=code` for `*.test.php` files
 - `--kind=json` for existing JSON manifests
 - `--tag=<tag>` for code-defined test tags
 - `--group=<group>` for code-defined test groups
 - `--name=<text|/regex/>` for code-defined test names
 - `--case=<index>` for a single expanded case index
+- `--id=<stable-id>` for one durable contract identity
 - `--parallel=<workers>` for bounded code-test worker concurrency
+- `--isolate=auto|case|file` to use adaptive file batching, force one worker per
+  case, or require one strict file-lifecycle worker
 - `--parallel-json` with `--parallel-json-allow=<path-prefix>` for an explicit diagnostic lane that parallelizes only allow-listed JSON workers
 - `--junit=<path>` for a CI-readable JUnit report
-- `--coverage=<path>` for a code-test coverage summary using Xdebug line data when available, or included-file coverage otherwise
+- `--profile[=<path>]` for per-case durations, lifecycle reasons, contract
+  metadata, and adaptive-isolation decisions
+- `--coverage=<path>` for a code-test coverage summary using Xdebug or phpdbg exact line data when available, or included-file coverage otherwise
 - `--coverage-min-files=<count>` to fail when included-file coverage is too small
-- `--coverage-min-percent=<percent>` to fail when Xdebug line coverage is below the threshold
-- `--coverage-require=xdebug|included_files` to require a specific coverage engine
+- `--coverage-min-percent=<percent>` to fail when exact line coverage is below the threshold
+- `--coverage-require=xdebug|phpdbg|included_files` to require a specific coverage engine
+- `--coverage-source=<path,...>` and `--coverage-closed-world` to define and
+  enforce the complete first-party source inventory
+- `--source-epoch` to require a stable coverage-source inventory during an
+  ordinary run; exact-engine, line-threshold, and closed-world coverage enable
+  this non-bypassable certification guard automatically
 - `--github-annotations` for GitHub Actions error annotations
 - `--json` for machine-readable summaries and failures
 - `--fail-skipped` or `--fail-todo` for stricter CI lanes
 - `--include-dynamic` for generated diagnostic manifests
+- `--no-test-cache` to bypass content-addressed case discovery while diagnosing
+  environment-dependent declarations
+
+`--isolate=auto` is the normal lane. Dependency-free cases without an explicit
+lifecycle declaration are speculatively executed together once. If shared
+process state breaks that batch but every case passes in an isolated retry, the
+runner accepts the isolated outcomes and records the file's content fingerprint
+in `cache/unit-tests/isolation-index.json`. The next run goes directly to case
+workers until the test, any TestKit component, worker, or module bootstrap changes. Explicit
+`->isolation('case')` and `->isolation('process')` declarations bypass batching;
+explicit file isolation is strict and never receives an adaptive fallback.
+
+Code-case discovery is cached as one content-addressed shard per test manifest
+under `cache/unit-tests/code-case-index.d/`. A focused `--owner`, `--path`, or
+`--changed` run reads only the selected shards; it never decodes or rewrites a
+repository-wide cache index.
+
+Source-derived datasets can keep discovery caching without becoming stale. Add
+`// @dataphyre-test-discovery-dependency framework-source` to a PHP test whose
+declared cases are computed from framework product classes. Its cache key then
+includes the sorted content fingerprint of request-time framework PHP and
+excludes tests, documentation, and static-analysis fixtures. The marker is read
+only from PHP comments, so an example string cannot accidentally activate it.
+
+A module may register a runtime-inert test DSL in
+`runtime/modules/<module>/testing/bootstrap.php`; applications use
+`<app>/testing/bootstrap.php`. The worker loads that bootstrap after TestKit but
+before the owning test file, and its hash participates in discovery and
+isolation fingerprints.
+
+When Xdebug is not installed, run the orchestrator itself through phpdbg so its
+child workers inherit the same exact-line engine:
+
+```powershell
+phpdbg -d memory_limit=512M -qrr bin/dataphyre-test run --scope=framework --kind=code `
+  --coverage=cache/ci/framework.coverage.json --coverage-require=phpdbg
+```
+
+### Docker-backed local testing
+
+Hosts without a local PHP runtime can use the repository-owned PHP 8.4 image.
+The wrapper mounts product source read-only, keeps `cache/` writable for indexes
+and reports, and leaves disposable test workspaces under the container's `/tmp`:
+
+```bash
+docker build --file docker/testing/Dockerfile --tag dataphyre-test:php8.4 .
+
+DATAPHYRE_TEST_SKIP_BUILD=1 sh bin/dataphyre-test-docker run \
+  --owner=mcp --path=closed_world --why-selected
+```
+
+Use smart partials while developing. `--owner`, `--path`, and `--changed`
+select before case execution, the sharded discovery cache avoids touching
+unselected test metadata, and `--why-selected` makes the selection reason inspectable:
+
+```bash
+DATAPHYRE_TEST_SKIP_BUILD=1 sh bin/dataphyre-test-docker run \
+  --changed --parallel=8 --why-selected
+```
+
+When the framework is embedded below a larger Git worktree, the Docker wrapper
+mounts that repository read-only only for `--changed`, translates repository
+paths back to framework-relative paths, and ignores sibling-project changes.
+The same canonical smart-partial command therefore works in standalone and
+embedded distributions without exposing the parent repository to ordinary runs.
+
+Reserve exact closed-world coverage for certification. A bounded parallel pool
+amortizes phpdbg process startup without changing case isolation or coverage
+semantics; `--profile` identifies the remaining expensive contracts:
+
+```bash
+DATAPHYRE_TEST_SKIP_BUILD=1 sh bin/dataphyre-test-docker run \
+  --owner=mcp --kind=code --parallel=8 \
+  --profile=cache/ci/mcp.profile.json \
+  --coverage=cache/ci/mcp.coverage.json \
+  --coverage-require=phpdbg \
+  --coverage-source=runtime/modules/mcp/kernel \
+  --coverage-closed-world --coverage-min-percent=100
+```
+
+`--no-test-cache` is a diagnostic switch, not the normal development lane.
+It deliberately discards one of the runner's primary smart-partial savings.
+
+Exact reports merge child-worker maps with the orchestrator's own map. This
+keeps the first-party `Runner.php` in the closed-world product inventory instead
+of treating orchestration as invisible. Only `code_worker.php` is explicitly
+excluded because it must stop coverage before serializing its own result.
+phpdbg maps are reduced immediately to bounded, detached filename/line maps;
+the worker, covered-process transport, and orchestrator therefore share one
+allocator-safe evidence boundary even when a debugger returns malformed keys.
+The orchestrator removes each exact map from its worker result as soon as it is
+received. `CoverageAccumulator` serializes that payload into a temporary spool
+which spills after 1 MiB, then decodes and unions one payload at a time into an
+owned in-place aggregate. A full-framework certification therefore retains
+small test outcomes in memory without retaining thousands of debugger maps or
+rebuilding the complete aggregate for every worker.
+
+Certification also has a source epoch. Immediately before workers start, the
+runner inventories the selected coverage source as sorted framework-relative
+paths with SHA-256 content hashes. It repeats that inventory after worker and
+orchestrator coverage capture. A changed, added, or removed product file fails
+the run as `source-epoch-changed`, even when every test passed. The JSON summary,
+profile, and coverage report retain both fingerprints, file counts, activation
+reason, and the complete path-level delta; human output names a bounded subset
+for quick diagnosis. Unit-test definitions, documentation, static-analysis
+fixtures, the code-worker transport, caches, temp workers, and JSON/XML report
+outputs are outside the product inventory, so runner artifacts cannot invalidate
+their own epoch. Use `--source-epoch` for the same guarantee on a focused run
+without coverage.
+
+CI enforces the same contract on Ubuntu PHP 8.4 with Xdebug. Its source boundary
+is `runtime/modules`: every module production file must be observed and every
+reported executable line must be covered. JUnit, per-case profile, JSON summary,
+and exact coverage artifacts are retained even when the gate fails.
+
+Exact certification can set `--coverage-memory-default=1G` as a covered-worker
+fallback without changing the ordinary 256M lane. A suite or case with
+`coverageMemoryLimit('2G')` remains self-describing and takes precedence over
+that fallback; the broad `--memory=limit` option remains the final operator
+override when every worker intentionally needs the same ceiling.
+
+On Windows the runner captures child stdout and stderr in managed per-run files.
+Native process pipes can remain blocking even after a non-blocking request,
+which previously delayed status polling, timeout enforcement, and parallel queue
+progress until the child exited. File-backed capture keeps those contracts
+portable and also avoids deadlocks when a worker emits a large diagnostic.
+
+For Panel, follow the runner with the module-owned source-completeness gate. It
+requires every production Panel PHP file to be present in the exact report, so a
+never-loaded file cannot be mistaken for covered code:
+
+```powershell
+phpdbg -d memory_limit=1G -qrr bin/dataphyre-test run --scope=framework `
+  --owner=panel --kind=code --no-test-cache --parallel=1 `
+  --coverage=cache/ci/panel.coverage.json --coverage-require=phpdbg `
+  --coverage-source=runtime/modules/panel/Framework,runtime/modules/panel/kernel `
+  --coverage-closed-world --coverage-min-percent=100
+
+php -d memory_limit=1G runtime/modules/panel/testing/panel_php_coverage_gate.php `
+  --coverage=cache/ci/panel.coverage.json --require-engine=phpdbg `
+  --minimum-percent=100
+```
+
+Panel's release orchestrator combines that exact coverage check with the asset,
+interaction, and responsive/accessibility browser lanes and writes one aggregate
+CI report:
+
+```powershell
+node runtime/modules/panel/testing/panel_release_gate.js `
+  --base-url=http://127.0.0.1:8098/panel `
+  --coverage=cache/ci/panel.coverage.json --coverage-engine=phpdbg `
+  --require-coverage --artifact-dir=cache/ci/panel-release
+```
+
+For a release rather than an exploratory run, the gate can bind every report,
+screenshot, and diagnostic byte to the prepared-package source tree, release
+contract, optional release manifest, inclusive matrix, runner, and expiry. The
+host keeps the HMAC key and supplies the authoritative package-tree digest. The
+gate writes the signed bundle outside the strict artifact root and immediately
+verifies it before returning success:
+
+```powershell
+node runtime/modules/panel/testing/panel_release_gate.js `
+  --base-url=http://127.0.0.1:8098/panel `
+  --artifact-dir=cache/ci/panel-release `
+  --evidence-key-file=C:\run\secrets\panel-quality-hmac `
+  --evidence-key-id=quality-v2 `
+  --evidence-source-digest=$preparedPackageTreeSha256 `
+  --evidence-release-digest=$releaseManifestSha256 `
+  --evidence-run-id=$env:GITHUB_RUN_ID `
+  --evidence-bundle=cache/ci/panel-release-evidence.json
+```
+
+`PanelReleaseEvidenceBundle` requires independent source and contract
+expectations during verification, rejects missing, extra, changed, or linked
+artifacts in strict mode, and emits a stable replay key for host persistence.
+It accepts automated `php`, `browser`, and real lab `adapter` channels, but not
+`manual`; native assistive-technology declarations remain separate. See
+`runtime/modules/panel/documentation/Dataphyre_Panel_Release_Evidence.md`.
+
+Panel's central release contract is
+`runtime/modules/panel/testing/panel_release_contract.json`. It is a bounded,
+machine-readable inventory of the asset-capability graph, browser result
+counts, inclusive evidence split, prepared-package boundary, and CI ownership.
+Contract schema v2 declares the unit, exact-coverage, asset, interaction,
+responsive/container, accessibility/inclusive, committed-pixel, Datadoc, and
+Panel-to-Datadoc evidence jobs plus the one aggregate job that consumes them.
+The validator continues to accept schema v1 for existing package evidence, but
+aggregate validation is deliberately v2-only because v1 did not declare every
+release gate.
+The validator compares those declarations with generated PHP assets rather than
+trusting the JSON alone. Every capability that appears in an aggregate cache
+token must change CSS or JavaScript bytes; built-in capabilities reject host
+asset duplicates, while a probe capability proves that external delivery still
+works. Upload keeps its complete form dependency and behavior, but shares the
+byte-identical `shell.form` cache token instead of creating a no-op cache key.
+The route-free Studio editor is a built-in `studio-editor` capability: host
+shells that keep its default `inline_assets=false` mode select the aggregate
+`shell.form.studio-editor` bundle, while duplicate host URLs are rejected.
+
+Run the adversarial parser tests and source probe with each release PHP:
+
+```powershell
+node runtime/modules/panel/testing/panel_release_contract.js --self-test
+node runtime/modules/panel/testing/panel_release_contract.js `
+  --mode=source --php=php `
+  --report=cache/ci/panel-release-contract/source.json
+```
+
+CI executes that source probe on PHP 8.2 and 8.4. The asset, browser, and
+committed-pixel jobs feed their real reports back to the same validator. PHP
+8.4 also prepares a public export outside the checkout and verifies every
+packaged path, byte count, file digest, and release tree digest. Local
+`.codex-tmp/` and `.tmp/` tooling trees are excluded before copying and are
+forbidden in a prepared package.
+
+The final `panel-release` job runs even when a dependency fails and passes the
+exact GitHub job-result map through the same dependency-free validator:
+
+```powershell
+node runtime/modules/panel/testing/panel_release_contract.js `
+  --mode=aggregate `
+  --job-results='{"panel-release-contract":"success","panel-unit":"success","panel-exact-coverage":"success","panel-assets":"success","panel-browser":"success","panel-visual-regression":"success","datadoc-documentation":"success","datadoc-documentation-browser":"success"}'
+```
+
+Missing, extra, duplicate, malformed, failed, cancelled, or skipped results all
+fail closed. The Datadoc jobs execute both the universal workspace corpus and
+Panel's real generated API corpus; the latter is published by `panel_docs.php`
+through `PanelDocumentationPortal` and exercised in desktop/mobile Chromium.
+Panel's publication tests also execute beneath a restrictive POSIX `umask` and
+prove exact `0755` directory/`0644` file modes, non-mutating previews, and
+idempotent repair of legacy private modes.
+
+### Inclusive locale, input, and assistive-technology evidence
+
+Panel's versioned inclusive-quality matrix covers locale/script/direction,
+timezones, number/date/plural formatting, long text, pseudo-locales, keyboard,
+touch/coarse pointer, forced colors, reduced motion, CSS-viewport zoom-reflow
+proxies, synthetic IME composition, and accessibility-tree proxies. The default
+matrix contains 126 cases: 78 executable browser cases and 48 adapter/manual
+declarations. Proxy evidence never claims that NVDA, JAWS, VoiceOver, TalkBack,
+Dragon, Voice Control, Voice Access, a physical switch, a native IME, or native
+browser zoom actually ran.
+
+Generate, execute, and gate the lane from the repository root:
+
+```powershell
+php dev/tools/panel_developer.php inclusive-quality --name=panel_release `
+  --url=/panel --output=cache/ci/panel-inclusive/matrix.json
+
+node runtime/modules/panel/testing/panel_inclusive_quality_regression.js `
+  --php=php --manifest=cache/ci/panel-inclusive/matrix.json `
+  --base-url=http://127.0.0.1:8098 `
+  --report=cache/ci/panel-inclusive/report.json `
+  --capabilities=cache/ci/panel-inclusive/capabilities.json
+
+node runtime/modules/panel/testing/panel_release_gate.js --lanes=inclusive `
+  --php=php --inclusive-manifest=cache/ci/panel-inclusive/matrix.json `
+  --inclusive-capabilities=cache/ci/panel-inclusive/capabilities.json `
+  --inclusive-evidence=cache/ci/panel-inclusive/report.json `
+  --artifact-dir=cache/ci/panel-inclusive/release
+```
+
+The PHP validator reconstructs the matrix, authenticates its digest, and returns
+the canonical browser case mapping. The Node runner requires exact profile and
+contract payload parity, an exact case/URL set, bounded JSON input, a Chromium
+sandbox unless `--allow-no-sandbox` is explicit, and a same-origin top-frame
+navigation policy before contact. Subresource origins remain the mounted page's
+policy. Every passed or failed evidence record is bound to the exact matrix
+digest; stale or unbound reports fail closed. Capability status must include a
+source and execution channel. `declared` is not treated as `available`.
+
+Adapter/manual results stay in `declared_manual` and have independent budgets.
+Use a real lab adapter and artifact for native AT results; a browser proxy cannot
+be relabelled as native evidence. The commands and JSON schemas are portable
+between Windows and Linux; only the PHP/browser executable paths differ.
+
+The standalone repository can run the release gate's asset lane without a host
+application. Generate the bundles first, then pass both local files together:
+
+```powershell
+php runtime/modules/panel/testing/panel_asset_snapshot.php `
+  --output-dir=cache/ci/panel-assets
+
+node runtime/modules/panel/testing/panel_release_gate.js --lanes=asset `
+  --css-file=cache/ci/panel-assets/panel.css `
+  --js-file=cache/ci/panel-assets/panel.js `
+  --artifact-dir=cache/ci/panel-release-assets
+```
+
+The snapshot command defaults to the historical full bundles used by the
+architecture gate. Capability delivery has a separate deterministic lane; use
+the same declarations a surface reports in `asset_manifest`:
+
+```powershell
+php runtime/modules/panel/testing/panel_asset_snapshot.php `
+  --output-dir=cache/ci/panel-assets-table `
+  --mode=capability --capabilities=shell,table,navigation
+
+node runtime/modules/panel/testing/panel_asset_architecture_audit.js `
+  --css-file=cache/ci/panel-assets-table/panel.css `
+  --js-file=cache/ci/panel-assets-table/panel.js `
+  --max-css-bytes=806000 --max-js-bytes=385000
+```
+
+With a live asset endpoint, pass the canonical ordered token instead:
+
+```powershell
+node runtime/modules/panel/testing/panel_asset_architecture_audit.js `
+  --base-url=http://127.0.0.1:8098/panel `
+  --capabilities=shell.navigation.table `
+  --max-css-bytes=806000 --max-js-bytes=385000
+```
+
+Physical delivery has its own public-manifest and browser-runtime gate. The
+snapshot command publishes every first-party file selected by the closed
+capability graph when `--asset` is omitted:
+
+```powershell
+php runtime/modules/panel/testing/panel_asset_snapshot.php `
+  --output-dir=cache/ci/panel-assets-physical-table `
+  --mode=physical --capabilities=shell,table,navigation `
+  --report=cache/ci/panel-assets-physical-table.json
+
+node runtime/modules/panel/testing/panel_asset_delivery_audit.js `
+  --manifest-url=http://127.0.0.1:8098/panel/assets/panel-assets.json `
+  --browser --report=cache/ci/panel-asset-delivery.json
+```
+
+The delivery audit verifies every same-origin response, immutable caching,
+`nosniff`, MIME type, bytes, SHA-256, SRI, dependency order, gzip/Brotli size,
+parse time, Chromium bootstrap time, long tasks, and page errors against
+checked-in profile ratchets. Use `--report-only` only while intentionally
+recalibrating those budgets; the release lane must omit it.
+
+Never update visual baselines as part of an asset-splitting change. Run the
+normal interaction and pixel comparison lanes against the physical-delivery
+showroom; use `asset_mode=capability` or `asset_mode=full` only as explicit
+compatibility comparisons.
+
+The interaction and visual lanes intentionally require `--base-url`. The
+repository-owned browser showroom is the canonical framework release fixture:
+it builds real Panel resources, forms, tables, boards, relations, imports,
+actions, modals, widgets, themes, navigation, and assets from the current source
+tree. Its deterministic mutable records live only in the browser session; it has
+no database or application dependency.
+
+Start the fixture from the Dataphyre root:
+
+```powershell
+php -S 127.0.0.1:8098 `
+  runtime/modules/panel/testing/fixtures/panel_browser_showroom.php
+```
+
+Then run all 51 interaction contracts and the complete default
+responsive/accessibility visual audit from another terminal:
+
+```powershell
+node runtime/modules/panel/testing/panel_interaction_regression.js `
+  --base-url=http://127.0.0.1:8098/panel `
+  --report=cache/ci/panel-browser/interaction.json
+
+node runtime/modules/panel/testing/panel_visual_regression.js `
+  --base-url=http://127.0.0.1:8098/panel --audit-only `
+  --artifact-dir=cache/ci/panel-browser/default `
+  --report=cache/ci/panel-browser/default/report.json
+```
+
+CI also runs bounded environment matrices. These commands reproduce the axes
+without creating an unbounded Cartesian product:
+
+```powershell
+# 320px and desktop, light/dark/system, and both writing directions.
+node runtime/modules/panel/testing/panel_visual_regression.js `
+  --base-url=http://127.0.0.1:8098/panel --audit-only --theme=glass `
+  --scenario=orders_index,orders_create,orders_board,orders_show,feature_showcase `
+  --viewport=320,desktop --theme-mode=light,dark,system --direction=ltr,rtl `
+  --artifact-dir=cache/ci/panel-browser/theme-direction
+
+# Mobile/laptop reflow at 200%, reduced motion, and real forced-colors emulation.
+node runtime/modules/panel/testing/panel_visual_regression.js `
+  --base-url=http://127.0.0.1:8098/panel --audit-only --theme=glass `
+  --scenario=orders_index,orders_create,orders_show,feature_showcase `
+  --viewport=mobile,laptop --zoom=2 --reduced-motion=reduce --forced-colors=active `
+  --artifact-dir=cache/ci/panel-browser/reflow-media
+
+# Keep a desktop viewport while constraining the Panel container. This is
+# deliberately stricter than matching viewport width to container width.
+node runtime/modules/panel/testing/panel_visual_regression.js `
+  --base-url=http://127.0.0.1:8098/panel --audit-only --theme=glass `
+  --scenario=orders_index,orders_board,orders_create,feature_showcase `
+  --viewport=desktop --container-width=320,768,1024 --direction=ltr,rtl `
+  --artifact-dir=cache/ci/panel-browser/container `
+  --report=cache/ci/panel-browser/container/report.json
+```
+
+The isolated-container lane must not be replaced with matching viewport sizes:
+its purpose is to expose components that respond only to viewport media queries.
+On failure, the JSON report identifies the escaping region, element, target size,
+container width, and direction so the responsive contract remains actionable.
+
+The bounded Ubuntu matrices above are audit-only and never create or approve
+screenshots. A separate `panel-visual-regression` Windows job runs the complete
+52-result default matrix against the committed source-showroom references.
+It fails on missing references, dimension changes, structural or accessibility
+regressions, console errors, and pixel differences above the approved threshold.
+The job also asserts the exact result count so a silently narrowed matrix cannot
+pass.
+
+Reference images may only be refreshed by an explicit, reviewable local
+`--update-baselines` run on Windows. The CI comparison invokes the visual runner
+without `--audit-only` or `--update-baselines`; it cannot create, replace, or
+self-approve references. Do not combine baseline generation and comparison in
+the same CI run.
+
+ShopiCore's live example remains a separate consuming-application integration
+fixture. It is useful for proving application routes, identity, and seed data,
+but it is not the authoritative source for the framework browser gate.
+
+For a sibling ShopiCore checkout, the source-tree router pins that external
+showroom to the Dataphyre checkout under test. Start it from the Dataphyre root:
+
+```powershell
+$env:DP_PANEL_LIVE_EXAMPLE_ENTRY = (Resolve-Path `
+  '..\ShopiCore\applications\shopiro\shared\debug\dataphyre-panel-live-example\index.php').Path
+$env:DP_PANEL_RUNTIME_ROOT = (Resolve-Path '.').Path
+php -S 127.0.0.1:8097 dev/tools/public/panel_live_example_router.php
+```
+
+Then run the browser contracts from another terminal:
+
+```powershell
+node runtime/modules/panel/testing/panel_interaction_regression.js `
+  --base-url=http://127.0.0.1:8097/debug `
+  --report=cache/ci/panel-interaction.json
+```
+
+The browser runners require `puppeteer-core` below `.tmp/puppeteer-check/`,
+`.tmp/`, or the Panel testing directory, plus a system Chrome or Edge executable
+(or `--browser`). The external application router is deliberately under
+export-ignored `dev/`; the canonical framework showroom stays under Panel's
+testing tree and is never loaded by production bootstrap.
 
 The default lane skips `unit_tests/dynamic/`. Those files are useful for deeper
 diagnostics, but they are not part of the fast test path.

@@ -77,12 +77,12 @@ trait dataphyre_mcp_planning_api_surfaces {
 			],
 			'endpoint_policy_metadata'=>$endpoint_policy_metadata,
 			'recommended_docs'=>[
-				'common/dataphyre/runtime/modules/api/documentation/Dataphyre_Api.md',
-				'common/dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md',
-				'common/dataphyre/runtime/modules/http/documentation/Dataphyre_HTTP.md',
+				'dataphyre/runtime/modules/api/documentation/Dataphyre_Api.md',
+				'dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md',
+				'dataphyre/runtime/modules/http/documentation/Dataphyre_HTTP.md',
 			],
 			'optional_guidance_docs'=>[
-				'common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
+				'dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
 			],
 			'proposed_files'=>$proposed_files,
 			'steps'=>[
@@ -237,12 +237,12 @@ trait dataphyre_mcp_planning_api_surfaces {
 			'selected_recipe'=>$selected!=='' ? $selected : null,
 			'recipe_count'=>count($recipes),
 			'recommended_docs'=>[
-				'common/dataphyre/runtime/modules/api/documentation/Dataphyre_Api.md',
-				'common/dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md',
-				'common/dataphyre/runtime/modules/http/documentation/Dataphyre_HTTP.md',
+				'dataphyre/runtime/modules/api/documentation/Dataphyre_Api.md',
+				'dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md',
+				'dataphyre/runtime/modules/http/documentation/Dataphyre_HTTP.md',
 			],
 			'optional_guidance_docs'=>[
-				'common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
+				'dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
 			],
 			'recipes'=>$recipes,
 			'common_steps'=>[
@@ -268,10 +268,10 @@ trait dataphyre_mcp_planning_api_surfaces {
 	 */
 	private function api_cache_static_summary(): array {
 		$files=[
-			'facade'=>'common/dataphyre/runtime/modules/api/Framework/Api.php',
-			'manager'=>'common/dataphyre/runtime/modules/api/Framework/ApiManager.php',
-			'endpoint'=>'common/dataphyre/runtime/modules/api/Framework/Endpoint.php',
-			'documentation'=>'common/dataphyre/runtime/modules/api/documentation/Dataphyre_Api.md',
+			'facade'=>'dataphyre/runtime/modules/api/Framework/Api.php',
+			'manager'=>'dataphyre/runtime/modules/api/Framework/ApiManager.php',
+			'endpoint'=>'dataphyre/runtime/modules/api/Framework/Endpoint.php',
+			'documentation'=>'dataphyre/runtime/modules/api/documentation/Dataphyre_Api.md',
 		];
 		$sources=[];
 		foreach($files as $key=>$relative){
@@ -359,12 +359,12 @@ trait dataphyre_mcp_planning_api_surfaces {
 	 */
 	private function open_api_static_contract_summary(): array {
 		$files=[
-			'facade'=>'common/dataphyre/runtime/modules/api/Framework/Api.php',
-			'manager'=>'common/dataphyre/runtime/modules/api/Framework/ApiManager.php',
-			'generator'=>'common/dataphyre/runtime/modules/api/Framework/OpenApiGenerator.php',
-			'openapi_controller'=>'common/dataphyre/runtime/modules/api/Framework/OpenApiController.php',
-			'swagger_controller'=>'common/dataphyre/runtime/modules/api/Framework/SwaggerUiController.php',
-			'documentation'=>'common/dataphyre/runtime/modules/api/documentation/Dataphyre_Api.md',
+			'facade'=>'dataphyre/runtime/modules/api/Framework/Api.php',
+			'manager'=>'dataphyre/runtime/modules/api/Framework/ApiManager.php',
+			'generator'=>'dataphyre/runtime/modules/api/Framework/OpenApiGenerator.php',
+			'openapi_controller'=>'dataphyre/runtime/modules/api/Framework/OpenApiController.php',
+			'swagger_controller'=>'dataphyre/runtime/modules/api/Framework/SwaggerUiController.php',
+			'documentation'=>'dataphyre/runtime/modules/api/documentation/Dataphyre_Api.md',
 		];
 		$sources=[];
 		foreach($files as $key=>$relative){

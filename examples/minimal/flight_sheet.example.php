@@ -5,7 +5,17 @@
  * Copyright (c) 2025 Shopiro Ltd.
  * SPDX-License-Identifier: MIT
  */
-$example_applications=is_dir(__DIR__.'/applications/example_app') ? __DIR__.'/applications' : __DIR__.'/examples/minimal/applications';
+$example_applications=__DIR__.'/applications';
+foreach([
+	__DIR__.'/applications',
+	__DIR__.'/dataphyre/examples/minimal/applications',
+	__DIR__.'/examples/minimal/applications',
+] as $applications_root){
+	if(is_dir($applications_root.'/example_app')){
+		$example_applications=$applications_root;
+		break;
+	}
+}
 return [
 	'bootstrap'=>[
 		'app'=>'example_app',
@@ -15,6 +25,10 @@ return [
 		'max_execution_time'=>30,
 		'application_roots'=>[
 			$example_applications,
+		],
+		'modules'=>[
+			'enabled'=>[],
+			'disabled'=>[],
 		],
 		'flightdeck'=>[
 			'enabled'=>false,
@@ -28,16 +42,70 @@ return [
 		'shared'=>[
 			'directories'=>[
 				'cache',
-				'logs',
+				'cache/flightdeck',
 				'config',
+				'config/static',
+				'logs',
 				'plugins',
+				'plugins/pre_init',
+				'plugins/post_init',
+				'sql_migration',
+				'sql_migration/plans',
+				'sql_migration/snapshots',
+			],
+			'files'=>[
+				[
+					'path'=>'cache/load_level.php',
+					'type'=>'literal',
+					'contents'=>"<?php return ['level'=>0,'timestamp'=>0,'bottleneck'=>null];\n",
+				],
+				[
+					'path'=>'sql_migration/table_versions.json',
+					'type'=>'literal',
+					'contents'=>"{}\n",
+				],
 			],
 		],
 		'app'=>[
 			'directories'=>[
 				'cache',
-				'logs',
+				'cache/locks',
 				'config',
+				'config/static',
+				'fulltext_indexes',
+				'logs',
+				'modules',
+				'plugins',
+				'plugins/pre_init',
+				'plugins/post_init',
+				'sql_migration',
+				'sql_migration/plans',
+				'sql_migration/snapshots',
+			],
+			'files'=>[
+				[
+					'path'=>'modcache.php',
+					'type'=>'literal',
+					'contents'=>"<?php return [];\n",
+				],
+				[
+					'path'=>'cache/known_error_conditions.json',
+					'type'=>'literal',
+					'contents'=>"{}\n",
+				],
+				[
+					'path'=>'config/static/dpvk',
+					'type'=>'generated_dpvk',
+				],
+				[
+					'path'=>'unavailable.php',
+					'type'=>'literal',
+					'contents'=>"<?php\nhttp_response_code(503);\necho '<h1>Service unavailable</h1>';\nexit();\n",
+				],
+				[
+					'path'=>'cache/verified',
+					'type'=>'generated_verified',
+				],
 			],
 		],
 	],

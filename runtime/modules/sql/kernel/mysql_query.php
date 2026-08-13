@@ -8,7 +8,7 @@
 namespace dataphyre;
 use Mysqli;
 
-register_shutdown_function(function(){
+function flush_mysql_query_queue_at_shutdown(): void {
 	try{
 		do{
 			foreach(mysql_query_builder::$queued_queries as $queue=>$queue_data){
@@ -22,7 +22,8 @@ register_shutdown_function(function(){
 	}catch(\Throwable $exception){
 		\dataphyre_shutdown_log('Exception on Dataphyre SQL MySQL shutdown callback', $exception);
 	}
-});
+}
+register_shutdown_function(__NAMESPACE__.'\\flush_mysql_query_queue_at_shutdown');
 
 /**
  * MySQL queue executor for Dataphyre SQL helper functions.
@@ -72,7 +73,7 @@ class mysql_query_builder {
 	 * @param string $dbms_cluster Cluster key used to read credentials and database name.
 	 * @return object|false MySQLi connection on success, or `false` when the endpoint is unavailable.
 	 */
-	private static function connect_to_endpoint(string $endpoint, string $dbms_cluster='default') : object {
+	private static function connect_to_endpoint(string $endpoint, string $dbms_cluster='default') : object|false {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(isset(self::$conns[$dbms_cluster])){
 			return	self::$conns[$dbms_cluster];
@@ -81,7 +82,11 @@ class mysql_query_builder {
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="$endpoint is known as being unavailable, using next available server", $S="warning");
 			return false;
 		}
-		if(!$conn=\mysqli_init()){
+		return self::configure_endpoint_connection($endpoint, $dbms_cluster, \mysqli_init());
+	}
+
+	private static function configure_endpoint_connection(string $endpoint, string $dbms_cluster, object|false $conn): object|false {
+		if($conn===false){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Failed mysql init", $S="warning");
 			sql::flag_server_unavailable($endpoint);
 			return false;
@@ -137,7 +142,7 @@ class mysql_query_builder {
 				$stmt->execute();
 				if($stmt->field_count>0){
 					$result=$stmt->get_result();
-					$results[$index]=$result instanceof \mysqli_result ? $result->fetch_all(MYSQLI_ASSOC) : [];
+					$results[$index]=is_object($result) ? $result->fetch_all(MYSQLI_ASSOC) : [];
 				}
 				elseif(!empty($result_key=$stmt->insert_id)){
 					$results[$index]=$result_key;
@@ -328,7 +333,7 @@ class mysql_query_builder {
 			}
 		}
 		$results=[];
-		$dbms_cluster=DP_SQL_CFG['tables']['raw']['cluster'] ?? DP_SQL_CFG['default_cluster'];
+		$dbms_cluster=sql::resolve_cluster(DP_SQL_CFG['tables']['raw']['cluster'] ?? DP_SQL_CFG['default_cluster']);
 		if($multipoint===true){
 			$endpoints=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
 			if(!empty($prepared_statements)){
@@ -434,7 +439,8 @@ class mysql_query_builder {
 				throw new \RuntimeException('Query failed: '.mysqli_error($conn));
 			}
 		};
-		if($multipoint === true){
+			$result=false;
+			if($multipoint === true){
 			$endpoints=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
 			$results=[];
 			foreach($endpoints as $endpoint){
@@ -455,7 +461,7 @@ class mysql_query_builder {
 		if($result===true){
 			return true;
 		}
-		if($result === false || !($result instanceof mysqli_result)){
+		if($result === false || !is_object($result)){
 			return false;
 		}
 		$query_result=[];
@@ -605,26 +611,16 @@ class mysql_query_builder {
 			$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint, $dbms_cluster);
 			$query="UPDATE ".$location." SET ".$fields." ".$params;
 			try{
-				if(is_array($vars)){
-					$stmt=$conn->prepare($query);
-					if($stmt===false){
-						throw new \RuntimeException('Query failed: '.$conn->error);
-					}
-					$stmt->bind_param($datatypes, ...$vars);				
-					if($stmt->execute()){
-						$affected_rows[]=$stmt->affected_rows;
-						$succeeded++;
-					}
-					$stmt->close();
+				$stmt=$conn->prepare($query);
+				if($stmt===false){
+					throw new \RuntimeException('Query failed: '.$conn->error);
 				}
-				else
-				{
-					if(mysqli_query($conn, $query)===false){
-						throw new \RuntimeException('Query failed: '.$conn->error);
-					}
-					$affected_rows[]=mysqli_affected_rows($conn);
+				$stmt->bind_param($datatypes, ...$vars);
+				if($stmt->execute()){
+					$affected_rows[]=$stmt->affected_rows;
 					$succeeded++;
 				}
+				$stmt->close();
 			}catch(\Throwable $exception){
 				sql::log_query_error('MySQLi', $dbms_cluster, $query, $vars, $exception);
 			}
@@ -662,6 +658,7 @@ class mysql_query_builder {
 		$is_multipoint=DP_SQL_CFG['tables'][$location]['multipoint_writes']??false;
 		$endpoints=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
 		shuffle($endpoints);
+		$result_key=false;
 		foreach($endpoints as $endpoint){
 			$query="INSERT IGNORE INTO ".$location." (".$fields.") VALUES (".$fields_question_marks.") RETURNING ".$returning;
 			try{
@@ -680,7 +677,7 @@ class mysql_query_builder {
 			}
 			if(!$is_multipoint)break;
 		}
-		return $result_key ?? true;
+		return $result_key;
 	}
 	
 	/**

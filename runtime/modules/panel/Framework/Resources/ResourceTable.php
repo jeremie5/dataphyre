@@ -15,21 +15,25 @@ namespace Dataphyre\Panel;
  * manifest metadata for a Panel resource listing. Builder methods clone the table;
  * resolver methods combine the definition with PanelRequest, Resource, records,
  * and preferences for rendering and manifest export.
+ *
+ * @template TRecord = mixed
+ * @template TState of array<string, mixed> = array<string, mixed>
  */
 final class ResourceTable {
+	use HasCollectionPresentations;
 
-	/** @var array<string, Column> */
+	/** @var array<string, Column<TRecord, mixed>> */
 	private array $columns=[];
 	private int $defaultPerPage=25;
 	private array $perPageOptions=[10, 25, 50, 100];
 	private ?array $defaultSort=null;
-	/** @var array<string, TableView> */
+	/** @var array<string, TableView<TRecord, TState>> */
 	private array $views=[];
-	/** @var array<string, TableFilter> */
+	/** @var array<string, TableFilter<TRecord, mixed, TState>> */
 	private array $filters=[];
-	/** @var array<string, TableSummary> */
+	/** @var array<string, TableSummary<TRecord, mixed>> */
 	private array $summaries=[];
-	/** @var array<string, TableGroup> */
+	/** @var array<string, TableGroup<TRecord, mixed>> */
 	private array $groups=[];
 	/** @var array<int, array<string, mixed>|\Closure> */
 	private array $rowAttributes=[];
@@ -44,6 +48,7 @@ final class ResourceTable {
 	private ?\Closure $rowPreviewResolver=null;
 	private array $emptyState=[];
 	private array $filteredEmptyState=[];
+	private ?PanelDataSurfaceDefinition $dataSurface=null;
 	private array $meta=[];
 
 	/**
@@ -52,11 +57,23 @@ final class ResourceTable {
 	 * The returned builder starts with default pagination and no columns, filters,
 	 * views, summaries, groups, row actions, preview fields, or custom metadata.
 	 *
-	 * @return self Fresh table builder.
+	 * @return self<TRecord,TState> Fresh table builder.
 	 */
 	public static function make(): self {
 		return new self();
 	}
+
+	/** Attaches one typed virtual or alternate collection surface to this table instance. */
+	public function dataSurface(PanelDataSurfaceDefinition $definition): self {
+		$clone=clone $this;
+		$clone->dataSurface=$definition;
+		return $clone;
+	}
+
+	/** Removes the attached DataSurface without changing the table fallback. */
+	public function withoutDataSurface(): self { $clone=clone $this; $clone->dataSurface=null; return $clone; }
+
+	public function dataSurfaceDefinition(): ?PanelDataSurfaceDefinition { return $this->dataSurface; }
 
 	/**
 	 * Replaces the table column set.
@@ -65,8 +82,8 @@ final class ResourceTable {
 	 * names. The table is cloned before mutation and each entry is normalized through
 	 * column().
 	 *
-	 * @param array<int, Column|array|string> $columns Column definitions in display order.
-	 * @return self Cloned table with the supplied columns.
+	 * @param array<int, Column<TRecord, mixed>|array<string, mixed>|string> $columns Column definitions in display order.
+	 * @return self<TRecord,TState> Cloned table with the supplied columns.
 	 */
 	public function columns(array $columns): self {
 		$clone=clone $this;
@@ -83,9 +100,10 @@ final class ResourceTable {
 	 * String input creates a Column with the supplied type or text by default. Array
 	 * input is restored with Column::fromArray().
 	 *
-	 * @param Column|array|string $column Column object, serialized column, or column name.
+	 * @template TColumnValue
+	 * @param Column<TRecord,TColumnValue>|array<string,mixed>|string $column Column object, serialized column, or column name.
 	 * @param string|null $type Column type used for string input.
-	 * @return self Cloned table containing the column.
+	 * @return self<TRecord,TState> Cloned table containing the column.
 	 */
 	public function column(Column|array|string $column, ?string $type=null): self {
 		$column=$column instanceof Column ? $column : (is_array($column) ? Column::fromArray($column) : Column::make((string)$column, $type ?? 'text'));
@@ -101,7 +119,7 @@ final class ResourceTable {
 	 * inserted into the available per-page options if it is not already present.
 	 *
 	 * @param int $rows Desired default rows per page.
-	 * @return self Cloned table with updated pagination default.
+	 * @return self<TRecord,TState> Cloned table with updated pagination default.
 	 */
 	public function perPage(int $rows): self {
 		$clone=clone $this;
@@ -120,7 +138,7 @@ final class ResourceTable {
 	 * to contain the current default per-page value.
 	 *
 	 * @param array<int, mixed> $options Candidate per-page option values.
-	 * @return self Cloned table with normalized per-page options.
+	 * @return self<TRecord,TState> Cloned table with normalized per-page options.
 	 */
 	public function perPageOptions(array $options): self {
 		$options=array_values(array_unique(array_filter(array_map(
@@ -145,7 +163,7 @@ final class ResourceTable {
 	 *
 	 * @param string $column Column name to sort by.
 	 * @param string $direction Sort direction, asc unless exactly desc.
-	 * @return self Cloned table with the default sort definition.
+	 * @return self<TRecord,TState> Cloned table with the default sort definition.
 	 */
 	public function defaultSort(string $column, string $direction='asc'): self {
 		$column=Resource::normalizeName($column);
@@ -161,8 +179,8 @@ final class ResourceTable {
 	 * Entries can be TableFilter instances, serialized arrays, or string names. The
 	 * table is cloned and each entry is normalized through filter().
 	 *
-	 * @param array<int, TableFilter|array|string> $filters Filter definitions.
-	 * @return self Cloned table with the supplied filters.
+	 * @param array<int, TableFilter<TRecord, mixed, TState>|array<string, mixed>|string> $filters Filter definitions.
+	 * @return self<TRecord,TState> Cloned table with the supplied filters.
 	 */
 	public function filters(array $filters): self {
 		$clone=clone $this;
@@ -179,8 +197,8 @@ final class ResourceTable {
 	 * Views can carry query defaults and a default marker used when the request does
 	 * not choose a view explicitly.
 	 *
-	 * @param array<int, TableView|array|string> $views View definitions.
-	 * @return self Cloned table with the supplied views.
+	 * @param array<int, TableView<TRecord, TState>|array<string, mixed>|string> $views View definitions.
+	 * @return self<TRecord,TState> Cloned table with the supplied views.
 	 */
 	public function views(array $views): self {
 		$clone=clone $this;
@@ -197,8 +215,8 @@ final class ResourceTable {
 	 * String input creates a TableView by name and array input is restored from its
 	 * serialized form.
 	 *
-	 * @param TableView|array|string $view View object, serialized view, or view name.
-	 * @return self Cloned table containing the view.
+	 * @param TableView<TRecord,TState>|array<string,mixed>|string $view View object, serialized view, or view name.
+	 * @return self<TRecord,TState> Cloned table containing the view.
 	 */
 	public function view(TableView|array|string $view): self {
 		$view=$view instanceof TableView
@@ -215,9 +233,10 @@ final class ResourceTable {
 	 * String input creates a TableFilter with the supplied type or text by default.
 	 * Array input is restored with TableFilter::fromArray().
 	 *
-	 * @param TableFilter|array|string $filter Filter object, serialized filter, or filter name.
+	 * @template TFilterValue
+	 * @param TableFilter<TRecord,TFilterValue,TState>|array<string,mixed>|string $filter Filter object, serialized filter, or filter name.
 	 * @param string|null $type Filter type used for string input.
-	 * @return self Cloned table containing the filter.
+	 * @return self<TRecord,TState> Cloned table containing the filter.
 	 */
 	public function filter(TableFilter|array|string $filter, ?string $type=null): self {
 		$filter=$filter instanceof TableFilter
@@ -234,8 +253,8 @@ final class ResourceTable {
 	 * Each entry is normalized through summary() so string, array, and TableSummary
 	 * definitions share the same storage path.
 	 *
-	 * @param array<int, TableSummary|array|string> $summaries Summary definitions.
-	 * @return self Cloned table with the supplied summaries.
+	 * @param array<int, TableSummary<TRecord, mixed>|array<string, mixed>|string> $summaries Summary definitions.
+	 * @return self<TRecord,TState> Cloned table with the supplied summaries.
 	 */
 	public function summaries(array $summaries): self {
 		$clone=clone $this;
@@ -251,9 +270,10 @@ final class ResourceTable {
 	 *
 	 * String input creates a summary with the supplied type or count by default.
 	 *
-	 * @param TableSummary|array|string $summary Summary object, serialized summary, or summary name.
+	 * @template TSummaryValue
+	 * @param TableSummary<TRecord,TSummaryValue>|array<string,mixed>|string $summary Summary object, serialized summary, or summary name.
 	 * @param string|null $type Summary type used for string input.
-	 * @return self Cloned table containing the summary.
+	 * @return self<TRecord,TState> Cloned table containing the summary.
 	 */
 	public function summary(TableSummary|array|string $summary, ?string $type=null): self {
 		$summary=$summary instanceof TableSummary
@@ -270,8 +290,8 @@ final class ResourceTable {
 	 * Groups are used to choose an active grouping from request state or a configured
 	 * default. Empty group names are ignored by group().
 	 *
-	 * @param array<int, TableGroup|array|string> $groups Group definitions.
-	 * @return self Cloned table with the supplied groups.
+	 * @param array<int, TableGroup<TRecord, mixed>|array<string, mixed>|string> $groups Group definitions.
+	 * @return self<TRecord,TState> Cloned table with the supplied groups.
 	 */
 	public function groups(array $groups): self {
 		$clone=clone $this;
@@ -288,8 +308,9 @@ final class ResourceTable {
 	 * String input creates a TableGroup by name and array input is restored from its
 	 * serialized form. Blank group names are ignored.
 	 *
-	 * @param TableGroup|array|string $group Group object, serialized group, or group name.
-	 * @return self Cloned table containing the group when valid.
+	 * @template TGroupKey
+	 * @param TableGroup<TRecord,TGroupKey>|array<string,mixed>|string $group Group object, serialized group, or group name.
+	 * @return self<TRecord,TState> Cloned table containing the group when valid.
 	 */
 	public function group(TableGroup|array|string $group): self {
 		$group=$group instanceof TableGroup
@@ -309,9 +330,9 @@ final class ResourceTable {
 	 * evaluated later with record, request, resource, and table context. Passing merge
 	 * false replaces previously configured row-attribute sources.
 	 *
-	 * @param array|callable $attributes Static attributes or resolver callback.
+	 * @param array<string, mixed>|callable(TRecord, PanelRequest|null=, Resource<TRecord, TState>|null=, self<TRecord, TState>=): array<string, mixed> $attributes Static attributes or resolver callback.
 	 * @param bool $merge Whether to append to existing attribute sources.
-	 * @return self Cloned table with updated row attributes.
+	 * @return self<TRecord,TState> Cloned table with updated row attributes.
 	 */
 	public function rowAttributes(array|callable $attributes, bool $merge=true): self {
 		$clone=clone $this;
@@ -325,9 +346,9 @@ final class ResourceTable {
 	/**
 	 * Alias for rowAttributes() using record-oriented naming.
 	 *
-	 * @param array|callable $attributes Static attributes or resolver callback.
+	 * @param array<string,mixed>|callable(TRecord,PanelRequest|null=,Resource<TRecord,TState>|null=,self<TRecord,TState>=):array<string,mixed> $attributes Static attributes or resolver callback.
 	 * @param bool $merge Whether to append to existing attribute sources.
-	 * @return self Cloned table with updated row attributes.
+	 * @return self<TRecord,TState> Cloned table with updated row attributes.
 	 */
 	public function recordAttributes(array|callable $attributes, bool $merge=true): self {
 		return $this->rowAttributes($attributes, $merge);
@@ -340,7 +361,7 @@ final class ResourceTable {
 	 *
 	 * @param string $name Attribute name.
 	 * @param mixed $value Attribute value, true for boolean attributes.
-	 * @return self Cloned table with the attribute appended.
+	 * @return self<TRecord,TState> Cloned table with the attribute appended.
 	 */
 	public function rowAttribute(string $name, mixed $value=true): self {
 		return $this->rowAttributes([$name=>$value]);
@@ -353,7 +374,7 @@ final class ResourceTable {
 	 *
 	 * @param string $name data-* suffix without the data- prefix.
 	 * @param mixed $value Attribute value.
-	 * @return self Cloned table with the data attribute appended.
+	 * @return self<TRecord,TState> Cloned table with the data attribute appended.
 	 */
 	public function rowData(string $name, mixed $value=true): self {
 		return $this->rowAttribute('data-'.self::normalizeAttributeSegment($name), $value);
@@ -367,7 +388,7 @@ final class ResourceTable {
 	 *
 	 * @param string $name aria-* suffix without the aria- prefix.
 	 * @param mixed $value Attribute value.
-	 * @return self Cloned table with the ARIA attribute appended.
+	 * @return self<TRecord,TState> Cloned table with the ARIA attribute appended.
 	 */
 	public function rowAria(string $name, mixed $value=true): self {
 		return $this->rowAttribute('aria-'.self::normalizeAttributeSegment($name), $value);
@@ -380,9 +401,9 @@ final class ResourceTable {
 	 * resolves a custom URL at runtime. Authorization is checked later by
 	 * resolveRowClick().
 	 *
-	 * @param bool|string|callable $target Disabled flag, operation name, or URL resolver.
+	 * @param bool|string|callable(TRecord, PanelRequest|null=, Resource<TRecord, TState>|null=, self<TRecord, TState>=, string=): string|array<string, mixed>|null $target Disabled flag, operation name, or URL resolver.
 	 * @param bool $modal Whether the client should open the target in a modal.
-	 * @return self Cloned table with row-click behavior configured.
+	 * @return self<TRecord,TState> Cloned table with row-click behavior configured.
 	 */
 	public function rowClick(bool|string|callable $target=true, bool $modal=true): self {
 		$clone=clone $this;
@@ -407,9 +428,9 @@ final class ResourceTable {
 	/**
 	 * Alias for rowClick() kept for readable table definitions.
 	 *
-	 * @param bool|string|callable $target Disabled flag, operation name, or URL resolver.
+	 * @param bool|string|callable(TRecord,PanelRequest|null=,Resource<TRecord,TState>|null=,self<TRecord,TState>=,string=):string|array<string,mixed>|null $target Disabled flag, operation name, or URL resolver.
 	 * @param bool $modal Whether the client should open the target in a modal.
-	 * @return self Cloned table with row-click behavior configured.
+	 * @return self<TRecord,TState> Cloned table with row-click behavior configured.
 	 */
 	public function clickableRows(bool|string|callable $target=true, bool $modal=true): self {
 		return $this->rowClick($target, $modal);
@@ -423,7 +444,7 @@ final class ResourceTable {
 	 *
 	 * @param string $operation Resource operation opened by row click.
 	 * @param bool $modal Whether the client should open the operation in a modal.
-	 * @return self Cloned table with operation row clicks configured.
+	 * @return self<TRecord,TState> Cloned table with operation row clicks configured.
 	 */
 	public function rowAction(string $operation='show', bool $modal=true): self {
 		return $this->rowClick($operation, $modal);
@@ -437,7 +458,7 @@ final class ResourceTable {
 	 *
 	 * @param string $actionName Named resource action.
 	 * @param bool $modal Whether the client should open the action in a modal.
-	 * @return self Cloned table with action row clicks configured.
+	 * @return self<TRecord,TState> Cloned table with action row clicks configured.
 	 */
 	public function recordAction(string $actionName, bool $modal=true): self {
 		$actionName=Resource::normalizeName($actionName);
@@ -456,9 +477,9 @@ final class ResourceTable {
 	 * The resolver receives record, request, resource, table, and operation context
 	 * when resolveRowClick() runs.
 	 *
-	 * @param callable $resolver Runtime URL resolver.
+	 * @param callable(TRecord, PanelRequest|null=, Resource<TRecord, TState>|null=, self<TRecord, TState>=, string=): string|null $resolver Runtime URL resolver.
 	 * @param bool $modal Whether the client should open the URL in a modal.
-	 * @return self Cloned table with URL row clicks configured.
+	 * @return self<TRecord,TState> Cloned table with URL row clicks configured.
 	 */
 	public function rowUrl(callable $resolver, bool $modal=true): self {
 		return $this->rowClick($resolver, $modal);
@@ -470,7 +491,7 @@ final class ResourceTable {
 	 * Preview fields are configured separately with previewFields().
 	 *
 	 * @param bool $enabled Whether preview actions should be exposed.
-	 * @return self Cloned table with preview action state updated.
+	 * @return self<TRecord,TState> Cloned table with preview action state updated.
 	 */
 	public function previewable(bool $enabled=true): self {
 		$clone=clone $this;
@@ -482,7 +503,7 @@ final class ResourceTable {
 	 * Alias for previewable() using row-oriented naming.
 	 *
 	 * @param bool $enabled Whether preview actions should be exposed.
-	 * @return self Cloned table with preview action state updated.
+	 * @return self<TRecord,TState> Cloned table with preview action state updated.
 	 */
 	public function rowPreview(bool $enabled=true): self {
 		return $this->previewable($enabled);
@@ -492,7 +513,7 @@ final class ResourceTable {
 	 * Alias for previewable() using action-oriented naming.
 	 *
 	 * @param bool $enabled Whether preview actions should be exposed.
-	 * @return self Cloned table with preview action state updated.
+	 * @return self<TRecord,TState> Cloned table with preview action state updated.
 	 */
 	public function previewAction(bool $enabled=true): self {
 		return $this->previewable($enabled);
@@ -504,9 +525,9 @@ final class ResourceTable {
 	 * Static definitions are serialized into manifests. Callable definitions are
 	 * evaluated at runtime with record, request, resource, and table context.
 	 *
-	 * @param array|callable $fields Static preview fields or runtime field resolver.
+	 * @param array<int|string, mixed>|callable(TRecord, PanelRequest|null=, Resource<TRecord, TState>|null=, self<TRecord, TState>=): array<int|string, mixed> $fields Static preview fields or runtime field resolver.
 	 * @param bool $showAction Whether preview actions should be exposed.
-	 * @return self Cloned table with preview field configuration.
+	 * @return self<TRecord,TState> Cloned table with preview field configuration.
 	 */
 	public function previewFields(array|callable $fields, bool $showAction=true): self {
 		$clone=clone $this;
@@ -528,12 +549,12 @@ final class ResourceTable {
 	 * Heading may be a static string, serialized state array, or resolver callback.
 	 * Optional action fields provide the primary empty-state call to action.
 	 *
-	 * @param string|array|callable $heading Heading, serialized state, or resolver.
+	 * @param string|array<string,mixed>|callable(PanelRequest,Resource<TRecord,TState>|null=,self<TRecord,TState>=,bool=):scalar|\Stringable|array<string,mixed>|null $heading Heading, serialized state, or resolver.
 	 * @param string|null $description Optional supporting text.
 	 * @param string|null $actionLabel Optional action label.
-	 * @param string|callable|null $actionUrl Optional static or resolved action URL.
+	 * @param string|callable(PanelRequest,Resource<TRecord,TState>|null=,self<TRecord,TState>=,bool=):scalar|\Stringable|null $actionUrl Optional static or resolved action URL.
 	 * @param string|null $icon Optional icon name.
-	 * @return self Cloned table with empty-state configuration.
+	 * @return self<TRecord,TState> Cloned table with empty-state configuration.
 	 */
 	public function emptyState(string|array|callable $heading, ?string $description=null, ?string $actionLabel=null, string|callable|null $actionUrl=null, ?string $icon=null): self {
 		$clone=clone $this;
@@ -547,12 +568,12 @@ final class ResourceTable {
 	 * This state is preferred by resolveEmptyState() when filters, search, grouping,
 	 * or views constrain the current table request.
 	 *
-	 * @param string|array|callable $heading Heading, serialized state, or resolver.
+	 * @param string|array<string,mixed>|callable(PanelRequest,Resource<TRecord,TState>|null=,self<TRecord,TState>=,bool=):scalar|\Stringable|array<string,mixed>|null $heading Heading, serialized state, or resolver.
 	 * @param string|null $description Optional supporting text.
 	 * @param string|null $actionLabel Optional action label.
-	 * @param string|callable|null $actionUrl Optional static or resolved action URL.
+	 * @param string|callable(PanelRequest,Resource<TRecord,TState>|null=,self<TRecord,TState>=,bool=):scalar|\Stringable|null $actionUrl Optional static or resolved action URL.
 	 * @param string|null $icon Optional icon name.
-	 * @return self Cloned table with filtered empty-state configuration.
+	 * @return self<TRecord,TState> Cloned table with filtered empty-state configuration.
 	 */
 	public function filteredEmptyState(string|array|callable $heading, ?string $description=null, ?string $actionLabel=null, string|callable|null $actionUrl=null, ?string $icon=null): self {
 		$clone=clone $this;
@@ -567,8 +588,8 @@ final class ResourceTable {
 	 * serialization except for a dynamic marker.
 	 *
 	 * @param string $label Action label.
-	 * @param string|callable $url Static URL or runtime URL resolver.
-	 * @return self Cloned table with empty-state action updated.
+	 * @param string|callable(PanelRequest,Resource<TRecord,TState>|null=,self<TRecord,TState>=,bool=):scalar|\Stringable|null $url Static URL or runtime URL resolver.
+	 * @return self<TRecord,TState> Cloned table with empty-state action updated.
 	 */
 	public function emptyStateAction(string $label, string|callable $url): self {
 		$clone=clone $this;
@@ -581,8 +602,8 @@ final class ResourceTable {
 	 * Adds or replaces the filtered empty-state action.
 	 *
 	 * @param string $label Action label.
-	 * @param string|callable $url Static URL or runtime URL resolver.
-	 * @return self Cloned table with filtered empty-state action updated.
+	 * @param string|callable(PanelRequest,Resource<TRecord,TState>|null=,self<TRecord,TState>=,bool=):scalar|\Stringable|null $url Static URL or runtime URL resolver.
+	 * @return self<TRecord,TState> Cloned table with filtered empty-state action updated.
 	 */
 	public function filteredEmptyStateAction(string $label, string|callable $url): self {
 		$clone=clone $this;
@@ -598,7 +619,7 @@ final class ResourceTable {
 	 * table manifests, or client-side extensions.
 	 *
 	 * @param array<string, mixed> $meta Metadata to merge over existing values.
-	 * @return self Cloned table with merged metadata.
+	 * @return self<TRecord,TState> Cloned table with merged metadata.
 	 */
 	public function meta(array $meta): self {
 		$clone=clone $this;
@@ -609,7 +630,7 @@ final class ResourceTable {
 	/**
 	 * Returns configured Column objects keyed by column name.
 	 *
-	 * @return array<string, Column> Table columns in configured order.
+	 * @return array<string, Column<TRecord, mixed>> Table columns in configured order.
 	 */
 	public function columnsList(): array {
 		return $this->columns;
@@ -621,8 +642,8 @@ final class ResourceTable {
 	 * Resource fallback allows concise resource definitions where the table inherits
 	 * the resource's base field columns.
 	 *
-	 * @param Resource|null $resource Resource supplying fallback columns.
-	 * @return array<string, Column> Effective columns for the table.
+	 * @param Resource<TRecord, TState>|null $resource Resource supplying fallback columns.
+	 * @return array<string, Column<TRecord, mixed>> Effective columns for the table.
 	 */
 	public function columnsFor(?Resource $resource=null): array {
 		if($this->columns!==[]){
@@ -686,10 +707,12 @@ final class ResourceTable {
 	 * empty-state metadata for renderers.
 	 *
 	 * @param PanelRequest $request Current panel request.
-	 * @param list<mixed> $records Records already loaded for display.
-	 * @param Resource|null $resource Resource owning the table.
+	 * @param list<TRecord> $records Records already loaded for display.
+	 * @param Resource<TRecord, TState>|null $resource Resource owning the table.
 	 * @param bool $alreadyPaginated Whether records are already paginated upstream.
 	 * @param array<string,mixed> $preferences Persisted table preferences.
+	 * @param array<string,mixed> $dataSource Structured data-source result metadata.
+	 * @param ?int $totalRecords Upstream total when records contain only one page.
 	 * @return PanelTableState Runtime table state object.
 	 */
 	public function state(
@@ -697,7 +720,9 @@ final class ResourceTable {
 		array $records=[],
 		?Resource $resource=null,
 		bool $alreadyPaginated=false,
-		array $preferences=[]
+		array $preferences=[],
+		array $dataSource=[],
+		?int $totalRecords=null
 	): PanelTableState {
 		$request=$resource instanceof Resource ? $resource->requestWithResolvedView($request) : $this->requestWithResolvedView($request);
 		$activeView=$resource instanceof Resource ? $resource->activeTableViewName($request) : $this->activeViewName($request);
@@ -719,7 +744,7 @@ final class ResourceTable {
 				$summaries[]=$summary->resolve($records, $resource, $request);
 			}
 		}
-		return PanelTableState::make($records, $allColumns, $visibleColumns, $summaries, [
+		$stateMeta=[
 			'mode'=>'table',
 			'query'=>trim((string)$request->query('q', '')),
 			'filters'=>$filterValues,
@@ -728,9 +753,13 @@ final class ResourceTable {
 			'active_view'=>$activeView,
 			'page'=>$request->page(),
 			'per_page'=>$request->perPage($this->defaultPerPage),
-			'total_records'=>count($records),
+			'total_records'=>$totalRecords ?? count($records),
 			'already_paginated'=>$alreadyPaginated,
-		]);
+		];
+		if($dataSource!==[]){
+			$stateMeta['data_source']=$dataSource;
+		}
+		return PanelTableState::make($records, $allColumns, $visibleColumns, $summaries, $stateMeta);
 	}
 
 	/**
@@ -781,7 +810,7 @@ final class ResourceTable {
 	/**
 	 * Returns configured table filters keyed by filter name.
 	 *
-	 * @return array<string, TableFilter> Filter definitions.
+	 * @return array<string, TableFilter<TRecord, mixed, TState>> Filter definitions.
 	 */
 	public function filtersList(): array {
 		return $this->filters;
@@ -790,7 +819,7 @@ final class ResourceTable {
 	/**
 	 * Returns configured saved table views keyed by view name.
 	 *
-	 * @return array<string, TableView> View definitions.
+	 * @return array<string, TableView<TRecord, TState>> View definitions.
 	 */
 	public function viewsList(): array {
 		return $this->views;
@@ -875,7 +904,7 @@ final class ResourceTable {
 	/**
 	 * Returns configured table summaries keyed by summary name.
 	 *
-	 * @return array<string, TableSummary> Summary definitions.
+	 * @return array<string, TableSummary<TRecord, mixed>> Summary definitions.
 	 */
 	public function summariesList(): array {
 		return $this->summaries;
@@ -884,7 +913,7 @@ final class ResourceTable {
 	/**
 	 * Returns configured table groups keyed by group name.
 	 *
-	 * @return array<string, TableGroup> Group definitions.
+	 * @return array<string, TableGroup<TRecord, mixed>> Group definitions.
 	 */
 	public function groupsList(): array {
 		return $this->groups;
@@ -896,9 +925,9 @@ final class ResourceTable {
 	 * Dynamic callbacks are evaluated with record, request, resource, and table
 	 * context. Later attribute sources replace earlier keys after allow-list filtering.
 	 *
-	 * @param mixed $record Row record being rendered.
+	 * @param TRecord|null $record Row record being rendered.
 	 * @param PanelRequest|null $request Current panel request.
-	 * @param Resource|null $resource Resource owning the record.
+	 * @param Resource<TRecord, TState>|null $resource Resource owning the record.
 	 * @return array<string, mixed> Safe row attributes.
 	 */
 	public function resolveRowAttributes(mixed $record=null, ?PanelRequest $request=null, ?Resource $resource=null): array {
@@ -925,9 +954,9 @@ final class ResourceTable {
 	 * The resolver enforces resource/action visibility, authorization, disabled state,
 	 * record keys, and operation ability mapping before emitting a URL target.
 	 *
-	 * @param mixed $record Row record being rendered.
+	 * @param TRecord|null $record Row record being rendered.
 	 * @param PanelRequest|null $request Current panel request.
-	 * @param Resource|null $resource Resource owning the record.
+	 * @param Resource<TRecord, TState>|null $resource Resource owning the record.
 	 * @return array<string, mixed> Row-click target payload, or empty when unavailable.
 	 */
 	public function resolveRowClick(mixed $record=null, ?PanelRequest $request=null, ?Resource $resource=null): array {
@@ -1010,9 +1039,9 @@ final class ResourceTable {
 	 * Static fields are normalized into label/value pairs and non-displayable entries
 	 * are dropped.
 	 *
-	 * @param mixed $record Row record being previewed.
+	 * @param TRecord|null $record Row record being previewed.
 	 * @param PanelRequest|null $request Current panel request.
-	 * @param Resource|null $resource Resource owning the record.
+	 * @param Resource<TRecord, TState>|null $resource Resource owning the record.
 	 * @return array<int, array{label:string, value:string}> Resolved preview fields.
 	 */
 	public function resolveRowPreviewFields(mixed $record=null, ?PanelRequest $request=null, ?Resource $resource=null): array {
@@ -1142,6 +1171,8 @@ final class ResourceTable {
 			],
 			'empty_state'=>$this->serializableEmptyState($this->emptyState),
 			'filtered_empty_state'=>$this->serializableEmptyState($this->filteredEmptyState),
+			'data_surface'=>$this->dataSurface?->jsonSerialize(),
+			'presentation'=>$this->presentations(),
 			'meta'=>$this->meta,
 		];
 	}

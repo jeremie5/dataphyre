@@ -94,9 +94,6 @@ trait PanelRendererBulkOperations {
 		if($denied!==[]){
 			$notifications[]=PanelNotification::warning(self::panelText('bulk.duplicate_denied', ['count'=>count($denied), 'record'=>self::panelText(count($denied)===1 ? 'common.record' : 'common.records')]));
 		}
-		if($notifications===[]){
-			$notifications[]=PanelNotification::info(self::panelText('bulk.duplicate_none'));
-		}
 		$redirect=self::actionReturnUrl($resource, $request);
 		PanelTrace::record('bulk_duplicate.completed', [
 			'resource'=>$resource,
@@ -114,8 +111,7 @@ trait PanelRendererBulkOperations {
 			'duplicated'=>$duplicated,
 			'failed'=>$failed,
 			'denied'=>$denied,
-			'results'=>$results,
-		], $notifications);
+			'results'=>$results], $notifications);
 	}
 
 	/**
@@ -193,9 +189,6 @@ trait PanelRendererBulkOperations {
 		if($denied!==[]){
 			$notifications[]=PanelNotification::warning(self::panelText('bulk.restore_denied', ['count'=>count($denied), 'record'=>self::panelText(count($denied)===1 ? 'common.record' : 'common.records')]));
 		}
-		if($notifications===[]){
-			$notifications[]=PanelNotification::info(self::panelText('bulk.restore_none'));
-		}
 		$redirect=self::actionReturnUrl($resource, $request);
 		PanelTrace::record('bulk_restore.completed', [
 			'resource'=>$resource,
@@ -212,8 +205,7 @@ trait PanelRendererBulkOperations {
 			'request'=>$request->toArray(),
 			'restored'=>$restored,
 			'failed'=>$failed,
-			'denied'=>$denied,
-		], $notifications);
+			'denied'=>$denied], $notifications);
 	}
 
 	/**
@@ -361,9 +353,6 @@ trait PanelRendererBulkOperations {
 		if($denied!==[]){
 			$notifications[]=PanelNotification::warning(self::panelText('bulk.delete_denied', ['count'=>count($denied), 'record'=>self::panelText(count($denied)===1 ? 'common.record' : 'common.records')]));
 		}
-		if($notifications===[]){
-			$notifications[]=PanelNotification::info(self::panelText('bulk.delete_none'));
-		}
 		$redirect=self::actionReturnUrl($resource, $request);
 		PanelTrace::record('bulk_delete.completed', [
 			'resource'=>$resource,
@@ -380,8 +369,7 @@ trait PanelRendererBulkOperations {
 			'request'=>$request->toArray(),
 			'deleted'=>$deleted,
 			'failed'=>$failed,
-			'denied'=>$denied,
-		], $notifications);
+			'denied'=>$denied], $notifications);
 	}
 
 	/**
@@ -461,9 +449,6 @@ trait PanelRendererBulkOperations {
 		if($denied!==[]){
 			$notifications[]=PanelNotification::warning(self::panelText('bulk.force_delete_denied', ['count'=>count($denied), 'record'=>self::panelText(count($denied)===1 ? 'common.record' : 'common.records')]));
 		}
-		if($notifications===[]){
-			$notifications[]=PanelNotification::info(self::panelText('bulk.force_delete_none'));
-		}
 		$redirect=self::actionReturnUrl($resource, $request);
 		PanelTrace::record('bulk_force_delete.completed', [
 			'resource'=>$resource,
@@ -481,8 +466,7 @@ trait PanelRendererBulkOperations {
 			'force_deleted'=>$forceDeleted,
 			'failed'=>$failed,
 			'denied'=>$denied,
-			'results'=>$results,
-		], $notifications);
+			'results'=>$results], $notifications);
 	}
 
 	/**

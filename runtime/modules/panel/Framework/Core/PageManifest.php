@@ -84,7 +84,7 @@ final class PageManifest {
 			'tables'=>count($tables),
 			'custom_renderer'=>$manifest['rendering']['custom_renderer'],
 		]);
-		return $manifest;
+		return PanelManifestContract::stamp($manifest);
 	}
 
 	/**

@@ -16,9 +16,13 @@ namespace Dataphyre\Panel;
  *
  * Group keys are normalized for stable URLs and serialized state. Empty or null values resolve to the special __blank key
  * so "not set" records are grouped consistently instead of disappearing from grouped table views.
+ *
+ * @template TRecord = mixed
+ * @template TKey = mixed
  */
 final class TableGroup {
 	use PanelExtensible;
+	use HasCollectionItemPresentation;
 
 	/** @var string Normalized field or group identifier. */
 	private string $name;
@@ -62,7 +66,7 @@ final class TableGroup {
 	 * object.
 	 *
 	 * @param string $name Field name or logical grouping key.
-	 * @return self Configured group definition.
+	 * @return self<TRecord, TKey> Configured group definition.
 	 */
 	public static function make(string $name): self {
 		return self::configured(new self($name));
@@ -76,7 +80,7 @@ final class TableGroup {
 	 * Callable resolvers are intentionally not reconstructed from array payloads.
 	 *
 	 * @param array<string, mixed> $definition Serialized group definition.
-	 * @return self Group definition rebuilt from scalar and array metadata.
+	 * @return self<TRecord,TKey> Group definition rebuilt from scalar and array metadata.
 	 */
 	public static function fromArray(array $definition): self {
 		$group=self::make((string)($definition['name'] ?? ''));
@@ -122,7 +126,7 @@ final class TableGroup {
 	 * Dynamic per-key labels should use labelUsing().
 	 *
 	 * @param string $label Human-facing label for the group selector.
-	 * @return self Cloned group with the new static label.
+	 * @return self<TRecord,TKey> Cloned group with the new static label.
 	 */
 	public function label(string $label): self {
 		$clone=clone $this;
@@ -136,8 +140,9 @@ final class TableGroup {
 	 * The resolver receives record, resource, request, group, and table context through PanelUtilityResolver. Returned
 	 * booleans become yes/no, blank values become __blank, and other values are normalized with Resource::normalizeName().
 	 *
-	 * @param callable $resolver Record-to-group-key resolver.
-	 * @return self Cloned group with the state resolver.
+	 * @template TResolvedKey
+	 * @param callable(TRecord, Resource<TRecord>|null=, PanelRequest|null=, self<TRecord, TResolvedKey>=, PageTable<TRecord>|ResourceTable<TRecord>|null=): TResolvedKey $resolver Record-to-group-key resolver.
+	 * @return self<TRecord,TResolvedKey>
 	 */
 	public function stateUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -151,8 +156,8 @@ final class TableGroup {
 	 * The resolver receives key, value, records, resource, request, group, and table context. Non-empty scalar results are
 	 * used as labels; otherwise the key is humanized.
 	 *
-	 * @param callable $resolver Group-label resolver.
-	 * @return self Cloned group with the label resolver.
+	 * @param callable(string, list<TRecord>=, Resource<TRecord>|null=, PanelRequest|null=, self<TRecord, TKey>=, PageTable<TRecord>|ResourceTable<TRecord>|null=): string|\Stringable|null $resolver Group-label resolver.
+	 * @return self<TRecord,TKey> Cloned group with the label resolver.
 	 */
 	public function labelUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -164,7 +169,7 @@ final class TableGroup {
 	 * Sets a static description shown for each resolved group.
 	 *
 	 * @param string $description Description text.
-	 * @return self Cloned group with description metadata.
+	 * @return self<TRecord,TKey> Cloned group with description metadata.
 	 */
 	public function description(string $description): self {
 		return $this->meta(['description'=>trim($description)]);
@@ -173,8 +178,8 @@ final class TableGroup {
 	/**
 	 * Sets a resolver for per-bucket descriptions.
 	 *
-	 * @param callable $resolver Description resolver receiving key, records, resource, request, group, and table context.
-	 * @return self Cloned group with the description resolver.
+	 * @param callable(string, list<TRecord>=, Resource<TRecord>|null=, PanelRequest|null=, self<TRecord, TKey>=, PageTable<TRecord>|ResourceTable<TRecord>|null=): string|\Stringable|null $resolver Description resolver receiving key, records, resource, request, group, and table context.
+	 * @return self<TRecord,TKey> Cloned group with the description resolver.
 	 */
 	public function descriptionUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -188,7 +193,7 @@ final class TableGroup {
 	 * Only desc is preserved; every other value falls back to asc.
 	 *
 	 * @param string $direction asc or desc.
-	 * @return self Cloned group with the normalized direction.
+	 * @return self<TRecord,TKey> Cloned group with the normalized direction.
 	 */
 	public function direction(string $direction): self {
 		$direction=strtolower(trim($direction));
@@ -201,7 +206,7 @@ final class TableGroup {
 	 * Marks this group as the table's default grouping option.
 	 *
 	 * @param bool $default Whether this group is selected by default.
-	 * @return self Cloned group with default state.
+	 * @return self<TRecord,TKey> Cloned group with default state.
 	 */
 	public function default(bool $default=true): self {
 		$clone=clone $this;
@@ -215,7 +220,7 @@ final class TableGroup {
 	 * Disabling collapsibility also clears the default collapsed state.
 	 *
 	 * @param bool $collapsible Whether groups may be collapsed.
-	 * @return self Cloned group with collapsibility state.
+	 * @return self<TRecord,TKey> Cloned group with collapsibility state.
 	 */
 	public function collapsible(bool $collapsible=true): self {
 		$clone=clone $this;
@@ -232,7 +237,7 @@ final class TableGroup {
 	 * Enabling collapsed state also enables collapsibility because non-collapsible groups cannot start collapsed.
 	 *
 	 * @param bool $collapsed Whether groups start collapsed.
-	 * @return self Cloned group with collapsed state.
+	 * @return self<TRecord,TKey> Cloned group with collapsed state.
 	 */
 	public function collapsed(bool $collapsed=true): self {
 		$clone=clone $this;
@@ -246,8 +251,8 @@ final class TableGroup {
 	 *
 	 * Each summary may be a TableSummary, array definition, or string accepted by summary().
 	 *
-	 * @param array<int, TableSummary|array<string, mixed>|string> $summaries Summary definitions.
-	 * @return self Cloned group with the replacement summary set.
+	 * @param array<int, TableSummary<TRecord, mixed>|array<string, mixed>|string> $summaries Summary definitions.
+	 * @return self<TRecord,TKey> Cloned group with the replacement summary set.
 	 */
 	public function summaries(array $summaries): self {
 		$clone=clone $this;
@@ -264,9 +269,9 @@ final class TableGroup {
 	 * String input creates a TableSummary with the supplied type or count by default. Array input is rehydrated through
 	 * TableSummary::fromArray(). Empty summary names are ignored to keep serialized group definitions addressable.
 	 *
-	 * @param TableSummary|array<string, mixed>|string $summary Summary definition.
+	 * @param TableSummary<TRecord, mixed>|array<string, mixed>|string $summary Summary definition.
 	 * @param ?string $type Summary type used when $summary is a string.
-	 * @return self Cloned group with the summary added.
+	 * @return self<TRecord,TKey> Cloned group with the summary added.
 	 */
 	public function summary(TableSummary|array|string $summary, ?string $type=null): self {
 		if(is_string($summary)){
@@ -286,7 +291,7 @@ final class TableGroup {
 	 * Replaces the group actions.
 	 *
 	 * @param array<int, array<string, mixed>|string> $actions Action definitions.
-	 * @return self Cloned group with replacement actions.
+	 * @return self<TRecord,TKey> Cloned group with replacement actions.
 	 */
 	public function actions(array $actions): self {
 		$clone=clone $this;
@@ -304,10 +309,10 @@ final class TableGroup {
 	 * with key, records, resource, request, group, and table context. Invalid label definitions are ignored.
 	 *
 	 * @param array<string, mixed>|string $action Action definition or static label.
-	 * @param string|callable|null $url Static or computed URL when $action is a string.
+	 * @param string|callable(string,list<TRecord>=,Resource<TRecord>|null=,PanelRequest|null=,self<TRecord,TKey>=,PageTable<TRecord>|ResourceTable<TRecord>|null=):scalar|\Stringable|null $url Static or computed URL when $action is a string.
 	 * @param string $tone Visual tone for the action.
 	 * @param ?string $icon Optional icon name.
-	 * @return self Cloned group with the action appended.
+	 * @return self<TRecord,TKey> Cloned group with the action appended.
 	 */
 	public function action(array|string $action, string|callable|null $url=null, string $tone='neutral', ?string $icon=null): self {
 		$definition=is_array($action) ? $action : [
@@ -329,7 +334,7 @@ final class TableGroup {
 	 * Merges free-form metadata into the group definition.
 	 *
 	 * @param array<string, mixed> $meta Metadata merged over existing metadata.
-	 * @return self Cloned group with merged metadata.
+	 * @return self<TRecord,TKey> Cloned group with merged metadata.
 	 */
 	public function meta(array $meta): self {
 		$clone=clone $this;
@@ -343,10 +348,10 @@ final class TableGroup {
 	 * Without a custom state resolver, the group reads the field named by name() from arrays, public object properties, or a
 	 * conventional getter. Boolean values become yes/no, blank values become __blank, and all other values are normalized.
 	 *
-	 * @param mixed $record Record being grouped.
-	 * @param ?Resource $resource Resource context.
+	 * @param TRecord $record Record being grouped.
+	 * @param Resource<TRecord>|null $resource Resource context.
 	 * @param ?PanelRequest $request Request context.
-	 * @param PageTable|ResourceTable|null $table Table context.
+	 * @param PageTable<TRecord>|ResourceTable<TRecord>|null $table Table context.
 	 * @return string Stable group key.
 	 */
 	public function resolveKey(mixed $record, ?Resource $resource=null, ?PanelRequest $request=null, PageTable|ResourceTable|null $table=null): string {
@@ -379,10 +384,10 @@ final class TableGroup {
 	 * to produce labels such as date ranges or relationship names.
 	 *
 	 * @param string $key Resolved group key.
-	 * @param array<int, mixed> $records Records in the group.
-	 * @param ?Resource $resource Resource context.
+	 * @param list<TRecord> $records Records in the group.
+	 * @param Resource<TRecord>|null $resource Resource context.
 	 * @param ?PanelRequest $request Request context.
-	 * @param PageTable|ResourceTable|null $table Table context.
+	 * @param PageTable<TRecord>|ResourceTable<TRecord>|null $table Table context.
 	 * @return string Human-facing bucket label.
 	 */
 	public function resolveLabel(string $key, array $records=[], ?Resource $resource=null, ?PanelRequest $request=null, PageTable|ResourceTable|null $table=null): string {
@@ -413,10 +418,10 @@ final class TableGroup {
 	 * is used.
 	 *
 	 * @param string $key Resolved group key.
-	 * @param array<int, mixed> $records Records in the group.
-	 * @param ?Resource $resource Resource context.
+	 * @param list<TRecord> $records Records in the group.
+	 * @param Resource<TRecord>|null $resource Resource context.
 	 * @param ?PanelRequest $request Request context.
-	 * @param PageTable|ResourceTable|null $table Table context.
+	 * @param PageTable<TRecord>|ResourceTable<TRecord>|null $table Table context.
 	 * @return string Bucket description or an empty string.
 	 */
 	public function resolveDescription(string $key, array $records=[], ?Resource $resource=null, ?PanelRequest $request=null, PageTable|ResourceTable|null $table=null): string {
@@ -444,10 +449,10 @@ final class TableGroup {
 	 * summary row so renderers can associate summary values with the bucket that produced them.
 	 *
 	 * @param string $key Resolved group key.
-	 * @param array<int, mixed> $records Records in the group.
-	 * @param ?Resource $resource Resource context.
+	 * @param list<TRecord> $records Records in the group.
+	 * @param Resource<TRecord>|null $resource Resource context.
 	 * @param ?PanelRequest $request Request context.
-	 * @param PageTable|ResourceTable|null $table Table context.
+	 * @param PageTable<TRecord>|ResourceTable<TRecord>|null $table Table context.
 	 * @return array<int, array<string, mixed>> Resolved summary payloads.
 	 */
 	public function resolveSummaries(string $key, array $records=[], ?Resource $resource=null, ?PanelRequest $request=null, PageTable|ResourceTable|null $table=null): array {
@@ -458,9 +463,6 @@ final class TableGroup {
 		$request ??= PanelRequest::fromArray([]);
 		$resolved=[];
 		foreach($this->summaries as $summary){
-			if(!$summary instanceof TableSummary){
-				continue;
-			}
 			$data=$summary->resolve($records, $resource, $request);
 			$data['group']=$this->name;
 			$data['group_key']=$key;
@@ -476,10 +478,10 @@ final class TableGroup {
 	 * Tones are normalized to the supported panel tone set and invalid tones fall back to neutral.
 	 *
 	 * @param string $key Resolved group key.
-	 * @param array<int, mixed> $records Records in the group.
-	 * @param ?Resource $resource Resource context.
+	 * @param list<TRecord> $records Records in the group.
+	 * @param Resource<TRecord>|null $resource Resource context.
 	 * @param ?PanelRequest $request Request context.
-	 * @param PageTable|ResourceTable|null $table Table context.
+	 * @param PageTable<TRecord>|ResourceTable<TRecord>|null $table Table context.
 	 * @return array<int, array<string, string>> Resolved action payloads.
 	 */
 	public function resolveActions(string $key, array $records=[], ?Resource $resource=null, ?PanelRequest $request=null, PageTable|ResourceTable|null $table=null): array {

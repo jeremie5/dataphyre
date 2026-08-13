@@ -797,8 +797,8 @@ final class dataphyre_flightdeck_stack_snippets {
 	/**
 	 * Detects undefined-method messages and reflects loaded class methods.
 	 *
-	 * Reflection failures are swallowed because diagnostics must not replace the
-	 * original error with a secondary introspection failure.
+	 * Symbols are checked before reflection so diagnostics only inspect classes,
+	 * interfaces, and traits that PHP has already loaded successfully.
 	 *
 	 * @param string $text Plaintext diagnostic message.
 	 * @return array<int,array<string,mixed>> Diagnostic card models for missing methods.
@@ -813,13 +813,9 @@ final class dataphyre_flightdeck_stack_snippets {
 			$method=(string)$match[2];
 			$candidates=[];
 			if(class_exists($class) || interface_exists($class) || trait_exists($class)){
-				try{
-					$reflection=new \ReflectionClass($class);
-					foreach($reflection->getMethods() as $candidate){
-						$candidates[]=$candidate->getName();
-					}
-				}catch(\Throwable){
-					$candidates=[];
+				$reflection=new \ReflectionClass($class);
+				foreach($reflection->getMethods() as $candidate){
+					$candidates[]=$candidate->getName();
 				}
 			}
 			$suggestions=self::closest_names($method, $candidates);
@@ -857,13 +853,9 @@ final class dataphyre_flightdeck_stack_snippets {
 			$property=(string)$match[2];
 			$candidates=[];
 			if(class_exists($class)){
-				try{
-					$reflection=new \ReflectionClass($class);
-					foreach($reflection->getProperties() as $candidate){
-						$candidates[]=$candidate->getName();
-					}
-				}catch(\Throwable){
-					$candidates=[];
+				$reflection=new \ReflectionClass($class);
+				foreach($reflection->getProperties() as $candidate){
+					$candidates[]=$candidate->getName();
 				}
 			}
 			$suggestions=self::closest_names($property, $candidates);
@@ -1094,23 +1086,24 @@ final class dataphyre_flightdeck_stack_snippets {
 	 * @return ?string Highlighted and linkified HTML, or null when DataDoc is unavailable.
 	 */
 	private static function datadoc_highlight(string $code, int $start, int $line, array $context=[], array $options=[]): ?string {
-		$highlighter=dirname(__DIR__, 2).'/datadoc/kernel/highlighter.php';
+		$highlighter=(string)($options['highlighter_file'] ?? dirname(__DIR__, 2).'/datadoc/kernel/highlighter.php');
+		$highlighter_class=(string)($options['highlighter_class'] ?? '\\dataphyre\\datadoc\\highlighter');
 		if(!is_file($highlighter)){
 			return null;
 		}
 		try{
 			require_once($highlighter);
-			if(!class_exists('\dataphyre\datadoc\highlighter', false)){
+			if(!class_exists($highlighter_class, false)){
 				return null;
 			}
-			$highlighted=\dataphyre\datadoc\highlighter::highlight_code($code, 'php', [
+			$highlighted=$highlighter_class::highlight_code($code, 'php', [
 				'show_lines'=>true,
 				'start_line'=>$start,
 				'line_number_start'=>$start,
 				'highlight_offset'=>$line - $start,
 				'highlight_class'=>(string)($options['highlight_class'] ?? 'fd-callsite-line'),
 			]);
-			return \dataphyre\datadoc\highlighter::linkify_php(
+			return $highlighter_class::linkify_php(
 				$highlighted,
 				(string)($context['project'] ?? ''),
 				(string)($context['namespace'] ?? ''),

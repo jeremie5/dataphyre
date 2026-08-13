@@ -482,9 +482,6 @@ final class PanelLocalization implements \JsonSerializable {
 		}
 		$replacements=[];
 		foreach($parameters as $key=>$value){
-			if(!is_string($key) && !is_int($key)){
-				continue;
-			}
 			$key=trim((string)$key);
 			if($key===''){
 				continue;

@@ -14,9 +14,21 @@ if(function_exists('dataphyre\tracelog')){
 if(function_exists('dp_define_module_config')){
 	dp_define_module_config('reactor', 'DP_REACTOR_CFG', [
 		'secret'=>null,
+		'signing_keys'=>null,
+		'current_signing_key'=>null,
+		'previous_signing_secrets'=>[],
+		'production'=>null,
+		'expose_trace_manifest'=>null,
+		'snapshot_max_age_seconds'=>null,
+		'require_signed_mutation_snapshots'=>true,
+		'snapshot_version_store'=>null,
+		'snapshot_reservation_ttl_seconds'=>120,
+		'transport_authorizer'=>null,
+		'security_context_resolver'=>null,
+		'legacy_snapshot_policy'=>null,
 		'component_parameter'=>'component',
 		'action_parameter'=>'action',
-		'allow_unsigned_in_debug'=>true,
+		'allow_unsigned_in_debug'=>false,
 		'max_payload_bytes'=>262144,
 		'components'=>[],
 	]);

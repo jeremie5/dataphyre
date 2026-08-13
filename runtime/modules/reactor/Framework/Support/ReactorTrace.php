@@ -19,6 +19,10 @@ final class ReactorTrace {
 
 	/** Maximum number of completed event records retained in memory. */
 	private const LIMIT=160;
+	private const MAX_DEPTH=8;
+	private const MAX_ITEMS=100;
+	private const MAX_STRING_BYTES=2048;
+	private const REDACTED='[REDACTED]';
 
 	/** @var array<int, array<string, mixed>> Ring-buffer style event history. */
 	private static array $events=[];
@@ -95,8 +99,8 @@ final class ReactorTrace {
 		self::record($event, $context+[
 			'span_id'=>$spanId,
 			'exception'=>$exception::class,
-			'message'=>$exception->getMessage(),
-			'file'=>$exception->getFile(),
+			'exception_message_exposed'=>false,
+			'file'=>basename($exception->getFile()),
 			'line'=>$exception->getLine(),
 		]);
 	}
@@ -168,14 +172,71 @@ final class ReactorTrace {
 	 * @return array<string, mixed> Sanitized context suitable for JSON and in-memory retention.
 	 */
 	private static function sanitize(array $context): array {
-		foreach($context as $key=>$value){
-			if($value instanceof \JsonSerializable){
-				$context[$key]=$value->jsonSerialize();
-			}
-			elseif(is_object($value)){
-				$context[$key]=$value::class;
-			}
+		$clean=self::sanitizeValue($context, null, [], 0);
+		return is_array($clean) ? $clean : [];
+	}
+
+	private static function sanitizeValue(mixed $value, ?string $key, array $path, int $depth): mixed {
+		if($key!==null && self::sensitiveKey($key, array_slice($path, 0, -1))){ return self::REDACTED; }
+		if($depth>self::MAX_DEPTH){ return ['type'=>get_debug_type($value),'truncated'=>'depth']; }
+		if($value instanceof \Throwable){ $value=['exception'=>$value::class,'message'=>$value->getMessage()]; }
+		elseif($value instanceof \JsonSerializable){
+			try{ $value=$value->jsonSerialize(); }
+			catch(\Throwable){ return ['type'=>'object','class'=>$value::class,'serialization'=>'failed']; }
 		}
-		return $context;
+		if(is_array($value)){
+			$clean=[];
+			$total=count($value);
+			$seen=0;
+			foreach($value as $itemKey=>$item){
+				if($seen++>=self::MAX_ITEMS){ break; }
+				$childKey=is_string($itemKey) ? $itemKey : null;
+				$outputKey=is_string($itemKey) ? self::truncate(self::normalizeUtf8($itemKey)) : $itemKey;
+				$clean[$outputKey]=self::sanitizeValue($item, $childKey, [...$path,(string)$itemKey], $depth+1);
+			}
+			if($total>self::MAX_ITEMS){ $clean['__truncated_items__']=$total-self::MAX_ITEMS; }
+			return $clean;
+		}
+		if(is_object($value)){ return ['type'=>'object','class'=>$value::class]; }
+		if(is_resource($value)){ return ['type'=>'resource','resource_type'=>get_resource_type($value)]; }
+		if(is_float($value) && !is_finite($value)){ return (string)$value; }
+		if(!is_string($value)){ return $value; }
+		return self::truncate(self::scrub(self::normalizeUtf8($value)));
+	}
+
+	private static function sensitiveKey(string $key, array $path): bool {
+		$key=self::normalizeKey($key);
+		if($key==='code'){
+			$parents=array_map([self::class,'normalizeKey'], $path);
+			return array_intersect($parents, ['input','query','authentication','challenge','mfa','totp','otp'])!==[];
+		}
+		return preg_match('/(?:^|_)(?:password|passwd|pwd|passphrase|token|secret|credential|authorization|cookie|csrf|recovery_codes?|totp|otp|api_key|access_key|private_key|encryption_key|signing_key|challenge_key|session_id|pepper)(?:_|$)/', $key)===1;
+	}
+
+	private static function normalizeKey(string $key): string {
+		$key=preg_replace('/([a-z0-9])([A-Z])/', '$1_$2', trim(self::normalizeUtf8($key))) ?? $key;
+		return strtolower(trim(preg_replace('/[^a-z0-9]+/i', '_', $key) ?? '', '_'));
+	}
+
+	private static function normalizeUtf8(string $value): string {
+		if($value==='' || preg_match('//u', $value)===1){ return $value; }
+		return (string)json_decode((string)json_encode($value, JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE), true);
+	}
+
+	private static function scrub(string $value): string {
+		if(preg_match('/-----BEGIN (?:(?:ENCRYPTED|RSA|EC|DSA|OPENSSH|PGP|SSH2 ENCRYPTED) )?PRIVATE KEY(?: BLOCK)?-----/i', $value)===1){ return self::REDACTED; }
+		$value=preg_replace('/([a-z][a-z0-9+.-]*:\/\/[^\/\s:@]+:)[^@\s\/]+(@)/i', '$1'.self::REDACTED.'$2', $value) ?? $value;
+		$names='password|passwd|pwd|passphrase|token|secret|credential|access[_-]?token|refresh[_-]?token|api[_-]?key|client[_-]?secret|authorization|cookie|csrf[_-]?token|session[_-]?id|private[_-]?key';
+		$value=preg_replace('/(\b(?:'.$names.')\b\s*(?:=|:)\s*)(?:"[^"]*"|\'[^\']*\')/i', '$1'.self::REDACTED, $value) ?? $value;
+		$value=preg_replace('/(\b(?:'.$names.')\b\s*(?:=|:)\s*)(?!\[REDACTED\])[^&,;}\]\r\n]*?(?=(?:\s+[A-Za-z][A-Za-z0-9_.-]*\s*(?:=|:))|[&,;}\]\r\n]|$)/i', '$1'.self::REDACTED, $value) ?? $value;
+		$value=preg_replace('/\b(Bearer|Basic)\s+[A-Za-z0-9._~+\/=:-]+/i', '$1 '.self::REDACTED, $value) ?? $value;
+		return preg_replace('/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/', self::REDACTED, $value) ?? $value;
+	}
+
+	private static function truncate(string $value): string {
+		if(strlen($value)<=self::MAX_STRING_BYTES){ return $value; }
+		$cut=substr($value, 0, self::MAX_STRING_BYTES);
+		while($cut!=='' && preg_match('//u', $cut)!==1){ $cut=substr($cut, 0, -1); }
+		return $cut.'...';
 	}
 }

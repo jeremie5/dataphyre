@@ -262,6 +262,7 @@
             "core",
             "optional",
             "adapter",
+            "tooling",
             "legacy",
             "experimental"
           ]

@@ -188,6 +188,10 @@ use Dataphyre\Database\MultipleRecordsFoundException;
 use Dataphyre\Database\OptimisticLockException;
 use Dataphyre\Database\Tools\ScaffoldTableArtifacts;
 use Dataphyre\Database\Contracts\RecordHydrator;
+use Dataphyre\Database\Migrations\PostgreSqlMigrationManifest;
+use Dataphyre\Database\Migrations\PostgreSqlMigrationProfile;
+use Dataphyre\Database\Migrations\PostgreSqlMigrationRunner;
+use Dataphyre\Database\Migrations\PostgreSqlSchemaInspector;
 ```
 
 The framework is explicit on the failure path too. When setup or usage is wrong, exceptions include:
@@ -340,7 +344,7 @@ Supported casts are:
 - `json`
 - `datetime`
 
-On reads, schema casts convert registered columns into PHP values. On writes, schema casts serialize supported values into storage-safe values. JSON casts encode arrays and objects before writes and decode valid JSON strings after reads. Datetime casts write `DateTimeInterface` values as `Y-m-d H:i:s` and read non-empty database values as `DateTimeImmutable`.
+On reads, schema casts convert registered columns into PHP values. On writes, schema casts serialize supported values into storage-safe values. JSON casts encode arrays and objects before writes and decode valid JSON strings after reads. JSON encoding preserves a PHP float's zero fraction, so values such as `30.0` remain `30.0` instead of silently becoming the integer-shaped JSON value `30`. Datetime casts write `DateTimeInterface` values as `Y-m-d H:i:s` and read non-empty database values as `DateTimeImmutable`.
 
 ## Observability
 
@@ -552,6 +556,14 @@ $status_rows=MachineRepository::query()
 	->whereEq('tenant_id', $tenant_id)
 	->aggregateRowsBy(['tenant_id', 'status'], 'COUNT');
 
+// Critical projections can distinguish a SQL failure from a valid empty set.
+// The policy also propagates into row relations loaded with with(...).
+$inventory=MachineRepository::query()
+	->failOnReadError()
+	->with('components')
+	->whereEq('tenant_id', $tenant_id)
+	->get();
+
 $updated=MachineRepository::query()
 	->whereEq('tenant_id', $tenant_id)
 	->whereEq('status', 'queued')
@@ -574,8 +586,23 @@ MachineRepository::query()
 			// handle queued write result later
 		},
 		'reporting'
-	);
+);
 ```
+
+Convenience collection reads intentionally normalize an unavailable SQL result
+to `[]`, and convenience first-row reads normalize it to `null`. Use
+`failOnReadError()` on `RepositoryQuery` or `TableQuery` when that ambiguity is
+unsafe. A valid no-match result remains `[]` or `null`; only a low-level SQL
+failure or malformed read payload raises a structured `SQL read error`.
+On PostgreSQL-compatible drivers, the legacy kernel may represent a successful
+single-row miss as `false`; strict framework reads consult
+`sql::last_query_error()` and normalize that sentinel to `null` only when no
+query error was recorded. A `false` result accompanied by an error still fails
+closed. This distinction also applies to `TableQuery` strict reads.
+Repository strictness also propagates through eager row and record relations, so
+a failed child query cannot be presented as an empty relation. The equivalent
+static repository primitives are `allOrFailOnReadError(...)` and
+`firstOrFailOnReadError(...)`.
 
 Queued reads return the same row shapes as their immediate equivalents, including row transforms and repository eager-loaded relations. Collection helpers such as `queuePluck(...)`, `queueKeyBy(...)`, and `queueExists(...)` are derived from the normalized queued read callbacks. Static repository finder helpers also have queued forms, including `queueFindOneBy(...)`, `queueFindOneByOrFail(...)`, `queueFindManyByIds(...)`, and hydrated/keyed variants. `queueFirstOrFail(...)`, `queueFindOrFail(...)`, `queueFindOneRecordByOrFail(...)`, `queueFindRecordOrFail(...)`, `queueValueOrFail(...)`, and `queueSole(...)` raise the same structured SQL exceptions as their immediate equivalents when the queued callback is processed. `queuePaginate(...)` queues the count and page-item reads together, then calls back once with a `PageResult` when both results are available. Queued writes pass the affected-row style result to the callback, so code can handle `0`, a positive row count, or `false` without reaching into the raw driver response. Repository write conveniences also have queued forms, including `queueUpdateById(...)`, `queueIncrementById(...)`, and `queueDeleteById(...)`. Queued optimistic writes such as `queueUpdateWithVersion(...)` and `queueUpdateByIdWithVersion(...)` call back with a `MutationResult` so `stale()` and `throwIfStale()` stay available. Queued batch writes such as `queueCreateMany(...)` and `queueUpsertMany(...)` call back once with a `MutationBatchResult` after every queued row callback has resolved. If a queued statement fails because a registered table or column is missing, Dataphyre hydrates the registered definition once and retries the queue.
 
@@ -784,6 +811,261 @@ $result=ScaffoldTableArtifacts::scaffold(
 ```
 
 By default the scaffold refuses to overwrite existing files. Pass `--force` on the CLI, or `true` as the final argument programmatically, when you intentionally want to regenerate artifacts.
+
+## PostgreSQL release migrations
+
+Dataphyre owns the reusable PostgreSQL migration state machine. Applications
+provide policy and immutable SQL; they do not need to copy manifest parsing,
+journaling, drift inspection, advisory locking, rolling-deployment checks, or
+down-migration certification into their own release tools.
+
+The complete public contract, manifest-v3 example, expand/contract workflow,
+release-provenance rules, and rollback boundary are documented in
+[`Dataphyre_PostgreSQL_Migrations.md`](Dataphyre_PostgreSQL_Migrations.md).
+The normative machine-readable shape is
+[`postgresql-migration-manifest-v3.schema.json`](postgresql-migration-manifest-v3.schema.json).
+
+The application supplies a `PostgreSqlMigrationProfile` with its schema,
+journal names, advisory-lock key, grandfathered bootstrap IDs, and timeouts.
+`PostgreSqlMigrationManifest::load(...)` then validates a schema-v3 manifest,
+confines every referenced SQL file to the selected database component, and
+verifies its SHA-256 checksum before any database work begins. It also rejects
+transaction-control statements and PostgreSQL concurrent index operations,
+which cannot participate in the runner-owned transaction.
+
+```php
+use Dataphyre\Database\Migrations\PostgreSqlMigrationManifest;
+use Dataphyre\Database\Migrations\PostgreSqlMigrationProfile;
+use Dataphyre\Database\Migrations\PostgreSqlMigrationRunner;
+
+$profile=PostgreSqlMigrationProfile::fromArray([
+	'application_id'=>'example_app',
+	'schema'=>'example_app',
+	'journal_table'=>'schema_migrations',
+	'event_table'=>'schema_migration_events',
+	'release_digest_column'=>'release_sha256',
+	'advisory_lock'=>'example_app.postgresql_migrations',
+	'bootstrap_ids'=>['001_legacy_schema_baseline'],
+	'bootstrap_cutoff'=>'001_legacy_schema_baseline',
+	'manifest_public_path'=>'database/postgresql/manifest.json',
+	'lock_timeout'=>'5s',
+	'statement_timeout'=>'120s',
+]);
+
+$manifest=PostgreSqlMigrationManifest::load(
+	$application_root.'/database',
+	$profile
+);
+$runner=new PostgreSqlMigrationRunner($pdo, $profile);
+
+$state=$runner->status($manifest);
+$deployment=$runner->deploymentEvidence($manifest, $state, 'rolling');
+if($deployment['eligible']===true){
+	$result=$runner->apply($manifest, 'rolling');
+}
+```
+
+Bootstrap migrations retain stable `NNN_name.sql` filenames. Post-bootstrap
+migrations use paired `NNN_name.up.sql` and `NNN_name.down.sql` files, or
+declare an explicit irreversible reason. A down direction must declare
+`lossless` or `data_loss`; data-loss rollback requires an explicit opt-in.
+Dataphyre certifies reversible SQL by executing down/up/down inside its
+runner-owned transaction. Manifest entries default `change_kind` to `schema`;
+explicit `data_only` entries must keep structural fingerprints unchanged while
+exactly restoring and repeating their data fingerprints. Lossless migrations
+additionally preserve application row counts.
+
+`rolling_expand` accepts only the additive SQL subset checked by
+`deploymentEvidence(...)`. Bootstrap and rolling modes select their leading
+pending bootstrap/expand or expand-only prefix and defer the first
+`rolling_contract` plus its tail. `rolling_contract` records an exact minimum
+compatible release and is intentionally rejected from ordinary rolling apply.
+After the bootstrap cutoff, `maintenance` mode selects the complete pending
+expand/contract suffix transactionally. Selecting maintenance is the
+application's assertion that its drain/barrier is already established;
+Dataphyre does not verify that operational state.
+
+Maintenance contract evidence requires a caller-verified minimum active release:
+
+```php
+$deployment=$runner->deploymentEvidence(
+	$manifest,
+	$state,
+	'maintenance',
+	$callerVerifiedMinimumActiveRelease
+);
+if($deployment['eligible']===true){
+	$result=$runner->apply(
+		$manifest,
+		'maintenance',
+		false,
+		$releaseIdentity,
+		$callerVerifiedMinimumActiveRelease
+	);
+}
+```
+
+Evidence exposes stable `required_minimum_active_release`,
+`verified_minimum_active_release`, and `compatibility_floor_satisfied` fields.
+It also distinguishes the complete pending inventory from exact
+`selected_migrations`, `selected_phases`, and `deferred_migrations`; `apply(...)`
+executes only the recomputed selection.
+The compatibility argument is rejected outside maintenance. Exact Semantic
+Version precedence is implemented by
+`PostgreSqlMigrationProfile::compareVersions(...)`; build metadata is ignored,
+while prerelease identifiers retain their normative ordering.
+Evidence also fails closed when the supplied `status(...)` result reports drift
+or omits, duplicates, or assigns a non-deployable status to a manifest entry.
+
+Release-specific authority stays application-owned. For example, a
+high-availability application should prove that request responders and
+background jobs are drained before calling `rollback(...)`; Dataphyre performs
+the database rollback but does not invent or weaken that operational proof.
+Likewise, an immutable release launcher should load these classes from its
+pinned Dataphyre package rather than whichever framework version is currently
+installed on the host.
+
+The profile safely quotes schema/table identifiers, including mixed-case
+PostgreSQL names. Its configurable release-digest column defaults to
+`release_sha256` and may not collide, case-insensitively, with any fixed event
+journal column. The profile implements `JsonSerializable`, making its normalized
+public configuration safe to include in validation and planning output.
+
+`manifest_public_path` is a release-relative summary label.
+`PostgreSqlMigrationManifest::load($database_root, ...)` always reads
+`$database_root/postgresql/manifest.json`; the profile value does not redirect
+that filesystem read.
+
+The rolling-expansion scanner is deliberately conservative. In particular,
+explicit `CREATE INDEX` is outside the transactional rolling lane. A regular
+post-bootstrap index can run transactionally in maintenance mode.
+`CREATE INDEX CONCURRENTLY` remains outside the runner because PostgreSQL
+requires a separate autocommit protocol.
+Schema drift inspection covers supported table, column, primary/foreign-key,
+check-constraint, and index syntax; it does not claim semantic inspection of
+views, routines, triggers, extensions, privileges, or application invariants.
+
+## Native SQL seeding
+
+Dataphyre SQL treats seed data as versioned application infrastructure rather
+than request-service behavior. Application-owned `*.seed.php` files return a
+`SeedDefinition` (or a list of definitions); `SeedManager` resolves
+dependencies, runs every selected preflight before the first write, applies the
+pending batch in one transaction, and records it in a portable SQL ledger. A
+matching checksum makes repeat execution a no-op.
+Changing an already-applied definition is reported as drift: add a new version
+instead of mutating seed history.
+
+Keep reference/demo fixture orchestration in dedicated seeder classes. Runtime
+controllers and services should consume persisted data and must not invoke the
+seed manager during web requests.
+
+A seed file can delegate to an application seeder while retaining framework
+lifecycle metadata:
+
+```php
+<?php
+
+use Dataphyre\Database\Seeds\SeedContext;
+use Dataphyre\Database\Seeds\SeedDefinition;
+use Serve\Database\Seeders\DemoPortfolioSeeder;
+
+return new SeedDefinition(
+	id: 'serve.demo-portfolio',
+	version: 1,
+	up: static fn(SeedContext $context)=>(new DemoPortfolioSeeder())->apply($context),
+	preflight: static fn(SeedContext $context)=>(new DemoPortfolioSeeder())->preflight($context),
+	description: 'Local multi-concept portfolio fixture',
+	profiles: ['demo'],
+	content_sources: [
+		__DIR__.'/../../src/Database/Seeders/DemoPortfolioSeeder.php',
+		__DIR__.'/../../src/Support/DemoFranchisePortfolio.php',
+	],
+);
+```
+
+Seed ids are stable lowercase identifiers. Versions are positive integers.
+Dependencies may name an id (which resolves to its latest declared version) or
+an exact `id@version`. Versions of the same id are ordered automatically.
+Seed callbacks receive `SeedContext`, whose `query(...)` method executes
+Dataphyre SQL immediately with bound values and whose attributes can carry
+application/tenant bootstrap context. When a cluster is selected, the context,
+ledger queries, mutex, and Framework transaction are all bound to that same
+cluster. Application seeders that bypass `SeedContext` must reject clusters they
+cannot honor.
+
+`SeedContext::query(...)` also infers registered tables targeted by ordinary
+`INSERT`, `UPDATE`, `DELETE`, `MERGE`, `TRUNCATE`, and table-DDL statements. Their
+Dataphyre cache invalidations are deferred with the atomic seed transaction and
+become visible only after commit. Pass an explicit fourth-argument table list
+for vendor-specific mutation syntax that cannot be inferred. Passing `false`
+opts out and should be reserved for statements proven not to affect a cached
+table.
+
+The standalone seed command also loads the flight-sheet-enabled `cache` kernel,
+when present, so inferred invalidations advance the same released shared
+Memcached generations used by request and worker processes.
+
+Definitions use the `default` execution profile unless declared otherwise.
+Non-production fixtures should use `profiles: ['demo']`; they are excluded from
+an ordinary apply and require both `--profile=demo` and the explicit
+`--allow-demo` acknowledgement. Applications must still fail closed on demo
+profiles in production/staging. `content_sources` fingerprints delegated seeder
+and fixture code in addition to the definition file, so changing executable
+seed behavior is detected as drift. Persistent programmatic definitions must
+provide an explicit content checksum when no seed file is available.
+
+The standalone command discovers `applications/<app>/database/seeds` with
+`--app`, accepts repeatable `--path` values, or reads
+`DP_SQL_CFG['seeds']['paths']`. Applications with custom SQL/autoload setup can
+provide a side-effect-free CLI bootstrap file. With `--app=serve`, Dataphyre
+automatically loads `applications/serve/database/seeds/bootstrap.php` when it
+exists; an explicit `--bootstrap` path overrides the convention:
+
+```bash
+php runtime/modules/sql/kernel/seeds.php list --app=serve
+php runtime/modules/sql/kernel/seeds.php status --app=serve --json
+php runtime/modules/sql/kernel/seeds.php apply --app=serve --dry-run
+php runtime/modules/sql/kernel/seeds.php apply --app=serve
+php runtime/modules/sql/kernel/seeds.php apply --app=serve --profile=demo --allow-demo --id=serve.demo-portfolio
+php runtime/modules/sql/kernel/seeds.php status --app=serve --cluster=primary --ledger-table=dataphyre_seed_ledger
+php runtime/modules/sql/kernel/seeds.php rollback --app=serve --id=serve.reversible-reference@1 --dry-run
+php runtime/modules/sql/kernel/seeds.php rollback --app=serve --id=serve.reversible-reference@1 --confirm
+php runtime/modules/sql/kernel/seeds.php status --path=applications/serve/database/seeds --bootstrap=applications/serve/database/seeds/bootstrap.php
+```
+
+The default ledger is `dataphyre_seed_ledger` with the composite identity
+`(seed_id, seed_version)`, checksum, batch, and application timestamp. Override
+it with `--ledger-table` or `DP_SQL_CFG['seeds']['ledger_table']`. Rollback is
+available only when the exact definition supplies a down callback, the checksum
+still matches, no applied dependent exists, and the caller passes `--confirm`.
+Every mutation takes a row lock in the companion ledger mutex table, validates
+the entire applied graph for drift/orphans, and uses Dataphyre Framework
+transaction/savepoint semantics. There is deliberately no reset-all command.
+
+Native mutation transactions are supported on MySQL and PostgreSQL. SQLite
+status/catalog operations remain portable, but apply/rollback fail before the
+seed callback until Dataphyre's SQLite kernel provides one persistent
+transaction connection. An embedding with a verified persistent SQLite
+transaction executor may supply it explicitly.
+
+Programmatic use is useful for app-specific command wrappers and tests:
+
+```php
+use Dataphyre\Database\Seeds\SeedContext;
+use Dataphyre\Database\Seeds\SeedFileLoader;
+use Dataphyre\Database\Seeds\SeedManager;
+use Dataphyre\Database\Seeds\SqlSeedLedger;
+
+$manager=new SeedManager(
+	SeedFileLoader::load(__DIR__.'/database/seeds'),
+	new SqlSeedLedger('dataphyre_seed_ledger', cluster: 'primary'),
+	new SeedContext(attributes: ['application'=>'serve'], cluster: 'primary'),
+);
+
+$pending=$manager->planApply();
+$result=$manager->apply();
+```
 
 ## `TableQuery`
 
@@ -1029,6 +1311,16 @@ DB::table('machines', 'machine_id')
 `RepositoryQuery` is the repository-scoped query builder returned by `TableRepository::query()`.
 
 It extends `QuerySpec`, so all `where_*`, `order_by`, and paging helpers work, and it executes directly against its repository.
+
+`TableRepository::query()` starts from the repository's `spec()`, so tenant,
+soft-delete, ordering, and other repository-wide constraints also apply to
+fluent calls and relation-generated queries. It also captures the repository's
+effective `defaultReadCaching()` and `defaultWriteInvalidation()` policies.
+Named `cacheName(...)` / `cacheNames(...)` and `invalidateCacheName(...)` /
+`invalidateCacheNames(...)` calls merge with repository-default names, including
+for queued operations. Explicit `cache(...)`, `withoutCaching()`,
+`invalidateOnWrite(...)`, and `withoutInvalidation()` calls replace those
+repository defaults.
 
 Execution helpers include:
 
@@ -1399,6 +1691,14 @@ $schema=new TableSchema(
 $summary_columns=$schema->projection('summary');
 $primary_key=$schema->primaryKey();
 ```
+
+Resolve named projections with `TableRepository::projectionNamed(...)` or
+`TableSchema::projection(...)`, then pass the returned list to `TableRepository`
+or `TableQuery` read helpers. Explicit column lists use the same path. The
+Framework validates and compiles those lists to a comma-separated SQL selector
+before calling the kernel. This is distinct from the low-level
+`sql_select(...)` array form, which is reserved for DBMS-specific selector maps
+keyed by `mysql`, `postgresql`, or `sqlite`.
 
 `TableSchema` does not create tables from its column list. Missing-table and missing-column hydration are resolved through the SQL table-definition registry, so the same module-owned definition is used for kernel helpers, repositories, and ad hoc `DB::table(...)` queries.
 
@@ -2127,6 +2427,12 @@ Counter writes use the same result type. `increment(...)` and `decrement(...)` i
 
 For `update(...)`, `delete(...)`, counter writes, `updateWithVersion(...)`, and queued optimistic updates, `affectedRows()` reports the database engine's affected-row count when the driver provides one. Zero affected rows is still a successful execution; it means the statement matched no rows or made no change.
 
+For inserts, `insertedId()` accepts scalar driver identities and PostgreSQL-style
+`RETURNING` row arrays. Array results are resolved only through the
+`primary_key` column in the mutation context; Dataphyre does not guess from the
+first returned column, and the complete row remains available through
+`rawResult()`.
+
 `MutationResult` exposes:
 
 - `operation()`
@@ -2197,15 +2503,173 @@ $first_batch_error=$batch->firstErrorMessage();
 $batch_errors=$batch->errorMessages();
 ```
 
+### Bounded multi-row mutations
+
+Synchronous `createMany(...)` and `upsertMany(...)` use bounded multi-value SQL
+statements when the active DBMS can preserve the existing per-row
+`MutationBatchResult` contract. This removes the former one-round-trip-per-row
+behavior without adding an implicit transaction or changing requested/processed
+accounting. `TableRepository`, `RepositoryQuery`, and `TableQuery` expose the
+same optional final `BulkMutationOptions` argument:
+
+```php
+use Dataphyre\Database\BulkMutationOptions;
+
+$created=MachineRepository::createMany(
+	$rows,
+	clearCache: true,
+	options: BulkMutationOptions::inserts(maxRowsPerStatement: 128),
+);
+
+$created_with_generated_ids=EventRepository::createMany(
+	$rowsWithUniqueExternalKeys,
+	clearCache: true,
+	options: BulkMutationOptions::inserts(correlationColumn: 'external_key'),
+);
+
+$inventory=InventoryRepository::upsertMany(
+	$rows,
+	clearCache: true,
+	options: BulkMutationOptions::upserts(
+		conflictColumns: ['tenant_id', 'sku'],
+		updateColumns: ['name', 'quantity', 'updated_at'],
+	),
+);
+```
+
+The planner validates and casts every row through the normal repository/schema
+field path before it emits SQL. Consecutive rows with the same canonical column
+set share a statement; a changed shape starts a new group so omitted columns
+still receive their database defaults and input mutation order is not
+rearranged. Each group is split by both a row ceiling and a bind-parameter
+ceiling. Defaults are 128 rows, 32,000 PostgreSQL/YSQL parameters, and 900
+SQLite parameters. Applications can lower or tune the bounds globally or for a
+registered table:
+
+```php
+'bulk_mutations'=>[
+	'enabled'=>true,
+	'max_rows_per_statement'=>128,
+	'parameter_limits'=>[
+		'postgresql'=>32000,
+		'sqlite'=>900,
+	],
+],
+
+'tables'=>[
+	'inventory'=>[
+		'bulk_mutations'=>[
+			'max_rows_per_statement'=>64,
+			'max_parameters'=>8000,
+		],
+	],
+],
+```
+
+These bounds are statement limits, not a promise that every call becomes one
+statement. For example, the focused contract proves that 1,000 compatible
+two-column PostgreSQL rows compile to eight statements at the 128-row default,
+instead of 1,000 statements. YugabyteDB likewise recommends starting with 128
+rows and tuning for the workload, explicitly recommends multi-row inserts and
+multi-row `INSERT ... ON CONFLICT`, and notes that batching reduces distributed
+round trips. See the YugabyteDB
+[YSQL data-modeling and performance guidance](https://docs.yugabyte.com/stable/develop/best-practices-develop/data-modeling-perf/)
+and [YSQL `INSERT` contract](https://docs.yugabyte.com/stable/api/ysql/the-sql-language/statements/dml_insert/).
+
+Compatibility and failure behavior are explicit:
+
+- PostgreSQL and YugabyteDB inserts use multi-row `VALUES ... ON CONFLICT DO
+  NOTHING RETURNING <primary key>, <correlation column>`. By default, every row
+  must supply a distinct scalar
+  repository primary key, and returned rows are correlated by that key rather
+  than unspecified result order. Tables with database-generated primary keys
+  can instead set `correlationColumn` to a distinct scalar input column, such as
+  an application-generated UUID; the column must be present with a distinct
+  scalar value in every input row and must round-trip without trigger-side
+  rewriting. A database uniqueness constraint is recommended for durable
+  application keys. The returned primary key still becomes each child's
+  `insertedId()`. Without either safe correlation shape,
+  Dataphyre stays on the legacy per-row path rather than inventing identities.
+  Conflicting rows remain failed child results just as the single-row helper
+  reports them. PostgreSQL documents that `RETURNING` contains only rows
+  actually inserted or updated in its
+  [`INSERT` reference](https://www.postgresql.org/docs/current/sql-insert.html).
+- PostgreSQL/YSQL and SQLite upserts batch only the portable
+  `ON CONFLICT (<explicit columns>) DO UPDATE SET ...` shape. Conflict columns
+  come from `BulkMutationOptions::upserts(...)` or, when options are omitted,
+  the repository/table primary key. Explicit conflict metadata fails closed if
+  the active path cannot represent it; it is never silently discarded.
+- SQLite inserts use its existing `INSERT OR IGNORE` success semantics, so child
+  insert identities remain `null`. SQLite documents multi-row `VALUES`, omitted
+  column defaults, `UPSERT`, and `RETURNING` in its
+  [`INSERT` reference](https://sqlite.org/lang_insert.html).
+- MySQL keeps the compatible per-row path. Its multi-row insert result exposes
+  only the first generated auto-increment identity, and `ON DUPLICATE KEY UPDATE`
+  cannot select one exact conflict target. Dataphyre therefore does not invent
+  child identities or claim that a composite target was honored. MySQL's
+  documentation describes both the
+  [first-identity behavior](https://dev.mysql.com/doc/refman/26.7/en/example-auto-increment.html)
+  and the performance benefit of
+  [multi-value inserts](https://dev.mysql.com/doc/refman/26.7/en/insert-optimization.html);
+  a future driver result contract can unlock that optimization safely.
+- Custom legacy `$updateParams` / `$updateVars` keep their per-row execution
+  path. Queued `queueCreateMany(...)` and `queueUpsertMany(...)` also remain
+  per-row because their callback delivery/order contract is different from the
+  synchronous batch result. Tables configured with `multipoint_writes` retain
+  the endpoint-aware per-row kernel path; raw bulk SQL is never substituted for
+  that replication contract.
+
+A successful multi-row statement is atomic at the database statement boundary;
+Dataphyre does not wrap the whole batch in a new transaction. If one bulk insert
+statement is rejected, its rows replay through the legacy single-row helper so
+partial failure and identity results remain observable. A rejected bulk upsert
+replays as single-row statements compiled with the same explicit conflict
+target. Previously successful chunks remain committed outside a caller-owned
+transaction, matching the old batch's row-by-row progress. An error aborts an
+active PostgreSQL/YSQL transaction, so Dataphyre deliberately does not issue
+doomed per-row retries inside a Framework transaction: every child in that
+statement is reported failed and the owning transaction must roll back. Normal
+cluster affinity, cache bypass, and commit-time invalidation rules still apply.
+
+Cache invalidation occurs once per physical statement, and `clearCache: true`
+is resolved to the real table rather than the raw-query namespace. Named
+invalidations remain unchanged. SQL observers receive one execution event per
+physical statement with `framework_operation`, `bulk_mutation`, and
+`bulk_rows` trace context; a rejected statement's isolated retries carry
+`bulk_mutation_fallback`. Consumers that previously counted one observer event
+per input row must use `bulk_rows` or batch results instead.
+
 ## `DB`, `ConnectionContext`, `Transaction`, and `TransactionResult`
 
 The framework also provides a low-magic transaction layer over the kernel transaction primitives.
 
 `DB::transaction(...)` throws on transaction begin/commit/rollback failures and rethrows callback exceptions. `DB::attemptTransaction(...)` gives the same orchestration path without forcing exception-based control flow. `transactionWithRetries(...)` and `attemptTransactionWithRetries(...)` retry transient SQL failures such as deadlocks, lock timeouts, serialization failures, and SQLite busy/locked errors.
 
+YugabyteDB can surface a retryable distributed conflict after its internal
+best-effort retries without preserving SQLSTATE through every driver or YSQL
+Connection Manager path. `SqlError::isTransientTransactionException(...)`
+therefore also recognizes YugabyteDB's concrete message signatures: `All
+transparent retries exhausted`, `Restart read required`, transaction expiry or
+abort by a conflict, higher-priority transaction conflicts, `Value write after
+transaction start`, and `kConflict`. Classification remains deliberately
+narrow: generic `try again`, generic exhausted-retry prose, ordinary mentions
+of read-restart policy, constraint violations, and other deterministic failures
+do not become retryable. See YugabyteDB's [transaction retry
+guidance](https://docs.yugabyte.com/stable/develop/learn/transactions/transactions-retries-ysql/),
+[concurrency-control error examples](https://docs.yugabyte.com/stable/architecture/transactions/concurrency-control/),
+and [`Restart read required` contract](https://docs.yugabyte.com/stable/architecture/transactions/read-restart-error/).
+
 Transaction callbacks can be zero-argument callbacks, or they can ask for a `Transaction` and/or `ConnectionContext` parameter. Typed callback parameters are matched by type. Untyped callbacks receive the transaction first from `DB::transaction(...)` / `Transaction::run(...)`, and the connection first from `ConnectionContext::transaction(...)`.
 
 Nested framework transactions use database savepoints. The outermost transaction calls `BEGIN` / `COMMIT` / `ROLLBACK`; inner transactions on the same cluster call `SAVEPOINT`, `RELEASE SAVEPOINT`, and `ROLLBACK TO SAVEPOINT`. This allows repository methods to wrap their own write flows without accidentally committing or rolling back an outer unit of work.
+
+An active framework transaction also establishes cluster affinity for ordinary `DB` raw helpers and ORM/table operations. A callback opened through `DB::transaction(..., 'analytics')` therefore cannot silently route a repository call back to that table's configured/default cluster. Pass an explicit connection context only when deliberately opening an independent transaction on another cluster. Transaction depth, active-cluster routing, cache bypass, and deferred invalidations are isolated per Fiber so concurrent execution contexts do not inherit one another's unit of work.
+
+When the caller omits a cluster, Dataphyre resolves the transaction bookkeeping key from `DP_SQL_CFG['default_cluster']`; the implicit transaction and an explicit reference to that same configured cluster therefore share one active depth and connection identity. This normalization matters for nested repository transactions and `transactionAdvisoryLock(...)`: both must recognize the default-cluster transaction already in progress rather than rejecting the lock or opening an unrelated unit of work. If no configured default exists, Dataphyre retains an internal default sentinel until connection discovery can resolve one.
+
+Framework transactions are cache-safe by construction. Reads issued while a transaction is active bypass Dataphyre's read caches so they observe prior writes without publishing uncommitted rows. Successful writes queue their table or named-cache invalidations on the active transaction: released savepoints merge invalidations into their parent, rolled-back work discards them, and only a successful outer commit flushes them. Commit-time cache backend failures are logged after the database commit and are never converted into a retryable transaction failure, because replaying an already-committed callback could duplicate durable side effects. Raw kernel transactions that bypass `Dataphyre\Database\Transaction` cannot receive this coordination and must not combine transactional writes with shared-cache reads or invalidation.
+
+`shared_cache` is used only while Dataphyre Cache reports a healthy shared Memcached backend. Its request-local outage fallback is deliberately treated as a cache miss: SQL neither reads nor publishes local entries under a shared policy. A shared read verifies the table generation both before and after fetching its payload, so an invalidation racing the two Memcached operations becomes a miss instead of leaking one stale response. Registered table names in a multi-target invalidation also advance their shared table-version tokens, so raw multi-table writes invalidate entries created by other workers rather than relying only on a request-local named-key index. If Memcached is unavailable when a post-commit version increment is due, Dataphyre emits a failed-invalidation observer event; keep shared-cache lifespans bounded because an already-committed database callback cannot be safely replayed.
 
 `DB` exposes:
 
@@ -2223,6 +2687,7 @@ Nested framework transactions use database savepoints. The outermost transaction
 - `clusterDbms(...)`
 - `begin(...)`
 - `transaction(...)`
+- `transactionAdvisoryLock(...)`
 - `attemptTransaction(...)`
 - `transactionWithRetries(...)`
 - `attemptTransactionWithRetries(...)`
@@ -2273,6 +2738,8 @@ Nested framework transactions use database savepoints. The outermost transaction
 - `isNested()`
 - `savepointName()`
 - `activeDepth(...)`
+- `activeCluster()`
+- `hasActiveTransaction()`
 - `isActive()`
 - `begun()`
 - `committed()`
@@ -2338,6 +2805,14 @@ $nested=DB::transaction(static function(Transaction $outer){
 	});
 });
 
+$serialized=DB::transaction(static function(): MutationResult{
+	DB::transactionAdvisoryLock('tenant:42:inventory:SKU-100');
+	return InventoryRepository::query()
+		->whereEq('tenant_id', 42)
+		->whereEq('sku', 'SKU-100')
+		->increment('reserved_quantity');
+});
+
 $attempt=DB::attemptTransaction(static function(){
 	return MachineRepository::deleteById('MACHINE_404');
 });
@@ -2395,6 +2870,26 @@ $manual=(new Transaction('default'))->attempt(static function(Transaction $trans
 $manual_ok=$manual->ok();
 $manual_cluster=$manual->cluster();
 ```
+
+`DB::transactionAdvisoryLock(...)` exposes only PostgreSQL-compatible
+transaction-level advisory locks. It must run inside an active Dataphyre
+transaction, hashes the prepared string key with PostgreSQL's
+`hashtextextended(..., 0)`, and releases the lock with the outermost transaction.
+Dataphyre intentionally does not expose session advisory locks: session state can
+leak to unrelated clients when a pool or YugabyteDB YSQL Connection Manager
+reuses a server connection.
+
+The helper fails explicitly for non-PostgreSQL DBMSs and PostgreSQL-compatible
+servers it cannot identify. For YugabyteDB, the process performs a cached server
+version preflight and requires v2025.1 or later before the lock query. Cluster
+operators must also keep advisory locks enabled and include this preflight in
+release qualification; YugabyteDB documents distributed advisory locks as
+available and enabled by default starting in v2025.1. See YugabyteDB's
+[explicit locking documentation](https://docs.yugabyte.com/stable/explore/transactions/explicit-locking/).
+
+Database discovery remains safe during partial bootstrap: before optional
+`DP_SQL_CFG` or `DP_CORE_CFG` constants exist, `DB::clusters()` returns an empty
+catalog and the default-cluster, DBMS, and datacenter helpers return `null`.
 
 ## Design Notes
 

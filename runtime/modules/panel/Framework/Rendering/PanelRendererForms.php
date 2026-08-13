@@ -260,13 +260,16 @@ trait PanelRendererForms {
 	 */
 	private static function displayOnlyControl(array $meta, mixed $value): string {
 		$fieldMeta=is_array($meta['meta'] ?? null) ? $meta['meta'] : [];
-		$content=array_key_exists('display_content', $fieldMeta) ? (string)$fieldMeta['display_content'] : self::stringValue($value);
+		$contentValue=array_key_exists('display_content', $fieldMeta) ? $fieldMeta['display_content'] : $value;
+		$safe=$contentValue instanceof PanelSafeHtml ? $contentValue : null;
+		$content=$safe!==null ? $safe->html() : self::stringValue($contentValue);
 		if($content===''){
 			$content=(string)($meta['placeholder'] ?? '');
+			$safe=null;
 		}
-		$html=($fieldMeta['html'] ?? false)===true
-			? self::safeRichHtml($content)
-			: nl2br(self::e($content));
+		$html=$safe!==null
+			? $safe->html()
+			: (($fieldMeta['html'] ?? false)===true ? self::safeRichHtml($content) : nl2br(self::e($content)));
 		$description=trim((string)($fieldMeta['description'] ?? ''));
 		$descriptionHtml=$description!=='' ? '<small>'.self::e($description).'</small>' : '';
 		return '<div class="dp-panel-display-field" data-dp-panel-display-field="1" role="note"><div>'.$html.'</div>'.$descriptionHtml.'</div>';
@@ -550,9 +553,12 @@ trait PanelRendererForms {
 		$iconHtml=$icon!=='' && $action!=='toggle_password' ? '<span class="dp-panel-input-button-icon">'.self::e(strtoupper(substr($icon, 0, 2))).'</span>' : '';
 		$content=$iconHtml.'<span>'.self::e($label).'</span>';
 		$attrs=self::inputButtonAttributeHtml($button);
-		if(isset($button['url']) && is_scalar($button['url']) && trim((string)$button['url'])!==''){
-			$target=isset($button['target']) && is_scalar($button['target']) && trim((string)$button['target'])!=='' ? ' target="'.self::e((string)$button['target']).'" rel="noopener"' : '';
-			return '<a class="'.$class.'" href="'.self::e((string)$button['url']).'" title="'.self::e($title).'"'.$target.$attrs.'>'.$content.'</a>';
+		$url=isset($button['url']) && is_scalar($button['url']) ? self::safeWidgetUrl((string)$button['url']) : '';
+		if($url!==''){
+			$target=isset($button['target']) && is_scalar($button['target']) ? strtolower(trim((string)$button['target'])) : '';
+			$target=in_array($target, ['_blank', '_self'], true) ? $target : '';
+			$targetHtml=$target!=='' ? ' target="'.self::e($target).'"'.($target==='_blank' ? ' rel="noopener noreferrer"' : '') : '';
+			return '<a class="'.$class.'" href="'.self::e($url).'" title="'.self::e($title).'"'.$targetHtml.$attrs.'>'.$content.'</a>';
 		}
 		$value=isset($button['value']) && is_scalar($button['value']) ? ' data-dp-panel-field-button-value="'.self::e((string)$button['value']).'"' : '';
 		$copyMode=($action==='copy' && ($button['copy_normalized'] ?? false)===true) ? ' data-dp-panel-field-button-copy="normalized"' : '';
@@ -573,7 +579,7 @@ trait PanelRendererForms {
 		$attributes=is_array($button['attributes'] ?? null) ? $button['attributes'] : [];
 		foreach($attributes as $name=>$value){
 			$name=strtolower(trim((string)$name));
-			if($name==='' || (!str_starts_with($name, 'data-') && !str_starts_with($name, 'aria-'))){
+			if(preg_match('/^(?:data|aria)-[a-z0-9_.:-]+$/', $name)!==1){
 				continue;
 			}
 			if(is_bool($value)){
@@ -605,6 +611,7 @@ trait PanelRendererForms {
 	 */
 	private static function textareaControl(string $name, array $meta, mixed $value, string $required, string $readonly, string $placeholder): string {
 		$type=(string)($meta['type'] ?? 'textarea');
+		$editorProfile=is_array($meta['meta']['editor_profile'] ?? null) ? $meta['meta']['editor_profile'] : null;
 		$editor=(string)($meta['meta']['editor'] ?? (in_array($type, ['markdown', 'html', 'code', 'rich_editor', 'rich_text'], true) ? $type : 'plain'));
 		$class='dp-panel-textarea-'.$type;
 		if($editor!=='' && $editor!=='plain'){
@@ -632,11 +639,13 @@ trait PanelRendererForms {
 		if($hasVisualEditor){
 			$control=str_replace('<div class="dp-panel-input-shell"', '<div class="dp-panel-input-shell" hidden data-dp-panel-editor-source-shell="1"', $control);
 		}
-		$preview=$previewEnabled ? self::editorPreviewHtml($mode, self::stringValue($value), $codeLanguage ?? 'plain') : '';
+		$preview=$previewEnabled ? self::editorPreviewHtml($mode, self::stringValue($value), $codeLanguage ?? 'plain', $editorProfile) : '';
 		if($hasWritePreviewEditor && $preview!==''){
 			$preview=str_replace('class="dp-panel-editor-preview', 'hidden class="dp-panel-editor-preview', $preview);
 		}
-		$buttons=in_array($normalizedEditor, ['markdown', 'html', 'rich_editor', 'rich_text'], true)
+		$buttons=$editorProfile!==null && is_array($editorProfile['toolbar'] ?? null)
+			? self::editorProfileToolbarHtml($editorProfile['toolbar'])
+			: (in_array($normalizedEditor, ['markdown', 'html', 'rich_editor', 'rich_text'], true)
 			? '<div class="dp-panel-editor-tools" role="toolbar" aria-label="'.self::e(self::editorLabel($mode)).' tools">'
 				.'<span class="dp-panel-editor-tool-group" data-dp-panel-editor-tool-group="history">'
 				.'<button type="button" data-dp-panel-editor-command="undo" title="'.self::e(self::panelText('editor.undo')).'">'.self::e(self::panelText('editor.undo')).'</button>'
@@ -668,6 +677,13 @@ trait PanelRendererForms {
 				.'<button type="button" data-dp-panel-editor-command="clear_format" title="'.self::e(self::panelText('editor.clear_formatting')).'">'.self::e(self::panelText('common.clear')).'</button>'
 				.'</span>'
 			.'</div>'
+			: '');
+		$assetProvider=$editorProfile!==null && is_array($editorProfile['asset_provider'] ?? null) ? $editorProfile['asset_provider'] : null;
+		$assetReady=$assetProvider!==null && ($assetProvider['ready'] ?? false)===true && is_array($assetProvider['browser'] ?? null) && trim((string)($assetProvider['browser']['driver'] ?? ''))!=='';
+		$assetTools=$assetReady
+			? '<div class="dp-panel-editor-tools dp-panel-editor-asset-tools" role="toolbar" aria-label="'.self::e(self::panelText('editor.assets', [], 'Editor assets')).'">'
+				.'<button type="button" hidden data-dp-panel-editor-assets-trigger="1" aria-haspopup="dialog" aria-expanded="false" title="'.self::e(self::panelText('editor.assets', [], 'Media library')).'">'.self::e(self::panelText('editor.media', [], 'Media')).'</button>'
+				.'</div>'
 			: '';
 		$modeSwitch=$hasWritePreviewEditor
 			? '<div class="dp-panel-editor-mode-switch" role="group" aria-label="'.self::e(self::panelText('editor.preview')).'">'
@@ -678,6 +694,7 @@ trait PanelRendererForms {
 		$toolbar='<div class="dp-panel-editor-toolbar">'
 			.'<span>'.self::e(self::editorLabel($mode)).'</span>'
 			.$buttons
+			.$assetTools
 			.$modeSwitch
 			.($previewEnabled ? '<small data-dp-panel-editor-status>'.self::e(self::panelText('editor.write')).'</small>' : '')
 			.'</div>';
@@ -691,11 +708,32 @@ trait PanelRendererForms {
 		$visual=in_array(Resource::normalizeName($editor), ['html', 'rich_editor', 'rich_text'], true)
 			? '<div class="dp-panel-editor-visual" contenteditable="'.($readonly!=='' ? 'false' : 'true').'" role="textbox" aria-multiline="true" aria-label="'.$visualPlaceholder.'" data-dp-panel-editor-visual="1" data-dp-panel-editor-placeholder="'.$visualPlaceholder.'" data-dp-panel-editor-empty="1"></div>'
 			: '';
+		$browserAdapter=$editorProfile!==null && is_array($editorProfile['browser_adapter'] ?? null) ? $editorProfile['browser_adapter'] : null;
+		$browserSyntax=$editorProfile!==null && is_array($editorProfile['browser_syntax'] ?? null) ? $editorProfile['browser_syntax'] : null;
 		$editorAttrs=Resource::normalizeName($editor)==='code'
 			? ' data-dp-panel-code-language="'.self::e($codeLanguage).'"'
 			: '';
+		if($editorProfile!==null){
+			$profileJson=json_encode($editorProfile, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT);
+			$editorAttrs.=' data-dp-panel-editor-profile="'.self::e((string)$profileJson).'"';
+			$editorAttrs.=' data-dp-panel-editor-profile-name="'.self::e((string)($editorProfile['name'] ?? 'default')).'"';
+		}
+		if($browserAdapter!==null){
+			$editorAttrs.=' data-dp-panel-editor-browser-adapter="'.self::e((string)($browserAdapter['driver'] ?? '')).'"';
+			$editorAttrs.=' data-dp-panel-editor-browser-fallback="'.self::e((string)($browserAdapter['fallback'] ?? 'native')).'"';
+		}
+		if($browserSyntax!==null){
+			$editorAttrs.=' data-dp-panel-editor-browser-syntax="'.self::e((string)($browserSyntax['driver'] ?? '')).'"';
+		}
+		if($assetReady){
+			$editorAttrs.=' data-dp-panel-editor-assets="'.self::e((string)($assetProvider['browser']['driver'] ?? '')).'"';
+		}
+		$externalHost=$browserAdapter!==null && ($browserAdapter['configured'] ?? false)===true
+			? '<div class="dp-panel-editor-external-host" hidden aria-hidden="true" data-dp-panel-editor-external-host="1"></div>'
+			: '';
 		$initialMode=$hasWritePreviewEditor ? 'write' : 'source';
-		return '<div class="dp-panel-editor" data-dp-panel-editor="'.self::e($editor).'"'.$editorAttrs.' data-dp-panel-editor-mode="'.$initialMode.'">'.$toolbar.$visual.$control.$preview.'</div>';
+		$assetHost=$assetReady ? '<div data-dp-panel-editor-assets-host="1"></div>' : '';
+		return '<div class="dp-panel-editor" data-dp-panel-editor="'.self::e($editor).'"'.$editorAttrs.' data-dp-panel-editor-mode="'.$initialMode.'">'.$toolbar.$visual.$externalHost.$control.$preview.$assetHost.'</div>';
 	}
 
 	/**
@@ -709,7 +747,7 @@ trait PanelRendererForms {
 	 * @param string $codeLanguage Code language token for code previews.
 	 * @return string Preview HTML.
 	 */
-	private static function editorPreviewHtml(string $mode, string $value, string $codeLanguage='plain'): string {
+	private static function editorPreviewHtml(string $mode, string $value, string $codeLanguage='plain', ?array $editorProfile=null): string {
 		$value=trim($value);
 		if($value===''){
 			return '<div class="dp-panel-editor-preview dp-panel-editor-preview-empty">'.self::e(self::panelText('client.editor_preview_empty')).'</div>';
@@ -722,12 +760,39 @@ trait PanelRendererForms {
 			return '<div class="dp-panel-editor-preview dp-panel-editor-preview-markdown">'.$preview.'</div>';
 		}
 		if($mode==='html' || $mode==='rich_editor' || $mode==='rich_text'){
+			if($editorProfile!==null){
+				$profile=PanelEditorProfile::fromArray($editorProfile)->forMode($mode);
+				$value=$profile->process($value, PanelEditorContext::make('', $mode, $codeLanguage, 'preview'))->content();
+				return '<div class="dp-panel-editor-preview dp-panel-editor-preview-html">'.$value.'</div>';
+			}
 			return '<div class="dp-panel-editor-preview dp-panel-editor-preview-html">'.self::safeRichHtml($value).'</div>';
 		}
 		if($mode==='code'){
 			return '<pre class="dp-panel-editor-preview dp-panel-editor-preview-code" data-dp-panel-code-language="'.self::e($codeLanguage).'"><code>'.self::e($value).'</code></pre>';
 		}
 		return '<div class="dp-panel-editor-preview">'.nl2br(self::e($value)).'</div>';
+	}
+
+	/** Renders the declarative toolbar from an explicit editor profile. */
+	private static function editorProfileToolbarHtml(array $toolbar): string {
+		$groups=[];
+		foreach(($toolbar['commands'] ?? []) as $command){
+			if(!is_array($command)){ continue; }
+			$name=Resource::normalizeName((string)($command['command'] ?? ''));
+			if($name===''){ continue; }
+			$group=Resource::normalizeName((string)($command['group'] ?? 'custom')) ?: 'custom';
+			$label=trim((string)($command['label'] ?? $name));
+			$title=trim((string)($command['title'] ?? $label));
+			$plugin=Resource::normalizeName((string)($command['plugin'] ?? ''));
+			$groups[$group][]= '<button type="button" data-dp-panel-editor-command="'.self::e($name).'"'
+				.($plugin!=='' ? ' data-dp-panel-editor-plugin="'.self::e($plugin).'"' : '')
+				.(($command['pressed_state'] ?? false)===true ? ' aria-pressed="false"' : '')
+				.' title="'.self::e($title).'">'.self::e($label).'</button>';
+		}
+		if($groups===[]){ return ''; }
+		$html='<div class="dp-panel-editor-tools" role="toolbar" aria-label="Editor tools">';
+		foreach($groups as $group=>$buttons){ $html.='<span class="dp-panel-editor-tool-group" data-dp-panel-editor-tool-group="'.self::e($group).'">'.implode('', $buttons).'</span>'; }
+		return $html.'</div>';
 	}
 
 	/**
@@ -757,10 +822,7 @@ trait PanelRendererForms {
 	 * @return string Sanitized rich HTML.
 	 */
 	private static function safeRichHtml(string $value): string {
-		$value=preg_replace('/<(script|style|iframe|object|embed)\b[^>]*>.*?<\/\1>/is', '', $value) ?? $value;
-		$value=strip_tags($value, '<p><br><strong><b><em><i><u><s><a><ul><ol><li><blockquote><pre><code><h1><h2><h3><h4><h5><h6><hr>');
-		$value=preg_replace('/\s(on[a-z]+|style)\s*=\s*(["\']).*?\2/i', '', $value) ?? $value;
-		$value=preg_replace('/\s(href)\s*=\s*(["\'])\s*javascript:.*?\2/i', '', $value) ?? $value;
+		$value=PanelSafeHtml::sanitize($value)->html();
 		for($pass=0;$pass<4;$pass++){
 			$value=preg_replace('/<(strong|b|em|i|u|s|a|code)([^>]*)>\s*<(p|li|blockquote|pre|h[1-6])([^>]*)>(.*?)<\/\3>\s*<\/\1>/is', '<$3$4><$1$2>$5</$1></$3>', $value) ?? $value;
 		}
@@ -1282,7 +1344,18 @@ trait PanelRendererForms {
 		$inputName=$multiple ? $name.'[]' : $name;
 		$columns=max(1, min(6, (int)($fieldMeta['choice_columns'] ?? 1)));
 		$inline=($fieldMeta['inline_choices'] ?? false)===true;
+		$presentationDefinition=$fieldMeta['options_presentation'] ?? null;
+		if(!is_array($presentationDefinition) && !is_string($presentationDefinition)){
+			$presentationDefinition=[
+				'display'=>$segmented ? 'segmented' : ($inline ? 'inline' : ($columns > 1 ? 'grid' : 'stack')),
+				'columns'=>['base'=>$columns],
+				'fit'=>$columns > 1 ? 'fixed' : 'auto',
+				'gap'=>'compact',
+				'min_width'=>150,
+			];
+		}
 		$items='';
+		$optionIndex=0;
 		foreach(self::flatOptionMetas($options) as $option){
 			$optionValue=(string)$option['value'];
 			$label=(string)$option['label'];
@@ -1290,11 +1363,13 @@ trait PanelRendererForms {
 			$id='dp-field-'.substr(sha1($name.'|'.$optionValue), 0, 12);
 			$optionDisabled=$disabled.((($option['disabled'] ?? false)===true) ? ' disabled' : '');
 			$description=trim((string)($option['description'] ?? ''));
-			$items.='<label class="dp-panel-choice'.($segmented ? ' dp-panel-choice-button' : '').((($option['disabled'] ?? false)===true) ? ' dp-panel-choice-disabled' : '').'" for="'.$id.'">'
+			$item='<label class="dp-panel-choice'.($segmented ? ' dp-panel-choice-button' : '').((($option['disabled'] ?? false)===true) ? ' dp-panel-choice-disabled' : '').'" for="'.$id.'">'
 				.'<input id="'.$id.'" type="'.($multiple ? 'checkbox' : 'radio').'" name="'.self::e($inputName).'" value="'.self::e($optionValue).'"'.$checked.$optionDisabled.$required.'>'
 				.'<span>'.self::e((string)$label).'</span>'
 				.($description!=='' ? '<small>'.self::e($description).'</small>' : '')
 				.'</label>';
+			$items.=PanelCollectionPresentation::decorateItemHtml($item, $presentationDefinition, $optionValue, $optionIndex, is_array($option['meta'] ?? null) ? $option['meta'] : []);
+			$optionIndex++;
 		}
 		$mirror=$multiple ? '' : '<input type="hidden" name="'.self::e($name).'" value="">';
 		if(($meta['readonly'] ?? false) && $multiple){
@@ -1309,7 +1384,7 @@ trait PanelRendererForms {
 		}
 		$role=$multiple ? 'group' : 'radiogroup';
 		$label=trim((string)($meta['label'] ?? self::humanFieldLabel($name)));
-		return $mirror.'<div class="dp-panel-choice-list'.($inline ? ' dp-panel-choice-list-inline' : '').($segmented ? ' dp-panel-choice-list-buttons' : '').'" role="'.$role.'" aria-label="'.self::e($label).'"'.$attrs.' style="--dp-choice-columns:'.$columns.'">'.$items.'</div>';
+		return $mirror.'<div class="dp-panel-choice-list'.($inline ? ' dp-panel-choice-list-inline' : '').($segmented ? ' dp-panel-choice-list-buttons' : '').'" role="'.$role.'" aria-label="'.self::e($label).'"'.$attrs.PanelCollectionPresentation::htmlAttributes($presentationDefinition, 'stack').'>'.$items.'</div>';
 	}
 
 	/**
@@ -1353,23 +1428,38 @@ trait PanelRendererForms {
 	/**
 	 * Normalizes a submitted or persisted value into selected option strings.
 	 *
-	 * JSON arrays are accepted for compatibility with stored multi-select values.
+	 * JSON arrays are accepted for compatibility with stored multi-select values;
+	 * nested structures and non-stringable objects are ignored because option identifiers are scalar.
 	 *
 	 * @param mixed $value Current value.
 	 * @return string[] Selected values.
 	 */
 	private static function selectedValues(mixed $value): array {
 		if(is_array($value)){
-			return array_values(array_filter(array_map(static fn(mixed $item): string => (string)$item, $value), static fn(string $item): bool => $item!==''));
+			$selected=[];
+			foreach($value as $item){
+				if(!is_scalar($item) && !$item instanceof \Stringable){
+					continue;
+				}
+				$item=(string)$item;
+				if($item!==''){
+					$selected[]=$item;
+				}
+			}
+			return $selected;
 		}
 		if($value===null || $value===''){
 			return [];
 		}
-		$decoded=json_decode((string)$value, true);
+		if(!is_scalar($value) && !$value instanceof \Stringable){
+			return [];
+		}
+		$text=(string)$value;
+		$decoded=json_decode($text, true);
 		if(is_array($decoded)){
 			return self::selectedValues($decoded);
 		}
-		return [(string)$value];
+		return [$text];
 	}
 
 	/**
@@ -1465,6 +1555,8 @@ trait PanelRendererForms {
 		if($deleteEndpoint===''){
 			$deleteEndpoint=$endpoint;
 		}
+		$endpoint=self::safeWidgetUrl($endpoint);
+		$deleteEndpoint=self::safeWidgetUrl($deleteEndpoint);
 		$chunkSize=max(65536, min(52428800, (int)($fieldMeta['upload_chunk_size'] ?? 5242880)));
 		$retries=max(0, min(10, (int)($fieldMeta['upload_retries'] ?? 3)));
 		$concurrency=max(1, min(6, (int)($fieldMeta['upload_concurrency'] ?? 2)));
@@ -1481,11 +1573,13 @@ trait PanelRendererForms {
 		$storage=array_filter($storage, static fn(string $item): bool => trim($item)!=='');
 		$headers=self::customFileUploaderHeaders($fieldMeta);
 		$fields=self::customFileUploaderFields($fieldMeta);
-		if(trim((string)($fieldMeta['upload_csrf_form'] ?? ''))!=='' && class_exists('\Dataphyre\Csrf')){
-			$token=\Dataphyre\Csrf::value((string)$fieldMeta['upload_csrf_form']);
+		$csrfEnabled=PanelConfig::config('upload_csrf', true)!==false;
+		$csrfForm=trim((string)($fieldMeta['upload_csrf_form'] ?? PanelConfig::config('upload_csrf_form', 'dp_panel_upload')));
+		if($csrfEnabled && $csrfForm!==''){
+			$token=PanelCsrfTokenBridge::uploadToken($csrfForm);
 			if($token!==''){
-				$fieldName=trim((string)($fieldMeta['upload_csrf_field'] ?? 'csrf')) ?: 'csrf';
-				$header=trim((string)($fieldMeta['upload_csrf_header'] ?? 'X-CSRF-Token')) ?: 'X-CSRF-Token';
+				$fieldName=trim((string)($fieldMeta['upload_csrf_field'] ?? PanelConfig::config('upload_csrf_field', 'csrf'))) ?: 'csrf';
+				$header=trim((string)($fieldMeta['upload_csrf_header'] ?? PanelConfig::config('upload_csrf_header', 'X-CSRF-Token'))) ?: 'X-CSRF-Token';
 				$fields[$fieldName]=$token;
 				if(preg_match('/^[A-Za-z0-9!#$%&\'*+.^_`|~-]+$/', $header)===1){
 					$headers[$header]=$token;
@@ -1843,6 +1937,37 @@ trait PanelRendererForms {
 	}
 
 	/**
+	 * Resolves an opt-in presentation owned by a structural Field descriptor.
+	 *
+	 * @param array<string,mixed> $meta Parent field descriptor.
+	 * @param array<int,array<string,mixed>> $items Rendered item descriptors or values.
+	 * @return ?array<string,mixed>
+	 */
+	private static function fieldCollectionPresentation(array $meta, string $collection, array $items=[], string $defaultDisplay='grid'): ?array {
+		$key=Resource::normalizeName($collection);
+		$fieldMeta=is_array($meta['meta'] ?? null) ? $meta['meta'] : [];
+		$presentations=is_array($fieldMeta['presentation'] ?? null) ? $fieldMeta['presentation'] : [];
+		$definition=$fieldMeta[$key.'_presentation'] ?? $meta[$key.'_presentation'] ?? $presentations[$key] ?? null;
+		if(is_array($definition) || is_string($definition)){
+			return PanelCollectionPresentation::normalize($definition, $defaultDisplay);
+		}
+		foreach($items as $item){
+			if(PanelCollectionItemPresentation::fromMeta(self::collectionDescriptorMeta($item))!==[]){
+				return PanelCollectionPresentation::normalize(null, $defaultDisplay);
+			}
+		}
+		return null;
+	}
+
+	/** @param array<string,mixed> $descriptor
+	 *  @return array<string,mixed>
+	 */
+	private static function collectionDescriptorMeta(array $descriptor): array {
+		$nested=is_array($descriptor['meta'] ?? null) ? $descriptor['meta'] : [];
+		return array_replace($nested, $descriptor);
+	}
+
+	/**
 	 * Renders a repeatable group of homogeneous child fields.
 	 *
 	 * Existing rows are normalized to arrays, minimum row counts are materialized,
@@ -1864,15 +1989,18 @@ trait PanelRendererForms {
 		while(count($rows)<$min){
 			$rows[]=[];
 		}
+		$rowsPresentation=self::fieldCollectionPresentation($meta, 'rows', $rows, 'stack');
+		$fieldsPresentation=self::fieldCollectionPresentation($meta, 'fields', array_values($fields), 'grid');
 		$items='';
 		foreach($rows as $index=>$row){
-			$items.=self::repeaterRowHtml($name, $fields, $row, (string)$index, false);
+			$rowHtml=self::repeaterRowHtml($name, $fields, $row, (string)$index, false, $fieldsPresentation);
+			$items.=PanelCollectionPresentation::decorateItemHtml($rowHtml, $rowsPresentation, null, $index, $row);
 		}
-		$template=self::repeaterRowHtml($name, $fields, [], '__INDEX__', true);
+		$template=self::repeaterRowHtml($name, $fields, [], '__INDEX__', true, $fieldsPresentation);
 		$addLabel=(string)($meta['meta']['add_item_label'] ?? 'Add item');
 		$attrs=' data-dp-panel-repeater data-dp-panel-repeater-next="'.count($rows).'" data-dp-panel-repeater-min="'.self::e((string)$min).'" data-dp-panel-repeater-max="'.self::e((string)$max).'"';
 		return '<div class="dp-panel-repeater"'.$attrs.'>'
-			.'<div class="dp-panel-repeater-items" data-dp-panel-repeater-items>'.$items.'</div>'
+			.'<div class="dp-panel-repeater-items" data-dp-panel-repeater-items'.($rowsPresentation===null ? '' : PanelCollectionPresentation::htmlAttributes($rowsPresentation, 'stack')).'>'.$items.'</div>'
 			.'<template data-dp-panel-repeater-template>'.$template.'</template>'
 			.'<button class="dp-panel-button dp-panel-button-secondary" type="button" data-dp-panel-repeater-add>'.self::e($addLabel).'</button>'
 			.'</div>';
@@ -1901,25 +2029,35 @@ trait PanelRendererForms {
 		while(count($rows)<$min){
 			$rows[]=['_type'=>$defaultBlock];
 		}
+		$rowsPresentation=self::fieldCollectionPresentation($meta, 'rows', $rows, 'stack');
+		$allFields=[];
+		foreach($blocks as $block){
+			$allFields=array_merge($allFields, array_values(is_array($block['fields'] ?? null) ? $block['fields'] : []));
+		}
+		$fieldsPresentation=self::fieldCollectionPresentation($meta, 'fields', $allFields, 'grid');
+		$actionsPresentation=self::fieldCollectionPresentation($meta, 'actions', array_values($blocks), 'inline');
 		$items='';
 		foreach($rows as $index=>$row){
 			$type=Resource::normalizeName((string)($row['_type'] ?? $row['type'] ?? $defaultBlock));
 			if(!isset($blocks[$type])){
 				$type=$defaultBlock;
 			}
-			$items.=self::builderRowHtml($name, $blocks[$type], $row, (string)$index, false);
+			$rowHtml=self::builderRowHtml($name, $blocks[$type], $row, (string)$index, false, $fieldsPresentation);
+			$items.=PanelCollectionPresentation::decorateItemHtml($rowHtml, $rowsPresentation, $type, $index, $row);
 		}
 		$templates='';
 		$buttons='';
+		$actionIndex=0;
 		foreach($blocks as $blockName=>$block){
-			$templates.='<template data-dp-panel-repeater-template data-dp-panel-builder-template="'.self::e($blockName).'">'.self::builderRowHtml($name, $block, ['_type'=>$blockName], '__INDEX__', true).'</template>';
-			$buttons.='<button class="dp-panel-button dp-panel-button-secondary" type="button" data-dp-panel-repeater-add data-dp-panel-builder-add="'.self::e($blockName).'">'.self::e((string)$block['label']).'</button>';
+			$templates.='<template data-dp-panel-repeater-template data-dp-panel-builder-template="'.self::e($blockName).'">'.self::builderRowHtml($name, $block, ['_type'=>$blockName], '__INDEX__', true, $fieldsPresentation).'</template>';
+			$button='<button class="dp-panel-button dp-panel-button-secondary" type="button" data-dp-panel-repeater-add data-dp-panel-builder-add="'.self::e($blockName).'">'.self::e((string)$block['label']).'</button>';
+			$buttons.=PanelCollectionPresentation::decorateItemHtml($button, $actionsPresentation, $blockName, $actionIndex++, self::collectionDescriptorMeta($block));
 		}
 		$attrs=' data-dp-panel-repeater data-dp-panel-builder="1" data-dp-panel-repeater-next="'.count($rows).'" data-dp-panel-repeater-min="'.self::e((string)$min).'" data-dp-panel-repeater-max="'.self::e((string)$max).'"';
 		return '<div class="dp-panel-repeater dp-panel-builder"'.$attrs.'>'
-			.'<div class="dp-panel-repeater-items" data-dp-panel-repeater-items>'.$items.'</div>'
+			.'<div class="dp-panel-repeater-items" data-dp-panel-repeater-items'.($rowsPresentation===null ? '' : PanelCollectionPresentation::htmlAttributes($rowsPresentation, 'stack')).'>'.$items.'</div>'
 			.$templates
-			.'<div class="dp-panel-builder-actions">'.$buttons.'</div>'
+			.'<div class="dp-panel-builder-actions"'.($actionsPresentation===null ? '' : PanelCollectionPresentation::htmlAttributes($actionsPresentation, 'inline')).'>'.$buttons.'</div>'
 			.'</div>';
 	}
 
@@ -1942,11 +2080,16 @@ trait PanelRendererForms {
 			if($blockName===''){
 				continue;
 			}
-			$blocks[$blockName]=[
+			$descriptor=[
 				'name'=>$blockName,
 				'label'=>(string)($block['label'] ?? self::humanFieldLabel($blockName)),
 				'fields'=>self::childFieldMetas(['child_fields'=>is_array($block['fields'] ?? null) ? $block['fields'] : []]),
 			];
+			$itemPresentation=PanelCollectionItemPresentation::fromMeta(self::collectionDescriptorMeta($block));
+			if($itemPresentation!==[]){
+				$descriptor['item_presentation']=$itemPresentation;
+			}
+			$blocks[$blockName]=$descriptor;
 		}
 		return $blocks;
 	}
@@ -1964,9 +2107,10 @@ trait PanelRendererForms {
 	 * @param bool $template Whether the row is rendered inside a template element.
 	 * @return string Builder row HTML.
 	 */
-	private static function builderRowHtml(string $name, array $block, array $row, string $index, bool $template=false): string {
+	private static function builderRowHtml(string $name, array $block, array $row, string $index, bool $template=false, ?array $fieldsPresentation=null): string {
 		$type=(string)($block['name'] ?? '');
 		$controls='<input type="hidden" name="'.self::e($name.'['.$index.'][_type]').'" value="'.self::e($type).'">';
+		$fieldIndex=0;
 		foreach(($block['fields'] ?? []) as $childName=>$field){
 			$fieldName=$name.'['.$index.']['.$childName.']';
 			$value=$row[$childName] ?? ($field['default'] ?? '');
@@ -1978,11 +2122,12 @@ trait PanelRendererForms {
 			}
 			$tag=self::isDisplayFieldType((string)($field['type'] ?? '')) ? 'div' : 'label';
 			$class='dp-panel-field'.(self::isDisplayFieldType((string)($field['type'] ?? '')) ? ' dp-panel-field-display' : '');
-			$controls.='<'.$tag.' class="'.$class.'">'.$fieldLabel.$control.$fieldHelp.'</'.$tag.'>';
+			$itemHtml='<'.$tag.' class="'.$class.'">'.$fieldLabel.$control.$fieldHelp.'</'.$tag.'>';
+			$controls.=PanelCollectionPresentation::decorateItemHtml($itemHtml, $fieldsPresentation, (string)$childName, $fieldIndex++, self::collectionDescriptorMeta($field));
 		}
 		return '<div class="dp-panel-repeater-row dp-panel-builder-row" data-dp-panel-repeater-row data-dp-panel-builder-row="'.self::e($type).'">'
 			.'<div class="dp-panel-builder-row-header"><strong>'.self::e((string)($block['label'] ?? $type)).'</strong><button class="dp-panel-button dp-panel-button-secondary" type="button" data-dp-panel-repeater-remove>'.self::e(self::panelText('common.remove')).'</button></div>'
-			.'<div class="dp-panel-repeater-grid dp-panel-builder-grid">'.$controls.'</div>'
+			.'<div class="dp-panel-repeater-grid dp-panel-builder-grid"'.($fieldsPresentation===null ? '' : PanelCollectionPresentation::htmlAttributes($fieldsPresentation, 'grid')).'>'.$controls.'</div>'
 			.'</div>';
 	}
 
@@ -2003,7 +2148,9 @@ trait PanelRendererForms {
 			return '<p class="dp-panel-empty">'.self::e(self::panelText('form.no_group_fields', [], 'No grouped fields configured.')).'</p>';
 		}
 		$row=is_array($value) ? $value : [];
+		$fieldsPresentation=self::fieldCollectionPresentation($meta, 'fields', array_values($fields), 'grid');
 		$controls='';
+		$fieldIndex=0;
 		foreach($fields as $childName=>$field){
 			$fieldName=$name.'['.$childName.']';
 			$childValue=$row[$childName] ?? ($field['default'] ?? '');
@@ -2012,7 +2159,8 @@ trait PanelRendererForms {
 			$control=self::fieldControl($fieldName, $field, $childValue);
 			$tag=self::isDisplayFieldType((string)($field['type'] ?? '')) ? 'div' : 'label';
 			$class='dp-panel-field'.(self::isDisplayFieldType((string)($field['type'] ?? '')) ? ' dp-panel-field-display' : '');
-			$controls.='<'.$tag.' class="'.$class.'">'.$fieldLabel.$control.$fieldHelp.'</'.$tag.'>';
+			$itemHtml='<'.$tag.' class="'.$class.'">'.$fieldLabel.$control.$fieldHelp.'</'.$tag.'>';
+			$controls.=PanelCollectionPresentation::decorateItemHtml($itemHtml, $fieldsPresentation, (string)$childName, $fieldIndex++, self::collectionDescriptorMeta($field));
 		}
 		$legend=trim((string)($meta['label'] ?? ''));
 		$legendHtml=$legend!=='' ? '<legend>'.self::e($legend).'</legend>' : '';
@@ -2026,7 +2174,7 @@ trait PanelRendererForms {
 		if($isAddress && $country!==''){
 			$attrs.=' data-dp-panel-address-country="'.self::e($country).'"';
 		}
-		return '<fieldset class="'.$class.'"'.$attrs.'>'.$legendHtml.$descriptionHtml.'<div class="dp-panel-fieldset-grid">'.$controls.'</div></fieldset>';
+		return '<fieldset class="'.$class.'"'.$attrs.'>'.$legendHtml.$descriptionHtml.'<div class="dp-panel-fieldset-grid"'.($fieldsPresentation===null ? '' : PanelCollectionPresentation::htmlAttributes($fieldsPresentation, 'grid')).'>'.$controls.'</div></fieldset>';
 	}
 
 	/**
@@ -2081,8 +2229,9 @@ trait PanelRendererForms {
 	 * @param bool $template Whether the row is rendered inside a template element.
 	 * @return string Repeater row HTML.
 	 */
-	private static function repeaterRowHtml(string $name, array $fields, array $row, string $index, bool $template=false): string {
+	private static function repeaterRowHtml(string $name, array $fields, array $row, string $index, bool $template=false, ?array $fieldsPresentation=null): string {
 		$controls='';
+		$fieldIndex=0;
 		foreach($fields as $childName=>$field){
 			$fieldName=$name.'['.$index.']['.$childName.']';
 			$value=$row[$childName] ?? ($field['default'] ?? '');
@@ -2092,10 +2241,11 @@ trait PanelRendererForms {
 			if($template){
 				$control=str_replace(['<input ', '<select ', '<textarea '], ['<input disabled ', '<select disabled ', '<textarea disabled '], $control);
 			}
-			$controls.='<label class="dp-panel-field">'.$fieldLabel.$control.$fieldHelp.'</label>';
+			$itemHtml='<label class="dp-panel-field">'.$fieldLabel.$control.$fieldHelp.'</label>';
+			$controls.=PanelCollectionPresentation::decorateItemHtml($itemHtml, $fieldsPresentation, (string)$childName, $fieldIndex++, self::collectionDescriptorMeta($field));
 		}
 		return '<div class="dp-panel-repeater-row" data-dp-panel-repeater-row>'
-			.'<div class="dp-panel-repeater-grid">'.$controls.'</div>'
+			.'<div class="dp-panel-repeater-grid"'.($fieldsPresentation===null ? '' : PanelCollectionPresentation::htmlAttributes($fieldsPresentation, 'grid')).'>'.$controls.'</div>'
 			.'<button class="dp-panel-button dp-panel-button-secondary" type="button" data-dp-panel-repeater-remove>'.self::e(self::panelText('common.remove')).'</button>'
 			.'</div>';
 	}
@@ -2160,12 +2310,20 @@ trait PanelRendererForms {
 	 */
 	private static function optionMeta(string|int $value, mixed $label, bool $disabled=false, bool $listOptions=false): array {
 		if(is_array($label)){
-			return [
+			$meta=is_array($label['meta'] ?? null) ? $label['meta'] : [];
+			if(is_array($label['item_presentation'] ?? null)){
+				$meta['item_presentation']=$label['item_presentation'];
+			}
+			$option=[
 				'value'=>(string)($label['value'] ?? $value),
 				'label'=>(string)($label['label'] ?? $label['name'] ?? $label['value'] ?? $value),
 				'description'=>trim((string)($label['description'] ?? $label['help'] ?? '')),
 				'disabled'=>$disabled || (($label['disabled'] ?? false)===true),
 			];
+			if($meta!==[]){
+				$option['meta']=$meta;
+			}
+			return $option;
 		}
 		if($listOptions && is_int($value)){
 			$value=(string)$label;
@@ -2279,7 +2437,8 @@ trait PanelRendererForms {
 		}
 		$layoutMeta=is_array($meta['meta'] ?? null) ? $meta['meta'] : [];
 		$span=$layoutMeta['column_span'] ?? '1';
-		$class='dp-panel-field';
+		$automaticColumn=!array_key_exists('column_span', $layoutMeta) && !array_key_exists('column_start', $layoutMeta);
+		$class='dp-panel-field'.($automaticColumn ? ' dp-panel-grid-item-auto' : '');
 		if(self::isBooleanType((string)($meta['type'] ?? ''))){
 			$class.=' dp-panel-field-boolean';
 		}
@@ -2301,7 +2460,7 @@ trait PanelRendererForms {
 		elseif(!is_array($span) && (int)$span>1){
 			$class.=' dp-panel-field-span-'.min(12, (int)$span);
 		}
-		$tag=self::isDisplayFieldType((string)($meta['type'] ?? '')) ? 'div' : 'label';
+		$tag=self::isDisplayFieldType((string)($meta['type'] ?? '')) || self::isBooleanType((string)($meta['type'] ?? '')) ? 'div' : 'label';
 		return '<'.$tag.' class="'.$class.'"'.$style.$attrs.'>'
 			.self::fieldLabelHtml($meta, (string)$meta['label'])
 			.self::fieldControl($name, $meta, $value)
@@ -2500,9 +2659,6 @@ trait PanelRendererForms {
 	 */
 	public static function fieldOptions(Resource $resource, PanelRequest $request, mixed $record=null): PanelPageResult {
 		[$form, $operation]=self::reactiveForm($resource, $request);
-		if(!$form instanceof ResourceForm){
-			return PanelPageResult::json(['error'=>'form_not_available'], 404);
-		}
 		$fieldName=Resource::normalizeName((string)$request->input('__panel_field', $request->query('__panel_field', '')));
 		$field=$fieldName!=='' ? ($form->fieldsList()[$fieldName] ?? null) : null;
 		if(!$field instanceof Field){
@@ -2550,9 +2706,6 @@ trait PanelRendererForms {
 	 */
 	public static function fieldState(Resource $resource, PanelRequest $request, mixed $record=null): PanelPageResult {
 		[$form, $operation]=self::reactiveForm($resource, $request);
-		if(!$form instanceof ResourceForm){
-			return PanelPageResult::json(['error'=>'form_not_available'], 404);
-		}
 		$validate=Resource::normalizeName((string)$request->input('__panel_validate', $request->query('__panel_validate', '')));
 		$validateField=Resource::normalizeName((string)$request->input('__panel_validate_field', $request->query('__panel_validate_field', '')));
 		$validatedState=null;
@@ -2747,7 +2900,7 @@ trait PanelRendererForms {
 	 *
 	 * @param Resource $resource Resource that owns the form.
 	 * @param PanelRequest $request Current Panel request.
-	 * @return array{0:?ResourceForm,1:string} Form instance and normalized operation.
+	 * @return array{0:ResourceForm,1:string} Form instance and normalized operation.
 	 */
 	private static function reactiveForm(Resource $resource, PanelRequest $request): array {
 		if($request->operation()==='action'){
@@ -2780,7 +2933,7 @@ trait PanelRendererForms {
 	 * @param array<string, array<string, mixed>> $sectionMeta Section metadata keyed by normalized section name.
 	 * @return string Form section HTML.
 	 */
-	private static function formSectionsHtml(array $sections, int|array $columns=1, array $sectionMeta=[]): string {
+	private static function formSectionsHtml(array $sections, int|array $columns=1, array $sectionMeta=[], array $presentations=[]): string {
 		if($sections===[]){
 			return '<p class="dp-panel-empty">'.self::e(self::panelText('form.no_fields')).'</p>';
 		}
@@ -2789,21 +2942,29 @@ trait PanelRendererForms {
 		[$tabbed, $untabbed]=self::tabbedSections($unstepped, $sectionMeta);
 		$defaultSection=self::panelText('record.details');
 		$single=$stepped===[] && $tabbed===[] && count($sections)===1 && array_key_first($sections)===$defaultSection;
+		$fieldPresentation=$presentations['fields'] ?? null;
+		$sectionPresentation=$presentations['sections'] ?? null;
 		$html='';
+		$sectionIndex=0;
 		foreach($sections as $label=>$fields){
 			if(!isset($untabbed[$label])){
+				$sectionIndex++;
 				continue;
 			}
 			$meta=self::sectionMeta($sectionMeta, (string)$label);
-			$html.=self::sectionBlockHtml((string)$label, $fields, $meta, $columns, false, $single);
+			$block=self::sectionBlockHtml((string)$label, $fields, $meta, $columns, false, $single, $fieldPresentation);
+			$html.=PanelCollectionPresentation::decorateItemHtml($block, $sectionPresentation, (string)($meta['name'] ?? $label), $sectionIndex, is_array($meta['meta'] ?? null) ? $meta['meta'] : []);
+			$sectionIndex++;
 		}
 		if($tabbed!==[]){
-			$html.=self::tabsHtml($tabbed, $sectionMeta, $columns, false);
+			$html.=self::tabsHtml($tabbed, $sectionMeta, $columns, false, $presentations['tabs'] ?? null, $fieldPresentation);
 		}
 		if($stepped!==[]){
-			$html.=self::stepsHtml($stepped, $sectionMeta, $columns, false);
+			$html.=self::stepsHtml($stepped, $sectionMeta, $columns, false, $presentations['steps'] ?? null, $fieldPresentation);
 		}
-		return $html;
+		return isset($presentations['sections'])
+			? '<div class="dp-panel-form-sections"'.PanelCollectionPresentation::htmlAttributes($presentations['sections'], 'stack').'>'.$html.'</div>'
+			: $html;
 	}
 
 	/**
@@ -2823,7 +2984,8 @@ trait PanelRendererForms {
 	private static function showFieldHtml(Field $field, array $meta, mixed $value, mixed $record=null, ?PanelRequest $request=null): string {
 		$layoutMeta=is_array($meta['meta'] ?? null) ? $meta['meta'] : [];
 		$span=$layoutMeta['column_span'] ?? '1';
-		$class='dp-panel-show-field';
+		$automaticColumn=!array_key_exists('column_span', $layoutMeta) && !array_key_exists('column_start', $layoutMeta);
+		$class='dp-panel-show-field'.($automaticColumn ? ' dp-panel-grid-item-auto' : '');
 		if(($layoutMeta['copyable'] ?? false)===true){
 			$class.=' dp-panel-show-field-copyable';
 		}
@@ -2836,16 +2998,18 @@ trait PanelRendererForms {
 			$class.=' dp-panel-field-span-'.min(12, (int)$span);
 		}
 		$display=self::displayFieldValue($field, $meta, $value, $record, $request);
+		$displayText=(string)$display;
 		$label=(string)$meta['label'];
 		$icon=trim((string)($layoutMeta['icon'] ?? ''));
 		$iconHtml=$icon!=='' ? '<i class="dp-panel-entry-icon" aria-hidden="true">'.self::e(self::entryIconText($icon, $label)).'</i>' : '';
-		$copyHtml=($layoutMeta['copyable'] ?? false)===true && $display!==''
-			? '<button type="button" class="dp-panel-entry-copy" data-dp-panel-copy-entry="'.self::e($display).'" title="'.self::e(self::panelText('copy.value', [], 'Copy value')).'">'.self::e(self::panelText('common.copy')).'</button>'
+		$copyHtml=($layoutMeta['copyable'] ?? false)===true && $displayText!==''
+			? '<button type="button" class="dp-panel-entry-copy" data-dp-panel-copy-entry="'.self::e($displayText).'" title="'.self::e(self::panelText('copy.value', [], 'Copy value')).'">'.self::e(self::panelText('common.copy')).'</button>'
 			: '';
 		$description=trim((string)($layoutMeta['description'] ?? ''));
 		$valueHtml=self::entryValueHtml($display, $value, $meta);
 		return '<article class="'.$class.'"'.$style.'>'
-			.'<header>'.$iconHtml.'<span>'.self::e($label).'</span>'.$copyHtml.'</header>'
+			.'<header>'.$iconHtml.'<span>'.self::e($label).'</span></header>'
+			.$copyHtml
 			.$valueHtml
 			.($description!=='' ? '<small class="dp-panel-entry-description">'.self::e($description).'</small>' : '')
 			.'</article>';
@@ -2864,7 +3028,8 @@ trait PanelRendererForms {
 		$meta=is_array($entry['field'] ?? null) ? $entry['field'] : [];
 		$layoutMeta=is_array($entry['meta'] ?? null) ? $entry['meta'] : (is_array($meta['meta'] ?? null) ? $meta['meta'] : []);
 		$span=$layoutMeta['column_span'] ?? '1';
-		$class='dp-panel-show-field';
+		$automaticColumn=!array_key_exists('column_span', $layoutMeta) && !array_key_exists('column_start', $layoutMeta);
+		$class='dp-panel-show-field'.($automaticColumn ? ' dp-panel-grid-item-auto' : '');
 		if(($entry['copyable'] ?? $layoutMeta['copyable'] ?? false)===true){
 			$class.=' dp-panel-show-field-copyable';
 		}
@@ -2876,17 +3041,20 @@ trait PanelRendererForms {
 		elseif(!is_array($span) && (int)$span>1){
 			$class.=' dp-panel-field-span-'.min(12, (int)$span);
 		}
-		$display=(string)($entry['display'] ?? '');
+		$displayValue=$entry['display'] ?? '';
+		$display=$displayValue instanceof PanelSafeHtml ? $displayValue : self::stringValue($displayValue);
+		$displayText=(string)$display;
 		$label=(string)($entry['label'] ?? $entry['name'] ?? 'Entry');
 		$icon=trim((string)($layoutMeta['icon'] ?? ''));
 		$iconHtml=$icon!=='' ? '<i class="dp-panel-entry-icon" aria-hidden="true">'.self::e(self::entryIconText($icon, $label)).'</i>' : '';
-		$copyHtml=($entry['copyable'] ?? $layoutMeta['copyable'] ?? false)===true && $display!==''
-			? '<button type="button" class="dp-panel-entry-copy" data-dp-panel-copy-entry="'.self::e($display).'" title="'.self::e(self::panelText('copy.value', [], 'Copy value')).'">'.self::e(self::panelText('common.copy')).'</button>'
+		$copyHtml=($entry['copyable'] ?? $layoutMeta['copyable'] ?? false)===true && $displayText!==''
+			? '<button type="button" class="dp-panel-entry-copy" data-dp-panel-copy-entry="'.self::e($displayText).'" title="'.self::e(self::panelText('copy.value', [], 'Copy value')).'">'.self::e(self::panelText('common.copy')).'</button>'
 			: '';
 		$description=trim((string)($layoutMeta['description'] ?? ''));
 		$valueHtml=self::entryValueHtml($display, $entry['raw'] ?? null, $meta);
 		return '<article class="'.$class.'"'.$style.'>'
-			.'<header>'.$iconHtml.'<span>'.self::e($label).'</span>'.$copyHtml.'</header>'
+			.'<header>'.$iconHtml.'<span>'.self::e($label).'</span></header>'
+			.$copyHtml
 			.$valueHtml
 			.($description!=='' ? '<small class="dp-panel-entry-description">'.self::e($description).'</small>' : '')
 			.'</article>';
@@ -2900,7 +3068,7 @@ trait PanelRendererForms {
 	 * @param array<string, array<string, mixed>> $sectionMeta Section metadata keyed by normalized section name.
 	 * @return string Show section HTML.
 	 */
-	private static function showSectionsHtml(array $sections, int|array $columns=1, array $sectionMeta=[]): string {
+	private static function showSectionsHtml(array $sections, int|array $columns=1, array $sectionMeta=[], array $presentations=[]): string {
 		if($sections===[]){
 			return '<p class="dp-panel-empty">'.self::e(self::panelText('form.no_visible_fields')).'</p>';
 		}
@@ -2909,21 +3077,29 @@ trait PanelRendererForms {
 		[$tabbed, $untabbed]=self::tabbedSections($unstepped, $sectionMeta);
 		$defaultSection=self::panelText('record.details');
 		$single=$stepped===[] && $tabbed===[] && count($sections)===1 && array_key_first($sections)===$defaultSection;
+		$fieldPresentation=$presentations['entries'] ?? $presentations['fields'] ?? null;
+		$sectionPresentation=$presentations['sections'] ?? null;
 		$html='';
+		$sectionIndex=0;
 		foreach($sections as $label=>$fields){
 			if(!isset($untabbed[$label])){
+				$sectionIndex++;
 				continue;
 			}
 			$meta=self::sectionMeta($sectionMeta, (string)$label);
-			$html.=self::sectionBlockHtml((string)$label, $fields, $meta, $columns, true, $single);
+			$block=self::sectionBlockHtml((string)$label, $fields, $meta, $columns, true, $single, $fieldPresentation);
+			$html.=PanelCollectionPresentation::decorateItemHtml($block, $sectionPresentation, (string)($meta['name'] ?? $label), $sectionIndex, is_array($meta['meta'] ?? null) ? $meta['meta'] : []);
+			$sectionIndex++;
 		}
 		if($tabbed!==[]){
-			$html.=self::tabsHtml($tabbed, $sectionMeta, $columns, true);
+			$html.=self::tabsHtml($tabbed, $sectionMeta, $columns, true, $presentations['tabs'] ?? null, $fieldPresentation);
 		}
 		if($stepped!==[]){
-			$html.=self::stepsHtml($stepped, $sectionMeta, $columns, true);
+			$html.=self::stepsHtml($stepped, $sectionMeta, $columns, true, $presentations['steps'] ?? null, $fieldPresentation);
 		}
-		return $html;
+		return isset($presentations['sections'])
+			? '<div class="dp-panel-show-sections"'.PanelCollectionPresentation::htmlAttributes($presentations['sections'], 'stack').'>'.$html.'</div>'
+			: $html;
 	}
 
 	/**
@@ -2981,7 +3157,7 @@ trait PanelRendererForms {
 	 * @param bool $show Whether panels are for show/detail output.
 	 * @return string Tabbed section HTML.
 	 */
-	private static function tabsHtml(array $tabs, array $sectionMeta, int|array $columns, bool $show=false): string {
+	private static function tabsHtml(array $tabs, array $sectionMeta, int|array $columns, bool $show=false, array|string|null $presentation=null, array|string|null $fieldPresentation=null): string {
 		if($tabs===[]){
 			return '';
 		}
@@ -2991,15 +3167,25 @@ trait PanelRendererForms {
 		foreach($tabs as $tab=>$sections){
 			$tabId='dp-panel-tab-'.substr(sha1((string)$tab.$index), 0, 10);
 			$active=$index===0;
-			$buttons.='<button type="button" id="'.$tabId.'-button" role="tab" aria-controls="'.$tabId.'" aria-selected="'.($active ? 'true' : 'false').'">'.self::e((string)$tab).'</button>';
+			$button='<button type="button" id="'.$tabId.'-button" role="tab" aria-controls="'.$tabId.'" aria-selected="'.($active ? 'true' : 'false').'">'.self::e((string)$tab).'</button>';
+			$itemMeta=[];
+			foreach(array_keys($sections) as $label){
+				$meta=self::sectionMeta($sectionMeta, (string)$label);
+				$local=$meta['meta']['tab_item_presentation'] ?? null;
+				if(is_array($local)){
+					$itemMeta=['item_presentation'=>$local];
+					break;
+				}
+			}
+			$buttons.=PanelCollectionPresentation::decorateItemHtml($button, $presentation, (string)$tab, $index, $itemMeta);
 			$content='';
 			foreach($sections as $label=>$fields){
-				$content.=self::sectionBlockHtml((string)$label, $fields, self::sectionMeta($sectionMeta, (string)$label), $columns, $show, false);
+				$content.=self::sectionBlockHtml((string)$label, $fields, self::sectionMeta($sectionMeta, (string)$label), $columns, $show, false, $fieldPresentation);
 			}
 			$panels.='<div id="'.$tabId.'" class="dp-panel-tab-panel" role="tabpanel" aria-labelledby="'.$tabId.'-button"'.($active ? '' : ' hidden').'>'.$content.'</div>';
 			$index++;
 		}
-		return '<section class="dp-panel-tabs" data-dp-panel-tabs><div class="dp-panel-tab-list" role="tablist">'.$buttons.'</div>'.$panels.'</section>';
+		return '<section class="dp-panel-tabs" data-dp-panel-tabs><div class="dp-panel-tab-list"'.PanelCollectionPresentation::htmlAttributes($presentation, 'segmented').' role="tablist">'.$buttons.'</div>'.$panels.'</section>';
 	}
 
 	/**
@@ -3014,7 +3200,7 @@ trait PanelRendererForms {
 	 * @param bool $show Whether panels are for show/detail output.
 	 * @return string Stepped section HTML.
 	 */
-	private static function stepsHtml(array $steps, array $sectionMeta, int|array $columns, bool $show=false): string {
+	private static function stepsHtml(array $steps, array $sectionMeta, int|array $columns, bool $show=false, array|string|null $presentation=null, array|string|null $fieldPresentation=null): string {
 		if($steps===[]){
 			return '';
 		}
@@ -3025,10 +3211,20 @@ trait PanelRendererForms {
 		foreach($steps as $step=>$sections){
 			$stepId='dp-panel-step-'.substr(sha1((string)$step.$index), 0, 10);
 			$active=$index===0;
-			$buttons.='<button type="button" id="'.$stepId.'-button" data-dp-panel-step-button aria-controls="'.$stepId.'" aria-current="'.($active ? 'step' : 'false').'"><span>'.($index+1).'</span>'.self::e((string)$step).'</button>';
+			$button='<button type="button" id="'.$stepId.'-button" data-dp-panel-step-button aria-controls="'.$stepId.'" aria-current="'.($active ? 'step' : 'false').'"><span>'.($index+1).'</span>'.self::e((string)$step).'</button>';
+			$itemMeta=[];
+			foreach(array_keys($sections) as $label){
+				$meta=self::sectionMeta($sectionMeta, (string)$label);
+				$local=$meta['meta']['step_item_presentation'] ?? null;
+				if(is_array($local)){
+					$itemMeta=['item_presentation'=>$local];
+					break;
+				}
+			}
+			$buttons.=PanelCollectionPresentation::decorateItemHtml($button, $presentation, (string)$step, $index, $itemMeta);
 			$content='';
 			foreach($sections as $label=>$fields){
-				$content.=self::sectionBlockHtml((string)$label, $fields, self::sectionMeta($sectionMeta, (string)$label), $columns, $show, false);
+				$content.=self::sectionBlockHtml((string)$label, $fields, self::sectionMeta($sectionMeta, (string)$label), $columns, $show, false, $fieldPresentation);
 			}
 			$footer='';
 			if(!$show && $count>1){
@@ -3040,7 +3236,7 @@ trait PanelRendererForms {
 			$panels.='<div id="'.$stepId.'" class="dp-panel-step-panel" data-dp-panel-step-panel aria-labelledby="'.$stepId.'-button"'.($active ? '' : ' hidden').'>'.$content.$footer.'</div>';
 			$index++;
 		}
-		return '<section class="dp-panel-steps" data-dp-panel-steps><nav class="dp-panel-step-list" aria-label="'.self::e(self::panelText('client.steps')).'">'.$buttons.'</nav>'.$panels.'</section>';
+		return '<section class="dp-panel-steps" data-dp-panel-steps><nav class="dp-panel-step-list"'.PanelCollectionPresentation::htmlAttributes($presentation, 'segmented').' aria-label="'.self::e(self::panelText('client.steps')).'">'.$buttons.'</nav>'.$panels.'</section>';
 	}
 
 	/**
@@ -3057,12 +3253,32 @@ trait PanelRendererForms {
 	 * @param bool $single Whether section chrome should be minimized.
 	 * @return string Section HTML.
 	 */
-	private static function sectionBlockHtml(string $label, array $fields, array $meta, int|array $columns, bool $show=false, bool $single=false): string {
+	private static function sectionBlockHtml(string $label, array $fields, array $meta, int|array $columns, bool $show=false, bool $single=false, array|string|null $presentation=null): string {
 		$sectionColumns=(int)($meta['columns'] ?? 0);
 		$sectionColumns=$sectionColumns>0 ? $sectionColumns : $columns;
 		$sectionColumns=self::normalizeGridColumns(self::sectionGridColumns($meta, $sectionColumns));
 		$sectionPolicy=is_array($meta['meta']['accessibility'] ?? null) ? $meta['meta']['accessibility'] : (is_array($meta['accessibility'] ?? null) ? $meta['accessibility'] : []);
-		$grid='<div class="dp-panel-form-grid dp-panel-form-grid-'.(int)max($sectionColumns).'" style="'.self::e(self::gridColumnsStyle($sectionColumns)).'"'.self::accessibilityDefaultAttrs(['accessibility'=>$sectionPolicy]).'>'.implode('', $fields).'</div>';
+		$sectionPresentations=is_array($meta['presentation'] ?? null) ? $meta['presentation'] : [];
+		$presentation=$sectionPresentations[$show ? 'entries' : 'fields'] ?? $sectionPresentations['fields'] ?? $meta['fields_presentation'] ?? $presentation;
+		$gridAttributes=$presentation===null
+			? ' style="'.self::e(self::gridColumnsStyle($sectionColumns)).'"'
+			: PanelCollectionPresentation::htmlAttributes($presentation, 'grid', self::gridColumnsStyle($sectionColumns));
+		$fieldHtml='';
+		$fieldIndex=0;
+		foreach($fields as $key=>$field){
+			if(is_array($field) && is_string($field['html'] ?? null)){
+				$name=(string)($field['name'] ?? (is_string($key) ? $key : ''));
+				$itemMeta=is_array($field['meta'] ?? null) ? $field['meta'] : [];
+				$item=$field['html'];
+			}else{
+				$name=is_string($key) ? $key : '';
+				$itemMeta=[];
+				$item=is_string($field) ? $field : '';
+			}
+			$fieldHtml.=PanelCollectionPresentation::decorateItemHtml($item, $presentation, $name, $fieldIndex, $itemMeta);
+			$fieldIndex++;
+		}
+		$grid='<div class="dp-panel-form-grid dp-panel-form-grid-'.(int)max($sectionColumns).'"'.$gridAttributes.self::accessibilityDefaultAttrs(['accessibility'=>$sectionPolicy]).'>'.$fieldHtml.'</div>';
 		if($single){
 			return $show ? '<section class="dp-panel-show">'.$grid.'</section>' : $grid;
 		}
@@ -3188,7 +3404,10 @@ trait PanelRendererForms {
 		$style=[];
 		foreach($columns as $breakpoint=>$value){
 			$suffix=$breakpoint==='default' ? '' : '-'.$breakpoint;
-			$style[]='--dp-grid-cols'.$suffix.':'.max(1, min(12, (int)$value));
+			$value=max(1, min(12, (int)$value));
+			$automaticSpan=$value<=4 ? 1 : ($value<=8 ? 2 : 3);
+			$style[]='--dp-grid-cols'.$suffix.':'.$value;
+			$style[]='--dp-grid-auto-span'.$suffix.':'.$automaticSpan;
 		}
 		return implode(';', $style);
 	}
@@ -3306,10 +3525,13 @@ trait PanelRendererForms {
 	 * @param mixed $value Raw field value.
 	 * @param mixed $record Current record.
 	 * @param PanelRequest|null $request Current Panel request.
-	 * @return string Display value.
+	 * @return string|PanelSafeHtml Display value with explicit markup trust preserved.
 	 */
-	private static function displayFieldValue(Field $field, array $meta, mixed $value, mixed $record=null, ?PanelRequest $request=null): string {
+	private static function displayFieldValue(Field $field, array $meta, mixed $value, mixed $record=null, ?PanelRequest $request=null): string|PanelSafeHtml {
 		$display=$field->displayValue($value, $record, $request);
+		if($display instanceof PanelSafeHtml){
+			return $display;
+		}
 		if($display!==$value){
 			return self::stringValue($display);
 		}
@@ -3357,17 +3579,18 @@ trait PanelRendererForms {
 	 * The renderer supports badges, booleans, mailto links, external URL links,
 	 * image previews, repeater lists, rich HTML opt-in, and prefix/suffix wrapping.
 	 *
-	 * @param string $display Display string.
+	 * @param string|PanelSafeHtml $display Display string or explicit safe markup.
 	 * @param mixed $raw Raw value used for typed rendering decisions.
 	 * @param array<string, mixed> $meta Field or entry metadata.
 	 * @return string Show value HTML.
 	 */
-	private static function entryValueHtml(string $display, mixed $raw, array $meta): string {
+	private static function entryValueHtml(string|PanelSafeHtml $display, mixed $raw, array $meta): string {
 		$fieldMeta=is_array($meta['meta'] ?? null) ? $meta['meta'] : [];
 		$type=(string)($meta['type'] ?? 'text');
 		$prefix=(string)($fieldMeta['prefix'] ?? '');
 		$suffix=(string)($fieldMeta['suffix'] ?? '');
-		$text=$prefix.$display.$suffix;
+		$displayText=(string)$display;
+		$text=$prefix.$displayText.$suffix;
 		if(($fieldMeta['badge'] ?? false)===true || $type==='badge'){
 			return '<strong><span class="dp-panel-badge dp-panel-badge-'.self::entryTone($raw, $fieldMeta).'">'.self::e($text).'</span></strong>';
 		}
@@ -3388,14 +3611,14 @@ trait PanelRendererForms {
 			}
 		}
 		if($type==='image'){
-			$url=trim(self::stringValue($raw));
-			if($url!=='' && (str_starts_with($url, '/') || preg_match('/^https?:\/\//i', $url)===1)){
-				return '<strong class="dp-panel-entry-media"><img src="'.self::e($url).'" alt="'.self::e($display).'"></strong>';
+			$url=self::safeWidgetUrl(self::stringValue($raw));
+			if($url!==''){
+				return '<strong class="dp-panel-entry-media"><img src="'.self::e($url).'" alt="'.self::e($displayText).'"></strong>';
 			}
 		}
-		if($type==='repeater' && str_contains($display, "\n")){
+		if($type==='repeater' && str_contains($displayText, "\n")){
 			$items='';
-			foreach(explode("\n", $display) as $line){
+			foreach(explode("\n", $displayText) as $line){
 				$line=trim($line);
 				if($line!==''){
 					$items.='<li>'.self::e($line).'</li>';
@@ -3405,8 +3628,11 @@ trait PanelRendererForms {
 				return '<strong><ul class="dp-panel-entry-list">'.$items.'</ul></strong>';
 			}
 		}
+		if($display instanceof PanelSafeHtml){
+			return '<strong>'.self::e($prefix).$display->html().self::e($suffix).'</strong>';
+		}
 		if(($fieldMeta['html'] ?? false)===true){
-			return '<strong>'.$text.'</strong>';
+			return '<strong>'.self::e($prefix).self::safeRichHtml($displayText).self::e($suffix).'</strong>';
 		}
 		return '<strong>'.self::e($text).'</strong>';
 	}
@@ -3509,9 +3735,6 @@ trait PanelRendererForms {
 					return (string)($label['label'] ?? $key);
 				}
 			}
-			elseif((string)$optionValue===$key){
-				return (string)$label;
-			}
 		}
 		return null;
 	}
@@ -3583,11 +3806,12 @@ trait PanelRendererForms {
 	 * @return array<string,mixed> Attachment summary.
 	 */
 	private static function attachmentFileSummary(array $file): array {
+		$temporaryName=isset($file['tmp_name']) ? str_replace('\\', '/', (string)$file['tmp_name']) : null;
 		return [
 			'name'=>$file['name'] ?? null,
 			'type'=>$file['type'] ?? null,
 			'size'=>$file['size'] ?? null,
-			'tmp_name'=>isset($file['tmp_name']) ? basename((string)$file['tmp_name']) : null,
+			'tmp_name'=>$temporaryName!==null ? basename($temporaryName) : null,
 		];
 	}
 
@@ -3612,7 +3836,7 @@ trait PanelRendererForms {
 			return $value;
 		}
 		if(is_int($value) || is_float($value)){
-			return $value!==0;
+			return (float)$value!==0.0;
 		}
 		if(is_string($value)){
 			return in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'on'], true);
@@ -3662,10 +3886,10 @@ trait PanelRendererForms {
 				}
 			}
 			if(isset($result['redirect'])){
-				$redirect=(string)$result['redirect'];
+				$redirect=self::safeReturnUrl((string)$result['redirect']);
 			}
 			elseif(isset($result['redirect_to'])){
-				$redirect=(string)$result['redirect_to'];
+				$redirect=self::safeReturnUrl((string)$result['redirect_to']);
 			}
 			if(isset($result['status'])){
 				$status=max(300, min(399, (int)$result['status']));
@@ -3677,7 +3901,7 @@ trait PanelRendererForms {
 		}
 		return [
 			'message'=>$message,
-			'redirect'=>$redirect!==null && trim($redirect)!=='' ? trim($redirect) : null,
+			'redirect'=>$redirect,
 			'status'=>$status,
 			'notifications'=>$notifications,
 			'result'=>$payload,
@@ -3720,6 +3944,9 @@ trait PanelRendererForms {
 		if(array_key_exists('close_modal', $next)){
 			$current['close_modal']=$next['close_modal'];
 		}
+		if(array_key_exists('modal_navigation', $next)){
+			$current['modal_navigation']=$next['modal_navigation'];
+		}
 		if(array_key_exists('refresh', $next)){
 			$current['refresh']=array_values(array_unique(array_merge($current['refresh'] ?? [], $next['refresh'])));
 		}
@@ -3743,8 +3970,14 @@ trait PanelRendererForms {
 			return [];
 		}
 		$normalized=[];
-		if(array_key_exists('close_modal', $effects)){
+		$modalNavigation=Resource::normalizeName((string)($effects['modal_navigation'] ?? $effects['modal_after_submit'] ?? ''));
+		if(in_array($modalNavigation, ['back', 'close', 'stay'], true)){
+			$normalized['modal_navigation']=$modalNavigation;
+			$normalized['close_modal']=$modalNavigation==='close';
+		}
+		elseif(array_key_exists('close_modal', $effects)){
 			$normalized['close_modal']=(bool)$effects['close_modal'];
+			$normalized['modal_navigation']=$normalized['close_modal'] ? 'close' : 'stay';
 		}
 		if(array_key_exists('refresh', $effects)){
 			$normalized['refresh']=self::normalizeActionEffectTargets($effects['refresh']);
@@ -3890,13 +4123,10 @@ trait PanelRendererForms {
 		foreach(self::notificationList($notifications) as $notification){
 			$type=strtolower(trim((string)($notification['type'] ?? 'info')));
 			$type=$type==='error' ? 'error' : self::safeTone($type);
-			if($type==='neutral'){
-				$type='info';
-			}
 			$title=isset($notification['title']) && $notification['title']!==null ? '<strong>'.self::e((string)$notification['title']).'</strong>' : '';
 			$message=self::e((string)($notification['message'] ?? ''));
 			$actionLabel=trim((string)($notification['action_label'] ?? ''));
-			$actionUrl=trim((string)($notification['action_url'] ?? ''));
+			$actionUrl=self::safeWidgetUrl((string)($notification['action_url'] ?? ''));
 			$action=$actionLabel!=='' && $actionUrl!=='' ? '<a href="'.self::e($actionUrl).'">'.self::e($actionLabel).'</a>' : '';
 			$html.='<div class="dp-panel-notice dp-panel-notice-'.$type.'">'.$title.'<span>'.$message.'</span>'.$action.'</div>';
 		}

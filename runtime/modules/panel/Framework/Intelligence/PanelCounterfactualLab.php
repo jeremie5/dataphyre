@@ -1,0 +1,20 @@
+<?php
+/*************************************************************************
+ * Dataphyre
+ *
+ * Copyright (c) 2026 Shopiro Ltd.
+ * SPDX-License-Identifier: MIT
+ */
+declare(strict_types=1);
+
+namespace Dataphyre\Panel;
+
+/** Deterministic side-effect-free scenario comparison and Simulation-module bridge. */
+final class PanelCounterfactualLab implements \JsonSerializable {
+	private readonly \Closure $simulator;
+	/** @param callable(array<string,mixed>,array<string,mixed>,string,int):array<string,mixed> $simulator */public function __construct(callable $simulator,private readonly int $maxRuns=1000){$this->simulator=\Closure::fromCallable($simulator);if($maxRuns<1||$maxRuns>10000){throw new \InvalidArgumentException('Counterfactual run limit is invalid.');}}
+	/** @param array<string,mixed> $baseline @param array<string,array<string,mixed>> $interventions @param list<string> $objectives @return array<string,mixed> */
+	public function compare(array $baseline,array $interventions,array $objectives,int $runs=1,string $seed='panel-counterfactual'):array {PanelOperationsGuard::object($baseline,'counterfactual baseline',4096);PanelOperationsGuard::object($interventions,'counterfactual interventions',256);$objectives=PanelOperationsGuard::names($objectives,'counterfactual objective');if($interventions===[]||$objectives===[]||$runs<1||$runs>$this->maxRuns){throw new \InvalidArgumentException('Counterfactual comparison requires interventions, objectives, and bounded runs.');}$baselineResult=($this->simulator)(PanelOperationsGuard::canonical($baseline),[],hash('sha256',$seed.':baseline'),0);$baselineMetrics=$this->metrics($baselineResult,$objectives);$scenarios=[];foreach($interventions as$name=>$intervention){$name=PanelOperationsGuard::name((string)$name,'counterfactual intervention name');if(!is_array($intervention)){throw new \InvalidArgumentException('Counterfactual interventions must be object-like maps.');}$samples=[];for($run=0;$run<$runs;$run++){$result=($this->simulator)(PanelOperationsGuard::canonical($baseline),PanelOperationsGuard::canonical($intervention),hash('sha256',$seed.':'.$name.':'.$run),$run);$samples[]=$this->metrics($result,$objectives);}$metrics=[];$score=0.0;foreach($objectives as$objective){$values=array_column($samples,$objective);$average=array_sum($values)/count($values);$delta=$average-$baselineMetrics[$objective];$metrics[$objective]=['baseline'=>$baselineMetrics[$objective],'mean'=>$average,'delta'=>$delta,'minimum'=>min($values),'maximum'=>max($values)];$score+=$delta;}$scenarios[]=['name'=>$name,'runs'=>$runs,'metrics'=>$metrics,'score'=>$score,'intervention_hash'=>PanelOperationsGuard::digest($intervention)];}usort($scenarios,static fn(array $a,array $b):int=>[$b['score'],$a['name']]<=>[$a['score'],$b['name']]);return PanelManifestContract::stamp(['type'=>'panel_counterfactual_report_manifest','version'=>1,'baseline_hash'=>PanelOperationsGuard::digest($baseline),'baseline_metrics'=>$baselineMetrics,'objectives'=>$objectives,'scenarios'=>$scenarios,'recommended'=>$scenarios[0]['name']??null,'side_effect_free'=>true,'replayable_seed'=>hash('sha256',$seed)]);}
+	public function jsonSerialize():array{return PanelManifestContract::stamp(['type'=>'panel_counterfactual_lab_manifest','version'=>1,'max_runs'=>$this->maxRuns,'capabilities'=>['deterministic_seeds'=>true,'multiple_replications'=>true,'objective_deltas'=>true,'ranked_interventions'=>true,'side_effect_free'=>true,'simulation_adapter'=>true]]);}
+	/** @param array<string,mixed> $result @param list<string> $objectives @return array<string,float> */private function metrics(array $result,array $objectives):array {$metrics=[];foreach($objectives as$objective){$value=PanelOperationsGuard::valueAt($result,$objective);if(!is_int($value)&&!is_float($value)){throw new \UnexpectedValueException('Counterfactual objective must resolve to a number: '.$objective);}$metrics[$objective]=(float)PanelOperationsGuard::finite($value,'counterfactual objective');}return$metrics;}
+}

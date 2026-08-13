@@ -68,9 +68,6 @@ trait dataphyre_mcp_client_discovery_surfaces {
 			}else{
 				foreach(preg_split('/\s+/', $query) ?: [] as $term){
 					$term=trim($term);
-					if($term===''){
-						continue;
-					}
 					if(str_contains(strtolower($name), $term)){
 						$score+=5;
 						$reasons[]='name:'.$term;
@@ -329,7 +326,7 @@ trait dataphyre_mcp_client_discovery_surfaces {
 		$limit=max(1, min((int)($args['limit'] ?? 12) ?: 12, 80));
 		$app_builder_task=$this->mcp_task_implies_app_builder($query);
 		$api_endpoint_task=$app_builder_task && $this->infer_app_builder_scaffold_type($raw_query, [])==='api_endpoint';
-		$module_doc_task=$app_builder_task || str_contains($query, 'panel') || str_contains($query, 'sql') || str_contains($query, 'schema') || str_contains($query, 'table') || str_contains($query, 'api') || str_contains($query, 'openapi') || str_contains($query, 'endpoint');
+		$module_doc_task=$app_builder_task || str_contains($query, 'application') || str_contains($query, 'panel') || str_contains($query, 'sql') || str_contains($query, 'schema') || str_contains($query, 'table') || str_contains($query, 'api') || str_contains($query, 'openapi') || str_contains($query, 'endpoint');
 		$app_modules=[];
 		if($module_doc_task){
 			$app_modules=$app_builder_task ? ($api_endpoint_task ? ['api', 'routing'] : ['panel', 'sql']) : [];
@@ -396,9 +393,6 @@ trait dataphyre_mcp_client_discovery_surfaces {
 			}else{
 				foreach(preg_split('/\s+/', $query) ?: [] as $term){
 					$term=trim($term);
-					if($term===''){
-						continue;
-					}
 					if(str_contains(strtolower($candidate['id']), $term)){
 						$score+=5;
 						$reasons[]='id:'.$term;
@@ -427,7 +421,7 @@ trait dataphyre_mcp_client_discovery_surfaces {
 				}
 			}
 			if($app_builder_task){
-				if(($candidate['kind'] ?? '')==='prompt' && in_array((string)($candidate['id'] ?? ''), ['dataphyre_panel_workflow', 'dataphyre_feature_plan', 'dataphyre_sql_schema_workflow'], true)){
+				if(($candidate['kind'] ?? '')==='prompt' && in_array((string)($candidate['id'] ?? ''), ['dataphyre_panel_workflow', 'dataphyre_panel_platform_workflow', 'dataphyre_panel_operations_workflow', 'dataphyre_panel_studio_workflow', 'dataphyre_panel_realtime_workflow', 'dataphyre_panel_adapter_workflow', 'dataphyre_feature_plan', 'dataphyre_sql_schema_workflow'], true)){
 					$score+=4;
 					$reasons[]='app_builder_prompt';
 				}
@@ -449,6 +443,9 @@ trait dataphyre_mcp_client_discovery_surfaces {
 			$score=(int)($b['score'] ?? 0) <=> (int)($a['score'] ?? 0);
 			return $score!==0 ? $score : strcmp((string)($a['id'] ?? ''), (string)($b['id'] ?? ''));
 		});
+		if($module_doc_task && $app_modules!==[]){
+			$matches=$this->mcp_resource_prioritize_module_docs($matches, array_values(array_unique($app_modules)));
+		}
 		$next_steps=$app_builder_task ? array_values(array_filter([
 			$api_endpoint_task ? 'Use matched API and Routing docs as read-only context after the app-builder plan, not before the planner.' : 'Use matched Panel and SQL docs as read-only context after the app-builder plan, not before the planner.',
 			'Call dataphyre_app_builder_plan_generate first with payload_profile=compact plus explicit entities, fields, and max_entities when available; use foreign_key_target for relationships, not_foreign_key for external ids, and json/jsonb for structured columns.',
@@ -497,6 +494,48 @@ trait dataphyre_mcp_client_discovery_surfaces {
 			'context_links'=>$this->mcp_lightweight_discovery_context_links(),
 			'next_steps'=>$next_steps,
 		];
+	}
+
+	/**
+	 * Places the best documentation match for every requested app module before
+	 * secondary matches. Match scores still choose each module representative;
+	 * module growth can no longer hide another explicitly requested module.
+	 *
+	 * @param list<array<string,mixed>> $matches
+	 * @param list<string> $modules
+	 * @return list<array<string,mixed>>
+	 */
+	private function mcp_resource_prioritize_module_docs(array $matches,array $modules): array {
+		$prioritized=[];
+		$used=[];
+		foreach($modules as $module){
+			$canonical='dataphyre_'.strtolower($module).'.md';
+			foreach($matches as $index=>$match){
+				if(isset($used[$index]) || ($match['kind'] ?? null)!=='documentation' || ($match['module'] ?? null)!==$module){
+					continue;
+				}
+				if(strtolower(basename((string)($match['path'] ?? '')))!==$canonical){
+					continue;
+				}
+				$prioritized[]=$match;
+				$used[$index]=true;
+				continue 2;
+			}
+			foreach($matches as $index=>$match){
+				if(isset($used[$index]) || ($match['kind'] ?? null)!=='documentation' || ($match['module'] ?? null)!==$module){
+					continue;
+				}
+				$prioritized[]=$match;
+				$used[$index]=true;
+				break;
+			}
+		}
+		foreach($matches as $index=>$match){
+			if(!isset($used[$index])){
+				$prioritized[]=$match;
+			}
+		}
+		return $prioritized;
 	}
 
 	/**

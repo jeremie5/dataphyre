@@ -2,7 +2,11 @@
 
 This directory is the install-level configuration overlay for Dataphyre modules.
 Runtime modules read files such as `config/stripe.php` or `config/access.php`
-when an application boots.
+after the selected application's `flight_sheet.php` has enabled them. Files in
+this directory configure modules; they do not enable them.
+
+Do not create `config/modules.php` for module selection. Use
+`bootstrap.modules.enabled` and `bootstrap.modules.disabled` in the flight sheet.
 
 For the public repository, direct `config/*.php` files are treated as local
 install state. Keep reusable examples as `config/*.example.php`, then copy the
@@ -11,6 +15,7 @@ needed example to the matching local filename in an install.
 Included templates:
 
 - [access.example.php](access.example.php)
+- [cache.example.php](cache.example.php)
 - [mvc.example.php](mvc.example.php)
 - [storage.example.php](storage.example.php)
 - [stripe.example.php](stripe.example.php)

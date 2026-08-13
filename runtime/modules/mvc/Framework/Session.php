@@ -18,6 +18,7 @@ final class Session {
 
 	private static array $fallback=[];
 	private static bool $started=false;
+	private static ?bool $nativeSessionOverride=null;
 
 	/**
 	 * Starts session storage when needed and initializes flash bookkeeping.
@@ -31,7 +32,7 @@ final class Session {
 		if(self::$started){
 			return;
 		}
-		if(PHP_SAPI!=='cli' && session_status()===PHP_SESSION_NONE && headers_sent()===false){
+		if(self::nativeSessionEnabled() && session_status()===PHP_SESSION_NONE && headers_sent()===false){
 			session_start();
 		}
 		self::$started=true;
@@ -335,7 +336,7 @@ final class Session {
 	 * @return void
 	 */
 	public static function flush(): void {
-		if(PHP_SAPI!=='cli' && session_status()===PHP_SESSION_ACTIVE){
+		if(self::nativeSessionEnabled() && session_status()===PHP_SESSION_ACTIVE){
 			$_SESSION=[];
 		}
 		self::$fallback=[];
@@ -351,10 +352,23 @@ final class Session {
 	 * @return array<string, mixed> Mutable session store.
 	 */
 	private static function &store(): array {
-		if(PHP_SAPI!=='cli' && session_status()===PHP_SESSION_ACTIVE){
+		if(self::nativeSessionEnabled() && session_status()===PHP_SESSION_ACTIVE){
 			return $_SESSION;
 		}
 		return self::$fallback;
+	}
+
+	/**
+	 * Reports whether native PHP session storage may be used in this runtime.
+	 *
+	 * The nullable override is intentionally private: normal callers retain the
+	 * historical web/native and CLI/fallback behavior, while isolated framework
+	 * tests can exercise both storage paths without changing the process SAPI.
+	 *
+	 * @return bool True when native session storage is enabled.
+	 */
+	private static function nativeSessionEnabled(): bool {
+		return self::$nativeSessionOverride ?? !in_array(PHP_SAPI,['cli','phpdbg'],true);
 	}
 
 	/**
@@ -449,18 +463,15 @@ final class Session {
 		}
 		$current=&$data;
 		$segments=explode('.', $key);
-		$lastIndex=count($segments) - 1;
-		foreach($segments as $index=>$segment){
-			if($index===$lastIndex){
-				if(is_array($current)){
-					unset($current[$segment]);
-				}
-				return;
-			}
+		$last=array_pop($segments);
+		foreach($segments as $segment){
 			if(!is_array($current) || !array_key_exists($segment, $current)){
 				return;
 			}
 			$current=&$current[$segment];
+		}
+		if(is_array($current)){
+			unset($current[$last]);
 		}
 	}
 }

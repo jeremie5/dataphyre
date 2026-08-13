@@ -5,6 +5,29 @@
  * Copyright (c) 2025 Shopiro Ltd.
  * SPDX-License-Identifier: MIT
  */
+if(!function_exists("json_validation_result")){
+	/**
+	 * Translates a JSON decoder status into Dataphyre's validation contract.
+	 *
+	 * Keeping the status mapping separate makes every decoder outcome directly
+	 * testable, including future or host-specific error codes.
+	 *
+	 * @param int $error One of PHP's JSON_ERROR_* constants.
+	 * @return bool|string True for JSON_ERROR_NONE, otherwise a stable error message.
+	 */
+	function json_validation_result(int $error): bool|string {
+		return match($error){
+			JSON_ERROR_NONE=>true,
+			JSON_ERROR_DEPTH=>'Maximum stack depth exceeded',
+			JSON_ERROR_STATE_MISMATCH=>'Underflow or the modes mismatch',
+			JSON_ERROR_CTRL_CHAR=>'Unexpected control character found',
+			JSON_ERROR_SYNTAX=>'Syntax error, malformed JSON',
+			JSON_ERROR_UTF8=>'Malformed UTF-8 characters, possibly incorrectly encoded',
+			default=>'Unknown error',
+		};
+	}
+}
+
 if(!function_exists("validate_json")){
 	/**
 	 * Validates a JSON string and returns the decoder error message on failure.
@@ -18,29 +41,7 @@ if(!function_exists("validate_json")){
 	 */
 	function validate_json(string $json): bool|string {
 		json_decode($json,true);
-		switch(json_last_error()){
-			case JSON_ERROR_NONE:
-				return true;
-			break;
-			case JSON_ERROR_DEPTH:
-				return 'Maximum stack depth exceeded';
-			break;
-			case JSON_ERROR_STATE_MISMATCH:
-				return 'Underflow or the modes mismatch';
-			break;
-			case JSON_ERROR_CTRL_CHAR:
-				return 'Unexpected control character found';
-			break;
-			case JSON_ERROR_SYNTAX:
-				return 'Syntax error, malformed JSON';
-			break;
-			case JSON_ERROR_UTF8:
-				return 'Malformed UTF-8 characters, possibly incorrectly encoded';
-			break;
-			default:
-				return 'Unknown error';
-			break;
-		}
+		return json_validation_result(json_last_error());
 	}
 }
 
@@ -50,8 +51,8 @@ if(!function_exists("current_datetime")){
 	 *
 	 * @return string Timestamp formatted as `Y-m-d H:i:s`.
 	 */
-	function current_datetime(): string {
-		return date('Y-m-d H:i:s', time());
+	function current_datetime(?int $timestamp=null): string {
+		return date('Y-m-d H:i:s', $timestamp ?? time());
 	}
 }
 
@@ -108,10 +109,20 @@ if(!function_exists("is_cli")){
 	 *
 	 * @return bool True when the process appears to be CLI.
 	 */
-	function is_cli(): bool {
-		return defined('STDIN') || php_sapi_name() === 'cli' || array_key_exists('SHELL', $_ENV) || 
-			   (empty($_SERVER['REMOTE_ADDR']) && !isset($_SERVER['HTTP_USER_AGENT']) && count($_SERVER['argv']) > 0) || 
-			   !array_key_exists('REQUEST_METHOD', $_SERVER);
+	function is_cli(?array $runtime=null): bool {
+		$runtime ??=[
+			'stdin'=>defined('STDIN'),
+			'sapi'=>php_sapi_name(),
+			'environment'=>$_ENV,
+			'server'=>$_SERVER,
+		];
+		$environment=is_array($runtime['environment'] ?? null) ? $runtime['environment'] : [];
+		$server=is_array($runtime['server'] ?? null) ? $runtime['server'] : [];
+		return ($runtime['stdin'] ?? false)===true
+			|| ($runtime['sapi'] ?? '')==='cli'
+			|| array_key_exists('SHELL', $environment)
+			|| (empty($server['REMOTE_ADDR']) && !isset($server['HTTP_USER_AGENT']) && count((array)($server['argv'] ?? []))>0)
+			|| !array_key_exists('REQUEST_METHOD', $server);
 	}
 }
 
@@ -161,7 +172,6 @@ if(!function_exists("is_base64")){
 		$decoded=base64_decode($string, true);
 		if(false===$decoded)return false;
 		if(base64_encode($decoded)!==$string)return false;
-		if(is_null($string))return false;
 		return true;
 	}
 }
@@ -239,6 +249,7 @@ if(!function_exists("array_shuffle")){
 	 */
 	function array_shuffle(array $array): array {
 		$keys=array_keys($array);
+		$new=[];
 		shuffle($keys);
 		foreach($keys as $key){
 			$new[$key]=$array[$key];
@@ -274,8 +285,7 @@ if(!function_exists("copy_folder")){
 	 * Recursively copies a directory tree.
 	 *
 	 * The destination directory is created if missing. Nested directories are
-	 * delegated to `core::copy_folder()` to preserve the historical recursion
-	 * path used by the core class.
+	 * delegated back to this helper so nested trees follow the same copy contract.
 	 *
 	 * @param string $src Source directory.
 	 * @param string $dst Destination directory.
@@ -287,7 +297,7 @@ if(!function_exists("copy_folder")){
 		while(false!==$file=readdir($dir)){
 			if(($file!='.') && ($file!='..' )){
 				if(is_dir($src.'/'.$file)){
-					core::copy_folder($src.'/'.$file, $dst.'/'.$file);
+					copy_folder($src.'/'.$file, $dst.'/'.$file);
 				}
 				else
 				{

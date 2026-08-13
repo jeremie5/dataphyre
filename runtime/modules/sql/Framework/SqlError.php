@@ -58,6 +58,28 @@ final class SqlError {
 	}
 
 	/**
+	 * Creates an exception when a strict Framework read receives a SQL failure
+	 * marker instead of a row-shaped result.
+	 *
+	 * Empty result sets are not failures: strict reads still return an empty list
+	 * or null. This exception is reserved for false and other invalid driver
+	 * payloads that convenience reads would otherwise normalize as empty.
+	 *
+	 * @param string $owner Repository class or table query that owns the read.
+	 * @param string $operation Read operation such as get or first.
+	 * @param array<string,mixed> $context Non-sensitive query metadata.
+	 * @return \RuntimeException Stable SQL read failure.
+	 */
+	public static function readFailure(string $owner,string $operation,array $context=[]): \RuntimeException {
+		return new \RuntimeException(self::format(
+			'SQL read error',
+			"{$owner} could not complete the {$operation} read.",
+			['owner'=>$owner,'operation'=>$operation]+$context,
+			'Inspect the SQL error log or retry policy. Use the default convenience read only when an unavailable result may intentionally be treated as empty.'
+		));
+	}
+
+	/**
 	 * Creates an exception for record/table operations that require primary-key metadata.
 	 *
 	 * @param string $repositoryClass Repository class name being validated.
@@ -531,6 +553,14 @@ final class SqlError {
 				'sqlite_busy',
 				'sqlite_locked',
 				'too much contention',
+				// YugabyteDB can surface transient distributed conflicts without
+				// preserving SQLSTATE through every driver/connection-manager path.
+				'all transparent retries exhausted',
+				'restart read required',
+				'expired or aborted by a conflict',
+				'conflicts with higher priority transaction',
+				'value write after transaction start',
+				'kconflict',
 			] as $needle){
 				if(str_contains($message, $needle)){
 					return true;

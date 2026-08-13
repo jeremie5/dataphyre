@@ -6,7 +6,7 @@ boot and should not run during application requests.
 It manages only the framework install path:
 
 ```text
-common/dataphyre
+dataphyre
 ```
 
 Applications are private repositories and declare their dependencies on other
@@ -15,13 +15,13 @@ applications in the consuming project registry.
 ## Commands
 
 ```bash
-php common/dataphyre/installer/install.php init --root .
-php common/dataphyre/installer/install.php install --root . --source ../dataphyre
-php common/dataphyre/installer/install.php update --root . --source ../dataphyre
-php common/dataphyre/installer/install.php lock
-php common/dataphyre/installer/install.php verify
-php common/dataphyre/installer/install.php check
-php common/dataphyre/installer/install.php doctor
+php dataphyre/installer/install.php init --root .
+php dataphyre/installer/install.php install --root . --source ../dataphyre
+php dataphyre/installer/install.php update --root . --source ../dataphyre
+php dataphyre/installer/install.php lock
+php dataphyre/installer/install.php verify
+php dataphyre/installer/install.php check
+php dataphyre/installer/install.php doctor
 ```
 
 `init` creates `dataphyre.project.json` when a project adopts installer-managed
@@ -35,8 +35,8 @@ that lock. `check` is an alias for `verify`. `doctor` prints the resolved
 installer state for diagnostics.
 
 `install` and `update` synchronize the managed export and prune stale files
-inside `common/dataphyre` unless those files are excluded by the Dataphyre
+inside `dataphyre` unless those files are excluded by the Dataphyre
 manifest. The installer refuses to prune or export into application roots.
 
-The installer refuses to export Dataphyre into application roots or non-framework
-common folders.
+The installer refuses to export Dataphyre into application roots or any other
+project-owned path outside `dataphyre`.

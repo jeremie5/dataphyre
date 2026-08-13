@@ -685,7 +685,7 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 			],
 			'sql_config_path'=>(string)($path_context['dataphyre_root'] ?? 'applications/<app>/backend/dataphyre').'/config/sql.php',
 			'scaffold_tool'=>[
-				'script'=>'common/dataphyre/runtime/modules/sql/kernel/scaffold_table_artifacts.php',
+				'script'=>'dataphyre/runtime/modules/sql/kernel/scaffold_table_artifacts.php',
 				'arguments'=>[
 					'--application='.(string)($path_context['application_id'] ?? '<app>'),
 					'--entity='.$class,
@@ -5402,9 +5402,6 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 		$verification_todo=[];
 		foreach($steps as $step){
 			$tool=(string)($step['tool'] ?? '');
-			if($tool===''){
-				continue;
-			}
 			$arguments=$step['arguments'] ?? (object)[];
 			$requires_concrete_paths=($step['requires_concrete_paths'] ?? false)===true;
 			$evidence[]=[
@@ -5898,45 +5895,40 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 			'diagnostic_next'=>'Use dataphyre_diagnostics_last_error only when the focused check output is not enough; copy diagnostic_summary.copy_safe_evidence, not raw logs.',
 			'not_required'=>['MCP/release-surface validation', 'Dataphyre runtime-internal edits for one application failure'],
 		];
-		switch($tool){
-			case 'dataphyre_php_lint':
-				$branch['likely_app_owned_fix']='Correct syntax, namespace, imports, class names, or generated skeleton adaptation in app-owned PHP files.';
-				$branch['next_reads']=['Open the failing app-owned PHP file and compare namespaces/class names with builder_response.naming_contract.'];
-				break;
-			case 'dataphyre_run_panel_field_catalog_check':
-				$branch['likely_app_owned_fix']='Adjust app-owned Panel field/control metadata, options/defaults, or unsupported control mappings.';
-				$branch['next_reads']=['builder_response.field_metadata_summary', 'builder_response.implementation_matrix.work_items[field_metadata]'];
-				break;
-			case 'dataphyre_run_panel_regression':
-				$branch['likely_app_owned_fix']='Fix app-owned Panel resource, manifest, relationship adapter, filters, actions, or route-free regression manifest.';
-				$branch['next_reads']=['builder_response.relationship_contract_summary', 'builder_response.implementation_matrix', 'builder_response.verification_handoff'];
-				break;
-			case 'app_local_php_unit_tests':
-				$branch['likely_app_owned_fix']='Fix app-owned generated PHP resources, handlers, data-model artifacts, or the lightweight test skeleton assertions.';
-				$branch['next_reads']=['builder_response.code_skeleton_summary.paths_by_kind', 'builder_response.implementation_recipe.items', 'builder_response.verification_handoff'];
-				break;
-			case 'dataphyre_sql_schema_read':
-				$branch['likely_app_owned_fix']='Fix app-owned SQL config registration, TableSchema metadata, repository/table naming, or required/index/foreign-key hints.';
-				$branch['next_reads']=['builder_response.data_integrity_summary', 'builder_response.code_skeleton_summary.paths_by_kind.table_schema'];
-				break;
-			case 'dataphyre_route_manifest_read':
-			case 'dataphyre_route_url_preview':
-			case 'dataphyre_route_match_preview':
-				$branch['likely_app_owned_fix']='Fix app-owned route manifest/source declarations, route names, parameters, middleware metadata, or URL/match expectations without dispatching handlers.';
-				$branch['next_reads']=['builder_response.surface_execution_plan', 'focused_context.docs'];
-				break;
-			case 'dataphyre_api_docs_static_summary':
-			case 'dataphyre_openapi_static_contract_summary':
-			case 'dataphyre_api_cache_static_summary':
-				$branch['likely_app_owned_fix']='Fix app-owned API endpoint declarations, static docs contract metadata, cache key contract, or OpenAPI-facing annotations without runtime publication validation.';
-				$branch['next_reads']=['builder_response.companion_surface_handoff', 'builder_response.endpoint_policy_metadata'];
-				break;
-			default:
-				$branch['likely_app_owned_fix']='Inspect the focused check result, adjust app-owned code/config/tests, then rerun the same focused check.';
-				$branch['next_reads']=['builder_response.verification_todo', 'builder_response.diagnostic_handoff_hint'];
-				break;
-		}
-		return $branch;
+		return $branch+match($tool){
+			'dataphyre_php_lint'=>[
+				'likely_app_owned_fix'=>'Correct syntax, namespace, imports, class names, or generated skeleton adaptation in app-owned PHP files.',
+				'next_reads'=>['Open the failing app-owned PHP file and compare namespaces/class names with builder_response.naming_contract.'],
+			],
+			'dataphyre_run_panel_field_catalog_check'=>[
+				'likely_app_owned_fix'=>'Adjust app-owned Panel field/control metadata, options/defaults, or unsupported control mappings.',
+				'next_reads'=>['builder_response.field_metadata_summary', 'builder_response.implementation_matrix.work_items[field_metadata]'],
+			],
+			'dataphyre_run_panel_regression'=>[
+				'likely_app_owned_fix'=>'Fix app-owned Panel resource, manifest, relationship adapter, filters, actions, or route-free regression manifest.',
+				'next_reads'=>['builder_response.relationship_contract_summary', 'builder_response.implementation_matrix', 'builder_response.verification_handoff'],
+			],
+			'app_local_php_unit_tests'=>[
+				'likely_app_owned_fix'=>'Fix app-owned generated PHP resources, handlers, data-model artifacts, or the lightweight test skeleton assertions.',
+				'next_reads'=>['builder_response.code_skeleton_summary.paths_by_kind', 'builder_response.implementation_recipe.items', 'builder_response.verification_handoff'],
+			],
+			'dataphyre_sql_schema_read'=>[
+				'likely_app_owned_fix'=>'Fix app-owned SQL config registration, TableSchema metadata, repository/table naming, or required/index/foreign-key hints.',
+				'next_reads'=>['builder_response.data_integrity_summary', 'builder_response.code_skeleton_summary.paths_by_kind.table_schema'],
+			],
+			'dataphyre_route_manifest_read', 'dataphyre_route_url_preview', 'dataphyre_route_match_preview'=>[
+				'likely_app_owned_fix'=>'Fix app-owned route manifest/source declarations, route names, parameters, middleware metadata, or URL/match expectations without dispatching handlers.',
+				'next_reads'=>['builder_response.surface_execution_plan', 'focused_context.docs'],
+			],
+			'dataphyre_api_docs_static_summary', 'dataphyre_openapi_static_contract_summary', 'dataphyre_api_cache_static_summary'=>[
+				'likely_app_owned_fix'=>'Fix app-owned API endpoint declarations, static docs contract metadata, cache key contract, or OpenAPI-facing annotations without runtime publication validation.',
+				'next_reads'=>['builder_response.companion_surface_handoff', 'builder_response.endpoint_policy_metadata'],
+			],
+			default=>[
+				'likely_app_owned_fix'=>'Inspect the focused check result, adjust app-owned code/config/tests, then rerun the same focused check.',
+				'next_reads'=>['builder_response.verification_todo', 'builder_response.diagnostic_handoff_hint'],
+			],
+		};
 	}
 
 	/**
@@ -6195,9 +6187,6 @@ trait dataphyre_mcp_planning_app_builder_contract_surfaces {
 		$relationship_targets=[];
 		foreach($relationships as $relationship){
 			$key=(string)$relationship['target_entity'];
-			if($key===''){
-				continue;
-			}
 			$relationship_targets[$key]=[
 				'target_entity'=>$key,
 				'target_table'=>(string)$relationship['target_table'],

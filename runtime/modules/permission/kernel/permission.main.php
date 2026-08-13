@@ -57,7 +57,7 @@ if(function_exists('dp_define_module_config')){
 	]);
 }
 
-if(defined('RUN_MODE') && RUN_MODE==='diagnostic'){
+if(defined('RUN_MODE') && in_array(RUN_MODE, ['diagnostic', 'ci'], true)){
 	require_once(__DIR__.'/permission.diagnostic.php');
 }
 
@@ -104,9 +104,6 @@ final class permission {
 		$bootstrap=dirname(__DIR__).'/Framework/Bootstrap.php';
 		if(is_file($bootstrap)){
 			require_once($bootstrap);
-		}
-		if(class_exists('\Dataphyre\Permission\Permission', false)){
-			return;
 		}
 		foreach([
 			'PermissionRule.php',

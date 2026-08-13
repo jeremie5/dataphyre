@@ -6,23 +6,65 @@
  * SPDX-License-Identifier: MIT
  */
 global $modcache;
+$modcache=is_array($modcache ?? null) ? $modcache : [];
 
-if(!isset($modcache) || !is_array($modcache)){
-	if(defined('ROOTPATH')){
-		$modcache_file=ROOTPATH['dataphyre']."modcache.php";
-		$modcache=(is_file($modcache_file) && filemtime($modcache_file)+300>time()) ? require($modcache_file) : [];
-		if(!is_array($modcache)){
-			$modcache=[];
-		}
+/**
+ * Returns the root-path map used by bootstrap helpers.
+ *
+ * Isolated bootstrap diagnostics may provide a process-local override without
+ * redefining the immutable ROOTPATH constant used by the running application.
+ * A false override represents the pre-ROOTPATH phase.
+ *
+ * @return ?array<string, mixed> Active root-path map, or null before bootstrap.
+ */
+function dp_helper_rootpath(): ?array {
+	$override=$GLOBALS['DATAPHYRE_HELPER_ROOTPATH_OVERRIDE'] ?? null;
+	if($override===false){
+		return null;
 	}
-	else
-	{
-		$modcache=[];
+	if(is_array($override)){
+		return $override;
 	}
+	return defined('ROOTPATH') && is_array(ROOTPATH) ? ROOTPATH : null;
 }
 
 /**
- * Persists the module discovery cache when its serialized contents changed.
+ * Returns the run mode used by dependency checks.
+ *
+ * A process-local override lets bootstrap diagnostics inspect pre-init and
+ * diagnostic behavior while a host process is already running in another mode.
+ */
+function dp_helper_run_mode(): string {
+	$override=$GLOBALS['DATAPHYRE_HELPER_RUN_MODE_OVERRIDE'] ?? null;
+	return is_string($override) && $override!==''
+		? $override
+		: (defined('RUN_MODE') ? RUN_MODE : 'pre-init');
+}
+
+/**
+ * Returns the mutable runtime configuration available during bootstrap.
+ *
+ * The loaded core facade is authoritative. Legacy CFG containers remain
+ * supported for callers that load module helpers before the facade exists.
+ *
+ * @return array<string, mixed> Complete runtime configuration payload.
+ */
+function dp_helper_config_all(): array {
+	if(class_exists('\dataphyre\core', false)){
+		return \dataphyre\core::config_all();
+	}
+	if(!defined('CFG')){
+		return [];
+	}
+	if(is_object(CFG) && method_exists(CFG, 'raw')){
+		$config=CFG->raw();
+		return is_array($config) ? $config : [];
+	}
+	return is_array(CFG) ? CFG : [];
+}
+
+/**
+ * Persists a legacy module cache for callers that still invoke this helper.
  *
  * The cache lives under the application Dataphyre root and stores module
  * entrypoint/version lookups. Writing is skipped before ROOTPATH exists and
@@ -32,10 +74,11 @@ if(!isset($modcache) || !is_array($modcache)){
  * @return void
  */
 function dp_modcache_save_if_changed(array $modcache): void {
-	if(!defined('ROOTPATH')){
+	$rootpath=dp_helper_rootpath();
+	if($rootpath===null || empty($rootpath['dataphyre'])){
 		return;
 	}
-	$modcache_file=ROOTPATH['dataphyre']."modcache.php";
+	$modcache_file=(string)($rootpath['dataphyre'] ?? '')."modcache.php";
 	$new_data='<?php return '.var_export($modcache, true).';';
 	$existing=@file_get_contents($modcache_file);
 	if($existing===$new_data){
@@ -45,41 +88,18 @@ function dp_modcache_save_if_changed(array $modcache): void {
 }
 
 /**
- * Resolves whether a Dataphyre module is installed and where it boots from.
+ * Resolves the kernel entry for a flight-sheet-enabled Dataphyre module.
  *
- * Application modules take precedence over common runtime modules. A directory
- * prefixed with `-` in the application tree disables the common module of the
- * same name. Results are cached in the global modcache and written back to disk.
+ * The module registry performs the authoritative O(1) policy check before any
+ * filesystem inspection. Its per-process definition cache replaces the former
+ * disk-backed discovery cache, which could leak modules across policy changes.
  *
  * @param string $module Module directory name.
  * @return array{0: string, 1: string}|false Entrypoint path and version, or false when absent/disabled.
  */
 function dp_module_present(string $module): array|bool {
-	global $modcache;
-	if(!is_array($modcache)){
-		$modcache=[];
-	}
-	if(isset($modcache[$module]) || array_key_exists($module, $modcache)){
-		$cached=$modcache[$module];
-		if($cached===false || (is_array($cached) && isset($cached[0]) && is_string($cached[0]) && is_file($cached[0]))){
-			return $cached;
-		}
-		unset($modcache[$module]);
-	}
-	$p=ROOTPATH['dataphyre']."modules/$module/";
-	$c=ROOTPATH['common_dataphyre_runtime']."modules/$module/";
-	$result=false;
-	$app_entry=$p."kernel/$module.main.php";
-	$common_entry=$c."kernel/$module.main.php";
-	if(is_file($app_entry)){
-		$result=[$app_entry, is_file($p."version") ? trim((string)file_get_contents($p."version")) : '1.0'];
-	}
-	elseif(!is_dir(ROOTPATH['dataphyre']."modules/-$module/") && is_file($common_entry)){
-		$result=[$common_entry, is_file($c."version") ? trim((string)file_get_contents($c."version")) : '1.0'];
-	}
-	$modcache[$module]=$result;
-	dp_modcache_save_if_changed($modcache);
-	return $result;
+	require_once(__DIR__.'/module_registry.php');
+	return \dataphyre\module_registry::kernel_module_present($module);
 }
 
 /**
@@ -99,7 +119,7 @@ function dp_module_present(string $module): array|bool {
  */
 function dp_module_required(string $module, string $required_module, string $min_version='1.0', string $max_version=''): void {
 	$presence=dp_module_present($required_module);
-	$run_mode=defined('RUN_MODE') ? RUN_MODE : 'pre-init';
+	$run_mode=dp_helper_run_mode();
 	$version_invalid=is_array($presence) && (
 		version_compare($presence[1], $min_version, '<') ||
 		($max_version!=='' && version_compare($presence[1], $max_version, '>'))
@@ -159,7 +179,8 @@ function dp_module_config_constant_name(string $module): string {
  * @return array<int, string> Candidate config file paths in merge order.
  */
 function dp_config_candidate_files(string $module, bool $include_cache=true): array {
-	if(!defined('ROOTPATH')){
+	$rootpath=dp_helper_rootpath();
+	if($rootpath===null){
 		return [];
 	}
 	$module=trim($module);
@@ -171,16 +192,16 @@ function dp_config_candidate_files(string $module, bool $include_cache=true): ar
 	];
 	$files=[];
 	foreach(['common_dataphyre', 'dataphyre'] as $root_key){
-		if(empty(ROOTPATH[$root_key])){
+		if(empty($rootpath[$root_key])){
 			continue;
 		}
-		$base=rtrim((string)ROOTPATH[$root_key], '/\\').'/config/';
+		$base=rtrim((string)$rootpath[$root_key], '/\\').'/config/';
 		foreach($filenames as $filename){
 			$files[]=$base.$filename;
 		}
 	}
-	if($include_cache===true && !empty(ROOTPATH['dataphyre'])){
-		$cache_base=rtrim((string)ROOTPATH['dataphyre'], '/\\').'/cache/config/';
+	if($include_cache===true && !empty($rootpath['dataphyre'])){
+		$cache_base=rtrim((string)$rootpath['dataphyre'], '/\\').'/cache/config/';
 		$files[]=$cache_base.$module.'.compiled.php';
 	}
 	return array_values(array_unique($files));
@@ -218,7 +239,7 @@ function dp_define_core_config(?string $constant='DP_CORE_CFG'): array {
 		$existing=constant($constant);
 		return is_array($existing) ? $existing : [];
 	}
-	if(!defined('ROOTPATH')){
+	if(dp_helper_rootpath()===null){
 		define($constant, []);
 		return [];
 	}
@@ -232,13 +253,7 @@ function dp_define_core_config(?string $constant='DP_CORE_CFG'): array {
 			$config=array_replace_recursive($config, dp_core_config_extract($data));
 			continue;
 		}
-		$all_config=class_exists('\dataphyre\core', false)
-			? \dataphyre\core::config_all()
-			: (
-				defined('CFG')
-				? (is_object(CFG) && method_exists(CFG, 'raw') ? CFG->raw() : (is_array(CFG) ? CFG : []))
-				: []
-			);
+		$all_config=dp_helper_config_all();
 		if(isset($all_config['dataphyre']) && is_array($all_config['dataphyre'])){
 			$config=array_replace_recursive($config, $all_config['dataphyre']);
 		}
@@ -274,14 +289,15 @@ function dp_module_config_extract(array $config, string $module): array {
  * @return ?string Application config path, or null when unavailable.
  */
 function dp_module_config_app_file(string $module): ?string {
-	if(!defined('ROOTPATH') || empty(ROOTPATH['dataphyre'])){
+	$rootpath=dp_helper_rootpath();
+	if($rootpath===null || empty($rootpath['dataphyre'])){
 		return null;
 	}
 	$module=trim($module);
 	if($module===''){
 		return null;
 	}
-	return rtrim((string)ROOTPATH['dataphyre'], '/\\').'/config/'.$module.'.php';
+	return rtrim((string)$rootpath['dataphyre'], '/\\').'/config/'.$module.'.php';
 }
 
 /**
@@ -343,7 +359,7 @@ function dp_define_module_config(string $module, ?string $constant=null, array $
 		$existing=constant($constant);
 		return is_array($existing) ? $existing : [];
 	}
-	if(!defined('ROOTPATH')){
+	if(dp_helper_rootpath()===null){
 		define($constant, []);
 		return [];
 	}
@@ -366,13 +382,7 @@ function dp_define_module_config(string $module, ?string $constant=null, array $
 			$config=array_replace_recursive($config, dp_module_config_extract($data, $module));
 			continue;
 		}
-		$all_config=class_exists('\dataphyre\core', false)
-			? \dataphyre\core::config_all()
-			: (
-				defined('CFG')
-				? (is_object(CFG) && method_exists(CFG, 'raw') ? CFG->raw() : (is_array(CFG) ? CFG : []))
-				: []
-			);
+		$all_config=dp_helper_config_all();
 		if(isset($all_config['dataphyre'][$module]) && is_array($all_config['dataphyre'][$module])){
 			$config=array_replace_recursive($config, $all_config['dataphyre'][$module]);
 		}
@@ -394,13 +404,18 @@ function dp_define_module_config(string $module, ?string $constant=null, array $
  * @return array<int, string> Private keys in rotation order.
  */
 function dpvks(): array {
-	if(!defined('DP_CORE_CFG') && defined('ROOTPATH')){
+	$rootpath=dp_helper_rootpath();
+	if(!defined('DP_CORE_CFG') && $rootpath!==null){
 		dp_define_core_config();
 	}
-	if(false!=$keys=file_get_contents(ROOTPATH['dataphyre']."config/static/dpvk")){
+	$key_file=$rootpath!==null && !empty($rootpath['dataphyre'])
+		? rtrim((string)$rootpath['dataphyre'], '/\\').'/config/static/dpvk'
+		: null;
+	if($key_file!==null && false!==($keys=@file_get_contents($key_file))){
 		return explode(",", $keys);
 	}
-	$private_keys=DP_CORE_CFG['private_key'] ?? [];
+	$core_config=defined('DP_CORE_CFG') && is_array(DP_CORE_CFG) ? DP_CORE_CFG : [];
+	$private_keys=$core_config['private_key'] ?? [];
 	if(is_string($private_keys) && $private_keys!==''){
 		return [$private_keys];
 	}
@@ -408,6 +423,7 @@ function dpvks(): array {
 		return $private_keys;
 	}
 	pre_init_error("Failed getting private keys");
+	throw new RuntimeException("Failed getting private keys");
 }
 
 /**

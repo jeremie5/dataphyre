@@ -97,7 +97,7 @@ trait dataphyre_mcp_client_capability_surfaces {
 		return match($family){
 			'publication_validation'=>'bounded_execution_for_publication_claims',
 			'verification'=>'read_only_or_focused_app_execution',
-			'agent_and_planning', 'skill_registration', 'panel_helpers', 'api_and_openapi'=>'read_only_or_dry_run',
+			'agent_and_planning', 'skill_registration', 'panel_intelligence', 'panel_helpers', 'api_and_openapi', 'sql_migrations'=>'read_only_or_dry_run',
 			default=>'read_only',
 		};
 	}
@@ -115,6 +115,9 @@ trait dataphyre_mcp_client_capability_surfaces {
 			'skill_registration'=>'Skill catalogs, manifests, audits, packs, and install plans are generated for client-side use but not installed or written.',
 			'agent_and_planning'=>'Plans, manifests, prompt packs, and client checklists are generated but not written.',
 			'config_storage_sql'=>'Config, storage, and SQL tools inspect metadata and plans without exposing secrets or connecting to databases.',
+			'sql_migrations'=>'Migration tools catalog contracts—including maintenance expand/contract transactions and exact SemVer compatibility floors—validate repo-local immutable manifests, and generate scaffold plans without writes, application-code loading, database connections, or SQL execution; applications retain drain/barrier and authorization authority.',
+			'contracts'=>'Executable TestKit declarations, PHP type relationships, serialized discriminators, and legacy manifests are indexed from source without loading runtime code.',
+			'panel_intelligence'=>'Panel platform manifests, Framework declarations, documentation, contracts, and executable evidence are joined from source without bootstrapping Panel or connecting to providers.',
 			'routes'=>'Route tools read manifests, tokenize source, and preview matches without dispatching handlers.',
 			'diagnostics'=>'Diagnostics read bounded artifacts and source metadata without running collectors or browser sessions.',
 			default=>'Static inspection only; source files are read but runtime code is not invoked.',
@@ -133,6 +136,9 @@ trait dataphyre_mcp_client_capability_surfaces {
 			'publication_validation'=>[],
 			'routes'=>['dataphyre_route_manifest_read', 'dataphyre_route_source_ambiguity_report'],
 			'config_storage_sql'=>['dataphyre_sql_query_plan', 'dataphyre_config_shape_read'],
+			'sql_migrations'=>['dataphyre_sql_migration_manifest_validate', 'dataphyre_sql_migration_scaffold_plan'],
+			'contracts'=>['dataphyre_contract_catalog', 'dataphyre_contract_describe', 'dataphyre_unit_tests_list'],
+			'panel_intelligence'=>['dataphyre_panel_capability_describe', 'dataphyre_panel_surface_graph', 'dataphyre_panel_verification_plan'],
 			'skill_registration'=>['dataphyre_mcp_skill_registration_audit', 'dataphyre_mcp_skill_pack_export', 'dataphyre_mcp_skill_install_plan', 'dataphyre_mcp_skill_file_install_plan'],
 			'agent_and_planning'=>['dataphyre_mcp_manifest_export', 'dataphyre_mcp_status_board'],
 			default=>['focused application or module verification selected by affected surface'],
@@ -212,6 +218,8 @@ trait dataphyre_mcp_client_capability_surfaces {
 			'verification'=>['Use the publication_validation family for MCP/release-surface proof; ordinary verification stays focused on app/module checks.'],
 			'routes'=>array_merge(['confirm route tools remain read-only and do not dispatch handlers'], $common),
 			'config_storage_sql'=>array_merge(['confirm SQL/config/storage tools expose metadata only and do not reveal credentials'], $common),
+			'contracts'=>array_merge(['confirm contract discovery remains token/JSON based and computed versions stay explicitly unresolved until TestKit lists them'], $common),
+			'panel_intelligence'=>array_merge(['confirm the source-derived Panel index covers every current platform domain and that plans remain dry-run guidance rather than runtime readiness claims'], $common),
 			'skill_registration'=>array_merge(['confirm skill pack/install surfaces remain plan-only unless explicitly installed by the client'], $common),
 			'agent_and_planning'=>array_merge(['confirm generated guidance keeps Application-Agent Default Lane first'], $common),
 			default=>$common,

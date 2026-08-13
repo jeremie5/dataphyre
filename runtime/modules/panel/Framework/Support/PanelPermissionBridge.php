@@ -51,9 +51,7 @@ final class PanelPermissionBridge {
 	 */
 	public static function available(): bool {
 		$available=class_exists('\Dataphyre\Permission\Permission');
-		if(!$available && class_exists('\dataphyre\core') && \dataphyre\core::load_framework_module('permission')===true){
-			$available=class_exists('\Dataphyre\Permission\Permission');
-		}
+		if(!$available && class_exists('\dataphyre\core') && \dataphyre\core::load_framework_module('permission')===true){ $available=class_exists('\Dataphyre\Permission\Permission'); }
 		return $available;
 	}
 

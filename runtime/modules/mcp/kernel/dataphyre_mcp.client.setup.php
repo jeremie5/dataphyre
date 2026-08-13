@@ -19,10 +19,7 @@ trait dataphyre_mcp_client_setup_surfaces {
 	 * @return array Client install checklist payload.
 	 */
 	private function mcp_client_install_checklist(array $args): array {
-		$target=strtolower(trim((string)($args['target'] ?? 'generic')));
-		if(!in_array($target, ['codex', 'claude', 'cursor', 'generic'], true)){
-			$target='generic';
-		}
+		$target=$this->mcp_client_target($args['target'] ?? 'generic');
 		$config=$this->mcp_client_config_summary([
 			'include_cwd'=>($args['include_cwd'] ?? false)===true,
 			'php_command'=>trim((string)($args['php_command'] ?? 'php')) ?: 'php',
@@ -49,7 +46,7 @@ trait dataphyre_mcp_client_setup_surfaces {
 					'id'=>'generate_config',
 					'action'=>'Generate or copy the portable stdio config for the MCP client.',
 					'tool'=>'dataphyre_mcp_client_config_summary',
-					'expected'=>'Client points command to php and args to common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php.',
+					'expected'=>'Client points command to php and args to dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php.',
 				],
 				[
 					'id'=>'add_instructions',
@@ -107,10 +104,7 @@ trait dataphyre_mcp_client_setup_surfaces {
 	 * @return array Client config install plan payload.
 	 */
 	private function mcp_client_config_install_plan(array $args): array {
-		$target=strtolower(trim((string)($args['target'] ?? 'generic')));
-		if(!in_array($target, ['codex', 'claude', 'cursor', 'generic'], true)){
-			$target='generic';
-		}
+		$target=$this->mcp_client_target($args['target'] ?? 'generic');
 		$php_command=trim((string)($args['php_command'] ?? 'php'));
 		if($php_command===''){
 			$php_command='php';
@@ -245,10 +239,7 @@ trait dataphyre_mcp_client_setup_surfaces {
 	 * @return array Smoke-test plan payload.
 	 */
 	private function mcp_smoke_test_export(array $args): array {
-		$format=strtolower(trim((string)($args['format'] ?? 'all')));
-		if(!in_array($format, ['powershell', 'bash', 'node', 'php', 'all'], true)){
-			$format='all';
-		}
+		$format=$this->mcp_smoke_format($args['format'] ?? 'all');
 		$requests=[
 			[
 				'name'=>'initialize',
@@ -286,7 +277,7 @@ trait dataphyre_mcp_client_setup_surfaces {
 					"\$body = '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"dataphyre-mcp-smoke\",\"version\":\"1.0.0\"}}}'",
 					'$length = [System.Text.Encoding]::UTF8.GetByteCount($body)',
 					'$frame = "Content-Length: $length`r`n`r`n$body"',
-					'$frame | php common\dataphyre\runtime\modules\mcp\kernel\dataphyre_mcp.php',
+					'$frame | php dataphyre\runtime\modules\mcp\kernel\dataphyre_mcp.php',
 				]),
 			],
 			'bash'=>[
@@ -295,7 +286,7 @@ trait dataphyre_mcp_client_setup_surfaces {
 				'script'=>implode("\n", [
 					"body='{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"dataphyre-mcp-smoke\",\"version\":\"1.0.0\"}}}'",
 					'length=$(printf "%s" "$body" | wc -c | tr -d " ")',
-					'printf "Content-Length: %s\r\n\r\n%s" "$length" "$body" | php common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php',
+					'printf "Content-Length: %s\r\n\r\n%s" "$length" "$body" | php dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php',
 				]),
 			],
 			'node'=>[
@@ -305,7 +296,7 @@ trait dataphyre_mcp_client_setup_surfaces {
 					"const { spawnSync } = require('node:child_process');",
 					"const body = JSON.stringify({jsonrpc:'2.0', id:1, method:'initialize', params:{protocolVersion:'2025-11-25', capabilities:{}, clientInfo:{name:'dataphyre-mcp-smoke', version:'1.0.0'}}});",
 					'const frame = `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`;',
-					"const result = spawnSync('php', ['common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php'], {input: frame, encoding: 'utf8'});",
+					"const result = spawnSync('php', ['dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php'], {input: frame, encoding: 'utf8'});",
 					"process.stdout.write(result.stdout);",
 					"process.stderr.write(result.stderr);",
 					"process.exit(result.status ?? 1);",
@@ -319,7 +310,7 @@ trait dataphyre_mcp_client_setup_surfaces {
 					'$body=json_encode(["jsonrpc"=>"2.0","id"=>1,"method"=>"initialize","params"=>["protocolVersion"=>"2025-11-25","capabilities"=>(object)[],"clientInfo"=>["name"=>"dataphyre-mcp-smoke","version"=>"1.0.0"]]], JSON_UNESCAPED_SLASHES);',
 					'$frame="Content-Length: ".strlen($body)."\\r\\n\\r\\n".$body;',
 					'$descriptor=[0=>["pipe","r"],1=>["pipe","w"],2=>["pipe","w"]];',
-					'$process=proc_open([PHP_BINARY, "common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php"], $descriptor, $pipes, getcwd());',
+					'$process=proc_open([PHP_BINARY, "dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php"], $descriptor, $pipes, getcwd());',
 					'fwrite($pipes[0], $frame); fclose($pipes[0]);',
 					'echo stream_get_contents($pipes[1]);',
 					'fwrite(STDERR, stream_get_contents($pipes[2]));',
@@ -373,14 +364,8 @@ trait dataphyre_mcp_client_setup_surfaces {
 	 * @return array Client onboarding payload.
 	 */
 	private function mcp_client_onboarding_pack(array $args): array {
-		$target=strtolower(trim((string)($args['target'] ?? 'generic')));
-		if(!in_array($target, ['codex', 'claude', 'cursor', 'generic'], true)){
-			$target='generic';
-		}
-		$smoke_format=strtolower(trim((string)($args['smoke_format'] ?? 'all')));
-		if(!in_array($smoke_format, ['powershell', 'bash', 'node', 'php', 'all'], true)){
-			$smoke_format='all';
-		}
+		$target=$this->mcp_client_target($args['target'] ?? 'generic');
+		$smoke_format=$this->mcp_smoke_format($args['smoke_format'] ?? 'all');
 		$config=$this->mcp_client_config_summary([
 			'include_cwd'=>false,
 			'php_command'=>'php',
@@ -470,10 +455,7 @@ trait dataphyre_mcp_client_setup_surfaces {
 	 * @return array Troubleshooting payload.
 	 */
 	private function mcp_client_troubleshoot(array $args): array {
-		$target=strtolower(trim((string)($args['target'] ?? 'generic')));
-		if(!in_array($target, ['codex', 'claude', 'cursor', 'generic'], true)){
-			$target='generic';
-		}
+		$target=$this->mcp_client_target($args['target'] ?? 'generic');
 		$symptoms=array_values(array_filter(array_map(static fn(mixed $value): string => trim((string)$value), (array)($args['symptoms'] ?? [])), static fn(string $value): bool => $value!==''));
 		$haystack=strtolower(implode("\n", $symptoms));
 		$diagnoses=[];
@@ -484,7 +466,7 @@ trait dataphyre_mcp_client_setup_surfaces {
 				'cause'=>'The client may not be launching the stdio server, or the server is exiting before it reads a complete frame.',
 				'fixes'=>[
 					'Run dataphyre_mcp_live_validate from the project root for local client setup.',
-					'Confirm the client command is php and args include common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php.',
+					'Confirm the client command is php and args include dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php.',
 					'Confirm the client cwd is the project root or that the server is launched from the project root.',
 				],
 			],
@@ -710,6 +692,12 @@ trait dataphyre_mcp_client_setup_surfaces {
 		};
 	}
 
+	/** Normalizes the finite set of portable smoke-export runtimes. */
+	private function mcp_smoke_format(mixed $format): string {
+		$name=strtolower(trim((string)$format));
+		return in_array($name,['powershell','bash','node','php','all'],true) ? $name : 'all';
+	}
+
 	/**
 	 * Describes what client validation helpers prove so agents do not upgrade setup checks into app proof.
 	 *
@@ -755,24 +743,36 @@ trait dataphyre_mcp_client_setup_surfaces {
 	}
 
 	/**
+	 * Resolves caller-owned client config while retaining input provenance for
+	 * audits and nested setup surfaces.
+	 *
+	 * @return array{config:array<string,mixed>,source:'array'|'json'|'missing'|'invalid_json',parse_error:?string}
+	 */
+	private function mcp_client_config_input(array $args): array {
+		if(isset($args['config']) && is_array($args['config'])){
+			return ['config'=>$args['config'],'source'=>'array','parse_error'=>null];
+		}
+		$config_json=trim((string)($args['config_json'] ?? ''));
+		if($config_json===''){
+			return ['config'=>[],'source'=>'missing','parse_error'=>null];
+		}
+		$decoded=json_decode($config_json,true);
+		if(is_array($decoded)){
+			return ['config'=>$decoded,'source'=>'json','parse_error'=>null];
+		}
+		return ['config'=>[],'source'=>'invalid_json','parse_error'=>json_last_error_msg()];
+	}
+
+	/**
 	 * Audits a target MCP client configuration for readiness and safety.
 	 *
 	 * @param array<string,mixed> $args Client target and configuration details.
 	 * @return array Client configuration audit payload.
 	 */
 	private function mcp_client_config_audit(array $args): array {
-		$config=[];
-		$parse_error=null;
-		if(isset($args['config']) && is_array($args['config'])){
-			$config=$args['config'];
-		}elseif(isset($args['config_json']) && trim((string)$args['config_json'])!==''){
-			$decoded=json_decode((string)$args['config_json'], true);
-			if(is_array($decoded)){
-				$config=$decoded;
-			}else{
-				$parse_error=json_last_error_msg();
-			}
-		}
+		$input=$this->mcp_client_config_input($args);
+		$config=$input['config'];
+		$parse_error=$input['parse_error'];
 		$server=is_array($config['mcpServers']['dataphyre'] ?? null) ? $config['mcpServers']['dataphyre'] : null;
 		$issues=[];
 		$warnings=[];
@@ -901,8 +901,8 @@ trait dataphyre_mcp_client_setup_surfaces {
 			'expected'=>[
 				'server_key'=>'mcpServers.dataphyre',
 				'command'=>'php',
-				'server_arg'=>'common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php',
-				'module_bootstrap'=>'common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php',
+				'server_arg'=>'dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php',
+				'module_bootstrap'=>'dataphyre/runtime/modules/mcp/kernel/mcp.main.php',
 				'default_mode'=>'read_only',
 			],
 			'recommended_followup'=>[

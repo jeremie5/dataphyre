@@ -45,6 +45,11 @@ final class PanelUploadController {
 			return $response;
 		}
 		$post=$request->input();
+		if(!self::csrfValid($request, $post)){
+			$response=self::json(['ok'=>false, 'error'=>'Panel upload CSRF validation failed.'], 419, $headers);
+			self::trace($request, $response, ['ok'=>false, 'reason'=>'csrf']);
+			return $response;
+		}
 		$files=self::filesArray($request->files());
 		$result=isset($post['dp_panel_upload_delete'])
 			? PanelStorageUploadEndpoint::delete($post)
@@ -95,6 +100,31 @@ final class PanelUploadController {
 			}
 		}
 		return $normalized;
+	}
+
+	/**
+	 * Validates the form-scoped token protecting upload and delete mutations.
+	 *
+	 * Applications that already enforce an equivalent middleware boundary may
+	 * explicitly set `upload_csrf=false`. Otherwise missing CSRF support, a blank
+	 * form scope, or an invalid body/header token fails closed.
+	 *
+	 * @param \Dataphyre\Http\Request $request Current request.
+	 * @param array<string, mixed> $post Parsed request body.
+	 * @return bool Whether the mutation may continue.
+	 */
+	private static function csrfValid(\Dataphyre\Http\Request $request, array $post): bool {
+		if(PanelConfig::config('upload_csrf', true)===false){
+			return true;
+		}
+		$form=trim((string)PanelConfig::config('upload_csrf_form', 'dp_panel_upload'));
+		if($form==='' || !class_exists('\Dataphyre\Csrf')){
+			return false;
+		}
+		$field=trim((string)PanelConfig::config('upload_csrf_field', 'csrf')) ?: 'csrf';
+		$header=trim((string)PanelConfig::config('upload_csrf_header', 'X-CSRF-Token')) ?: 'X-CSRF-Token';
+		$token=$post[$field] ?? $request->header($header);
+		return \Dataphyre\Csrf::validate($form, $token);
 	}
 
 	/**

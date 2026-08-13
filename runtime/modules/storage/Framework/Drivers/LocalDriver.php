@@ -122,6 +122,7 @@ final class LocalDriver implements StorageDriver {
 			return false;
 		}
 		if(!@rename($tmp, $file)){
+			@unlink($tmp);
 			return false;
 		}
 		$visibility=(string)($options['visibility'] ?? '');
@@ -193,7 +194,10 @@ final class LocalDriver implements StorageDriver {
 			return [];
 		}
 		$results=[];
-		$iterator=new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($base, \FilesystemIterator::SKIP_DOTS));
+		$iterator=new \RecursiveIteratorIterator(
+			new \RecursiveDirectoryIterator($base, \FilesystemIterator::SKIP_DOTS),
+			\RecursiveIteratorIterator::SELF_FIRST,
+		);
 		foreach($iterator as $file){
 			if(!$file instanceof \SplFileInfo || !$file->isFile()){
 				continue;

@@ -344,10 +344,10 @@ final class PanelMediaCollection implements \JsonSerializable {
 		}
 		$size=max(0, (int)($file['size'] ?? 0));
 		if($this->minSize>0 && $size<$this->minSize){
-			$errors[]='File is smaller than '.self::format_bytes($this->minSize).'.';
+			$errors[]='File is smaller than '.self::formatBytes($this->minSize).'.';
 		}
 		if($this->maxSize>0 && $size>$this->maxSize){
-			$errors[]='File is larger than '.self::format_bytes($this->maxSize).'.';
+			$errors[]='File is larger than '.self::formatBytes($this->maxSize).'.';
 		}
 		if($this->acceptedTypes!==[] && !self::fileAccepted($file, $this->acceptedTypes)){
 			$errors[]='File type is not accepted by the '.$this->label.' collection.';

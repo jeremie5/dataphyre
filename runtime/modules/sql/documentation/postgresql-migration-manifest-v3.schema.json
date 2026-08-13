@@ -114,6 +114,14 @@
             "rolling_contract"
           ]
         },
+        "change_kind": {
+          "enum": [
+            "schema",
+            "data_only"
+          ],
+          "default": "schema",
+          "description": "Classifies reversible certification evidence. Data-only migrations must not change application structure."
+        },
         "up": {
           "$ref": "#/$defs/up"
         },

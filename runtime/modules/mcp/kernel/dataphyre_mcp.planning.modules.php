@@ -204,7 +204,7 @@ trait dataphyre_mcp_planning_module_surfaces {
 			'version_policy'=>[
 				'module_version_file'=>'runtime/modules/<module>/version',
 				'default_when_missing'=>'Flightdeck and Dpanel fall back to 1.0 when a module version file is missing.',
-				'bootstrap_constant'=>'BS_VERSION in common/dataphyre/runtime/bootstrap.php',
+				'bootstrap_constant'=>'BS_VERSION in dataphyre/runtime/bootstrap.php',
 			],
 			'guardrails'=>[
 				'This tool reads version metadata files only and does not bootstrap Dataphyre.',
@@ -272,9 +272,9 @@ trait dataphyre_mcp_planning_module_surfaces {
 		$max_bytes_per_doc=max(1000, min($max_bytes_per_doc ?: 40000, 120000));
 		$documents=[];
 		$baseline=[
-			'common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
-			'common/dataphyre/docs/MODULES.md',
-			'common/dataphyre/runtime/README.md',
+			'dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
+			'dataphyre/docs/MODULES.md',
+			'dataphyre/runtime/README.md',
 		];
 		foreach(array_merge($baseline, $description['files']['documentation'] ?? []) as $path){
 			$documents[]=[
@@ -312,12 +312,10 @@ trait dataphyre_mcp_planning_module_surfaces {
 		$includes=[];
 		$classes=[];
 		$functions=[];
-		foreach($files as $relative){
-			$path=$this->safe_repo_path($relative);
-			if(!is_file($path)){
-				continue;
-			}
-			$text=(string)file_get_contents($path);
+		foreach($this->module_dependency_sources($files) as $source){
+			$relative=$source['relative'];
+			$path=$source['path'];
+			$text=$source['text'];
 			$required_modules=array_merge($required_modules, $this->extract_module_names_from_calls($text, 'dp_module_required'));
 			$framework_loads=array_merge($framework_loads, $this->extract_module_names_from_calls($text, 'load_framework_module'));
 			$framework_loads=array_merge($framework_loads, $this->extract_module_names_from_calls($text, 'load_framework_modules'));
@@ -353,6 +351,25 @@ trait dataphyre_mcp_planning_module_surfaces {
 			'functions'=>array_slice($functions, 0, 120),
 			'execution'=>'not_executed',
 		];
+	}
+
+	/** @return array{0:string,1:string}|null */
+	private function module_dependency_source(string $relative): ?array {
+		$path=$this->safe_repo_path($relative);
+		if(!is_file($path)){return null;}
+		$text=file_get_contents($path);
+		return is_string($text) ? [$path,$text] : null;
+	}
+
+	/** @param list<string> $files @return list<array{relative:string,path:string,text:string}> */
+	private function module_dependency_sources(array $files): array {
+		$sources=[];
+		foreach($files as $relative){
+			$source=$this->module_dependency_source((string)$relative);
+			if($source===null){continue;}
+			$sources[]=['relative'=>(string)$relative,'path'=>$source[0],'text'=>$source[1]];
+		}
+		return $sources;
 	}
 
 }

@@ -7,7 +7,7 @@
  */
 namespace dataphyre;
 
-register_shutdown_function(function(){
+function flush_postgresql_query_queue_at_shutdown(): void {
 	try{
 		do{
 			foreach(postgresql_query_builder::$queued_queries as $queue=>$queue_data){
@@ -21,7 +21,8 @@ register_shutdown_function(function(){
 	}catch(\Throwable $exception){
 		\dataphyre_shutdown_log('Exception on Dataphyre SQL PostgreSQL shutdown callback', $exception);
 	}
-});
+}
+register_shutdown_function(__NAMESPACE__.'\\flush_postgresql_query_queue_at_shutdown');
 
 /**
  * PostgreSQL queue executor for Dataphyre SQL helper functions.
@@ -106,7 +107,7 @@ class postgresql_query_builder {
 	 */
 	private static function connect_to_endpoint(string $endpoint, ?string $dbms_cluster): object|bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		$dbms_cluster??=DP_SQL_CFG['default_cluster'];
+		$dbms_cluster=sql::resolve_cluster($dbms_cluster ?? (DP_SQL_CFG['default_cluster'] ?? null));
 		if(isset(self::$conns[$dbms_cluster]))return self::$conns[$dbms_cluster];
 		if(!sql::is_server_available($endpoint)){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="$endpoint is known as being unavailable, using next available server", $S="warning");
@@ -173,7 +174,7 @@ class postgresql_query_builder {
 				if(!$result=pg_execute($conn, $statement_name, $statement['vars'])){
 					throw new \Exception("Execution of prepared statement failed: ".pg_last_error($conn));
 				}
-				if($result instanceof \PgSql\Result){
+				if(is_object($result)){
 					if(pg_num_fields($result)===0){
 						$results[$index]=max(0, pg_affected_rows($result));
 					}
@@ -245,8 +246,12 @@ class postgresql_query_builder {
 							throw new \Exception("Query failed: ".pg_last_error($conn));
 						}
 						$fetched_results=pg_fetch_all($result, PGSQL_ASSOC);
-						self::normalize_pg_value($fetched_results, $result);
-						$results[$index]=$fetched_results?$fetched_results:[];
+						if($fetched_results!==false){
+							foreach($fetched_results as &$row){
+								self::normalize_pg_value($row, $result);
+							}
+						}
+						$results[$index]=$fetched_results ?: [];
 						pg_free_result($result);
 					}
 					$index++;
@@ -358,6 +363,112 @@ class postgresql_query_builder {
 		if(!isset(self::$queued_queries[$queue]))return null;
 		$queued_queries=self::$queued_queries[$queue];
 		unset(self::$queued_queries[$queue]);
+		$batches=[];
+		foreach(self::queued_query_list($queued_queries) as $query_info){
+			$environment=self::queued_environment($query_info);
+			$signature=hash('sha256', json_encode($environment, JSON_UNESCAPED_SLASHES));
+			$batch_index=array_key_last($batches);
+			if($batch_index===null || ($batches[$batch_index]['signature'] ?? null)!==$signature){
+				$batches[]=[
+					'signature'=>$signature,
+					'environment'=>$environment,
+					'queries'=>[],
+				];
+				$batch_index=array_key_last($batches);
+			}
+			$query_type=trim((string)($query_info['type'] ?? 'raw')) ?: 'raw';
+			$batches[$batch_index]['queries'][$query_type][]=$query_info;
+		}
+		$success=true;
+		foreach($batches as $batch){
+			$result=self::run_in_queued_environment(
+				$batch['environment'],
+				static fn(): bool=>self::execute_multiquery_batch(
+					$queue,
+					$batch['queries'],
+					(string)$batch['environment']['cluster'],
+					$hydration_retry
+				)
+			);
+			if($result!==true){
+				$success=false;
+			}
+		}
+		return $success;
+	}
+
+	/**
+	 * Resolves the immutable cluster and cache context captured with a queued query.
+	 *
+	 * Legacy queue payloads without an environment snapshot retain the environment
+	 * active when they are drained. New payloads always carry the registration-time
+	 * context so a deferred sandbox operation cannot fall back to the live cluster.
+	 *
+	 * @param array<string,mixed> $query_info
+	 * @return array{name:string,cluster:string,cache_namespace:?string}
+	 */
+	private static function queued_environment(array $query_info): array {
+		$current=[
+			'name'=>'live',
+			'cluster'=>null,
+			'cache_namespace'=>null,
+		];
+		if(class_exists('\Dataphyre\Database\DataEnvironment')){
+			$current=\Dataphyre\Database\DataEnvironment::current();
+		}
+		$snapshot=is_array($query_info['data_environment'] ?? null)
+			? $query_info['data_environment']
+			: [];
+		$name=strtolower(trim((string)($snapshot['name'] ?? $current['name'] ?? 'live')));
+		if($name==='' || preg_match('/^[a-z0-9][a-z0-9._-]*$/D', $name)!==1){
+			$name='live';
+		}
+		$cluster=trim((string)(
+			$query_info['dbms_cluster']
+			?? $snapshot['cluster']
+			?? $current['cluster']
+			?? ''
+		));
+		if($cluster===''){
+			$cluster=sql::resolve_cluster(DP_SQL_CFG['tables']['raw']['cluster'] ?? DP_SQL_CFG['default_cluster']);
+		}
+		$namespace=array_key_exists('cache_namespace', $snapshot)
+			? $snapshot['cache_namespace']
+			: ($current['cache_namespace'] ?? null);
+		$namespace=is_string($namespace) && trim($namespace)!=='' ? trim($namespace) : null;
+		return [
+			'name'=>$name,
+			'cluster'=>$cluster,
+			'cache_namespace'=>$namespace,
+		];
+	}
+
+	/** Executes one cluster-homogeneous queue batch inside its captured cache context. */
+	private static function run_in_queued_environment(array $environment, callable $callback): mixed {
+		if(!class_exists('\Dataphyre\Database\DataEnvironment')){
+			return $callback();
+		}
+		return \Dataphyre\Database\DataEnvironment::run(
+			(string)$environment['name'],
+			static fn(): mixed=>$callback(),
+			[
+				'cluster'=>(string)$environment['cluster'],
+				'cache_namespace'=>$environment['cache_namespace'],
+			]
+		);
+	}
+
+	/**
+	 * Executes one cluster-homogeneous queue batch and processes its callbacks.
+	 *
+	 * @param array<string,list<array<string,mixed>>> $queued_queries
+	 */
+	private static function execute_multiquery_batch(
+		string $queue,
+		array $queued_queries,
+		string $dbms_cluster,
+		bool $hydration_retry
+	): bool {
 		$multipoint=false;
 		$queries=[];
 		$prepared_statements=[];
@@ -397,14 +508,13 @@ class postgresql_query_builder {
 			}
 		}
 		$results=[];
-		$dbms_cluster=DP_SQL_CFG['tables']['raw']['cluster'] ?? DP_SQL_CFG['default_cluster'];
 		if($multipoint===true){
 			$endpoints=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
 			if(!empty($prepared_statements)){
 				foreach($endpoints as $endpoint){
 					$conn=self::connect_to_endpoint($endpoint, $dbms_cluster);
 					if(!self::execute_prepared_statements($conn, $prepared_statements, $results, $dbms_cluster)){
-						return self::retry_queue_after_hydration($queue, $queued_queries, $hydration_retry);
+						return self::retry_batch_after_hydration($queue, $queued_queries, $dbms_cluster, $hydration_retry);
 					}
 				}
 			}
@@ -413,7 +523,7 @@ class postgresql_query_builder {
 				foreach($endpoints as $endpoint){
 					$conn=self::connect_to_endpoint($endpoint, $dbms_cluster);
 					if(!self::execute_multi_query_string($conn, $multi_query_string, $results, $dbms_cluster)){
-						return self::retry_queue_after_hydration($queue, $queued_queries, $hydration_retry);
+						return self::retry_batch_after_hydration($queue, $queued_queries, $dbms_cluster, $hydration_retry);
 					}
 				}
 			}
@@ -423,13 +533,13 @@ class postgresql_query_builder {
 			$conn=self::connect_to_cluster($dbms_cluster);
 			if(!empty($prepared_statements)){
 				if(!self::execute_prepared_statements($conn,$prepared_statements,$results, $dbms_cluster)){
-					return self::retry_queue_after_hydration($queue, $queued_queries, $hydration_retry);
+					return self::retry_batch_after_hydration($queue, $queued_queries, $dbms_cluster, $hydration_retry);
 				}
 			}
 			else
 			{
 				if(!self::execute_multi_query_string($conn,$multi_query_string,$results, $dbms_cluster)){
-					return self::retry_queue_after_hydration($queue, $queued_queries, $hydration_retry);
+					return self::retry_batch_after_hydration($queue, $queued_queries, $dbms_cluster, $hydration_retry);
 				}
 			}
 		}
@@ -438,20 +548,24 @@ class postgresql_query_builder {
 	}
 
 	/**
-	 * Requeues a failed batch after attempting schema hydration once.
+	 * Retries a failed batch after attempting schema hydration once.
 	 *
 	 * @param string $queue Queue name that failed.
 	 * @param array<string, mixed> $queued_queries Original queued query payload.
 	 * @param bool $hydration_retry Whether the caller is already in a hydration retry.
 	 * @return bool `true` when the retry completed successfully.
 	 */
-	private static function retry_queue_after_hydration(string $queue, array $queued_queries, bool $hydration_retry): bool {
+	private static function retry_batch_after_hydration(
+		string $queue,
+		array $queued_queries,
+		string $dbms_cluster,
+		bool $hydration_retry
+	): bool {
 		if($hydration_retry===true || sql::hydrate_missing_structure_from_definition()===false){
 			return false;
 		}
-		self::$queued_queries[$queue]=$queued_queries;
 		sql::clear_last_query_error();
-		return self::execute_multiquery($queue, true) === true;
+		return self::execute_multiquery_batch($queue, $queued_queries, $dbms_cluster, true);
 	}
 	
 	/**
@@ -514,7 +628,7 @@ class postgresql_query_builder {
 			return false;
 		}
 		$query_result=[];
-		if($result instanceof \PgSql\Result){
+		if(is_object($result)){
 			if($associative!==true){
 				if(false!==$row=pg_fetch_assoc($result)){
 					self::normalize_pg_value($row, $result);
@@ -581,7 +695,7 @@ class postgresql_query_builder {
 		if($result===false){
 			return false;
 		}
-		if($result instanceof \PgSql\Result){
+		if(is_object($result)){
 			if($associative!==true){
 				if(false!==$query_result=pg_fetch_assoc($result)){
 					self::normalize_pg_value($query_result, $result);
@@ -637,7 +751,7 @@ class postgresql_query_builder {
 		if($result===false){
 			return $count;
 		}
-		if($result instanceof \PgSql\Result){
+		if(is_object($result)){
 			if($row=pg_fetch_assoc($result)){
 				$count=$row['count'];
 			}
@@ -725,7 +839,7 @@ class postgresql_query_builder {
 				if(!$result=pg_execute($conn, $statement_name, $vars)){
 					throw new \Exception("Failed to execute statement: ".pg_last_error($conn));
 				}
-				if($result instanceof \PgSql\Result){
+				if(is_object($result)){
 					if($row=pg_fetch_assoc($result)){
 						$result_key=$row;
 					}

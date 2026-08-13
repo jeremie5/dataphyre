@@ -28,14 +28,16 @@ class diagnostic{
      *
      * @return void Findings are appended to dpanel verbose output.
      */
-    public static function tests(): void {
-		$verbose=[];
-		if(!\function_exists('sql_query')){
+	    public static function tests(?array $config=null, ?callable $query_runner=null, ?int $observed_at=null): void {
+			$verbose=[];
+			$config??=DP_SQL_CFG;
+			$observed_at??=time();
+			if($query_runner===null && !\function_exists('sql_query')){
 			$verbose[]=[
 				'module'=>'sql',
 				'level'=>'warning',
 				'message'=>'SQL cluster probes were skipped because SQL helper functions are unavailable when module entrypoint execution is disabled.',
-				'time'=>time(),
+					'time'=>$observed_at,
 			];
 			\dataphyre\dpanel::add_verbose($verbose);
 			return;
@@ -45,9 +47,10 @@ class diagnostic{
 		$query['postgresql']='SELECT EXTRACT(EPOCH FROM (NOW() - TIMEZONE(\'UTC\', NOW()))) AS timediff';
 		$query['mysql']='SELECT TIMEDIFF(NOW(), UTC_TIMESTAMP) AS timediff;';
 		$query['sqlite']='SELECT ROUND((julianday(\'now\', \'localtime\') - julianday(\'now\')) * 86400.0) AS timediff;';
-		foreach(["postgresql", "mysql", "sqlite"] as $dbms){
-			$matching_clusters=[];
-			foreach(DP_SQL_CFG['datacenters'] ?? [] as $location=>$location_data){
+			$query_runner??=static fn(...$arguments): mixed=>\sql_query(...$arguments);
+			foreach(["postgresql", "mysql", "sqlite"] as $dbms){
+				$matching_clusters=[];
+				foreach($config['datacenters'] ?? [] as $location=>$location_data){
 				foreach($location_data['dbms_clusters'] as $cluster_name=>$cluster_data){
 					if($cluster_data['dbms']===$dbms){
 						$matching_clusters[]=$cluster_name;
@@ -56,7 +59,7 @@ class diagnostic{
 			}
 			if(empty($matching_clusters))continue;
 			foreach($matching_clusters as $cluster){
-				if(false!==$result=\sql_query(
+					if(false!==$result=$query_runner(
 					$Q=[
 						"dbms_cluster_override"=>$cluster, 
 						$dbms=>$query[$dbms]
@@ -79,11 +82,11 @@ class diagnostic{
 						$timediff_seconds=abs(((int)$parts[0]*3600+(int)$parts[1]*60+(int)$parts[2]));
 					}
 					if(abs($timediff_seconds)>1){
-						$verbose[]=['module'=>'sql', 'error'=>'Time mismatch ('.$timediff_seconds.' seconds) between web server and cluster '.$cluster, 'time'=>time()];
+						$verbose[]=['module'=>'sql', 'error'=>'Time mismatch ('.$timediff_seconds.' seconds) between web server and cluster '.$cluster, 'time'=>$observed_at];
 					}
 					else
 					{
-						$verbose[]=['module'=>'sql', 'error'=>'No time mismatch between web server and cluster '.$cluster, 'time'=>time()];
+						$verbose[]=['module'=>'sql', 'error'=>'No time mismatch between web server and cluster '.$cluster, 'time'=>$observed_at];
 					}
 				}
 			}

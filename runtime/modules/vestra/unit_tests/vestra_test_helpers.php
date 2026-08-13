@@ -21,8 +21,8 @@ namespace {
 	}
 	if(!defined('ROOTPATH')){
 		define('ROOTPATH', [
-			'root'=>dirname(__DIR__, 6),
-			'common_dataphyre'=>dirname(__DIR__, 3).'/',
+			'root'=>dirname(__DIR__, 5),
+			'common_dataphyre'=>dirname(__DIR__, 4).'/',
 		]);
 	}
 	if(!defined('DP_VESTRA_CFG')){

@@ -1,0 +1,7 @@
+parameters:
+    level: max
+    paths:
+        - fixtures/panel-builders.php
+    scanDirectories:
+        - ../Framework
+    treatPhpDocTypesAsCertain: true

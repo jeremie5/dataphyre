@@ -31,34 +31,18 @@ class date_translation{
 	 * @param string $format Original date format, used for locale-specific ordering.
 	 * @return string|null Translated date string, or null if legacy loading leaves no locale payload.
 	 */
-	static function translate_date(string $string, string $lang, string $format) : string|null {
+	static function translate_date(string $string, string $lang, string $format, ?callable $locale_loader=null) : string|null {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(str_starts_with($lang, 'en')){
 			return $string;
 		}
 		$chunks=explode(' ',$string);
 		if(!isset(date_translation::$date_locales[$lang])){
-			if(ini_get("opcache.enable")=="1"){
-				if(file_exists($file=ROOTPATH['dataphyre']."config/date_translation/languages/".$lang.".php")){
-					require_once($file);
-				}
-				else
-				{
-					require_once(ROOTPATH['common_dataphyre']."config/date_translation/languages/".$lang.".php");
-				}
-			}
-			else
-			{
-				if(file_exists($file=ROOTPATH['dataphyre']."config/date_translation/languages/".$lang.".json")){
-					$date_locale=json_decode(file_get_contents($file), true);
-				}
-				else
-				{
-					$date_locale=json_decode(file_get_contents(ROOTPATH['common_dataphyre']."config/date_translation/languages/".$lang.".json"), true);
-				}
+			$date_locale=$locale_loader!==null ? $locale_loader($lang) : self::load_date_locale($lang);
+			if(!is_array($date_locale) || !is_array($date_locale[$lang] ?? null)){
+				return null;
 			}
 			date_translation::$date_locales[$lang]=$date_locale[$lang];
-			unset($date_locale);
 		}
 		foreach($chunks as $key=>$chunk){
 			$chunk=strtolower($chunk);
@@ -119,5 +103,35 @@ class date_translation{
 		$translated=implode(' ', $chunks);
 		return $translated;
 	}
-	
+
+	/**
+	 * Loads one locale catalog through deterministic filesystem and format seams.
+	 *
+	 * @return ?array<string,mixed> Catalog keyed by language code.
+	 */
+	protected static function load_date_locale(
+		string $lang,
+		?bool $opcache_enabled=null,
+		?callable $file_exists=null,
+		?callable $php_loader=null,
+		?callable $json_reader=null
+	): ?array {
+		$opcache_enabled??=ini_get('opcache.enable')==='1';
+		$file_exists??=static fn(string $path): bool=>file_exists($path);
+		$php_loader??=static function(string $path): ?array {
+			$date_locale=null;
+			require $path;
+			return is_array($date_locale) ? $date_locale : null;
+		};
+		$json_reader??=static function(string $path): ?array {
+			$decoded=json_decode((string)file_get_contents($path), true);
+			return is_array($decoded) ? $decoded : null;
+		};
+		$extension=$opcache_enabled ? 'php' : 'json';
+		$local=ROOTPATH['dataphyre'].'config/date_translation/languages/'.$lang.'.'.$extension;
+		$common=ROOTPATH['common_dataphyre'].'config/date_translation/languages/'.$lang.'.'.$extension;
+		$path=$file_exists($local) ? $local : $common;
+		return $opcache_enabled ? $php_loader($path) : $json_reader($path);
+	}
+
 }

@@ -1469,7 +1469,7 @@ final class TemplatingManager {
 			];
 		}
 
-		$ttl=max(1, (int)($config['ttl'] ?? 0));
+		$ttl=(int)($config['ttl'] ?? 0);
 		if($ttl < 1){
 			return [
 				'cacheable'=>false,

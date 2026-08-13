@@ -23,7 +23,13 @@ trait dataphyre_mcp_registry_surfaces {
 		$name=(string)($params['name'] ?? '');
 		$args=(array)($params['arguments'] ?? []);
 		$args=$this->validate_tool_arguments($name, $args);
-		$result=match($name){
+		$result=$this->dispatch_validated_tool($name,$args);
+		return ['content'=>[['type'=>'text', 'text'=>$this->json($result)]]];
+	}
+
+	/** Dispatches a schema-validated tool name through the exhaustive registry. */
+	private function dispatch_validated_tool(string $name,array $args): mixed {
+		return match($name){
 			'dataphyre_application_info'=>$this->application_info(),
 			'dataphyre_application_catalog'=>$this->application_catalog($args),
 			'dataphyre_package_metadata_read'=>$this->read_package_metadata($args),
@@ -64,6 +70,10 @@ trait dataphyre_mcp_registry_surfaces {
 			'dataphyre_sql_query_plan'=>$this->sql_query_plan($args),
 			'dataphyre_sql_query_runner_contract'=>$this->sql_query_runner_contract(),
 			'dataphyre_sql_runtime_readiness_plan'=>$this->sql_runtime_readiness_plan($args),
+			'dataphyre_sql_migration_catalog'=>$this->sql_migration_catalog($args),
+			'dataphyre_sql_migration_describe'=>$this->sql_migration_describe($args),
+			'dataphyre_sql_migration_manifest_validate'=>$this->sql_migration_manifest_validate($args),
+			'dataphyre_sql_migration_scaffold_plan'=>$this->sql_migration_scaffold_plan($args),
 			'dataphyre_tracelog_artifacts_list'=>$this->list_tracelog_artifacts($args),
 			'dataphyre_tracelog_read'=>$this->read_tracelog_artifact($args),
 			'dataphyre_tracelog_search'=>$this->search_tracelog_artifacts($args),
@@ -72,6 +82,8 @@ trait dataphyre_mcp_registry_surfaces {
 			'dataphyre_flightdeck_surfaces_list'=>$this->list_flightdeck_surfaces($args),
 			'dataphyre_unit_tests_list'=>$this->list_unit_test_manifests($args),
 			'dataphyre_unit_test_manifest_read'=>$this->read_unit_test_manifest($args),
+			'dataphyre_contract_catalog'=>$this->contract_catalog($args),
+			'dataphyre_contract_describe'=>$this->contract_describe($args),
 			'dataphyre_agent_context_generate'=>$this->generate_agent_context($args),
 			'dataphyre_scaffold_plan_generate'=>$this->generate_scaffold_plan($args),
 			'dataphyre_app_builder_plan_generate'=>$this->generate_app_builder_plan($args),
@@ -80,6 +92,12 @@ trait dataphyre_mcp_registry_surfaces {
 			'dataphyre_api_cache_static_summary'=>$this->api_cache_static_summary(),
 			'dataphyre_openapi_static_contract_summary'=>$this->open_api_static_contract_summary(),
 			'dataphyre_openapi_runtime_readiness_plan'=>$this->open_api_runtime_readiness_plan($args),
+			'dataphyre_panel_capability_catalog'=>$this->panel_capability_catalog($args),
+			'dataphyre_panel_capability_describe'=>$this->panel_capability_describe($args),
+			'dataphyre_panel_surface_graph'=>$this->panel_surface_graph($args),
+			'dataphyre_panel_recipe_plan'=>$this->panel_recipe_plan($args),
+			'dataphyre_panel_integration_plan'=>$this->panel_integration_plan($args),
+			'dataphyre_panel_verification_plan'=>$this->panel_verification_plan($args),
 			'dataphyre_panel_scaffold_catalog'=>$this->panel_scaffold_catalog(),
 			'dataphyre_panel_package_manifest_summary'=>$this->panel_package_manifest_summary(),
 			'dataphyre_panel_theme_manifest_summary'=>$this->panel_theme_manifest_summary(),
@@ -93,8 +111,8 @@ trait dataphyre_mcp_registry_surfaces {
 			'dataphyre_browser_regression_manifest_summary'=>$this->browser_regression_manifest_summary(),
 			'dataphyre_verification_surface_catalog'=>$this->verification_surface_catalog($args),
 			'dataphyre_php_lint'=>$this->php_lint((array)($args['paths'] ?? [])),
-			'dataphyre_release_check'=>$this->run_release_check(),
-			'dataphyre_release_triage_summary'=>$this->release_triage_summary(),
+			'dataphyre_release_check'=>$this->run_release_check($args),
+			'dataphyre_release_triage_summary'=>$this->release_triage_summary($args),
 			'dataphyre_release_fix_plan'=>$this->release_fix_plan($args),
 			'dataphyre_mcp_manifest_export'=>$this->mcp_manifest_export($args),
 			'dataphyre_prompt_pack_export'=>$this->prompt_pack_export($args),
@@ -151,6 +169,5 @@ trait dataphyre_mcp_registry_surfaces {
 			'dataphyre_mcp_doctor'=>$this->mcp_doctor(),
 			default=>throw new InvalidArgumentException('Unknown Dataphyre tool: '.$name),
 		};
-		return ['content'=>[['type'=>'text', 'text'=>$this->json($result)]]];
 	}
 }

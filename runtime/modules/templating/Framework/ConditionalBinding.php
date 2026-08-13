@@ -192,9 +192,7 @@ final class ConditionalBinding implements BindingMetadataProvider, BindingCacheI
 			return new \ReflectionMethod($callable[0], $callable[1]);
 		}
 		if(is_string($callable) && str_contains($callable, '::')){
-			return method_exists(\ReflectionMethod::class, 'createFromMethodName')
-				? \ReflectionMethod::createFromMethodName($callable)
-				: new \ReflectionMethod($callable);
+			return method_exists(\ReflectionMethod::class, 'createFromMethodName') ? \ReflectionMethod::createFromMethodName($callable) : new \ReflectionMethod($callable);
 		}
 		if(is_object($callable) && !$callable instanceof \Closure){
 			return new \ReflectionMethod($callable, '__invoke');

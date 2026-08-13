@@ -20,6 +20,30 @@ final class Transaction {
 
 	private static array $activeDepthByCluster=[];
 
+	/**
+	 * Fiber-local transaction state for async runtimes.
+	 *
+	 * Main-thread state remains in the dedicated static properties so existing
+	 * diagnostics and long-running non-Fiber workers keep a cheap fast path.
+	 *
+	 * @var ?\WeakMap<\Fiber,array{depth:array<string,int>,transactions:array<int,self>,flushing:bool}>
+	 */
+	private static ?\WeakMap $fiberStates=null;
+
+	/**
+	 * Active framework transactions in callback nesting order.
+	 *
+	 * The stack lets the SQL kernel attach cache invalidations to the transaction
+	 * that currently owns execution without coupling mutation helpers to a
+	 * particular repository or connection API.
+	 *
+	 * @var array<int,self>
+	 */
+	private static array $activeTransactions=[];
+
+	/** Prevents commit-time delivery from being captured by another active cluster. */
+	private static bool $flushingCacheInvalidations=false;
+
 	private bool $active=false;
 	private bool $begun=false;
 	private bool $committed=false;
@@ -27,6 +51,16 @@ final class Transaction {
 	private bool $nested=false;
 	private ?string $savepointName=null;
 	private ?string $cluster;
+
+	/**
+	 * Cache invalidations that become visible only after this transaction commits.
+	 *
+	 * Keys deduplicate repeated writes to the same table or named cache index inside
+	 * one unit of work.
+	 *
+	 * @var array<string,array{target:array|string,policy:array|bool|null}>
+	 */
+	private array $pendingCacheInvalidations=[];
 
 	/**
 	 * Creates a transaction object scoped to an optional SQL cluster.
@@ -41,6 +75,12 @@ final class Transaction {
 		if($this->cluster===''){
 			$this->cluster=null;
 		}
+		if($this->cluster===null && class_exists(DataEnvironment::class)){
+			$environmentCluster=DataEnvironment::clusterOverride();
+			if(is_string($environmentCluster) && trim($environmentCluster)!==''){
+				$this->cluster=trim($environmentCluster);
+			}
+		}
 	}
 
 	/**
@@ -52,7 +92,6 @@ final class Transaction {
 		return $this->cluster;
 	}
 
-	/**
 	/**
 	 * Creates a connection context bound to the transaction cluster.
 	 *
@@ -94,7 +133,80 @@ final class Transaction {
 	 */
 	public static function activeDepth(?string $cluster=null): int {
 		$key=self::clusterKeyFor($cluster);
-		return self::$activeDepthByCluster[$key] ?? 0;
+		$state=self::executionState();
+		return $state['depth'][$key] ?? 0;
+	}
+
+	/**
+	 * Reports whether any Framework transaction currently owns SQL execution.
+	 *
+	 * The SQL kernel uses this signal to bypass read caches inside a transaction,
+	 * preserving read-your-writes behavior and preventing a transactional read from
+	 * hydrating shared cache state that may later roll back.
+	 *
+	 * @return bool True while at least one Framework transaction is active.
+	 */
+	public static function hasActiveTransaction(): bool {
+		return self::executionState()['transactions']!==[];
+	}
+
+	/**
+	 * Returns the cluster owned by the innermost active transaction.
+	 *
+	 * Framework query entry points use this value when no explicit connection
+	 * override was supplied. This keeps repositories, raw DB helpers, and nested
+	 * transaction calls on the connection that owns the current unit of work.
+	 *
+	 * @return string|null Active cluster, or null when no transaction/default exists.
+	 */
+	public static function activeCluster(): ?string {
+		$transactions=self::executionState()['transactions'];
+		$transaction=end($transactions);
+		if(!$transaction instanceof self || !$transaction->active){
+			return null;
+		}
+		if($transaction->cluster!==null && trim($transaction->cluster)!==''){
+			return trim($transaction->cluster);
+		}
+		if(defined('DP_SQL_CFG')){
+			$config=constant('DP_SQL_CFG');
+			if(is_array($config)){
+				$default=trim((string)($config['default_cluster'] ?? ''));
+				return $default!=='' ? $default : null;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Defers a cache invalidation onto the currently executing transaction.
+	 *
+	 * The SQL kernel calls this before performing an invalidation. A true return
+	 * means the invalidation was accepted for commit-time delivery; false means no
+	 * Framework transaction is active and the kernel should invalidate immediately.
+	 * Nested savepoints retain their own list until release, then merge it into the
+	 * parent transaction. Rollback discards the list.
+	 *
+	 * @param array|string $target Table location or named cache indexes.
+	 * @param array|bool|null $cachePolicy Resolved table cache policy when available.
+	 * @return bool True when the invalidation was queued for commit.
+	 */
+	public static function deferCacheInvalidation(array|string $target, array|bool|null $cachePolicy=null): bool {
+		$state=self::executionState();
+		if($state['flushing']){
+			return false;
+		}
+		$transactions=$state['transactions'];
+		$transaction=end($transactions);
+		if(!$transaction instanceof self || !$transaction->active){
+			return false;
+		}
+		$key=hash('sha256', serialize([$target, $cachePolicy]));
+		$transaction->pendingCacheInvalidations[$key]=[
+			'target'=>$target,
+			'policy'=>$cachePolicy,
+		];
+		return true;
 	}
 
 	/**
@@ -107,7 +219,6 @@ final class Transaction {
 	}
 
 	/**
-	/**
 	 * Reports whether begin() succeeded for this attempt.
 	 *
 	 * @return bool True once a BEGIN or SAVEPOINT has been created.
@@ -117,7 +228,6 @@ final class Transaction {
 	}
 
 	/**
-	/**
 	 * Reports whether this attempt was committed.
 	 *
 	 * @return bool True after commit() successfully commits or releases a savepoint.
@@ -126,7 +236,6 @@ final class Transaction {
 		return $this->committed;
 	}
 
-	/**
 	/**
 	 * Reports whether this attempt was rolled back.
 	 *
@@ -156,7 +265,8 @@ final class Transaction {
 			);
 		}
 		$key=$this->clusterKey();
-		$depth=self::$activeDepthByCluster[$key] ?? 0;
+		$state=self::executionState();
+		$depth=$state['depth'][$key] ?? 0;
 		if($depth>0){
 			$this->nested=true;
 			$this->savepointName=$this->createSavepointName($depth+1);
@@ -184,7 +294,9 @@ final class Transaction {
 		$this->begun=true;
 		$this->committed=false;
 		$this->rolledBack=false;
-		self::$activeDepthByCluster[$key]=$depth+1;
+		$state['depth'][$key]=$depth+1;
+		$state['transactions'][]=$this;
+		self::replaceExecutionState($state);
 		return $this;
 	}
 
@@ -228,6 +340,14 @@ final class Transaction {
 		$this->active=false;
 		$this->committed=true;
 		$this->decrementActiveDepth();
+		$this->detachFromActiveTransactions();
+		if($this->nested){
+			$this->mergePendingCacheInvalidationsIntoParent();
+		}
+		else
+		{
+			$this->flushPendingCacheInvalidations();
+		}
 		return $this;
 	}
 
@@ -279,6 +399,8 @@ final class Transaction {
 		$this->active=false;
 		$this->rolledBack=true;
 		$this->decrementActiveDepth();
+		$this->detachFromActiveTransactions();
+		$this->pendingCacheInvalidations=[];
 		return $this;
 	}
 
@@ -307,12 +429,7 @@ final class Transaction {
 				try{
 					$this->rollback();
 				}catch(\Throwable $rollbackException){
-					throw SqlError::transactionException(
-						'Rollback failed after the transaction callback threw an exception: '.$rollbackException->getMessage(),
-						$this->cluster,
-						'Inspect both the original callback exception and the rollback failure. The SQL logs should contain the engine-level details.',
-						$exception
-					);
+					throw SqlError::transactionException('Rollback failed after the transaction callback threw an exception: '.$rollbackException->getMessage(), $this->cluster, 'Inspect both the original callback exception and the rollback failure. The SQL logs should contain the engine-level details.', $exception);
 				}
 			}
 			throw $exception;
@@ -342,22 +459,18 @@ final class Transaction {
 		bool $preferConnection=false
 	): mixed {
 		$attempts=max(1, $attempts);
-		for($attempt=1; $attempt<=$attempts; $attempt++){
+		for($attempt=1; $attempt<$attempts; $attempt++){
 			$transaction=$this->transactionForAttempt($attempt);
 			try{
 				return $transaction->run($callback, $connection, $preferConnection);
 			}catch(\Throwable $exception){
-				if($attempt>=$attempts || !$this->shouldRetry($exception, $attempt, $attempts, $shouldRetry)){
+				if(!$this->shouldRetry($exception, $attempt, $attempts, $shouldRetry)){
 					throw $exception;
 				}
 				$this->sleepBeforeRetry($sleepMs, $attempt);
 			}
 		}
-		throw SqlError::transactionException(
-			'Transaction retry loop exited without returning a value.',
-			$this->cluster,
-			'This should not happen. Check the transaction retry configuration and callback behavior.'
-		);
+		return $this->transactionForAttempt($attempts)->run($callback, $connection, $preferConnection);
 	}
 
 	/**
@@ -418,7 +531,7 @@ final class Transaction {
 		bool $preferConnection=false
 	): TransactionResult {
 		$attempts=max(1, $attempts);
-		for($attempt=1; $attempt<=$attempts; $attempt++){
+		for($attempt=1; $attempt<$attempts; $attempt++){
 			$transaction=$this->transactionForAttempt($attempt);
 			try{
 				$value=$transaction->run($callback, $connection, $preferConnection);
@@ -430,7 +543,7 @@ final class Transaction {
 					$attempt
 				);
 			}catch(\Throwable $exception){
-				if($attempt>=$attempts || !$this->shouldRetry($exception, $attempt, $attempts, $shouldRetry)){
+				if(!$this->shouldRetry($exception, $attempt, $attempts, $shouldRetry)){
 					return TransactionResult::failure(
 						$this->cluster,
 						$transaction->begun(),
@@ -443,14 +556,26 @@ final class Transaction {
 				$this->sleepBeforeRetry($sleepMs, $attempt);
 			}
 		}
-		return TransactionResult::failure(
-			$this->cluster,
-			$this->begun,
-			$this->committed,
-			$this->rolledBack,
-			SqlError::transactionException('Transaction retry loop exited without returning a result.', $this->cluster),
-			$attempts
-		);
+		$transaction=$this->transactionForAttempt($attempts);
+		try{
+			$value=$transaction->run($callback, $connection, $preferConnection);
+			return TransactionResult::success(
+				$this->cluster,
+				$transaction->begun(),
+				$transaction->committed(),
+				$value,
+				$attempts
+			);
+		}catch(\Throwable $exception){
+			return TransactionResult::failure(
+				$this->cluster,
+				$transaction->begun(),
+				$transaction->committed(),
+				$transaction->rolledBack(),
+				$exception,
+				$attempts
+			);
+		}
 	}
 
 	/**
@@ -623,12 +748,141 @@ final class Transaction {
 	 */
 	private function decrementActiveDepth(): void {
 		$key=$this->clusterKey();
-		$depth=max(0, (self::$activeDepthByCluster[$key] ?? 1)-1);
+		$state=self::executionState();
+		$depth=max(0, ($state['depth'][$key] ?? 1)-1);
 		if($depth===0){
-			unset(self::$activeDepthByCluster[$key]);
+			unset($state['depth'][$key]);
+			self::replaceExecutionState($state);
 			return;
 		}
-		self::$activeDepthByCluster[$key]=$depth;
+		$state['depth'][$key]=$depth;
+		self::replaceExecutionState($state);
+	}
+
+	/**
+	 * Removes this transaction from the active execution stack.
+	 *
+	 * Normal callback nesting always removes the final entry. The reverse search is
+	 * retained for manually controlled transactions so a failed or unusual caller
+	 * cannot leave a stale cache-deferral owner behind.
+	 *
+	 * @return void
+	 */
+	private function detachFromActiveTransactions(): void {
+		$state=self::executionState();
+		for($index=count($state['transactions'])-1; $index>=0; $index--){
+			if($state['transactions'][$index]!==$this){
+				continue;
+			}
+			array_splice($state['transactions'], $index, 1);
+			self::replaceExecutionState($state);
+			return;
+		}
+	}
+
+	/**
+	 * Moves savepoint invalidations to the still-active parent transaction.
+	 *
+	 * Releasing a savepoint does not make its writes externally visible. Deferring
+	 * the invalidations until the outer commit prevents stale data from being
+	 * repopulated between savepoint release and the real database commit.
+	 *
+	 * @return void
+	 */
+	private function mergePendingCacheInvalidationsIntoParent(): void {
+		$parent=null;
+		$transactions=self::executionState()['transactions'];
+		for($index=count($transactions)-1; $index>=0; $index--){
+			$candidate=$transactions[$index];
+			if($candidate->active && $candidate->clusterKey()===$this->clusterKey()){
+				$parent=$candidate;
+				break;
+			}
+		}
+		if(!$parent instanceof self){
+			$this->flushPendingCacheInvalidations();
+			return;
+		}
+		foreach($this->pendingCacheInvalidations as $key=>$invalidation){
+			$parent->pendingCacheInvalidations[$key]=$invalidation;
+		}
+		$this->pendingCacheInvalidations=[];
+	}
+
+	/**
+	 * Delivers transaction invalidations after a successful outer commit.
+	 *
+	 * Cache backend failures are logged rather than converted into transaction
+	 * failures: the database has already committed at this point, so retrying the
+	 * callback could duplicate durable side effects.
+	 *
+	 * @return void
+	 */
+	private function flushPendingCacheInvalidations(): void {
+		$invalidations=$this->pendingCacheInvalidations;
+		$this->pendingCacheInvalidations=[];
+		$state=self::executionState();
+		$state['flushing']=true;
+		self::replaceExecutionState($state);
+		try{
+			foreach($invalidations as $invalidation){
+				try{
+					$result=\dataphyre\sql::invalidate_cache($invalidation['target'], $invalidation['policy']);
+					if($result===false){
+						tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, 'Commit-time SQL cache invalidation failed.', 'warning');
+					}
+				}catch(\Throwable $exception){
+					tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, 'Commit-time SQL cache invalidation threw: '.$exception->getMessage(), 'warning');
+				}
+			}
+		}finally{
+			$state=self::executionState();
+			$state['flushing']=false;
+			self::replaceExecutionState($state);
+		}
+	}
+
+	/**
+	 * Returns transaction bookkeeping for the current main or Fiber context.
+	 *
+	 * @return array{depth:array<string,int>,transactions:array<int,self>,flushing:bool}
+	 */
+	private static function executionState(): array {
+		$fiber=\Fiber::getCurrent();
+		if($fiber===null){
+			return [
+				'depth'=>self::$activeDepthByCluster,
+				'transactions'=>self::$activeTransactions,
+				'flushing'=>self::$flushingCacheInvalidations,
+			];
+		}
+		self::$fiberStates ??= new \WeakMap();
+		return self::$fiberStates[$fiber] ?? [
+			'depth'=>[],
+			'transactions'=>[],
+			'flushing'=>false,
+		];
+	}
+
+	/**
+	 * Replaces transaction bookkeeping for the current main or Fiber context.
+	 *
+	 * @param array{depth:array<string,int>,transactions:array<int,self>,flushing:bool} $state
+	 */
+	private static function replaceExecutionState(array $state): void {
+		$fiber=\Fiber::getCurrent();
+		if($fiber===null){
+			self::$activeDepthByCluster=$state['depth'];
+			self::$activeTransactions=$state['transactions'];
+			self::$flushingCacheInvalidations=$state['flushing'];
+			return;
+		}
+		self::$fiberStates ??= new \WeakMap();
+		if($state['depth']===[] && $state['transactions']===[] && $state['flushing']===false){
+			unset(self::$fiberStates[$fiber]);
+			return;
+		}
+		self::$fiberStates[$fiber]=$state;
 	}
 
 	/**
@@ -648,6 +902,16 @@ final class Transaction {
 	 */
 	private static function clusterKeyFor(?string $cluster): string {
 		$cluster=$cluster!==null ? trim($cluster) : null;
-		return $cluster!==null && $cluster!=='' ? $cluster : '__default__';
+		if($cluster!==null && $cluster!==''){
+			return $cluster;
+		}
+		if(defined('DP_SQL_CFG')){
+			$config=constant('DP_SQL_CFG');
+			if(is_array($config)){
+				$default=trim((string)($config['default_cluster'] ?? ''));
+				if($default!=='') return $default;
+			}
+		}
+		return '__default__';
 	}
 }

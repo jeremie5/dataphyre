@@ -21,7 +21,7 @@ Options:
   -h, --help  Show this help text.
 
 Runs the Dataphyre MCP self-test suite for contributors. The tool can run from
-an embedded common/dataphyre tree or a standalone Git worktree.
+an embedded dataphyre tree or a standalone Git worktree.
 
 HELP;
 	exit(0);
@@ -29,95 +29,96 @@ HELP;
 
 $root=dataphyre_mcp_self_test_workspace_root(__DIR__);
 if(!is_string($root)){
-	fwrite(STDERR, "Unable to resolve embedded Dataphyre Git worktree root. Expected common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php below the workspace root.\n");
+	fwrite(STDERR, "Unable to resolve embedded Dataphyre Git worktree root. Expected dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php below the workspace root.\n");
 	exit(2);
 }
 
-$server=$root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php';
+$server=$root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php';
 if(!is_file($server)){
 	fwrite(STDERR, "MCP server not found at {$server}.\n");
 	exit(2);
 }
 dataphyre_mcp_self_test_prepare_application_catalog_fixtures($root);
 
-$registrySource=(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.registry.workflow_tools.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.registry.tools.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.registry.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.registry.validation.php');
+$registrySource=(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.registry.workflow_tools.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.registry.tools.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.registry.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.registry.validation.php');
 foreach(['private function list_tools', 'dataphyre_app_builder_plan_generate', 'validate_tool_arguments', 'additionalProperties', 'closest_tool_argument', 'Did you mean'] as $requiredRegistryText){
 	if(!str_contains($registrySource, $requiredRegistryText)){
 		throw new RuntimeException("mcp registry source is missing tool catalog or argument validation text: {$requiredRegistryText}");
 	}
 }
 
-$routeManifest='common/dataphyre/cache/mcp-self-test-route-manifest.php';
+$routeManifest='dataphyre/cache/mcp-self-test-route-manifest.php';
 dataphyre_mcp_self_test_write_route_manifest($root.'/'.$routeManifest);
-$tracelogArtifact='common/dataphyre/cache/mcp-self-test-tracelog.dat';
+$tracelogArtifact='dataphyre/cache/mcp-self-test-tracelog.dat';
 dataphyre_mcp_self_test_write_tracelog_artifact($root.'/'.$tracelogArtifact);
-$configPreviewFixture='common/dataphyre/config/mcp-self-test-mailer.php';
+$configPreviewFixture='applications/mcp_catalog_primary/backend/dataphyre/config/mcp-self-test-mailer.php';
 dataphyre_mcp_self_test_write_config_preview_fixture($root.'/'.$configPreviewFixture);
 register_shutdown_function(static function() use ($root, $routeManifest, $configPreviewFixture): void {
 	@unlink($root.'/'.$routeManifest);
-	@unlink($root.'/common/dataphyre/cache/mcp-self-test-tracelog.dat');
+	@unlink($root.'/dataphyre/cache/mcp-self-test-tracelog.dat');
 	@unlink($root.'/'.$configPreviewFixture);
 });
 
-$inspectionSource=(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.inspection.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.inspection.data.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.inspection.routing.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.inspection.mvc.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.inspection.verification.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.inspection.diagnostics.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.inspection.inventory.php');
+$inspectionSource=(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.inspection.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.inspection.data.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.inspection.routing.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.inspection.mvc.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.inspection.verification.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.inspection.diagnostics.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.inspection.inventory.php');
 foreach(['enterprise_verification_policy', 'bounded_first_party_commands', 'Passing aggregate verification supports MCP/release-surface claims only', "mcp_application_agent_operating_contract('mcp_verify_all')", "mcp_application_agent_operating_contract('release_check')", "mcp_application_agent_operating_contract('release_triage_summary')", "mcp_ordinary_app_work_contract('mcp_verify_all')", "mcp_ordinary_app_work_contract('release_check')", "mcp_ordinary_app_work_contract('mcp_live_validate')", "mcp_ordinary_app_work_contract('mcp_doctor')", 'not_required_for_ordinary_application_work'] as $requiredSourceText){
 	if(!str_contains($inspectionSource, $requiredSourceText)){
 		throw new RuntimeException("mcp verify all source is missing enterprise verification policy text: {$requiredSourceText}");
 	}
 }
-$clientSource=(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.workflow.transcript.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.workflow.state.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.workflow.start_pack.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.workflow.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.safety.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.enterprise.audit.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.enterprise.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.capabilities.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.skills.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.examples.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.brief.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.setup.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.prompts.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.docs.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.discovery.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.readiness.php');
+$clientSource=(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.workflow.transcript.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.workflow.state.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.workflow.start_pack.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.workflow.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.safety.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.enterprise.audit.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.enterprise.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.capabilities.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.skills.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.examples.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.brief.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.setup.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.prompts.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.docs.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.discovery.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.client.readiness.php');
 foreach(['governance_baseline', 'tenant_application_boundary', 'framework_vs_application_verification', 'docs/AGENTIC_ENTERPRISE.md#governance-baseline'] as $requiredSourceText){
 	if(!str_contains($clientSource, $requiredSourceText)){
 		throw new RuntimeException("mcp client source is missing governance baseline contract text: {$requiredSourceText}");
 	}
 }
 dataphyre_mcp_self_test_shared_mcp_app_coupling_guard($root);
-$planningSource=(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.sensitivity.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.readiness.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.contract.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.response.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.schema.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.api.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.docs.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.task_pack.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.modules.php')
-	."\n".(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.agent_context.php');
-$utilitySource=(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.utility.php');
+$planningSource=(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.sensitivity.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.readiness.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.contract.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.response.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.app_builder.schema.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.api.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.docs.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.task_pack.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.modules.php')
+	."\n".(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.planning.agent_context.php');
+$utilitySource=(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.utility.php');
 if(
 	!str_contains($utilitySource, 'RecursiveIteratorIterator::CATCH_GET_CHILD')
-	|| !str_contains($utilitySource, 'is_readable($root)')
+	|| !str_contains($utilitySource, '$readable($root)')
+	|| !str_contains($utilitySource, 'guarded_filesystem_iterator')
 	|| !str_contains($utilitySource, 'catch(UnexpectedValueException|RuntimeException)')
 ){
 	throw new RuntimeException('mcp utility file traversal must skip unreadable workspace directories instead of failing discovery.');
 }
-$mcpDocs=(string)file_get_contents($root.'/common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md');
+$mcpDocs=(string)file_get_contents($root.'/dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md');
 if(!str_contains($mcpDocs, 'API endpoint/OpenAPI scaffolding plans now.')){
 	throw new RuntimeException('Dataphyre_MCP.md code generation helpers do not mention API endpoint/OpenAPI scaffolding.');
 }
@@ -210,12 +211,17 @@ $checks=[
 		'assert'=>static function(array $response): void {
 			$names=array_map(static fn(array $tool): string => (string)($tool['name'] ?? ''), $response['result']['tools'] ?? []);
 			$toolsJson=json_encode($response['result']['tools'] ?? [], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-			foreach(['dataphyre_application_info', 'dataphyre_application_catalog', 'dataphyre_package_metadata_read', 'dataphyre_api_docs_static_summary', 'dataphyre_api_scaffold_plan', 'dataphyre_api_recipe_catalog', 'dataphyre_api_cache_static_summary', 'dataphyre_openapi_static_contract_summary', 'dataphyre_openapi_runtime_readiness_plan', 'dataphyre_source_api_summary', 'dataphyre_module_describe', 'dataphyre_module_dependency_map', 'dataphyre_runtime_version_summary', 'dataphyre_module_docs_pack', 'dataphyre_docs_chunks_export', 'dataphyre_docs_index_plan', 'dataphyre_embeddings_readiness_plan', 'dataphyre_remote_docs_readiness_plan', 'dataphyre_datadoc_static_summary', 'dataphyre_datadoc_runtime_readiness_plan', 'dataphyre_config_shape_read', 'dataphyre_config_value_preview', 'dataphyre_storage_config_summary', 'dataphyre_storage_driver_catalog', 'dataphyre_sql_schema_read', 'dataphyre_sql_query_plan', 'dataphyre_sql_query_runner_contract', 'dataphyre_sql_runtime_readiness_plan', 'dataphyre_route_manifest_read', 'dataphyre_route_url_preview', 'dataphyre_route_match_preview', 'dataphyre_route_source_static_summary', 'dataphyre_route_source_ambiguity_report', 'dataphyre_route_runtime_provenance_plan', 'dataphyre_controller_source_summary', 'dataphyre_middleware_source_summary', 'dataphyre_mvc_config_static_summary', 'dataphyre_mvc_route_cache_summary', 'dataphyre_tracelog_artifacts_list', 'dataphyre_tracelog_read', 'dataphyre_tracelog_search', 'dataphyre_diagnostics_last_error', 'dataphyre_browser_diagnostics_readiness_plan', 'dataphyre_flightdeck_surfaces_list', 'dataphyre_unit_tests_list', 'dataphyre_unit_test_manifest_read', 'dataphyre_browser_regression_manifest_summary', 'dataphyre_verification_surface_catalog', 'dataphyre_agent_context_generate', 'dataphyre_scaffold_plan_generate', 'dataphyre_app_builder_plan_generate', 'dataphyre_panel_scaffold_catalog', 'dataphyre_panel_package_manifest_summary', 'dataphyre_panel_theme_manifest_summary', 'dataphyre_panel_documentation_catalog_summary', 'dataphyre_panel_media_manifest_summary', 'dataphyre_task_pack_generate', 'dataphyre_apply_audit_plan', 'dataphyre_apply_runtime_readiness_plan', 'dataphyre_release_check', 'dataphyre_release_triage_summary', 'dataphyre_release_fix_plan', 'dataphyre_mcp_manifest_export', 'dataphyre_prompt_pack_export', 'dataphyre_mcp_prompt_catalog', 'dataphyre_mcp_skill_catalog', 'dataphyre_mcp_skill_manifest_export', 'dataphyre_mcp_skill_registration_audit', 'dataphyre_mcp_skill_pack_export', 'dataphyre_mcp_skill_install_plan', 'dataphyre_mcp_skill_file_install_plan', 'dataphyre_mcp_client_config_summary', 'dataphyre_mcp_client_install_checklist', 'dataphyre_mcp_client_config_install_plan', 'dataphyre_mcp_smoke_test_export', 'dataphyre_mcp_client_onboarding_pack', 'dataphyre_mcp_client_troubleshoot', 'dataphyre_mcp_client_compatibility_matrix', 'dataphyre_mcp_client_config_audit', 'dataphyre_mcp_safety_boundary_report', 'dataphyre_mcp_status_board', 'dataphyre_mcp_enterprise_adoption_audit', 'dataphyre_mcp_capability_matrix', 'dataphyre_mcp_release_notes_generate', 'dataphyre_mcp_surface_changelog', 'dataphyre_mcp_tool_call_examples_export', 'dataphyre_mcp_workflow_playbook_export', 'dataphyre_mcp_workflow_readiness_audit', 'dataphyre_mcp_workflow_session_export', 'dataphyre_mcp_workflow_transcript_schema_export', 'dataphyre_mcp_workflow_state_schema_export', 'dataphyre_mcp_workflow_state_audit', 'dataphyre_mcp_workflow_state_summary_export', 'dataphyre_mcp_workflow_state_transition_export', 'dataphyre_mcp_workflow_state_sync_pack_export', 'dataphyre_mcp_workflow_state_timeline_export', 'dataphyre_mcp_workflow_state_resume_brief_export', 'dataphyre_mcp_workflow_transcript_audit', 'dataphyre_mcp_workflow_transcript_summary_export', 'dataphyre_mcp_workflow_checkpoint_export', 'dataphyre_mcp_workflow_handoff_pack_export', 'dataphyre_mcp_workflow_catalog', 'dataphyre_mcp_workflow_lifecycle_export', 'dataphyre_mcp_workflow_next_action_export', 'dataphyre_mcp_workflow_recommend', 'dataphyre_mcp_workflow_recommendation_handoff_export', 'dataphyre_mcp_task_start_pack_export', 'dataphyre_mcp_agent_brief_export', 'dataphyre_mcp_tool_finder', 'dataphyre_mcp_resource_finder', 'dataphyre_mcp_docs_coverage_report', 'dataphyre_mcp_readiness_report', 'dataphyre_mcp_live_validate', 'dataphyre_mcp_verify_all', 'dataphyre_mcp_doctor'] as $required){
-				if(!in_array($required, $names, true)){
-					throw new RuntimeException("tools/list is missing {$required}.");
+				foreach(['dataphyre_application_info', 'dataphyre_application_catalog', 'dataphyre_package_metadata_read', 'dataphyre_api_docs_static_summary', 'dataphyre_api_scaffold_plan', 'dataphyre_api_recipe_catalog', 'dataphyre_api_cache_static_summary', 'dataphyre_openapi_static_contract_summary', 'dataphyre_openapi_runtime_readiness_plan', 'dataphyre_source_api_summary', 'dataphyre_module_describe', 'dataphyre_module_dependency_map', 'dataphyre_runtime_version_summary', 'dataphyre_module_docs_pack', 'dataphyre_docs_chunks_export', 'dataphyre_docs_index_plan', 'dataphyre_embeddings_readiness_plan', 'dataphyre_remote_docs_readiness_plan', 'dataphyre_datadoc_static_summary', 'dataphyre_datadoc_runtime_readiness_plan', 'dataphyre_config_shape_read', 'dataphyre_config_value_preview', 'dataphyre_storage_config_summary', 'dataphyre_storage_driver_catalog', 'dataphyre_sql_schema_read', 'dataphyre_sql_query_plan', 'dataphyre_sql_query_runner_contract', 'dataphyre_sql_runtime_readiness_plan', 'dataphyre_route_manifest_read', 'dataphyre_route_url_preview', 'dataphyre_route_match_preview', 'dataphyre_route_source_static_summary', 'dataphyre_route_source_ambiguity_report', 'dataphyre_route_runtime_provenance_plan', 'dataphyre_controller_source_summary', 'dataphyre_middleware_source_summary', 'dataphyre_mvc_config_static_summary', 'dataphyre_mvc_route_cache_summary', 'dataphyre_tracelog_artifacts_list', 'dataphyre_tracelog_read', 'dataphyre_tracelog_search', 'dataphyre_diagnostics_last_error', 'dataphyre_browser_diagnostics_readiness_plan', 'dataphyre_flightdeck_surfaces_list', 'dataphyre_contract_catalog', 'dataphyre_contract_describe', 'dataphyre_unit_tests_list', 'dataphyre_unit_test_manifest_read', 'dataphyre_browser_regression_manifest_summary', 'dataphyre_verification_surface_catalog', 'dataphyre_agent_context_generate', 'dataphyre_scaffold_plan_generate', 'dataphyre_app_builder_plan_generate', 'dataphyre_panel_scaffold_catalog', 'dataphyre_panel_package_manifest_summary', 'dataphyre_panel_theme_manifest_summary', 'dataphyre_panel_documentation_catalog_summary', 'dataphyre_panel_media_manifest_summary', 'dataphyre_task_pack_generate', 'dataphyre_apply_audit_plan', 'dataphyre_apply_runtime_readiness_plan', 'dataphyre_release_check', 'dataphyre_release_triage_summary', 'dataphyre_release_fix_plan', 'dataphyre_mcp_manifest_export', 'dataphyre_prompt_pack_export', 'dataphyre_mcp_prompt_catalog', 'dataphyre_mcp_skill_catalog', 'dataphyre_mcp_skill_manifest_export', 'dataphyre_mcp_skill_registration_audit', 'dataphyre_mcp_skill_pack_export', 'dataphyre_mcp_skill_install_plan', 'dataphyre_mcp_skill_file_install_plan', 'dataphyre_mcp_client_config_summary', 'dataphyre_mcp_client_install_checklist', 'dataphyre_mcp_client_config_install_plan', 'dataphyre_mcp_smoke_test_export', 'dataphyre_mcp_client_onboarding_pack', 'dataphyre_mcp_client_troubleshoot', 'dataphyre_mcp_client_compatibility_matrix', 'dataphyre_mcp_client_config_audit', 'dataphyre_mcp_safety_boundary_report', 'dataphyre_mcp_status_board', 'dataphyre_mcp_enterprise_adoption_audit', 'dataphyre_mcp_capability_matrix', 'dataphyre_mcp_release_notes_generate', 'dataphyre_mcp_surface_changelog', 'dataphyre_mcp_tool_call_examples_export', 'dataphyre_mcp_workflow_playbook_export', 'dataphyre_mcp_workflow_readiness_audit', 'dataphyre_mcp_workflow_session_export', 'dataphyre_mcp_workflow_transcript_schema_export', 'dataphyre_mcp_workflow_state_schema_export', 'dataphyre_mcp_workflow_state_audit', 'dataphyre_mcp_workflow_state_summary_export', 'dataphyre_mcp_workflow_state_transition_export', 'dataphyre_mcp_workflow_state_sync_pack_export', 'dataphyre_mcp_workflow_state_timeline_export', 'dataphyre_mcp_workflow_state_resume_brief_export', 'dataphyre_mcp_workflow_transcript_audit', 'dataphyre_mcp_workflow_transcript_summary_export', 'dataphyre_mcp_workflow_checkpoint_export', 'dataphyre_mcp_workflow_handoff_pack_export', 'dataphyre_mcp_workflow_catalog', 'dataphyre_mcp_workflow_lifecycle_export', 'dataphyre_mcp_workflow_next_action_export', 'dataphyre_mcp_workflow_recommend', 'dataphyre_mcp_workflow_recommendation_handoff_export', 'dataphyre_mcp_task_start_pack_export', 'dataphyre_mcp_agent_brief_export', 'dataphyre_mcp_tool_finder', 'dataphyre_mcp_resource_finder', 'dataphyre_mcp_docs_coverage_report', 'dataphyre_mcp_readiness_report', 'dataphyre_mcp_live_validate', 'dataphyre_mcp_verify_all', 'dataphyre_mcp_doctor'] as $required){
+					if(!in_array($required, $names, true)){
+						throw new RuntimeException("tools/list is missing {$required}.");
+					}
 				}
-			}
-			if(str_contains($toolsJson, 'common/dataphyre/dev/tools')){
+				foreach(['dataphyre_sql_migration_catalog', 'dataphyre_sql_migration_describe', 'dataphyre_sql_migration_manifest_validate', 'dataphyre_sql_migration_scaffold_plan'] as $required){
+					if(!in_array($required, $names, true)){
+						throw new RuntimeException("tools/list is missing {$required}.");
+					}
+				}
+			if(str_contains($toolsJson, 'dataphyre/dev/tools')){
 				throw new RuntimeException('tools/list exposed Git worktree dev helper paths in tool metadata.');
 			}
 			foreach([
@@ -224,10 +230,12 @@ $checks=[
 				'dataphyre_task_pack_generate'=>['optional builder context', 'focused docs', 'scaffold guidance', 'write handoff', 'verification hints', 'ordinary app work'],
 				'dataphyre_mcp_task_start_pack_export'=>['builder-profile cold-start context', 'app-builder compact planning', 'broader workflow discovery', 'defaults payload_profile=builder'],
 				'dataphyre_mcp_agent_brief_export'=>['compact read-only brief', 'direct app-builder fast lane', 'first-view guidance', 'next_detail_page', 'collapsed enterprise context'],
-				'dataphyre_release_check'=>['Dataphyre release-check boundary', 'not app behavior proof'],
-				'dataphyre_release_triage_summary'=>['release-check boundary metadata', 'not ordinary application-agent verification'],
+				'dataphyre_release_check'=>['fixed Dataphyre application release preflight', 'deterministic boolean deployment prediction', 'configuration, dependency, or verification failures'],
+				'dataphyre_release_triage_summary'=>['same fixed application preflight', 'configuration, dependency, or verification'],
 				'dataphyre_release_fix_plan'=>['Dataphyre maintainer release repair plan'],
 				'dataphyre_application_info'=>['copy_safe_startup_summary', 'instead of root or raw git output'],
+				'dataphyre_contract_catalog'=>['executable TestKit contracts', 'PHP interfaces/abstract contracts', 'serialized payload contracts'],
+				'dataphyre_contract_describe'=>['methods', 'implementations', 'executable evidence', 'without loading runtime code'],
 				'dataphyre_mcp_docs_coverage_report'=>['MCP/release-surface claims', 'not app behavior proof'],
 				'dataphyre_mcp_safety_boundary_report'=>['not an ordinary app-building entrypoint', 'dataphyre_app_builder_plan_generate payload_profile=compact'],
 				'dataphyre_mcp_status_board'=>['MCP surface health', 'not an ordinary app-building entrypoint', 'dataphyre_app_builder_plan_generate payload_profile=compact'],
@@ -265,6 +273,15 @@ $checks=[
 			$descriptions=[];
 			foreach($response['result']['tools'] ?? [] as $tool){
 				$descriptions[(string)($tool['name'] ?? '')]=(string)($tool['description'] ?? '');
+			}
+			if(
+				(($schemas['dataphyre_contract_describe']['id']['type']??null)!=='string')
+				|| (($schemas['dataphyre_unit_tests_list']['kind']['enum']??null)!==['all','code','json'])
+				|| (($schemas['dataphyre_contract_catalog']['kinds']['items']['enum']??null)!==['test_contract','php_type_contract','serialized_contract','legacy_test_manifest'])
+				|| !str_contains((string)($schemas['dataphyre_contract_catalog']['modules']['description']??''),'Required')
+				|| !str_contains((string)($schemas['dataphyre_unit_tests_list']['modules']['description']??''),'Required')
+			){
+				throw new RuntimeException('tools/list contract schemas do not expose stable ids and bounded contract kinds.');
 			}
 			$appBuilderFieldsDescription=(string)($schemas['dataphyre_app_builder_plan_generate']['fields']['description'] ?? '');
 			if(
@@ -482,7 +499,7 @@ $checks=[
 		'message'=>['jsonrpc'=>'2.0', 'id'=>5, 'method'=>'prompts/list', 'params'=>[]],
 		'assert'=>static function(array $response): void {
 			$names=array_map(static fn(array $prompt): string => (string)($prompt['name'] ?? ''), $response['result']['prompts'] ?? []);
-			foreach(['dataphyre_runtime_guidelines', 'dataphyre_release_triage', 'dataphyre_sql_schema_workflow', 'dataphyre_route_manifest_workflow', 'dataphyre_diagnostics_workflow'] as $required){
+			foreach(['dataphyre_runtime_guidelines', 'dataphyre_release_triage', 'dataphyre_sql_schema_workflow', 'dataphyre_route_manifest_workflow', 'dataphyre_diagnostics_workflow', 'dataphyre_contract_workflow'] as $required){
 				if(!in_array($required, $names, true)){
 					throw new RuntimeException("prompts/list is missing {$required}.");
 				}
@@ -520,16 +537,30 @@ $checks=[
 		},
 	],
 	[
+		'name'=>'prompts/get contract workflow',
+		'message'=>['jsonrpc'=>'2.0', 'id'=>504, 'method'=>'prompts/get', 'params'=>['name'=>'dataphyre_contract_workflow']],
+		'assert'=>static function(array $response): void {
+			$text=(string)($response['result']['messages'][0]['content']['text'] ?? '');
+			foreach(['dataphyre_contract_catalog','dataphyre_contract_describe','stable id','TestKit list','never executes test definitions'] as $required){
+				if(!str_contains($text,$required)){
+					throw new RuntimeException('prompts/get contract workflow is missing source-safe guidance: '.$required);
+				}
+			}
+		},
+	],
+	[
 		'name'=>'prompts/get release triage',
 		'message'=>['jsonrpc'=>'2.0', 'id'=>502, 'method'=>'prompts/get', 'params'=>['name'=>'dataphyre_release_triage']],
 		'assert'=>static function(array $response): void {
 			$text=(string)($response['result']['messages'][0]['content']['text'] ?? '');
 			if(
-				!str_contains($text, 'Release triage is Dataphyre maintainer work')
-				|| !str_contains($text, 'not ordinary application-agent verification')
-				|| !str_contains($text, 'dataphyre_release_check')
+				!str_contains($text, 'dataphyre_release_check')
+				|| !str_contains($text, 'deterministic local prediction')
+				|| !str_contains($text, 'configuration, dependency, or verification failure')
+				|| !str_contains($text, 'exact built candidate')
+				|| !str_contains($text, 'Never substitute an application release script')
 			){
-				throw new RuntimeException('prompts/get release triage did not keep release checks maintainer-scoped.');
+				throw new RuntimeException('prompts/get release triage did not describe the executable application preflight boundary.');
 			}
 		},
 	],
@@ -539,18 +570,16 @@ $checks=[
 		'assert'=>static function(array $response): void {
 			$text=(string)($response['result']['messages'][0]['content']['text'] ?? '');
 			if(
-				!str_contains($text, 'dataphyre_app_builder_plan_generate payload_profile=compact')
-				|| !str_contains($text, 'builder_response.first_read first')
-				|| !str_contains($text, 'entity_planning.continuation_calls')
-				|| !str_contains($text, 'dataphyre_mcp_agent_brief_export for compact cold starts or handoffs')
-				|| !str_contains($text, 'dataphyre_mcp_task_start_pack_export payload_profile=builder')
-				|| !str_contains($text, 'only when broader bounded workflow context is needed')
-				|| !str_contains($text, 'dataphyre_task_pack_generate payload_profile=governance only for escalation triggers')
-				|| !str_contains($text, 'dataphyre_task_pack_generate payload_profile=governance')
-				|| str_contains($text, 'dataphyre_mcp_task_start_pack_export payload_profile=governance')
-				|| str_contains($text, 'dataphyre_mcp_task_start_pack_export payload_profile=builder or agent-brief')
+				!str_contains($text, 'dataphyre_panel_capability_catalog')
+				|| !str_contains($text, 'describe the affected domain or framework area')
+				|| !str_contains($text, 'dataphyre_panel_recipe_plan')
+				|| !str_contains($text, 'dataphyre_panel_integration_plan')
+				|| !str_contains($text, 'dataphyre_panel_surface_graph')
+				|| !str_contains($text, 'dataphyre_panel_verification_plan')
+				|| !str_contains($text, 'after changed paths and proof scope are known')
+				|| !str_contains($text, 'dataphyre_app_builder_plan_generate payload_profile=compact after capability discovery')
 			){
-				throw new RuntimeException('prompts/get panel workflow did not keep start-pack and task-pack payload profiles distinct.');
+				throw new RuntimeException('prompts/get panel workflow did not expose the source-derived capability-first contract.');
 			}
 		},
 	],
@@ -950,9 +979,9 @@ $checks=[
 				|| !in_array('file writes', $data['module_inventory_safety']['not_performed'] ?? [], true)
 				|| !in_array('application-owned adapters', $data['module_inventory_safety']['ordinary_app_work']['extension_points'] ?? [], true)
 				|| (($data['bootstrap']['bs_version'] ?? null)!=='2.0.3')
-				|| (($modules['api']['version_file'] ?? null)!=='common/dataphyre/runtime/modules/api/version')
+				|| (($modules['api']['version_file'] ?? null)!=='dataphyre/runtime/modules/api/version')
 				|| (($modules['mcp']['has_docs'] ?? null)!==true)
-				|| !in_array('common/dataphyre/runtime/modules/stripe/src/VERSION', $packagePaths, true)
+				|| !in_array('dataphyre/runtime/modules/stripe/src/VERSION', $packagePaths, true)
 				|| (($data['version_policy']['module_version_file'] ?? null)!=='runtime/modules/<module>/version')
 			){
 				throw new RuntimeException('runtime version summary did not return the expected static version inventory.');
@@ -968,7 +997,7 @@ $checks=[
 			'params'=>[
 				'name'=>'dataphyre_package_metadata_read',
 				'arguments'=>[
-					'paths'=>['common/dataphyre/composer.json'],
+					'paths'=>['dataphyre/composer.json'],
 				],
 			],
 		],
@@ -1056,7 +1085,7 @@ $checks=[
 			'params'=>[
 				'name'=>'dataphyre_source_api_summary',
 				'arguments'=>[
-					'paths'=>['common/dataphyre/runtime/modules/api/Framework/Api.php'],
+					'paths'=>['dataphyre/runtime/modules/api/Framework/Api.php'],
 					'limit'=>1,
 				],
 			],
@@ -1092,7 +1121,7 @@ $checks=[
 			'params'=>[
 				'name'=>'dataphyre_api_docs_static_summary',
 				'arguments'=>[
-					'paths'=>['common/dataphyre/runtime/modules/api/unit_tests/api_test_helpers.php'],
+					'paths'=>['dataphyre/runtime/modules/api/unit_tests/api_test_helpers.php'],
 					'limit'=>1,
 				],
 			],
@@ -1393,8 +1422,8 @@ $checks=[
 				|| (($data['discovery_safety']['application_agent_operating_contract']['default_posture'] ?? null)!=='read_only_metadata_first')
 				|| !in_array('file writes', $data['discovery_safety']['not_performed'] ?? [], true)
 				|| (($data['discovery_safety']['ordinary_app_work']['verification'] ?? null)!=='focused application or module checks')
-				|| !in_array('common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $paths, true)
-				|| !in_array('common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md', $paths, true)
+				|| !in_array('dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $paths, true)
+				|| !in_array('dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md', $paths, true)
 			){
 				throw new RuntimeException('module docs pack did not return MCP docs and AI guidelines.');
 			}
@@ -1435,7 +1464,7 @@ $checks=[
 			'method'=>'tools/call',
 			'params'=>[
 				'name'=>'dataphyre_read_doc',
-				'arguments'=>['path'=>'common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md'],
+				'arguments'=>['path'=>'dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md'],
 			],
 		],
 		'assert'=>static function(array $response): void {
@@ -1493,8 +1522,8 @@ $checks=[
 				|| (($data['chunks'][0]['line_start'] ?? 0)>($data['chunks'][0]['line_end'] ?? -1))
 				|| !is_string($data['chunks'][0]['content_sha256'] ?? null)
 				|| !preg_match('/^[a-f0-9]{64}$/', (string)($data['chunks'][0]['content_sha256'] ?? ''))
-				|| !in_array('common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $paths, true)
-				|| !in_array('common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md', $paths, true)
+				|| !in_array('dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $paths, true)
+				|| !in_array('dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md', $paths, true)
 			){
 				throw new RuntimeException('docs chunks export did not return MCP semantic chunks.');
 			}
@@ -1532,9 +1561,9 @@ $checks=[
 				|| (($data['chunks'][0]['line_start'] ?? 0)>($data['chunks'][0]['line_end'] ?? -1))
 				|| !is_string($data['chunks'][0]['content_sha256'] ?? null)
 				|| !preg_match('/^[a-f0-9]{64}$/', (string)($data['chunks'][0]['content_sha256'] ?? ''))
-				|| in_array('common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $paths, true)
-				|| !in_array('common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md', $paths, true)
-				|| !in_array('common/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md', $paths, true)
+				|| in_array('dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $paths, true)
+				|| !in_array('dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md', $paths, true)
+				|| !in_array('dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md', $paths, true)
 				|| (!str_contains($headings, 'Resource Definitions') && !str_contains($headings, 'RepositoryQuery'))
 			){
 				throw new RuntimeException('docs chunks export builder profile did not keep ordinary app docs practical and governance-light.');
@@ -1564,8 +1593,8 @@ $checks=[
 				!is_array($data)
 				|| (($data['docs_profile'] ?? null)!=='default')
 				|| (($data['guidelines_position'] ?? null)!=='after_modules')
-				|| (($data['chunks'][0]['path'] ?? null)!=='common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md')
-				|| in_array('common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', array_slice($paths, 0, 2), true)
+				|| (($data['chunks'][0]['path'] ?? null)!=='dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md')
+				|| in_array('dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', array_slice($paths, 0, 2), true)
 			){
 				throw new RuntimeException('docs chunks export default profile did not keep requested module docs first.');
 			}
@@ -1766,7 +1795,7 @@ $checks=[
 			'params'=>[
 				'name'=>'dataphyre_config_shape_read',
 				'arguments'=>[
-					'path'=>'common/dataphyre/config/storage.example.php',
+					'path'=>'dataphyre/config/storage.example.php',
 					'max_paths'=>80,
 				],
 			],
@@ -1839,7 +1868,7 @@ $checks=[
 			'params'=>[
 				'name'=>'dataphyre_storage_config_summary',
 				'arguments'=>[
-					'config_path'=>'common/dataphyre/config/storage.example.php',
+					'config_path'=>'dataphyre/config/storage.example.php',
 				],
 			],
 		],
@@ -1978,7 +2007,7 @@ $checks=[
 			'params'=>[
 				'name'=>'dataphyre_route_source_static_summary',
 				'arguments'=>[
-					'paths'=>['common/dataphyre/runtime/modules/mvc/kernel/mvc_regression.php'],
+					'paths'=>['dataphyre/runtime/modules/mvc/kernel/mvc_regression.php'],
 					'limit'=>1,
 				],
 			],
@@ -2018,7 +2047,7 @@ $checks=[
 			'params'=>[
 				'name'=>'dataphyre_controller_source_summary',
 				'arguments'=>[
-					'paths'=>['common/dataphyre/runtime/modules/mvc/kernel/mvc_regression.php'],
+					'paths'=>['dataphyre/runtime/modules/mvc/kernel/mvc_regression.php'],
 					'limit'=>1,
 				],
 			],
@@ -2060,7 +2089,7 @@ $checks=[
 			'params'=>[
 				'name'=>'dataphyre_route_source_ambiguity_report',
 				'arguments'=>[
-					'paths'=>['common/dataphyre/runtime/modules/mvc/kernel/mvc_regression.php'],
+					'paths'=>['dataphyre/runtime/modules/mvc/kernel/mvc_regression.php'],
 					'limit'=>1,
 				],
 			],
@@ -2127,7 +2156,7 @@ $checks=[
 			'params'=>[
 				'name'=>'dataphyre_middleware_source_summary',
 				'arguments'=>[
-					'paths'=>['common/dataphyre/runtime/modules/mvc/kernel/mvc_regression.php'],
+					'paths'=>['dataphyre/runtime/modules/mvc/kernel/mvc_regression.php'],
 					'limit'=>1,
 				],
 			],
@@ -2298,7 +2327,7 @@ $checks=[
 			'params'=>[
 				'name'=>'dataphyre_tracelog_artifacts_list',
 				'arguments'=>[
-					'scope'=>'common/dataphyre/cache',
+					'scope'=>'dataphyre/cache',
 					'limit'=>10,
 				],
 			],
@@ -2433,7 +2462,7 @@ $checks=[
 				'name'=>'dataphyre_tracelog_search',
 				'arguments'=>[
 					'query'=>'Synthetic MCP trace',
-					'scope'=>'common/dataphyre/cache',
+					'scope'=>'dataphyre/cache',
 					'limit'=>5,
 				],
 			],
@@ -2494,7 +2523,7 @@ $checks=[
 			'params'=>[
 				'name'=>'dataphyre_diagnostics_last_error',
 				'arguments'=>[
-					'scope'=>'common/dataphyre/cache',
+					'scope'=>'dataphyre/cache',
 					'limit'=>3,
 					'max_artifacts'=>5,
 				],
@@ -2629,6 +2658,7 @@ $checks=[
 				'name'=>'dataphyre_unit_tests_list',
 				'arguments'=>[
 					'modules'=>['core', 'panel'],
+					'kind'=>'json',
 					'limit'=>80,
 				],
 			],
@@ -2638,9 +2668,9 @@ $checks=[
 			$data=json_decode($text, true);
 			$paths=array_map(static fn(array $manifest): string => (string)($manifest['path'] ?? ''), $data['manifests'] ?? []);
 			foreach([
-				'common/dataphyre/runtime/modules/core/unit_tests/dataphyre.core.config_repository.json',
-				'common/dataphyre/runtime/modules/core/unit_tests/dataphyre.core.env_repository.json',
-				'common/dataphyre/runtime/modules/panel/unit_tests/dataphyre.panel.test_harness.json',
+				'dataphyre/runtime/modules/core/unit_tests/dataphyre.core.config_repository.json',
+				'dataphyre/runtime/modules/core/unit_tests/dataphyre.core.env_repository.json',
+				'dataphyre/runtime/modules/panel/unit_tests/dataphyre.panel.test_harness.json',
 			] as $requiredManifest){
 				if(
 					!is_array($data)
@@ -2662,7 +2692,7 @@ $checks=[
 			'params'=>[
 				'name'=>'dataphyre_unit_test_manifest_read',
 				'arguments'=>[
-					'path'=>'common/dataphyre/runtime/modules/core/unit_tests/dataphyre.core.config_repository.json',
+					'path'=>'dataphyre/runtime/modules/core/unit_tests/dataphyre.core.config_repository.json',
 					'max_cases'=>3,
 				],
 			],
@@ -2680,6 +2710,121 @@ $checks=[
 				|| ($data['cases'][0]['function'] ?? null)!=='dp_core_unit_config_repository_contract'
 			){
 				throw new RuntimeException('unit test manifest read did not summarize the core Config repository contract manifest.');
+			}
+		},
+	],
+	[
+		'name'=>'code unit tests list',
+		'message'=>[
+			'jsonrpc'=>'2.0',
+			'id'=>190,
+			'method'=>'tools/call',
+			'params'=>[
+				'name'=>'dataphyre_unit_tests_list',
+				'arguments'=>[
+					'modules'=>['mcp'],
+					'kind'=>'code',
+					'contract'=>'test:mcp.protocol.discovery@1',
+					'limit'=>5,
+				],
+			],
+		],
+		'assert'=>static function(array $response): void {
+			$data=json_decode((string)($response['result']['content'][0]['text']??''),true);
+			$manifest=$data['manifests'][0]??[];
+			if(
+				!is_array($data)
+				|| ($data['kind']??null)!=='code'
+				|| ($data['matched_manifest_count']??null)!==1
+				|| ($manifest['path']??null)!=='dataphyre/runtime/modules/mcp/unit_tests/dataphyre.mcp.protocol_contract.test.php'
+				|| !array_key_exists('expanded_case_count', $manifest)
+				|| $manifest['expanded_case_count']!==null
+				|| !str_contains((string)($manifest['runtime_metadata_command']??''),'--owner=mcp')
+			){
+				throw new RuntimeException('code unit tests list did not expose the TestKit semantic contract file.');
+			}
+		},
+	],
+	[
+		'name'=>'code unit test manifest read',
+		'message'=>[
+			'jsonrpc'=>'2.0',
+			'id'=>191,
+			'method'=>'tools/call',
+			'params'=>[
+				'name'=>'dataphyre_unit_test_manifest_read',
+				'arguments'=>[
+					'path'=>'dataphyre/runtime/modules/mcp/unit_tests/dataphyre.mcp.protocol_contract.test.php',
+					'max_cases'=>5,
+				],
+			],
+		],
+		'assert'=>static function(array $response): void {
+			$data=json_decode((string)($response['result']['content'][0]['text']??''),true);
+			if(
+				!is_array($data)
+				|| ($data['kind']??null)!=='code'
+				|| ($data['execution']??null)!=='not_executed'
+				|| ($data['declared_case_count']??null)!==2
+				|| ($data['contracts'][0]['id']??null)!=='test:mcp.protocol.discovery@1'
+				|| ($data['cases'][0]['name']??null)!=='one self-describing transcript exercises every public MCP protocol family'
+			){
+				throw new RuntimeException('code unit test manifest read did not summarize the TestKit source safely.');
+			}
+		},
+	],
+	[
+		'name'=>'contract catalog',
+		'message'=>[
+			'jsonrpc'=>'2.0',
+			'id'=>192,
+			'method'=>'tools/call',
+			'params'=>[
+				'name'=>'dataphyre_contract_catalog',
+				'arguments'=>[
+					'modules'=>['mcp'],
+					'kinds'=>['test_contract'],
+					'query'=>'mcp.protocol.discovery',
+					'limit'=>5,
+				],
+			],
+		],
+		'assert'=>static function(array $response): void {
+			$data=json_decode((string)($response['result']['content'][0]['text']??''),true);
+			if(
+				!is_array($data)
+				|| ($data['catalog_type']??null)!=='dataphyre_contract_catalog'
+				|| ($data['counts']['matched']??null)!==1
+				|| ($data['records'][0]['id']??null)!=='test:mcp.protocol.discovery@1'
+				|| ($data['execution']??null)!=='not_executed'
+				|| (($data['contract_safety']['reflection_used']??null)!==false)
+			){
+				throw new RuntimeException('contract catalog did not return the focused source-derived semantic contract.');
+			}
+		},
+	],
+	[
+		'name'=>'contract describe',
+		'message'=>[
+			'jsonrpc'=>'2.0',
+			'id'=>193,
+			'method'=>'tools/call',
+			'params'=>[
+				'name'=>'dataphyre_contract_describe',
+				'arguments'=>['id'=>'test:mcp.protocol.discovery@1'],
+			],
+		],
+		'assert'=>static function(array $response): void {
+			$data=json_decode((string)($response['result']['content'][0]['text']??''),true);
+			if(
+				!is_array($data)
+				|| ($data['status']??null)!=='found'
+				|| ($data['contract']['name']??null)!=='mcp.protocol.discovery'
+				|| ($data['contract']['kind']??null)!=='test_contract'
+				|| ($data['relationship_contract']['no_runtime_inference']??null)!==true
+				|| (($data['contract_safety']['source_required']??null)!==false)
+			){
+				throw new RuntimeException('contract describe did not return the stable TestKit contract descriptor.');
 			}
 		},
 	],
@@ -2722,7 +2867,7 @@ $checks=[
 			'params'=>[
 				'name'=>'dataphyre_php_lint',
 				'arguments'=>[
-					'paths'=>['common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.utility.php'],
+					'paths'=>['dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.utility.php'],
 				],
 			],
 		],
@@ -2734,7 +2879,7 @@ $checks=[
 			$stderr=(string)($result['stderr'] ?? '');
 			if(
 				!is_array($data)
-				|| (($data['results'][0]['path'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.utility.php')
+				|| (($data['results'][0]['path'] ?? null)!=='dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.utility.php')
 				|| (($result['exit_code'] ?? null)!==0)
 				|| (($result['redacted'] ?? null)!==true)
 				|| !str_contains((string)($result['redaction_policy'] ?? ''), 'machine-local path patterns')
@@ -2770,9 +2915,9 @@ $checks=[
 				|| ($data['catalog_type'] ?? null)!=='dataphyre_verification_surface_catalog'
 				|| ($data['write_policy'] ?? null)!=='read_only'
 				|| ($data['execution'] ?? null)!=='not_executed'
-				|| !in_array('common/dataphyre/runtime/modules/panel/kernel/panel_field_catalog_check.php', $paths, true)
-				|| !in_array('common/dataphyre/runtime/modules/panel/unit_tests/dataphyre.panel.test_harness.json', $paths, true)
-				|| !in_array('common/dataphyre/runtime/modules/mvc/kernel/mvc_regression.php', $paths, true)
+				|| !in_array('dataphyre/runtime/modules/panel/kernel/panel_field_catalog_check.php', $paths, true)
+				|| !in_array('dataphyre/runtime/modules/panel/unit_tests/dataphyre.panel.test_harness.json', $paths, true)
+				|| !in_array('dataphyre/runtime/modules/mvc/kernel/mvc_regression.php', $paths, true)
 				|| (($data['verification_safety']['application_default'] ?? null)!=='safe_for_selecting_focused_app_or_module_verification_without_execution')
 				|| (($data['verification_safety']['ordinary_app_summary']['owner'] ?? null)!=='consuming_application')
 				|| (($data['verification_safety']['boundary_refs']['application_agent_operating_contract'] ?? null)!=='dataphyre_mcp_readiness_report')
@@ -2829,8 +2974,8 @@ $checks=[
 				|| (($data['focused_app_verification']['audience'] ?? null)!=='application_agents_building_apps')
 				|| (($data['publication_validation']['audience'] ?? null)!=='maintainers_and_release_surface_claims')
 				|| (($data['publication_validation']['app_agent_default'] ?? null)!=='not_required_for_ordinary_application_work')
-				|| !in_array('common/dataphyre/runtime/modules/panel/kernel/panel_field_catalog_check.php', $focusedPaths, true)
-				|| !in_array('common/dataphyre/dev/tools/public/mcp_self_test.php', $publicationPaths, true)
+				|| !in_array('dataphyre/runtime/modules/panel/kernel/panel_field_catalog_check.php', $focusedPaths, true)
+				|| !in_array('dataphyre/dev/tools/public/mcp_self_test.php', $publicationPaths, true)
 				|| !in_array('dataphyre_mcp_verify_all', $data['publication_validation']['tools'] ?? [], true)
 				|| (($data['publication_validation']['next_action']['status'] ?? null)!=='use_only_for_publication_or_mcp_claim')
 				|| !in_array('ordinary app behavior proof', $data['publication_validation']['next_action']['not_required'] ?? [], true)
@@ -2867,16 +3012,16 @@ $checks=[
 			$toolBlock=dataphyre_mcp_self_test_between($inspectionSource, '$category=match($scope_path)', "\n\t\treturn [");
 			if(
 				!is_array($data)
-				|| (($byPath['common/dataphyre/runtime/modules/panel/kernel/panel_field_catalog_check.php']['known_mcp_wrapper'] ?? null)!=='dataphyre_run_panel_field_catalog_check')
-				|| (($byPath['common/dataphyre/runtime/modules/panel/kernel/panel_field_catalog_check.php']['module'] ?? null)!=='panel')
+				|| (($byPath['dataphyre/runtime/modules/panel/kernel/panel_field_catalog_check.php']['known_mcp_wrapper'] ?? null)!=='dataphyre_run_panel_field_catalog_check')
+				|| (($byPath['dataphyre/runtime/modules/panel/kernel/panel_field_catalog_check.php']['module'] ?? null)!=='panel')
 				|| !str_contains($inspectionSource, 'private function verification_package_scope_path')
 				|| !str_contains($inspectionSource, '$normalized=$this->verification_package_scope_path($relative);')
 				|| !str_contains($inspectionSource, "#^runtime/modules/([^/]+)/#")
-				|| str_contains($inspectionSource, "#^common/dataphyre/runtime/modules/([^/]+)/#")
+				|| str_contains($inspectionSource, "#^dataphyre/runtime/modules/([^/]+)/#")
 				|| !str_contains($wrapperBlock, "'runtime/modules/panel/kernel/panel_field_catalog_check.php'=>'dataphyre_run_panel_field_catalog_check'")
-				|| str_contains($wrapperBlock, "'common/dataphyre/runtime/modules/panel/kernel/panel_field_catalog_check.php'")
+				|| str_contains($wrapperBlock, "'dataphyre/runtime/modules/panel/kernel/panel_field_catalog_check.php'")
 				|| !str_contains($toolBlock, "'dev/tools/public/mcp_self_test.php'=>'mcp_self_test'")
-				|| str_contains($toolBlock, "'common/dataphyre/dev/tools/public/mcp_self_test.php'")
+				|| str_contains($toolBlock, "'dataphyre/dev/tools/public/mcp_self_test.php'")
 			){
 				throw new RuntimeException('verification surface catalog did not normalize Dataphyre package path variants for module/wrapper/tool classification.');
 			}
@@ -2904,8 +3049,8 @@ $checks=[
 				!is_array($data)
 				|| ($data['recommended_path'] ?? null)!=='.cursor/rules/dataphyre.mdc'
 				|| ($data['write_policy'] ?? null)!=='not_written_by_mcp_tool'
-				|| !in_array('common/dataphyre/docs/AGENTIC_ENTERPRISE.md', $data['source_documents'] ?? [], true)
-				|| !in_array('common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md', $data['source_documents'] ?? [], true)
+				|| !in_array('dataphyre/docs/AGENTIC_ENTERPRISE.md', $data['source_documents'] ?? [], true)
+				|| !in_array('dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md', $data['source_documents'] ?? [], true)
 				|| !str_contains($content, 'Dataphyre Agent Context')
 				|| !str_contains($content, 'primarily to build Dataphyre applications safely')
 				|| !str_contains($content, 'framework-maintainer guidance applies only')
@@ -2966,10 +3111,10 @@ $checks=[
 				|| ($data['type'] ?? null)!=='panel_resource'
 				|| !in_array('dataphyre_run_panel_regression', $data['verification'] ?? [], true)
 				|| empty($data['proposed_files'])
-				|| (($recommendedDocs[0] ?? null)!=='common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md')
-				|| !in_array('common/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md', $recommendedDocs, true)
-				|| in_array('common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $recommendedDocs, true)
-				|| !in_array('common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $optionalGuidanceDocs, true)
+				|| (($recommendedDocs[0] ?? null)!=='dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md')
+				|| !in_array('dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md', $recommendedDocs, true)
+				|| in_array('dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $recommendedDocs, true)
+				|| !in_array('dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $optionalGuidanceDocs, true)
 				|| ($data['field_hints'][0]['name'] ?? null)!=='name'
 				|| !in_array('plugins', $data['extension_boundary']['preferred_order'] ?? [], true)
 				|| (($data['extension_boundary']['decision_ladder']['layers'][0]['id'] ?? null)!=='application_code')
@@ -3585,10 +3730,10 @@ $checks=[
 				|| ($data['write_policy'] ?? null)!=='read_only_plan'
 				|| ($data['execution'] ?? null)!=='not_executed'
 				|| !array_key_exists('builder_plan', $data)
-				|| (($focusedDocs[0] ?? null)!=='common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md')
-				|| !in_array('common/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md', $focusedDocs, true)
-				|| in_array('common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $focusedDocs, true)
-				|| !in_array('common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $focusedOptionalDocs, true)
+				|| (($focusedDocs[0] ?? null)!=='dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md')
+				|| !in_array('dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md', $focusedDocs, true)
+				|| in_array('dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $focusedDocs, true)
+				|| !in_array('dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $focusedOptionalDocs, true)
 				|| !in_array('applications/<app>/backend/dataphyre/panel/resources/ProjectResource.php', $files, true)
 				|| !in_array('applications/<app>/backend/dataphyre/panel/resources/TicketResource.php', $files, true)
 				|| !str_contains($schema, '"entity":"Ticket"')
@@ -3716,8 +3861,8 @@ $checks=[
 				|| !in_array('not_foreign_key', $data['field_input_contract']['accepted_metadata'] ?? [], true)
 				|| (($data['focused_context']['entrypoint_tool'] ?? null)!=='dataphyre_app_builder_plan_generate')
 				|| (($data['focused_context']['scaffold_tool'] ?? null)!=='dataphyre_scaffold_plan_generate')
-				|| !in_array('common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md', $data['focused_context']['docs'] ?? [], true)
-				|| !in_array('common/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md', $data['focused_context']['docs'] ?? [], true)
+				|| !in_array('dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md', $data['focused_context']['docs'] ?? [], true)
+				|| !in_array('dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md', $data['focused_context']['docs'] ?? [], true)
 				|| array_key_exists('application_agent_operating_contract', $data)
 				|| array_key_exists('ordinary_app_work', $data)
 				|| (($data['context_links']['application_agent_operating_contract'] ?? null)!=='dataphyre_mcp_readiness_report')
@@ -6195,7 +6340,7 @@ $checks=[
 				|| (($surfaceStepById['complete_entity_chunks']['status'] ?? null)!=='required_before_writes')
 				|| (($surfaceStepById['plan_companion_surface']['surface'] ?? null)!=='api_endpoint')
 				|| (($surfaceStepById['plan_companion_surface']['source'] ?? null)!=='builder_response.companion_surface_handoff.arguments')
-				|| !in_array('common/dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md', $focusedDocs, true)
+				|| !in_array('dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md', $focusedDocs, true)
 				|| !in_array('dataphyre_api_docs_static_summary', $followUps, true)
 				|| !in_array('dataphyre_route_source_static_summary', $followUps, true)
 				|| (($builderResponse['write_readiness']['status'] ?? null)!=='continue_entity_chunks')
@@ -12411,17 +12556,17 @@ $checks=[
 				|| !str_contains($firstDocPath, '/panel/')
 				|| (($docHeadings[0] ?? null)!=='Resource Definitions')
 				|| !in_array('Table Definitions And Hydration', $docHeadings, true)
-				|| !in_array('Generated Tables', $docHeadings, true)
+				|| !in_array('RepositoryQuery', array_map(static fn(string $heading): string => trim($heading, '`'), $docHeadings), true)
 				|| !in_array('Scaffolding', $docHeadings, true)
 				|| !in_array('panel', $docModules, true)
 				|| !in_array('sql', $docModules, true)
 				|| !in_array('module', $docGroups, true)
 				|| in_array('reference', $docGroups, true)
-				|| !in_array('common/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md', $docPaths, true)
-				|| in_array('common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel_Capability_Audit.md', $docPaths, true)
-				|| in_array('common/dataphyre/docs/MODULES.md', $docPaths, true)
-				|| in_array('common/dataphyre/runtime/README.md', $docPaths, true)
-				|| in_array('common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $docPaths, true)
+				|| !in_array('dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md', $docPaths, true)
+				|| in_array('dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel_Capability_Audit.md', $docPaths, true)
+				|| in_array('dataphyre/docs/MODULES.md', $docPaths, true)
+				|| in_array('dataphyre/runtime/README.md', $docPaths, true)
+				|| in_array('dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $docPaths, true)
 			){
 				throw new RuntimeException('task pack generator did not return the expected lightweight builder-first task context.');
 			}
@@ -12477,11 +12622,11 @@ $checks=[
 				|| !in_array('panel', $docModules, true)
 				|| !in_array('sql', $docModules, true)
 				|| in_array('reference', $docGroups, true)
-				|| in_array('common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel_Capability_Audit.md', $docPaths, true)
-				|| in_array('common/dataphyre/docs/MODULES.md', $docPaths, true)
-				|| in_array('common/dataphyre/runtime/README.md', $docPaths, true)
-				|| in_array('common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $docPaths, true)
-				|| in_array('common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md', $docPaths, true)
+				|| in_array('dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel_Capability_Audit.md', $docPaths, true)
+				|| in_array('dataphyre/docs/MODULES.md', $docPaths, true)
+				|| in_array('dataphyre/runtime/README.md', $docPaths, true)
+				|| in_array('dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md', $docPaths, true)
+				|| in_array('dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md', $docPaths, true)
 				|| (($data['governance_lane']['collapsed'] ?? null)!==true)
 			){
 				throw new RuntimeException('task pack inferred app modules did not prioritize Panel/SQL docs without MCP governance docs.');
@@ -12656,8 +12801,8 @@ $checks=[
 				'arguments'=>[
 					'task'=>'Add MCP audit envelope',
 					'proposed_files'=>[
-						'common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php',
-						'common/dataphyre/dev/tools/public/mcp_self_test.php',
+						'dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php',
+						'dataphyre/dev/tools/public/mcp_self_test.php',
 					],
 					'change_summary'=>'Add read-only planning for future unsafe apply workflow audit output.',
 				],
@@ -12672,9 +12817,9 @@ $checks=[
 				|| ($data['write_policy'] ?? null)!=='read_only_plan'
 				|| ($data['execution'] ?? null)!=='not_executed'
 				|| (($data['unsafe_required_to_apply'] ?? null)!==true)
-				|| !in_array('common/dataphyre/dev/tools/public/mcp_self_test.php', array_map(static fn(array $file): string => (string)($file['path'] ?? ''), $data['proposed_files'] ?? []), true)
+				|| !in_array('dataphyre/dev/tools/public/mcp_self_test.php', array_map(static fn(array $file): string => (string)($file['path'] ?? ''), $data['proposed_files'] ?? []), true)
 				|| in_array('Dataphyre MCP publication evidence', $data['verification'] ?? [], true)
-				|| in_array('common/dataphyre/dev/tools/public/mcp_self_test.php', $data['verification'] ?? [], true)
+				|| in_array('dataphyre/dev/tools/public/mcp_self_test.php', $data['verification'] ?? [], true)
 				|| !in_array('dataphyre_php_lint', $data['verification'] ?? [], true)
 				|| !in_array('Dataphyre MCP publication evidence', $data['publication_validation'] ?? [], true)
 				|| !in_array('MCP app-coupling guard scan', $data['publication_validation'] ?? [], true)
@@ -12797,6 +12942,38 @@ $checks=[
 		},
 	],
 	[
+		'name'=>'release check deterministic local failure',
+		'message'=>[
+			'jsonrpc'=>'2.0',
+			'id'=>281,
+			'method'=>'tools/call',
+			'params'=>[
+				'name'=>'dataphyre_release_check',
+				'arguments'=>[
+					'project_root'=>'dataphyre',
+					'application'=>'mcp-release-preflight-missing',
+					'environment'=>'local',
+				],
+			],
+		],
+		'assert'=>static function(array $response): void {
+			$text=(string)($response['result']['content'][0]['text'] ?? '');
+			$data=json_decode($text, true);
+			if(
+				!is_array($data)
+				|| ($data['contract_type'] ?? null)!=='dataphyre.application-release-prediction'
+				|| ($data['contract_version'] ?? null)!==2
+				|| ($data['prediction']['available'] ?? null)!==true
+				|| ($data['prediction']['likely_to_deploy'] ?? null)!==false
+				|| ($data['passed'] ?? null)!==false
+				|| ($data['preflight']['failures'][0]['kind'] ?? null)!=='configuration'
+				|| ($data['preflight']['failures'][0]['code'] ?? null)!=='application_definition_missing'
+			){
+				throw new RuntimeException('release check did not execute the fixed local preflight with a deterministic configuration failure.');
+			}
+		},
+	],
+	[
 		'name'=>'release fix plan',
 		'message'=>[
 			'jsonrpc'=>'2.0',
@@ -12805,7 +12982,7 @@ $checks=[
 			'params'=>[
 				'name'=>'dataphyre_release_fix_plan',
 				'arguments'=>[
-					'release_output'=>"FAIL: MODULES.md is missing module api.\nFAIL: Runtime module foo has no markdown documentation.\nFAIL: Invalid JSON in common/dataphyre/runtime/modules/foo/unit_tests/foo.json.\n",
+					'release_output'=>"FAIL: MODULES.md is missing module api.\nFAIL: Runtime module foo has no markdown documentation.\nFAIL: Invalid JSON in dataphyre/runtime/modules/foo/unit_tests/foo.json.\n",
 				],
 			],
 		],
@@ -12864,9 +13041,9 @@ $checks=[
 				|| ($data['manifest_type'] ?? null)!=='dataphyre_mcp_manifest'
 				|| ($data['default_safety'] ?? null)!=='read_only'
 				|| (($data['include_schemas'] ?? null)!==false)
-				|| (($data['server_entrypoint_contract']['stdio_server'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
-				|| (($data['server_entrypoint_contract']['module_bootstrap'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php')
-				|| (($data['server_entrypoint_contract']['validation_tool'] ?? null)!=='common/dataphyre/dev/tools/public/mcp_live_validate.php')
+				|| (($data['server_entrypoint_contract']['stdio_server'] ?? null)!=='dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
+				|| (($data['server_entrypoint_contract']['module_bootstrap'] ?? null)!=='dataphyre/runtime/modules/mcp/kernel/mcp.main.php')
+				|| (($data['server_entrypoint_contract']['validation_tool'] ?? null)!=='dataphyre/dev/tools/public/mcp_live_validate.php')
 				|| !str_contains((string)($data['server_entrypoint_contract']['client_policy'] ?? ''), 'not a stdio MCP server')
 				|| !str_contains($boundary, 'Content-Length framed JSON-RPC')
 				|| !str_contains($boundary, 'max_frame_bytes')
@@ -12916,7 +13093,7 @@ $checks=[
 				|| !in_array('Dataphyre hot-path benchmarks', $data['tool_audience_boundaries']['not_default_for_ordinary_app_work'] ?? [], true)
 				|| !in_array('dataphyre://mcp-capabilities', $resourceUris, true)
 				|| !in_array('dataphyre://agentic-enterprise', $resourceUris, true)
-				|| in_array('dataphyre://doc/common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md', $resourceUris, true)
+				|| in_array('dataphyre://doc/dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md', $resourceUris, true)
 				|| !in_array('config secret values', $data['safety']['intentionally_not_exposed'] ?? [], true)
 			){
 				throw new RuntimeException('mcp manifest export did not return the expected client-visible manifest.');
@@ -12943,25 +13120,6 @@ $checks=[
 			$promptText=implode("\n", array_map(static fn(array $prompt): string => (string)($prompt['text'] ?? ''), $data['prompts'] ?? []));
 			$usageNotes=implode(' ', $data['usage_notes'] ?? []);
 			if(
-				is_array($data)
-				&& (($data['pack_type'] ?? null)==='dataphyre_prompt_pack')
-				&& (($data['prompt_count'] ?? 0)===2)
-				&& (($data['governance_notes']['status'] ?? null)==='none triggered')
-				&& (($data['context_links']['runtime_guidelines_prompt'] ?? null)==='dataphyre_runtime_guidelines')
-				&& (($data['context_links']['compact_app_builder_plan'] ?? null)==='dataphyre_app_builder_plan_generate payload_profile=compact')
-				&& !array_key_exists('enterprise_audit', $data['context_links'] ?? [])
-				&& in_array('dataphyre_panel_workflow', $promptNames, true)
-				&& in_array('dataphyre_sql_schema_workflow', $promptNames, true)
-				&& str_contains($promptText, 'dataphyre_app_builder_plan_generate payload_profile=compact')
-				&& str_contains($promptText, 'builder_response.first_read')
-				&& str_contains($promptText, 'entity_planning.continuation_calls')
-				&& str_contains($promptText, 'focused Panel/SQL docs or a ready prompt are needed')
-				&& str_contains($promptText, 'Do not execute SQL queries')
-				&& str_contains($usageNotes, 'application agents building apps')
-			){
-				return;
-			}
-			if(
 				!is_array($data)
 				|| ($data['pack_type'] ?? null)!=='dataphyre_prompt_pack'
 				|| ($data['write_policy'] ?? null)!=='read_only'
@@ -12976,24 +13134,13 @@ $checks=[
 				|| array_key_exists('enterprise_audit', $data['context_links'] ?? [])
 				|| !in_array('dataphyre_panel_workflow', $promptNames, true)
 				|| !in_array('dataphyre_sql_schema_workflow', $promptNames, true)
-				|| !str_contains($promptText, 'first copy dataphyre_app_builder_plan_generate')
-				|| !str_contains($promptText, 'builder_response.first_read.next_action')
-				|| !str_contains($promptText, 'entity_planning.continuation_calls')
-				|| !str_contains($promptText, 'deferred_entities is empty')
-				|| !str_contains($promptText, 'dependency_context')
-				|| !str_contains($promptText, 'chunk-scoped fields')
-				|| !str_contains($promptText, 'focused Panel/SQL module docs or a ready prompt are needed')
-				|| !str_contains($promptText, 'task-specific first views')
-				|| !str_contains($promptText, 'scaffold_completion_summary')
-				|| !str_contains($promptText, 'local_convention_probe')
-				|| !str_contains($promptText, 'data_sensitivity_summary')
-				|| !str_contains($promptText, 'policy_decision_register')
-				|| !str_contains($promptText, 'prewrite_checklist')
-				|| !str_contains($promptText, 'verification_evidence')
-				|| !str_contains($promptText, 'verification_plan')
-				|| !str_contains($promptText, 'app_contract_summary')
-				|| !str_contains($promptText, 'acceptance_criteria')
-				|| !str_contains($promptText, 'acceptance_review_plan')
+				|| !str_contains($promptText, 'dataphyre_panel_capability_catalog')
+				|| !str_contains($promptText, 'describe the affected domain or framework area')
+				|| !str_contains($promptText, 'dataphyre_panel_recipe_plan')
+				|| !str_contains($promptText, 'dataphyre_panel_integration_plan')
+				|| !str_contains($promptText, 'dataphyre_panel_surface_graph')
+				|| !str_contains($promptText, 'dataphyre_panel_verification_plan')
+				|| !str_contains($promptText, 'dataphyre_app_builder_plan_generate payload_profile=compact after capability discovery')
 				|| !str_contains($promptText, 'Do not execute SQL queries')
 				|| !str_contains($usageNotes, 'application agents building apps')
 				|| !in_array('dataphyre_runtime_guidelines', $data['available_prompts'] ?? [], true)
@@ -13068,12 +13215,9 @@ $checks=[
 				|| (($prompts['dataphyre_sql_schema_workflow']['theme'] ?? null)!=='sql')
 				|| !in_array('dataphyre_sql_query_plan', $prompts['dataphyre_sql_schema_workflow']['related_tools'] ?? [], true)
 				|| (($prompts['dataphyre_panel_workflow']['theme'] ?? null)!=='panel')
-				|| !str_contains((string)($prompts['dataphyre_panel_workflow']['first_action'] ?? ''), 'dataphyre_app_builder_plan_generate')
-				|| !str_contains((string)($prompts['dataphyre_panel_workflow']['first_action'] ?? ''), 'payload_profile=compact')
-				|| !str_contains((string)($prompts['dataphyre_panel_workflow']['first_action'] ?? ''), 'builder_response.first_read.next_action')
-				|| !str_contains((string)($prompts['dataphyre_panel_workflow']['first_action'] ?? ''), 'open planning, implementation, verification, or controls details only when the first read points there')
-				|| !str_contains((string)($prompts['dataphyre_panel_workflow']['first_action'] ?? ''), 'deferred_entities is empty')
-				|| !str_contains((string)($prompts['dataphyre_panel_workflow']['first_action'] ?? ''), 'dependency_context')
+				|| !str_contains((string)($prompts['dataphyre_panel_workflow']['first_action'] ?? ''), 'Catalog and describe the affected Panel domain first')
+				|| !str_contains((string)($prompts['dataphyre_panel_workflow']['first_action'] ?? ''), 'recipe, integration, or verification planning')
+				|| !str_contains((string)($prompts['dataphyre_panel_workflow']['first_action'] ?? ''), 'source-derived contract is visible')
 				|| !str_contains((string)($prompts['dataphyre_feature_plan']['first_action'] ?? ''), 'foreign_key_target')
 				|| !str_contains((string)($prompts['dataphyre_feature_plan']['first_action'] ?? ''), 'not_foreign_key')
 				|| !str_contains((string)($prompts['dataphyre_feature_plan']['first_action'] ?? ''), 'json/jsonb')
@@ -13083,12 +13227,17 @@ $checks=[
 				|| !str_contains((string)($prompts['dataphyre_feature_plan']['first_action'] ?? ''), 'acceptance_review_plan')
 				|| !str_contains((string)($prompts['dataphyre_feature_plan']['first_action'] ?? ''), 'verification_recovery_plan')
 				|| !in_array('dataphyre_app_builder_plan_generate', $prompts['dataphyre_panel_workflow']['related_tools'] ?? [], true)
-				|| !in_array('dataphyre_task_pack_generate', $prompts['dataphyre_panel_workflow']['related_tools'] ?? [], true)
-				|| (($prompts['dataphyre_panel_workflow']['related_resources'][0] ?? null)!=='dataphyre://doc/common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md')
-				|| !in_array('dataphyre://doc/common/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md', $prompts['dataphyre_panel_workflow']['related_resources'] ?? [], true)
+				|| !in_array('dataphyre_panel_capability_catalog', $prompts['dataphyre_panel_workflow']['related_tools'] ?? [], true)
+				|| !in_array('dataphyre_panel_capability_describe', $prompts['dataphyre_panel_workflow']['related_tools'] ?? [], true)
+				|| !in_array('dataphyre_panel_recipe_plan', $prompts['dataphyre_panel_workflow']['related_tools'] ?? [], true)
+				|| !in_array('dataphyre_panel_integration_plan', $prompts['dataphyre_panel_workflow']['related_tools'] ?? [], true)
+				|| !in_array('dataphyre_panel_verification_plan', $prompts['dataphyre_panel_workflow']['related_tools'] ?? [], true)
+				|| (($prompts['dataphyre_panel_workflow']['related_resources'][0] ?? null)!=='dataphyre://panel')
+				|| !in_array('dataphyre://contracts', $prompts['dataphyre_panel_workflow']['related_resources'] ?? [], true)
+				|| !in_array('dataphyre://doc/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md', $prompts['dataphyre_panel_workflow']['related_resources'] ?? [], true)
 				|| in_array('dataphyre://ai-guidelines', $prompts['dataphyre_panel_workflow']['related_resources'] ?? [], true)
 				|| in_array('dataphyre://agentic-enterprise', $prompts['dataphyre_panel_workflow']['related_resources'] ?? [], true)
-				|| (($prompts['dataphyre_sql_schema_workflow']['related_resources'][0] ?? null)!=='dataphyre://doc/common/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md')
+				|| (($prompts['dataphyre_sql_schema_workflow']['related_resources'][0] ?? null)!=='dataphyre://doc/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md')
 				|| in_array('dataphyre://ai-guidelines', $prompts['dataphyre_sql_schema_workflow']['related_resources'] ?? [], true)
 				|| !in_array('dataphyre://ai-guidelines', $prompts['dataphyre_runtime_guidelines']['related_resources'] ?? [], true)
 				|| !in_array('dataphyre://agentic-enterprise', $prompts['dataphyre_runtime_guidelines']['related_resources'] ?? [], true)
@@ -13141,7 +13290,7 @@ $checks=[
 			'method'=>'tools/call',
 			'params'=>[
 				'name'=>'dataphyre_mcp_skill_catalog',
-				'arguments'=>['names'=>['dataphyre-app-builder', 'dataphyre-runtime-guidelines', 'dataphyre-route-inspection', 'dataphyre-workflow-continuity'], 'target'=>'codex'],
+				'arguments'=>['names'=>['dataphyre-app-builder', 'dataphyre-panel-builder', 'dataphyre-runtime-guidelines', 'dataphyre-route-inspection', 'dataphyre-workflow-continuity'], 'target'=>'codex'],
 			],
 		],
 		'assert'=>static function(array $response): void {
@@ -13152,13 +13301,14 @@ $checks=[
 				$skills[(string)($skill['name'] ?? '')]=$skill;
 			}
 			$appBuilderInstructions=implode(' ', is_array($skills['dataphyre-app-builder']['instructions'] ?? null) ? $skills['dataphyre-app-builder']['instructions'] : []);
+			$panelBuilderInstructions=implode(' ', is_array($skills['dataphyre-panel-builder']['instructions'] ?? null) ? $skills['dataphyre-panel-builder']['instructions'] : []);
 			if(
 				!is_array($data)
 				|| ($data['catalog_type'] ?? null)!=='dataphyre_mcp_skill_catalog'
 				|| ($data['write_policy'] ?? null)!=='read_only'
 				|| ($data['execution'] ?? null)!=='not_executed'
 				|| ($data['target'] ?? null)!=='codex'
-				|| (($data['skill_count'] ?? 0)!==4)
+				|| (($data['skill_count'] ?? 0)!==5)
 				|| array_key_exists('application_agent_operating_contract', $data)
 				|| array_key_exists('ordinary_app_work', $data)
 				|| array_key_exists('tool_audience_boundaries', $data)
@@ -13209,7 +13359,19 @@ $checks=[
 				|| !str_contains($appBuilderInstructions, 'without collecting maintainer release evidence')
 				|| !str_contains($appBuilderInstructions, 'open full code_skeleton previews only when adapting app-owned files')
 				|| !str_contains($appBuilderInstructions, 'only when module docs or a ready-to-use prompt are needed')
-				|| (($skills['dataphyre-app-builder']['related_resources'][0] ?? null)!=='dataphyre://doc/common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md')
+				|| (($skills['dataphyre-app-builder']['related_resources'][0] ?? null)!=='dataphyre://panel')
+				|| !in_array('dataphyre_panel_capability_catalog', $skills['dataphyre-app-builder']['related_tools'] ?? [], true)
+				|| (($skills['dataphyre-panel-builder']['theme'] ?? null)!=='panel')
+				|| !in_array('dataphyre_panel_capability_catalog', $skills['dataphyre-panel-builder']['related_tools'] ?? [], true)
+				|| !in_array('dataphyre_panel_surface_graph', $skills['dataphyre-panel-builder']['related_tools'] ?? [], true)
+				|| !in_array('dataphyre_panel_recipe_plan', $skills['dataphyre-panel-builder']['related_tools'] ?? [], true)
+				|| !in_array('dataphyre_panel_integration_plan', $skills['dataphyre-panel-builder']['related_tools'] ?? [], true)
+				|| !in_array('dataphyre_panel_verification_plan', $skills['dataphyre-panel-builder']['related_tools'] ?? [], true)
+				|| !in_array('dataphyre_panel_realtime_workflow', $skills['dataphyre-panel-builder']['related_prompts'] ?? [], true)
+				|| (($skills['dataphyre-panel-builder']['related_resources'][0] ?? null)!=='dataphyre://panel')
+				|| !str_contains($panelBuilderInstructions, 'static availability only')
+				|| !str_contains($panelBuilderInstructions, 'clients, connections, callbacks, and credentials host-owned')
+				|| !str_contains($panelBuilderInstructions, 'a plan is not proof')
 				|| in_array('dataphyre://ai-guidelines', $skills['dataphyre-app-builder']['related_resources'] ?? [], true)
 				|| in_array('dataphyre://agentic-enterprise', $skills['dataphyre-app-builder']['related_resources'] ?? [], true)
 				|| !in_array('dataphyre_mcp_enterprise_adoption_audit', $skills['dataphyre-runtime-guidelines']['related_tools'] ?? [], true)
@@ -13528,13 +13690,13 @@ $checks=[
 				|| !str_contains($boundary, 'Content-Length framed JSON-RPC')
 				|| !str_contains($boundary, 'safe_repo_path')
 				|| !str_contains($boundary, 'ordinary application agents use focused app verification')
-				|| (($data['server_entrypoint_contract']['stdio_server'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
-				|| (($data['server_entrypoint_contract']['module_bootstrap'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php')
-				|| (($data['server_entrypoint_contract']['validation_tool'] ?? null)!=='common/dataphyre/dev/tools/public/mcp_live_validate.php')
+				|| (($data['server_entrypoint_contract']['stdio_server'] ?? null)!=='dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
+				|| (($data['server_entrypoint_contract']['module_bootstrap'] ?? null)!=='dataphyre/runtime/modules/mcp/kernel/mcp.main.php')
+				|| (($data['server_entrypoint_contract']['validation_tool'] ?? null)!=='dataphyre/dev/tools/public/mcp_live_validate.php')
 				|| !str_contains((string)($data['server_entrypoint_contract']['client_policy'] ?? ''), 'not a stdio MCP server')
 				|| !str_contains((string)($data['server_entrypoint_contract']['validation_policy'] ?? ''), 'not ordinary application-agent')
 				|| (($data['manual_config']['mcpServers']['dataphyre']['command'] ?? null)!=='php')
-				|| !in_array('common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php', $data['manual_config']['mcpServers']['dataphyre']['args'] ?? [], true)
+				|| !in_array('dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php', $data['manual_config']['mcpServers']['dataphyre']['args'] ?? [], true)
 				|| !in_array('--allow-unsafe', $data['unsafe_config_example']['mcpServers']['dataphyre']['args'] ?? [], true)
 				|| (($data['config_generator']['scope'] ?? null)!=='contributor helper only')
 				|| !str_contains((string)($data['config_generator']['release_guidance'] ?? ''), 'contributor helpers are optional')
@@ -13601,8 +13763,8 @@ $checks=[
 				|| !str_contains($boundary, 'Content-Length framed JSON-RPC')
 				|| !str_contains($boundary, 'safe_repo_path')
 				|| !str_contains($boundary, 'sibling paths that only share a prefix are rejected')
-				|| (($data['server_entrypoint_contract']['stdio_server'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
-				|| (($data['server_entrypoint_contract']['module_bootstrap'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php')
+				|| (($data['server_entrypoint_contract']['stdio_server'] ?? null)!=='dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
+				|| (($data['server_entrypoint_contract']['module_bootstrap'] ?? null)!=='dataphyre/runtime/modules/mcp/kernel/mcp.main.php')
 				|| ($data['recommended_instruction_path'] ?? null)!=='.cursor/rules/dataphyre.mdc'
 				|| !in_array('verify_server', $stepIds, true)
 				|| !str_contains($stepsJson, 'local client wiring')
@@ -14016,7 +14178,7 @@ $checks=[
 						'mcpServers'=>[
 							'dataphyre'=>[
 								'command'=>'php',
-								'args'=>['common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php'],
+								'args'=>['dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php'],
 							],
 						],
 					],
@@ -14046,10 +14208,10 @@ $checks=[
 				|| !str_contains($boundary, 'Content-Length framed JSON-RPC')
 				|| !str_contains($boundary, 'safe_repo_path')
 				|| !str_contains($boundary, 'ordinary application agents use focused app verification')
-				|| (($data['server_entrypoint_contract']['stdio_server'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
-				|| (($data['server_entrypoint_contract']['module_bootstrap'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php')
-				|| (($data['expected']['server_arg'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
-				|| (($data['expected']['module_bootstrap'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php')
+				|| (($data['server_entrypoint_contract']['stdio_server'] ?? null)!=='dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
+				|| (($data['server_entrypoint_contract']['module_bootstrap'] ?? null)!=='dataphyre/runtime/modules/mcp/kernel/mcp.main.php')
+				|| (($data['expected']['server_arg'] ?? null)!=='dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
+				|| (($data['expected']['module_bootstrap'] ?? null)!=='dataphyre/runtime/modules/mcp/kernel/mcp.main.php')
 			){
 				throw new RuntimeException('mcp client config audit did not accept the expected portable config.');
 			}
@@ -14068,7 +14230,7 @@ $checks=[
 						'mcpServers'=>[
 							'dataphyre'=>[
 								'command'=>'php',
-								'args'=>['common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php'],
+								'args'=>['dataphyre/runtime/modules/mcp/kernel/mcp.main.php'],
 							],
 						],
 					],
@@ -14089,8 +14251,8 @@ $checks=[
 				|| !str_contains($boundary, 'Content-Length framed JSON-RPC')
 				|| !str_contains($boundary, 'safe_repo_path')
 				|| !str_contains($boundary, 'ordinary application agents use focused app verification')
-				|| (($data['server_entrypoint_contract']['stdio_server'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
-				|| (($data['server_entrypoint_contract']['module_bootstrap'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php')
+				|| (($data['server_entrypoint_contract']['stdio_server'] ?? null)!=='dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
+				|| (($data['server_entrypoint_contract']['module_bootstrap'] ?? null)!=='dataphyre/runtime/modules/mcp/kernel/mcp.main.php')
 			){
 				throw new RuntimeException('mcp client config audit did not reject mcp.main.php as a stdio server.');
 			}
@@ -18111,7 +18273,7 @@ $checks=[
 				|| array_key_exists('compact_start', $data['app_builder_readiness'] ?? [])
 				|| (($data['app_builder_readiness']['skill'] ?? null)!=='dataphyre-app-builder')
 				|| !in_array('api_endpoint', $data['app_builder_readiness']['supported_scaffold_types'] ?? [], true)
-				|| !in_array('dataphyre://doc/common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md', $data['app_builder_readiness']['module_resources'] ?? [], true)
+				|| !in_array('dataphyre://doc/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md', $data['app_builder_readiness']['module_resources'] ?? [], true)
 				|| !empty($data['app_builder_readiness']['missing_registered_surfaces'])
 				|| (($data['app_builder_readiness']['chunking_contract']['default_max_entities'] ?? null)!==4)
 				|| (($data['app_builder_readiness']['chunking_contract']['max_entities_cap'] ?? null)!==12)
@@ -19090,8 +19252,8 @@ $checks=[
 					'feature'=>'core runtime dispatch optimization',
 					'module'=>'core',
 					'files'=>[
-						'common/dataphyre/runtime/modules/core/kernel/runtime.php',
-						'common/dataphyre/runtime/modules/sql/Framework/TableRepository.php',
+						'dataphyre/runtime/modules/core/kernel/runtime.php',
+						'dataphyre/runtime/modules/sql/Framework/TableRepository.php',
 						'applications/demo_shop/backend/dataphyre/panel/resources/ProductResource.php',
 					],
 					'public_claim'=>false,
@@ -19113,7 +19275,7 @@ $checks=[
 				|| !str_contains((string)($data['change_classification']['benchmark_scope'] ?? ''), 'application changes using Dataphyre')
 				|| !in_array('Dataphyre maintainer benchmark evidence required before keeping Dataphyre shared hot-path changes', $data['recommended_verification'] ?? [], true)
 				|| !in_array('do not ask application agents to run contributor benchmark tooling', $data['recommended_verification'] ?? [], true)
-				|| str_contains($text, 'common/dataphyre/runtime/modules/core/kernel/runtime.php')
+				|| str_contains($text, 'dataphyre/runtime/modules/core/kernel/runtime.php')
 			){
 				throw new RuntimeException('mcp enterprise adoption audit did not normalize Dataphyre package-prefixed paths before classifying hot-path files: '.json_encode([
 					'path_summary'=>$data['path_summary'] ?? null,
@@ -19174,7 +19336,7 @@ $checks=[
 					'markdown_no_app_proof'=>str_contains($markdown, 'MCP readiness is not proof of app behavior'),
 					'markdown_no_mcp_readiness_as_app_proof'=>str_contains($markdown, 'do not use MCP readiness as proof of app behavior'),
 					'markdown_self_test_evidence'=>str_contains($markdown, 'Dataphyre MCP publication evidence'),
-					'markdown_no_dev_path'=>!str_contains($markdown, 'common/dataphyre/dev/tools/public/mcp_self_test.php'),
+					'markdown_no_dev_path'=>!str_contains($markdown, 'dataphyre/dev/tools/public/mcp_self_test.php'),
 					'markdown_governance'=>str_contains($markdown, 'Governance baseline'),
 					'markdown_apply'=>str_contains($markdown, 'Apply readiness'),
 					'markdown_next_action_contracts'=>str_contains($markdown, 'Next-Action Contracts'),
@@ -19248,7 +19410,7 @@ $checks=[
 				|| !str_contains($markdown, 'MCP readiness is not proof of app behavior')
 				|| !str_contains($markdown, 'do not use MCP readiness as proof of app behavior')
 				|| !str_contains($markdown, 'Dataphyre MCP publication evidence')
-				|| str_contains($markdown, 'common/dataphyre/dev/tools/public/mcp_self_test.php')
+				|| str_contains($markdown, 'dataphyre/dev/tools/public/mcp_self_test.php')
 				|| str_contains($markdown, 'dataphyre_mcp_task_start_pack_export payload_profile=builder or dataphyre_mcp_agent_brief_export')
 				|| !str_contains($markdown, 'Governance baseline')
 				|| !str_contains($markdown, 'Apply readiness')
@@ -19576,8 +19738,8 @@ $checks=[
 				|| !in_array('focused_app_or_module_docs', $topScopes, true)
 				|| !str_contains($topOpenPolicyJson, 'after dataphyre_app_builder_plan_generate payload_profile=compact')
 				|| !str_contains($topOpenPolicyJson, 'do not open governance or release context first')
-				|| !in_array('common/dataphyre/runtime/modules/api/documentation/Dataphyre_Api.md', $topPaths, true)
-				|| !in_array('common/dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md', $topPaths, true)
+				|| !in_array('dataphyre/runtime/modules/api/documentation/Dataphyre_Api.md', $topPaths, true)
+				|| !in_array('dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md', $topPaths, true)
 				|| (($matches[0]['id'] ?? null)==='dataphyre://ai-guidelines')
 				|| (($matches[0]['id'] ?? null)==='dataphyre://agentic-enterprise')
 				|| !str_contains($nextSteps, 'API and Routing docs')
@@ -19633,9 +19795,9 @@ $checks=[
 				|| !in_array('sql', $topModules, true)
 				|| !in_array('focused_app_or_module_docs', $topScopes, true)
 				|| !str_contains($topOpenPolicyJson, 'after dataphyre_app_builder_plan_generate payload_profile=compact')
-				|| !str_contains($topOpenPolicyJson, 'dataphyre_read_doc path=common/dataphyre/runtime/modules')
-				|| !in_array('common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md', $topPaths, true)
-				|| !in_array('common/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md', $topPaths, true)
+				|| !str_contains($topOpenPolicyJson, 'dataphyre_read_doc path=dataphyre/runtime/modules')
+				|| !in_array('dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md', $topPaths, true)
+				|| !in_array('dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md', $topPaths, true)
 				|| (($matches[0]['id'] ?? null)==='dataphyre://ai-guidelines')
 				|| !str_contains($nextSteps, 'dataphyre_read_doc')
 				|| !str_contains($nextSteps, 'after the app-builder plan')
@@ -19889,11 +20051,40 @@ $checks=[
 			$resources=$response['result']['resources'] ?? [];
 			$uris=array_map(static fn(array $resource): string => (string)($resource['uri'] ?? ''), is_array($resources) ? $resources : []);
 			if(
-				!in_array('dataphyre://doc/common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md', $uris, true)
-				|| !in_array('dataphyre://doc/common/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md', $uris, true)
-				|| !in_array('dataphyre://doc/common/dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md', $uris, true)
+				!in_array('dataphyre://doc/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md', $uris, true)
+				|| !in_array('dataphyre://doc/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md', $uris, true)
+				|| !in_array('dataphyre://doc/dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md', $uris, true)
+				|| !in_array('dataphyre://contracts', $uris, true)
 			){
 				throw new RuntimeException('resources/list did not expose stable app-builder module documentation resources.');
+			}
+		},
+	],
+	[
+		'name'=>'contracts resource',
+		'message'=>[
+			'jsonrpc'=>'2.0',
+			'id'=>405,
+			'method'=>'resources/read',
+			'params'=>['uri'=>'dataphyre://contracts'],
+		],
+		'assert'=>static function(array $response): void {
+			$text=(string)($response['result']['contents'][0]['text'] ?? '');
+			$data=json_decode($text,true);
+			if(
+				!is_array($data)
+				|| ($data['resource_type']??null)!=='dataphyre_contract_index'
+				|| ($data['execution']??null)!=='not_executed'
+				|| (($data['counts']['total']??0)<1)
+				|| (($data['resource_mode']??null)!=='bounded_bootstrap_partial')
+				|| (($data['scope_modules']??null)!==['mcp'])
+				|| !in_array('mcp',$data['available_modules']??[],true)
+				|| (($data['enumeration_contract']['strategy']??null)!=='module_federation')
+				|| !isset($data['kind_summary']['test_contract'])
+				|| (($data['contract_safety']['source_required']??null)!==false)
+				|| (($data['full_catalog_tool']??null)!=='dataphyre_contract_catalog')
+			){
+				throw new RuntimeException('contracts resource did not expose the bounded source-derived contract snapshot.');
 			}
 		},
 	],
@@ -19914,9 +20105,11 @@ $checks=[
 			}
 			if(
 				!str_contains($text, '# Dataphyre MCP')
-				|| !str_contains($text, 'Client configs must use `common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php` as the MCP stdio server entrypoint')
-				|| !str_contains($text, '`common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php` is only the Dataphyre runtime module bootstrap')
-				|| !str_contains($text, 'Dataphyre release-check boundary metadata for release or framework claims, not routine app behavior proof')
+				|| !str_contains($text, 'Client configs must use `dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php` as the MCP stdio server entrypoint')
+				|| !str_contains($text, '`dataphyre/runtime/modules/mcp/kernel/mcp.main.php` is only the Dataphyre runtime module bootstrap')
+				|| !str_contains($text, 'executes the fixed application release preflight')
+				|| !str_contains($text, '`likely_to_deploy` field is always')
+				|| !str_contains($text, '`true` or `false`')
 				|| !str_contains($text, 'aggregate maintainer MCP verification suite for MCP/release-surface claims, not routine app verification')
 				|| !str_contains($text, 'ordinary app agents use it as discovery, not as a release gate')
 				|| !str_contains($text, '`builder_response`')
@@ -20245,9 +20438,9 @@ $checks=[
 				!is_array($data)
 				|| ($data['server'] ?? null)!=='dataphyre-mcp'
 				|| ($data['default_safety'] ?? null)!=='read_only'
-				|| (($data['server_entrypoint_contract']['stdio_server'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
-				|| (($data['server_entrypoint_contract']['module_bootstrap'] ?? null)!=='common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php')
-				|| (($data['server_entrypoint_contract']['validation_tool'] ?? null)!=='common/dataphyre/dev/tools/public/mcp_live_validate.php')
+				|| (($data['server_entrypoint_contract']['stdio_server'] ?? null)!=='dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')
+				|| (($data['server_entrypoint_contract']['module_bootstrap'] ?? null)!=='dataphyre/runtime/modules/mcp/kernel/mcp.main.php')
+				|| (($data['server_entrypoint_contract']['validation_tool'] ?? null)!=='dataphyre/dev/tools/public/mcp_live_validate.php')
 				|| !str_contains((string)($data['server_entrypoint_contract']['client_policy'] ?? ''), 'not a stdio MCP server')
 				|| !str_contains($boundary, 'Content-Length framed JSON-RPC')
 				|| !str_contains($boundary, 'missing_content_length_policy')
@@ -20624,7 +20817,7 @@ function dataphyre_mcp_self_test_replay_app_builder_continuation(array $argument
 	if(!is_string($root)){
 		throw new RuntimeException('Unable to resolve workspace root for app-builder continuation replay.');
 	}
-	$server=$root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php';
+	$server=$root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php';
 	return dataphyre_mcp_self_test_request(PHP_BINARY, $server, $root, [
 		'jsonrpc'=>'2.0',
 		'id'=>9164,
@@ -21034,7 +21227,7 @@ function dataphyre_mcp_self_test_has_positive_ordinary_app_escalation_instructio
 
 function dataphyre_mcp_self_test_shared_mcp_app_coupling_guard(string $root): void {
 	$paths=[];
-	$mcpRoot=$root.'/common/dataphyre/runtime/modules/mcp';
+	$mcpRoot=$root.'/dataphyre/runtime/modules/mcp';
 	if(is_dir($mcpRoot)){
 		$iterator=new RecursiveIteratorIterator(new RecursiveDirectoryIterator($mcpRoot, FilesystemIterator::SKIP_DOTS));
 		foreach($iterator as $file){
@@ -21044,7 +21237,7 @@ function dataphyre_mcp_self_test_shared_mcp_app_coupling_guard(string $root): vo
 		}
 	}
 	foreach(['mcp_config.php', 'mcp_live_validate.php'] as $helper){
-		$path=$root.'/common/dataphyre/dev/tools/public/'.$helper;
+		$path=$root.'/dataphyre/dev/tools/public/'.$helper;
 		if(is_file($path)){
 			$paths[]=$path;
 		}
@@ -21141,8 +21334,15 @@ function dataphyre_mcp_self_test_workspace_root(string $tool_dir): ?string {
 	if(!is_string($real_tool_dir)){
 		return null;
 	}
+	$source_root=realpath($real_tool_dir.'/../../..');
+	if(is_string($source_root) && is_file($source_root.'/runtime/modules/mcp/kernel/dataphyre_mcp.php')){
+		$isolated=dataphyre_mcp_self_test_source_embedded_workspace(rtrim(str_replace('\\', '/', $source_root), '/'));
+		if(is_string($isolated)){
+			return $isolated;
+		}
+	}
 	$candidates=[
-		realpath($real_tool_dir.'/../../../../..'),
+		realpath($real_tool_dir.'/../../../..'),
 		getcwd() ?: null,
 	];
 	foreach($candidates as $candidate){
@@ -21150,14 +21350,18 @@ function dataphyre_mcp_self_test_workspace_root(string $tool_dir): ?string {
 			continue;
 		}
 		$root=rtrim(str_replace('\\', '/', $candidate), '/');
-		if(is_file($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')){
+		if(is_file($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')){
 			return $root;
 		}
+		if(is_file($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')){
+			$common_source=$root.'/common/dataphyre';
+			$isolated=dataphyre_mcp_self_test_source_embedded_workspace($common_source);
+			if(is_string($isolated)){
+				return $isolated;
+			}
+		}
 	}
-	$source_candidates=[
-		realpath($real_tool_dir.'/../../..'),
-		getcwd() ?: null,
-	];
+	$source_candidates=[getcwd() ?: null];
 	foreach($source_candidates as $candidate){
 		if(!is_string($candidate) || $candidate===''){
 			continue;
@@ -21172,9 +21376,8 @@ function dataphyre_mcp_self_test_workspace_root(string $tool_dir): ?string {
 
 function dataphyre_mcp_self_test_source_embedded_workspace(string $source_root): ?string {
 	$workspace=rtrim(str_replace('\\', '/', sys_get_temp_dir()), '/').'/dataphyre-mcp-self-test-'.substr(sha1($source_root), 0, 12).'-'.getmypid();
-	$common=$workspace.'/common';
-	$link=$common.'/dataphyre';
-	if(!is_dir($common) && !@mkdir($common, 0777, true) && !is_dir($common)){
+	$link=$workspace.'/dataphyre';
+	if(!is_dir($workspace) && !@mkdir($workspace, 0777, true) && !is_dir($workspace)){
 		return null;
 	}
 	if(is_file($link.'/runtime/modules/mcp/kernel/dataphyre_mcp.php')){
@@ -21207,7 +21410,6 @@ function dataphyre_mcp_self_test_cleanup_embedded_workspace(string $workspace, s
 	elseif(is_dir($link)){
 		@rmdir($link);
 	}
-	@rmdir(dirname($link));
 	@rmdir($workspace);
 }
 

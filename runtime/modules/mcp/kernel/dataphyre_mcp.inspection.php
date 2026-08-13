@@ -13,6 +13,12 @@ declare(strict_types=1);
  * Mcp kernel boundary: module configuration, runtime state, and Dataphyre service calls.
  */
 trait dataphyre_mcp_inspection_surfaces {
+	private const RELEASE_PREFLIGHT_MAX_STDOUT_BYTES=524288;
+	private const RELEASE_PREFLIGHT_MAX_MIGRATION_ITEMS=999;
+	private const RELEASE_PREFLIGHT_MAX_MIGRATION_ERRORS=2048;
+	private const RELEASE_PREFLIGHT_MAX_ROLLING_ISSUES=4096;
+	private const RELEASE_PREFLIGHT_MAX_MISSING_ENVIRONMENT_KEYS=64;
+	private const RELEASE_PREFLIGHT_MAX_EVIDENCE_NODES=65536;
 
 	use dataphyre_mcp_inspection_routing_surfaces;
 	use dataphyre_mcp_inspection_mvc_surfaces;
@@ -20,27 +26,871 @@ trait dataphyre_mcp_inspection_surfaces {
 	use dataphyre_mcp_inspection_verification_surfaces;
 
 	/**
-	 * Reports the release-check boundary for public MCP clients.
+	 * Executes the fixed application release preflight and returns its boolean verdict.
 	 *
-	 * @return array<string, mixed> Release check command result.
+	 * Callers select only a repository-local project root, application id, and
+	 * environment. The executable owns migration dry-run, application boot, and
+	 * the loopback health probe; arbitrary release commands are never accepted.
+	 *
+	 * @param array<string,mixed> $args
+	 * @param null|callable(list<string>):array<string,mixed> $runner Test seam for the fixed command.
+	 * @return array<string,mixed>
 	 */
-	private function run_release_check(): array {
+	private function run_release_check(array $args=[], ?callable $runner=null): array {
+		$application=trim((string)($args['application'] ?? ''));
+		$environment=trim((string)($args['environment'] ?? ''));
+		$typedTarget=$this->release_preflight_application_identifier($application)
+			&& $this->release_preflight_environment_identifier($environment);
+		$expectedApplication=$typedTarget ? $application : null;
+		$expectedEnvironment=$typedTarget ? $environment : null;
+		try{
+			$projectRoot=array_key_exists('project_root', $args)
+				? $this->safe_repo_path((string)$args['project_root'])
+				: $this->root;
+		}catch(Throwable){
+			return $this->release_preflight_result($this->release_preflight_failure(
+				$application,
+				$environment,
+				66,
+				'configuration',
+				'project_unavailable',
+				'The selected application project root is unavailable.'
+			));
+		}
+
+		$script=dirname(__DIR__, 2).'/core/kernel/application_release_preflight.php';
+		if(!is_file($script) || !is_readable($script)){
+			return $this->release_preflight_result($this->release_preflight_failure(
+				$application,
+				$environment,
+				69,
+				'dependency',
+				'preflight_executable_unavailable',
+				'The fixed Dataphyre application preflight executable is unavailable.'
+			));
+		}
+		$command=[
+			$this->php_binary(),
+			$script,
+			'--project-root='.$projectRoot,
+			'--application='.$application,
+			'--environment='.$environment,
+		];
+		try{
+			$process=$runner!==null ? $runner($command) : $this->run_release_preflight_command($command, 250000);
+		}catch(Throwable){
+			return $this->release_preflight_result($this->release_preflight_failure(
+				$application,
+				$environment,
+				69,
+				'dependency',
+				'preflight_runner_unavailable',
+				'The fixed Dataphyre application preflight could not be executed.'
+			));
+		}
+		$process=is_array($process) ? $process : [];
+		$stdout=is_string($process['stdout'] ?? null) ? $process['stdout'] : '';
+		$stdoutLimitExceeded=($process['stdout_limit_exceeded'] ?? null)===true
+			|| strlen($stdout)>self::RELEASE_PREFLIGHT_MAX_STDOUT_BYTES;
+		$stdout=$stdoutLimitExceeded ? '' : trim($stdout);
+		try{
+			$preflight=json_decode($stdout, true, 64, JSON_THROW_ON_ERROR);
+		}catch(Throwable){
+			$preflight=null;
+		}
+		$processExit=$process['exit_code'] ?? null;
+		$preflight=$stdoutLimitExceeded ? null : $this->validated_release_preflight(
+			$preflight,
+			$processExit,
+			$expectedApplication,
+			$expectedEnvironment
+		);
+		if($preflight===null){
+			$preflight=$this->release_preflight_failure(
+				$application,
+				$environment,
+				70,
+				'verification',
+				'preflight_result_invalid',
+				'The fixed Dataphyre application preflight returned an invalid result.'
+			);
+		}
+		return $this->release_preflight_result($preflight);
+	}
+
+	/** @param array<string,mixed> $preflight @return array<string,mixed> */
+	private function release_preflight_result(array $preflight): array {
+		$likely=$preflight['likely_to_deploy']===true;
+		$failures=is_array($preflight['failures'] ?? null) ? array_values($preflight['failures']) : [];
+		$first=is_array($failures[0] ?? null) ? $failures[0] : [];
 		$result=[
 			'check_type'=>'dataphyre_release_check',
-			'write_policy'=>'read_only',
-			'execution'=>'not_exposed',
-			'available'=>false,
-			'passed'=>false,
-			'message'=>'Release-check execution is outside the public MCP execution surface.',
+			'contract_type'=>'dataphyre.application-release-prediction',
+			'contract_version'=>2,
+			'write_policy'=>(string)($preflight['write_policy'] ?? 'database_dry_run_and_ephemeral_application_boot'),
+			'execution'=>'local_preflight_executed',
+			'passed'=>$likely,
+			'prediction'=>[
+				'available'=>true,
+				'likely_to_deploy'=>$likely,
+				'reason_code'=>$likely ? 'application_preflight_passed' : (string)($first['code'] ?? 'application_preflight_failed'),
+			],
+			'preflight'=>$preflight,
+			'message'=>$likely
+				? 'The fixed local application release preflight passed.'
+				: (string)($first['message'] ?? 'The fixed local application release preflight failed.'),
 		];
 		$result['application_agent_operating_contract']=$this->mcp_application_agent_operating_contract('release_check');
 		$result['ordinary_app_work']=$this->mcp_ordinary_app_work_contract('release_check');
 		$result['maintainer_tool_boundary']=[
-			'tool_scope'=>'source_checkout_release_surface_validation',
-			'app_agent_default'=>'not_required_for_ordinary_application_work',
-			'claim_boundary'=>'Release-check evidence supports Dataphyre release-surface and public framework claims; application behavior still needs focused app or module verification.',
+			'tool_scope'=>'application_release_preflight',
+			'app_agent_default'=>'run_before_proposing_or_promoting_an_application_release',
+			'claim_boundary'=>'The boolean predicts from local configuration bootstrap, the native migration dry-run, application startup, and GET /health. Dataphyre Cloud must run the same command inside the exact built candidate and preserve source, image, environment, and traffic identity before promotion.',
 		];
 		return $result;
+	}
+
+	/** @return array<string,mixed> */
+	private function release_preflight_failure(
+		string $application,
+		string $environment,
+		int $exitStatus,
+		string $kind,
+		string $code,
+		string $message
+	): array {
+		$typedTarget=$this->release_preflight_application_identifier($application)
+			&& $this->release_preflight_environment_identifier($environment);
+		return [
+			'contract'=>'dataphyre.application_release_preflight.v1',
+			'contract_version'=>1,
+			'exit_status'=>$exitStatus,
+			'ok'=>false,
+			'likely_to_deploy'=>false,
+			'application'=>$typedTarget ? $application : null,
+			'environment'=>$typedTarget ? $environment : null,
+			'execution'=>'completed',
+			'execution_boundary'=>'fixed_dataphyre_commands_and_loopback_application_boot',
+			'write_policy'=>'database_dry_run_and_ephemeral_application_boot',
+			'checks'=>[],
+			'failures'=>[[
+				'kind'=>$kind,
+				'code'=>$code,
+				'message'=>$message,
+			]],
+			'claim_boundary'=>$this->release_preflight_claim_boundary(),
+		];
+	}
+
+	/** @param list<string> $command @return array{exit_code:int|null,stdout:string,stderr:string,stdout_limit_exceeded:bool} */
+	private function run_release_preflight_command(array $command, int $timeoutMilliseconds): array {
+		if(!is_dir($this->root)){
+			throw new RuntimeException('Unable to start application preflight.');
+		}
+		$descriptor=[
+			1=>['pipe', 'w'],
+			2=>['pipe', 'w'],
+		];
+		$process=@proc_open($command, $descriptor, $pipes, $this->root);
+		if(!is_resource($process)){
+			throw new RuntimeException('Unable to start application preflight.');
+		}
+		foreach($pipes as $pipe){
+			if(is_resource($pipe)) stream_set_blocking($pipe, false);
+		}
+		$stdout='';
+		$stdoutLimitExceeded=false;
+		$discard=null;
+		$discardLimit=false;
+		$exitCode=null;
+		$started=microtime(true);
+		try{
+			while(true){
+				$this->drain_release_preflight_pipe($pipes[1] ?? null, $stdout, $stdoutLimitExceeded);
+				$this->drain_release_preflight_pipe($pipes[2] ?? null, $discard, $discardLimit);
+				if($stdoutLimitExceeded){
+					$this->stop_release_preflight_process($process, $pipes);
+					return [
+						'exit_code'=>null,
+						'stdout'=>'',
+						'stderr'=>'',
+						'stdout_limit_exceeded'=>true,
+					];
+				}
+				$status=proc_get_status($process);
+				if(!is_array($status) || ($status['running'] ?? false)!==true){
+					$candidate=is_array($status) ? ($status['exitcode'] ?? null) : null;
+					$exitCode=is_int($candidate) && $candidate!==-1 ? $candidate : null;
+					break;
+				}
+				if((microtime(true)-$started)*1000>$timeoutMilliseconds){
+					throw new RuntimeException('Application preflight timed out.');
+				}
+				usleep(10000);
+			}
+			$this->drain_release_preflight_pipe($pipes[1] ?? null, $stdout, $stdoutLimitExceeded);
+			$this->drain_release_preflight_pipe($pipes[2] ?? null, $discard, $discardLimit);
+			foreach($pipes as $pipe){
+				if(is_resource($pipe)) fclose($pipe);
+			}
+			$closedExit=proc_close($process);
+			if($stdoutLimitExceeded){
+				return [
+					'exit_code'=>null,
+					'stdout'=>'',
+					'stderr'=>'',
+					'stdout_limit_exceeded'=>true,
+				];
+			}
+			if($exitCode===null || $exitCode===-1){
+				$exitCode=is_int($closedExit) ? $closedExit : 127;
+			}
+			return [
+				'exit_code'=>$exitCode,
+				'stdout'=>trim($stdout),
+				'stderr'=>'',
+				'stdout_limit_exceeded'=>false,
+			];
+		}catch(Throwable $error){
+			$this->stop_release_preflight_process($process, $pipes);
+			throw $error;
+		}
+	}
+
+	/** @param resource|null $pipe */
+	private function drain_release_preflight_pipe(mixed $pipe, ?string &$output, bool &$limitExceeded): void {
+		if(!is_resource($pipe)) return;
+		for($read=0;$read<128;$read++){
+			$chunk=fread($pipe, 8192);
+			if(!is_string($chunk) || $chunk==='') break;
+			if($output===null || $limitExceeded) continue;
+			$remaining=self::RELEASE_PREFLIGHT_MAX_STDOUT_BYTES-strlen($output);
+			if(strlen($chunk)>$remaining){
+				$output='';
+				$limitExceeded=true;
+				continue;
+			}
+			$output.=$chunk;
+		}
+	}
+
+	/** @param resource $process @param array<int,resource> $pipes */
+	private function stop_release_preflight_process(mixed $process, array $pipes): void {
+		if(is_resource($process)){
+			$status=proc_get_status($process);
+			if(is_array($status) && ($status['running'] ?? false)===true){
+				@proc_terminate($process);
+				$deadline=microtime(true)+0.5;
+				do{
+					usleep(10000);
+					$status=proc_get_status($process);
+				}while(is_array($status) && ($status['running'] ?? false)===true && microtime(true)<$deadline);
+				if(is_array($status) && ($status['running'] ?? false)===true) @proc_terminate($process, 9);
+			}
+		}
+		$discard=null;
+		$limit=false;
+		foreach($pipes as $pipe){
+			$this->drain_release_preflight_pipe($pipe, $discard, $limit);
+			if(is_resource($pipe)) fclose($pipe);
+		}
+		if(is_resource($process)) @proc_close($process);
+	}
+
+	private function release_preflight_application_identifier(string $value): bool {
+		return (
+			preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/D', $value)===1
+				&& !in_array($value, ['.','..'], true)
+		) || preg_match('/^[A-Za-z_][A-Za-z0-9_$]{0,62}$/D', $value)===1;
+	}
+
+	private function release_preflight_environment_identifier(string $value): bool {
+		return preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/D', $value)===1
+			&& !in_array($value, ['.','..'], true);
+	}
+
+	/** @return array<string,mixed>|null */
+	private function validated_release_preflight(
+		mixed $preflight,
+		mixed $processExit,
+		?string $expectedApplication,
+		?string $expectedEnvironment
+	): ?array {
+		$remainingNodes=self::RELEASE_PREFLIGHT_MAX_EVIDENCE_NODES;
+		if(
+			!is_array($preflight)
+			|| !$this->release_preflight_value_is_bounded($preflight, $remainingNodes)
+			|| !$this->release_preflight_exact_object($preflight, [
+				'contract',
+				'contract_version',
+				'exit_status',
+				'ok',
+				'likely_to_deploy',
+				'application',
+				'environment',
+				'execution',
+				'execution_boundary',
+				'write_policy',
+				'checks',
+				'failures',
+				'claim_boundary',
+			])
+			|| $preflight['contract']!=='dataphyre.application_release_preflight.v1'
+			|| $preflight['contract_version']!==1
+			|| $preflight['execution']!=='completed'
+			|| $preflight['execution_boundary']!=='fixed_dataphyre_commands_and_loopback_application_boot'
+			|| $preflight['write_policy']!=='database_dry_run_and_ephemeral_application_boot'
+			|| $preflight['claim_boundary']!==$this->release_preflight_claim_boundary()
+			|| $preflight['application']!==$expectedApplication
+			|| $preflight['environment']!==$expectedEnvironment
+			|| !is_int($processExit)
+			|| !is_int($preflight['exit_status'])
+			|| $processExit!==$preflight['exit_status']
+			|| !in_array($preflight['exit_status'], [0,64,66,69,70,75,78], true)
+			|| !is_bool($preflight['ok'])
+			|| !is_bool($preflight['likely_to_deploy'])
+			|| $preflight['ok']!==$preflight['likely_to_deploy']
+			|| ($preflight['exit_status']===0)!==$preflight['ok']
+			|| !is_array($preflight['checks'])
+			|| !is_array($preflight['failures'])
+			|| !$this->release_preflight_failures_are_valid(
+				$preflight['failures'],
+				$preflight['exit_status'],
+				$preflight['ok']
+			)
+			|| !$this->release_preflight_checks_are_valid(
+				$preflight['checks'],
+				$preflight['failures'],
+				$preflight['exit_status'],
+				$preflight['ok']
+			)
+			|| !$this->release_preflight_failure_stage_is_valid($preflight)
+		){
+			return null;
+		}
+		return $preflight;
+	}
+
+	/** @param list<mixed> $failures */
+	private function release_preflight_failures_are_valid(array $failures, int $exitStatus, bool $ok): bool {
+		if(!array_is_list($failures) || count($failures)!==($ok ? 0 : 1)) return false;
+		if($ok) return true;
+		$failure=$failures[0] ?? null;
+		if(
+			!is_array($failure)
+			|| !$this->release_preflight_exact_object($failure, ['kind','code','message'])
+			|| !is_string($failure['kind'])
+			|| !is_string($failure['code'])
+			|| !is_string($failure['message'])
+		){
+			return false;
+		}
+		$applicationMessage='The application bootstrap configuration is incomplete or invalid.';
+		$migrationConfigurationMessage='The PostgreSQL migration profile, manifest, or connection configuration is invalid.';
+		$migrationVerificationMessage='The PostgreSQL migration dry-run found drift or an ineligible migration plan.';
+		$healthMessage='The application did not become healthy through the fixed loopback probe.';
+		$tuples=[
+			'64:invalid_runtime'=>['configuration','Application release preflight is available only through the CLI.'],
+			'64:invalid_invocation'=>['configuration','Use only the documented typed application release preflight options.'],
+			'66:project_unavailable'=>['configuration','The selected application project root is unavailable.'],
+			'69:database_connection_failed'=>['dependency','The configured PostgreSQL dependency could not be verified.'],
+			'69:migration_preflight_failed'=>['dependency','The configured PostgreSQL dependency could not be verified.'],
+			'70:migration_failed'=>['verification',$migrationVerificationMessage],
+			'70:migration_plan_ineligible'=>['verification',$migrationVerificationMessage],
+			'70:migration_preflight_failed'=>['verification',$migrationVerificationMessage],
+			'75:preflight_router_missing'=>['verification',$healthMessage],
+			'75:application_server_unavailable'=>['verification',$healthMessage],
+			'75:application_health_evidence_invalid'=>['verification',$healthMessage],
+			'75:application_environment_keys_missing'=>['verification',$healthMessage],
+			'75:application_boot_failed'=>['verification',$healthMessage],
+			'75:application_health_timeout'=>['verification',$healthMessage],
+			'75:application_health_rejected'=>['verification',$healthMessage],
+			'75:application_health_failed'=>['verification',$healthMessage],
+			'78:flight_sheet_missing'=>['configuration',$applicationMessage],
+			'78:runtime_bootstrap_missing'=>['configuration',$applicationMessage],
+			'78:application_manifest_mismatch'=>['configuration',$applicationMessage],
+			'78:application_definition_missing'=>['configuration',$applicationMessage],
+			'78:application_configuration_invalid'=>['configuration',$applicationMessage],
+			'78:migration_configuration_incomplete'=>[
+				'configuration',
+				'The application must provide both the PostgreSQL profile and immutable manifest.',
+			],
+			'78:invalid_runtime'=>['configuration',$migrationConfigurationMessage],
+			'78:invalid_invocation'=>['configuration',$migrationConfigurationMessage],
+			'78:project_unavailable'=>['configuration',$migrationConfigurationMessage],
+			'78:profile_invalid'=>['configuration',$migrationConfigurationMessage],
+			'78:manifest_invalid'=>['configuration',$migrationConfigurationMessage],
+			'78:database_configuration_invalid'=>['configuration',$migrationConfigurationMessage],
+			'78:migration_preflight_failed'=>['configuration',$migrationConfigurationMessage],
+		];
+		$expected=$tuples[$exitStatus.':'.$failure['code']] ?? null;
+		return is_array($expected)
+			&& $failure['kind']===$expected[0]
+			&& $failure['message']===$expected[1];
+	}
+
+	/** @param array<string,mixed> $preflight */
+	private function release_preflight_failure_stage_is_valid(array $preflight): bool {
+		if($preflight['ok']===true) return true;
+		$checks=$preflight['checks'];
+		$failure=$preflight['failures'][0];
+		$code=$failure['code'];
+		$exitStatus=$preflight['exit_status'];
+		if($checks===[]){
+			return in_array([$exitStatus,$code], [
+				[64,'invalid_runtime'],
+				[64,'invalid_invocation'],
+				[66,'project_unavailable'],
+				[78,'flight_sheet_missing'],
+				[78,'runtime_bootstrap_missing'],
+				[78,'application_manifest_mismatch'],
+				[78,'application_definition_missing'],
+				[78,'application_configuration_invalid'],
+			], true);
+		}
+		if(count($checks)===2){
+			$database=$checks[1]['evidence'];
+			if($this->release_preflight_exact_object($database, ['declared'])){
+				return $exitStatus===78 && $code==='migration_configuration_incomplete';
+			}
+			return ($database['error_code'] ?? null)===$code
+				&& in_array([$exitStatus,$code], [
+					[69,'database_connection_failed'],
+					[69,'migration_preflight_failed'],
+					[70,'migration_failed'],
+					[70,'migration_plan_ineligible'],
+					[70,'migration_preflight_failed'],
+					[78,'profile_invalid'],
+					[78,'manifest_invalid'],
+					[78,'invalid_runtime'],
+					[78,'invalid_invocation'],
+					[78,'project_unavailable'],
+					[78,'database_configuration_invalid'],
+					[78,'migration_preflight_failed'],
+				], true);
+		}
+		return count($checks)===3 && $exitStatus===75;
+	}
+
+	/** @param list<mixed> $checks @param list<mixed> $failures */
+	private function release_preflight_checks_are_valid(array $checks, array $failures, int $exitStatus, bool $ok): bool {
+		if(!array_is_list($checks) || count($checks)>3) return false;
+		$expectedIds=['configuration_bootstrap','database_migrations','application_health'];
+		foreach($checks as $index=>$check){
+			if(
+				!is_array($check)
+				|| !$this->release_preflight_exact_object($check, ['id','status','evidence'])
+				|| ($check['id'] ?? null)!==$expectedIds[$index]
+				|| !is_array($check['evidence'])
+			){
+				return false;
+			}
+		}
+		$failureCode=is_string($failures[0]['code'] ?? null) ? $failures[0]['code'] : '';
+		if(isset($checks[0]) && !$this->release_preflight_configuration_check_is_valid($checks[0])) return false;
+		if(isset($checks[1]) && !$this->release_preflight_database_check_is_valid($checks[1], $failureCode, $exitStatus)) return false;
+		if(isset($checks[2]) && !$this->release_preflight_health_check_is_valid($checks[2], $failureCode)) return false;
+
+		if($ok){
+			return count($checks)===3
+				&& in_array($checks[1]['status'], ['passed','not_applicable'], true)
+				&& $checks[2]['status']==='passed';
+		}
+		if($checks===[]) return in_array($exitStatus, [64,66,78], true);
+		if(count($checks)===2){
+			return $checks[1]['status']==='failed' && in_array($exitStatus, [69,70,78], true);
+		}
+		return count($checks)===3
+			&& in_array($checks[1]['status'], ['passed','not_applicable'], true)
+			&& $checks[2]['status']==='failed'
+			&& $exitStatus===75;
+	}
+
+	/** @param array<string,mixed> $check */
+	private function release_preflight_configuration_check_is_valid(array $check): bool {
+		$evidence=$check['evidence'];
+		return $check['status']==='passed'
+			&& $this->release_preflight_exact_object($evidence, [
+				'application_layout','application_definition','flight_sheet','runtime_bootstrap',
+			])
+			&& in_array($evidence['application_layout'], ['standalone_application_root','project_applications_root'], true)
+			&& $evidence['application_definition']===true
+			&& $evidence['flight_sheet']===true
+			&& $evidence['runtime_bootstrap']===true;
+	}
+
+	/** @param array<string,mixed> $check */
+	private function release_preflight_database_check_is_valid(array $check, string $failureCode, int $preflightExitStatus): bool {
+		$evidence=$check['evidence'];
+		if($check['status']==='not_applicable'){
+			return $this->release_preflight_exact_object($evidence, ['declared','reason'])
+				&& $evidence['declared']===false
+				&& $evidence['reason']==='no_postgresql_migration_profile';
+		}
+		if($check['status']==='failed' && $this->release_preflight_exact_object($evidence, ['declared'])){
+			return $evidence['declared']===true;
+		}
+		$expectedKeys=$check['status']==='passed'
+			? ['declared','dry_run','contract','manifest','plan']
+			: ['declared','dry_run','contract','manifest','plan','exit_status','error_code'];
+		if(
+			!in_array($check['status'], ['passed','failed'], true)
+			|| !$this->release_preflight_exact_object($evidence, $expectedKeys)
+		){
+			return false;
+		}
+		$manifestEmpty=$evidence['manifest']===[];
+		$planEmpty=$evidence['plan']===[];
+		if(
+			$evidence['declared']!==true
+			|| $evidence['dry_run']!==true
+			|| !is_string($evidence['contract'])
+			|| !in_array($evidence['contract'], ['', 'dataphyre.postgresql_migration_command.v1'], true)
+			|| !is_array($evidence['manifest'])
+			|| !is_array($evidence['plan'])
+			|| $manifestEmpty!==$planEmpty
+			|| !$this->release_preflight_manifest_evidence_is_valid($evidence['manifest'], $check['status']==='passed')
+			|| !$this->release_preflight_plan_evidence_is_valid($evidence['plan'], $check['status']==='passed')
+		){
+			return false;
+		}
+		if($check['status']==='passed'){
+			return $evidence['contract']==='dataphyre.postgresql_migration_command.v1'
+				&& $evidence['plan']['eligible']===true
+				&& $this->release_preflight_plan_fits_manifest($evidence['manifest'], $evidence['plan']);
+		}
+		$childExit=$evidence['exit_status'];
+		if(
+			!is_int($childExit)
+			|| $childExit<0
+			|| $childExit>255
+			|| !is_string($evidence['error_code'])
+			|| preg_match('/^[a-z][a-z0-9_]{2,119}$/D', $evidence['error_code'])!==1
+		){
+			return false;
+		}
+		$classifiedExit=in_array($childExit, [64,65,66,78], true)
+			? 78
+			: (in_array($childExit, [69,124,127], true) ? 69 : 70);
+		return $classifiedExit===$preflightExitStatus
+			&& (!$manifestEmpty
+				? $evidence['contract']==='dataphyre.postgresql_migration_command.v1'
+					&& $childExit===70
+					&& $evidence['plan']['eligible']===false
+					&& $this->release_preflight_plan_fits_manifest($evidence['manifest'], $evidence['plan'])
+					&& $failureCode==='migration_plan_ineligible'
+				: $this->release_preflight_empty_migration_failure_is_valid(
+					$childExit,
+					$evidence['contract'],
+					$failureCode
+				))
+			&& $evidence['error_code']===$failureCode;
+	}
+
+	private function release_preflight_plan_fits_manifest(array $manifest, array $plan): bool {
+		$count=$manifest['migration_count'];
+		if((int)substr($manifest['bootstrap_cutoff'], 0, 3)>$count) return false;
+		foreach($plan['pending_migrations'] as $migration){
+			if((int)substr($migration, 0, 3)>$count) return false;
+		}
+		foreach($plan['errors'] as $error){
+			$parts=explode(':', $error);
+			if(count($parts)!==2) continue;
+			$migration=$parts[1];
+			if((int)substr($migration, 0, 3)>$count) return false;
+			if(
+				in_array($parts[0], [
+					'pending_contract_requires_compatibility_finalization',
+					'pending_migration_is_not_rolling_expand',
+				], true)
+				&& !in_array($migration, $plan['pending_migrations'], true)
+			){
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private function release_preflight_empty_migration_failure_is_valid(
+		int $childExit,
+		string $contract,
+		string $failureCode
+	): bool {
+		if($childExit<0 || $childExit>255) return false;
+		if($failureCode==='migration_preflight_failed'){
+			return $contract==='';
+		}
+		if($contract!=='dataphyre.postgresql_migration_command.v1') return false;
+		return in_array([$childExit,$failureCode], [
+			[64,'invalid_runtime'],
+			[64,'invalid_invocation'],
+			[65,'manifest_invalid'],
+			[66,'project_unavailable'],
+			[69,'database_connection_failed'],
+			[70,'migration_failed'],
+			[78,'profile_invalid'],
+			[78,'database_configuration_invalid'],
+		], true);
+	}
+
+	private function release_preflight_manifest_evidence_is_valid(array $manifest, bool $required): bool {
+		if($manifest===[]) return !$required;
+		return $this->release_preflight_exact_object($manifest, [
+			'algorithm','bootstrap_cutoff','migration_count','schema_version','sha256',
+		])
+			&& $manifest['algorithm']==='sha256'
+			&& $this->release_preflight_migration_id($manifest['bootstrap_cutoff'] ?? null)
+			&& is_int($manifest['migration_count'])
+			&& $manifest['migration_count']>=1
+			&& $manifest['migration_count']<=self::RELEASE_PREFLIGHT_MAX_MIGRATION_ITEMS
+			&& $manifest['schema_version']===3
+			&& is_string($manifest['sha256'])
+			&& preg_match('/^[a-f0-9]{64}$/D', $manifest['sha256'])===1;
+	}
+
+	private function release_preflight_plan_evidence_is_valid(array $plan, bool $required): bool {
+		if($plan===[]) return !$required;
+		if(
+			!$this->release_preflight_exact_object($plan, [
+				'mode','eligible','errors','pending_migrations','selected_migrations','deferred_migrations','rolling_scan',
+			])
+			|| !in_array($plan['mode'], ['bootstrap','rolling'], true)
+			|| !is_bool($plan['eligible'])
+			|| !$this->release_preflight_migration_errors_are_valid($plan['errors'])
+			|| !$this->release_preflight_migration_ids_are_valid($plan['pending_migrations'])
+			|| !$this->release_preflight_migration_ids_are_valid($plan['selected_migrations'])
+			|| !$this->release_preflight_migration_ids_are_valid($plan['deferred_migrations'])
+			|| !is_array($plan['rolling_scan'])
+			|| !$this->release_preflight_rolling_scan_is_valid($plan['rolling_scan'], $plan['mode'], $plan['selected_migrations'])
+		){
+			return false;
+		}
+		if($plan['pending_migrations']!==array_merge($plan['selected_migrations'], $plan['deferred_migrations'])) return false;
+		$hasRollingIssues=$plan['rolling_scan']['issues']!==[];
+		$hasRollingError=in_array('pending_rolling_migrations_contain_incompatible_sql', $plan['errors'], true);
+		if($hasRollingIssues!==$hasRollingError) return false;
+		return $plan['eligible']===($plan['errors']===[] && $plan['rolling_scan']['issues']===[])
+			&& (!$required || $plan['eligible']===true);
+	}
+
+	private function release_preflight_rolling_scan_is_valid(array $scan, string $mode, array $selected): bool {
+		if(
+			!$this->release_preflight_exact_object($scan, ['performed','migration_count','issue_count','issues'])
+			|| !is_bool($scan['performed'])
+			|| $scan['performed']!==($mode==='rolling')
+			|| !is_int($scan['migration_count'])
+			|| $scan['migration_count']!==($mode==='rolling' ? count($selected) : 0)
+			|| !is_int($scan['issue_count'])
+			|| !is_array($scan['issues'])
+			|| !array_is_list($scan['issues'])
+			|| count($scan['issues'])>self::RELEASE_PREFLIGHT_MAX_ROLLING_ISSUES
+			|| $scan['issue_count']!==count($scan['issues'])
+			|| ($scan['performed']===false && $scan['issues']!==[])
+		){
+			return false;
+		}
+		$issueCodes=[
+			'drop_object',
+			'truncate_rows',
+			'delete_rows',
+			'replace_object',
+			'create_index_requires_concurrent_autocommit_protocol',
+			'create_trigger',
+			'revoke_privilege',
+			'dynamic_sql',
+			'unsafe_create_table',
+			'unsafe_comment',
+			'set_not_null',
+			'add_not_null_column',
+			'incompatible_alter_table',
+			'incompatible_alter',
+			'data_mutation_not_allowlisted',
+			'privilege_change_not_allowlisted',
+			'unapproved_statement',
+		];
+		$selectedPositions=array_flip($selected);
+		$previousPosition=-1;
+		$previousStatement=0;
+		foreach($scan['issues'] as $issue){
+			if(
+				!is_array($issue)
+				|| !$this->release_preflight_exact_object($issue, ['migration','code','statement'])
+				|| !$this->release_preflight_migration_id($issue['migration'] ?? null)
+				|| !is_string($issue['code'])
+				|| !in_array($issue['code'], $issueCodes, true)
+				|| !is_int($issue['statement'])
+				|| $issue['statement']<1
+				|| $issue['statement']>2048
+			){
+				return false;
+			}
+			$position=$selectedPositions[$issue['migration']] ?? null;
+			if(
+				!is_int($position)
+				|| $position<$previousPosition
+				|| ($position===$previousPosition && $issue['statement']<=$previousStatement)
+			){
+				return false;
+			}
+			if($position!==$previousPosition) $previousStatement=0;
+			$previousPosition=$position;
+			$previousStatement=$issue['statement'];
+		}
+		return true;
+	}
+
+	private function release_preflight_migration_ids_are_valid(mixed $values): bool {
+		if(!is_array($values) || !array_is_list($values) || count($values)>self::RELEASE_PREFLIGHT_MAX_MIGRATION_ITEMS) return false;
+		$seen=[];
+		$previous=0;
+		foreach($values as $value){
+			$ordinal=is_string($value) ? (int)substr($value, 0, 3) : 0;
+			if(!$this->release_preflight_migration_id($value) || isset($seen[$value]) || $ordinal<=$previous) return false;
+			$seen[$value]=true;
+			$previous=$ordinal;
+		}
+		return true;
+	}
+
+	private function release_preflight_migration_errors_are_valid(mixed $values): bool {
+		if(!is_array($values) || !array_is_list($values) || count($values)>self::RELEASE_PREFLIGHT_MAX_MIGRATION_ERRORS) return false;
+		$fixed=[
+			'migration_state_entries_invalid',
+			'migration_state_entries_duplicate',
+			'migration_state_entries_unmanifested',
+			'migration_state_drift_count_invalid',
+			'migration_state_has_drift',
+			'bootstrap_cutoff_already_applied_with_pending_rolling_migrations',
+			'bootstrap_history_is_out_of_order',
+			'bootstrap_cutoff_not_applied',
+			'pending_rolling_migrations_contain_incompatible_sql',
+		];
+		$withMigration=[
+			'migration_state_status_missing',
+			'migration_state_status_not_deployable',
+			'pending_contract_requires_compatibility_finalization',
+			'pending_migration_is_not_rolling_expand',
+		];
+		$seen=[];
+		foreach($values as $value){
+			if(!is_string($value) || strlen($value)>512 || isset($seen[$value])) return false;
+			$seen[$value]=true;
+			if(in_array($value, $fixed, true)) continue;
+			$parts=explode(':', $value);
+			if(count($parts)!==2 || !in_array($parts[0], $withMigration, true) || !$this->release_preflight_migration_id($parts[1])) return false;
+		}
+		return true;
+	}
+
+	private function release_preflight_migration_id(mixed $value): bool {
+		return is_string($value)
+			&& preg_match('/^[0-9]{3}_[a-z0-9_]{1,124}$/D', $value)===1
+			&& (int)substr($value, 0, 3)>=1;
+	}
+
+	/** @param array<string,mixed> $check */
+	private function release_preflight_health_check_is_valid(array $check, string $failureCode): bool {
+		$evidence=$check['evidence'];
+		if(
+			!in_array($check['status'], ['passed','failed'], true)
+			|| !$this->release_preflight_exact_object($evidence, [
+				'path','loopback_only','attempts','http_status','response_contract_valid','missing_environment_keys',
+			])
+			|| $evidence['path']!=='/health'
+			|| $evidence['loopback_only']!==true
+			|| !is_int($evidence['attempts'])
+			|| $evidence['attempts']<0
+			|| $evidence['attempts']>10000
+			|| !(is_null($evidence['http_status']) || (
+				is_int($evidence['http_status'])
+				&& $evidence['http_status']>=100
+				&& $evidence['http_status']<=599
+			))
+			|| !is_bool($evidence['response_contract_valid'])
+			|| !$this->release_preflight_missing_environment_keys_are_valid($evidence['missing_environment_keys'])
+			|| ($evidence['response_contract_valid']===false && $evidence['missing_environment_keys']!==[])
+		){
+			return false;
+		}
+		$healthyStatus=is_int($evidence['http_status'])
+			&& $evidence['http_status']>=200
+			&& $evidence['http_status']<300;
+		if($check['status']==='passed'){
+			return $healthyStatus
+				&& $evidence['attempts']>=1
+				&& $evidence['response_contract_valid']===true
+				&& $evidence['missing_environment_keys']===[];
+		}
+		if($evidence['missing_environment_keys']!==[]){
+			return is_int($evidence['http_status'])
+				&& $evidence['response_contract_valid']===true
+				&& $evidence['attempts']>=1
+				&& $failureCode==='application_environment_keys_missing';
+		}
+		if($failureCode==='application_environment_keys_missing') return false;
+		if($failureCode==='application_health_failed') return true;
+		if($evidence['response_contract_valid']===false){
+			if(is_int($evidence['http_status'])){
+				return $evidence['attempts']>=1 && $failureCode==='application_health_evidence_invalid';
+			}
+			return match($failureCode){
+				'preflight_router_missing','application_server_unavailable'=>$evidence['attempts']===0,
+				'application_boot_failed'=>$evidence['attempts']>=0,
+				'application_health_timeout'=>$evidence['attempts']>=1,
+				default=>false,
+			};
+		}
+		return is_int($evidence['http_status'])
+			&& !$healthyStatus
+			&& $evidence['attempts']>=1
+			&& in_array($failureCode, ['application_boot_failed','application_health_rejected'], true);
+	}
+
+	private function release_preflight_missing_environment_keys_are_valid(mixed $values): bool {
+		if(
+			!is_array($values)
+			|| !array_is_list($values)
+			|| count($values)>self::RELEASE_PREFLIGHT_MAX_MISSING_ENVIRONMENT_KEYS
+		){
+			return false;
+		}
+		$seen=[];
+		foreach($values as $value){
+			if(
+				!is_string($value)
+				|| preg_match('/^[A-Z_][A-Z0-9_]{0,119}$/D', $value)!==1
+				|| isset($seen[$value])
+			){
+				return false;
+			}
+			$seen[$value]=true;
+		}
+		$sorted=$values;
+		sort($sorted, SORT_STRING);
+		return $values===$sorted;
+	}
+
+	/** @param list<string> $keys */
+	private function release_preflight_exact_object(array $value, array $keys): bool {
+		if(array_is_list($value)) return false;
+		$actual=array_keys($value);
+		sort($actual, SORT_STRING);
+		sort($keys, SORT_STRING);
+		return $actual===$keys;
+	}
+
+	private function release_preflight_value_is_bounded(mixed $value, int &$remainingNodes, int $depth=0): bool {
+		$remainingNodes--;
+		if($remainingNodes<0 || $depth>16) return false;
+		if(!is_array($value)) return true;
+		foreach($value as $item){
+			if(!$this->release_preflight_value_is_bounded($item, $remainingNodes, $depth+1)) return false;
+		}
+		return true;
+	}
+
+	private function release_preflight_claim_boundary(): string {
+		return 'This verdict covers local configuration bootstrap, the native PostgreSQL migration dry-run when declared, application startup, and GET /health. A release platform must run this same command inside the exact candidate image and separately preserve source, image, environment, and traffic identity.';
 	}
 
 	/**
@@ -82,6 +932,12 @@ trait dataphyre_mcp_inspection_surfaces {
 				'dataphyre_mcp_doctor',
 				'dataphyre_mcp_prompt_catalog',
 				'dataphyre://mcp-capabilities',
+				'dataphyre_contract_catalog',
+				'dataphyre_contract_describe',
+				'dataphyre://contracts',
+				'dataphyre_panel_capability_catalog',
+				'dataphyre_panel_capability_describe',
+				'dataphyre://panel',
 			],
 		];
 	}
@@ -183,34 +1039,37 @@ trait dataphyre_mcp_inspection_surfaces {
 	}
 
 	/**
-	 * Converts release check output into categorized failure counts and examples.
+	 * Groups the executable application preflight failures by actionable kind.
 	 *
-	 * parses available release-check output into stable categories and returns a
-	 * summary suitable for planning without mutating the workspace.
-	 *
-	 * @return array{exit_code: mixed, total_failures: int, categories: array<string, array>} Release triage summary.
+	 * @param array<string,mixed> $args
+	 * @param null|callable(list<string>):array<string,mixed> $runner Test seam for the fixed command.
+	 * @return array<string,mixed>
 	 */
-	private function release_triage_summary(): array {
-		$result=$this->run_release_check();
-		$output=trim((string)($result['stdout'] ?? '')."\n".(string)($result['stderr'] ?? ''));
-		$categories=$this->categorize_release_failures($output);
+	private function release_triage_summary(array $args=[], ?callable $runner=null): array {
+		$result=$this->run_release_check($args, $runner);
+		$preflight=is_array($result['preflight'] ?? null) ? $result['preflight'] : [];
+		$failures=is_array($preflight['failures'] ?? null) ? array_values($preflight['failures']) : [];
 		$summary=[];
-		foreach($categories as $key=>$items){
-			$summary[$key]=[
+		foreach(['configuration','dependency','verification'] as $kind){
+			$items=array_values(array_filter($failures, static fn(mixed $failure): bool=>is_array($failure) && ($failure['kind'] ?? null)===$kind));
+			$summary[$kind]=[
 				'count'=>count($items),
-				'examples'=>array_slice($items, 0, 12),
+				'failures'=>$items,
 			];
 		}
 		return [
-			'exit_code'=>$result['exit_code'] ?? null,
-			'total_failures'=>array_sum(array_map('count', $categories)),
+			'exit_code'=>$preflight['exit_status'] ?? null,
+			'total_failures'=>count($failures),
 			'categories'=>$summary,
+			'release_check_execution'=>$result['execution'],
+			'release_prediction'=>$result['prediction'],
+			'checks'=>$preflight['checks'] ?? [],
 			'application_agent_operating_contract'=>$this->mcp_application_agent_operating_contract('release_triage_summary'),
 			'ordinary_app_work'=>$this->mcp_ordinary_app_work_contract('release_triage_summary'),
 			'maintainer_tool_boundary'=>[
-				'tool_scope'=>'source_checkout_release_failure_triage',
-				'app_agent_default'=>'not_required_for_ordinary_application_work',
-				'claim_boundary'=>'Release triage summarizes Dataphyre release hygiene failures and is not application behavior proof.',
+				'tool_scope'=>'application_release_preflight_triage',
+				'app_agent_default'=>'use_the_failure_kind_and_code_to_fix_the_application_before_release',
+				'claim_boundary'=>'Release triage summarizes only failures returned by the fixed application preflight.',
 			],
 		];
 	}
@@ -218,35 +1077,25 @@ trait dataphyre_mcp_inspection_surfaces {
 	/**
 	 * Produces a prioritized repair plan from release check output.
 	 *
-	 * accepts caller-provided output or current release-check boundary metadata, then groups failures
-	 * by category with recommended actions and verification gates. It does not apply fixes.
+	 * accepts caller-provided maintainer output and groups failures by category
+	 * with recommended actions and verification gates. Without supplied output it
+	 * returns an explicit no-op plan; it does not run a package or Cloud check.
 	 *
 	 * @param array{release_output?: string, max_examples_per_batch?: int} $args Planning options.
 	 * @return array<string, mixed> Release repair plan.
 	 */
 	private function release_fix_plan(array $args): array {
 		$max_examples=max(1, min((int)($args['max_examples_per_batch'] ?? 8) ?: 8, 30));
-		$source='release_check';
+		$source='none';
 		$exit_code=null;
+		$execution='not_executed';
 		if(isset($args['release_output']) && trim((string)$args['release_output'])!==''){
 			$output=(string)$args['release_output'];
 			$source='provided_output';
-		}else{
-			$result=$this->run_release_check();
-			$output=trim((string)($result['stdout'] ?? '')."\n".(string)($result['stderr'] ?? ''));
-			$exit_code=$result['exit_code'] ?? null;
-		}
+		}else{$output='';}
 		$categories=$this->categorize_release_failures($output);
 		$batches=[];
-		$order=[
-			'module_index',
-			'module_docs',
-			'invalid_json',
-			'missing_spdx_headers',
-			'license_wording',
-			'release_hygiene',
-			'other',
-		];
+		$order=$this->release_fix_category_order();
 		foreach($order as $category){
 			$items=$categories[$category] ?? [];
 			if($items===[]){
@@ -263,7 +1112,7 @@ trait dataphyre_mcp_inspection_surfaces {
 		}
 		return [
 			'write_policy'=>'read_only_plan',
-			'execution'=>$source==='release_check' ? 'release_check_executed' : 'not_executed',
+			'execution'=>$execution,
 			'application_agent_operating_contract'=>$this->mcp_application_agent_operating_contract('release_fix_plan'),
 			'ordinary_app_work'=>$this->mcp_ordinary_app_work_contract('release_fix_plan'),
 			'source'=>$source,
@@ -272,7 +1121,7 @@ trait dataphyre_mcp_inspection_surfaces {
 			'batch_count'=>count($batches),
 			'batches'=>$batches,
 			'global_guardrails'=>[
-				'Fix one category at a time and rerun the release check after each batch.',
+				'Fix one category at a time and rerun the external maintainer package check that produced the supplied output; MCP does not execute it.',
 				'Avoid broad formatting churn while repairing release hygiene.',
 				'Do not change runtime behavior while fixing documentation, JSON, license wording, or headers.',
 			],
@@ -289,15 +1138,7 @@ trait dataphyre_mcp_inspection_surfaces {
 	 * @return array{module_docs: array<int, string>, module_index: array<int, string>, invalid_json: array<int, string>, license_wording: array<int, string>, release_hygiene: array<int, string>, missing_spdx_headers: array<int, string>, other: array<int, string>} Categorized failures.
 	 */
 	private function categorize_release_failures(string $output): array {
-		$categories=[
-			'module_docs'=>[],
-			'module_index'=>[],
-			'invalid_json'=>[],
-			'license_wording'=>[],
-			'release_hygiene'=>[],
-			'missing_spdx_headers'=>[],
-			'other'=>[],
-		];
+		$categories=array_fill_keys($this->release_failure_categories(),[]);
 		foreach(preg_split('/\R/', $output) ?: [] as $line){
 			$line=trim($line);
 			if(!str_starts_with($line, 'FAIL: ')){
@@ -323,6 +1164,16 @@ trait dataphyre_mcp_inspection_surfaces {
 		return $categories;
 	}
 
+	/** @return list<string> Stable release-failure order shared by parsing and repair batches. */
+	private function release_failure_categories(): array {
+		return ['module_docs','module_index','invalid_json','license_wording','release_hygiene','missing_spdx_headers','other'];
+	}
+
+	/** @return list<string> Repair order keeps blocking consistency and validity failures first. */
+	private function release_fix_category_order(): array {
+		return ['module_index','module_docs','invalid_json','missing_spdx_headers','license_wording','release_hygiene','other'];
+	}
+
 	/**
 	 * Maps a release failure category to an ordered repair priority.
 	 *
@@ -333,15 +1184,7 @@ trait dataphyre_mcp_inspection_surfaces {
 	 * @return string Priority label.
 	 */
 	private function release_fix_priority(string $category): string {
-		return match($category){
-			'module_index'=>'P1: shared index consistency',
-			'module_docs'=>'P1: missing public documentation',
-			'invalid_json'=>'P1: machine-readable fixture validity',
-			'missing_spdx_headers'=>'P2: release metadata compliance',
-			'license_wording'=>'P2: license clarity',
-			'release_hygiene'=>'P3: workspace hygiene',
-			default=>'P3: inspect manually',
-		};
+		return $this->release_fix_contract($category)['priority'];
 	}
 
 	/**
@@ -354,15 +1197,7 @@ trait dataphyre_mcp_inspection_surfaces {
 	 * @return string Recommended repair action.
 	 */
 	private function release_fix_action(string $category): string {
-		return match($category){
-			'module_index'=>'Update docs/MODULES.md to match existing runtime module directories and remove stale entries.',
-			'module_docs'=>'Add concise markdown documentation for each listed module, covering purpose, public surface, safety notes, and verification.',
-			'invalid_json'=>'Repair malformed JSON manifests without changing their semantic intent.',
-			'missing_spdx_headers'=>'Add the standard Dataphyre MIT/SPDX header to first-party PHP/JS/CSS files that require it.',
-			'license_wording'=>'Replace stale proprietary wording with current MIT/Dataphyre release language.',
-			'release_hygiene'=>'Remove temporary artifacts or address explicit hygiene warnings without touching unrelated files.',
-			default=>'Read the failure, identify the owning file, make the narrowest repair, and rerun the release check.',
-		};
+		return $this->release_fix_contract($category)['action'];
 	}
 
 	/**
@@ -375,13 +1210,49 @@ trait dataphyre_mcp_inspection_surfaces {
 	 * @return array<int, string> Verification steps.
 	 */
 	private function release_fix_verification(string $category): array {
-		$common=['dataphyre_release_check'];
-		return match($category){
-			'invalid_json'=>array_merge(['JSON parse check for touched manifests'], $common),
-			'missing_spdx_headers'=>array_merge(['focused header scan for touched files'], $common),
-			'module_docs', 'module_index'=>array_merge(['review docs/MODULES.md and documentation links'], $common),
-			default=>$common,
-		};
+		return $this->release_fix_contract($category)['verification'];
+	}
+
+	/** @return array{priority:string,action:string,verification:list<string>} */
+	private function release_fix_contract(string $category): array {
+		$release_check=['rerun the external maintainer package check that produced the supplied output'];
+		$catalog=[
+			'module_index'=>[
+				'priority'=>'P1: shared index consistency',
+				'action'=>'Update docs/MODULES.md to match existing runtime module directories and remove stale entries.',
+				'verification'=>['review docs/MODULES.md and documentation links',...$release_check],
+			],
+			'module_docs'=>[
+				'priority'=>'P1: missing public documentation',
+				'action'=>'Add concise markdown documentation for each listed module, covering purpose, public surface, safety notes, and verification.',
+				'verification'=>['review docs/MODULES.md and documentation links',...$release_check],
+			],
+			'invalid_json'=>[
+				'priority'=>'P1: machine-readable fixture validity',
+				'action'=>'Repair malformed JSON manifests without changing their semantic intent.',
+				'verification'=>['JSON parse check for touched manifests',...$release_check],
+			],
+			'missing_spdx_headers'=>[
+				'priority'=>'P2: release metadata compliance',
+				'action'=>'Add the standard Dataphyre MIT/SPDX header to first-party PHP/JS/CSS files that require it.',
+				'verification'=>['focused header scan for touched files',...$release_check],
+			],
+			'license_wording'=>[
+				'priority'=>'P2: license clarity',
+				'action'=>'Replace stale proprietary wording with current MIT/Dataphyre release language.',
+				'verification'=>$release_check,
+			],
+			'release_hygiene'=>[
+				'priority'=>'P3: workspace hygiene',
+				'action'=>'Remove temporary artifacts or address explicit hygiene warnings without touching unrelated files.',
+				'verification'=>$release_check,
+			],
+		];
+		return $catalog[$category] ?? [
+			'priority'=>'P3: inspect manually',
+			'action'=>'Read the failure, identify the owning file, make the narrowest repair, and rerun the external maintainer package check that produced the supplied output.',
+			'verification'=>$release_check,
+		];
 	}
 
 	/**
@@ -395,8 +1266,8 @@ trait dataphyre_mcp_inspection_surfaces {
 	private function mcp_doctor(): array {
 		$checks=[];
 		$required_files=$this->mcp_kernel_surface_files()+[
-			'docs'=>'common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md',
-			'guidelines'=>'common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
+			'docs'=>'dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md',
+			'guidelines'=>'dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
 		];
 		foreach($required_files as $name=>$path){
 			$checks[]=[
@@ -417,13 +1288,13 @@ trait dataphyre_mcp_inspection_surfaces {
 				],
 			];
 		}
-		$module_index=$this->read_repo_text('common/dataphyre/docs/MODULES.md', 120000);
-		$runtime_readme=$this->read_repo_text('common/dataphyre/runtime/README.md', 120000);
-		$docs_index=$this->read_repo_text('common/dataphyre/docs/README.md', 120000);
+		$module_index=$this->read_repo_text('dataphyre/docs/MODULES.md', 120000);
+		$runtime_readme=$this->read_repo_text('dataphyre/runtime/README.md', 120000);
+		$docs_index=$this->read_repo_text('dataphyre/docs/README.md', 120000);
 		$checks[]=[
 			'name'=>'module-index-entry',
 			'passed'=>str_contains($module_index, '| `mcp` |'),
-			'detail'=>'common/dataphyre/docs/MODULES.md includes mcp',
+			'detail'=>'dataphyre/docs/MODULES.md includes mcp',
 		];
 		$checks[]=[
 			'name'=>'runtime-readme-entry',
@@ -436,13 +1307,25 @@ trait dataphyre_mcp_inspection_surfaces {
 			'detail'=>'documentation index links MCP docs',
 		];
 		$tool_names=array_map(static fn(array $tool): string => (string)($tool['name'] ?? ''), $this->list_tools()['tools']);
-		foreach(['dataphyre_application_catalog', 'dataphyre_package_metadata_read', 'dataphyre_api_docs_static_summary', 'dataphyre_api_scaffold_plan', 'dataphyre_api_recipe_catalog', 'dataphyre_api_cache_static_summary', 'dataphyre_openapi_static_contract_summary', 'dataphyre_openapi_runtime_readiness_plan', 'dataphyre_source_api_summary', 'dataphyre_module_dependency_map', 'dataphyre_runtime_version_summary', 'dataphyre_module_docs_pack', 'dataphyre_docs_chunks_export', 'dataphyre_docs_index_plan', 'dataphyre_embeddings_readiness_plan', 'dataphyre_remote_docs_readiness_plan', 'dataphyre_datadoc_static_summary', 'dataphyre_datadoc_runtime_readiness_plan', 'dataphyre_config_shape_read', 'dataphyre_config_value_preview', 'dataphyre_storage_config_summary', 'dataphyre_storage_driver_catalog', 'dataphyre_sql_schema_read', 'dataphyre_sql_query_plan', 'dataphyre_sql_query_runner_contract', 'dataphyre_route_source_static_summary', 'dataphyre_route_source_ambiguity_report', 'dataphyre_route_runtime_provenance_plan', 'dataphyre_controller_source_summary', 'dataphyre_middleware_source_summary', 'dataphyre_mvc_config_static_summary', 'dataphyre_mvc_route_cache_summary', 'dataphyre_tracelog_artifacts_list', 'dataphyre_tracelog_read', 'dataphyre_tracelog_search', 'dataphyre_diagnostics_last_error', 'dataphyre_browser_diagnostics_readiness_plan', 'dataphyre_flightdeck_surfaces_list', 'dataphyre_unit_tests_list', 'dataphyre_unit_test_manifest_read', 'dataphyre_browser_regression_manifest_summary', 'dataphyre_verification_surface_catalog', 'dataphyre_agent_context_generate', 'dataphyre_scaffold_plan_generate', 'dataphyre_app_builder_plan_generate', 'dataphyre_panel_scaffold_catalog', 'dataphyre_panel_package_manifest_summary', 'dataphyre_panel_theme_manifest_summary', 'dataphyre_panel_documentation_catalog_summary', 'dataphyre_panel_media_manifest_summary', 'dataphyre_task_pack_generate', 'dataphyre_apply_audit_plan', 'dataphyre_apply_runtime_readiness_plan', 'dataphyre_release_triage_summary', 'dataphyre_release_fix_plan', 'dataphyre_mcp_manifest_export', 'dataphyre_prompt_pack_export', 'dataphyre_mcp_prompt_catalog', 'dataphyre_mcp_skill_catalog', 'dataphyre_mcp_skill_manifest_export', 'dataphyre_mcp_skill_registration_audit', 'dataphyre_mcp_skill_pack_export', 'dataphyre_mcp_skill_install_plan', 'dataphyre_mcp_skill_file_install_plan', 'dataphyre_mcp_client_config_summary', 'dataphyre_mcp_client_install_checklist', 'dataphyre_mcp_client_config_install_plan', 'dataphyre_mcp_smoke_test_export', 'dataphyre_mcp_client_onboarding_pack', 'dataphyre_mcp_client_troubleshoot', 'dataphyre_mcp_client_compatibility_matrix', 'dataphyre_mcp_client_config_audit', 'dataphyre_mcp_safety_boundary_report', 'dataphyre_mcp_status_board', 'dataphyre_mcp_capability_matrix', 'dataphyre_mcp_release_notes_generate', 'dataphyre_mcp_surface_changelog', 'dataphyre_mcp_tool_call_examples_export', 'dataphyre_mcp_workflow_playbook_export', 'dataphyre_mcp_workflow_readiness_audit', 'dataphyre_mcp_workflow_session_export', 'dataphyre_mcp_workflow_transcript_schema_export', 'dataphyre_mcp_workflow_state_schema_export', 'dataphyre_mcp_workflow_state_audit', 'dataphyre_mcp_workflow_state_summary_export', 'dataphyre_mcp_workflow_state_transition_export', 'dataphyre_mcp_workflow_state_sync_pack_export', 'dataphyre_mcp_workflow_state_timeline_export', 'dataphyre_mcp_workflow_state_resume_brief_export', 'dataphyre_mcp_workflow_transcript_audit', 'dataphyre_mcp_workflow_transcript_summary_export', 'dataphyre_mcp_workflow_checkpoint_export', 'dataphyre_mcp_workflow_handoff_pack_export', 'dataphyre_mcp_workflow_catalog', 'dataphyre_mcp_workflow_lifecycle_export', 'dataphyre_mcp_workflow_next_action_export', 'dataphyre_mcp_workflow_recommend', 'dataphyre_mcp_workflow_recommendation_handoff_export', 'dataphyre_mcp_task_start_pack_export', 'dataphyre_mcp_agent_brief_export', 'dataphyre_mcp_tool_finder', 'dataphyre_mcp_resource_finder', 'dataphyre_mcp_docs_coverage_report', 'dataphyre_mcp_readiness_report', 'dataphyre_mcp_live_validate', 'dataphyre_mcp_verify_all', 'dataphyre_mcp_doctor'] as $tool){
-			$checks[]=[
-				'name'=>'tool:'.$tool,
-				'passed'=>in_array($tool, $tool_names, true),
-				'detail'=>'tool is registered',
-			];
-		}
+			foreach(['dataphyre_application_catalog', 'dataphyre_package_metadata_read', 'dataphyre_api_docs_static_summary', 'dataphyre_api_scaffold_plan', 'dataphyre_api_recipe_catalog', 'dataphyre_api_cache_static_summary', 'dataphyre_openapi_static_contract_summary', 'dataphyre_openapi_runtime_readiness_plan', 'dataphyre_source_api_summary', 'dataphyre_module_dependency_map', 'dataphyre_runtime_version_summary', 'dataphyre_module_docs_pack', 'dataphyre_docs_chunks_export', 'dataphyre_docs_index_plan', 'dataphyre_embeddings_readiness_plan', 'dataphyre_remote_docs_readiness_plan', 'dataphyre_datadoc_static_summary', 'dataphyre_datadoc_runtime_readiness_plan', 'dataphyre_config_shape_read', 'dataphyre_config_value_preview', 'dataphyre_storage_config_summary', 'dataphyre_storage_driver_catalog', 'dataphyre_sql_schema_read', 'dataphyre_sql_query_plan', 'dataphyre_sql_query_runner_contract', 'dataphyre_route_source_static_summary', 'dataphyre_route_source_ambiguity_report', 'dataphyre_route_runtime_provenance_plan', 'dataphyre_controller_source_summary', 'dataphyre_middleware_source_summary', 'dataphyre_mvc_config_static_summary', 'dataphyre_mvc_route_cache_summary', 'dataphyre_tracelog_artifacts_list', 'dataphyre_tracelog_read', 'dataphyre_tracelog_search', 'dataphyre_diagnostics_last_error', 'dataphyre_browser_diagnostics_readiness_plan', 'dataphyre_flightdeck_surfaces_list', 'dataphyre_contract_catalog', 'dataphyre_contract_describe', 'dataphyre_unit_tests_list', 'dataphyre_unit_test_manifest_read', 'dataphyre_browser_regression_manifest_summary', 'dataphyre_verification_surface_catalog', 'dataphyre_agent_context_generate', 'dataphyre_scaffold_plan_generate', 'dataphyre_app_builder_plan_generate', 'dataphyre_panel_capability_catalog', 'dataphyre_panel_capability_describe', 'dataphyre_panel_surface_graph', 'dataphyre_panel_recipe_plan', 'dataphyre_panel_integration_plan', 'dataphyre_panel_verification_plan', 'dataphyre_panel_scaffold_catalog', 'dataphyre_panel_package_manifest_summary', 'dataphyre_panel_theme_manifest_summary', 'dataphyre_panel_documentation_catalog_summary', 'dataphyre_panel_media_manifest_summary', 'dataphyre_task_pack_generate', 'dataphyre_apply_audit_plan', 'dataphyre_apply_runtime_readiness_plan', 'dataphyre_release_triage_summary', 'dataphyre_release_fix_plan', 'dataphyre_mcp_manifest_export', 'dataphyre_prompt_pack_export', 'dataphyre_mcp_prompt_catalog', 'dataphyre_mcp_skill_catalog', 'dataphyre_mcp_skill_manifest_export', 'dataphyre_mcp_skill_registration_audit', 'dataphyre_mcp_skill_pack_export', 'dataphyre_mcp_skill_install_plan', 'dataphyre_mcp_skill_file_install_plan', 'dataphyre_mcp_client_config_summary', 'dataphyre_mcp_client_install_checklist', 'dataphyre_mcp_client_config_install_plan', 'dataphyre_mcp_smoke_test_export', 'dataphyre_mcp_client_onboarding_pack', 'dataphyre_mcp_client_troubleshoot', 'dataphyre_mcp_client_compatibility_matrix', 'dataphyre_mcp_client_config_audit', 'dataphyre_mcp_safety_boundary_report', 'dataphyre_mcp_status_board', 'dataphyre_mcp_capability_matrix', 'dataphyre_mcp_release_notes_generate', 'dataphyre_mcp_surface_changelog', 'dataphyre_mcp_tool_call_examples_export', 'dataphyre_mcp_workflow_playbook_export', 'dataphyre_mcp_workflow_readiness_audit', 'dataphyre_mcp_workflow_session_export', 'dataphyre_mcp_workflow_transcript_schema_export', 'dataphyre_mcp_workflow_state_schema_export', 'dataphyre_mcp_workflow_state_audit', 'dataphyre_mcp_workflow_state_summary_export', 'dataphyre_mcp_workflow_state_transition_export', 'dataphyre_mcp_workflow_state_sync_pack_export', 'dataphyre_mcp_workflow_state_timeline_export', 'dataphyre_mcp_workflow_state_resume_brief_export', 'dataphyre_mcp_workflow_transcript_audit', 'dataphyre_mcp_workflow_transcript_summary_export', 'dataphyre_mcp_workflow_checkpoint_export', 'dataphyre_mcp_workflow_handoff_pack_export', 'dataphyre_mcp_workflow_catalog', 'dataphyre_mcp_workflow_lifecycle_export', 'dataphyre_mcp_workflow_next_action_export', 'dataphyre_mcp_workflow_recommend', 'dataphyre_mcp_workflow_recommendation_handoff_export', 'dataphyre_mcp_task_start_pack_export', 'dataphyre_mcp_agent_brief_export', 'dataphyre_mcp_tool_finder', 'dataphyre_mcp_resource_finder', 'dataphyre_mcp_docs_coverage_report', 'dataphyre_mcp_readiness_report', 'dataphyre_mcp_live_validate', 'dataphyre_mcp_verify_all', 'dataphyre_mcp_doctor'] as $tool){
+				$checks[]=[
+					'name'=>'tool:'.$tool,
+					'passed'=>in_array($tool, $tool_names, true),
+					'detail'=>'tool is registered',
+				];
+			}
+			foreach([
+				'dataphyre_sql_migration_catalog',
+				'dataphyre_sql_migration_describe',
+				'dataphyre_sql_migration_manifest_validate',
+				'dataphyre_sql_migration_scaffold_plan',
+			] as $tool){
+				$checks[]=[
+					'name'=>'tool:'.$tool,
+					'passed'=>in_array($tool, $tool_names, true),
+					'detail'=>'SQL migration tool is registered',
+				];
+			}
 		$leaks=$this->mcp_app_coupling_leaks();
 		$checks[]=[
 			'name'=>'app-coupling-guard',
@@ -480,19 +1363,25 @@ trait dataphyre_mcp_inspection_surfaces {
 			'tools\\/sho'.'piro',
 			'\\.local\\/sho'.'piro',
 		]).'/i';
-		foreach($this->all_files($this->root.'/common/dataphyre/runtime/modules/mcp', 200) as $path){
+		foreach($this->all_files($this->root.'/dataphyre/runtime/modules/mcp', 200) as $path){
 			$text=(string)file_get_contents($path);
-			if(preg_match($app_pattern, $text)===1){
+			if($this->mcp_app_coupling_text_has_leak($text,$app_pattern)){
 				$leaks[]=$this->relative_path($path);
 			}
 		}
-		foreach(['common/dataphyre/dev/tools/public/mcp_self_test.php', 'common/dataphyre/dev/tools/public/mcp_config.php', 'common/dataphyre/dev/tools/public/mcp_live_validate.php'] as $path){
+		foreach(['dataphyre/dev/tools/public/mcp_self_test.php', 'dataphyre/dev/tools/public/mcp_config.php', 'dataphyre/dev/tools/public/mcp_live_validate.php'] as $path){
 			$text=$this->read_repo_text($path, 120000);
-			if(preg_match($app_pattern, $text)===1){
+			if($this->mcp_app_coupling_text_has_leak($text,$app_pattern)){
 				$leaks[]=$path;
 			}
 		}
 		return array_values(array_unique($leaks));
+	}
+
+	/** Ignores legal attribution lines while retaining coupling checks for shipped source and fixtures. */
+	private function mcp_app_coupling_text_has_leak(string $text,string $pattern): bool {
+		$body=preg_replace('/^\s*\*?\s*Copyright\s+\(c\).*$/mi','',$text) ?? $text;
+		return preg_match($pattern,$body)===1;
 	}
 
 

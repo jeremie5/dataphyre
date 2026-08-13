@@ -1,7 +1,7 @@
 [
   {
     "name": "Request create normalizes method and path into request instance",
-    "file": "/common/dataphyre/runtime/modules/http/Framework/Request.php",
+    "file": "/dataphyre/runtime/modules/http/Framework/Request.php",
     "class": "Dataphyre\\Http\\Request",
     "static_method": true,
     "function": "create",
@@ -34,7 +34,7 @@
   },
   {
     "name": "Request create falls back to GET for empty method",
-    "file": "/common/dataphyre/runtime/modules/http/Framework/Request.php",
+    "file": "/dataphyre/runtime/modules/http/Framework/Request.php",
     "class": "Dataphyre\\Http\\Request",
     "static_method": true,
     "function": "create",

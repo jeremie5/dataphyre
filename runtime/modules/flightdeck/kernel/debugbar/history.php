@@ -88,10 +88,11 @@ trait dataphyre_flightdeck_debugbar_history {
 	 *
 	 * @param string $method HTTP method to replay.
 	 * @param string $uri Request URI to replay.
+	 * @param ?string $signing_secret Optional deterministic signing secret.
 	 * @return string Signed replay token, or empty string when replay is unavailable.
 	 */
-	private static function replay_token(string $method, string $uri): string {
-		$secret=self::replay_secret();
+	private static function replay_token(string $method, string $uri, ?string $signing_secret=null): string {
+		$secret=$signing_secret ?? self::replay_secret();
 		if($secret===''){
 			return '';
 		}
@@ -167,16 +168,19 @@ trait dataphyre_flightdeck_debugbar_history {
 	 * history remains focused on application requests.
 	 *
 	 * @param array<string, mixed> $state Current debugbar runtime state.
+	 * @param ?string $sapi Optional deterministic PHP SAPI.
+	 * @param ?bool $session_active Optional deterministic session state.
+	 * @param ?string $request_path Optional deterministic request path.
 	 * @return ?array<string, mixed> Stored snapshot, or null when recording is skipped.
 	 */
-	private static function record_snapshot(array $state): ?array {
-		if(PHP_SAPI==='cli'){
+	private static function record_snapshot(array $state, ?string $sapi=null, ?bool $session_active=null, ?string $request_path=null): ?array {
+		if(in_array($sapi ?? PHP_SAPI,['cli','phpdbg'],true)){
 			return null;
 		}
-		if(session_status()!==PHP_SESSION_ACTIVE){
+		if(($session_active ?? session_status()===PHP_SESSION_ACTIVE)!==true){
 			return null;
 		}
-		$path=self::current_path();
+		$path=$request_path ?? self::current_path();
 		if(self::is_control_plane_path($path)===true){
 			return null;
 		}

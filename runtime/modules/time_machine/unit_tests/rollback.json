@@ -4,7 +4,7 @@
 		"function": "dp_time_machine_unit_rollback_success",
 		"args": [],
 		"expected": [true, false],
-		"file": "/common/dataphyre/runtime/modules/time_machine/unit_tests/time_machine_test_helpers.php",
+		"file": "/dataphyre/runtime/modules/time_machine/unit_tests/time_machine_test_helpers.php",
 		"dependencies": {
 			"function": ["dp_time_machine_unit_rollback_success"]
 		}

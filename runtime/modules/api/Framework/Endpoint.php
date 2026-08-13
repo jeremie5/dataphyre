@@ -1013,7 +1013,7 @@ final class Endpoint implements CompilableRoute {
 		];
 		$identity=$options['identity'] ?? null;
 		if($identity!==null){
-			$normalized['identity']=$this->normalizeBindingValue($identity, true);
+			$normalized['identity']=$this->normalizeBindingValue($identity);
 		}
 		return $normalized;
 	}
@@ -1158,23 +1158,19 @@ final class Endpoint implements CompilableRoute {
 	 * Recursively validates binding metadata before it is embedded in endpoint compile output.
 	 *
 	 * @param mixed $value Candidate binding metadata value.
-	 * @param bool $allowCallableIdentity Reserved compatibility flag for identity-specific values.
-	 * @return mixed scalar, null, array, or callable-identity marker safe for binding metadata serialization.
+	 * @return mixed scalar, null, or array safe for binding metadata serialization.
 	 * @throws \RuntimeException When the value cannot be serialized into binding metadata.
 	 */
-	private function normalizeBindingValue(mixed $value, bool $allowCallableIdentity=false): mixed {
+	private function normalizeBindingValue(mixed $value): mixed {
 		if(is_array($value)){
 			$normalized=[];
 			foreach($value as $key=>$entry){
-				$normalized[$key]=$this->normalizeBindingValue($entry, $allowCallableIdentity);
+				$normalized[$key]=$this->normalizeBindingValue($entry);
 			}
 			return $normalized;
 		}
 		if(is_scalar($value) || $value===null){
 			return $value;
-		}
-		if($allowCallableIdentity && is_string($value)){
-			return trim($value);
 		}
 		throw new \RuntimeException('API binding options must be composed of scalar, null, or array values.');
 	}

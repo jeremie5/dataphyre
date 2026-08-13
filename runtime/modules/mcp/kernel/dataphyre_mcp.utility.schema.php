@@ -442,8 +442,10 @@ trait dataphyre_mcp_utility_schema_methods {
 				$parts[$last_index]=substr($last, 0, -3).'y';
 			}elseif(str_ends_with($lower, 'sses') && strlen($last)>4){
 				$parts[$last_index]=substr($last, 0, -2);
-			}elseif(str_ends_with($lower, 'ses') && strlen($last)>3){
+			}elseif($lower==='statuses'){
 				$parts[$last_index]=substr($last, 0, -2);
+			}elseif(str_ends_with($lower, 'ses') && strlen($last)>3){
+				$parts[$last_index]=substr($last, 0, -1);
 			}elseif(str_ends_with($lower, 's') && !str_ends_with($lower, 'ss') && strlen($last)>1){
 				$parts[$last_index]=substr($last, 0, -1);
 			}

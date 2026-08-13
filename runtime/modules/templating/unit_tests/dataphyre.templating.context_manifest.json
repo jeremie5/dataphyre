@@ -1,14 +1,14 @@
 [
   {
     "name": "binding context resolves data, overrides, slots, and theme paths",
-    "file": "/common/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
     "function": "DataphyreUnitTests\\templating_binding_context_json",
     "args": [],
     "expected": "{\"binding_trace_id\":null,\"has_title\":true,\"missing\":\"fallback\",\"override_price\":129,\"slot\":\"Hello\",\"theme\":\"red\"}"
   },
   {
     "name": "asset manifest renders grouped tags and summary metadata",
-    "file": "/common/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
     "function": "DataphyreUnitTests\\templating_asset_manifest_summary_json",
     "args": [{
       "stylesheets": ["/app.css"],

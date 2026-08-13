@@ -101,34 +101,7 @@ trait dataphyre_mcp_utility_methods {
 		}
 		$definitions=require $file;
 		$definition_id=$entry['definition_id'] ?? null;
-		$candidates=[];
-		if($definition_id!==null && is_array($definitions) && array_key_exists($definition_id, $definitions)){
-			$candidates[]=$definitions[$definition_id];
-		}
-		if(is_array($definitions) && array_key_exists($table, $definitions)){
-			$candidates[]=$definitions[$table];
-		}
-		if($definitions instanceof \Dataphyre\Database\TableDefinition || is_callable($definitions)){
-			$candidates[]=$definitions;
-		}
-		if(is_array($definitions)){
-			foreach($definitions as $definition){
-				$candidates[]=$definition;
-			}
-		}
-		foreach($candidates as $candidate){
-			if(is_callable($candidate)){
-				try{
-					$candidate=$candidate($table, $definition_id);
-				}catch(ArgumentCountError){
-					$candidate=$candidate($table);
-				}
-			}
-			if($candidate instanceof \Dataphyre\Database\TableDefinition){
-				return $candidate;
-			}
-		}
-		return null;
+		return $this->resolve_table_definition_candidates($definitions,$table,is_string($definition_id) ? $definition_id : null);
 	}
 
 	/**
@@ -149,6 +122,11 @@ trait dataphyre_mcp_utility_methods {
 			return null;
 		}
 		$definitions=require $file;
+		return $this->resolve_table_definition_candidates($definitions,$table,$definition_id);
+	}
+
+	/** Resolves every supported static TableDefinition declaration shape. */
+	private function resolve_table_definition_candidates(mixed $definitions,string $table,?string $definition_id): ?\Dataphyre\Database\TableDefinition {
 		$candidates=[];
 		if($definition_id!==null && is_array($definitions) && array_key_exists($definition_id, $definitions)){
 			$candidates[]=$definitions[$definition_id];
@@ -294,7 +272,7 @@ trait dataphyre_mcp_utility_methods {
 	 * and direct CDN asset content, and can treat a single file as a one-item
 	 * traversal source.
 	 */
-	private function all_files(string $root, int $limit): Generator {
+	private function all_files(string $root, int $limit, ?callable $readable=null): Generator {
 		if(!is_dir($root) && !is_file($root)){
 			return;
 		}
@@ -302,37 +280,82 @@ trait dataphyre_mcp_utility_methods {
 			yield $root;
 			return;
 		}
-		if(!is_readable($root)){
+		$readable ??= 'is_readable';
+		if(!$readable($root)){
 			return;
 		}
 		$flags=FilesystemIterator::SKIP_DOTS | FilesystemIterator::CURRENT_AS_PATHNAME;
-		try{
-			$iterator=new RecursiveIteratorIterator(
+		$iterator=$this->guarded_filesystem_iterator(static fn()=>new RecursiveIteratorIterator(
 				new RecursiveDirectoryIterator($root, $flags),
 				RecursiveIteratorIterator::LEAVES_ONLY,
 				RecursiveIteratorIterator::CATCH_GET_CHILD
-			);
-		}catch(UnexpectedValueException|RuntimeException){
-			return;
-		}
+			));
 		$count=0;
-		try{
-			foreach($iterator as $path){
-				$normalized=str_replace('\\', '/', $path);
-				if(str_contains($normalized, '/.git/') || str_contains($normalized, '/cdn_content/direct/assets/')){
-					continue;
-				}
-				if(is_file($path)){
-					yield $path;
-					$count++;
-					if($count>=$limit){
-						return;
-					}
+		foreach($iterator as $path){
+			$normalized=str_replace('\\', '/', $path);
+			if(str_contains($normalized, '/.git/') || str_contains($normalized, '/cdn_content/direct/assets/')){
+				continue;
+			}
+			if(is_file($path)){
+				yield $path;
+				$count++;
+				if($count>=$limit){
+					return;
 				}
 			}
-		}catch(UnexpectedValueException|RuntimeException){
-			return;
 		}
+	}
+
+	/**
+	 * Selects a bounded, de-duplicated set of PHP source files for static inspection.
+	 *
+	 * Callers may mix files and directories. Documentation and vendored subtrees are
+	 * excluded by default so controller, middleware, and route inventories share one
+	 * deterministic read-only boundary instead of reimplementing traversal policy.
+	 *
+	 * @param array<int,string> $roots Repo-local file or directory roots.
+	 * @param array<int,string> $excluded_segments Normalized path segments to omit.
+	 * @return list<string> Absolute PHP source paths, bounded by $limit.
+	 */
+	private function bounded_php_source_files(array $roots,int $limit,array $excluded_segments=['/documentation/','/vendor/']): array {
+		$limit=max(1,$limit);
+		$files=[];
+		foreach($roots as $root){
+			$safe=$this->safe_repo_path((string)$root);
+			if(is_file($safe)){
+				$candidates=[$safe];
+			}elseif(is_dir($safe)){
+				$candidates=$this->all_files($safe,$limit*8);
+			}else{
+				continue;
+			}
+			foreach($candidates as $file){
+				if(strtolower(pathinfo($file,PATHINFO_EXTENSION))!=='php'){
+					continue;
+				}
+				$relative=strtolower(str_replace('\\','/',$this->relative_path($file)));
+				$excluded=false;
+				foreach($excluded_segments as $segment){
+					if(str_contains($relative,strtolower((string)$segment))){
+						$excluded=true;
+						break;
+					}
+				}
+				if($excluded){
+					continue;
+				}
+				$files[$file]=true;
+				if(count($files)>=$limit){
+					break 2;
+				}
+			}
+		}
+		return array_keys($files);
+	}
+
+	/** Converts iterator-construction failures into an empty read-only scan. */
+	private function guarded_filesystem_iterator(callable $factory): iterable {
+		try{return $factory();}catch(UnexpectedValueException|RuntimeException){return [];}
 	}
 
 	/**
@@ -342,7 +365,7 @@ trait dataphyre_mcp_utility_methods {
 	 * statically for array-key syntax; values are never returned.
 	 */
 	private function extract_config_keys(string $path): array {
-		$text=file_get_contents($path);
+		$text=@file_get_contents($path);
 		if(!is_string($text)){
 			return [];
 		}
@@ -447,9 +470,6 @@ trait dataphyre_mcp_utility_methods {
 		}
 		if(preg_match('/^array\s*\(/i', $expression)===1){
 			$open=strpos($expression, '(');
-			if($open===false){
-				return null;
-			}
 			$close=$this->matching_enclosure_offset($expression, (int)$open, '(', ')');
 			if($close===null){
 				return null;
@@ -935,7 +955,7 @@ trait dataphyre_mcp_utility_methods {
 	 */
 	private function module_from_unit_test_path(string $relative): ?string {
 		$normalized=str_replace('\\', '/', $relative);
-		if(preg_match('#common/dataphyre/runtime/modules/([^/]+)/unit_tests/#', $normalized, $match)===1){
+		if(preg_match('#(?:^|/)(?:common/)?dataphyre/runtime/modules/([^/]+)/unit_tests/#', $normalized, $match)===1){
 			return $match[1];
 		}
 		return null;
@@ -945,8 +965,8 @@ trait dataphyre_mcp_utility_methods {
 	 * Summarizes a Dataphyre unit-test manifest JSON file.
 	 *
 	 * the manifest is decoded as data, cases are bounded, helper files and
-	 * expected result shapes are reported, and custom-script presence is flagged
-	 * without executing test code.
+	 * expected result shapes and declarative file resolvers are reported, and
+	 * obsolete executable fields are flagged without executing test code.
 	 */
 	private function unit_test_manifest_summary(string $path, int $max_cases, bool $include_expected): array {
 		$text=(string)file_get_contents($path);
@@ -969,7 +989,10 @@ trait dataphyre_mcp_utility_methods {
 			if(!is_array($case)){
 				continue;
 			}
-			$file=(string)($case['file'] ?? '');
+			$file_definition=$case['file'] ?? null;
+			$file=is_string($file_definition)
+				? $file_definition
+				: (is_array($file_definition) ? (string)json_encode($file_definition, JSON_UNESCAPED_SLASHES) : '');
 			if($file!==''){
 				$helpers[]=$file;
 			}
@@ -1021,11 +1044,15 @@ trait dataphyre_mcp_utility_methods {
 	/**
 	 * Classifies one expected-output declaration from a unit-test manifest.
 	 *
-	 * custom scripts, numeric ranges, array-shape declarations, regexes,
-	 * and scalar debug types receive coarse labels for static test inventory.
+	 * declarative assertions, obsolete custom scripts, numeric ranges,
+	 * array-shape declarations, regexes, and scalar debug types receive coarse
+	 * labels for static test inventory.
 	 */
 	private function unit_test_expected_shape(mixed $value): string {
 		if(is_array($value)){
+			if(isset($value['assert']) && is_array($value['assert'])){
+				return 'declarative_assertion';
+			}
 			if(isset($value['custom_script'])){
 				return 'custom_script';
 			}
@@ -1153,11 +1180,11 @@ trait dataphyre_mcp_utility_methods {
 		$patterns=[
 			'/-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----/is'=>'[REDACTED_PRIVATE_KEY]',
 			'/\b(Bearer|Basic)\s+[A-Za-z0-9._~+\/=-]+/i'=>'$1 [REDACTED]',
-			'/(\b(?:'.$sensitive_key.')\b\s*[:=]\s*[\'"])([^\'"]+)([\'"])/i'=>'$1[REDACTED]$3',
-			'/(\b(?:'.$sensitive_key.')\b\s*[:=]\s*)([^\s<>"\']+)/i'=>'$1[REDACTED]',
+			'/(\b(?:'.$sensitive_key.')\b[\'"]?\s*[:=]\s*[\'"])([^\'"]+)([\'"])/i'=>'$1[REDACTED]$3',
+			'/(\b(?:'.$sensitive_key.')\b[\'"]?\s*[:=]\s*)([^\s<>"\']+)/i'=>'$1[REDACTED]',
 			'/(\b(?:'.$sensitive_key.')\b[\'"]?\s*=>\s*[\'"])([^\'"]+)([\'"])/i'=>'$1[REDACTED]$3',
-			'/(\b(?:tenant|tenant_id|tenantId|product|product_id|productId|customer|customer_id|customerId|account|account_id|accountId)\b\s*[:=]\s*[\'"])([^\'"]+)([\'"])/i'=>'$1[REDACTED]$3',
-			'/(\b(?:tenant|tenant_id|tenantId|product|product_id|productId|customer|customer_id|customerId|account|account_id|accountId)\b\s*[:=]\s*)([^\s<>"\']+)/i'=>'$1[REDACTED]',
+			'/(\b(?:tenant|tenant_id|tenantId|product|product_id|productId|customer|customer_id|customerId|account|account_id|accountId)\b[\'"]?\s*[:=]\s*[\'"])([^\'"]+)([\'"])/i'=>'$1[REDACTED]$3',
+			'/(\b(?:tenant|tenant_id|tenantId|product|product_id|productId|customer|customer_id|customerId|account|account_id|accountId)\b[\'"]?\s*[:=]\s*)([^\s<>"\']+)/i'=>'$1[REDACTED]',
 			'/(\b(?:tenant|tenant_id|tenantId|product|product_id|productId|customer|customer_id|customerId|account|account_id|accountId)\b[\'"]?\s*=>\s*[\'"])([^\'"]+)([\'"])/i'=>'$1[REDACTED]$3',
 			'/(\b(?:X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|AWSAccessKeyId|Signature|Expires|sig|signature|passkey|totp|access_token|id_token|refresh_token|tenant_id|tenantId|product_id|productId|customer_id|customerId|account_id|accountId|plan|plan_id|planId|subscription_id|subscriptionId|entitlement_id|entitlementId)=)([^\s&#"\'<>]+)/i'=>'$1[REDACTED]',
 			'#\b([a-z][a-z0-9+.-]*://)([^\s/@:]+):([^\s/@]+)@([^\s<>"\']+)#i'=>'$1[REDACTED]',
@@ -1179,6 +1206,11 @@ trait dataphyre_mcp_utility_methods {
 	 */
 	private function mcp_sensitive_assignment_key_pattern(): string {
 		return 'password|passwd|pwd|secret|token|api[_-]?key|authorization|cookie|set-cookie|client[_-]?secret|clientSecret|private[_-]?key|privateKey|webhook[_-]?secret|webhookSecret|signing[_-]?secret|signingSecret|auth[_-]?token|authToken|accessToken|idToken|refreshToken';
+	}
+
+	/** Shared detector for assignment-like secrets in text, PHP arrays, and JSON objects. */
+	private function mcp_sensitive_assignment_pattern(): string {
+		return '/\b(?:'.$this->mcp_sensitive_assignment_key_pattern().')\b["\']?\s*(?:=>|:|=)\s*["\']?[^"\'\s\[\{]+/i';
 	}
 
 	/**
@@ -1414,11 +1446,14 @@ trait dataphyre_mcp_utility_methods {
 	 */
 	private function path_is_within_root(string $path, string $root): bool {
 		$root=$this->normalize_path($root);
+		if($root===''){
+			return false;
+		}
 		return $path===$root || str_starts_with($path, $root.'/');
 	}
 
 	/**
-	 * Accepts files reached through the Git worktree common/dataphyre symlink.
+	 * Accepts files reached through the Git worktree dataphyre symlink.
 	 */
 	private function path_is_within_dataphyre_real_root(string $path): bool {
 		$real=realpath($this->common_root.'/dataphyre');
@@ -1439,18 +1474,18 @@ trait dataphyre_mcp_utility_methods {
 		$dataphyre_root=$this->normalize_path($this->common_root.'/dataphyre');
 		if($this->path_is_within_root($path, $dataphyre_root)){
 			if($path===$dataphyre_root){
-				return 'common/dataphyre';
+				return 'dataphyre';
 			}
-			return 'common/dataphyre/'.substr($path, strlen($dataphyre_root)+1);
+			return 'dataphyre/'.substr($path, strlen($dataphyre_root)+1);
 		}
 		$dataphyre_real_root=realpath($dataphyre_root);
 		if(is_string($dataphyre_real_root)){
 			$dataphyre_real_root=$this->normalize_path($dataphyre_real_root);
 			if($this->path_is_within_root($path, $dataphyre_real_root)){
 				if($path===$dataphyre_real_root){
-					return 'common/dataphyre';
+					return 'dataphyre';
 				}
-				return 'common/dataphyre/'.substr($path, strlen($dataphyre_real_root)+1);
+				return 'dataphyre/'.substr($path, strlen($dataphyre_real_root)+1);
 			}
 		}
 		return $path;
@@ -1485,12 +1520,21 @@ trait dataphyre_mcp_utility_methods {
 	 * captured from pipes, timeout terminates the process, and stderr is returned
 	 * only when the caller explicitly opts in.
 	 */
-	private function run_command(array $command, int $timeout_ms, bool $include_stderr): array {
+	private function run_command(array $command, int $timeout_ms, bool $include_stderr, ?callable $process_opener=null): array {
+		if(!is_dir($this->root)){
+			throw new RuntimeException('Unable to start command.');
+		}
 		$descriptor=[
 			1=>['pipe', 'w'],
 			2=>['pipe', 'w'],
 		];
-		$process=proc_open($command, $descriptor, $pipes, $this->root);
+		if($process_opener===null){
+			$process=@proc_open($command, $descriptor, $pipes, $this->root);
+		}else{
+			$opened=$process_opener($command, $descriptor, $this->root);
+			$process=$opened['process'] ?? false;
+			$pipes=is_array($opened['pipes'] ?? null) ? $opened['pipes'] : [];
+		}
 		if(!is_resource($process)){
 			throw new RuntimeException('Unable to start command.');
 		}

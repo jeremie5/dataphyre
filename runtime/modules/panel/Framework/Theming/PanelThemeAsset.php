@@ -15,6 +15,7 @@ namespace Dataphyre\Panel;
  * instances and later rendered deterministically by Panel.
  */
 final class PanelThemeAsset {
+	private const ALLOWED_ATTRIBUTES=['media', 'integrity', 'crossorigin', 'referrerpolicy', 'fetchpriority', 'nonce', 'title'];
 
 	private string $name;
 	private string $href;
@@ -118,7 +119,7 @@ final class PanelThemeAsset {
 	public function attributes(array $attributes): self {
 		foreach($attributes as $name=>$value){
 			$name=Resource::normalizeName((string)$name);
-			if($name!=='' && (is_scalar($value) || $value===null)){
+			if(in_array($name, self::ALLOWED_ATTRIBUTES, true) && (is_scalar($value) || $value===null)){
 				$this->attributes[$name]=$value===null ? null : trim((string)$value);
 			}
 		}

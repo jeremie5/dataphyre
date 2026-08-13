@@ -1,0 +1,23 @@
+[
+  {
+    "name": "Stripe account client API is registered for application adapters",
+    "file": "/dataphyre/runtime/modules/stripe/unit_tests/stripe_account_client_test_helpers.php",
+    "function": "dp_stripe_account_client_api_contract_json",
+    "args": [],
+    "expected": "{\"final\":true,\"methods\":{\"readiness\":0,\"create_customer\":2,\"update_customer\":3,\"retrieve_customer\":1,\"delete_customer\":2,\"create_setup_intent\":2,\"retrieve_setup_intent\":1,\"cancel_setup_intent\":3,\"retrieve_payment_method\":1,\"detach_payment_method\":2,\"create_payment_intent\":2,\"retrieve_payment_intent\":1,\"construct_webhook_event\":3}}"
+  },
+  {
+    "name": "Stripe account client readiness is local and redacted",
+    "file": "/dataphyre/runtime/modules/stripe/unit_tests/stripe_account_client_test_helpers.php",
+    "function": "dp_stripe_account_client_readiness_json",
+    "args": [],
+    "expected": "{\"ready\":true,\"configured\":true,\"valid\":true,\"mode\":\"test\",\"key_type\":\"secret\",\"sdk_available\":true,\"network_checked\":false,\"executor_injected\":true,\"client_injected\":false}"
+  },
+  {
+    "name": "Stripe account client rejects invalid key families",
+    "file": "/dataphyre/runtime/modules/stripe/unit_tests/stripe_account_client_test_helpers.php",
+    "function": "dp_stripe_account_client_invalid_keys_json",
+    "args": [],
+    "expected": "{\"rejected\":4}"
+  }
+]

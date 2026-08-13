@@ -5,14 +5,21 @@
         "class": "dataphyre\\permission",
         "static_method": true,
         "args": [
-            ["panel.orders.refund", "panel.orders.cancel"],
+            [
+                "panel.orders.refund",
+                "panel.orders.cancel"
+            ],
             {
-                "permissions": ["panel.orders.cancel"]
+                "permissions": [
+                    "panel.orders.cancel"
+                ]
             }
         ],
         "expected": true,
-        "file_dynamic": "return dp_module_present(\"permission\")[0];",
-        "max_millis": 50
+        "max_millis": 50,
+        "file": {
+            "module": "permission"
+        }
     },
     {
         "name": "any_denies_when_no_permissions_match",
@@ -20,13 +27,20 @@
         "class": "dataphyre\\permission",
         "static_method": true,
         "args": [
-            ["panel.orders.refund", "panel.orders.cancel"],
+            [
+                "panel.orders.refund",
+                "panel.orders.cancel"
+            ],
             {
-                "permissions": ["panel.orders.view"]
+                "permissions": [
+                    "panel.orders.view"
+                ]
             }
         ],
         "expected": false,
-        "file_dynamic": "return dp_module_present(\"permission\")[0];",
-        "max_millis": 50
+        "max_millis": 50,
+        "file": {
+            "module": "permission"
+        }
     }
 ]

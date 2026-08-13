@@ -1,0 +1,58 @@
+<!doctype html>
+<!--
+ Dataphyre
+ Copyright (c) 2026 Shopiro Ltd.
+ SPDX-License-Identifier: MIT
+-->
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<title>Panel realtime client browser proof</title>
+	<style>
+		body{font:16px/1.5 system-ui,sans-serif;margin:2rem;background:#0b1220;color:#e8eef9}
+		main{max-width:48rem;margin:auto;padding:2rem;border:1px solid #355070;border-radius:1rem;background:#111c2e}
+		pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#b9d6ff}
+	</style>
+</head>
+<body>
+	<main><h1>Panel realtime client proof</h1><p id="status" role="status" aria-live="polite">Running</p><pre id="report"></pre></main>
+	<script>/*DP_RUNTIME*/</script>
+	<script>
+	(async function(){
+		"use strict";
+		const encoder=new TextEncoder(),requests=[],events=[];
+		const frame=(event,data,id)=>`${id?`id: ${id}\n`:""}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+		const response=(chunks,status=200)=>new Response(new ReadableStream({start(controller){chunks.forEach(chunk=>controller.enqueue(encoder.encode(chunk)));controller.close();}}),{status,headers:{"Content-Type":"text/event-stream; charset=utf-8"}});
+		const stream=frame("orders.updated",{schema_version:1,sequence:1,channel:"orders",topic:"orders.updated",type:"orders.updated",occurred_at:"2026-07-14T12:00:00Z",payload:{id:7},metadata:{}},"resume-browser-1")+": heartbeat 1\n\n"+frame("panel.error",{schema_version:1,type:"panel.error",code:"browser_complete",message:"Complete.",retryable:false});
+		const fetchProof=async(url,init)=>{requests.push({url,method:init.method,headers:init.headers,body:init.body||null,signal:!!init.signal});return response([stream.slice(0,23),stream.slice(23)]);};
+		const client=DataphyrePanelRealtime.create({url:"/realtime",baseUrl:"https://panel.example/app",subscriptionIntent:"browser-intent",headers:{Authorization:"Bearer browser-secret"},body:{channel:"orders"},fetch:fetchProof,saveCursor:value=>events.push({name:"saved",detail:value})});
+		Object.entries(DataphyrePanelRealtime.events).forEach(([name,type])=>client.addEventListener(type,event=>events.push({name,custom:event instanceof CustomEvent,detail:event.detail})));
+		client.start();await client.settled();
+		const publicEvents=events.filter(event=>event.name!=="saved"),applicationEvent=publicEvents.find(event=>event.name==="event");
+		const privacy={hasOptions:Object.prototype.hasOwnProperty.call(client,"options"),hasLastEventId:Object.prototype.hasOwnProperty.call(client,"lastEventId"),hasTarget:Object.prototype.hasOwnProperty.call(client,"target"),credentialHelpers:["requestBody","requestHeaders","refreshSubscriptionIntent","ensureSubscriptionIntent"].filter(name=>typeof client[name]!=="undefined"),publicSerialized:JSON.stringify({client,state:client.state(),events:publicEvents}),deepFrozen:Object.isFrozen(applicationEvent.detail)&&Object.isFrozen(applicationEvent.detail.envelope)&&Object.isFrozen(applicationEvent.detail.envelope.payload)};
+
+		const providerCalls=[],providerRequests=[];let providerFetches=0;
+		const providerClient=DataphyrePanelRealtime.create({url:"/realtime",baseUrl:"https://panel.example/app",subscriptionIntent:"provider-one",subscriptionIntentProvider:async input=>{providerCalls.push(input);return "provider-two";},baseRetryMs:100,maxRetryMs:250,jitter:0,fetch:async(url,init)=>{providerRequests.push(init.headers["X-Dataphyre-Realtime-Intent"]);providerFetches++;return response([providerFetches===1?frame("panel.error",{schema_version:1,type:"panel.error",code:"intent_expired",message:"Expired.",retryable:false}):frame("panel.error",{schema_version:1,type:"panel.error",code:"provider_complete",message:"Complete.",retryable:false})],providerFetches===1?401:200);}});
+		providerClient.start();await providerClient.settled();
+
+		let pausedFetches=0;
+		const paused=DataphyrePanelRealtime.create({url:"/realtime",baseUrl:"https://panel.example/app",subscriptionIntent:"pause-intent",fetch:async()=>{pausedFetches++;return response([frame("panel.error",{schema_version:1,type:"panel.error",code:"pause_complete",message:"Complete.",retryable:false})]);}});
+		paused.pause("manual").start();await new Promise(resolve=>setTimeout(resolve,30));const fetchesWhilePaused=pausedFetches;paused.resume("manual");await paused.settled();
+
+		let aborted=false,markFetchStarted;const fetchStarted=new Promise(resolve=>{markFetchStarted=resolve;});
+		const stopping=DataphyrePanelRealtime.create({url:"/realtime",baseUrl:"https://panel.example/app",subscriptionIntent:"stop-intent",fetch:(url,init)=>{markFetchStarted();return new Promise((resolve,reject)=>init.signal.addEventListener("abort",()=>{aborted=true;reject(new DOMException("Aborted","AbortError"));},{once:true}));}});
+		stopping.start();await fetchStarted;stopping.stop("browser_host");await stopping.settled();
+
+		window.__proof={
+			runtime:DataphyrePanelRealtime.manifest(),state:client.state(),requests,events,privacy,
+			provider:{calls:providerCalls,requests:providerRequests,state:providerClient.state()},
+			paused:{fetchesWhilePaused,totalFetches:pausedFetches,state:paused.state()},
+			stopped:{aborted,state:stopping.state()},
+			primitives:{fetch:typeof fetch,ReadableStream:typeof ReadableStream,AbortController:typeof AbortController,CustomEvent:typeof CustomEvent,TextDecoder:typeof TextDecoder}
+		};
+		document.getElementById("status").textContent="Passed";document.getElementById("report").textContent=JSON.stringify(window.__proof,null,2);window.__done=true;
+	})().catch(error=>{document.getElementById("status").textContent="Failed";document.getElementById("report").textContent=String(error&&error.stack||error);window.__failure=String(error&&error.stack||error);window.__done=true;});
+	</script>
+</body>
+</html>

@@ -11,30 +11,70 @@ use Dataphyre\Permission\PermissionAudit;
 use Dataphyre\Permission\PermissionManifest;
 use Dataphyre\Permission\PermissionRule;
 
-if(PHP_SAPI!=='cli'){
-	http_response_code(404);
-	echo "Permission checker is only available from CLI.\n";
-	exit(2);
+require_once dirname(__DIR__, 3).'/http.php';
+
+/**
+ * Executes the checker only for a directly-invoked entrypoint.
+ *
+ * Tests and embedders suppress automatic dispatch with
+ * `DATAPHYRE_PERMISSION_CHECK_NO_DISPATCH`, then call this boundary with an
+ * inspectable terminator. The production boundary delegates the actual process
+ * exit to the shared runtime so this module remains fully unit-testable.
+ *
+ * @param array<int,string> $arguments
+ * @param array<string,mixed> $runtime
+ */
+function dp_permission_check_entrypoint(array $arguments, ?bool $dispatch=null, array $runtime=[]): ?int {
+	$dispatch ??= !defined('DATAPHYRE_PERMISSION_CHECK_NO_DISPATCH');
+	if(!$dispatch){
+		return null;
+	}
+	$status=dp_permission_check_run($arguments, $runtime);
+	$terminate=$runtime['terminate'] ?? 'dataphyre_process_terminate';
+	if(!is_callable($terminate)){
+		throw new LogicException('Permission checker terminator must be callable.');
+	}
+	$terminate($status);
+	return $status;
 }
 
-try{
-	$options=dp_permission_check_options($argv ?? []);
-	if(isset($options['help'])){
-		dp_permission_check_usage();
-		exit(0);
+/**
+ * Runs one complete permission audit without terminating the caller.
+ *
+ * @param array<int,string> $arguments
+ * @param array{sapi?:string,error?:callable,terminate?:callable} $runtime
+ */
+function dp_permission_check_run(array $arguments, array $runtime=[]): int {
+	if(!in_array((string)($runtime['sapi'] ?? PHP_SAPI), ['cli','phpdbg'], true)){
+		http_response_code(404);
+		echo "Permission checker is only available from CLI.\n";
+		return 2;
 	}
-	dp_permission_check_bootstrap();
-	$report=dp_permission_check_report($options);
-	dp_permission_check_print($report, $options);
-	if(isset($options['json'])){
-		dp_permission_check_write_json((string)$options['json'], $report);
+	try{
+		$options=dp_permission_check_options($arguments);
+		if(isset($options['help'])){
+			dp_permission_check_usage();
+			return 0;
+		}
+		dp_permission_check_bootstrap();
+		$report=dp_permission_check_report($options);
+		dp_permission_check_print($report, $options);
+		if(isset($options['json'])){
+			dp_permission_check_write_json((string)$options['json'], $report);
+		}
+		return dp_permission_check_exit_code($report, $options);
 	}
-	exit(dp_permission_check_exit_code($report, $options));
+	catch(Throwable $exception){
+		$error=$runtime['error'] ?? 'dataphyre_process_error';
+		if(!is_callable($error)){
+			throw new LogicException('Permission checker error writer must be callable.', 0, $exception);
+		}
+		$error('[ERROR] '.$exception->getMessage().PHP_EOL);
+		return 2;
+	}
 }
-catch(Throwable $exception){
-	fwrite(STDERR, '[ERROR] '.$exception->getMessage().PHP_EOL);
-	exit(2);
-}
+
+dp_permission_check_entrypoint($argv ?? []);
 
 /**
  * Parses permission audit CLI flags into a normalized option map.
@@ -213,16 +253,17 @@ function dp_permission_check_report(array $options): array {
  * infrastructure errors.
  *
  * @param string $path CLI-supplied JSON path.
+ * @param null|callable(string):mixed $reader Optional deterministic read boundary.
  * @return array<string, mixed> Decoded JSON object or array.
  *
  * @throws RuntimeException When the file is missing, unreadable, or invalid JSON.
  */
-function dp_permission_check_read_json(string $path): array {
+function dp_permission_check_read_json(string $path, ?callable $reader=null): array {
 	$resolved=dp_permission_check_resolve_path($path);
 	if($resolved==='' || !is_file($resolved)){
 		throw new RuntimeException('JSON file not found: '.$path);
 	}
-	$content=file_get_contents($resolved);
+	$content=$reader===null ? @file_get_contents($resolved) : $reader($resolved);
 	if(!is_string($content)){
 		throw new RuntimeException('Unable to read '.$path.'.');
 	}
@@ -367,6 +408,9 @@ function dp_permission_check_diff_changed(array $diff): bool {
  * manifest diff totals.
  *
  * @param array<string, mixed> $report Permission audit report.
+ * @param null|callable(string,int,bool):bool $makeDirectory Optional directory boundary.
+ * @param null|callable(array<string,mixed>):mixed $encode Optional JSON encoder boundary.
+ * @param null|callable(string,string):mixed $write Optional file writer boundary.
  * @param array{quiet?: bool} $options Parsed options.
  * @return void
  */
@@ -412,20 +456,28 @@ function dp_permission_check_print(array $report, array $options): void {
  *
  * @throws RuntimeException When the destination is blank, cannot be created, cannot be encoded, or cannot be written.
  */
-function dp_permission_check_write_json(string $path, array $report): void {
+function dp_permission_check_write_json(
+	string $path,
+	array $report,
+	?callable $makeDirectory=null,
+	?callable $encode=null,
+	?callable $write=null
+): void {
 	$resolved=dp_permission_check_resolve_path($path);
 	if($resolved===''){
 		throw new RuntimeException('JSON path is empty.');
 	}
 	$directory=dirname($resolved);
-	if(!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)){
+	$created=is_dir($directory) || ($makeDirectory===null ? @mkdir($directory, 0775, true) : (bool)$makeDirectory($directory, 0775, true));
+	if(!$created && !is_dir($directory)){
 		throw new RuntimeException('Unable to create directory '.$directory.'.');
 	}
-	$json=json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+	$json=$encode===null ? json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : $encode($report);
 	if(!is_string($json)){
 		throw new RuntimeException('Unable to encode report JSON.');
 	}
-	if(file_put_contents($resolved, $json.PHP_EOL)===false){
+	$written=$write===null ? @file_put_contents($resolved, $json.PHP_EOL) : $write($resolved, $json.PHP_EOL);
+	if($written===false){
 		throw new RuntimeException('Unable to write '.$resolved.'.');
 	}
 }
@@ -464,9 +516,10 @@ function dp_permission_check_exit_code(array $report, array $options): int {
  * values remain blank so callers can produce targeted validation errors.
  *
  * @param string $path CLI-supplied path.
+ * @param string|false|null $workingDirectory Optional deterministic current directory.
  * @return string Absolute or unchanged path suitable for file operations.
  */
-function dp_permission_check_resolve_path(string $path): string {
+function dp_permission_check_resolve_path(string $path, string|false|null $workingDirectory=null): string {
 	$path=trim($path);
 	if($path===''){
 		return '';
@@ -475,6 +528,6 @@ function dp_permission_check_resolve_path(string $path): string {
 	if(preg_match('/^[A-Za-z]:\//', $normalized)===1 || str_starts_with($normalized, '/')){
 		return $path;
 	}
-	$cwd=getcwd();
+	$cwd=$workingDirectory ?? getcwd();
 	return (is_string($cwd) && $cwd!=='') ? $cwd.'/'.$path : $path;
 }

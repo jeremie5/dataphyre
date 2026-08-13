@@ -1,0 +1,73 @@
+{
+  "schema": "dataphyre.panel.asset-delivery-budgets.v1",
+  "profiles": {
+    "shell": {
+      "capabilities": "shell",
+      "maxStyleChunks": 6,
+      "maxScriptChunks": 4,
+      "maxTotalChunks": 10,
+      "maxRawBytes": 1053628,
+      "maxGzipBytes": 165643,
+      "maxBrotliBytes": 137648,
+      "maxChunkRawBytes": 268287,
+      "maxChunkGzipBytes": 32895,
+      "maxChunkBrotliBytes": 27323
+    },
+    "table": {
+      "capabilities": "shell.navigation.table",
+      "maxStyleChunks": 6,
+      "maxScriptChunks": 4,
+      "maxTotalChunks": 10,
+      "maxRawBytes": 1247099,
+      "maxGzipBytes": 189339,
+      "maxBrotliBytes": 155757,
+      "maxChunkRawBytes": 320640,
+      "maxChunkGzipBytes": 39330,
+      "maxChunkBrotliBytes": 30119
+    },
+    "form": {
+      "capabilities": "shell.form",
+      "maxStyleChunks": 6,
+      "maxScriptChunks": 5,
+      "maxTotalChunks": 11,
+      "maxRawBytes": 1152960,
+      "maxGzipBytes": 184674,
+      "maxBrotliBytes": 153632,
+      "maxChunkRawBytes": 274279,
+      "maxChunkGzipBytes": 33039,
+      "maxChunkBrotliBytes": 27323
+    },
+    "modal": {
+      "capabilities": "shell.form.editor.editor-assets.modal",
+      "maxStyleChunks": 6,
+      "maxScriptChunks": 9,
+      "maxTotalChunks": 15,
+      "maxRawBytes": 1330326,
+      "maxGzipBytes": 223589,
+      "maxBrotliBytes": 187805,
+      "maxChunkRawBytes": 274279,
+      "maxChunkGzipBytes": 33039,
+      "maxChunkBrotliBytes": 27323
+    },
+    "full": {
+      "capabilities": null,
+      "maxStyleChunks": 7,
+      "maxScriptChunks": 15,
+      "maxTotalChunks": 22,
+      "maxRawBytes": 1764059,
+      "maxGzipBytes": 295647,
+      "maxBrotliBytes": 247149,
+      "maxChunkRawBytes": 320640,
+      "maxChunkGzipBytes": 39330,
+      "maxChunkBrotliBytes": 30119
+    }
+  },
+  "runtime": {
+    "maxParseMilliseconds": 250,
+    "maxChunkParseMilliseconds": 50,
+    "maxBootstrapMilliseconds": 350,
+    "maxChunkBootstrapMilliseconds": 100,
+    "maxLongTasks": 0,
+    "maxPageErrors": 0
+  }
+}

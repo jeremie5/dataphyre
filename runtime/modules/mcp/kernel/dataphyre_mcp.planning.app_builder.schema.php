@@ -8555,9 +8555,6 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 				if($entity==='CaseDocument' && in_array($phrase, ['document evidence'], true) && ($this->bounded_phrase_match($lower, 'claims') || $this->bounded_phrase_match($lower, 'claim documents') || $this->bounded_phrase_match($lower, 'claim document'))){
 					continue;
 				}
-				if($entity==='Comment' && in_array($phrase, ['comment', 'comments'], true) && ($this->bounded_phrase_match($lower, 'case comments') || $this->bounded_phrase_match($lower, 'case comment') || $this->bounded_phrase_match($lower, 'threaded comments') || $this->bounded_phrase_match($lower, 'threaded comment'))){
-					continue;
-				}
 				if($entity==='Document' && in_array($phrase, ['documents', 'document'], true) && ($this->bounded_phrase_match($lower, 'case documents') || $this->bounded_phrase_match($lower, 'case document') || $this->bounded_phrase_match($lower, 'document evidence'))){
 					continue;
 				}
@@ -8606,16 +8603,7 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 				if($entity==='PurchaseRequestLine' && in_array($phrase, ['line items', 'line item'], true) && ($this->bounded_phrase_match($lower, 'invoice line items') || $this->bounded_phrase_match($lower, 'invoice line item'))){
 					continue;
 				}
-				if($entity==='Task' && in_array($phrase, ['tasks', 'task'], true) && ($this->bounded_phrase_match($lower, 'project tasks') || $this->bounded_phrase_match($lower, 'project task') || $this->bounded_phrase_match($lower, 'task assignment') || $this->bounded_phrase_match($lower, 'task assignments'))){
-					continue;
-				}
-				if($entity==='Issue' && in_array($phrase, ['issues', 'issue'], true) && ($this->bounded_phrase_match($lower, 'project issues') || $this->bounded_phrase_match($lower, 'project issue') || $this->bounded_phrase_match($lower, 'raid logs'))){
-					continue;
-				}
 				if($entity==='InspectionItem' && in_array($phrase, ['inspection checklists', 'inspection checklist'], true)){
-					continue;
-				}
-				if($entity==='EvaluationFinding' && in_array($phrase, ['finding severity'], true) && ($this->bounded_phrase_match($lower, 'audit findings') || $this->bounded_phrase_match($lower, 'audit finding') || $this->bounded_phrase_match($lower, 'quality audit'))){
 					continue;
 				}
 				if($entity==='AuditFinding' && in_array($phrase, ['audit findings', 'audit finding', 'finding severity'], true) && ($this->bounded_phrase_match($lower, 'monitor findings') || $this->bounded_phrase_match($lower, 'monitor finding'))){
@@ -8631,18 +8619,6 @@ trait dataphyre_mcp_planning_app_builder_schema_surfaces {
 					continue;
 				}
 				if($entity==='WorkOrder' && in_array($phrase, ['work orders', 'work order', 'workorders', 'workorder'], true) && ($this->bounded_phrase_match($lower, 'work order operations') || $this->bounded_phrase_match($lower, 'work order operation') || $this->bounded_phrase_match($lower, 'workorderoperations') || $this->bounded_phrase_match($lower, 'workorderoperation'))){
-					continue;
-				}
-				if($entity==='Order' && in_array($phrase, ['order', 'orders'], true) && ($this->bounded_phrase_match($lower, 'work orders') || $this->bounded_phrase_match($lower, 'work order') || $this->bounded_phrase_match($lower, 'workorders') || $this->bounded_phrase_match($lower, 'workorder'))){
-					continue;
-				}
-				if($entity==='Order' && in_array($phrase, ['order', 'orders'], true) && ($this->bounded_phrase_match($lower, 'work order vendor dispatch') || $this->bounded_phrase_match($lower, 'maintenance triage'))){
-					continue;
-				}
-				if($entity==='Order' && in_array($phrase, ['order', 'orders'], true) && ($this->bounded_phrase_match($lower, 'purchase order') || $this->bounded_phrase_match($lower, 'purchase orders') || $this->bounded_phrase_match($lower, 'purchase order matching'))){
-					continue;
-				}
-				if($entity==='Order' && in_array($phrase, ['order', 'orders'], true) && ($this->bounded_phrase_match($lower, 'production order') || $this->bounded_phrase_match($lower, 'production orders') || $this->bounded_phrase_match($lower, 'productionorders') || $this->bounded_phrase_match($lower, 'productionorder'))){
 					continue;
 				}
 				if($entity==='ApprovalStep' && in_array($phrase, ['approval', 'approvals'], true) && ($this->bounded_phrase_match($lower, 'approval workflow') || $this->bounded_phrase_match($lower, 'approval workflows') || $this->bounded_phrase_match($lower, 'approval gate') || $this->bounded_phrase_match($lower, 'approval gates') || $this->bounded_phrase_match($lower, 'change approval') || $this->bounded_phrase_match($lower, 'change approvals') || $this->bounded_phrase_match($lower, 'changeapproval') || $this->bounded_phrase_match($lower, 'changeapprovals') || $this->bounded_phrase_match($lower, 'access approval') || $this->bounded_phrase_match($lower, 'access approvals') || $this->bounded_phrase_match($lower, 'accessapproval') || $this->bounded_phrase_match($lower, 'accessapprovals') || $this->bounded_phrase_match($lower, 'model policy approval') || $this->bounded_phrase_match($lower, 'model policy approvals'))){

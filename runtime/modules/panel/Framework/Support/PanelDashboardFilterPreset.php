@@ -357,7 +357,7 @@ final class PanelDashboardFilterPreset {
 			}
 		}
 		$query=$request instanceof PanelRequest ? $request->query() : [];
-		$filterNames=$manager instanceof PanelManager ? array_keys($manager->dashboardFilters()) : array_keys($values);
+		$filterNames=self::dashboardFilterNames($values, $manager);
 		if($values===[]){
 			foreach($filterNames as $name){
 				if(trim((string)($query[$name] ?? ''))!=='' || trim((string)($query[$name.'_from'] ?? ''))!=='' || trim((string)($query[$name.'_to'] ?? ''))!==''){
@@ -389,10 +389,8 @@ final class PanelDashboardFilterPreset {
 	private function url(array $values, ?PanelRequest $request=null, ?PanelManager $manager=null): string {
 		$query=$request instanceof PanelRequest ? $request->query() : [];
 		unset($query['resource'], $query['operation'], $query['record'], $query['relation'], $query['action'], $query['page']);
-		if($manager instanceof PanelManager){
-			foreach(array_keys($manager->dashboardFilters()) as $name){
-				unset($query[$name], $query[$name.'_from'], $query[$name.'_to']);
-			}
+		foreach(self::dashboardFilterNames($values, $manager) as $name){
+			unset($query[$name], $query[$name.'_from'], $query[$name.'_to']);
 		}
 		foreach($values as $key=>$value){
 			$key=Resource::normalizeName((string)$key);
@@ -413,8 +411,8 @@ final class PanelDashboardFilterPreset {
 	/**
 	 * Filters a preset value map down to scalar query parameters with normalized keys.
 	 *
-	 * Arrays and objects are ignored because dashboard filter URLs can only carry
-	 * scalar query values through the current panel URL builder.
+	 * Non-scalar values are ignored because dashboard filter URLs can only carry
+	 * scalar or null query values through the current panel URL builder.
 	 *
 	 * @param array<string|int, mixed> $values Raw preset values.
 	 * @return array<string, scalar|null> Normalized query value map.
@@ -423,12 +421,26 @@ final class PanelDashboardFilterPreset {
 		$normalized=[];
 		foreach($values as $key=>$value){
 			$key=Resource::normalizeName((string)$key);
-			if($key==='' || is_array($value) || is_object($value)){
+			if($key==='' || (!is_scalar($value) && $value!==null)){
 				continue;
 			}
 			$normalized[$key]=$value;
 		}
 		return $normalized;
+	}
+
+	/**
+	 * Resolves filter keys without assuming a newer PanelManager registry API.
+	 *
+	 * Older managers do not expose dashboardFilters(). In that case preset value
+	 * keys still provide a safe cleanup and current-state comparison boundary.
+	 *
+	 * @param array<string, scalar|null> $values Normalized preset values.
+	 * @param ?PanelManager $manager Active panel manager, when available.
+	 * @return array<int, string> Dashboard filter names to inspect or remove.
+	 */
+	private static function dashboardFilterNames(array $values, ?PanelManager $manager=null): array {
+		return $manager instanceof PanelManager && is_callable([$manager, 'dashboardFilters']) ? array_keys((array)$manager->dashboardFilters()) : array_keys($values);
 	}
 
 	/**

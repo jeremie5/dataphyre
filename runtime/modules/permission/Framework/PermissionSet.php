@@ -249,9 +249,6 @@ final class PermissionSet {
 		if($childExists){
 			$base=substr($permission, 0, -2);
 			if($deny){
-				if(isset($exact[$permission])){
-					return $exact[$permission];
-				}
 				foreach($prefixes as $candidate=>$source){
 					if($candidate===$base || str_starts_with($base, $candidate.'.')){
 						return $source;

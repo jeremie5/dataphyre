@@ -25,7 +25,9 @@ final class PanelCommand {
 	private int $sort=100;
 	private array $keywords=[];
 	private array $meta=[];
+	/** @var (\Closure(?PanelRequest,self,?PanelManager):bool)|null */
 	private ?\Closure $visibilityResolver=null;
+	/** @var (\Closure(?PanelRequest,self,?PanelManager):(string|\Stringable|null))|null */
 	private ?\Closure $urlResolver=null;
 
 	/**
@@ -165,7 +167,7 @@ final class PanelCommand {
 	 *
 	 * Static URLs are trimmed and stored directly. Callable URLs are converted to closures and invoked during toArray() with the request, command, and manager; resolver failures are traced and serialized as null URLs.
 	 *
-	 * @param string|callable $url Static URL or resolver callback.
+	 * @param string|callable(?PanelRequest,self,?PanelManager):(string|\Stringable|null) $url Static URL or resolver callback.
 	 * @return self Cloned command with URL behavior updated.
 	 */
 	public function url(string|callable $url): self {
@@ -211,7 +213,7 @@ final class PanelCommand {
 	 *
 	 * Resolvers receive the current request, command, and manager. Exceptions are caught in isVisible(), recorded through PanelTrace, and treated as invisible to avoid leaking broken commands into the palette.
 	 *
-	 * @param callable $resolver Visibility callback.
+	 * @param callable(?PanelRequest,self,?PanelManager):bool $resolver Visibility callback.
 	 * @return self Cloned command with lazy visibility attached.
 	 */
 	public function visibleUsing(callable $resolver): self {

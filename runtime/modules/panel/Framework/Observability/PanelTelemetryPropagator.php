@@ -1,0 +1,24 @@
+<?php
+declare(strict_types=1);
+/*************************************************************************
+ * Dataphyre
+ *
+ * Copyright (c) 2026 Shopiro Ltd.
+ * SPDX-License-Identifier: MIT
+ */
+namespace Dataphyre\Panel;
+
+/** Strict, bounded W3C trace-context and safe-baggage propagation. */
+final class PanelTelemetryPropagator implements \JsonSerializable {
+	public const MAX_TRACESTATE_BYTES=512; public const MAX_TRACESTATE_MEMBERS=32; public const MAX_BAGGAGE_BYTES=8192; public const MAX_BAGGAGE_MEMBERS=32;
+	/** @param array<mixed,mixed> $headers */
+	public function extract(array $headers):?PanelTelemetryContext{$headers=self::headers($headers);$parent=$headers['traceparent']??'';if(!is_string($parent)||preg_match('/^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})(.*)$/D',$parent,$match)!==1||$match[1]==='ff'||($match[1]==='00'&&$match[5]!=='')||($match[1]!=='00'&&$match[5]!==''&&!str_starts_with($match[5],'-'))||trim($match[2],'0')===''||trim($match[3],'0')===''){return null;}$flags=hexdec($match[4])&1;return PanelTelemetryContext::remote($match[2],$match[3],$flags,$this->normalizeTraceState($headers['tracestate']??''),$this->normalizeBaggage($headers['baggage']??''));}
+	/** @param array<mixed,mixed> $headers @return array<string,string> */
+	public function inject(PanelTelemetryContext $context,array $headers=[]):array{$headers=self::headers($headers);$headers['traceparent']=$context->traceParent();if($context->traceState()!==''){$headers['tracestate']=$context->traceState();}else{unset($headers['tracestate']);}$baggage=self::baggageHeader($context->baggage());if($baggage!==''){$headers['baggage']=$baggage;}else{unset($headers['baggage']);}return$headers;}
+	public function normalizeTraceState(mixed $value):string{$value=trim(is_scalar($value)?(string)$value:'');if($value===''||strlen($value)>self::MAX_TRACESTATE_BYTES){return'';}$members=[];$seen=[];foreach(explode(',',$value)as$part){$part=trim($part);if($part===''||substr_count($part,'=')!==1){return'';}[$key,$member]=array_map('trim',explode('=',$part,2));$simple=preg_match('/^[a-z][a-z0-9_\-*\/]{0,255}$/D',$key)===1;$tenant=preg_match('/^[a-z0-9][a-z0-9_\-*\/]{0,240}@[a-z][a-z0-9_\-*\/]{0,13}$/D',$key)===1;if((!$simple&&!$tenant)||isset($seen[$key])||$member===''||strlen($member)>256||preg_match('/[\x00-\x1f\x7f,=]/',$member)===1){return'';}$seen[$key]=true;$members[]=$key.'='.$member;if(count($members)>self::MAX_TRACESTATE_MEMBERS){return'';}}return implode(',',$members);}
+	/** @return array<string,string> */
+	public function normalizeBaggage(mixed $value):array{$value=trim(is_scalar($value)?(string)$value:'');if($value===''||strlen($value)>self::MAX_BAGGAGE_BYTES){return[];}$out=[];foreach(explode(',',$value)as$part){$pair=trim(explode(';',$part,2)[0]);$separator=strpos($pair,'=');if($pair===''||$separator===false){continue;}$key=trim(substr($pair,0,$separator));$rawValue=trim(substr($pair,$separator+1));if(str_contains($key,'%')||preg_match('/%(?![0-9A-Fa-f]{2})/',$rawValue)===1||preg_match('~^(?:%[0-9A-Fa-f]{2}|[\x21\x23-\x24\x26-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E])*$~D',$rawValue)!==1){continue;}$decoded=rawurldecode($rawValue);if(strlen($key)>128||strlen($decoded)>256||preg_match('/^[a-zA-Z0-9][a-zA-Z0-9._\-*]{0,127}$/D',$key)!==1||preg_match('/[\x00-\x1f\x7f]/',$decoded)===1||PanelSensitiveDataSanitizer::isSensitiveKey($key)||isset($out[$key])){continue;}$safe=PanelSensitiveDataSanitizer::sanitize($decoded,['root_key'=>$key,'max_depth'=>2,'max_items'=>2,'max_string_bytes'=>256]);if(!is_string($safe)||str_contains($safe,PanelSensitiveDataSanitizer::REDACTED)){continue;}$out[$key]=$safe;if(count($out)>=self::MAX_BAGGAGE_MEMBERS){break;}}return$out;}
+	public function jsonSerialize():array{return['type'=>'panel_telemetry_propagator','schema_version'=>1,'formats'=>['traceparent'=>'w3c','tracestate'=>'w3c','baggage'=>'w3c-safe-subset'],'limits'=>['tracestate_bytes'=>self::MAX_TRACESTATE_BYTES,'tracestate_members'=>self::MAX_TRACESTATE_MEMBERS,'baggage_bytes'=>self::MAX_BAGGAGE_BYTES,'baggage_members'=>self::MAX_BAGGAGE_MEMBERS]];}
+	/** @param array<mixed,mixed> $headers @return array<string,string> */ private static function headers(array $headers):array{$out=[];foreach($headers as$key=>$value){$key=strtolower(str_replace('_','-',trim((string)$key)));if($key===''||!is_scalar($value)){continue;}$out[$key]=trim((string)$value);}return$out;}
+	/** @param array<string,string> $baggage */ private static function baggageHeader(array $baggage):string{$header='';foreach(array_slice($baggage,0,self::MAX_BAGGAGE_MEMBERS,true)as$key=>$value){if(!is_string($key)||!is_string($value)){continue;}$member=rawurlencode($key).'='.rawurlencode($value);$candidate=$header===''?$member:$header.','.$member;if(strlen($candidate)>self::MAX_BAGGAGE_BYTES){break;}$header=$candidate;}return$header;}
+}

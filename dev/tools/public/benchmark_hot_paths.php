@@ -77,7 +77,7 @@ require_once __DIR__.'/../../../runtime/modules/core/Framework/ConfigRepository.
 require_once __DIR__.'/../../../runtime/modules/core/Framework/ConfigSnapshot.php';
 if(!defined('ROOTPATH')){
 	define('ROOTPATH', [
-		'root'=>dirname(__DIR__, 5).'/',
+		'root'=>dirname(__DIR__, 4).'/',
 		'dataphyre'=>dirname(__DIR__, 3).'/',
 		'common_dataphyre'=>dirname(__DIR__, 3).'/',
 		'common_dataphyre_runtime'=>dirname(__DIR__, 3).'/runtime/',
@@ -151,6 +151,7 @@ require_once __DIR__.'/../../../runtime/modules/sql/Framework/TableDefinition.ph
 require_once __DIR__.'/../../../runtime/modules/sql/Framework/PageResult.php';
 require_once __DIR__.'/../../../runtime/modules/sql/Framework/MutationResult.php';
 require_once __DIR__.'/../../../runtime/modules/sql/Framework/MutationBatchResult.php';
+require_once __DIR__.'/../../../runtime/modules/sql/Framework/BulkMutationPlanner.php';
 require_once __DIR__.'/../../../runtime/modules/sql/Framework/TransactionResult.php';
 require_once __DIR__.'/../../../runtime/modules/sql/Framework/Record.php';
 require_once __DIR__.'/../../../runtime/modules/sql/Framework/CurrencyBridge.php';
@@ -264,6 +265,7 @@ use Dataphyre\Database\TableDefinition;
 use Dataphyre\Database\PageResult;
 use Dataphyre\Database\MutationResult;
 use Dataphyre\Database\MutationBatchResult;
+use Dataphyre\Database\BulkMutationPlanner;
 use Dataphyre\Database\TransactionResult;
 use Dataphyre\Database\Record;
 use Dataphyre\Database\CurrencyBridge;
@@ -2231,6 +2233,26 @@ if($scenario==='all' || $scenario==='sql-error-unknown-column'){
 		static fn() => SqlError::unknownColumn('products', 'missing_column', $knownColumns),
 		10000,
 		250
+	);
+}
+
+if($scenario==='all' || $scenario==='bulk-mutation-plan-postgresql'){
+	$rows=[];
+	for($index=1; $index<=1000; $index++){
+		$rows[]=['id'=>$index, 'name'=>'record-'.$index];
+	}
+	$results[]=bench_run(
+		'bulk-mutation-plan-postgresql-1000',
+		static fn() => BulkMutationPlanner::inserts(
+			'postgresql',
+			'records',
+			$rows,
+			'id',
+			BulkMutationPlanner::DEFAULT_MAX_ROWS,
+			BulkMutationPlanner::DEFAULT_POSTGRESQL_PARAMETERS
+		),
+		1000,
+		100
 	);
 }
 

@@ -1,7 +1,7 @@
 [
   {
     "name": "locale_definition_from_array_normalizes_empty_optional_fields",
-    "file": "/common/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
     "function": "DataphyreUnitTests\\localization_definition_json",
     "args": [
       {
@@ -19,7 +19,7 @@
   },
   {
     "name": "locale_definition_preserves_source_branch_and_commit",
-    "file": "/common/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
     "function": "DataphyreUnitTests\\localization_definition_source_json",
     "args": [
       {
@@ -39,7 +39,7 @@
   },
   {
     "name": "locale_definition_catalog_keeps_filters_and_entries",
-    "file": "/common/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
     "function": "DataphyreUnitTests\\localization_definition_catalog_json",
     "args": [
       [
@@ -66,7 +66,7 @@
   },
   {
     "name": "unknown_locale_entry_uppercases_name_and_serializes_context",
-    "file": "/common/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
     "function": "DataphyreUnitTests\\localization_unknown_entry_json",
     "args": [
       " checkout.title ",
@@ -83,7 +83,7 @@
   },
   {
     "name": "locale_definition_batch_result_marks_all_skipped_as_noop",
-    "file": "/common/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
     "function": "DataphyreUnitTests\\localization_batch_result_json",
     "args": ["save", true, 2, 0, 2, false, 0],
     "expected": "{\"operation\":\"save\",\"ok\":true,\"requested\":2,\"processed\":0,\"skipped\":2,\"rebuilt\":false,\"rebuild_targets\":0,\"noop\":true}",
@@ -91,7 +91,7 @@
   },
   {
     "name": "localization_rebuild_selection_local_keeps_filters",
-    "file": "/common/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
     "function": "DataphyreUnitTests\\localization_rebuild_selection_json",
     "args": ["local"],
     "expected": "{\"types\":[\"local\"],\"languages\":[\"en\"],\"themes\":[\"admin\"],\"paths\":[\"/orders/index.php\"]}",
@@ -99,7 +99,7 @@
   },
   {
     "name": "localization_maintenance_result_embeds_selection",
-    "file": "/common/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/localization/unit_tests/localization_test_helpers.php",
     "function": "DataphyreUnitTests\\localization_maintenance_result_json",
     "args": [],
     "expected": "{\"operation\":\"rebuild\",\"status\":\"ok\",\"ok\":true,\"noop\":false,\"count\":3,\"forced\":true,\"selection\":{\"types\":[\"local\"],\"languages\":[\"en\"],\"themes\":[\"admin\"],\"paths\":[\"/orders/index.php\"]}}",

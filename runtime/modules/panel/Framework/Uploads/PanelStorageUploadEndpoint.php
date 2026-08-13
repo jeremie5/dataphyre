@@ -34,8 +34,11 @@ final class PanelStorageUploadEndpoint {
 		if($path===''){
 			return self::error('Stored upload path is missing.');
 		}
-		if(str_contains($path, '..')){
+		if(!self::pathSegmentsSafe($path)){
 			return self::error('Stored upload path is invalid.');
+		}
+		if(!self::deletePathAllowed($path)){
+			return self::error('Stored upload path is outside the allowed upload prefixes.');
 		}
 		if(!class_exists(Storage::class)){
 			return self::error('Dataphyre Storage is unavailable.');
@@ -74,75 +77,140 @@ final class PanelStorageUploadEndpoint {
 		if($uploadId==='' || $filename===''){
 			return self::error('Upload identity is missing.');
 		}
-		$total=max(1, min(10000, (int)($post['chunks'] ?? 1)));
-		$index=max(0, min($total-1, (int)($post['chunk_index'] ?? 0)));
+		$total=self::integer($post['chunks'] ?? 1);
+		$index=self::integer($post['chunk_index'] ?? 0);
+		if($total===null || $total<1 || $total>10000){
+			return self::error('Upload chunk count is invalid.');
+		}
+		if($index===null || $index<0 || $index>=$total){
+			return self::error('Upload chunk index is invalid.');
+		}
+		$declaredSize=self::integer($post['size'] ?? $file['size'] ?? 0);
+		if($declaredSize===null || $declaredSize<0 || ($total>1 && $declaredSize===0)){
+			return self::error('Upload size is invalid.');
+		}
+		$maxUploadBytes=self::configuredByteLimit('upload_max_bytes', 536870912);
+		if($maxUploadBytes>0 && $declaredSize>$maxUploadBytes){
+			return self::error('Upload exceeds the configured size limit.');
+		}
+		$disk=self::storageName((string)($post['storage_disk'] ?? 'local')) ?: 'local';
+		$template=trim((string)($post['storage_path'] ?? 'panel_uploads/{date}/{filename}'), "\\/") ?: 'panel_uploads/{date}/{filename}';
+		$field=self::storageName((string)($post['field'] ?? 'file')) ?: 'file';
+		$collection=self::storageName((string)($post['storage_collection'] ?? 'default')) ?: 'default';
+		$visibility=trim((string)($post['storage_visibility'] ?? ''));
+		$path=self::storagePath($template, $filename, $uploadId, $field, $collection);
+		if($path===''){
+			return self::error('Upload storage path is invalid.');
+		}
 		$tmp=(string)($file['tmp_name'] ?? '');
 		if($tmp==='' || !is_file($tmp)){
 			return self::error('Temporary upload chunk is unavailable.');
+		}
+		$chunkBytes=@filesize($tmp);
+		if(!is_int($chunkBytes) || $chunkBytes<0){
+			return self::error('Upload chunk size could not be verified.');
+		}
+		$maxChunkBytes=self::configuredByteLimit('upload_max_chunk_bytes', 52428800);
+		if($maxChunkBytes>0 && $chunkBytes>$maxChunkBytes){
+			return self::error('Upload chunk exceeds the configured size limit.');
+		}
+		if($declaredSize>0 && $chunkBytes>$declaredSize){
+			return self::error('Upload chunk exceeds the declared upload size.');
+		}
+		if($declaredSize===0){
+			$declaredSize=$chunkBytes;
 		}
 		$directory=self::chunkDirectory($uploadId);
 		if(!is_dir($directory) && !@mkdir($directory, 0775, true) && !is_dir($directory)){
 			return self::error('Could not prepare upload workspace.');
 		}
-		$chunkPath=$directory.'/part-'.str_pad((string)$index, 6, '0', STR_PAD_LEFT);
-		if(!@move_uploaded_file($tmp, $chunkPath) && !@rename($tmp, $chunkPath)){
-			if(!@copy($tmp, $chunkPath)){
-				return self::error('Could not persist upload chunk.');
+		$lock=@fopen($directory.'/.upload.lock', 'c+b');
+		if(!is_resource($lock) || !@flock($lock, LOCK_EX)){
+			if(is_resource($lock)){
+				fclose($lock);
+			}
+			return self::error('Could not lock upload workspace.');
+		}
+		$cleanupAfterUnlock=false;
+		try{
+			$manifest=[
+				'upload_id'=>$uploadId,
+				'filename'=>$filename,
+				'size'=>$declaredSize,
+				'mime'=>self::mimeType((string)($post['type'] ?? $file['type'] ?? 'application/octet-stream')),
+				'chunks'=>$total,
+				'disk'=>$disk,
+				'path'=>$path,
+				'visibility'=>$visibility,
+				'updated_at'=>time(),
+			];
+			$manifestPath=$directory.'/manifest.json';
+			if(is_file($manifestPath)){
+				$existing=json_decode((string)@file_get_contents($manifestPath), true);
+				if(!is_array($existing) || !self::manifestMatches($existing, $manifest)){
+					return self::error('Upload metadata changed between chunks.');
+				}
+				$manifest=array_replace($manifest, $existing, ['updated_at'=>time()]);
+			}
+			$chunkPath=$directory.'/part-'.str_pad((string)$index, 6, '0', STR_PAD_LEFT);
+			if(!@move_uploaded_file($tmp, $chunkPath) && !@rename($tmp, $chunkPath)){
+				if(!@copy($tmp, $chunkPath)){
+					return self::error('Could not persist upload chunk.');
+				}
+			}
+			if(@file_put_contents($manifestPath, json_encode($manifest, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT), LOCK_EX)===false){
+				return self::error('Could not persist upload metadata.');
+			}
+			if(!self::chunksComplete($directory, $total)){
+				return [
+					'ok'=>true,
+					'pending'=>true,
+					'upload_id'=>$uploadId,
+					'chunk'=>$index,
+					'chunks'=>$total,
+				];
+			}
+			$assembled=$directory.'/assembled.bin';
+			if(!self::assemble($directory, $assembled, $total)){
+				return self::error('Could not assemble upload chunks.');
+			}
+			$assembledBytes=@filesize($assembled);
+			if(!is_int($assembledBytes) || $assembledBytes!==$declaredSize){
+				$cleanupAfterUnlock=true;
+				return self::error('Assembled upload size does not match the declared size.');
+			}
+			$detectedMime=self::detectedMimeType($assembled);
+			$storedMime=$detectedMime!=='application/octet-stream' ? $detectedMime : (string)$manifest['mime'];
+			$options=array_filter([
+				'content_type'=>$storedMime,
+				'original_name'=>$filename,
+				'visibility'=>$manifest['visibility'] ?: null,
+			], static fn(mixed $value): bool => $value!==null && $value!=='');
+			if(!class_exists(Storage::class)){
+				return self::error('Dataphyre Storage is unavailable.');
+			}
+			if(!Storage::putFile($path, $assembled, $disk, $options)){
+				return self::error('Dataphyre Storage could not persist the upload.');
+			}
+			$metadata=Storage::metadata($path, $disk);
+			$item=[
+				'upload_id'=>$uploadId,
+				'disk'=>$disk,
+				'path'=>$path,
+				'filename'=>basename($path),
+				'original_name'=>$filename,
+				'mime'=>$storedMime,
+				'size'=>$metadata ? $metadata->size() : (int)@filesize($assembled),
+				'url'=>Storage::temporaryUrl($path, time()+3600, $disk) ?: null,
+			];
+			$cleanupAfterUnlock=true;
+			return ['ok'=>true, 'complete'=>true, 'file'=>$item]; } finally {
+			@flock($lock, LOCK_UN);
+			fclose($lock);
+			if($cleanupAfterUnlock){
+				self::cleanup($directory);
 			}
 		}
-		$manifest=[
-			'upload_id'=>$uploadId,
-			'filename'=>$filename,
-			'size'=>max(0, (int)($post['size'] ?? $file['size'] ?? 0)),
-			'mime'=>trim((string)($post['type'] ?? $file['type'] ?? 'application/octet-stream')) ?: 'application/octet-stream',
-			'chunks'=>$total,
-			'updated_at'=>time(),
-		];
-		@file_put_contents($directory.'/manifest.json', json_encode($manifest, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT), LOCK_EX);
-		if(!self::chunksComplete($directory, $total)){
-			return [
-				'ok'=>true,
-				'pending'=>true,
-				'upload_id'=>$uploadId,
-				'chunk'=>$index,
-				'chunks'=>$total,
-			];
-		}
-		$assembled=$directory.'/assembled.bin';
-		if(!self::assemble($directory, $assembled, $total)){
-			return self::error('Could not assemble upload chunks.');
-		}
-		$disk=self::storageName((string)($post['storage_disk'] ?? 'local')) ?: 'local';
-		$template=trim((string)($post['storage_path'] ?? 'panel_uploads/{date}/{filename}'), "\\/") ?: 'panel_uploads/{date}/{filename}';
-		$path=self::storagePath($template, $filename, $uploadId, (string)($post['field'] ?? 'file'), (string)($post['storage_collection'] ?? 'default'));
-		$options=array_filter([
-			'content_type'=>$manifest['mime'],
-			'original_name'=>$filename,
-			'visibility'=>trim((string)($post['storage_visibility'] ?? '')) ?: null,
-		], static fn(mixed $value): bool => $value!==null && $value!=='');
-		if(!class_exists(Storage::class)){
-			return self::error('Dataphyre Storage is unavailable.');
-		}
-		if(!Storage::putFile($path, $assembled, $disk, $options)){
-			return self::error('Dataphyre Storage could not persist the upload.');
-		}
-		$metadata=Storage::metadata($path, $disk);
-		$item=[
-			'upload_id'=>$uploadId,
-			'disk'=>$disk,
-			'path'=>$path,
-			'filename'=>basename($path),
-			'original_name'=>$filename,
-			'mime'=>$manifest['mime'],
-			'size'=>$metadata ? $metadata->size() : (int)@filesize($assembled),
-			'url'=>Storage::temporaryUrl($path, time()+3600, $disk) ?: null,
-		];
-		self::cleanup($directory);
-		return [
-			'ok'=>true,
-			'complete'=>true,
-			'file'=>$item,
-		];
 	}
 
 	/**
@@ -171,7 +239,57 @@ final class PanelStorageUploadEndpoint {
 			'{hash}'=>$hash,
 			'{id}'=>$uploadId,
 		]);
-		return trim(preg_replace('#/+#', '/', str_replace('\\', '/', $path)) ?? $stored, '/');
+		$path=trim(preg_replace('#/+#', '/', str_replace('\\', '/', $path)) ?? '', '/');
+		if($path===''){
+			return '';
+		}
+		return self::pathSegmentsSafe($path) ? $path : '';
+	}
+
+	/**
+	 * Checks slash-delimited storage paths for empty and traversal segments.
+	 *
+	 * @param string $path Normalized relative storage path.
+	 * @return bool Whether every segment is a usable relative component.
+	 */
+	private static function pathSegmentsSafe(string $path): bool {
+		if($path===''){
+			return false;
+		}
+		foreach(explode('/', str_replace('\\', '/', $path)) as $segment){
+			if($segment==='' || $segment==='.' || $segment==='..'){
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Restricts browser-triggered deletion to configured Panel upload prefixes.
+	 *
+	 * The secure default covers objects produced by the default storage template.
+	 * Applications using custom templates must add their root prefixes through
+	 * `upload_delete_prefixes`; `*` is an explicit opt-out of prefix isolation.
+	 *
+	 * @param string $path Validated relative object path.
+	 * @return bool Whether the path belongs to an allowed upload namespace.
+	 */
+	private static function deletePathAllowed(string $path): bool {
+		$configured=PanelConfig::config('upload_delete_prefixes', ['panel_uploads']);
+		$prefixes=is_array($configured) ? $configured : [$configured];
+		foreach($prefixes as $prefix){
+			$prefix=trim(str_replace('\\', '/', (string)$prefix), '/');
+			if($prefix==='*'){
+				return true;
+			}
+			if($prefix==='' || !self::pathSegmentsSafe($prefix)){
+				continue;
+			}
+			if($path===$prefix || str_starts_with($path, $prefix.'/')){
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -184,6 +302,22 @@ final class PanelStorageUploadEndpoint {
 	private static function chunksComplete(string $directory, int $total): bool {
 		for($index=0;$index<$total;$index++){
 			if(!is_file($directory.'/part-'.str_pad((string)$index, 6, '0', STR_PAD_LEFT))){
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Checks that immutable upload metadata matches the first chunk manifest.
+	 *
+	 * @param array<string, mixed> $existing Stored first-chunk manifest.
+	 * @param array<string, mixed> $incoming Incoming chunk manifest.
+	 * @return bool True when identity, size, routing, and chunk count are unchanged.
+	 */
+	private static function manifestMatches(array $existing, array $incoming): bool {
+		foreach(['upload_id', 'filename', 'size', 'mime', 'chunks', 'disk', 'path', 'visibility'] as $key){
+			if(!array_key_exists($key, $existing) || (string)$existing[$key] !== (string)($incoming[$key] ?? null)){
 				return false;
 			}
 		}
@@ -210,7 +344,12 @@ final class PanelStorageUploadEndpoint {
 				fclose($out);
 				return false;
 			}
-			stream_copy_to_stream($in, $out);
+			if(@stream_copy_to_stream($in, $out)===false){
+				fclose($in);
+				fclose($out);
+				@unlink($target);
+				return false;
+			}
 			fclose($in);
 		}
 		fclose($out);
@@ -242,6 +381,7 @@ final class PanelStorageUploadEndpoint {
 				@unlink($file);
 			}
 		}
+		@unlink($directory.'/.upload.lock');
 		@rmdir($directory);
 	}
 
@@ -252,7 +392,77 @@ final class PanelStorageUploadEndpoint {
 	 * @return string Sanitized token.
 	 */
 	private static function token(string $value): string {
-		return preg_replace('/[^A-Za-z0-9_.-]+/', '', trim($value)) ?? '';
+		$value=preg_replace('/[^A-Za-z0-9_.-]+/', '', trim($value)) ?? '';
+		if(!preg_match('/\A[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,126}[A-Za-z0-9])?\z/', $value)){
+			return '';
+		}
+		return $value;
+	}
+
+	/**
+	 * Parses an integer request field without accepting partial numeric strings.
+	 *
+	 * @param mixed $value Raw request value.
+	 * @return int|null Parsed integer, or null when the value is not an integer.
+	 */
+	private static function integer(mixed $value): ?int {
+		if(is_int($value)){
+			return $value;
+		}
+		if(!is_string($value) || !preg_match('/\A-?\d+\z/', trim($value))){
+			return null;
+		}
+		$validated=filter_var(trim($value), FILTER_VALIDATE_INT);
+		return $validated===false ? null : $validated;
+	}
+
+	/**
+	 * Resolves a non-negative byte limit from Panel configuration.
+	 *
+	 * Invalid values fail back to the supplied secure default. A configured zero
+	 * explicitly disables that limit for applications that enforce quotas at a
+	 * different trusted boundary.
+	 *
+	 * @param string $key Panel configuration key.
+	 * @param int $default Default byte limit.
+	 * @return int Non-negative byte limit.
+	 */
+	private static function configuredByteLimit(string $key, int $default): int {
+		$value=PanelConfig::config($key, $default);
+		$parsed=self::integer($value);
+		return $parsed!==null && $parsed>=0 ? $parsed : $default;
+	}
+
+	/**
+	 * Normalizes a caller-provided MIME value to a single safe media type.
+	 *
+	 * Parameters and control characters are discarded. Invalid values use the
+	 * generic binary type until server-side detection can inspect the assembled
+	 * object.
+	 *
+	 * @param string $value Browser-provided MIME value.
+	 * @return string Safe MIME type.
+	 */
+	private static function mimeType(string $value): string {
+		$value=strtolower(trim(explode(';', $value, 2)[0]));
+		return preg_match('/\A[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*\z/', $value)===1
+			? $value
+			: 'application/octet-stream';
+	}
+
+	/**
+	 * Detects the assembled file MIME type without trusting browser metadata.
+	 *
+	 * @param string $path Assembled temporary file.
+	 * @return string Detected MIME type or the generic binary fallback.
+	 */
+	private static function detectedMimeType(string $path): string {
+		if(!class_exists('finfo')){
+			return 'application/octet-stream';
+		}
+		$finfo=new \finfo(FILEINFO_MIME_TYPE);
+		$detected=$finfo->file($path);
+		return is_string($detected) ? self::mimeType($detected) : 'application/octet-stream';
 	}
 
 	/**
@@ -262,7 +472,8 @@ final class PanelStorageUploadEndpoint {
 	 * @return string Name containing only storage-safe characters.
 	 */
 	private static function storageName(string $value): string {
-		return preg_replace('/[^a-zA-Z0-9_.-]+/', '_', trim($value)) ?? '';
+		$value=preg_replace('/[^a-zA-Z0-9_.-]+/', '_', trim($value)) ?? '';
+		return trim($value, '.-');
 	}
 
 	/**

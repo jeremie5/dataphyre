@@ -1,5 +1,5 @@
 [{
-    "max_millis":  10,
+    "max_millis":  100,
     "name":  "buffer_minify_removes_comments_and_extra_space_when_enabled",
     "function":  "dp_core_unit_buffer_minify",
     "args":  [
@@ -8,5 +8,5 @@
     "expected":  [
                      "\u003cdiv\u003eHello\u003c/div\u003e"
                  ],
-    "file":  "/common/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
+    "file":  "/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
 }]

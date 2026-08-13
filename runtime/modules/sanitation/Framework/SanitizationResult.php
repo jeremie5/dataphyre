@@ -144,7 +144,14 @@ final class SanitizationResult {
 	 * @return ?string First error message, or null when there are no errors.
 	 */
 	public function firstError(): ?string {
-		return $this->errors===[] ? null : (string)reset($this->errors);
+		if($this->errors===[]){
+			return null;
+		}
+		$first=$this->errors[array_key_first($this->errors)];
+		if(is_array($first)){
+			return $first===[] ? null : (string)$first[array_key_first($first)];
+		}
+		return (string)$first;
 	}
 
 	/**
@@ -344,7 +351,7 @@ final class SanitizationResult {
 		foreach($segments as $index=>$segment){
 			if($index===$lastIndex){
 				$current[$segment]=$value;
-				return;
+				break;
 			}
 			if(!isset($current[$segment]) || !is_array($current[$segment])){
 				$current[$segment]=[];
@@ -375,7 +382,7 @@ final class SanitizationResult {
 		foreach($segments as $index=>$segment){
 			if($index===$lastIndex){
 				unset($current[$segment]);
-				return;
+				break;
 			}
 			if(!isset($current[$segment]) || !is_array($current[$segment])){
 				return;

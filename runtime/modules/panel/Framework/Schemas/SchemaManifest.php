@@ -87,7 +87,7 @@ final class SchemaManifest {
 	/**
 	 * Builds the schema renderer manifest with flattened fields and sections.
 	 *
-	 * @return array{type:string,operation:?string,columns:int,responsive_columns:array<string,int>,component_count:int,field_count:int,section_count:int,components:array<int,array<string,mixed>>,fields:array<string,array<string,mixed>>,sections:array<string,array<string,mixed>>,capabilities:array{layouts:array<string,int>,fields:array<string,int>,behavior:array<string,bool>},lifecycle:array<string,mixed>,meta:array<string,mixed>} Schema manifest.
+	 * @return array{type:string,schema_version:int,api_version:int,operation:?string,columns:int,responsive_columns:array<string,int>,component_count:int,field_count:int,section_count:int,components:array<int,array<string,mixed>>,fields:array<string,array<string,mixed>>,sections:array<string,array<string,mixed>>,capabilities:array{layouts:array<string,int>,fields:array<string,int>,behavior:array<string,bool>},lifecycle:array<string,mixed>,meta:array<string,mixed>} Schema manifest.
 	 */
 	public function toArray(): array {
 		$schema=$this->schema->toArray();
@@ -118,7 +118,7 @@ final class SchemaManifest {
 			'section_count'=>$manifest['section_count'],
 			'capabilities'=>$capabilities,
 		]);
-		return $manifest;
+		return PanelManifestContract::stamp($manifest);
 	}
 
 	/**

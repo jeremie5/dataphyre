@@ -4,7 +4,7 @@
 		"function": "dp_time_machine_unit_create_basic",
 		"args": [],
 		"expected": ["regex:/^[a-zA-Z0-9]+$/", false],
-		"file": "/common/dataphyre/runtime/modules/time_machine/unit_tests/time_machine_test_helpers.php",
+		"file": "/dataphyre/runtime/modules/time_machine/unit_tests/time_machine_test_helpers.php",
 		"dependencies": {
 			"function": ["dp_time_machine_unit_create_basic"]
 		}

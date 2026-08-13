@@ -19,10 +19,7 @@ trait dataphyre_mcp_client_workflow_state_surfaces {
 	 * @return array Workflow state schema payload.
 	 */
 	private function mcp_workflow_state_schema_export(array $args): array {
-		$workflow=strtolower(trim((string)($args['workflow'] ?? 'generic')));
-		if(!in_array($workflow, ['feature', 'routes', 'sql', 'diagnostics', 'client', 'release', 'generic'], true)){
-			$workflow='generic';
-		}
+		$workflow=$this->mcp_workflow_name($args['workflow'] ?? 'generic',['feature','routes','sql','diagnostics','client','release','generic'],'generic');
 		return [
 			'export_type'=>'dataphyre_mcp_workflow_state_schema_export',
 			'write_policy'=>'read_only',
@@ -97,30 +94,38 @@ trait dataphyre_mcp_client_workflow_state_surfaces {
 	}
 
 	/**
+	 * Resolves client-owned state without losing whether it came from an object,
+	 * JSON, an omitted input, or malformed JSON during nested surface calls.
+	 *
+	 * @param array<string,mixed> $args Workflow-state arguments.
+	 * @return array{state:array<string,mixed>,source:'array'|'json'|'missing'|'invalid_json',parse_error:string}
+	 */
+	private function mcp_workflow_state_input(array $args): array {
+		if(isset($args['state']) && is_array($args['state'])){
+			return ['state'=>$args['state'],'source'=>'array','parse_error'=>''];
+		}
+		$state_json=trim((string)($args['state_json'] ?? ''));
+		if($state_json===''){
+			return ['state'=>[],'source'=>'missing','parse_error'=>''];
+		}
+		$decoded=json_decode($state_json,true);
+		if(is_array($decoded)){
+			return ['state'=>$decoded,'source'=>'json','parse_error'=>''];
+		}
+		return ['state'=>[],'source'=>'invalid_json','parse_error'=>'state_json could not be decoded as an object.'];
+	}
+
+	/**
 	 * Audits a workflow state payload for structure, phase, and handoff risks.
 	 *
 	 * @param array<string,mixed> $args Workflow state and audit options.
 	 * @return array Workflow state audit payload.
 	 */
 	private function mcp_workflow_state_audit(array $args): array {
-		$expected_workflow=strtolower(trim((string)($args['workflow'] ?? 'generic')));
-		if(!in_array($expected_workflow, ['feature', 'routes', 'sql', 'diagnostics', 'client', 'release', 'generic'], true)){
-			$expected_workflow='generic';
-		}
-		$state=[];
-		$parse_error='';
-		if(isset($args['state']) && is_array($args['state'])){
-			$state=$args['state'];
-		}
-		elseif(trim((string)($args['state_json'] ?? ''))!==''){
-			$decoded=json_decode((string)$args['state_json'], true);
-			if(is_array($decoded)){
-				$state=$decoded;
-			}
-			else{
-				$parse_error='state_json could not be decoded as an object.';
-			}
-		}
+		$expected_workflow=$this->mcp_workflow_name($args['workflow'] ?? 'generic',['feature','routes','sql','diagnostics','client','release','generic'],'generic');
+		$input=$this->mcp_workflow_state_input($args);
+		$state=$input['state'];
+		$parse_error=$input['parse_error'];
 		$findings=[];
 		$warnings=[];
 		if($state===[]){
@@ -181,9 +186,8 @@ trait dataphyre_mcp_client_workflow_state_surfaces {
 			}
 		}
 		$serialized=json_encode($state, JSON_UNESCAPED_SLASHES) ?: '';
-		$sensitive_key=$this->mcp_sensitive_assignment_key_pattern();
 		$secret_patterns=[
-			'secret_assignment'=>'/\b(?:'.$sensitive_key.')\b\s*(?:=>|:|=)\s*["\']?[^"\'\s\[\{]+/i',
+			'secret_assignment'=>$this->mcp_sensitive_assignment_pattern(),
 			'bearer_token'=>'/Bearer\s+[A-Za-z0-9._~+\/=-]{12,}/i',
 			'connection_string'=>'/\b(?:mysql|pgsql|postgres|redis|mongodb):\/\/[^"\s]+/i',
 			'absolute_windows_path'=>'/[A-Za-z]:(?:\\\\|\/)[^"\n\r]+/',
@@ -242,36 +246,17 @@ trait dataphyre_mcp_client_workflow_state_surfaces {
 	 * @return array Workflow state summary payload.
 	 */
 	private function mcp_workflow_state_summary_export(array $args): array {
-		$workflow=strtolower(trim((string)($args['workflow'] ?? 'generic')));
-		if(!in_array($workflow, ['feature', 'routes', 'sql', 'diagnostics', 'client', 'release', 'generic'], true)){
-			$workflow='generic';
-		}
-		$state=[];
-		if(isset($args['state']) && is_array($args['state'])){
-			$state=$args['state'];
-		}
-		elseif(trim((string)($args['state_json'] ?? ''))!==''){
-			$decoded=json_decode((string)$args['state_json'], true);
-			if(is_array($decoded)){
-				$state=$decoded;
-			}
-		}
-		$audit=$this->mcp_workflow_state_audit([
-			'workflow'=>$workflow,
-			'state'=>$state,
-			'state_json'=>$args['state_json'] ?? '',
-		]);
+		$workflow=$this->mcp_workflow_name($args['workflow'] ?? 'generic',['feature','routes','sql','diagnostics','client','release','generic'],'generic');
+		$state=$this->mcp_workflow_state_input($args)['state'];
+		$audit=$this->mcp_workflow_state_audit(['workflow'=>$workflow]+$args);
 		$pending_tools=array_values(array_slice($this->mcp_workflow_app_tools(is_array($state['pending_tools'] ?? null) ? $state['pending_tools'] : []), 0, 12));
 		$completed_tools=array_values(array_slice(is_array($state['completed_tools'] ?? null) ? $state['completed_tools'] : [], 0, 12));
-		$notes=[];
-		foreach(array_slice(is_array($state['notes'] ?? null) ? $state['notes'] : [], 0, 6) as $note){
-			$notes[]=$this->redact_sensitive_text(substr((string)$note, 0, 300));
-		}
-		$findings=[];
-		foreach(array_slice(is_array($state['findings'] ?? null) ? $state['findings'] : [], 0, 8) as $finding){
-			$findings[]=$this->redact_sensitive_text(substr(is_array($finding) ? json_encode($finding, JSON_UNESCAPED_SLASHES) : (string)$finding, 0, 500));
-		}
+		$notes=$this->mcp_workflow_state_summary_items($state['notes'] ?? null,6,300);
+		$findings=$this->mcp_workflow_state_summary_items($state['findings'] ?? null,8,500);
 		$audit_passed=($audit['passed'] ?? false)===true;
+		$next_tools=$audit_passed
+			? $this->mcp_workflow_app_tools(array_merge($pending_tools,['dataphyre_mcp_workflow_next_action_export']))
+			: ['dataphyre_mcp_workflow_state_audit','dataphyre_mcp_workflow_state_schema_export','dataphyre_mcp_safety_boundary_report'];
 		return [
 			'export_type'=>'dataphyre_mcp_workflow_state_summary_export',
 			'write_policy'=>'read_only',
@@ -298,12 +283,8 @@ trait dataphyre_mcp_client_workflow_state_surfaces {
 			'agent_handoff'=>[
 				'status_line'=>'Workflow '.((string)($audit['workflow'] ?? $workflow)).' state '.($audit_passed ? 'passed audit' : 'needs review').'.',
 				'safe_to_share'=>$audit_passed,
-				'next_tools'=>$audit_passed
-					? $this->mcp_workflow_app_tools(array_merge($pending_tools, ['dataphyre_mcp_workflow_next_action_export']))
-					: ['dataphyre_mcp_workflow_state_audit', 'dataphyre_mcp_workflow_state_schema_export', 'dataphyre_mcp_safety_boundary_report'],
-				'next_tool_boundaries'=>$this->mcp_workflow_tool_boundaries($audit_passed
-					? $this->mcp_workflow_app_tools(array_merge($pending_tools, ['dataphyre_mcp_workflow_next_action_export']))
-					: ['dataphyre_mcp_workflow_state_audit', 'dataphyre_mcp_workflow_state_schema_export', 'dataphyre_mcp_safety_boundary_report']),
+				'next_tools'=>$next_tools,
+				'next_tool_boundaries'=>$this->mcp_workflow_tool_boundaries($next_tools),
 				'copy_safe_resume'=>[
 					'status'=>'copy_safe_resume_ready',
 					'fields'=>['workflow', 'state_id', 'task_summary', 'current_phase', 'last_decision', 'checkpoint_status', 'pending_tools', 'completed_tools', 'state_findings', 'notes', 'next_tools'],
@@ -323,6 +304,17 @@ trait dataphyre_mcp_client_workflow_state_surfaces {
 		];
 	}
 
+	/** @return list<string> Copy-safe, bounded summaries from caller-controlled state lists. */
+	private function mcp_workflow_state_summary_items(mixed $items,int $limit,int $max_chars): array {
+		if(!is_array($items)){return [];}
+		$summaries=[];
+		foreach(array_slice($items,0,max(0,$limit)) as $item){
+			$value=is_array($item) ? json_encode($item,JSON_UNESCAPED_SLASHES) : (string)$item;
+			$summaries[]=$this->mcp_safe_handoff_label(is_string($value) ? $value : '',$max_chars);
+		}
+		return $summaries;
+	}
+
 	/**
 	 * Describes a workflow state transition between lifecycle phases.
 	 *
@@ -330,31 +322,11 @@ trait dataphyre_mcp_client_workflow_state_surfaces {
 	 * @return array Workflow transition payload.
 	 */
 	private function mcp_workflow_state_transition_export(array $args): array {
-		$workflow=strtolower(trim((string)($args['workflow'] ?? 'generic')));
-		if(!in_array($workflow, ['feature', 'routes', 'sql', 'diagnostics', 'client', 'release', 'generic'], true)){
-			$workflow='generic';
-		}
-		$state=[];
-		if(isset($args['state']) && is_array($args['state'])){
-			$state=$args['state'];
-		}
-		elseif(trim((string)($args['state_json'] ?? ''))!==''){
-			$decoded=json_decode((string)$args['state_json'], true);
-			if(is_array($decoded)){
-				$state=$decoded;
-			}
-		}
-		$summary=$this->mcp_workflow_state_summary_export([
-			'workflow'=>$workflow,
-			'state'=>$state,
-			'state_json'=>$args['state_json'] ?? '',
-		]);
-		$next=$this->mcp_workflow_next_action_export([
-			'task'=>$args['task'] ?? ($state['task'] ?? ''),
-			'workflow'=>$workflow,
-			'state'=>$state,
-			'state_json'=>$args['state_json'] ?? '',
-		]);
+		$workflow=$this->mcp_workflow_name($args['workflow'] ?? 'generic',['feature','routes','sql','diagnostics','client','release','generic'],'generic');
+		$state=$this->mcp_workflow_state_input($args)['state'];
+		$surface_args=['workflow'=>$workflow,'task'=>$args['task'] ?? ($state['task'] ?? '')]+$args;
+		$summary=$this->mcp_workflow_state_summary_export($surface_args);
+		$next=$this->mcp_workflow_next_action_export($surface_args);
 		$decision=(string)($next['decision'] ?? 'start_workflow');
 		$recommended_tool=(string)($next['recommended_tool'] ?? 'dataphyre_mcp_task_start_pack_export');
 		$phase_map=[
@@ -434,26 +406,9 @@ trait dataphyre_mcp_client_workflow_state_surfaces {
 	 * @return array Workflow state sync pack payload.
 	 */
 	private function mcp_workflow_state_sync_pack_export(array $args): array {
-		$workflow=strtolower(trim((string)($args['workflow'] ?? 'generic')));
-		if(!in_array($workflow, ['feature', 'routes', 'sql', 'diagnostics', 'client', 'release', 'generic'], true)){
-			$workflow='generic';
-		}
-		$state=[];
-		if(isset($args['state']) && is_array($args['state'])){
-			$state=$args['state'];
-		}
-		elseif(trim((string)($args['state_json'] ?? ''))!==''){
-			$decoded=json_decode((string)$args['state_json'], true);
-			if(is_array($decoded)){
-				$state=$decoded;
-			}
-		}
-		$base_args=[
-			'workflow'=>$workflow,
-			'state'=>$state,
-			'state_json'=>$args['state_json'] ?? '',
-			'task'=>$args['task'] ?? ($state['task'] ?? ''),
-		];
+		$workflow=$this->mcp_workflow_name($args['workflow'] ?? 'generic',['feature','routes','sql','diagnostics','client','release','generic'],'generic');
+		$state=$this->mcp_workflow_state_input($args)['state'];
+		$base_args=['workflow'=>$workflow,'task'=>$args['task'] ?? ($state['task'] ?? '')]+$args;
 		$schema=$this->mcp_workflow_state_schema_export(['workflow'=>$workflow]);
 		$audit=$this->mcp_workflow_state_audit($base_args);
 		$summary=$this->mcp_workflow_state_summary_export($base_args);
@@ -510,6 +465,7 @@ trait dataphyre_mcp_client_workflow_state_surfaces {
 		$allowed_phases=is_array($sync['schema']['allowed_phases'] ?? null) ? $sync['schema']['allowed_phases'] : [];
 		$current_phase=(string)($sync['current_phase'] ?? '');
 		$next_phase=(string)($sync['next_phase'] ?? '');
+		$current_index=array_search($current_phase,$allowed_phases,true);
 		$timeline=[];
 		foreach($allowed_phases as $index=>$phase){
 			$phase=(string)$phase;
@@ -520,7 +476,7 @@ trait dataphyre_mcp_client_workflow_state_surfaces {
 			elseif($phase===$next_phase){
 				$status='next';
 			}
-			elseif($current_phase!=='' && array_search($phase, $allowed_phases, true)<array_search($current_phase, $allowed_phases, true)){
+			elseif(is_int($current_index) && $index<$current_index){
 				$status='completed_or_skipped';
 			}
 			$timeline[]=[

@@ -343,7 +343,7 @@ trait dataphyre_flightdeck_debugbar_state {
 			];
 		}
 		try{
-			$summary=\Dataphyre\Panel\Panel::trace_summary();
+			$summary=\Dataphyre\Panel\Panel::traceSummary();
 		}
 		catch(\Throwable $exception){
 			$summary=['count'=>0, 'events'=>[], 'latest'=>[], 'error'=>$exception->getMessage()];
@@ -1431,10 +1431,11 @@ trait dataphyre_flightdeck_debugbar_state {
 	 * assets when an HTML body is available.
 	 *
 	 * @param ?string $buffer Response body buffer, when captured.
+	 * @param ?array $response_headers Optional deterministic header snapshot for diagnostics and tests.
 	 * @return array<string,mixed> Response metadata, content classification, safe preview, asset diagnostics, and suspicious-marker findings.
 	 */
-	private static function response_state(?string $buffer): array {
-		$headers=headers_list();
+	private static function response_state(?string $buffer, ?array $response_headers=null): array {
+		$headers=$response_headers ?? headers_list();
 		$content_type='';
 		foreach($headers as $header){
 			if(stripos((string)$header, 'Content-Type:')===0){

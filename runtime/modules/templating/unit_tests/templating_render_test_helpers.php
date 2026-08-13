@@ -7,6 +7,8 @@
  */
 
 namespace {
+	require_once __DIR__.'/../../testing/tooling/bootstrap.php';
+
 	if(!function_exists('tracelog')){
 		function tracelog(...$args): void {}
 	}
@@ -15,7 +17,7 @@ namespace {
 	}
 	if(!defined('ROOTPATH')){
 		define('ROOTPATH', [
-			'dataphyre'=>sys_get_temp_dir().'/dataphyre-templating-unit/',
+			'dataphyre'=>__DIR__.'/fixtures/json-app/',
 		]);
 	}
 }
@@ -27,33 +29,35 @@ namespace dataphyre {
 }
 
 namespace DataphyreUnitTests {
+	use Dataphyre\Test\Context;
+	use Dataphyre\Test\TempWorkspace;
 
 	require_once __DIR__.'/../kernel/templating.main.php';
 
+	/** Gives legacy JSON fixtures the same owned workspace lifecycle as code tests. */
+	final class TemplatingRenderFixtureOwner {
+		public static function run(callable $scenario): mixed {
+			$context=new Context('templating legacy JSON fixture', file:__FILE__, suite:'templating');
+			$workspace=$context->workspace('templating-json-render');
+			try{
+				return $scenario($workspace);
+			}finally{
+				$context->runDeferred();
+			}
+		}
+	}
+
 	function templating_legacy_extend_render_json(): string {
-		$root=sys_get_temp_dir().'/dataphyre_templating_extend_'.bin2hex(random_bytes(4));
-		$cache=$root.'/cache/';
-		$templates=$root.'/templates/';
-		mkdir($cache, 0777, true);
-		mkdir($templates, 0777, true);
-		$base=$templates.'base.tpl';
-		$child=$templates.'child.tpl';
-		file_put_contents($base, '<main>{{ block_content "body" }}</main>');
-		file_put_contents($child, '{{ extend "base.tpl" }}{{ block "body" }}Hello {{name}}{{ endblock }}');
-		try{
+		return TemplatingRenderFixtureOwner::run(static function(TempWorkspace $workspace): string {
+			$cache=rtrim($workspace->directory('cache'),'/\\').DIRECTORY_SEPARATOR;
+			$base=$workspace->file('templates/base.tpl', '<main>{{ block_content "body" }}</main>');
+			$child=$workspace->file('templates/child.tpl', '{{ extend "base.tpl" }}{{ block "body" }}Hello {{name}}{{ endblock }}');
 			\dataphyre\templating::init(true, $cache, false);
 			$html=(string)\dataphyre\templating::render($child, ['name'=>'Ada']);
-		}
-		finally{
-			@unlink($child);
-			@unlink($base);
-			@rmdir($templates);
-			@rmdir($cache);
-			@rmdir($root);
-		}
-		return json_encode([
-			'html'=>$html,
-			'has_wrapper'=>str_starts_with($html, '<div class='),
-		], JSON_UNESCAPED_SLASHES);
+			return json_encode([
+				'html'=>$html,
+				'has_wrapper'=>str_starts_with($html, '<div class='),
+			], JSON_UNESCAPED_SLASHES);
+		});
 	}
 }

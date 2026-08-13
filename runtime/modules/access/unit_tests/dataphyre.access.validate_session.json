@@ -2,7 +2,7 @@
     {
         "name": "Valid session recently validated (cached)",
         "function": "dp_access_unit_validate_session_cached",
-        "file": "/common/dataphyre/runtime/modules/access/unit_tests/access_session_test_helpers.php",
+        "file": "/dataphyre/runtime/modules/access/unit_tests/access_session_test_helpers.php",
         "args": [
             true
         ],
@@ -19,7 +19,7 @@
     {
         "name": "Session not valid due to IP mismatch",
         "function": "dp_access_unit_validate_session_cached",
-        "file": "/common/dataphyre/runtime/modules/access/unit_tests/access_session_test_helpers.php",
+        "file": "/dataphyre/runtime/modules/access/unit_tests/access_session_test_helpers.php",
         "args": [
             false
         ],

@@ -164,7 +164,6 @@ trait conditional_parsing {
 				'<=' =>$left<=$right,
 				'>' =>$left>$right,
 				'<' =>$left<$right,
-				default=>false,
 			};
 		}
 		return (bool)self::condition_value($expression, $data);

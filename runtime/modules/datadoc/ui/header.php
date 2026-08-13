@@ -10,7 +10,7 @@ $datadoc_auth_context=dataphyre\datadoc::auth_context();
 if(isset($_GET['logout'])){
 	dataphyre\datadoc::logout();
 	header('Location: '.dataphyre\datadoc::index_url());
-	exit();
+	return false;
 }
 
 require_once(__DIR__.'/assets_support.php');
@@ -64,12 +64,7 @@ require_once(__DIR__.'/assets_support.php');
 		?>
 		<nav class="d-flex justify-content-between align-items-center px-3 py-2">
 			<?=adapt(["dark"=>"<style>.breadcrumb-item+.breadcrumb-item::before{color: white;}</style>"]);?>
-			<ol class="breadcrumb p-0">
-			<!--
-				<li class="breadcrumb-item <?=adapt(["dark"=>"text-white"]);?>"><a href="<?=dataphyre\core::url_self();?>developer/documentation" class="<?=adapt(["light"=>"text-body","dark"=>"text-white"]);?>">Developer Documentation</a></li>
-				<li class="breadcrumb-item <?=adapt(["dark"=>"text-white"]);?>"><a href="<?=dataphyre\core::url_self();?>developer/documentation/<?=$documentid;?>/<?=$document_url_title;?>" class="<?=adapt(["light"=>"text-body","dark"=>"text-white"]);?>"><b><?=$document_data['titles'];?></b></a></li>
-			-->
-			</ol>
+			<ol class="breadcrumb p-0"></ol>
 			<div class="search-container position-relative">
 				<input type="text" class="w-100" placeholder="Search coming soon" disabled>
 				<i class="fas fa-search h-100 position-absolute d-flex align-items-center justify-content-center"></i>
@@ -84,3 +79,4 @@ require_once(__DIR__.'/assets_support.php');
 		 <?php
 		}
 		?>
+		<?php return true; ?>

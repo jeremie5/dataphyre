@@ -54,6 +54,9 @@ final class WidgetManifest {
 		$resolved=$this->resolved($definition);
 		$effective=$resolved ?? $definition;
 		$chart=self::chart($effective);
+		$interaction=is_array($definition['interaction'] ?? null)
+			? PanelWidgetInteractionDefinition::fromArray($definition['interaction'])
+			: null;
 		$manifest=[
 			'type'=>'widget_manifest',
 			'name'=>(string)($definition['name'] ?? ''),
@@ -76,11 +79,13 @@ final class WidgetManifest {
 			'interaction'=>[
 				'url'=>$definition['url'] ?? null,
 				'linked'=>trim((string)($definition['url'] ?? ''))!=='',
+				'interactive'=>$interaction instanceof PanelWidgetInteractionDefinition,
+				'runtime'=>$interaction?->toArray(),
 			],
 			'chart'=>$chart,
 			'capabilities'=>self::capabilities($definition, $chart),
 			'state'=>$resolved['state'] ?? null,
-			'meta'=>array_replace(self::safeMeta(is_array($definition['meta'] ?? null) ? $definition['meta'] : []), $this->meta),
+			'meta'=>array_replace(self::safeMeta(is_array($definition['meta'] ?? null) ? $definition['meta'] : []), self::safeMeta($this->meta)),
 		];
 		PanelTrace::record('widget.manifest.described', [
 			'name'=>$manifest['name'],
@@ -89,7 +94,7 @@ final class WidgetManifest {
 			'chart'=>$manifest['capabilities']['chart']['enabled'],
 			'resolved'=>$manifest['data']['resolved'],
 		]);
-		return $manifest;
+		return PanelManifestContract::stamp($manifest);
 	}
 
 	/**
@@ -112,9 +117,12 @@ final class WidgetManifest {
 			])->jsonSerialize();
 		}
 		catch(\Throwable $exception){
+			$fallbackMeta=is_array($definition['meta'] ?? null) ? $definition['meta'] : [];
+			unset($fallbackMeta['chart_type'], $fallbackMeta['type'], $fallbackMeta['datasets'], $fallbackMeta['data'], $fallbackMeta['labels']);
 			return array_replace($definition, [
 				'value'=>'Unavailable',
 				'tone'=>'warning',
+				'meta'=>array_replace($fallbackMeta, ['error'=>true]),
 				'state'=>[
 					'has_error'=>true,
 					'meta'=>['error_message'=>$exception->getMessage()],
@@ -162,6 +170,7 @@ final class WidgetManifest {
 	 */
 	private static function capabilities(array $definition, array $chart): array {
 		$type=Resource::normalizeName((string)($definition['type'] ?? 'stat')) ?: 'stat';
+		$interaction=is_array($definition['interaction'] ?? null) ? PanelWidgetInteractionDefinition::fromArray($definition['interaction']) : null;
 		return [
 			'display'=>[
 				'stat'=>$type==='stat',
@@ -177,6 +186,10 @@ final class WidgetManifest {
 			],
 			'interaction'=>[
 				'linked'=>trim((string)($definition['url'] ?? ''))!=='',
+				'interactive'=>$interaction instanceof PanelWidgetInteractionDefinition,
+				'adapter'=>$interaction?->adapter(),
+				'named_actions'=>$interaction===null ? 0 : count($interaction->namedActions()),
+				'reactor_bridge'=>false,
 			],
 			'chart'=>[
 				'enabled'=>($chart['enabled'] ?? false)===true,
@@ -243,6 +256,10 @@ final class WidgetManifest {
 		$safe=[];
 		foreach($meta as $key=>$value){
 			$key=(string)$key;
+			if(preg_match('/(?:^|[_-])(?:pass(?:word)?|passwd|secret|credential|authorization|cookie|private[_-]?key|api[_-]?key|access[_-]?token|refresh[_-]?token|token)$/i', $key)===1){
+				$safe[$key]='[redacted]';
+				continue;
+			}
 			if($value instanceof \Closure || is_callable($value)){
 				$safe[$key]=['dynamic'=>true];
 				continue;

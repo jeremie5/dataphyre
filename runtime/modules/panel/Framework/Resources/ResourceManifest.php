@@ -50,7 +50,7 @@ final class ResourceManifest {
 	/**
 	 * Materializes the resource_manifest payload.
 	 *
-	 * @return array{type:string,name:string,label:string,plural_label:string,navigation:array<string,mixed>,identity:array<string,bool>,data:array<string,mixed>,tenant:array<string,mixed>,forms:array<string,array<string,mixed>>,infolist:array<string,mixed>,table:array<string,mixed>,actions:array<string,array<string,mixed>>,relations:array<string,array<string,mixed>>,record_surface:array<string,mixed>,operations:array<string,mixed>,policies:array<string,mixed>,permission:array<string,mixed>,search:array<string,mixed>,capabilities:array<string,array<string,mixed>>,meta:array<string,mixed>} Resource manifest payload.
+	 * @return array{type:string,schema_version:int,api_version:int,name:string,label:string,plural_label:string,navigation:array<string,mixed>,identity:array<string,bool>,data:array<string,mixed>,tenant:array<string,mixed>,forms:array<string,array<string,mixed>>,infolist:array<string,mixed>,table:array<string,mixed>,actions:array<string,array<string,mixed>>,relations:array<string,array<string,mixed>>,record_surface:array<string,mixed>,operations:array<string,mixed>,policies:array<string,mixed>,permission:array<string,mixed>,search:array<string,mixed>,capabilities:array<string,array<string,mixed>>,meta:array<string,mixed>} Resource manifest payload.
 	 */
 	public function toArray(): array {
 		$definition=$this->definitionOverride ?? ($this->resource?->toArray() ?? []);
@@ -95,7 +95,7 @@ final class ResourceManifest {
 			'fields'=>(int)($manifest['capabilities']['forms']['fields'] ?? 0),
 			'columns'=>(int)($manifest['capabilities']['table']['columns'] ?? 0),
 		]);
-		return $manifest;
+		return PanelManifestContract::stamp($manifest);
 	}
 
 	/**
@@ -184,11 +184,7 @@ final class ResourceManifest {
 			return TableManifest::from(is_array($definition['table_schema'] ?? null) ? $definition['table_schema'] : [], null, $this->request, [
 				'surface'=>'resource_manifest',
 				'resource'=>(string)($definition['name'] ?? ''),
-			])->toArray();
-		}
-		catch(\Throwable $exception){
-			return self::errorManifest('table_manifest', $exception);
-		}
+			])->toArray(); } catch(\Throwable $exception){ return self::errorManifest('table_manifest', $exception); }
 	}
 
 	/**
@@ -216,11 +212,7 @@ final class ResourceManifest {
 			return SchemaManifest::from($schema, $operation, [
 				'surface'=>'resource_manifest',
 				'resource'=>(string)($this->definitionOverride['name'] ?? ''),
-			])->toArray();
-		}
-		catch(\Throwable $exception){
-			return self::errorManifest('schema_manifest', $exception);
-		}
+			])->toArray(); } catch(\Throwable $exception){ return self::errorManifest('schema_manifest', $exception); }
 	}
 
 	/**

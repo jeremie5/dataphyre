@@ -158,14 +158,7 @@ final class ExchangeQuote implements \JsonSerializable {
 	 */
 	public function assertFresh(int $maxAgeSeconds): self {
 		if($this->isStale($maxAgeSeconds)){
-			throw StaleExchangeRatesException::forQuote(
-				$this->sourceCurrency,
-				$this->targetCurrency,
-				$this->source,
-				$this->time,
-				$this->ageSeconds(),
-				$maxAgeSeconds
-			);
+			throw StaleExchangeRatesException::forQuote($this->sourceCurrency, $this->targetCurrency, $this->source, $this->time, $this->ageSeconds(), $maxAgeSeconds);
 		}
 		return $this;
 	}

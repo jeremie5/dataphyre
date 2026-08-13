@@ -246,12 +246,10 @@ final class dataphyre_flightdeck_dpanel_surface {
 		$previous_unit_test_mode=\dataphyre\dpanel::$run_unit_tests;
 		$previous_entrypoint_mode=\dataphyre\dpanel::$load_module_entrypoints;
 		$previous_dependency_mode=\dataphyre\dpanel::$follow_dependency_diagnostics;
-		$previous_eval_mode=\dataphyre\dpanel::$allow_eval_unit_tests;
 		$previous_core_bootstrap_mode=\dataphyre\dpanel::$bootstrap_core_before_module;
 		\dataphyre\dpanel::$run_unit_tests=false;
 		\dataphyre\dpanel::$load_module_entrypoints=false;
 		\dataphyre\dpanel::$follow_dependency_diagnostics=false;
-		\dataphyre\dpanel::$allow_eval_unit_tests=false;
 		\dataphyre\dpanel::$bootstrap_core_before_module=false;
 		\dataphyre\dpanel::add_verbose([[
 			'type'=>'diagnostic_runtime',
@@ -289,7 +287,6 @@ final class dataphyre_flightdeck_dpanel_surface {
 			\dataphyre\dpanel::$run_unit_tests=$previous_unit_test_mode;
 			\dataphyre\dpanel::$load_module_entrypoints=$previous_entrypoint_mode;
 			\dataphyre\dpanel::$follow_dependency_diagnostics=$previous_dependency_mode;
-			\dataphyre\dpanel::$allow_eval_unit_tests=$previous_eval_mode;
 			\dataphyre\dpanel::$bootstrap_core_before_module=$previous_core_bootstrap_mode;
 			self::restore_diagnostic_runtime_overrides($config_override);
 		}
@@ -314,7 +311,7 @@ final class dataphyre_flightdeck_dpanel_surface {
 		$current=self::memory_to_bytes($previous);
 		$target=self::memory_to_bytes('256M');
 		if($current>0 && $current<$target){
-			$raised=@ini_set('memory_limit', '256M');
+			$raised=function_exists('ini_set') ? @ini_set('memory_limit', '256M') : false;
 			$effective=(string)ini_get('memory_limit');
 			\dataphyre\dpanel::add_verbose([[
 				'type'=>'diagnostic_runtime',
@@ -675,6 +672,48 @@ final class dataphyre_flightdeck_dpanel_surface {
 			}
 			$body.='</details>';
 		}
+		$code_suites=is_array($inventory['code_suites'] ?? null) ? $inventory['code_suites'] : [];
+		if($code_suites!==[]){
+			$suite_rows=[];
+			foreach($code_suites as $suite=>$count){
+				$suite_rows[]=[self::e((string)$suite), self::e((string)(int)$count)];
+			}
+			$body.='<details class="fd-details"><summary>Self-described suites: '.self::e((string)count($code_suites)).'</summary>';
+			$body.=dataphyre_flightdeck_view::table(['Suite', 'Cases'], $suite_rows).'</details>';
+		}
+		$catalog=is_array($inventory['code_case_catalog'] ?? null) ? $inventory['code_case_catalog'] : [];
+		if($catalog!==[]){
+			$catalog_rows='';
+			$catalog_case_count=0;
+			foreach($catalog as $case){
+				if(!is_array($case)){
+					continue;
+				}
+				$catalog_case_count++;
+				$suite=trim((string)($case['suite'] ?? ''));
+				$name=(string)($case['name'] ?? 'Unnamed test');
+				$module=(string)($case['module'] ?? 'unscoped');
+				$file=basename(str_replace('\\', '/', (string)($case['file'] ?? '')));
+				$concerns=array_values(array_unique(array_merge(
+					array_map('strval', is_array($case['tags'] ?? null) ? $case['tags'] : []),
+					array_map('strval', is_array($case['groups'] ?? null) ? $case['groups'] : [])
+				)));
+				$search=strtolower(implode(' ', [$suite, $name, $module, $file, ...$concerns]));
+				$catalog_rows.='<tr data-dpanel-test-row data-search="'.self::e($search).'">'
+					.'<td>'.($suite!=='' ? self::e($suite) : '<span class="fd-muted">No suite declared</span>').'</td>'
+					.'<td><strong>'.self::e($name).'</strong></td>'
+					.'<td>'.self::e($module).'</td>'
+					.'<td><code>'.self::e($file).'</code></td>'
+					.'<td>'.self::e(implode(', ', $concerns)).'</td>'
+					.'</tr>';
+			}
+			$body.='<details class="fd-details fd-test-catalog" data-dpanel-test-catalog>'
+				.'<summary>Browse all '.self::e((string)$catalog_case_count).' code-defined test cases</summary>'
+				.'<div class="fd-test-catalog-filter"><label><span>Filter tests</span><input type="search" data-dpanel-test-filter placeholder="suite, test, module, file, tag, or group"></label>'
+				.'<span class="fd-muted" data-dpanel-test-filter-status>'.self::e((string)$catalog_case_count).' cases</span></div>'
+				.'<div class="fd-table-wrap fd-test-catalog-table"><table><thead><tr><th>Suite</th><th>Test</th><th>Owner</th><th>File</th><th>Concerns</th></tr></thead><tbody>'.$catalog_rows.'</tbody></table></div>'
+				.'</details>';
+		}
 		$body.='</details></div>';
 		return $body;
 	}
@@ -999,6 +1038,12 @@ final class dataphyre_flightdeck_dpanel_surface {
 .fd-dpanel-run-details{margin-top:0}
 .fd-dpanel-inventory-details{margin-bottom:12px;padding:10px 12px;border:1px solid rgba(15,23,42,.08);border-radius:8px;background:#fff}
 .fd-dpanel-inventory-details>summary{color:#334155}
+.fd-test-catalog-filter{display:flex;gap:12px;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;margin-top:12px}
+.fd-test-catalog-filter label{display:grid;gap:5px;min-width:min(100%,420px);color:#334155;font-size:12px;font-weight:800}
+.fd-test-catalog-filter input{width:100%;border:1px solid rgba(15,23,42,.16);border-radius:8px;padding:9px 11px;background:#fff;color:#0f172a}
+.fd-test-catalog-table{max-height:520px;overflow:auto}
+.fd-test-catalog-table thead{position:sticky;top:0;z-index:1;background:#f8fafc}
+.fd-test-catalog-table tr[hidden]{display:none}
 ';
 	}
 
@@ -1036,6 +1081,26 @@ document.addEventListener("DOMContentLoaded", function(){
 	if(!root || !window.fetch || !window.FormData){
 		return;
 	}
+	root.addEventListener("input", function(event){
+		const input=event.target;
+		if(!input || !input.matches || !input.matches("[data-dpanel-test-filter]")){
+			return;
+		}
+		const catalog=input.closest("[data-dpanel-test-catalog]");
+		if(!catalog){
+			return;
+		}
+		const query=String(input.value || "").trim().toLowerCase();
+		const rows=Array.prototype.slice.call(catalog.querySelectorAll("[data-dpanel-test-row]"));
+		let visible=0;
+		rows.forEach(function(row){
+			const matches=query==="" || String(row.dataset.search || "").indexOf(query)!==-1;
+			row.hidden=!matches;
+			if(matches){visible++;}
+		});
+		const status=catalog.querySelector("[data-dpanel-test-filter-status]");
+		if(status){status.textContent=String(visible) + " of " + String(rows.length) + " cases";}
+	});
 	let running=false;
 	let timer=null;
 	const replacePart=function(name, html){
@@ -1435,7 +1500,7 @@ document.addEventListener("DOMContentLoaded", function(){
 		}
 		$worker=self::code_unit_test_worker_script();
 		if($worker==='' || !is_file($worker)){
-			return self::code_unit_test_worker_skip($module, $test_file, 'Code-defined unit tests were skipped because common/dataphyre/testing/code_worker.php is unavailable.');
+			return self::code_unit_test_worker_skip($module, $test_file, 'Code-defined unit tests were skipped because runtime/modules/testing/tooling/code_worker.php is unavailable.');
 		}
 		$payload=[
 			'module'=>$module,
@@ -1512,7 +1577,13 @@ document.addEventListener("DOMContentLoaded", function(){
 			];
 		}
 		$memory_limit=(string)($payload['memory_limit'] ?? self::unit_test_worker_memory_limit());
-		$command=self::php_binary().' -d memory_limit='.escapeshellarg($memory_limit).' '.escapeshellarg($worker).' '.escapeshellarg($payload_path);
+		$command=[
+			self::php_binary(),
+			'-d',
+			'memory_limit='.$memory_limit,
+			$worker,
+			$payload_path,
+		];
 		$descriptors=[
 			0=>['pipe', 'r'],
 			1=>['pipe', 'w'],
@@ -1538,12 +1609,14 @@ document.addEventListener("DOMContentLoaded", function(){
 		$stdout='';
 		$stderr='';
 		$timed_out=false;
+		$observed_exit=-1;
 		$deadline=microtime(true) + self::unit_test_worker_timeout_seconds();
 		do{
 			$stdout.=self::read_worker_pipe($pipes[1]);
 			$stderr.=self::read_worker_pipe($pipes[2]);
 			$status=proc_get_status($process);
 			if(($status['running'] ?? false)!==true){
+				$observed_exit=(int)($status['exitcode'] ?? -1);
 				break;
 			}
 			if(microtime(true)>=$deadline){
@@ -1562,7 +1635,7 @@ document.addEventListener("DOMContentLoaded", function(){
 		$stderr.=self::read_worker_pipe($pipes[2]);
 		fclose($pipes[1]);
 		fclose($pipes[2]);
-		$exit_code=proc_close($process);
+		$exit_code=self::worker_exit_code($observed_exit, proc_close($process));
 		$result=is_file($output_path) ? json_decode((string)file_get_contents($output_path), true) : null;
 		@unlink($payload_path);
 		@unlink($output_path);
@@ -1648,28 +1721,36 @@ document.addEventListener("DOMContentLoaded", function(){
 		return $output;
 	}
 
+	/** Preserves the terminal status observed before proc_close loses it on some PHP builds. */
+	private static function worker_exit_code(int $observed, int $closed): int {
+		return $observed>=0 ? $observed : $closed;
+	}
+
 	/**
 	 * Returns the PHP executable used for worker children.
 	 *
-	 * @return string Shell-escaped PHP binary path.
+	 * @return string Raw PHP binary path for an argv-based worker command.
 	 */
-	private static function php_binary(): string {
+	private static function php_binary(?string $current_binary=null, ?string $binary_directory=null): string {
 		$configured=trim((string)(getenv('DATAPHYRE_DPANEL_PHP_BINARY') ?: getenv('DATAPHYRE_PHP') ?: ''));
 		if($configured!=='' && is_file($configured)){
-			return escapeshellarg($configured);
+			return $configured;
 		}
-		$current=defined('PHP_BINARY') && PHP_BINARY!=='' ? (string)PHP_BINARY : '';
+		$current=$current_binary ?? (defined('PHP_BINARY') && PHP_BINARY!=='' ? (string)PHP_BINARY : '');
 		$current_name=$current!=='' ? strtolower(basename($current)) : '';
-		$current_is_cli=$current!=='' && !str_contains($current_name, 'cgi') && !str_contains($current_name, 'fpm');
+		$current_is_cli=$current!==''
+			&& !str_contains($current_name, 'cgi')
+			&& !str_contains($current_name, 'fpm')
+			&& !str_contains($current_name, 'phpdbg');
 		if($current_is_cli && is_file($current)){
-			return escapeshellarg($current);
+			return $current;
 		}
-		$bindir=defined('PHP_BINDIR') ? (string)PHP_BINDIR : '';
+		$bindir=$binary_directory ?? (defined('PHP_BINDIR') ? (string)PHP_BINDIR : '');
 		$cli_candidate=$bindir!=='' ? rtrim($bindir, '/\\').DIRECTORY_SEPARATOR.(DIRECTORY_SEPARATOR==='\\' ? 'php.exe' : 'php') : '';
 		if($cli_candidate!=='' && is_file($cli_candidate)){
-			return escapeshellarg($cli_candidate);
+			return $cli_candidate;
 		}
-		return escapeshellarg($current!=='' ? $current : 'php');
+		return $current!=='' ? $current : 'php';
 	}
 
 	/**
@@ -1677,11 +1758,16 @@ document.addEventListener("DOMContentLoaded", function(){
 	 *
 	 * @return string Absolute worker script path.
 	 */
-	private static function unit_test_worker_script(): string {
-		if(!defined('ROOTPATH') || empty(ROOTPATH['common_dataphyre_runtime'])){
+	private static function unit_test_worker_script(?array $rootpath=null): string {
+		$configured=trim((string)(getenv('DATAPHYRE_DPANEL_UNIT_TEST_WORKER') ?: ''));
+		if($configured!==''){
+			return $configured;
+		}
+		$rootpath=self::runtime_paths($rootpath);
+		if(empty($rootpath['common_dataphyre_runtime'])){
 			return '';
 		}
-		return rtrim((string)ROOTPATH['common_dataphyre_runtime'], '/\\').'/modules/dpanel/kernel/dpanel.worker.php';
+		return rtrim((string)$rootpath['common_dataphyre_runtime'], '/\\').'/modules/dpanel/kernel/dpanel.worker.php';
 	}
 
 	/**
@@ -1689,14 +1775,33 @@ document.addEventListener("DOMContentLoaded", function(){
 	 *
 	 * @return string Absolute code worker script path.
 	 */
-	private static function code_unit_test_worker_script(): string {
-		if(defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre'])){
-			return rtrim((string)ROOTPATH['common_dataphyre'], '/\\').'/testing/code_worker.php';
+	private static function code_unit_test_worker_script(?array $rootpath=null): string {
+		$configured=trim((string)(getenv('DATAPHYRE_DPANEL_CODE_WORKER') ?: ''));
+		if($configured!==''){
+			return $configured;
 		}
-		if(defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre_runtime'])){
-			return dirname(rtrim((string)ROOTPATH['common_dataphyre_runtime'], '/\\')).'/testing/code_worker.php';
+		$rootpath=self::runtime_paths($rootpath);
+		$candidates=[];
+		if(!empty($rootpath['common_dataphyre_runtime'])){
+			$runtime_root=rtrim((string)$rootpath['common_dataphyre_runtime'], '/\\');
+			$candidates[]=$runtime_root.'/modules/testing/tooling/code_worker.php';
 		}
-		return '';
+		if(!empty($rootpath['common_dataphyre'])){
+			$dataphyre_root=rtrim((string)$rootpath['common_dataphyre'], '/\\');
+			$candidates[]=$dataphyre_root.'/runtime/modules/testing/tooling/code_worker.php';
+			$candidates[]=$dataphyre_root.'/testing/code_worker.php';
+		}
+		elseif(isset($runtime_root))
+		{
+			$candidates[]=dirname($runtime_root).'/testing/code_worker.php';
+		}
+		$candidates=array_values(array_unique($candidates));
+		foreach($candidates as $candidate){
+			if(is_file($candidate)){
+				return $candidate;
+			}
+		}
+		return $candidates[0] ?? '';
 	}
 
 	/**
@@ -1704,22 +1809,39 @@ document.addEventListener("DOMContentLoaded", function(){
 	 *
 	 * @return bool True when the reusable code worker and proc_open are available.
 	 */
-	private static function code_unit_test_worker_available(): bool {
-		$worker=self::code_unit_test_worker_script();
+	private static function code_unit_test_worker_available(?array $rootpath=null): bool {
+		$worker=self::code_unit_test_worker_script($rootpath);
 		return function_exists('proc_open') && $worker!=='' && is_file($worker);
 	}
 
 	/**
-	 * Returns the committed runtime code-test root when it can be resolved.
+	 * Returns the legacy centralized code-test root only for pre-module installs.
 	 *
 	 * @return string Absolute unit-test root, or empty string.
 	 */
-	private static function dataphyre_testing_unit_test_root(): string {
-		if(defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre'])){
-			return rtrim((string)ROOTPATH['common_dataphyre'], '/\\').'/testing/unit_tests';
+	private static function dataphyre_testing_unit_test_root(?array $rootpath=null): string {
+		$rootpath=self::runtime_paths($rootpath);
+		$canonical_roots=[];
+		$legacy_roots=[];
+		if(!empty($rootpath['common_dataphyre_runtime'])){
+			$runtime_root=rtrim((string)$rootpath['common_dataphyre_runtime'], '/\\');
+			$canonical_roots[]=$runtime_root.'/modules/testing/unit_tests';
+			$legacy_roots[]=dirname($runtime_root).'/testing/unit_tests';
 		}
-		if(defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre_runtime'])){
-			return dirname(rtrim((string)ROOTPATH['common_dataphyre_runtime'], '/\\')).'/testing/unit_tests';
+		if(!empty($rootpath['common_dataphyre'])){
+			$dataphyre_root=rtrim((string)$rootpath['common_dataphyre'], '/\\');
+			$canonical_roots[]=$dataphyre_root.'/runtime/modules/testing/unit_tests';
+			$legacy_roots[]=$dataphyre_root.'/testing/unit_tests';
+		}
+		foreach(array_unique($canonical_roots) as $canonical_root){
+			if(is_dir($canonical_root)){
+				return '';
+			}
+		}
+		foreach(array_unique($legacy_roots) as $legacy_root){
+			if(is_dir($legacy_root)){
+				return $legacy_root;
+			}
 		}
 		return '';
 	}
@@ -1729,14 +1851,35 @@ document.addEventListener("DOMContentLoaded", function(){
 	 *
 	 * @return string Absolute directory path.
 	 */
-	private static function worker_state_dir(): string {
-		if(defined('ROOTPATH') && !empty(ROOTPATH['dataphyre'])){
-			return rtrim((string)ROOTPATH['dataphyre'], '/\\').'/cache/flightdeck/dpanel_workers';
+	private static function worker_state_dir(?array $rootpath=null): string {
+		$configured=trim((string)(getenv('DATAPHYRE_DPANEL_WORKER_STATE_DIR') ?: ''));
+		if($configured!==''){
+			return rtrim($configured, '/\\');
 		}
-		if(defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre'])){
-			return rtrim((string)ROOTPATH['common_dataphyre'], '/\\').'/cache/flightdeck/dpanel_workers';
+		$rootpath=self::runtime_paths($rootpath);
+		if(!empty($rootpath['dataphyre'])){
+			return rtrim((string)$rootpath['dataphyre'], '/\\').'/cache/flightdeck/dpanel_workers';
+		}
+		if(!empty($rootpath['common_dataphyre'])){
+			return rtrim((string)$rootpath['common_dataphyre'], '/\\').'/cache/flightdeck/dpanel_workers';
 		}
 		return '';
+	}
+
+	/**
+	 * Resolves runtime roots from an explicit map or the current framework constant.
+	 *
+	 * Explicit maps make path discovery deterministic for partial installations and
+	 * focused tests while ordinary requests continue to use the bootstrapped ROOTPATH.
+	 *
+	 * @param ?array<string,mixed> $rootpath Explicit root map, or null for ROOTPATH.
+	 * @return array<string,mixed> Normalized runtime root map.
+	 */
+	private static function runtime_paths(?array $rootpath=null): array {
+		if($rootpath!==null){
+			return $rootpath;
+		}
+		return defined('ROOTPATH') && is_array(ROOTPATH) ? ROOTPATH : [];
 	}
 
 	/**
@@ -1754,7 +1897,8 @@ document.addEventListener("DOMContentLoaded", function(){
 	 * @return int Timeout in seconds.
 	 */
 	private static function unit_test_worker_timeout_seconds(): int {
-		return 8;
+		$configured=filter_var(getenv('DATAPHYRE_DPANEL_WORKER_TIMEOUT_SECONDS'), FILTER_VALIDATE_INT);
+		return is_int($configured) ? max(1, min(120, $configured)) : 8;
 	}
 
 	/**
@@ -1859,22 +2003,24 @@ document.addEventListener("DOMContentLoaded", function(){
 	 * @param array<string,mixed> $state Newly initialized scan state.
 	 * @return array<string,mixed> Scan state with queue, initial trace, and done flag.
 	 */
-	private static function populate_scan_queue(array $state): array {
+	private static function populate_scan_queue(array $state, ?array $rootpath=null): array {
+		$rootpath=self::runtime_paths($rootpath);
 		$scope=(string)($state['scope'] ?? 'all');
 		$queue=[];
 		$trace=[];
 		if($scope==='runtime' || $scope==='all'){
-			$result=self::module_queue_for_scope('runtime', rtrim((string)ROOTPATH['common_dataphyre_runtime'], '/\\').'/modules');
+			$runtime_root=rtrim((string)($rootpath['common_dataphyre_runtime'] ?? ''), '/\\');
+			$result=self::module_queue_for_scope('runtime', $runtime_root!=='' ? $runtime_root.'/modules' : '');
 			$queue=array_merge($queue, $result['queue']);
 			$trace=array_merge($trace, $result['trace']);
 		}
-		if(($scope==='app' || $scope==='all') && defined('ROOTPATH') && !empty(ROOTPATH['dataphyre'])){
-			$result=self::module_queue_for_scope('app', rtrim((string)ROOTPATH['dataphyre'], '/\\').'/modules');
+		if(($scope==='app' || $scope==='all') && !empty($rootpath['dataphyre'])){
+			$result=self::module_queue_for_scope('app', rtrim((string)$rootpath['dataphyre'], '/\\').'/modules');
 			$queue=array_merge($queue, $result['queue']);
 			$trace=array_merge($trace, $result['trace']);
 		}
 		$state['queue']=$queue;
-		$state['test_inventory']=self::unit_test_inventory_for_scope($scope);
+		$state['test_inventory']=self::unit_test_inventory_for_scope($scope, $rootpath);
 		$trace=array_merge($trace, self::unit_test_inventory_trace($state['test_inventory']));
 		$state['test_queue']=[];
 		$state['manifest_queue']=self::manifest_test_queue_from_inventory($state['test_inventory'], $queue);
@@ -1945,7 +2091,7 @@ document.addEventListener("DOMContentLoaded", function(){
 	 *
 	 * @param array<string,mixed> $inventory Unit-test inventory summary.
 	 * @param array<int,string> $module_queue Modules included in the structural scan.
-	 * @return array<int,array{module:string,path:string,kind:string,cases:int,case_index:int}> Unit-test worker jobs.
+	 * @return array<int,array{module:string,path:string,kind:string,cases:int,case_index:int,test_name:string,suite:string}> Unit-test worker jobs.
 	 */
 	private static function manifest_test_queue_from_inventory(array $inventory, array $module_queue): array {
 		$known_modules=array_fill_keys(array_map('strval', $module_queue), true);
@@ -1964,13 +2110,17 @@ document.addEventListener("DOMContentLoaded", function(){
 				continue;
 			}
 			$cases=max(0, (int)($file['cases'] ?? 0));
+			$case_definitions=is_array($file['case_definitions'] ?? null) ? array_values($file['case_definitions']) : [];
 			for($case_index=0; $case_index<$cases; $case_index++){
+				$case=is_array($case_definitions[$case_index] ?? null) ? $case_definitions[$case_index] : [];
 				$jobs[]=[
 					'module'=>$module!=='' ? $module : 'unscoped',
 					'path'=>$path,
 					'kind'=>$kind==='code' ? 'code' : 'json',
 					'cases'=>1,
 					'case_index'=>$case_index,
+					'test_name'=>(string)($case['name'] ?? ''),
+					'suite'=>(string)($case['suite'] ?? ''),
 				];
 			}
 		}
@@ -1990,6 +2140,11 @@ document.addEventListener("DOMContentLoaded", function(){
 		$kind=(string)($job['kind'] ?? 'json');
 		$case_index=(int)($job['case_index'] ?? 0);
 		$file=$path!=='' ? basename($path) : 'unit-test';
+		$test_name=trim((string)($job['test_name'] ?? ''));
+		$suite=trim((string)($job['suite'] ?? ''));
+		if($kind==='code' && $test_name!==''){
+			return $module.':'.($suite!=='' ? $suite.' / ' : '').$test_name.' #'.($case_index + 1);
+		}
 		return $module.':'.$file.'#'.($case_index + 1).($kind==='code' ? ':code' : '');
 	}
 
@@ -2038,18 +2193,19 @@ document.addEventListener("DOMContentLoaded", function(){
 	 * @param string $scope Runtime, app, or all module scope label.
 	 * @return array<string,mixed> Test inventory summary.
 	 */
-	private static function unit_test_inventory_for_scope(string $scope): array {
+	private static function unit_test_inventory_for_scope(string $scope, ?array $rootpath=null): array {
+		$rootpath=self::runtime_paths($rootpath);
 		$roots=[];
 		$include_dynamic=self::include_dynamic_unit_tests();
-		if(($scope==='runtime' || $scope==='all') && defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre_runtime'])){
-			$roots[]=rtrim((string)ROOTPATH['common_dataphyre_runtime'], '/\\').'/modules';
-			$testing_root=self::dataphyre_testing_unit_test_root();
+		if(($scope==='runtime' || $scope==='all') && !empty($rootpath['common_dataphyre_runtime'])){
+			$roots[]=rtrim((string)$rootpath['common_dataphyre_runtime'], '/\\').'/modules';
+			$testing_root=self::dataphyre_testing_unit_test_root($rootpath);
 			if($testing_root!==''){
 				$roots[]=$testing_root;
 			}
 		}
-		if(($scope==='app' || $scope==='all') && defined('ROOTPATH') && !empty(ROOTPATH['dataphyre'])){
-			$dataphyre_root=rtrim((string)ROOTPATH['dataphyre'], '/\\');
+		if(($scope==='app' || $scope==='all') && !empty($rootpath['dataphyre'])){
+			$dataphyre_root=rtrim((string)$rootpath['dataphyre'], '/\\');
 			$roots[]=$dataphyre_root.'/modules';
 			$roots[]=$dataphyre_root.'/unit_tests';
 		}
@@ -2068,6 +2224,8 @@ document.addEventListener("DOMContentLoaded", function(){
 			'code_test_cases'=>0,
 			'code_grouped_cases'=>0,
 			'code_dependent_cases'=>0,
+			'code_suites'=>[],
+			'code_case_catalog'=>[],
 			'code_skipped_files'=>0,
 			'code_discovery_errors'=>0,
 			'test_cases'=>0,
@@ -2078,11 +2236,12 @@ document.addEventListener("DOMContentLoaded", function(){
 			'warnings'=>[],
 			'dynamic_unit_tests_enabled'=>$include_dynamic,
 		];
-		$code_worker_available=self::code_unit_test_worker_available();
+		$code_worker_available=self::code_unit_test_worker_available($rootpath);
 		$code_skip_warning_added=false;
 		foreach($files as $file){
 			$kind=self::unit_test_file_kind($file);
 			$module=self::module_name_from_unit_test_path($file);
+			$cases=[];
 			if($kind==='code'){
 				$inventory['code_files']++;
 				if($code_worker_available!==true){
@@ -2093,7 +2252,7 @@ document.addEventListener("DOMContentLoaded", function(){
 							'level'=>'warning',
 							'module'=>'unit_tests',
 							'message'=>function_exists('proc_open')
-								? 'Code-defined PHP unit tests were discovered but skipped because common/dataphyre/testing/code_worker.php is unavailable.'
+								? 'Code-defined PHP unit tests were discovered but skipped because runtime/modules/testing/tooling/code_worker.php is unavailable.'
 								: 'Code-defined PHP unit tests were discovered but skipped because proc_open is unavailable in this PHP environment.',
 						];
 						$code_skip_warning_added=true;
@@ -2116,12 +2275,27 @@ document.addEventListener("DOMContentLoaded", function(){
 				{
 					$count=max(1, count($cases));
 					foreach($cases as $case){
-						if(is_array($case) && isset($case['groups']) && is_array($case['groups']) && $case['groups']!==[]){
+						if(!is_array($case)){
+							continue;
+						}
+						if(isset($case['groups']) && is_array($case['groups']) && $case['groups']!==[]){
 							$inventory['code_grouped_cases']++;
 						}
-						if(is_array($case) && isset($case['dependencies']) && is_array($case['dependencies']) && $case['dependencies']!==[]){
+						if(isset($case['dependencies']) && is_array($case['dependencies']) && $case['dependencies']!==[]){
 							$inventory['code_dependent_cases']++;
 						}
+						$suite=trim((string)($case['suite'] ?? ''));
+						if($suite!==''){
+							$inventory['code_suites'][$suite]=($inventory['code_suites'][$suite] ?? 0) + 1;
+						}
+						$inventory['code_case_catalog'][]=[
+							'suite'=>$suite,
+							'name'=>(string)($case['name'] ?? $case['base_name'] ?? 'case #'.((int)($case['index'] ?? 0) + 1)),
+							'module'=>$module,
+							'file'=>$file,
+							'tags'=>array_values(array_map('strval', is_array($case['tags'] ?? null) ? $case['tags'] : [])),
+							'groups'=>array_values(array_map('strval', is_array($case['groups'] ?? null) ? $case['groups'] : [])),
+						];
 					}
 				}
 				$inventory['code_test_cases']+=$count;
@@ -2146,9 +2320,19 @@ document.addEventListener("DOMContentLoaded", function(){
 				'module'=>$module,
 				'kind'=>$kind,
 				'cases'=>$count,
+				'case_definitions'=>$kind==='code' ? array_values(array_map(static fn(array $case): array=>[
+					'name'=>(string)($case['name'] ?? $case['base_name'] ?? ''),
+					'suite'=>trim((string)($case['suite'] ?? '')),
+				], array_values(array_filter($cases, 'is_array')))) : [],
 			];
 		}
 		ksort($inventory['modules'], SORT_STRING);
+		ksort($inventory['code_suites'], SORT_STRING);
+		usort($inventory['code_case_catalog'], static fn(array $a, array $b): int=>[
+			$a['suite'], $a['module'], $a['file'], $a['name'],
+		] <=> [
+			$b['suite'], $b['module'], $b['file'], $b['name'],
+		]);
 		return $inventory;
 	}
 
@@ -2172,9 +2356,6 @@ document.addEventListener("DOMContentLoaded", function(){
 				new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)
 			);
 			foreach($iterator as $file){
-				if(!$file instanceof \SplFileInfo || !$file->isFile()){
-					continue;
-				}
 				$path=$file->getPathname();
 				$normalized=str_replace('\\', '/', $path);
 				if(!str_contains($normalized, '/unit_tests/')){
@@ -2295,7 +2476,8 @@ document.addEventListener("DOMContentLoaded", function(){
 		if(preg_match('#/modules/([^/]+)/unit_tests/#', $normalized, $matches)===1){
 			return (string)$matches[1];
 		}
-		if(str_contains($normalized, '/common/dataphyre/testing/unit_tests/') || str_contains($normalized, '/dataphyre/testing/unit_tests/')){
+		// Compatibility for installs that predate module-owned test placement.
+		if(str_contains($normalized, '/dataphyre/testing/unit_tests/')){
 			return 'testing';
 		}
 		if(preg_match('#/unit_tests/dynamic/dataphyre/([^/.]+)/#', $normalized, $matches)===1){
@@ -2716,6 +2898,5 @@ document.addEventListener("DOMContentLoaded", function(){
 	}
 }
 
-if(defined('DATAPHYRE_FLIGHTDECK_ASSET_REQUEST')!==true){
-	dataphyre_flightdeck_dpanel_surface::dispatch();
-}
+// Direct route includes dispatch immediately; asset and test includes only load the surface.
+if(defined('DATAPHYRE_FLIGHTDECK_ASSET_REQUEST')!==true){dataphyre_flightdeck_dpanel_surface::dispatch();return;}

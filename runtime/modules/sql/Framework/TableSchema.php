@@ -554,7 +554,8 @@ final class TableSchema {
 	 *
 	 * Existing strings are assumed to be caller-supplied JSON and pass through.
 	 * Arrays, objects, and scalars are encoded without escaping Unicode or slashes
-	 * so stored values remain human-readable.
+	 * so stored values remain human-readable. Fractional PHP values retain their
+	 * zero fraction so JSON payloads do not silently change numeric representation.
 	 *
 	 * @param string $column Column being encoded, used for error context.
 	 * @param mixed $value Application value before JSON storage.
@@ -565,7 +566,10 @@ final class TableSchema {
 		if(is_string($value)){
 			return $value;
 		}
-		$encoded=json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+		$encoded=json_encode(
+			$value,
+			JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION
+		);
 		if($encoded===false){
 			throw SqlError::invalidFieldPayload("schema {$this->table}", "JSON cast failed for column '{$column}': ".json_last_error_msg());
 		}

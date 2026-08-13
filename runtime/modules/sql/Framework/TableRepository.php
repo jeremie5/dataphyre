@@ -150,18 +150,14 @@ abstract class TableRepository {
 		}
 		$candidates=[];
 		if(str_contains($repositoryClass, '\\Repository\\')){
-			$candidates[]=preg_replace(
-				'/\\\\Repository\\\\([^\\\\]+)Repository$/',
-				'\\\\Record\\\\$1Record',
-				$repositoryClass
-			);
+			$conventionalCandidate=preg_replace('/\\\\Repository\\\\([^\\\\]+)Repository$/', '\\\\Record\\\\$1Record', $repositoryClass);
+			if(is_string($conventionalCandidate) && $conventionalCandidate!==''){
+				$candidates[]=$conventionalCandidate;
+			}
 		}
 		$namespace=substr($repositoryClass, 0, (int)strrpos($repositoryClass, '\\'));
 		$candidates[]=$namespace.'\\'.$baseName.'Record';
 		foreach($candidates as $candidate){
-			if(!is_string($candidate) || trim($candidate)===''){
-				continue;
-			}
 			if(class_exists($candidate)){
 				return $candidate;
 			}
@@ -178,7 +174,12 @@ abstract class TableRepository {
 	 * @return RepositoryQuery Query builder bound to this repository.
 	 */
 	public static function query(): RepositoryQuery {
-		return new RepositoryQuery(static::class);
+		return new RepositoryQuery(
+			static::class,
+			static::spec(),
+			static::defaultReadCaching(),
+			static::defaultWriteInvalidation()
+		);
 	}
 
 	/**
@@ -372,14 +373,15 @@ abstract class TableRepository {
 	 * `*` and explicit columns still work.
 	 *
 	 * @param array|string $columns Column list, projection, or `*` selector.
-	 * @return string|array Normalized SQL column selector.
+	 * List selectors are joined before they reach sql_select(): the SQL kernel
+	 * reserves associative arrays for DBMS-specific selector maps.
+	 *
+	 * @return string Normalized SQL column selector.
 	 */
-	protected static function columns(array|string $columns='*'): string|array {
+	protected static function columns(array|string $columns='*'): string {
 		$schema=static::schema();
-		if($schema!==null){
-			return $schema->columns($columns);
-		}
-		return QuerySpec::columns($columns);
+		$resolved=$schema!==null ? $schema->columns($columns) : QuerySpec::columns($columns);
+		return is_array($resolved) ? implode(', ', $resolved) : $resolved;
 	}
 
 	/**
@@ -779,6 +781,33 @@ abstract class TableRepository {
 	}
 
 	/**
+	 * Returns all matching rows while preserving SQL read failures.
+	 *
+	 * Unlike all(), an unavailable or malformed SQL result is not normalized to
+	 * an empty collection. A successful empty result still returns an empty list.
+	 *
+	 * @param array|string $columns Column list, projection, or `*` selector.
+	 * @param ?QuerySpec $spec Additional query constraints.
+	 * @param bool|array|string|null $caching Dataphyre read-cache policy.
+	 * @return array<int,array<string,mixed>> Repository-cast rows.
+	 */
+	public static function allOrFailOnReadError(
+		array|string $columns='*',
+		?QuerySpec $spec=null,
+		bool|array|string|null $caching=null
+	): array {
+		$result=static::selectMany($columns,$spec,$caching);
+		if(static::isSuccessfulFalseReadAbsence($result)) return [];
+		if(!is_array($result)){
+			throw SqlError::readFailure(static::class,'get',[
+				'table'=>static::table(),
+				'result_type'=>get_debug_type($result),
+			]);
+		}
+		return static::castRepositoryRows($result);
+	}
+
+	/**
 	 * Queues a multi-row repository read and normalizes callback payloads.
 	 *
 	 * The callback always receives an array of repository-cast rows; failed or
@@ -832,6 +861,46 @@ abstract class TableRepository {
 		$spec=$spec!==null ? (clone $spec) : static::spec();
 		$result=static::selectOne($columns, $spec->limit(1), $caching);
 		return is_array($result) ? static::castRepositoryRow($result) : null;
+	}
+
+	/**
+	 * Returns the first matching row while distinguishing absence from failure.
+	 *
+	 * Null remains the successful no-match result. False and malformed driver
+	 * payloads raise a structured read exception.
+	 *
+	 * @param array|string $columns Column list, projection, or `*` selector.
+	 * @param ?QuerySpec $spec Additional query constraints.
+	 * @param bool|array|string|null $caching Dataphyre read-cache policy.
+	 * @return array<string,mixed>|null First row or null when no row matches.
+	 */
+	public static function firstOrFailOnReadError(
+		array|string $columns='*',
+		?QuerySpec $spec=null,
+		bool|array|string|null $caching=null
+	): ?array {
+		$spec=$spec!==null ? clone $spec : static::spec();
+		$result=static::selectOne($columns,$spec->limit(1),$caching);
+		if($result===null || static::isSuccessfulFalseReadAbsence($result)) return null;
+		if(!is_array($result)){
+			throw SqlError::readFailure(static::class,'first',[
+				'table'=>static::table(),
+				'result_type'=>get_debug_type($result),
+			]);
+		}
+		return static::castRepositoryRow($result);
+	}
+
+	/**
+	 * Distinguishes the SQL kernel's historical PostgreSQL no-row sentinel from
+	 * a failed read. The kernel records every actual query failure before
+	 * returning false; a cleared error alongside false therefore means that a
+	 * single-row query completed successfully without a match.
+	 */
+	private static function isSuccessfulFalseReadAbsence(mixed $result): bool {
+		return $result===false
+			&& method_exists(\dataphyre\sql::class, 'last_query_error')
+			&& \dataphyre\sql::last_query_error()===null;
 	}
 
 	/**
@@ -1257,16 +1326,14 @@ abstract class TableRepository {
 		if($rows===[]){
 			throw SqlError::recordNotFound(
 				static::class,
-				static::notFoundContext($columns, $spec),
-				$message,
+				static::notFoundContext($columns, $spec), $message,
 				'Use first() when zero matches are acceptable, or tighten the repository query before calling sole().'
 			);
 		}
 		if(count($rows)>1){
 			throw SqlError::multipleRecordsFound(
 				static::class,
-				static::notFoundContext($columns, $spec, ['matched_rows_sample'=>count($rows)]),
-				$message,
+				static::notFoundContext($columns, $spec, ['matched_rows_sample'=>count($rows)]), $message,
 				'Use all()/get() when multiple matches are expected, or tighten the repository query until it uniquely identifies a single row.'
 			);
 		}
@@ -1304,16 +1371,14 @@ abstract class TableRepository {
 				if($rows===[]){
 					throw SqlError::recordNotFound(
 						static::class,
-						static::notFoundContext($columns, $spec),
-						$message,
+						static::notFoundContext($columns, $spec), $message,
 						'Use queueFirst() when zero matches are acceptable, or tighten the repository query before calling queueSole().'
 					);
 				}
 				if(count($rows)>1){
 					throw SqlError::multipleRecordsFound(
 						static::class,
-						static::notFoundContext($columns, $spec, ['matched_rows_sample'=>count($rows)]),
-						$message,
+						static::notFoundContext($columns, $spec, ['matched_rows_sample'=>count($rows)]), $message,
 						'Use queueAll()/queueGet() when multiple matches are expected, or tighten the repository query until it uniquely identifies a single row.'
 					);
 				}
@@ -2923,11 +2988,7 @@ abstract class TableRepository {
 		}
 		return throw SqlError::recordNotFound(
 			static::class,
-			static::notFoundContext($columns, static::spec()->whereEq($column, $value), [
-				'lookup_column'=>$column,
-				'lookup_value'=>$value,
-			]),
-			$message,
+			static::notFoundContext($columns, static::spec()->whereEq($column, $value), ['lookup_column'=>$column, 'lookup_value'=>$value]), $message,
 			'Use findOneBy() when a missing record is acceptable, or verify the lookup column and value before calling findOneByOrFail().'
 		);
 	}
@@ -3424,8 +3485,7 @@ abstract class TableRepository {
 		}
 		return throw SqlError::recordNotFound(
 			static::class,
-			static::notFoundContext($columns, null, ['id'=>$id]),
-			$message,
+			static::notFoundContext($columns, null, ['id'=>$id]), $message,
 			'Use find() when a missing record is acceptable, or verify the repository primary key and identifier before calling findOrFail().'
 		);
 	}
@@ -3645,8 +3705,7 @@ abstract class TableRepository {
 		}
 		return throw SqlError::recordNotFound(
 			static::class,
-			static::notFoundContext($columns, null, ['id'=>$id]),
-			$message,
+			static::notFoundContext($columns, null, ['id'=>$id]), $message,
 			'Use findRecord() when a missing record is acceptable, or verify the repository primary key and identifier before calling findRecordOrFail().'
 		);
 	}
@@ -4240,18 +4299,48 @@ abstract class TableRepository {
 	 *
 	 * @param array<int, mixed> $rows Candidate insert rows.
 	 * @param bool|array|null $clearCache Dataphyre write invalidation policy.
+	 * @param ?BulkMutationOptions $options Optional statement bounds and PostgreSQL insert correlation column; omitted options preserve the public defaults.
 	 * @return MutationBatchResult Batch insert accounting and child results.
 	 */
 	public static function createMany(
 		array $rows,
-		bool|array|null $clearCache=null
+		bool|array|null $clearCache=null,
+		?BulkMutationOptions $options=null
 	): MutationBatchResult {
-		$results=[];
-		foreach($rows as $row){
+		$normalized=[];
+		foreach($rows as $index=>$row){
 			if(!is_array($row)){
 				continue;
 			}
-			$results[]=static::create($row, $clearCache);
+			$normalized[(int)$index]=static::fields($row);
+		}
+		$resolvedClearCache=static::resolveWriteInvalidation($clearCache);
+		$context=static::mutationContext();
+		$results=BulkMutationExecutor::inserts(
+			static::table(),
+			$normalized,
+			static::primaryKey(),
+			$resolvedClearCache,
+			$options,
+			static fn(array $query, array $vars, bool|array|null $invalidation): mixed => static::withSchemaHydration(
+				static fn(): mixed=>sql_query($query, $vars, true, false, false, $invalidation)
+			),
+			static fn(array $row): MutationResult => MutationResult::fromRaw(
+				'insert',
+				static::insertOne($row, $resolvedClearCache),
+				$context
+			),
+			$context
+		);
+		if($results===null){
+			$results=[];
+			foreach($normalized as $row){
+				$results[]=MutationResult::fromRaw(
+					'insert',
+					static::insertOne($row, $resolvedClearCache),
+					$context
+				);
+			}
 		}
 		return new MutationBatchResult('insert', $results, count($rows));
 	}
@@ -5505,20 +5594,63 @@ abstract class TableRepository {
 	 * @param string|array|null $updateParams DBMS-specific update expression or parameter map.
 	 * @param ?array $updateVars Variables bound to the update expression.
 	 * @param bool|array|null $clearCache Dataphyre write invalidation policy.
+	 * @param ?BulkMutationOptions $options Optional conflict target and statement bounds.
 	 * @return MutationBatchResult Batch result preserving requested and processed counts.
 	 */
 	public static function upsertMany(
 		array $rows,
 		string|array|null $updateParams=null,
 		?array $updateVars=null,
-		bool|array|null $clearCache=null
+		bool|array|null $clearCache=null,
+		?BulkMutationOptions $options=null
 	): MutationBatchResult {
-		$results=[];
-		foreach($rows as $row){
+		$normalized=[];
+		foreach($rows as $index=>$row){
 			if(!is_array($row)){
 				continue;
 			}
-			$results[]=static::upsert($row, $updateParams, $updateVars, $clearCache);
+			$normalized[(int)$index]=static::fields($row);
+		}
+		$resolvedClearCache=static::resolveWriteInvalidation($clearCache);
+		$context=static::mutationContext();
+		$conflictColumns=$options?->conflictColumns();
+		if($conflictColumns===null){
+			$primaryKey=static::primaryKey();
+			$conflictColumns=$primaryKey!==null ? [$primaryKey] : [];
+		}
+		$results=null;
+		if($updateParams===null && ($updateVars===null || $updateVars===[]) && $conflictColumns!==[]){
+			$results=BulkMutationExecutor::upserts(
+				static::table(),
+				$normalized,
+				$conflictColumns,
+				$options?->updateColumns(),
+				$resolvedClearCache,
+				$options,
+				static fn(array $query, array $vars, bool|array|null $invalidation): mixed => static::withSchemaHydration(
+					static fn(): mixed=>sql_query($query, $vars, false, false, false, $invalidation)
+				),
+				$context
+			);
+		}
+		if($results===null){
+			if($options?->conflictColumns()!==null){
+				throw new \LogicException('The explicit BulkMutationOptions conflict target cannot be preserved by the active upsert path.');
+			}
+			$results=[];
+			foreach($normalized as $row){
+				$results[]=MutationResult::fromRaw(
+					'upsert',
+					static::withSchemaHydration(static fn(): mixed => sql_upsert(
+						static::table(),
+						$row,
+						$updateParams,
+						$updateVars,
+						$resolvedClearCache
+					)),
+					$context
+				);
+			}
 		}
 		return new MutationBatchResult('upsert', $results, count($rows));
 	}

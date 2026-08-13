@@ -13,22 +13,28 @@ namespace Dataphyre\Panel;
  * PageTable defines columns, filters, views, summaries, groups, record sources,
  * default sorting, table-scoped query mapping, search, manifests, and metadata for
  * table widgets rendered on panel pages.
+ *
+ * @template TRecord = mixed
+ * @template TState of array<string, mixed> = array<string, mixed>
  */
 final class PageTable {
 	use PanelExtensible;
+	use HasCollectionPresentations;
+	use HasCollectionItemPresentation;
 
 	private string $name;
 	private string $label;
-	/** @var array<string, Column> */
+	/** @var array<string, Column<TRecord, mixed>> */
 	private array $columns=[];
-	/** @var array<string, TableFilter> */
+	/** @var array<string, TableFilter<TRecord, mixed, TState>> */
 	private array $filters=[];
-	/** @var array<string, TableView> */
+	/** @var array<string, TableView<TRecord, TState>> */
 	private array $views=[];
-	/** @var array<string, TableSummary> */
+	/** @var array<string, TableSummary<TRecord, mixed>> */
 	private array $summaries=[];
-	/** @var array<string, TableGroup> */
+	/** @var array<string, TableGroup<TRecord, mixed>> */
 	private array $groups=[];
+	/** @var list<TRecord> */
 	private array $records=[];
 	private ?\Closure $recordsResolver=null;
 	private ?string $emptyMessage=null;
@@ -57,7 +63,7 @@ final class PageTable {
 	 * PanelExtensible hooks are applied before the table is returned.
 	 *
 	 * @param string $name Raw table name.
-	 * @return self Configured table definition.
+	 * @return self<TRecord, TState> Configured table definition.
 	 */
 	public static function make(string $name): self {
 		return self::configured(new self($name));
@@ -70,13 +76,13 @@ final class PageTable {
 	 * filters, views, summaries, groups, records, default_sort, limit, sort, and meta.
 	 *
 	 * @param array<string, mixed> $definition Table definition payload.
-	 * @return self Configured table definition.
+	 * @return self<TRecord,TState> Configured table definition.
 	 */
 	public static function fromArray(array $definition): self {
 		$table=self::make((string)($definition['name'] ?? ''));
-		foreach(['label', 'description', 'empty_message'] as $key){
+		foreach(['label'=>'label', 'description'=>'description', 'empty_message'=>'emptyMessage'] as $key=>$method){
 			if(isset($definition[$key]) && is_string($definition[$key])){
-				$table=$table->{$key}($definition[$key]);
+				$table=$table->{$method}($definition[$key]);
 			}
 		}
 		if(isset($definition['columns']) && is_array($definition['columns'])){
@@ -109,6 +115,9 @@ final class PageTable {
 		if(isset($definition['meta']) && is_array($definition['meta'])){
 			$table=$table->meta($definition['meta']);
 		}
+		if(isset($definition['presentation']) && is_array($definition['presentation'])){
+			$table=$table->collectionPresentations($definition['presentation']);
+		}
 		return $table;
 	}
 
@@ -125,7 +134,7 @@ final class PageTable {
 	 * Returns a clone with a display label.
 	 *
 	 * @param string $label Human-readable table label.
-	 * @return self Cloned table definition.
+	 * @return self<TRecord,TState> Cloned table definition.
 	 */
 	public function label(string $label): self {
 		$clone=clone $this;
@@ -139,7 +148,7 @@ final class PageTable {
 	 * Empty descriptions are stored as null.
 	 *
 	 * @param string $description Description shown near the table.
-	 * @return self Cloned table definition.
+	 * @return self<TRecord,TState> Cloned table definition.
 	 */
 	public function description(string $description): self {
 		$clone=clone $this;
@@ -151,7 +160,7 @@ final class PageTable {
 	 * Returns a clone with the message shown when no records are available.
 	 *
 	 * @param string $message Empty-state message.
-	 * @return self Cloned table definition.
+	 * @return self<TRecord,TState> Cloned table definition.
 	 */
 	public function emptyMessage(string $message): self {
 		$clone=clone $this;
@@ -164,8 +173,8 @@ final class PageTable {
 	 *
 	 * Each entry may be a Column instance, array definition, or string column name.
 	 *
-	 * @param array<int, Column|array<string, mixed>|string> $columns Column definitions.
-	 * @return self Cloned table definition.
+	 * @param array<int, Column<TRecord, mixed>|array<string, mixed>|string> $columns Column definitions.
+	 * @return self<TRecord,TState> Cloned table definition.
 	 */
 	public function columns(array $columns): self {
 		$clone=clone $this;
@@ -180,9 +189,10 @@ final class PageTable {
 	 *
 	 * Empty normalized column names are ignored.
 	 *
-	 * @param Column|array<string, mixed>|string $column Column instance, array definition, or name.
+	 * @template TColumnValue
+	 * @param Column<TRecord,TColumnValue>|array<string,mixed>|string $column Column instance, array definition, or name.
 	 * @param string|null $type Column type used when $column is a string.
-	 * @return self Cloned table definition.
+	 * @return self<TRecord,TState> Cloned table definition.
 	 */
 	public function column(Column|array|string $column, ?string $type=null): self {
 		$clone=clone $this;
@@ -202,8 +212,8 @@ final class PageTable {
 	/**
 	 * Returns a clone with additional filters appended from mixed definitions.
 	 *
-	 * @param array<int, TableFilter|array<string, mixed>|string> $filters Filter definitions.
-	 * @return self Cloned table definition.
+	 * @param array<int, TableFilter<TRecord, mixed, TState>|array<string, mixed>|string> $filters Filter definitions.
+	 * @return self<TRecord,TState> Cloned table definition.
 	 */
 	public function filters(array $filters): self {
 		$clone=clone $this;
@@ -216,9 +226,10 @@ final class PageTable {
 	/**
 	 * Returns a clone with one filter registered by name.
 	 *
-	 * @param TableFilter|array<string, mixed>|string $filter Filter instance, array definition, or name.
+	 * @template TFilterValue
+	 * @param TableFilter<TRecord,TFilterValue,TState>|array<string,mixed>|string $filter Filter instance, array definition, or name.
 	 * @param string|null $type Filter type used when $filter is a string.
-	 * @return self Cloned table definition.
+	 * @return self<TRecord,TState> Cloned table definition.
 	 */
 	public function filter(TableFilter|array|string $filter, ?string $type=null): self {
 		$clone=clone $this;
@@ -238,8 +249,8 @@ final class PageTable {
 	/**
 	 * Returns a clone with the table views replaced.
 	 *
-	 * @param array<int, TableView|array<string, mixed>|string> $views View definitions.
-	 * @return self Cloned table definition.
+	 * @param array<int, TableView<TRecord, TState>|array<string, mixed>|string> $views View definitions.
+	 * @return self<TRecord,TState> Cloned table definition.
 	 */
 	public function views(array $views): self {
 		$clone=clone $this;
@@ -253,8 +264,8 @@ final class PageTable {
 	/**
 	 * Returns a clone with one view registered by name.
 	 *
-	 * @param TableView|array<string, mixed>|string $view View instance, array definition, or name.
-	 * @return self Cloned table definition.
+	 * @param TableView<TRecord, TState>|array<string, mixed>|string $view View instance, array definition, or name.
+	 * @return self<TRecord,TState> Cloned table definition.
 	 */
 	public function view(TableView|array|string $view): self {
 		$clone=clone $this;
@@ -274,8 +285,8 @@ final class PageTable {
 	/**
 	 * Returns a clone with additional summary definitions appended.
 	 *
-	 * @param array<int, TableSummary|array<string, mixed>|string> $summaries Summary definitions.
-	 * @return self Cloned table definition.
+	 * @param array<int, TableSummary<TRecord, mixed>|array<string, mixed>|string> $summaries Summary definitions.
+	 * @return self<TRecord,TState> Cloned table definition.
 	 */
 	public function summaries(array $summaries): self {
 		$clone=clone $this;
@@ -288,9 +299,10 @@ final class PageTable {
 	/**
 	 * Returns a clone with one summary registered by name.
 	 *
-	 * @param TableSummary|array<string, mixed>|string $summary Summary instance, array definition, or name.
+	 * @template TSummaryValue
+	 * @param TableSummary<TRecord,TSummaryValue>|array<string,mixed>|string $summary Summary instance, array definition, or name.
 	 * @param string $type Summary type used when $summary is a string.
-	 * @return self Cloned table definition.
+	 * @return self<TRecord,TState> Cloned table definition.
 	 */
 	public function summary(TableSummary|array|string $summary, string $type='count'): self {
 		$clone=clone $this;
@@ -310,8 +322,8 @@ final class PageTable {
 	/**
 	 * Returns a clone with the table groups replaced.
 	 *
-	 * @param array<int, TableGroup|array<string, mixed>|string> $groups Group definitions.
-	 * @return self Cloned table definition.
+	 * @param array<int, TableGroup<TRecord, mixed>|array<string, mixed>|string> $groups Group definitions.
+	 * @return self<TRecord,TState> Cloned table definition.
 	 */
 	public function groups(array $groups): self {
 		$clone=clone $this;
@@ -325,8 +337,9 @@ final class PageTable {
 	/**
 	 * Returns a clone with one group registered by name.
 	 *
-	 * @param TableGroup|array<string, mixed>|string $group Group instance, array definition, or name.
-	 * @return self Cloned table definition.
+	 * @template TGroupKey
+	 * @param TableGroup<TRecord,TGroupKey>|array<string,mixed>|string $group Group instance, array definition, or name.
+	 * @return self<TRecord,TState> Cloned table definition.
 	 */
 	public function group(TableGroup|array|string $group): self {
 		$clone=clone $this;
@@ -348,8 +361,9 @@ final class PageTable {
 	 *
 	 * Setting static records clears any lazy records resolver.
 	 *
-	 * @param array<int, mixed> $records Records to display.
-	 * @return self Cloned table definition.
+	 * @template TPageRecord
+	 * @param list<TPageRecord> $records Records to display.
+	 * @return self<TPageRecord,TState>
 	 */
 	public function records(array $records): self {
 		$clone=clone $this;
@@ -364,8 +378,8 @@ final class PageTable {
 	 * The resolver may receive request, table, and page context when records are
 	 * resolved for a manifest.
 	 *
-	 * @param callable $resolver Resolver returning an array or object with records.
-	 * @return self Cloned table definition.
+	 * @param callable(PanelRequest|null=,self<TRecord,TState>=,PanelPage|null=):iterable<TRecord>|PanelDataResult|object $resolver Resolver returning an iterable or data-result object with records.
+	 * @return self<TRecord,TState>
 	 */
 	public function recordsUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -376,8 +390,8 @@ final class PageTable {
 	/**
 	 * Alias for recordsUsing() for query-style table configuration.
 	 *
-	 * @param callable $resolver Resolver returning records.
-	 * @return self Cloned table definition.
+	 * @param callable(PanelRequest|null=,self<TRecord,TState>=,PanelPage|null=):iterable<TRecord>|PanelDataResult|object $resolver Resolver returning records.
+	 * @return self<TRecord,TState>
 	 */
 	public function queryUsing(callable $resolver): self {
 		return $this->recordsUsing($resolver);
@@ -390,7 +404,7 @@ final class PageTable {
 	 *
 	 * @param string $column Column name used for default sorting.
 	 * @param string $direction Sort direction.
-	 * @return self Cloned table definition.
+	 * @return self<TRecord,TState> Cloned table definition.
 	 */
 	public function defaultSort(string $column, string $direction='asc'): self {
 		$clone=clone $this;
@@ -406,7 +420,7 @@ final class PageTable {
 	 * Non-positive limits are treated as no limit.
 	 *
 	 * @param int|null $limit Maximum number of resolved records.
-	 * @return self Cloned table definition.
+	 * @return self<TRecord,TState> Cloned table definition.
 	 */
 	public function limit(?int $limit): self {
 		$clone=clone $this;
@@ -418,7 +432,7 @@ final class PageTable {
 	 * Returns a clone with an ordering weight for panel display.
 	 *
 	 * @param int $sort Sort weight.
-	 * @return self Cloned table definition.
+	 * @return self<TRecord,TState> Cloned table definition.
 	 */
 	public function sort(int $sort): self {
 		$clone=clone $this;
@@ -430,7 +444,7 @@ final class PageTable {
 	 * Returns a clone with merged table metadata.
 	 *
 	 * @param array<string, mixed> $meta Metadata to merge into the table manifest.
-	 * @return self Cloned table definition.
+	 * @return self<TRecord,TState> Cloned table definition.
 	 */
 	public function meta(array $meta): self {
 		$clone=clone $this;
@@ -438,51 +452,51 @@ final class PageTable {
 		return $clone;
 	}
 
-	/** @return array<string, Column> */
+	/** @return array<string, Column<TRecord, mixed>> */
 	/**
 	 * Returns registered columns keyed by column name.
 	 *
-	 * @return array<string, Column> Column instances.
+	 * @return array<string, Column<TRecord, mixed>> Column instances.
 	 */
 	public function columnsList(): array {
 		return $this->columns;
 	}
 
-	/** @return array<string, TableFilter> */
+	/** @return array<string, TableFilter<TRecord, mixed, TState>> */
 	/**
 	 * Returns registered filters keyed by filter name.
 	 *
-	 * @return array<string, TableFilter> Filter instances.
+	 * @return array<string, TableFilter<TRecord, mixed, TState>> Filter instances.
 	 */
 	public function filtersList(): array {
 		return $this->filters;
 	}
 
-	/** @return array<string, TableView> */
+	/** @return array<string, TableView<TRecord, TState>> */
 	/**
 	 * Returns registered views keyed by view name.
 	 *
-	 * @return array<string, TableView> View instances.
+	 * @return array<string, TableView<TRecord, TState>> View instances.
 	 */
 	public function viewsList(): array {
 		return $this->views;
 	}
 
-	/** @return array<string, TableSummary> */
+	/** @return array<string, TableSummary<TRecord, mixed>> */
 	/**
 	 * Returns registered summaries keyed by summary name.
 	 *
-	 * @return array<string, TableSummary> Summary instances.
+	 * @return array<string, TableSummary<TRecord, mixed>> Summary instances.
 	 */
 	public function summariesList(): array {
 		return $this->summaries;
 	}
 
-	/** @return array<string, TableGroup> */
+	/** @return array<string, TableGroup<TRecord, mixed>> */
 	/**
 	 * Returns registered groups keyed by group name.
 	 *
-	 * @return array<string, TableGroup> Group instances.
+	 * @return array<string, TableGroup<TRecord, mixed>> Group instances.
 	 */
 	public function groupsList(): array {
 		return $this->groups;
@@ -590,9 +604,6 @@ final class PageTable {
 	 * @return PanelRequest Request carrying unprefixed table filter values.
 	 */
 	public function filterRequest(PanelRequest $request): PanelRequest {
-		if($this->filters===[] && $this->views===[]){
-			return $request;
-		}
 		$query=$request->query();
 		$mapped=$query;
 		$prefix=$this->filterPrefix();
@@ -640,7 +651,7 @@ final class PageTable {
 	 *
 	 * @param PanelRequest|null $request Optional request used for filters/search/views.
 	 * @param PanelPage|null $page Optional page context passed to lazy record resolvers.
-	 * @return array<int, mixed> Resolved records for rendering.
+	 * @return list<TRecord> Resolved records for rendering.
 	 */
 	public function resolvedRecords(?PanelRequest $request=null, ?PanelPage $page=null): array {
 		if($request instanceof PanelRequest){
@@ -729,6 +740,7 @@ final class PageTable {
 			'default_sort_direction'=>$this->defaultSortDirection,
 			'limit'=>$this->limit,
 			'sort'=>$this->sort,
+			'presentation'=>$this->presentations(),
 			'meta'=>$this->meta,
 		];
 	}
@@ -855,9 +867,6 @@ final class PageTable {
 		$prefix=$this->filterPrefix();
 		foreach($view->queryDefaults() as $key=>$value){
 			$key=Resource::normalizeName((string)$key);
-			if($key===''){
-				continue;
-			}
 			$target=str_starts_with($key, $prefix) ? $key : $prefix.$key;
 			if(array_key_exists($target, $query) && (is_array($query[$target]) ? $query[$target]!==[] : (string)$query[$target]!=='')){
 				continue;

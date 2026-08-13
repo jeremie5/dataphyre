@@ -44,14 +44,7 @@ class bm25 {
 		if($max_score<=0.0){
 			return 0.0;
 		}
-		$normalized=$raw_score/$max_score;
-		if($normalized<0.0){
-			return 0.0;
-		}
-		if($normalized>1.0){
-			return 1.0;
-		}
-		return $normalized;
+		return min(1.0, $raw_score/$max_score);
 	}
 
 	/**
@@ -149,9 +142,6 @@ class bm25 {
 				continue;
 			}
 			$idf=self::inverse_document_frequency($term, $corpus_terms);
-			if($idf<=0.0){
-				continue;
-			}
 			$numerator=$term_frequency*($k1+1.0);
 			$denominator=$term_frequency+($k1*(1.0-$b+($b*($document_length/max(1e-9, $average_document_length)))));
 			$score+=$idf*($numerator/max(1e-9, $denominator))*max(1, (int)$query_frequency);
@@ -172,9 +162,6 @@ class bm25 {
 		$score=0.0;
 		foreach($query_term_frequency as $term=>$query_frequency){
 			$idf=self::inverse_document_frequency($term, $corpus_terms);
-			if($idf<=0.0){
-				continue;
-			}
 			$score+=$idf*($k1+1.0)*max(1, (int)$query_frequency);
 		}
 		return $score;
@@ -187,9 +174,6 @@ class bm25 {
 	 * @return float Average document length, never below `1.0`.
 	 */
 	private static function average_document_length(array $corpus_terms): float {
-		if(empty($corpus_terms)){
-			return 1.0;
-		}
 		$total_length=0;
 		foreach($corpus_terms as $document_terms){
 			$total_length+=count($document_terms);

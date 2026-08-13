@@ -18,7 +18,7 @@
         "name":  "Should skip a missing dependency without failing the manifest",
         "function":  "dataphyre\\dpanel::unit_test",
         "args":  [
-                     "/common/dataphyre/runtime/modules/dpanel/unit_tests/dpanel_mock_with_missing_dependency.json"
+                     "/dataphyre/runtime/modules/dpanel/unit_tests/dpanel_mock_with_missing_dependency.json"
                  ],
         "expected":  [
                          true
@@ -33,7 +33,7 @@
         "name":  "Should return true on valid test file",
         "function":  "dataphyre\\dpanel::unit_test",
         "args":  [
-                     "/common/dataphyre/runtime/modules/dpanel/unit_tests/dpanel_mock_allpass.json"
+                     "/dataphyre/runtime/modules/dpanel/unit_tests/dpanel_mock_allpass.json"
                  ],
         "expected":  [
                          true
@@ -48,7 +48,7 @@
         "name":  "Should report a slow test without failing manifest execution",
         "function":  "dataphyre\\dpanel::unit_test",
         "args":  [
-                     "/common/dataphyre/runtime/modules/dpanel/unit_tests/dpanel_mock_slowtest.json"
+                     "/dataphyre/runtime/modules/dpanel/unit_tests/dpanel_mock_slowtest.json"
                  ],
         "expected":  [
                          true

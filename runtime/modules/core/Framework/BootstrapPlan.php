@@ -42,7 +42,11 @@ final class BootstrapPlan implements \JsonSerializable {
 	 */
 	public static function fromApplication(Application $application, ?string $projectRoot=null): self {
 		return new self(
-			static::normalizeProjectRoot($projectRoot ?? Runtime::projectRoot()),
+			static::normalizeProjectRoot(
+				$projectRoot
+				?? \dataphyre\runtime::current_project_root()
+				?? (defined('ROOTPATH') && !empty(ROOTPATH['root']) ? (string)ROOTPATH['root'] : null)
+			),
 			$application
 		);
 	}

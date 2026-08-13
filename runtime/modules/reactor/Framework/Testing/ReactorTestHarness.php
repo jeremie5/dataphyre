@@ -39,7 +39,9 @@ final class ReactorTestHarness {
 	 * @return self Harness bound to the selected manager.
 	 */
 	public static function make(?ReactorManager $manager=null): self {
-		return new self($manager ?? new ReactorManager());
+		$manager ??= new ReactorManager();
+		$manager->trustInternalTransport('reactor:test-harness');
+		return new self($manager);
 	}
 
 	/**

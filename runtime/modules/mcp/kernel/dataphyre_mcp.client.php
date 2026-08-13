@@ -20,6 +20,12 @@ trait dataphyre_mcp_client_surfaces {
 	use dataphyre_mcp_client_setup_surfaces;
 	use dataphyre_mcp_client_prompt_surfaces;
 
+	/** Normalizes the finite MCP client vocabulary used by portable setup surfaces. */
+	private function mcp_client_target(mixed $target): string {
+		$name=strtolower(trim((string)$target));
+		return in_array($name,['codex','claude','cursor','generic'],true) ? $name : 'generic';
+	}
+
 	/**
 	 * Exports the client-facing MCP manifest.
 	 *
@@ -65,7 +71,10 @@ trait dataphyre_mcp_client_surfaces {
 			'documentation'=>['dataphyre_search_docs', 'dataphyre_read_doc', 'dataphyre_module_docs_pack', 'dataphyre_docs_chunks_export', 'dataphyre_docs_index_plan', 'dataphyre_embeddings_readiness_plan', 'dataphyre_remote_docs_readiness_plan', 'dataphyre_datadoc_static_summary', 'dataphyre_datadoc_runtime_readiness_plan'],
 			'routes'=>['dataphyre_list_routes', 'dataphyre_route_manifest_read', 'dataphyre_route_url_preview', 'dataphyre_route_match_preview', 'dataphyre_route_source_static_summary', 'dataphyre_route_source_ambiguity_report', 'dataphyre_route_runtime_provenance_plan', 'dataphyre_controller_source_summary', 'dataphyre_middleware_source_summary', 'dataphyre_mvc_config_static_summary', 'dataphyre_mvc_route_cache_summary'],
 			'config_storage_sql'=>['dataphyre_list_config_keys', 'dataphyre_config_shape_read', 'dataphyre_config_value_preview', 'dataphyre_storage_config_summary', 'dataphyre_storage_driver_catalog', 'dataphyre_sql_tables_list', 'dataphyre_sql_schema_read', 'dataphyre_sql_clusters_list', 'dataphyre_sql_query_plan', 'dataphyre_sql_query_runner_contract', 'dataphyre_sql_runtime_readiness_plan'],
-			'diagnostics'=>['dataphyre_tracelog_artifacts_list', 'dataphyre_tracelog_read', 'dataphyre_tracelog_search', 'dataphyre_diagnostics_last_error', 'dataphyre_browser_diagnostics_readiness_plan', 'dataphyre_flightdeck_surfaces_list', 'dataphyre_unit_tests_list', 'dataphyre_unit_test_manifest_read', 'dataphyre_browser_regression_manifest_summary', 'dataphyre_verification_surface_catalog'],
+			'sql_migrations'=>['dataphyre_sql_migration_catalog', 'dataphyre_sql_migration_describe', 'dataphyre_sql_migration_manifest_validate', 'dataphyre_sql_migration_scaffold_plan'],
+			'contracts'=>['dataphyre_contract_catalog', 'dataphyre_contract_describe', 'dataphyre_unit_tests_list', 'dataphyre_unit_test_manifest_read'],
+			'diagnostics'=>['dataphyre_tracelog_artifacts_list', 'dataphyre_tracelog_read', 'dataphyre_tracelog_search', 'dataphyre_diagnostics_last_error', 'dataphyre_browser_diagnostics_readiness_plan', 'dataphyre_flightdeck_surfaces_list', 'dataphyre_browser_regression_manifest_summary', 'dataphyre_verification_surface_catalog'],
+			'panel_intelligence'=>['dataphyre_panel_capability_catalog', 'dataphyre_panel_capability_describe', 'dataphyre_panel_surface_graph', 'dataphyre_panel_recipe_plan', 'dataphyre_panel_integration_plan', 'dataphyre_panel_verification_plan'],
 			'panel_helpers'=>['dataphyre_panel_scaffold_catalog', 'dataphyre_panel_package_manifest_summary', 'dataphyre_panel_theme_manifest_summary', 'dataphyre_panel_documentation_catalog_summary', 'dataphyre_panel_media_manifest_summary'],
 			'agent_and_planning'=>['dataphyre_app_builder_plan_generate', 'dataphyre_task_pack_generate', 'dataphyre_agent_context_generate', 'dataphyre_scaffold_plan_generate', 'dataphyre_apply_audit_plan', 'dataphyre_apply_runtime_readiness_plan', 'dataphyre_mcp_manifest_export', 'dataphyre_prompt_pack_export', 'dataphyre_mcp_prompt_catalog', 'dataphyre_mcp_skill_catalog', 'dataphyre_mcp_skill_manifest_export', 'dataphyre_mcp_skill_registration_audit', 'dataphyre_mcp_skill_pack_export', 'dataphyre_mcp_skill_install_plan', 'dataphyre_mcp_skill_file_install_plan', 'dataphyre_mcp_client_config_summary', 'dataphyre_mcp_client_install_checklist', 'dataphyre_mcp_client_config_install_plan', 'dataphyre_mcp_smoke_test_export', 'dataphyre_mcp_client_onboarding_pack', 'dataphyre_mcp_client_troubleshoot', 'dataphyre_mcp_client_compatibility_matrix', 'dataphyre_mcp_client_config_audit', 'dataphyre_mcp_safety_boundary_report', 'dataphyre_mcp_status_board', 'dataphyre_mcp_enterprise_adoption_audit', 'dataphyre_mcp_capability_matrix', 'dataphyre_mcp_release_notes_generate', 'dataphyre_mcp_surface_changelog', 'dataphyre_mcp_tool_call_examples_export', 'dataphyre_mcp_workflow_playbook_export', 'dataphyre_mcp_workflow_readiness_audit', 'dataphyre_mcp_workflow_session_export', 'dataphyre_mcp_workflow_transcript_schema_export', 'dataphyre_mcp_workflow_state_schema_export', 'dataphyre_mcp_workflow_state_audit', 'dataphyre_mcp_workflow_state_summary_export', 'dataphyre_mcp_workflow_state_transition_export', 'dataphyre_mcp_workflow_state_sync_pack_export', 'dataphyre_mcp_workflow_state_timeline_export', 'dataphyre_mcp_workflow_state_resume_brief_export', 'dataphyre_mcp_workflow_transcript_audit', 'dataphyre_mcp_workflow_transcript_summary_export', 'dataphyre_mcp_workflow_checkpoint_export', 'dataphyre_mcp_workflow_handoff_pack_export', 'dataphyre_mcp_workflow_catalog', 'dataphyre_mcp_workflow_lifecycle_export', 'dataphyre_mcp_workflow_next_action_export', 'dataphyre_mcp_workflow_recommend', 'dataphyre_mcp_workflow_recommendation_handoff_export', 'dataphyre_mcp_task_start_pack_export', 'dataphyre_mcp_agent_brief_export', 'dataphyre_mcp_tool_finder', 'dataphyre_mcp_resource_finder', 'dataphyre_mcp_readiness_report'],
 			'skill_registration'=>['dataphyre_mcp_skill_catalog', 'dataphyre_mcp_skill_manifest_export', 'dataphyre_mcp_skill_registration_audit', 'dataphyre_mcp_skill_pack_export', 'dataphyre_mcp_skill_install_plan', 'dataphyre_mcp_skill_file_install_plan'],
@@ -86,7 +95,7 @@ trait dataphyre_mcp_client_surfaces {
 		return [
 			'manifest_type'=>'dataphyre_mcp_manifest',
 			'server'=>'dataphyre-mcp',
-			'version'=>'2.0.3',
+			'version'=>'2.2.0',
 			'protocol'=>'2025-11-25',
 			'generated_from'=>'live tool, prompt, and resource registration',
 			'default_safety'=>'read_only',
@@ -138,10 +147,10 @@ trait dataphyre_mcp_client_surfaces {
 	 */
 	private function mcp_server_entrypoint_contract(): array {
 		return [
-			'stdio_server'=>'common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php',
-			'module_bootstrap'=>'common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php',
+			'stdio_server'=>'dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php',
+			'module_bootstrap'=>'dataphyre/runtime/modules/mcp/kernel/mcp.main.php',
 			'client_policy'=>'MCP stdio clients must launch dataphyre_mcp.php from the project root; mcp.main.php is the Dataphyre runtime module bootstrap and is not a stdio MCP server.',
-			'validation_tool'=>'common/dataphyre/dev/tools/public/mcp_live_validate.php',
+			'validation_tool'=>'dataphyre/dev/tools/public/mcp_live_validate.php',
 			'validation_policy'=>'The dev/tools validator is a Dataphyre maintainer fallback for MCP wiring checks, not ordinary application-agent release or app-behavior proof.',
 		];
 	}
@@ -214,7 +223,7 @@ trait dataphyre_mcp_client_surfaces {
 			],
 			'client_notes'=>[
 				'Run the stdio server from the project root so repo-relative paths resolve correctly.',
-				'Use common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php as the stdio server; common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php is only the Dataphyre runtime module bootstrap.',
+				'Use dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php as the stdio server; dataphyre/runtime/modules/mcp/kernel/mcp.main.php is only the Dataphyre runtime module bootstrap.',
 				'Keep command examples generic; do not commit product-local PHP paths into shared MCP docs or code.',
 				'Use dataphyre_mcp_manifest_export to discover current tools, prompts, resources, schemas, and safety posture.',
 				'Use dataphyre_prompt_pack_export for reusable workflow prompt bundles.',
@@ -507,7 +516,8 @@ trait dataphyre_mcp_client_surfaces {
 		return match($group){
 			'verification'=>'focused_app_or_module_verification',
 			'publication_validation'=>'publication_validation_not_ordinary_app_work',
-			'agent_and_planning', 'skill_registration'=>'application_agents_building_apps_with_collapsed_escalation',
+				'agent_and_planning', 'skill_registration'=>'application_agents_building_apps_with_collapsed_escalation',
+				'panel_intelligence'=>'panel_application_and_framework_agents',
 			default=>'application_agents_building_apps',
 		};
 	}
@@ -532,11 +542,16 @@ trait dataphyre_mcp_client_surfaces {
 				'audience_scope'=>'focused_app_or_module_verification',
 				'claim_boundary'=>'Panel field catalog compatibility evidence for the affected app/module only.',
 			],
-			'dataphyre_verification_surface_catalog'=>[
+				'dataphyre_verification_surface_catalog'=>[
 				'audience_scope'=>'focused_app_or_module_verification',
 				'claim_boundary'=>'Catalog selection helper for focused checks; not proof by itself.',
 				'not_app_behavior_proof'=>true,
-			],
+				],
+				'dataphyre_panel_verification_plan'=>[
+					'audience_scope'=>'panel_application_and_framework_agents',
+					'claim_boundary'=>'Source-derived verification selection plan only; execute the returned focused TestKit and browser lanes before claiming behavior.',
+					'not_app_behavior_proof'=>true,
+				],
 			'dataphyre_mcp_live_validate'=>[
 				'audience_scope'=>'local_client_setup_not_app_behavior',
 				'claim_boundary'=>'Local MCP client/server wiring validation; not application behavior proof.',
@@ -550,8 +565,8 @@ trait dataphyre_mcp_client_surfaces {
 				'not_required_for'=>['ordinary application behavior proof', 'focused app/module verification'],
 			],
 			'dataphyre_release_check'=>[
-				'audience_scope'=>'publication_validation_not_ordinary_app_work',
-				'claim_boundary'=>'Release-facing package evidence, not ordinary app behavior proof.',
+				'audience_scope'=>'application_release_preflight',
+				'claim_boundary'=>'Deterministic local prediction from the fixed configuration, migration dry-run, application boot, and GET /health checks; Cloud must repeat it inside the exact built candidate before promotion.',
 				'not_app_behavior_proof'=>true,
 			],
 			'dataphyre_release_triage_summary'=>[

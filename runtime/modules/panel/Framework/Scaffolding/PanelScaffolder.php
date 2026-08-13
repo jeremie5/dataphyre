@@ -38,6 +38,13 @@ final class PanelScaffolder {
 	}
 
 	/**
+	 * Creates the root-confined transactional writer for generated artifacts.
+	 */
+	public function writer(string $root): PanelScaffoldWriter {
+		return PanelScaffoldWriter::make($root);
+	}
+
+	/**
 	 * Generates a resource class skeleton with query, columns, and fields.
 	*
 	 * Options may provide `namespace`, `name`, `label`, `plural_label`, `icon`,
@@ -325,12 +332,18 @@ final class PanelScaffolder {
 			$class='GeneratedPanelArtifact';
 		}
 		if(!str_contains($class, '\\')){
-			return [trim($defaultNamespace, '\\') ?: 'App\\Panel', self::className($class)];
+			return [self::namespaceName($defaultNamespace), self::className($class)];
 		}
 		$parts=array_values(array_filter(explode('\\', $class), static fn(string $part): bool => $part!==''));
 		$short=self::className((string)array_pop($parts));
-		$namespace=implode('\\', $parts);
-		return [$namespace!=='' ? $namespace : (trim($defaultNamespace, '\\') ?: 'App\\Panel'), $short];
+		$namespace=implode('\\', array_map([self::class, 'className'], $parts));
+		return [$namespace!=='' ? $namespace : self::namespaceName($defaultNamespace), $short];
+	}
+
+	private static function namespaceName(string $namespace): string {
+		$parts=array_values(array_filter(explode('\\', trim($namespace, '\\')), static fn(string $part): bool=>$part!==''));
+		if($parts===[]){ return 'App\\Panel'; }
+		return implode('\\', array_map([self::class, 'className'], $parts));
 	}
 
 	/**
@@ -365,6 +378,7 @@ final class PanelScaffolder {
 			return (string)$options['path'];
 		}
 		$base=trim((string)($options['base_path'] ?? 'app/Panel'));
+		$base=str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $base!=='' ? $base : 'app/Panel');
 		[$namespace, $short]=self::splitClass($class, (string)($options['namespace'] ?? 'App\\Panel'));
 		$relative=str_replace('\\', DIRECTORY_SEPARATOR, $namespace);
 		foreach(['App'.DIRECTORY_SEPARATOR.'Panel', 'App'] as $prefix){

@@ -54,9 +54,23 @@ final class HttpClient {
 		$method=strtoupper(trim($method));
 		$url=$this->appendQuery($url, $query);
 		$bodyPayload=$this->normalizeBody($body, $headers);
-		return function_exists('curl_init')
-			? $this->sendWithCurl($method, $url, $bodyPayload, $headers)
-			: $this->sendWithStream($method, $url, $bodyPayload, $headers);
+		$handler=$this->config['handler'] ?? null;
+		if(is_callable($handler)){
+			$response=$handler($method, $url, $bodyPayload, $headers, $this->config);
+			if(!is_array($response)){
+				throw new OAuthException('OAuth HTTP handler must return a response array.');
+			}
+			return [
+				'status'=>(int)($response['status'] ?? 0),
+				'headers'=>is_array($response['headers'] ?? null) ? $response['headers'] : [],
+				'body'=>(string)($response['body'] ?? ''),
+			];
+		}
+		$transport=strtolower(trim((string)($this->config['transport'] ?? '')));
+		if($transport==='stream' || function_exists('curl_init')===false){
+			return $this->sendWithStream($method, $url, $bodyPayload, $headers);
+		}
+		return $this->sendWithCurl($method, $url, $bodyPayload, $headers);
 	}
 
 	/**
@@ -140,7 +154,21 @@ final class HttpClient {
 		if($bodyResponse===false){
 			throw new OAuthException('OAuth HTTP request failed for '.$url);
 		}
-		$rawHeaders=$httpResponseHeader ?? [];
+		[$status, $responseHeaders]=$this->parseResponseHeaders($http_response_header ?? []);
+		return [
+			'status'=>$status,
+			'headers'=>$responseHeaders,
+			'body'=>(string)$bodyResponse,
+		];
+	}
+
+	/**
+	 * Normalizes the response metadata emitted by PHP's HTTP stream wrapper.
+	 *
+	 * @param array<int, string> $rawHeaders Status and header lines from `$http_response_header`.
+	 * @return array{0:int,1:array<string,string>} Parsed status and lowercase header map.
+	 */
+	private function parseResponseHeaders(array $rawHeaders): array {
 		$status=0;
 		$responseHeaders=[];
 		foreach($rawHeaders as $index=>$header){
@@ -154,11 +182,7 @@ final class HttpClient {
 			[$name, $value]=explode(':', $header, 2);
 			$responseHeaders[strtolower(trim($name))]=trim($value);
 		}
-		return [
-			'status'=>$status,
-			'headers'=>$responseHeaders,
-			'body'=>(string)$bodyResponse,
-		];
+		return [$status, $responseHeaders];
 	}
 
 	/**

@@ -1,0 +1,8 @@
+#!/usr/bin/env php
+<?php
+declare(strict_types=1);
+
+$root=str_replace('\\', '/', dirname(__DIR__));
+require_once $root.'/runtime/modules/testing/tooling/Mutation.php';
+
+exit(\Dataphyre\Test\Mutation\MutationCli::main($_SERVER['argv'], $root));

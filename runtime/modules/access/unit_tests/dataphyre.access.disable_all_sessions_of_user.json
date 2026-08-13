@@ -19,7 +19,7 @@
                 "_SESSION"
             ]
         },
-        "file": "/common/dataphyre/runtime/modules/access/unit_tests/access_session_test_helpers.php",
+        "file": "/dataphyre/runtime/modules/access/unit_tests/access_session_test_helpers.php",
         "max_millis": 100
     },
     {
@@ -42,7 +42,7 @@
                 "_SESSION"
             ]
         },
-        "file": "/common/dataphyre/runtime/modules/access/unit_tests/access_session_test_helpers.php",
+        "file": "/dataphyre/runtime/modules/access/unit_tests/access_session_test_helpers.php",
         "max_millis": 100
     }
 ]

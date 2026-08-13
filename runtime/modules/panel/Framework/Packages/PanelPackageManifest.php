@@ -20,6 +20,7 @@ namespace Dataphyre\Panel;
  * supplied so registry output can preserve display text and external URLs.
  */
 final class PanelPackageManifest implements \JsonSerializable {
+	private const SEMVER_PATTERN='~^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$~D';
 
 	/** @var string Normalized package id used as the registry key. */
 	private string $id;
@@ -547,14 +548,18 @@ final class PanelPackageManifest implements \JsonSerializable {
 	/**
 	 * Tests a version string against the manifest's compact constraint language.
 	 *
-	 * Supported constraints are wildcard or blank, comma-separated exact versions, comparison operators accepted by
-	 * version_compare(), and caret ranges limited to the same major version. Every comma-separated part must match.
+	 * Supported constraints are wildcard or blank, comma-separated exact versions,
+	 * deterministic comparison operators, and Semantic Versioning caret ranges. Every
+	 * comma-separated part must match. PHP's looser version_compare() rules are never used.
 	 *
 	 * @param string $version Actual runtime or module version.
 	 * @param string $constraint Constraint expression from the manifest.
 	 * @return bool Whether the actual version satisfies every constraint part.
 	 */
 	public static function matchesConstraint(string $version, string $constraint): bool {
+		if(!self::validVersion($version)){
+			return false;
+		}
 		$constraint=trim($constraint);
 		if($constraint==='' || $constraint==='*'){
 			return true;
@@ -565,25 +570,96 @@ final class PanelPackageManifest implements \JsonSerializable {
 				continue;
 			}
 			if($part[0]==='^'){
-				$base=substr($part, 1);
-				$major=(int)explode('.', $base)[0];
-				if(!version_compare($version, $base, '>=') || !version_compare($version, (string)($major + 1).'.0.0', '<')){
+				$base=self::normalizeConstraintVersion(trim(substr($part, 1)));
+				if($base===null){
+					return false;
+				}
+				$parts=self::versionParts($base);
+				if($parts===null){return false;}
+				if($parts['major']!=='0'){$upper=self::incrementDecimal($parts['major']).'.0.0';}
+				elseif($parts['minor']!=='0'){$upper='0.'.self::incrementDecimal($parts['minor']).'.0';}
+				else{$upper='0.0.'.self::incrementDecimal($parts['patch']);}
+				if(self::compareVersions($version, $base)<0 || self::compareVersions($version, $upper)>=0){
 					return false;
 				}
 				continue;
 			}
-			if(preg_match('/^(>=|<=|>|<|=|==)\s*(.+)$/', $part, $matches)===1){
+			if(preg_match('/^(>=|<=|>|<|==|=)\s*(.+)$/', $part, $matches)===1){
 				$operator=$matches[1]==='==' ? '=' : $matches[1];
-				if(!version_compare($version, trim($matches[2]), $operator)){
+				$target=self::normalizeConstraintVersion(trim($matches[2]));
+				if($target===null || !self::comparisonMatches(self::compareVersions($version, $target), $operator)){
 					return false;
 				}
 				continue;
 			}
-			if(!version_compare($version, $part, '=')){
+			$target=self::normalizeConstraintVersion($part);
+			if($target===null || self::compareVersions($version, $target)!==0){
 				return false;
 			}
 		}
 		return true;
+	}
+
+	/** True only for strict Semantic Versioning 2.0.0 strings. */
+	public static function validVersion(string $version): bool {
+		return preg_match(self::SEMVER_PATTERN, $version)===1;
+	}
+
+	/**
+	 * Deterministic SemVer precedence. Build metadata is intentionally ignored,
+	 * numeric identifiers are compared without integer overflow, and invalid
+	 * versions fail closed rather than falling through to PHP version_compare().
+	 */
+	public static function compareVersions(string $left, string $right): int {
+		$leftParts=self::versionParts($left);$rightParts=self::versionParts($right);
+		if($leftParts===null || $rightParts===null){throw new \InvalidArgumentException('Strict semantic versions are required.');}
+		foreach(['major','minor','patch'] as $part){$comparison=self::compareNumeric($leftParts[$part], $rightParts[$part]);if($comparison!==0){return $comparison;}}
+		$leftPre=$leftParts['prerelease'];$rightPre=$rightParts['prerelease'];
+		if($leftPre===[] || $rightPre===[]){return $leftPre===$rightPre ? 0 : ($leftPre===[] ? 1 : -1);}
+		$count=max(count($leftPre), count($rightPre));
+		for($index=0;$index<$count;$index++){
+			if(!array_key_exists($index, $leftPre)){return -1;}
+			if(!array_key_exists($index, $rightPre)){return 1;}
+			$leftId=$leftPre[$index];$rightId=$rightPre[$index];$leftNumeric=ctype_digit($leftId);$rightNumeric=ctype_digit($rightId);
+			if($leftNumeric && $rightNumeric){$comparison=self::compareNumeric($leftId, $rightId);}
+			elseif($leftNumeric!==$rightNumeric){$comparison=$leftNumeric ? -1 : 1;}
+			else{$comparison=strcmp($leftId, $rightId)<=>0;}
+			if($comparison!==0){return $comparison;}
+		}
+		return 0;
+	}
+
+	/** @return array{major:string,minor:string,patch:string,prerelease:array<int,string>,build:array<int,string>}|null */
+	public static function versionParts(string $version): ?array {
+		if(preg_match(self::SEMVER_PATTERN, $version, $matches)!==1){return null;}
+		return [
+			'major'=>$matches[1],'minor'=>$matches[2],'patch'=>$matches[3],
+			'prerelease'=>isset($matches[4]) && $matches[4]!=='' ? explode('.', $matches[4]) : [],
+			'build'=>isset($matches[5]) && $matches[5]!=='' ? explode('.', $matches[5]) : [],
+		];
+	}
+
+	private static function normalizeConstraintVersion(string $version): ?string {
+		$version=trim($version);
+		if(self::validVersion($version)){return $version;}
+		if(preg_match('/^(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?$/D', $version, $matches)!==1){return null;}
+		return $matches[1].'.'.($matches[2] ?? '0').'.0';
+	}
+
+	private static function compareNumeric(string $left, string $right): int {
+		$length=strlen($left)<=>strlen($right);
+		return $length!==0 ? $length : (strcmp($left, $right)<=>0);
+	}
+
+	private static function incrementDecimal(string $value): string {
+		$digits=str_split($value);$carry=1;
+		for($index=count($digits)-1;$index>=0 && $carry===1;$index--){$digit=ord($digits[$index])-48+$carry;$digits[$index]=(string)($digit%10);$carry=$digit>=10 ? 1 : 0;}
+		if($carry===1){array_unshift($digits, '1');}
+		return implode('', $digits);
+	}
+
+	private static function comparisonMatches(int $comparison, string $operator): bool {
+		return match($operator){'>'=>$comparison>0,'>='=>$comparison>=0,'<'=>$comparison<0,'<='=>$comparison<=0,'='=>$comparison===0,default=>false};
 	}
 
 	/**
@@ -594,6 +670,7 @@ final class PanelPackageManifest implements \JsonSerializable {
 	 */
 	private static function humanize(string $value): string {
 		$value=trim(preg_replace('/(?<!^)[A-Z]/', ' $0', str_replace(['_', '-', '\\'], ' ', $value)) ?? $value);
+		$value=preg_replace('/\s+/', ' ', $value) ?? $value;
 		return $value==='' ? 'Panel Package' : ucwords($value);
 	}
 }

@@ -521,14 +521,18 @@ final class PanelTestHarness {
 	 * @return void The assertion passes silently; failures throw RuntimeException with a diagnostic message.
 	 */
 	public static function assertNotification(PanelPageResult $result, ?string $message=null, ?string $type=null): void {
+		$matched=false;
 		foreach($result->notifications() as $notification){
 			$matchesMessage=$message===null || str_contains((string)($notification['message'] ?? ''), $message);
 			$matchesType=$type===null || (string)($notification['type'] ?? $notification['tone'] ?? '')===$type;
 			if($matchesMessage && $matchesType){
-				return;
+				$matched=true;
+				break;
 			}
 		}
-		self::fail('Expected Panel notification was not present.');
+		if(!$matched){
+			self::fail('Expected Panel notification was not present.');
+		}
 	}
 
 	/**
@@ -803,6 +807,5 @@ final class PanelTestHarness {
 	 * @throws \AssertionError Always thrown with the supplied message.
 	 */
 	private static function fail(string $message): never {
-		throw new \AssertionError($message);
-	}
+		throw new \AssertionError($message); }
 }

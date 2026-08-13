@@ -28,6 +28,49 @@ Important kernel entrypoints include:
 - `\dataphyre\runtime::resolve_application_definition(...)`
 - `\dataphyre\runtime::current_application_definition()`
 
+## Application Release Preflight
+
+Dataphyre exposes one application-neutral executable preflight:
+
+```text
+php runtime/modules/core/kernel/application_release_preflight.php --project-root=<application-project> --application=<id> --environment=<id>
+```
+
+The command validates the existing flight sheet and application definition,
+uses the existing `dataphyre.app.json` name to bind a standalone application
+repository to its Dataphyre application id, runs the native PostgreSQL
+migration command in automatic dry-run mode when a profile and immutable
+manifest are declared, boots through a fixed loopback router, and probes only
+`GET /health`. It does not accept an application release script, command,
+executable path, health path, or migration mode.
+
+The conventional PostgreSQL profile and manifest are executable migration
+inputs, so they must be present together as readable regular files beneath
+non-symbolic-link directories. One-sided pairs, symbolic links, broken links,
+directories, pipes, and unreadable entries fail closed as invalid migration
+configuration; two absent files mean the migration check is not applicable.
+
+The application-owned `/health` response must be a JSON object with a top-level
+`missing_environment_keys` list. The list is canonical: sorted, unique, no more
+than 64 entries, and each entry matches `[A-Z_][A-Z0-9_]{0,119}`. It contains
+names only—never values or value-bearing explanations—and is empty when no
+configuration key is missing. A missing field, malformed object, duplicate or
+invalid name, oversized header/body, or non-JSON response fails closed as
+`application_health_evidence_invalid`; the preflight discards the raw body.
+Valid non-empty names fail as `application_environment_keys_missing`, including
+when the route incorrectly returned 2xx.
+
+Every invocation writes one JSON object to stdout and leaves stderr unused.
+`likely_to_deploy` is always boolean. Exit `0` means every check passed; `64`
+means invalid typed invocation or runtime, `66` means the project is
+unavailable, `69` means a dependency could not be verified, `70` means
+executable verification failed, `75` means the application did not become
+healthy, and `78` means application, migration, or environment configuration
+is invalid. Dataphyre Cloud must run this exact command inside the exact built
+candidate and preserve source, image, environment, and traffic identity before
+promotion; a local pass is a prediction, not proof that a different image will
+work.
+
 ## Kernel Config Topology
 
 Dataphyre now treats kernel module config as readonly module-local arrays instead of one shared mutable `dataphyre` config bag.
@@ -43,7 +86,7 @@ Use these stores:
 
 Kernel modules define their config with `dp_define_module_config(...)`, which merges:
 
-- `common/dataphyre/config/<module>.php`
+- `dataphyre/config/<module>.php`
 - `applications/<app>/backend/dataphyre/config/<module>.php`
 - `applications/<app>/backend/dataphyre/cache/config/<module>.compiled.php`
 

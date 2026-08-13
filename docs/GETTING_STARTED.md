@@ -4,6 +4,9 @@ This guide shows the smallest useful Dataphyre install shape. Dataphyre can run
 from an embedded/source tree or from `vendor/dataphyre/dataphyre` in a Composer
 consumer project.
 
+For the Docker-first, repository-isolated workflow used by Dataphyre
+applications and Dataphyre Cloud, see [Local application development](LOCAL_DEVELOPMENT.md).
+
 ## Install Shape
 
 By default, Dataphyre resolves paths from the physical location of
@@ -12,9 +15,11 @@ If the runtime lives at:
 
 ```text
 project/
-  common/
-    dataphyre/
-      runtime/
+  flight_sheet.php
+  index.php
+  applications/
+  dataphyre/
+    runtime/
 ```
 
 then Dataphyre treats `project/` as the project root. By default, it will
@@ -66,15 +71,15 @@ verification, and contributor commands.
 A minimal install needs these files:
 
 ```text
-dataphyre/
+project/
   flight_sheet.php
   index.php
-  runtime/
-
-applications/
-  example_app/
-    app.php
-    framework_bootstrap.php
+  dataphyre/
+    runtime/
+  applications/
+    example_app/
+      app.php
+      framework_bootstrap.php
 ```
 
 The public example provides templates for those files:
@@ -107,6 +112,10 @@ return [
         'application_roots' => [
             __DIR__.'/examples/minimal/applications',
         ],
+        'modules' => [
+            'enabled' => ['http', 'mvc', 'routing'],
+            'disabled' => ['flightdeck'],
+        ],
     ],
 ];
 ```
@@ -127,7 +136,7 @@ bootstrap:
 ```php
 <?php
 
-require __DIR__.'/runtime/bootstrap.php';
+require __DIR__.'/dataphyre/runtime/bootstrap.php';
 ```
 
 For a Composer vendor install, keep `flight_sheet.php` and `applications/`
@@ -142,7 +151,7 @@ $_SERVER['DATAPHYRE_PROJECT_ROOT']=__DIR__;
 require __DIR__.'/vendor/dataphyre/dataphyre/runtime/bootstrap.php';
 ```
 
-For a local smoke test from the Dataphyre install root:
+For a local smoke test from the project root:
 
 ```powershell
 php -S 127.0.0.1:8080 -t . index.php

@@ -13,5 +13,5 @@ if(is_file($kernelEntry)){
 }
 
 if(class_exists('\dataphyre\core', false)){
-	\dataphyre\core::load_framework_modules(['templating']);
+	\dataphyre\core::load_framework_modules(['async', 'templating']);
 }

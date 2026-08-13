@@ -87,7 +87,7 @@ final class RelationManifest {
 			'facts'=>count($facts),
 			'writable'=>($operations['writable'] ?? false)===true,
 		]);
-		return $manifest;
+		return PanelManifestContract::stamp($manifest);
 	}
 
 	/**

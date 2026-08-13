@@ -16,9 +16,13 @@ namespace Dataphyre\Panel;
  * callbacks. The object itself performs no persistence; it consumes the
  * already-filtered record set supplied by the renderer and returns a small
  * array payload for Panel views, traces, tests, and diagnostics.
+ *
+ * @template TRecord = mixed
+ * @template TValue = mixed
  */
 final class TableSummary {
 	use PanelExtensible;
+	use HasCollectionItemPresentation;
 
 	/** Normalized machine name used as the summary key in rendered payloads. */
 	private string $name;
@@ -70,7 +74,7 @@ final class TableSummary {
 	 *
 	 * @param string $name Summary key from a Panel resource definition.
 	 * @param string $type Aggregate strategy or custom resolver label.
-	 * @return self Immutable summary definition after extension hooks run.
+	 * @return self<TRecord, TValue> Immutable summary definition after extension hooks run.
 	 */
 	public static function make(string $name, string $type='count'): self {
 		return self::configured(new self($name, $type));
@@ -84,7 +88,7 @@ final class TableSummary {
 	 * must remain serializable and safe to inspect without executing user code.
 	 *
 	 * @param array{name?:string,type?:string,label?:string,column?:string,tone?:string,meta?:array<string,mixed>} $definition Array with optional name, type, label, column, tone, and meta keys.
-	 * @return self Immutable summary configured from the supplied definition.
+	 * @return self<TRecord,TValue> Immutable summary configured from the supplied definition.
 	 */
 	public static function fromArray(array $definition): self {
 		$summary=self::make((string)($definition['name'] ?? ''), (string)($definition['type'] ?? 'count'));
@@ -119,7 +123,7 @@ final class TableSummary {
 	 * punctuation, localized strings, or concise dashboard terminology.
 	 *
 	 * @param string $label Text shown beside the resolved summary value.
-	 * @return self Cloned summary with the updated label.
+	 * @return self<TRecord,TValue> Cloned summary with the updated label.
 	 */
 	public function label(string $label): self {
 		$clone=clone $this;
@@ -135,7 +139,7 @@ final class TableSummary {
 	 * the built-in aggregate path treats unknown values as count.
 	 *
 	 * @param string $type Aggregate strategy name.
-	 * @return self Cloned summary with the normalized type.
+	 * @return self<TRecord,TValue> Cloned summary with the normalized type.
 	 */
 	public function type(string $type): self {
 		$clone=clone $this;
@@ -151,7 +155,7 @@ final class TableSummary {
 	 * no data instead of accidentally scanning every record.
 	 *
 	 * @param string $column Record key or accessor suffix to aggregate.
-	 * @return self Cloned summary with the selected column.
+	 * @return self<TRecord,TValue> Cloned summary with the selected column.
 	 */
 	public function column(string $column): self {
 		$clone=clone $this;
@@ -166,7 +170,7 @@ final class TableSummary {
 	 * resolve(), after the renderer has already applied filters and selection
 	 * rules.
 	 *
-	 * @return self Cloned count summary with any prior numeric column cleared.
+	 * @return self<TRecord,TValue> Cloned count summary with any prior numeric column cleared.
 	 */
 	public function count(): self {
 		$clone=clone $this;
@@ -179,7 +183,7 @@ final class TableSummary {
 	 * Sets the summary to sum numeric values in the selected column.
 	 *
 	 * @param string $column Record key or getter-backed field to read.
-	 * @return self Cloned sum summary.
+	 * @return self<TRecord,TValue> Cloned sum summary.
 	 */
 	public function sum(string $column): self {
 		return $this->type('sum')->column($column);
@@ -189,7 +193,7 @@ final class TableSummary {
 	 * Sets the summary to average numeric values in the selected column.
 	 *
 	 * @param string $column Record key or getter-backed field to read.
-	 * @return self Cloned average summary.
+	 * @return self<TRecord,TValue> Cloned average summary.
 	 */
 	public function avg(string $column): self {
 		return $this->type('avg')->column($column);
@@ -199,7 +203,7 @@ final class TableSummary {
 	 * Sets the summary to read the minimum numeric value in the selected column.
 	 *
 	 * @param string $column Record key or getter-backed field to read.
-	 * @return self Cloned minimum summary.
+	 * @return self<TRecord,TValue> Cloned minimum summary.
 	 */
 	public function min(string $column): self {
 		return $this->type('min')->column($column);
@@ -209,7 +213,7 @@ final class TableSummary {
 	 * Sets the summary to read the maximum numeric value in the selected column.
 	 *
 	 * @param string $column Record key or getter-backed field to read.
-	 * @return self Cloned maximum summary.
+	 * @return self<TRecord,TValue> Cloned maximum summary.
 	 */
 	public function max(string $column): self {
 		return $this->type('max')->column($column);
@@ -223,8 +227,9 @@ final class TableSummary {
 	 * are caught by resolve(), traced, and converted into the configured empty
 	 * display value so one broken summary does not take down the table page.
 	 *
-	 * @param callable $resolver Resolver callable for the raw value.
-	 * @return self Cloned summary carrying the resolver closure.
+	 * @template TResolvedValue
+	 * @param callable(list<TRecord>, Resource<TRecord>=, PanelRequest|null=, self<TRecord, TResolvedValue>=): TResolvedValue $resolver Resolver callable for the raw value.
+	 * @return self<TRecord,TResolvedValue>
 	 */
 	public function valueUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -240,8 +245,8 @@ final class TableSummary {
 	 * arrays and objects remain inspectable instead of leaking PHP notices into
 	 * the operator UI.
 	 *
-	 * @param callable $formatter Formatter callable for display text.
-	 * @return self Cloned summary carrying the formatter closure.
+	 * @param callable(TValue, list<TRecord>=, Resource<TRecord>|null=, PanelRequest|null=, self<TRecord, TValue>=): scalar|\Stringable|array<array-key, mixed>|null $formatter Formatter callable for display text.
+	 * @return self<TRecord,TValue> Cloned summary carrying the formatter closure.
 	 */
 	public function format(callable $formatter): self {
 		$clone=clone $this;
@@ -258,7 +263,7 @@ final class TableSummary {
 	 *
 	 * @param string $currency Optional currency prefix such as CAD or USD.
 	 * @param int $decimals Number of decimal places to render.
-	 * @return self Cloned summary with money format metadata merged.
+	 * @return self<TRecord,TValue> Cloned summary with money format metadata merged.
 	 */
 	public function money(string $currency='', int $decimals=2): self {
 		return $this->meta([
@@ -276,7 +281,7 @@ final class TableSummary {
 	 *
 	 * @param int $decimals Number of decimal places to render.
 	 * @param float $multiplier Factor applied before appending the percent sign.
-	 * @return self Cloned summary with percent format metadata merged.
+	 * @return self<TRecord,TValue> Cloned summary with percent format metadata merged.
 	 */
 	public function percent(int $decimals=2, float $multiplier=100.0): self {
 		return $this->meta([
@@ -293,7 +298,7 @@ final class TableSummary {
 	 * accidentally emit unsupported UI classes.
 	 *
 	 * @param string $tone One of neutral, primary, success, warning, danger, or info.
-	 * @return self Cloned summary with the normalized tone.
+	 * @return self<TRecord,TValue> Cloned summary with the normalized tone.
 	 */
 	public function tone(string $tone): self {
 		$tone=Resource::normalizeName($tone);
@@ -310,7 +315,7 @@ final class TableSummary {
 	 * preserving unrelated hints.
 	 *
 	 * @param array<string,mixed> $meta Serializable metadata consumed by renderers or callbacks.
-	 * @return self Cloned summary with metadata merged over existing values.
+	 * @return self<TRecord,TValue> Cloned summary with metadata merged over existing values.
 	 */
 	public function meta(array $meta): self {
 		$clone=clone $this;
@@ -327,8 +332,8 @@ final class TableSummary {
 	 * PanelTrace, preserving the page response while leaving diagnostics for
 	 * developers.
 	 *
-	 * @param list<mixed> $records Filtered records visible to the current table request.
-	 * @param Resource $resource Resource that owns the table definition.
+	 * @param list<TRecord> $records Filtered records visible to the current table request.
+	 * @param Resource<TRecord> $resource Resource that owns the table definition.
 	 * @param PanelRequest $request Current Panel request context.
 	 * @return array{name:string,type:string,label:string,column:?string,value:mixed,formatted:string,tone:string,meta:array<string,mixed>}
 	 */

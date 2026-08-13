@@ -8,42 +8,19 @@
 namespace Dataphyre\Panel;
 
 /**
- * Process-local registry of Panel component descriptors.
+ * Source-compatible facade for Panel component descriptors.
  *
- * The registry catalogs schema kinds, fields, columns, actions, filters, relations, widgets, pages, resources, summaries, navigation items, imports, and exports for builders and renderers.
+ * Inside a PanelInstance context all state is owned by that surface's
+ * PanelInstanceExtensionRegistry. Calls made outside a surface use an explicit legacy
+ * process-local adapter so existing bootstrap code remains source-compatible.
  */
 final class PanelComponentRegistry {
-
-	/** @var array<string,array<string,mixed>> */
+	/**
+	 * @deprecated Reflection-only compatibility sentinel for pre-instance tests.
+	 * Runtime descriptor state lives in PanelInstanceExtensionRegistry.
+	 * @var array<string,array<string,mixed>>
+	 */
 	private static array $schemaKinds=[];
-	/** @var array<string,array<string,mixed>> */
-	private static array $fieldTypes=[];
-	/** @var array<string,array<string,mixed>> */
-	private static array $columnTypes=[];
-	/** @var array<string,array<string,mixed>> */
-	private static array $actionTypes=[];
-	/** @var array<string,array<string,mixed>> */
-	private static array $filterTypes=[];
-	/** @var array<string,array<string,mixed>> */
-	private static array $relationTypes=[];
-	/** @var array<string,array<string,mixed>> */
-	private static array $widgetTypes=[];
-	/** @var array<string,array<string,mixed>> */
-	private static array $pageTypes=[];
-	/** @var array<string,array<string,mixed>> */
-	private static array $resourceTypes=[];
-	/** @var array<string,array<string,mixed>> */
-	private static array $summaryTypes=[];
-	/** @var array<string,array<string,mixed>> */
-	private static array $viewTypes=[];
-	/** @var array<string,array<string,mixed>> */
-	private static array $navigationTypes=[];
-	/** @var array<string,array<string,mixed>> */
-	private static array $exportTypes=[];
-	/** @var array<string,array<string,mixed>> */
-	private static array $importTypes=[];
-	/** @var array<string,array<string,mixed>> */
-	private static array $bulkOperationTypes=[];
 
 	/**
 	 * Prevents construction of the process-local registry.
@@ -54,6 +31,16 @@ final class PanelComponentRegistry {
 	private function __construct() {
 	}
 
+	/** Resolves the active surface registry or the explicit legacy adapter. */
+	public static function extensionRegistry(): PanelInstanceExtensionRegistry {
+		$registry=PanelContext::config('__panel_extension_registry');
+		return $registry instanceof PanelInstanceExtensionRegistry ? $registry : PanelInstanceExtensionRegistry::legacy();
+	}
+
+	private static function state(): PanelInstanceExtensionRegistry {
+		return self::extensionRegistry();
+	}
+
 	/**
 	 * Initializes the Panel component registry.
 	 *
@@ -61,21 +48,23 @@ final class PanelComponentRegistry {
 	 * @return void
 	 */
 	public static function flush(): void {
-		self::$schemaKinds=self::defaultSchemaKinds();
-		self::$fieldTypes=self::defaultFieldTypes();
-		self::$columnTypes=self::defaultColumnTypes();
-		self::$actionTypes=self::defaultActionTypes();
-		self::$filterTypes=self::defaultFilterTypes();
-		self::$relationTypes=self::defaultRelationTypes();
-		self::$widgetTypes=self::defaultWidgetTypes();
-		self::$pageTypes=self::defaultPageTypes();
-		self::$resourceTypes=self::defaultResourceTypes();
-		self::$summaryTypes=self::defaultSummaryTypes();
-		self::$viewTypes=self::defaultViewTypes();
-		self::$navigationTypes=self::defaultNavigationTypes();
-		self::$exportTypes=self::defaultExportTypes();
-		self::$importTypes=self::defaultImportTypes();
-		self::$bulkOperationTypes=self::defaultBulkOperationTypes();
+		self::state()->resetComponents([
+			'schema_kinds'=>self::defaultSchemaKinds(),
+			'field_types'=>self::defaultFieldTypes(),
+			'column_types'=>self::defaultColumnTypes(),
+			'action_types'=>self::defaultActionTypes(),
+			'filter_types'=>self::defaultFilterTypes(),
+			'relation_types'=>self::defaultRelationTypes(),
+			'widget_types'=>self::defaultWidgetTypes(),
+			'page_types'=>self::defaultPageTypes(),
+			'resource_types'=>self::defaultResourceTypes(),
+			'summary_types'=>self::defaultSummaryTypes(),
+			'view_types'=>self::defaultViewTypes(),
+			'navigation_types'=>self::defaultNavigationTypes(),
+			'export_types'=>self::defaultExportTypes(),
+			'import_types'=>self::defaultImportTypes(),
+			'bulk_operation_types'=>self::defaultBulkOperationTypes(),
+		]);
 	}
 
 	/**
@@ -85,7 +74,7 @@ final class PanelComponentRegistry {
 	 * @return void
 	 */
 	public static function boot(): void {
-		if(self::$schemaKinds===[]){
+		if(self::state()->schemaKinds===[]){
 			self::flush();
 		}
 	}
@@ -737,7 +726,7 @@ final class PanelComponentRegistry {
 	 * Custom descriptors extend the registry while preserving normalized component keys and manifest metadata.
 	 *
 	 * @param string $kind Schema component kind before normalization.
-	 * @param array|callable $definition Descriptor metadata, or callable shorthand for the primary handler.
+	 * @param array<string,mixed>|callable(SchemaComponent,array<string,mixed>):(?string) $definition Descriptor metadata, or callable shorthand for the primary renderer.
 	 * @return string Normalized schema kind key, or an empty string when the key is invalid.
 	 */
 	public static function registerSchemaKind(string $kind, array|callable $definition=[]): string {
@@ -752,7 +741,7 @@ final class PanelComponentRegistry {
 		elseif(isset($definition['renderer']) && is_callable($definition['renderer'])){
 			$definition['renderer']=\Closure::fromCallable($definition['renderer']);
 		}
-		self::$schemaKinds[$kind]=array_replace(self::$schemaKinds[$kind] ?? [], $definition);
+		self::state()->contributeComponent('schema_kinds', $kind, array_replace(self::state()->schemaKinds[$kind] ?? [], $definition));
 		return $kind;
 	}
 
@@ -764,7 +753,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function schemaKinds(): array {
 		self::boot();
-		return self::$schemaKinds;
+		return self::state()->schemaKinds;
 	}
 
 	/**
@@ -777,7 +766,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function schemaKindRegistered(string $kind): bool {
 		self::boot();
-		return isset(self::$schemaKinds[self::normalizeName($kind)]);
+		return isset(self::state()->schemaKinds[self::normalizeName($kind)]);
 	}
 
 	/**
@@ -791,7 +780,7 @@ final class PanelComponentRegistry {
 	public static function normalizeSchemaKind(string $kind): string {
 		self::boot();
 		$kind=self::normalizeName($kind);
-		return isset(self::$schemaKinds[$kind]) ? $kind : 'field';
+		return isset(self::state()->schemaKinds[$kind]) ? $kind : 'field';
 	}
 
 	/**
@@ -805,7 +794,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function renderSchemaComponent(SchemaComponent $component, array $context=[]): ?string {
 		self::boot();
-		$definition=self::$schemaKinds[$component->kind()] ?? [];
+		$definition=self::state()->schemaKinds[$component->kind()] ?? [];
 		$renderer=$definition['renderer'] ?? null;
 		if(!is_callable($renderer)){
 			return null;
@@ -820,7 +809,7 @@ final class PanelComponentRegistry {
 	 * Custom descriptors extend the registry while preserving normalized component keys and manifest metadata.
 	 *
 	 * @param string $type Component type key before normalization.
-	 * @param ?callable $renderer Optional renderer callback stored as a Closure.
+	 * @param (callable(string,array<string,mixed>,mixed,array<string,mixed>):(?string))|null $renderer Optional renderer callback stored as a Closure.
 	 * @param array<string,mixed> $definition Descriptor metadata and optional lifecycle hooks.
 	 * @return string Normalized field type key, or an empty string when the key is invalid.
 	 */
@@ -835,11 +824,11 @@ final class PanelComponentRegistry {
 				$definition[$hook]=\Closure::fromCallable($definition[$hook]);
 			}
 		}
-		$existing=self::$fieldTypes[$type] ?? [];
-		self::$fieldTypes[$type]=array_replace($existing, $definition, [
+		$existing=self::state()->fieldTypes[$type] ?? [];
+		self::state()->contributeComponent('field_types', $type, array_replace($existing, $definition, [
 			'renderer'=>$renderer!==null ? \Closure::fromCallable($renderer) : ($existing['renderer'] ?? null),
 			'builtin'=>$existing['builtin'] ?? false,
-		]);
+		]));
 		return $type;
 	}
 
@@ -851,7 +840,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function fieldTypes(): array {
 		self::boot();
-		return self::$fieldTypes;
+		return self::state()->fieldTypes;
 	}
 
 	/**
@@ -864,7 +853,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function fieldTypeDefinition(string $type): array {
 		self::boot();
-		return self::$fieldTypes[self::normalizeName($type)] ?? [];
+		return self::state()->fieldTypes[self::normalizeName($type)] ?? [];
 	}
 
 	/**
@@ -877,7 +866,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function fieldTypeRegistered(string $type): bool {
 		self::boot();
-		return isset(self::$fieldTypes[self::normalizeName($type)]);
+		return isset(self::state()->fieldTypes[self::normalizeName($type)]);
 	}
 
 	/**
@@ -908,7 +897,7 @@ final class PanelComponentRegistry {
 	public static function renderFieldControl(string $type, string $name, array $meta, mixed $value, array $context=[]): ?string {
 		self::boot();
 		$type=self::normalizeName($type);
-		$renderer=self::$fieldTypes[$type]['renderer'] ?? null;
+		$renderer=self::state()->fieldTypes[$type]['renderer'] ?? null;
 		if(!is_callable($renderer)){
 			return null;
 		}
@@ -939,7 +928,7 @@ final class PanelComponentRegistry {
 	 * @param string $hook Descriptor hook name to test or invoke.
 	 * @param Field $field Field instance passed to the hook.
 	 * @param mixed ...$arguments Component factory arguments.
-	 *  param($m) '@return mixed '+$m.Groups[1].Value.ToUpperInvariant() ield type hook result, or null when no callable hook is registered.
+	 * @return mixed Field type hook result, or null when no callable hook is registered.
 	 */
 	public static function callFieldTypeHook(string $type, string $hook, Field $field, mixed ...$arguments): mixed {
 		$definition=self::fieldTypeDefinition($type);
@@ -956,7 +945,9 @@ final class PanelComponentRegistry {
 	 * Custom descriptors extend the registry while preserving normalized component keys and manifest metadata.
 	 *
 	 * @param string $type Component type key before normalization.
-	 * @param ?callable $renderer Optional renderer callback stored as a Closure.
+	 * @template TRecord
+	 * @template TValue
+	 * @param (callable(Column<TRecord,TValue>,TRecord,TValue,string,array<string,mixed>,array<string,mixed>):(?string))|null $renderer Optional renderer callback stored as a Closure.
 	 * @param array<string,mixed> $definition Descriptor metadata and optional column hooks.
 	 * @return string Normalized column type key, or an empty string when the key is invalid.
 	 */
@@ -971,11 +962,11 @@ final class PanelComponentRegistry {
 				$definition[$hook]=\Closure::fromCallable($definition[$hook]);
 			}
 		}
-		$existing=self::$columnTypes[$type] ?? [];
-		self::$columnTypes[$type]=array_replace($existing, $definition, [
+		$existing=self::state()->columnTypes[$type] ?? [];
+		self::state()->contributeComponent('column_types', $type, array_replace($existing, $definition, [
 			'renderer'=>$renderer!==null ? \Closure::fromCallable($renderer) : ($existing['renderer'] ?? null),
 			'builtin'=>$existing['builtin'] ?? false,
-		]);
+		]));
 		return $type;
 	}
 
@@ -987,7 +978,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function columnTypes(): array {
 		self::boot();
-		return self::$columnTypes;
+		return self::state()->columnTypes;
 	}
 
 	/**
@@ -1000,7 +991,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function columnTypeRegistered(string $type): bool {
 		self::boot();
-		return isset(self::$columnTypes[self::normalizeName($type)]);
+		return isset(self::state()->columnTypes[self::normalizeName($type)]);
 	}
 
 	/**
@@ -1020,7 +1011,7 @@ final class PanelComponentRegistry {
 	public static function renderColumnCell(string $type, Column $column, mixed $record, mixed $value, string $formatted, array $meta, array $context=[]): ?string {
 		self::boot();
 		$type=self::normalizeName($type);
-		$renderer=self::$columnTypes[$type]['renderer'] ?? null;
+		$renderer=self::state()->columnTypes[$type]['renderer'] ?? null;
 		if(!is_callable($renderer)){
 			return null;
 		}
@@ -1039,7 +1030,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function columnTypeHasHook(string $type, string $hook): bool {
 		self::boot();
-		$definition=self::$columnTypes[self::normalizeName($type)] ?? [];
+		$definition=self::state()->columnTypes[self::normalizeName($type)] ?? [];
 		return is_callable($definition[$hook] ?? null);
 	}
 
@@ -1052,11 +1043,11 @@ final class PanelComponentRegistry {
 	 * @param string $hook Descriptor hook name to test or invoke.
 	 * @param Column $column Column instance passed to the hook or renderer.
 	 * @param mixed ...$arguments Component factory arguments.
-	 *  param($m) '@return mixed '+$m.Groups[1].Value.ToUpperInvariant() olumn type hook result, or null when no callable hook is registered.
+	 * @return mixed Column type hook result, or null when no callable hook is registered.
 	 */
 	public static function callColumnTypeHook(string $type, string $hook, Column $column, mixed ...$arguments): mixed {
 		self::boot();
-		$definition=self::$columnTypes[self::normalizeName($type)] ?? [];
+		$definition=self::state()->columnTypes[self::normalizeName($type)] ?? [];
 		$callback=$definition[$hook] ?? null;
 		if(!is_callable($callback)){
 			return null;
@@ -1070,7 +1061,7 @@ final class PanelComponentRegistry {
 	 * Custom descriptors extend the registry while preserving normalized component keys and manifest metadata.
 	 *
 	 * @param string $type Component type key before normalization.
-	 * @param ?callable $handler Handler.
+	 * @param (callable(mixed...):mixed)|null $handler Handler invoked by the action-type adapter.
 	 * @param array<string,mixed> $definition Descriptor metadata and optional action hooks.
 	 * @return string Normalized action type key, or an empty string when the key is invalid.
 	 */
@@ -1085,11 +1076,11 @@ final class PanelComponentRegistry {
 				$definition[$hook]=\Closure::fromCallable($definition[$hook]);
 			}
 		}
-		$existing=self::$actionTypes[$type] ?? [];
-		self::$actionTypes[$type]=array_replace($existing, $definition, [
+		$existing=self::state()->actionTypes[$type] ?? [];
+		self::state()->contributeComponent('action_types', $type, array_replace($existing, $definition, [
 			'handler'=>$handler!==null ? \Closure::fromCallable($handler) : ($existing['handler'] ?? null),
 			'builtin'=>$existing['builtin'] ?? false,
-		]);
+		]));
 		return $type;
 	}
 
@@ -1101,7 +1092,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function actionTypes(): array {
 		self::boot();
-		return self::$actionTypes;
+		return self::state()->actionTypes;
 	}
 
 	/**
@@ -1114,7 +1105,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function actionTypeRegistered(string $type): bool {
 		self::boot();
-		return isset(self::$actionTypes[self::normalizeName($type)]);
+		return isset(self::state()->actionTypes[self::normalizeName($type)]);
 	}
 
 	/**
@@ -1127,7 +1118,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function actionTypeDefinition(string $type): array {
 		self::boot();
-		return self::$actionTypes[self::normalizeName($type)] ?? [];
+		return self::state()->actionTypes[self::normalizeName($type)] ?? [];
 	}
 
 	/**
@@ -1153,7 +1144,7 @@ final class PanelComponentRegistry {
 	 * @param string $hook Descriptor hook name to test or invoke.
 	 * @param Action $action Action instance passed to the hook.
 	 * @param mixed ...$arguments Component factory arguments.
-	 *  param($m) '@return mixed '+$m.Groups[1].Value.ToUpperInvariant() ction type hook result, or null when no callable hook is registered.
+	 * @return mixed Action type hook result, or null when no callable hook is registered.
 	 */
 	public static function callActionTypeHook(string $type, string $hook, Action $action, mixed ...$arguments): mixed {
 		$definition=self::actionTypeDefinition($type);
@@ -1170,7 +1161,10 @@ final class PanelComponentRegistry {
 	 * Custom descriptors extend the registry while preserving normalized component keys and manifest metadata.
 	 *
 	 * @param string $type Component type key before normalization.
-	 * @param ?callable $renderer Optional renderer callback stored as a Closure.
+	 * @template TRecord
+	 * @template TValue
+	 * @template TState of array<string,mixed>
+	 * @param (callable(TableFilter<TRecord,TValue,TState>,PanelRequest,array<string,mixed>,TValue,array<string,mixed>):(?string))|null $renderer Optional renderer callback stored as a Closure.
 	 * @param array<string,mixed> $definition Descriptor metadata and optional bulk-operation hooks.
 	 * @return string Normalized filter type key, or an empty string when the key is invalid.
 	 */
@@ -1185,11 +1179,11 @@ final class PanelComponentRegistry {
 				$definition[$hook]=\Closure::fromCallable($definition[$hook]);
 			}
 		}
-		$existing=self::$filterTypes[$type] ?? [];
-		self::$filterTypes[$type]=array_replace($existing, $definition, [
+		$existing=self::state()->filterTypes[$type] ?? [];
+		self::state()->contributeComponent('filter_types', $type, array_replace($existing, $definition, [
 			'renderer'=>$renderer!==null ? \Closure::fromCallable($renderer) : ($existing['renderer'] ?? null),
 			'builtin'=>$existing['builtin'] ?? false,
-		]);
+		]));
 		return $type;
 	}
 
@@ -1201,7 +1195,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function filterTypes(): array {
 		self::boot();
-		return self::$filterTypes;
+		return self::state()->filterTypes;
 	}
 
 	/**
@@ -1214,7 +1208,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function filterTypeDefinition(string $type): array {
 		self::boot();
-		return self::$filterTypes[self::normalizeName($type)] ?? [];
+		return self::state()->filterTypes[self::normalizeName($type)] ?? [];
 	}
 
 	/**
@@ -1227,7 +1221,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function filterTypeRegistered(string $type): bool {
 		self::boot();
-		return isset(self::$filterTypes[self::normalizeName($type)]);
+		return isset(self::state()->filterTypes[self::normalizeName($type)]);
 	}
 
 	/**
@@ -1266,7 +1260,7 @@ final class PanelComponentRegistry {
 	 * @param string $hook Descriptor hook name to test or invoke.
 	 * @param TableFilter $filter Filter instance passed to the hook or renderer.
 	 * @param mixed ...$arguments Component factory arguments.
-	 *  param($m) '@return mixed '+$m.Groups[1].Value.ToUpperInvariant() ilter type hook result, or null when no callable hook is registered.
+	 * @return mixed Filter type hook result, or null when no callable hook is registered.
 	 */
 	public static function callFilterTypeHook(string $type, string $hook, TableFilter $filter, mixed ...$arguments): mixed {
 		$definition=self::filterTypeDefinition($type);
@@ -1306,7 +1300,10 @@ final class PanelComponentRegistry {
 	 * Custom descriptors extend the registry while preserving normalized component keys and manifest metadata.
 	 *
 	 * @param string $type Component type key before normalization.
-	 * @param ?callable $renderer Optional renderer callback stored as a Closure.
+	 * @template TParentRecord
+	 * @template TRelatedRecord
+	 * @template TState of array<string,mixed>
+	 * @param (callable(RelationManager<TParentRecord,TRelatedRecord,TState>,Resource<TParentRecord,TState>,PanelRequest,TParentRecord,array<string,mixed>):(?string))|null $renderer Optional renderer callback stored as a Closure.
 	 * @param array<string,mixed> $definition Descriptor metadata and optional relation hooks.
 	 * @return string Normalized relation type key, or an empty string when the key is invalid.
 	 */
@@ -1316,16 +1313,16 @@ final class PanelComponentRegistry {
 		if($type===''){
 			return '';
 		}
-		foreach(['authorize', 'query', 'records', 'before_records', 'after_records', 'empty_state'] as $hook){
+		foreach(['authorize', 'query', 'records', 'before_records', 'after_records', 'before_render', 'after_render', 'empty_state'] as $hook){
 			if(isset($definition[$hook]) && is_callable($definition[$hook])){
 				$definition[$hook]=\Closure::fromCallable($definition[$hook]);
 			}
 		}
-		$existing=self::$relationTypes[$type] ?? [];
-		self::$relationTypes[$type]=array_replace($existing, $definition, [
+		$existing=self::state()->relationTypes[$type] ?? [];
+		self::state()->contributeComponent('relation_types', $type, array_replace($existing, $definition, [
 			'renderer'=>$renderer!==null ? \Closure::fromCallable($renderer) : ($existing['renderer'] ?? null),
 			'builtin'=>$existing['builtin'] ?? false,
-		]);
+		]));
 		return $type;
 	}
 
@@ -1337,7 +1334,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function relationTypes(): array {
 		self::boot();
-		return self::$relationTypes;
+		return self::state()->relationTypes;
 	}
 
 	/**
@@ -1350,7 +1347,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function relationTypeDefinition(string $type): array {
 		self::boot();
-		return self::$relationTypes[self::normalizeName($type)] ?? [];
+		return self::state()->relationTypes[self::normalizeName($type)] ?? [];
 	}
 
 	/**
@@ -1363,7 +1360,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function relationTypeRegistered(string $type): bool {
 		self::boot();
-		return isset(self::$relationTypes[self::normalizeName($type)]);
+		return isset(self::state()->relationTypes[self::normalizeName($type)]);
 	}
 
 	/**
@@ -1389,7 +1386,7 @@ final class PanelComponentRegistry {
 	 * @param string $hook Descriptor hook name to test or invoke.
 	 * @param RelationManager $relation Relation manager passed to the hook or renderer.
 	 * @param mixed ...$arguments Component factory arguments.
-	 *  param($m) '@return mixed '+$m.Groups[1].Value.ToUpperInvariant() elation type hook result, or null when no callable hook is registered.
+	 * @return mixed Relation type hook result, or null when no callable hook is registered.
 	 */
 	public static function callRelationTypeHook(string $type, string $hook, RelationManager $relation, mixed ...$arguments): mixed {
 		$definition=self::relationTypeDefinition($type);
@@ -1429,7 +1426,7 @@ final class PanelComponentRegistry {
 	 * Custom descriptors extend the registry while preserving normalized component keys and manifest metadata.
 	 *
 	 * @param string $type Component type key before normalization.
-	 * @param ?callable $renderer Optional renderer callback stored as a Closure.
+	 * @param (callable(array<string,mixed>,array<string,mixed>):(?string))|null $renderer Optional renderer callback stored as a Closure.
 	 * @param array<string,mixed> $definition Descriptor metadata and optional widget hooks.
 	 * @return string Normalized widget type key, or an empty string when the key is invalid.
 	 */
@@ -1439,16 +1436,16 @@ final class PanelComponentRegistry {
 		if($type===''){
 			return '';
 		}
-		foreach(['authorize', 'value', 'format', 'data', 'after_resolve'] as $hook){
+		foreach(['authorize', 'value', 'format', 'data', 'after_resolve', 'before_render', 'after_render'] as $hook){
 			if(isset($definition[$hook]) && is_callable($definition[$hook])){
 				$definition[$hook]=\Closure::fromCallable($definition[$hook]);
 			}
 		}
-		$existing=self::$widgetTypes[$type] ?? [];
-		self::$widgetTypes[$type]=array_replace($existing, $definition, [
+		$existing=self::state()->widgetTypes[$type] ?? [];
+		self::state()->contributeComponent('widget_types', $type, array_replace($existing, $definition, [
 			'renderer'=>$renderer!==null ? \Closure::fromCallable($renderer) : ($existing['renderer'] ?? null),
 			'builtin'=>$existing['builtin'] ?? false,
-		]);
+		]));
 		return $type;
 	}
 
@@ -1460,7 +1457,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function widgetTypes(): array {
 		self::boot();
-		return self::$widgetTypes;
+		return self::state()->widgetTypes;
 	}
 
 	/**
@@ -1473,7 +1470,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function widgetTypeDefinition(string $type): array {
 		self::boot();
-		return self::$widgetTypes[self::normalizeName($type)] ?? [];
+		return self::state()->widgetTypes[self::normalizeName($type)] ?? [];
 	}
 
 	/**
@@ -1486,7 +1483,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function widgetTypeRegistered(string $type): bool {
 		self::boot();
-		return isset(self::$widgetTypes[self::normalizeName($type)]);
+		return isset(self::state()->widgetTypes[self::normalizeName($type)]);
 	}
 
 	/**
@@ -1512,7 +1509,7 @@ final class PanelComponentRegistry {
 	 * @param string $hook Descriptor hook name to test or invoke.
 	 * @param Widget $widget Widget instance passed to the hook.
 	 * @param mixed ...$arguments Component factory arguments.
-	 *  param($m) '@return mixed '+$m.Groups[1].Value.ToUpperInvariant() idget type hook result, or null when no callable hook is registered.
+	 * @return mixed Widget type hook result, or null when no callable hook is registered.
 	 */
 	public static function callWidgetTypeHook(string $type, string $hook, Widget $widget, mixed ...$arguments): mixed {
 		$definition=self::widgetTypeDefinition($type);
@@ -1549,7 +1546,7 @@ final class PanelComponentRegistry {
 	 * Custom descriptors extend the registry while preserving normalized component keys and manifest metadata.
 	 *
 	 * @param string $type Component type key before normalization.
-	 * @param ?callable $renderer Optional renderer callback stored as a Closure.
+	 * @param (callable(PanelPage,PanelRequest,?PanelManager,array<string,mixed>):mixed)|null $renderer Optional renderer callback stored as a Closure.
 	 * @param array<string,mixed> $definition Descriptor metadata and optional page hooks.
 	 * @return string Normalized page type key, or an empty string when the key is invalid.
 	 */
@@ -1564,11 +1561,11 @@ final class PanelComponentRegistry {
 				$definition[$hook]=\Closure::fromCallable($definition[$hook]);
 			}
 		}
-		$existing=self::$pageTypes[$type] ?? [];
-		self::$pageTypes[$type]=array_replace($existing, $definition, [
+		$existing=self::state()->pageTypes[$type] ?? [];
+		self::state()->contributeComponent('page_types', $type, array_replace($existing, $definition, [
 			'renderer'=>$renderer!==null ? \Closure::fromCallable($renderer) : ($existing['renderer'] ?? null),
 			'builtin'=>$existing['builtin'] ?? false,
-		]);
+		]));
 		return $type;
 	}
 
@@ -1580,7 +1577,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function pageTypes(): array {
 		self::boot();
-		return self::$pageTypes;
+		return self::state()->pageTypes;
 	}
 
 	/**
@@ -1593,7 +1590,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function pageTypeDefinition(string $type): array {
 		self::boot();
-		return self::$pageTypes[self::normalizeName($type)] ?? [];
+		return self::state()->pageTypes[self::normalizeName($type)] ?? [];
 	}
 
 	/**
@@ -1606,7 +1603,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function pageTypeRegistered(string $type): bool {
 		self::boot();
-		return isset(self::$pageTypes[self::normalizeName($type)]);
+		return isset(self::state()->pageTypes[self::normalizeName($type)]);
 	}
 
 	/**
@@ -1632,7 +1629,7 @@ final class PanelComponentRegistry {
 	 * @param string $hook Descriptor hook name to test or invoke.
 	 * @param PanelPage $page Panel page instance passed to the hook or renderer.
 	 * @param mixed ...$arguments Component factory arguments.
-	 *  param($m) '@return mixed '+$m.Groups[1].Value.ToUpperInvariant() age type hook result, or null when no callable hook is registered.
+	 * @return mixed Page type hook result, or null when no callable hook is registered.
 	 */
 	public static function callPageTypeHook(string $type, string $hook, PanelPage $page, mixed ...$arguments): mixed {
 		$definition=self::pageTypeDefinition($type);
@@ -1653,7 +1650,7 @@ final class PanelComponentRegistry {
 	 * @param PanelRequest $request HTTP request being handled.
 	 * @param ?PanelManager $manager Optional Panel manager used for renderer context.
 	 * @param array<string,mixed> $context Render context supplied by the caller.
-	 *  param($m) '@return mixed '+$m.Groups[1].Value.ToUpperInvariant() egistered callback result, or null when unavailable.
+	 * @return mixed Registered callback result, or null when unavailable.
 	 */
 	public static function renderPage(string $type, PanelPage $page, PanelRequest $request, ?PanelManager $manager=null, array $context=[]): mixed {
 		$definition=self::pageTypeDefinition($type);
@@ -1670,7 +1667,9 @@ final class PanelComponentRegistry {
 	 * Custom descriptors extend the registry while preserving normalized component keys and manifest metadata.
 	 *
 	 * @param string $type Component type key before normalization.
-	 * @param array<string,mixed>|callable $definition Descriptor metadata or query callback.
+	 * @template TRecord
+	 * @template TState of array<string,mixed>
+	 * @param array<string,mixed>|callable(Resource<TRecord,TState>,PanelRequest|null=):mixed $definition Descriptor metadata or query callback.
 	 * @return string Normalized resource type key, or an empty string when the key is invalid.
 	 */
 	public static function registerResourceType(string $type, array|callable $definition=[]): string {
@@ -1687,10 +1686,10 @@ final class PanelComponentRegistry {
 				$definition[$hook]=\Closure::fromCallable($definition[$hook]);
 			}
 		}
-		$existing=self::$resourceTypes[$type] ?? [];
-		self::$resourceTypes[$type]=array_replace($existing, $definition, [
+		$existing=self::state()->resourceTypes[$type] ?? [];
+		self::state()->contributeComponent('resource_types', $type, array_replace($existing, $definition, [
 			'builtin'=>$existing['builtin'] ?? false,
-		]);
+		]));
 		return $type;
 	}
 
@@ -1702,7 +1701,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function resourceTypes(): array {
 		self::boot();
-		return self::$resourceTypes;
+		return self::state()->resourceTypes;
 	}
 
 	/**
@@ -1715,7 +1714,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function resourceTypeDefinition(string $type): array {
 		self::boot();
-		return self::$resourceTypes[self::normalizeName($type)] ?? [];
+		return self::state()->resourceTypes[self::normalizeName($type)] ?? [];
 	}
 
 	/**
@@ -1728,7 +1727,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function resourceTypeRegistered(string $type): bool {
 		self::boot();
-		return isset(self::$resourceTypes[self::normalizeName($type)]);
+		return isset(self::state()->resourceTypes[self::normalizeName($type)]);
 	}
 
 	/**
@@ -1754,7 +1753,7 @@ final class PanelComponentRegistry {
 	 * @param string $hook Descriptor hook name to test or invoke.
 	 * @param Resource $resource Resource instance passed to the hook or renderer.
 	 * @param mixed ...$arguments Component factory arguments.
-	 *  param($m) '@return mixed '+$m.Groups[1].Value.ToUpperInvariant() esource type hook result, or null when no callable hook is registered.
+	 * @return mixed Resource type hook result, or null when no callable hook is registered.
 	 */
 	public static function callResourceTypeHook(string $type, string $hook, Resource $resource, mixed ...$arguments): mixed {
 		$definition=self::resourceTypeDefinition($type);
@@ -1771,7 +1770,7 @@ final class PanelComponentRegistry {
 	 * Custom descriptors extend the registry while preserving normalized component keys and manifest metadata.
 	 *
 	 * @param string $type Component type key before normalization.
-	 * @param ?callable $renderer Optional renderer callback stored as a Closure.
+	 * @param (callable(array<string,mixed>,array<string,mixed>):(?string))|null $renderer Optional renderer callback stored as a Closure.
 	 * @param array<string,mixed> $definition Descriptor metadata and optional summary hooks.
 	 * @return string Normalized summary type key, or an empty string when the key is invalid.
 	 */
@@ -1786,11 +1785,11 @@ final class PanelComponentRegistry {
 				$definition[$hook]=\Closure::fromCallable($definition[$hook]);
 			}
 		}
-		$existing=self::$summaryTypes[$type] ?? [];
-		self::$summaryTypes[$type]=array_replace($existing, $definition, [
+		$existing=self::state()->summaryTypes[$type] ?? [];
+		self::state()->contributeComponent('summary_types', $type, array_replace($existing, $definition, [
 			'renderer'=>$renderer!==null ? \Closure::fromCallable($renderer) : ($existing['renderer'] ?? null),
 			'builtin'=>$existing['builtin'] ?? false,
-		]);
+		]));
 		return $type;
 	}
 
@@ -1802,7 +1801,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function summaryTypes(): array {
 		self::boot();
-		return self::$summaryTypes;
+		return self::state()->summaryTypes;
 	}
 
 	/**
@@ -1815,7 +1814,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function summaryTypeDefinition(string $type): array {
 		self::boot();
-		return self::$summaryTypes[self::normalizeName($type)] ?? [];
+		return self::state()->summaryTypes[self::normalizeName($type)] ?? [];
 	}
 
 	/**
@@ -1828,7 +1827,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function summaryTypeRegistered(string $type): bool {
 		self::boot();
-		return isset(self::$summaryTypes[self::normalizeName($type)]);
+		return isset(self::state()->summaryTypes[self::normalizeName($type)]);
 	}
 
 	/**
@@ -1854,7 +1853,7 @@ final class PanelComponentRegistry {
 	 * @param string $hook Descriptor hook name to test or invoke.
 	 * @param TableSummary $summary Table summary instance passed to the hook.
 	 * @param mixed ...$arguments Component factory arguments.
-	 *  param($m) '@return mixed '+$m.Groups[1].Value.ToUpperInvariant() ummary type hook result, or null when no callable hook is registered.
+	 * @return mixed Summary type hook result, or null when no callable hook is registered.
 	 */
 	public static function callSummaryTypeHook(string $type, string $hook, TableSummary $summary, mixed ...$arguments): mixed {
 		$definition=self::summaryTypeDefinition($type);
@@ -1891,7 +1890,9 @@ final class PanelComponentRegistry {
 	 * Custom descriptors extend the registry while preserving normalized component keys and manifest metadata.
 	 *
 	 * @param string $type Component type key before normalization.
-	 * @param ?callable $renderer Optional renderer callback stored as a Closure.
+	 * @template TRecord
+	 * @template TState of array<string,mixed>
+	 * @param (callable(TableView<TRecord,TState>,array<string,mixed>,array<string,mixed>):(?string))|null $renderer Optional renderer callback stored as a Closure.
 	 * @param array<string,mixed> $definition Descriptor metadata and optional view hooks.
 	 * @return string Normalized view type key, or an empty string when the key is invalid.
 	 */
@@ -1906,11 +1907,11 @@ final class PanelComponentRegistry {
 				$definition[$hook]=\Closure::fromCallable($definition[$hook]);
 			}
 		}
-		$existing=self::$viewTypes[$type] ?? [];
-		self::$viewTypes[$type]=array_replace($existing, $definition, [
+		$existing=self::state()->viewTypes[$type] ?? [];
+		self::state()->contributeComponent('view_types', $type, array_replace($existing, $definition, [
 			'renderer'=>$renderer!==null ? \Closure::fromCallable($renderer) : ($existing['renderer'] ?? null),
 			'builtin'=>$existing['builtin'] ?? false,
-		]);
+		]));
 		return $type;
 	}
 
@@ -1922,7 +1923,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function viewTypes(): array {
 		self::boot();
-		return self::$viewTypes;
+		return self::state()->viewTypes;
 	}
 
 	/**
@@ -1935,7 +1936,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function viewTypeDefinition(string $type): array {
 		self::boot();
-		return self::$viewTypes[self::normalizeName($type)] ?? [];
+		return self::state()->viewTypes[self::normalizeName($type)] ?? [];
 	}
 
 	/**
@@ -1948,7 +1949,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function viewTypeRegistered(string $type): bool {
 		self::boot();
-		return isset(self::$viewTypes[self::normalizeName($type)]);
+		return isset(self::state()->viewTypes[self::normalizeName($type)]);
 	}
 
 	/**
@@ -1974,7 +1975,7 @@ final class PanelComponentRegistry {
 	 * @param string $hook Descriptor hook name to test or invoke.
 	 * @param TableView $view Table view instance passed to the hook or renderer.
 	 * @param mixed ...$arguments Component factory arguments.
-	 *  param($m) '@return mixed '+$m.Groups[1].Value.ToUpperInvariant() iew type hook result, or null when no callable hook is registered.
+	 * @return mixed View type hook result, or null when no callable hook is registered.
 	 */
 	public static function callViewTypeHook(string $type, string $hook, TableView $view, mixed ...$arguments): mixed {
 		$definition=self::viewTypeDefinition($type);
@@ -2012,7 +2013,7 @@ final class PanelComponentRegistry {
 	 * Custom descriptors extend the registry while preserving normalized component keys and manifest metadata.
 	 *
 	 * @param string $type Component type key before normalization.
-	 * @param ?callable $renderer Optional renderer callback stored as a Closure.
+	 * @param (callable(array<string,mixed>,array<string,mixed>):(?string))|null $renderer Optional renderer callback stored as a Closure.
 	 * @param array<string,mixed> $definition Descriptor metadata and optional navigation hooks.
 	 * @return string Normalized navigation type key, or an empty string when the key is invalid.
 	 */
@@ -2027,11 +2028,11 @@ final class PanelComponentRegistry {
 				$definition[$hook]=\Closure::fromCallable($definition[$hook]);
 			}
 		}
-		$existing=self::$navigationTypes[$type] ?? [];
-		self::$navigationTypes[$type]=array_replace($existing, $definition, [
+		$existing=self::state()->navigationTypes[$type] ?? [];
+		self::state()->contributeComponent('navigation_types', $type, array_replace($existing, $definition, [
 			'renderer'=>$renderer!==null ? \Closure::fromCallable($renderer) : ($existing['renderer'] ?? null),
 			'builtin'=>$existing['builtin'] ?? false,
-		]);
+		]));
 		return $type;
 	}
 
@@ -2043,7 +2044,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function navigationTypes(): array {
 		self::boot();
-		return self::$navigationTypes;
+		return self::state()->navigationTypes;
 	}
 
 	/**
@@ -2056,7 +2057,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function navigationTypeDefinition(string $type): array {
 		self::boot();
-		return self::$navigationTypes[self::normalizeName($type)] ?? [];
+		return self::state()->navigationTypes[self::normalizeName($type)] ?? [];
 	}
 
 	/**
@@ -2069,7 +2070,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function navigationTypeRegistered(string $type): bool {
 		self::boot();
-		return isset(self::$navigationTypes[self::normalizeName($type)]);
+		return isset(self::state()->navigationTypes[self::normalizeName($type)]);
 	}
 
 	/**
@@ -2095,7 +2096,7 @@ final class PanelComponentRegistry {
 	 * @param string $hook Descriptor hook name to test or invoke.
 	 * @param array<string,mixed> $entry Navigation entry payload.
 	 * @param mixed ...$arguments Component factory arguments.
-	 *  param($m) '@return mixed '+$m.Groups[1].Value.ToUpperInvariant() avigation type hook result, or null when no callable hook is registered.
+	 * @return mixed Navigation type hook result, or null when no callable hook is registered.
 	 */
 	public static function callNavigationTypeHook(string $type, string $hook, array $entry, mixed ...$arguments): mixed {
 		$definition=self::navigationTypeDefinition($type);
@@ -2181,7 +2182,9 @@ final class PanelComponentRegistry {
 	 * Custom descriptors extend the registry while preserving normalized component keys and manifest metadata.
 	 *
 	 * @param string $type Component type key before normalization.
-	 * @param array<string,mixed>|callable $definition Descriptor metadata or records callback.
+	 * @template TRecord
+	 * @template TState of array<string,mixed>
+	 * @param array<string,mixed>|callable(Resource<TRecord,TState>,PanelRequest|null=):iterable<TRecord> $definition Descriptor metadata or records callback.
 	 * @return string Normalized export type key, or an empty string when the key is invalid.
 	 */
 	public static function registerExportType(string $type, array|callable $definition=[]): string {
@@ -2198,10 +2201,10 @@ final class PanelComponentRegistry {
 				$definition[$hook]=\Closure::fromCallable($definition[$hook]);
 			}
 		}
-		$existing=self::$exportTypes[$type] ?? [];
-		self::$exportTypes[$type]=array_replace($existing, $definition, [
+		$existing=self::state()->exportTypes[$type] ?? [];
+		self::state()->contributeComponent('export_types', $type, array_replace($existing, $definition, [
 			'builtin'=>$existing['builtin'] ?? false,
-		]);
+		]));
 		return $type;
 	}
 
@@ -2213,7 +2216,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function exportTypes(): array {
 		self::boot();
-		return self::$exportTypes;
+		return self::state()->exportTypes;
 	}
 
 	/**
@@ -2226,7 +2229,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function exportTypeDefinition(string $type): array {
 		self::boot();
-		return self::$exportTypes[self::normalizeName($type)] ?? [];
+		return self::state()->exportTypes[self::normalizeName($type)] ?? [];
 	}
 
 	/**
@@ -2239,7 +2242,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function exportTypeRegistered(string $type): bool {
 		self::boot();
-		return isset(self::$exportTypes[self::normalizeName($type)]);
+		return isset(self::state()->exportTypes[self::normalizeName($type)]);
 	}
 
 	/**
@@ -2265,7 +2268,7 @@ final class PanelComponentRegistry {
 	 * @param string $hook Descriptor hook name to test or invoke.
 	 * @param Resource $resource Resource instance passed to the hook or renderer.
 	 * @param mixed ...$arguments Component factory arguments.
-	 *  param($m) '@return mixed '+$m.Groups[1].Value.ToUpperInvariant() xport type hook result, or null when no callable hook is registered.
+	 * @return mixed Export type hook result, or null when no callable hook is registered.
 	 */
 	public static function callExportTypeHook(string $type, string $hook, Resource $resource, mixed ...$arguments): mixed {
 		$definition=self::exportTypeDefinition($type);
@@ -2282,7 +2285,9 @@ final class PanelComponentRegistry {
 	 * Custom descriptors extend the registry while preserving normalized component keys and manifest metadata.
 	 *
 	 * @param string $type Component type key before normalization.
-	 * @param array|callable $definition Descriptor metadata, or callable shorthand for the primary handler.
+	 * @template TRecord
+	 * @template TState of array<string,mixed>
+	 * @param array<string,mixed>|callable(Resource<TRecord,TState>,PanelRequest|null=):mixed $definition Descriptor metadata, or callable shorthand for the primary handler.
 	 * @return string Normalized import type key, or an empty string when the key is invalid.
 	 */
 	public static function registerImportType(string $type, array|callable $definition=[]): string {
@@ -2299,10 +2304,10 @@ final class PanelComponentRegistry {
 				$definition[$hook]=\Closure::fromCallable($definition[$hook]);
 			}
 		}
-		$existing=self::$importTypes[$type] ?? [];
-		self::$importTypes[$type]=array_replace($existing, $definition, [
+		$existing=self::state()->importTypes[$type] ?? [];
+		self::state()->contributeComponent('import_types', $type, array_replace($existing, $definition, [
 			'builtin'=>$existing['builtin'] ?? false,
-		]);
+		]));
 		return $type;
 	}
 
@@ -2314,7 +2319,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function importTypes(): array {
 		self::boot();
-		return self::$importTypes;
+		return self::state()->importTypes;
 	}
 
 	/**
@@ -2327,7 +2332,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function importTypeDefinition(string $type): array {
 		self::boot();
-		return self::$importTypes[self::normalizeName($type)] ?? [];
+		return self::state()->importTypes[self::normalizeName($type)] ?? [];
 	}
 
 	/**
@@ -2340,7 +2345,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function importTypeRegistered(string $type): bool {
 		self::boot();
-		return isset(self::$importTypes[self::normalizeName($type)]);
+		return isset(self::state()->importTypes[self::normalizeName($type)]);
 	}
 
 	/**
@@ -2366,7 +2371,7 @@ final class PanelComponentRegistry {
 	 * @param string $hook Descriptor hook name to test or invoke.
 	 * @param Resource $resource Resource instance passed to the hook or renderer.
 	 * @param mixed ...$arguments Component factory arguments.
-	 *  param($m) '@return mixed '+$m.Groups[1].Value.ToUpperInvariant() mport type hook result, or null when no callable hook is registered.
+	 * @return mixed Import type hook result, or null when no callable hook is registered.
 	 */
 	public static function callImportTypeHook(string $type, string $hook, Resource $resource, mixed ...$arguments): mixed {
 		$definition=self::importTypeDefinition($type);
@@ -2383,7 +2388,9 @@ final class PanelComponentRegistry {
 	 * Custom descriptors extend the registry while preserving normalized component keys and manifest metadata.
 	 *
 	 * @param string $type Component type key before normalization.
-	 * @param ?callable $renderer Optional renderer callback stored as a Closure.
+	 * @template TRecord
+	 * @template TState of array<string,mixed>
+	 * @param (callable(array<string,mixed>,Resource<TRecord,TState>,PanelRequest,array<string,mixed>):(?string))|null $renderer Optional renderer callback stored as a Closure.
 	 * @param array<string,mixed> $definition Descriptor metadata and optional bulk-operation hooks.
 	 * @return string Normalized bulk operation type key, or an empty string when the key is invalid.
 	 */
@@ -2398,11 +2405,11 @@ final class PanelComponentRegistry {
 				$definition[$hook]=\Closure::fromCallable($definition[$hook]);
 			}
 		}
-		$existing=self::$bulkOperationTypes[$type] ?? [];
-		self::$bulkOperationTypes[$type]=array_replace($existing, $definition, [
+		$existing=self::state()->bulkOperationTypes[$type] ?? [];
+		self::state()->contributeComponent('bulk_operation_types', $type, array_replace($existing, $definition, [
 			'renderer'=>$renderer!==null ? \Closure::fromCallable($renderer) : ($existing['renderer'] ?? null),
 			'builtin'=>$existing['builtin'] ?? false,
-		]);
+		]));
 		return $type;
 	}
 
@@ -2414,7 +2421,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function bulkOperationTypes(): array {
 		self::boot();
-		return self::$bulkOperationTypes;
+		return self::state()->bulkOperationTypes;
 	}
 
 	/**
@@ -2427,7 +2434,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function bulkOperationTypeDefinition(string $type): array {
 		self::boot();
-		return self::$bulkOperationTypes[self::normalizeName($type)] ?? [];
+		return self::state()->bulkOperationTypes[self::normalizeName($type)] ?? [];
 	}
 
 	/**
@@ -2440,7 +2447,7 @@ final class PanelComponentRegistry {
 	 */
 	public static function bulkOperationTypeRegistered(string $type): bool {
 		self::boot();
-		return isset(self::$bulkOperationTypes[self::normalizeName($type)]);
+		return isset(self::state()->bulkOperationTypes[self::normalizeName($type)]);
 	}
 
 	/**
@@ -2466,7 +2473,7 @@ final class PanelComponentRegistry {
 	 * @param string $hook Descriptor hook name to test or invoke.
 	 * @param array<string,mixed> $operation Bulk operation payload.
 	 * @param mixed ...$arguments Component factory arguments.
-	 *  param($m) '@return mixed '+$m.Groups[1].Value.ToUpperInvariant() ulk operation type hook result, or null when no callable hook is registered.
+	 * @return mixed Bulk operation type hook result, or null when no callable hook is registered.
 	 */
 	public static function callBulkOperationTypeHook(string $type, string $hook, array $operation, mixed ...$arguments): mixed {
 		$definition=self::bulkOperationTypeDefinition($type);

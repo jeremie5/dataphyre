@@ -27,7 +27,7 @@ require_once(__DIR__."/process.php");
 
 use dataphyre\async\promise;
 use dataphyre\async\coroutine;
-use dataphyre\event_emitter;
+use dataphyre\async\event_emitter;
 
 if(dp_module_present("tracelog")){
 	async::set_logger(function($message){
@@ -60,6 +60,11 @@ class async {
 	private static $task_queue=[];
 	private static $logger;
 	private static $cancellation_tokens=[];
+	private static ?event_emitter $event_emitter=null;
+
+	private static function event_emitter(): event_emitter {
+		return self::$event_emitter??=new event_emitter();
+	}
 
 	/**
 	 * Executes a curl request inside the coroutine scheduler and resolves a promise.
@@ -109,24 +114,26 @@ class async {
 	 */
 	public static function get_url(string $url, array $headers=[], bool $return_headers=false, int $priority=0): object {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		return coroutine::async(function()use($url, $headers, $return_headers, $priority){
-			self::add_to_event_loop(function()use($url, $headers, $return_headers){
-				self::manage_concurrency(function()use($url, $headers, $return_headers){
+		return new promise(function($resolve, $reject)use($url, $headers, $return_headers, $priority){
+			self::add_to_event_loop(function()use($url, $headers, $return_headers, $resolve, $reject){
+				self::manage_concurrency(function()use($url, $headers, $return_headers, $resolve, $reject){
 					$options=[
 						CURLOPT_RETURNTRANSFER=>true,
 						CURLOPT_FOLLOWLOCATION=>true,
 						CURLOPT_HTTPHEADER=>$headers
 					];
-					$result=yield self::send_curl_request($url, $options);
-					$response=$result['response'];
-					$info=$result['info'];
-					if($return_headers){
-						return ['body'=>$response, 'headers'=>$info];
-					}
-					else
-					{
-						return $response;
-					}
+					self::send_curl_request($url, $options)->then(
+						function(array $result)use($return_headers, $resolve): void {
+							self::task_complete();
+							$resolve($return_headers
+								? ['body'=>$result['response'], 'headers'=>$result['info']]
+								: $result['response']);
+						},
+						function($reason)use($reject): void {
+							self::task_complete();
+							$reject($reason);
+						}
+					);
 				});
 			}, $priority);
 		});
@@ -148,9 +155,9 @@ class async {
 	 */
 	public static function post_url(string $url, array $data, array $headers=[], bool $return_headers=false, int $priority=0): object {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		return coroutine::async(function()use($url, $data, $headers, $return_headers, $priority){
-			self::add_to_event_loop(function()use($url, $data, $headers, $return_headers){
-				self::manage_concurrency(function()use($url, $data, $headers, $return_headers){
+		return new promise(function($resolve, $reject)use($url, $data, $headers, $return_headers, $priority){
+			self::add_to_event_loop(function()use($url, $data, $headers, $return_headers, $resolve, $reject){
+				self::manage_concurrency(function()use($url, $data, $headers, $return_headers, $resolve, $reject){
 					$options=[
 						CURLOPT_RETURNTRANSFER=>true,
 						CURLOPT_FOLLOWLOCATION=>true,
@@ -158,16 +165,18 @@ class async {
 						CURLOPT_POSTFIELDS=>http_build_query($data),
 						CURLOPT_HTTPHEADER=>$headers
 					];
-					$result=yield self::send_curl_request($url, $options);
-					$response=$result['response'];
-					$info=$result['info'];
-					if($return_headers){
-						return ['body'=>$response, 'headers'=>$info];
-					}
-					else
-					{
-						return $response;
-					}
+					self::send_curl_request($url, $options)->then(
+						function(array $result)use($return_headers, $resolve): void {
+							self::task_complete();
+							$resolve($return_headers
+								? ['body'=>$result['response'], 'headers'=>$result['info']]
+								: $result['response']);
+						},
+						function($reason)use($reject): void {
+							self::task_complete();
+							$reject($reason);
+						}
+					);
 				});
 			}, $priority);
 		});
@@ -185,22 +194,12 @@ class async {
 	 */
 	public static function get_json(string $url): promise {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		$promise=new promise(function($resolve, $reject)use($url){
-			coroutine::create(function()use($url, $resolve, $reject){
-				try{
-					$response=yield self::send_curl_request($url, [
-						CURLOPT_RETURNTRANSFER=>true,
-						CURLOPT_HTTPHEADER=>['Content-Type: application/json'],
-					]);
-                    $resolve($response->then(function($result){
-                        return json_decode($result['response'], true);
-                    }));
-				}catch(Exception $e){
-					$reject($e);
-				}
-			});
+		return self::send_curl_request($url, [
+			CURLOPT_RETURNTRANSFER=>true,
+			CURLOPT_HTTPHEADER=>['Content-Type: application/json'],
+		])->then(static function(array $result): mixed {
+			return json_decode((string)$result['response'], true);
 		});
-		return $promise;
 	}
 
 	/**
@@ -216,24 +215,14 @@ class async {
 	 */
 	public static function post_json(string $url, array $data): promise {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		$promise=new promise(function($resolve, $reject)use($url, $data){
-			coroutine::create(function()use($url, $data, $resolve, $reject){
-				try{
-					$response=yield self::send_curl_request($url, [
-						CURLOPT_RETURNTRANSFER=>true,
-						CURLOPT_POST=>true,
-						CURLOPT_POSTFIELDS=>json_encode($data),
-						CURLOPT_HTTPHEADER=>['Content-Type: application/json'],
-					]);
-                    $resolve($response->then(function($result){
-                        return json_decode($result['response'], true);
-                    }));
-				}catch(Exception $e){
-					$reject($e);
-				}
-			});
+		return self::send_curl_request($url, [
+			CURLOPT_RETURNTRANSFER=>true,
+			CURLOPT_POST=>true,
+			CURLOPT_POSTFIELDS=>json_encode($data),
+			CURLOPT_HTTPHEADER=>['Content-Type: application/json'],
+		])->then(static function(array $result): mixed {
+			return json_decode((string)$result['response'], true);
 		});
-		return $promise;
 	}
 	
     /**
@@ -247,23 +236,22 @@ class async {
      */
     public static function read_stream($stream): promise {
         tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-        return new promise(function($resolve, $reject)use($stream){
-            coroutine::create(function()use($stream, $resolve, $reject){
-                $data='';
-                while(!feof($stream)){
-                    $data .= fread($stream, 8192);
-                    // Simulate asynchronous behavior
-                    coroutine::sleep(0);
-                }
-                if($data===false){
-                    $reject(new \Exception("Error reading stream"));
-                }
-				else
-				{
-                    $resolve($data);
-                }
-            });
-        });
+		return new promise(function($resolve, $reject)use($stream){
+			coroutine::create(function()use($stream, $resolve, $reject){
+				$data='';
+				while(!feof($stream)){
+					$chunk=fread($stream, 8192);
+					if($chunk===false){
+						$reject(new \Exception("Error reading stream"));
+						return;
+					}
+					$data.=$chunk;
+					// Simulate asynchronous behavior
+					coroutine::sleep(0);
+				}
+				$resolve($data);
+			});
+		});
     }
 
     /**
@@ -467,6 +455,9 @@ class async {
 	public static function process_batches(): void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		while(!empty(self::$prioritized_event_loop)){
+			$priority=array_key_first(self::$prioritized_event_loop);
+			self::$current_batch=array_merge(self::$current_batch, self::$prioritized_event_loop[$priority]);
+			unset(self::$prioritized_event_loop[$priority]);
 			self::process_batch();
 		}
 		if(!empty(self::$current_batch)){
@@ -540,7 +531,7 @@ class async {
 	 */
 	public static function on_event(string $event, callable $listener, int $priority=0): void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		event_emitter::on($event, $listener, $priority);
+		self::event_emitter()->on($event, $listener, $priority);
 	}
 
 	/**
@@ -556,7 +547,7 @@ class async {
 	 */
 	public static function add_listener_with_metadata(string $event, callable $listener, array $metadata): void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		event_emitter::add_listener_with_metadata($event, $listener, $metadata);
+		self::event_emitter()->add_listener_with_metadata($event, $listener, $metadata);
 	}
 
 	/**

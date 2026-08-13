@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<psalm
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns="https://getpsalm.org/schema/config"
+    xsi:schemaLocation="https://getpsalm.org/schema/config https://raw.githubusercontent.com/vimeo/psalm/master/config.xsd"
+    errorLevel="1"
+    resolveFromConfigFile="true"
+    findUnusedBaselineEntry="true"
+    findUnusedCode="false"
+    hideExternalErrors="true"
+>
+    <projectFiles>
+        <file name="fixtures/panel-builders.php" />
+    </projectFiles>
+    <extraFiles>
+        <directory name="../Framework" />
+    </extraFiles>
+</psalm>

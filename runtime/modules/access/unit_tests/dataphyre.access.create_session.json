@@ -2,7 +2,7 @@
     {
         "name": "CreateSessionSuccess",
         "function": "dp_access_unit_create_session",
-        "file": "/common/dataphyre/runtime/modules/access/unit_tests/access_session_test_helpers.php",
+        "file": "/dataphyre/runtime/modules/access/unit_tests/access_session_test_helpers.php",
         "args": [
             123,
             false
@@ -28,7 +28,7 @@
     {
         "name": "CreateSessionFailSqlInsert",
         "function": "dp_access_unit_create_session",
-        "file": "/common/dataphyre/runtime/modules/access/unit_tests/access_session_test_helpers.php",
+        "file": "/dataphyre/runtime/modules/access/unit_tests/access_session_test_helpers.php",
         "args": [
             999,
             true

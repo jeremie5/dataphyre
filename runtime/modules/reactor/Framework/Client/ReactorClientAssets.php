@@ -7,6 +7,8 @@
  */
 namespace Dataphyre\Reactor;
 
+require_once __DIR__.'/ReactorTransactionClientAssets.php';
+
 /**
  * Serves the browser-side Reactor runtime as versioned, cacheable framework assets.
  *
@@ -59,7 +61,7 @@ final class ReactorClientAssets {
 	 */
 	public static function assetContent(string $asset): ?array {
 		return self::assetName($asset)==='reactor.js'
-			? ['content_type'=>'application/javascript; charset=UTF-8', 'body'=>self::javascript()]
+			? ['content_type'=>'application/javascript; charset=UTF-8', 'body'=>self::javascript().ReactorTransactionClientAssets::javascript()]
 			: null;
 	}
 

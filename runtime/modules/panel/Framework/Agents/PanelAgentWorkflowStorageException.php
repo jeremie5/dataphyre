@@ -1,0 +1,26 @@
+<?php
+/*************************************************************************
+ * Dataphyre
+ *
+ * Copyright (c) 2026 Shopiro Ltd.
+ * SPDX-License-Identifier: MIT
+ */
+declare(strict_types=1);
+namespace Dataphyre\Panel;
+
+/** Stable, secret-free failure metadata for durable agent workflow adapters. */
+final class PanelAgentWorkflowStorageException extends \RuntimeException {
+	public function __construct(
+		private readonly string $errorCode,
+		string $message,
+		private readonly bool $retryable=false,
+	){
+		if(preg_match('/^[a-z][a-z0-9_]{1,63}$/D',$errorCode)!==1){
+			throw new \InvalidArgumentException('Panel agent workflow storage error code is invalid.');
+		}
+		parent::__construct($message);
+	}
+
+	public function errorCode():string { return $this->errorCode; }
+	public function retryable():bool { return $this->retryable; }
+}

@@ -19,6 +19,62 @@ before comparing Panel to Filament-style admin builders. The `/debug` live
 example is a useful exerciser, but it is not by itself a production-completeness
 claim.
 
+For PHPStan/Psalm generics, typed callback signatures, extension macro stubs,
+and the analyzer-free contract gate, see
+[Dataphyre_Panel_Static_Analysis.md](Dataphyre_Panel_Static_Analysis.md).
+
+For bounded virtual tables and alternate record collections, signed window
+intents, cursor privacy, progressive enhancement, and migration guidance, see
+[Dataphyre_Panel_Data_Surface.md](Dataphyre_Panel_Data_Surface.md).
+
+For deterministic host-bound PHP and TypeScript clients, protocol schemas,
+semantic compatibility reports, and publication boundaries, see
+[Dataphyre_Panel_Application_SDK.md](Dataphyre_Panel_Application_SDK.md).
+
+For collector-driven evidence, source-bound framework reference profiles,
+fingerprint-pinned plans, signed runs, freshness, crosswalks, and evidence drift,
+see
+[Dataphyre_Panel_Compliance_Automation.md](Dataphyre_Panel_Compliance_Automation.md).
+
+For the strict outbound POST/JSON adapter, immutable capability pins, approved
+scope projection, cursor binding, and host-owned network policy, see
+[Dataphyre_Panel_HTTP_Data_Source.md](Dataphyre_Panel_HTTP_Data_Source.md).
+
+For the accessible route-free Studio workspace and the optional production
+Reactor widget transport, see
+[Dataphyre_Panel_Studio_Editor.md](Dataphyre_Panel_Studio_Editor.md) and
+[Dataphyre_Panel_Reactor_Widgets.md](Dataphyre_Panel_Reactor_Widgets.md).
+
+For host-wired change streams, bounded model-proposed tool plans, and their
+shared-SQL workflow store, see
+[Dataphyre_Panel_Realtime.md](Dataphyre_Panel_Realtime.md) and
+[Dataphyre_Panel_Agent_Safe_Workflows.md](Dataphyre_Panel_Agent_Safe_Workflows.md),
+then
+[Dataphyre_Panel_Distributed_Agent_Workflows.md](Dataphyre_Panel_Distributed_Agent_Workflows.md).
+
+For shared-SQL leased jobs, the distributed command/event fabric, and
+transactional state migrations, see
+[Dataphyre_Panel_Distributed_Operations.md](Dataphyre_Panel_Distributed_Operations.md),
+[Dataphyre_Panel_Distributed_Command_Fabric.md](Dataphyre_Panel_Distributed_Command_Fabric.md),
+and
+[Dataphyre_Panel_Distributed_Migrations.md](Dataphyre_Panel_Distributed_Migrations.md).
+
+For the cohesive domain-as-code, universal work, policy, governed operator,
+semantic, compliance, federation, release, local-first, marketplace, and Studio
+branch control plane plus its bounded redacted operator console, see
+[Dataphyre_Panel_Operations_OS.md](Dataphyre_Panel_Operations_OS.md).
+
+For the non-executing, preview-first Filament 3/4/5 resource exit path, see
+[Dataphyre_Panel_Filament_Migration.md](Dataphyre_Panel_Filament_Migration.md).
+
+For signed Kubernetes, Nomad, ECS, Compose, and filesystem release intents and
+fence-bound deployment receipts, see
+[Dataphyre_Panel_Release_Deployment.md](Dataphyre_Panel_Release_Deployment.md).
+
+For source-bound, exact-tree, expiring, signed browser and quality evidence,
+independent verification, and replay keys, see
+[Dataphyre_Panel_Release_Evidence.md](Dataphyre_Panel_Release_Evidence.md).
+
 ```php
 \dataphyre\core::load_framework_module('panel');
 ```
@@ -87,11 +143,88 @@ Panel::routeUploadUrl('/admin');                           // /admin/upload
 Panel::routeManifest('/admin', 'default', ['name'=>'admin.panel']);
 ```
 
+### Secure standalone front controller
+
+Applications that do not load Dataphyre Routing or MVC can mount the same
+surface through `Panel::standaloneHost()`. This is a complete front-controller
+boundary, not a shortcut around application security:
+
+```php
+use Dataphyre\Panel\Panel;
+
+$host=Panel::standaloneHost('default', '/admin')
+	->authenticateUsing(fn($request)=>current_user($request))
+	->tenantUsing(fn($request)=>trusted_workspace_for($request))
+	->authorizeUsing(fn(string $ability, $user, $tenant)=>policy_allows($user, $ability, $tenant))
+	->rateLimitUsing(fn($request)=>panel_rate_limit($request))
+	->originUsing(fn(string $origin)=>hash_equals('https://console.example.com', $origin))
+	->csrfUsing(
+		fn(string $scope)=>issue_panel_token($scope),
+		fn(string $token, string $scope)=>validate_panel_token($scope, $token),
+	)
+	->allowMutations()
+	->allowUploads();
+
+// public/index.php or a PHP built-in-server router:
+if(!$host->serve()){
+	return false;
+}
+```
+
+The host is immutable and read-only by default. Assets are public GET/HEAD
+routes unless disabled. Pages require authentication (or explicit
+`allowAnonymous()`), authorization, and rate limiting. Enabling mutations or
+uploads additionally requires a token issuer, token validator, and origin
+validator before even a safe form-rendering request is considered ready; this
+prevents a write-capable deployment from quietly rendering tokenless forms.
+Unsafe requests with a missing/invalid origin or token fail with `403` or `419`.
+Missing or throwing policy infrastructure fails with `503`.
+
+The mount uses an exact prefix boundary (`/adminx` never matches `/admin`).
+Malformed, nested, slash/backslash-bearing, control-character, dot-traversal,
+oversized, or over-deep path/input/header/cookie/upload data is rejected before
+Panel dispatch. Reserved `assets/{asset}` and `upload` routes cannot fall
+through into page routing. The incoming HTTP request is rebuilt instead of
+mutated: query/body route identity, caller-supplied user/tenant attributes, and
+tenant headers are removed, while the trusted authentication and tenant
+resolvers repopulate those values.
+
+Downstream responses pass through a second boundary that strips hop-by-hop and
+`Connection`-nominated headers, preserves multi-value cookies and streams,
+normalizes HEAD/204/304 semantics, applies no-store and browser security
+headers, and confines redirects to the same Panel mount. A
+`redirectUsing()` policy may explicitly approve a syntactically safe HTTP(S)
+external target. Error envelopes expose stable codes and correlation IDs;
+exception detail appears only after explicit `developmentErrors()`.
+
+`manifest()` is secret-free and reports the exact routes, capability mode,
+missing policies, request limits, and deployment prerequisites. PHP/web-server
+`post_max_size`, `upload_max_filesize`, header, and body limits must remain at
+least as strict as the host limits because PHP may parse form and multipart
+input before application code runs.
+
 When a panel is dispatched through a mounted route, `Panel::panelManifest()`
 also includes a `routes` section with the current prefix, endpoint paths,
 generated examples, and controller classes. Unmounted panels report
 `routes.mounted=false` so tooling can distinguish route-free embeds from native
-Routing/MVC mounts.
+Routing/MVC mounts. The root `widget_runtime` entry is the secret-free manifest
+of that exact `PanelInstance` registry; its capability summary reports active
+adapter count, persistent binding-key configuration, and Reactor-bridge
+installation without serializing keys, callbacks, component state, or sessions.
+The root `data_sources` entry is emitted only from an already-ready attached
+platform registry and uses its registration snapshots; manifest generation
+never resolves a lazy service factory or invokes a live adapter. The separate
+`data_surfaces` and `studio_editor` entries report instance attachment and
+route-free editor availability without serializing endpoints, credentials,
+signing keys, CSRF values, preview bearers, or checkpoints. None of these
+manifests proves that a host route, identity boundary, or persistence adapter is
+installed.
+
+The root `realtime` and `agent_workflows` entries are also passive integration
+contracts. They report a surface as configured only when every required service
+is already resolved to the expected type and the endpoint/runtime wraps those
+exact registered dependencies. Building a manifest never resolves a factory,
+opens a stream, invokes an executor or policy callback, or installs transport.
 
 Use the narrower helpers when an application wants to place endpoints in
 separate route groups: `Panel::routes()`, `Panel::assetRoutes()`,
@@ -99,6 +232,217 @@ separate route groups: `Panel::routes()`, `Panel::assetRoutes()`,
 `Panel::mvcUploadRoutes()`. Legacy kernel endpoints under
 `/dataphyre/panel/assets/...` and `/dataphyre/panel/upload` still work and
 delegate to the same controller code used by mounted routes.
+
+### Interactive widget lifecycle
+
+Widgets remain static by default. A widget becomes progressively interactive
+only after it receives a `PanelWidgetInteractionDefinition` and the renderer
+explicitly mounts it through the owning `PanelInstance` runtime registry.
+Serialization, manifests, and state inspection do not create sessions.
+
+The browser request carries only the island id, operation-specific values, an
+opaque adapter snapshot, and a public binding tag. Tenant, principal, session,
+Panel surface, and authorization context are derived again from the trusted
+host request. Mount, hydrate, action, refresh, and unmount requests use strict
+operation-specific schemas, optimistic versions, and idempotency keys. The
+client validates exact, bounded response shapes and requires the response-body
+status to match the HTTP status before committing state or rotating credentials.
+
+```php
+use Dataphyre\Panel\PanelInMemoryWidgetRuntimeAdapter;
+use Dataphyre\Panel\PanelWidgetInteractionDefinition;
+use Dataphyre\Panel\Widget;
+
+$runtime=new PanelInMemoryWidgetRuntimeAdapter('/panel/widgets/runtime', $signingKeys);
+$runtime->register(
+	'counter',
+	['value'=>0],
+	['increment'=>fn(array $state,array $payload): array=>[
+		'value'=>$state['value']+(int)($payload['by'] ?? 1),
+	]],
+	fn($definition,$context,$request): bool=>$context->principal()!==null,
+);
+
+$panel->registerWidgetRuntimeAdapter($runtime);
+$panel->registerWidget(
+	Widget::make('counter')
+		->value(0)
+		->interactive(
+			PanelWidgetInteractionDefinition::make('memory','counter')
+				->action('increment','Increment')
+				->refresh('manual')
+		)
+);
+```
+
+The bundled in-memory adapter is a bounded conformance and single-process host
+adapter. It is explicitly non-durable and not multi-process safe. Its handler
+replay protects adapter state and responses; external handler side effects are
+not exactly once, so hosts must make those effects idempotent. Unmount delivery
+uses a best-effort keepalive request and bounded TTL expiration is the abrupt
+disconnect fallback.
+
+Panel also ships an optional production `PanelReactorWidgetRuntimeAdapter` and
+fail-closed `PanelReactorWidgetController`. Merely loading those classes or
+registering an adapter installs no route, authentication, authorization, CSRF
+policy, origin policy, signing key, snapshot-version persistence, or business
+idempotency. The host must register the exact POST route, construct the trusted
+`PanelRequest`, inject the validators and Reactor transport authorizer, and use
+a production-safe persistent version store. Public manifests report
+`reactor_bridge=false` until an active adapter truthfully declares the
+production bridge capability. See the
+[Reactor widget bridge guide](Dataphyre_Panel_Reactor_Widgets.md).
+
+Hosts that expose the endpoint must parse `PanelWidgetInteractionRequest`,
+resolve the server-registered widget definition, derive a fresh trusted
+`PanelWidgetInteractionContext` from the current `PanelRequest`, dispatch via
+the instance registry, and serialize the returned result. Browser payloads
+must never select an adapter class or supply authoritative scope claims.
+
+### Capability-driven browser assets
+
+Panel has three browser-delivery strategies. `capability` remains the
+compatibility default and emits capability-scoped `panel.css` and `panel.js`
+aggregates. `physical` emits independently cacheable CSS and JavaScript files
+from the same closed capability graph and is the recommended HTTP/2 or HTTP/3
+production lane. `full` retains the historical monoliths as an explicit
+rollback. Existing asset URL builders work with all three modes.
+
+Capability and physical style URLs carry a canonical `dp_panel_caps` token plus
+a content-derived version. The asset controller validates that token before
+serving the selected cascade. Forged, reordered, duplicated, or unknown tokens
+return a no-store 404. Physical runtime files are universal immutable chunks,
+so attaching a capability token to one is rejected instead of creating a
+second cache identity.
+
+Capabilities are additive. Panel discovers its own generated markup and page
+kind, while a custom page can declare additional requirements through
+`asset_capabilities`:
+
+```php
+$page=PanelPage::make('operations-map')->renderUsing(static fn()=>[
+	'content'=>'<section data-dp-reactor="map">...</section>',
+	'data'=>['asset_capabilities'=>['reactor', 'acme-map']],
+]);
+
+return PanelContext::run([
+	'asset_mode'=>'physical',   // recommended; capability is the compatibility default
+	'asset_integrity'=>true,    // optional SRI on framework-owned assets
+	'asset_nonce'=>$requestNonce,
+	'asset_capability_urls'=>[
+		// Optional-module or host-owned capability assets.
+		'reactor'=>'/dataphyre/reactor/assets/reactor.js?v=...',
+		'acme-map'=>[
+			'url'=>'https://cdn.example.test/acme-map.js',
+			'type'=>'script',
+			'attributes'=>['crossorigin'=>'anonymous'],
+		],
+	],
+], static fn()=>PanelRenderer::customPage($page, $request));
+```
+
+Built-in capabilities are dependency-closed: `board` includes `table` and
+`shell`; `editor` and `upload` include `form`; `editor-assets` includes
+`editor`; `modal` closes over form, upload, editor, and editor-asset support
+because daughter payloads can introduce any of them; `collaboration` includes
+`reactor`; every surface includes `shell`. Generated markers cover tables,
+forms, records, boards, charts, modals, uploads, editors, editor asset pickers,
+media, collaboration, authentication, extensions, platform surfaces, quality
+tooling, and Reactor islands. A declaration cannot remove a capability required
+by rendered content.
+
+Configured brick, masonry, and per-item responsive controls also activate the
+`collection-layout` capability. Plain shells do not download that layout
+fragment. Tables, forms, records, boards, and interactive widgets retain their
+shared v2 collection foundation automatically; a responsive v3 grow, shrink,
+order, break, or fill map adds the dedicated cache dimension even on those
+surfaces. Custom pages are detected from `data-dp-display` and item markers, so
+framework builders do not require a manual `asset_capabilities` declaration.
+
+Framework and package tooling can inspect the same deterministic contract:
+
+```php
+$graph=PanelRenderer::assetCapabilityManifest(['board', 'editor']);
+$manifest=PanelRenderer::assetManifest(
+	$graph->capabilities(),
+	'physical',
+	['integrity'=>true, 'nonce'=>$requestNonce],
+);
+
+foreach($manifest['styles'] as $asset){
+	// name, URL, bytes, SHA-256, SRI, attributes, and logical chunks
+}
+```
+
+Physical delivery keeps the legacy cascade in six ordered files:
+`panel-style-tokens.css`, `panel-style-foundation.css`,
+`panel-style-layout.css`, `panel-style-experience.css`,
+`panel-style-themes.css`, and `panel-style-accessibility.css`. Runtime ownership
+is split into dependency-declared `panel-runtime-*.js` files. Kernel,
+interaction, transport, and quality are always present; form, editor, Studio
+editor, Data Surface, Widget, modal, and board runtimes are selected only when
+their closed capabilities require them.
+
+Every physical descriptor includes its exact byte count, SHA-256, optional SRI,
+version, and runtime dependencies. The public `panel-assets.json` route exposes
+the same secret-free manifest for publishers and release auditors. Runtime
+chunks register under `window.DataphyrePanel.runtimeChunks`; implementation
+functions live in a private shared runtime scope rather than leaking
+`dpPanel*` globals. Dependency checks fail before a chunk executes when an
+earlier file is absent. AJAX navigation replaces capability-dependent styles
+before revealing the destination and adds each immutable runtime chunk at most
+once per document, allowing already downloaded universal chunks to remain
+warm.
+
+The aggregate `capability` lane preserves the same CSS source order and compiles
+selected controllers into one content-addressed `panel.js`. The base editor
+lifecycle remains independently cacheable as `panel-editor.js`;
+browse/upload/delete picker behavior and its scoped CSS are delivered only for
+`editor-assets` as `panel-editor-assets.js`. Provider-free editor pages
+therefore do not download the picker runtime. Modal shells retain the dependency
+because a daughter payload can introduce a provider-backed editor after initial
+render. Optional extension, platform, quality, Reactor, and host assets remain
+independently cacheable manifest entries.
+
+For a CDN that strips query parameters, a host that pre-publishes only the old
+monoliths, or a staged migration, set `asset_mode` to `full`. `panel.css`,
+`panel.js`, `PanelRenderer::assetContent()`, and direct asset routes retain the
+historical full-bundle behavior when no capability token is supplied. Unknown
+mode values also fail safe to `full`.
+
+The snapshot tool supports aggregate and physical publication:
+
+```powershell
+php runtime/modules/panel/testing/panel_asset_snapshot.php `
+  --output-dir=cache/panel-assets/full --mode=full
+
+php runtime/modules/panel/testing/panel_asset_snapshot.php `
+  --output-dir=cache/panel-assets/table `
+  --mode=capability --capabilities=shell,table,navigation
+
+php runtime/modules/panel/testing/panel_asset_snapshot.php `
+  --output-dir=cache/panel-assets/physical-table `
+  --mode=physical --capabilities=shell,table,navigation `
+  --report=cache/panel-assets/physical-table.json
+```
+
+Do not hand-craft `dp_panel_caps`: use the manifest or rendered asset URLs so
+dependency ordering and hashes stay canonical. Cache keys must include the query
+string. Nonces and allow-listed attributes (`integrity`, `crossorigin`,
+`referrerpolicy`, `fetchpriority`, and relevant stylesheet attributes) are
+escaped on framework-owned tags; event-handler attributes and unsafe URL schemes
+are discarded.
+
+The repository-owned delivery auditor fetches every public descriptor, verifies
+same-origin immutable responses, hashes, SRI, MIME types, dependency order,
+gzip/Brotli sizes, parse time, and a real Chromium bootstrap. Its checked-in
+budgets are release ratchets, not estimates:
+
+```powershell
+node runtime/modules/panel/testing/panel_asset_delivery_audit.js `
+  --manifest-url=http://127.0.0.1:8098/panel/assets/panel-assets.json `
+  --browser --report=cache/panel-asset-delivery-audit.json
+```
 
 ### Modal Chrome
 
@@ -308,6 +652,11 @@ that already matched a request and a Panel surface that can answer it.
 Panel::host('seller', $current_user)->emit();
 ```
 
+Use `Panel::standaloneHost()` instead when Panel itself must own exact-prefix
+routing, request limits, policy gates, trusted identity rebuilding, response
+sanitization, and SAPI emission. `PanelHost` remains the lighter adapter for a
+framework that already supplied those boundaries.
+
 For frameworks that own their own response object, keep the result instead:
 
 ```php
@@ -319,6 +668,1057 @@ return app_response(
 	$result->headers()
 );
 ```
+
+## Production Platform Runtime
+
+[`PanelPlatform`](../Framework/Platform/PanelPlatform.php) is the optional,
+instance-owned facade for Panel's production services. It complements the
+route-agnostic resource renderer; it does not turn Panel into a routed
+application or introduce process-global service state. `PanelPlatform::defaults()`
+assembles the local atomic reference stack, while `PanelPlatform::make()`,
+`register()`, and `factory()` let a host assemble equivalent database, broker,
+object-storage, or broadcast-backed domains.
+
+```php
+use Dataphyre\Panel\PanelPlatform;
+
+$platform=PanelPlatform::defaults([
+	'state_root'=>$stateRoot,
+	// Opt in when workers can overlap, restart, or run on multiple processes.
+	'distributed_operations'=>[
+		'lease_ttl_seconds'=>60,
+		'snapshot_retention'=>512,
+	],
+	// Explicit opt-in: definitions are instance-owned executable code.
+	'migrations'=>[
+		'definitions'=>$migrationDefinitions,
+		'snapshot_retention'=>512,
+		'authorize'=>$migrationAuthorizer,
+	],
+	// Explicit opt-in; inject any PanelTelemetryExporter in production.
+	'observability'=>[
+		'exporter'=>$telemetryExporter,
+		'sample_ratio'=>0.25,
+		'sampling_seed'=>'panel-production',
+	],
+	'authentication'=>[
+		'encryption_key'=>$authenticationEncryptionKey,
+		'pepper'=>$authenticationPepper,
+	],
+	// Explicit opt-in: durable tenant IAM, separate from login/session handling.
+	'iam'=>[
+		'audit_keys'=>[
+			'2026-q2'=>$iamAuditKey2026Q2,
+			'2026-q3'=>$iamAuditKey2026Q3,
+		],
+		'current_audit_key_id'=>'2026-q3',
+		'authorize'=>$iamAuthorizer,
+	],
+	// Explicit opt-in: portable envelopes plus trusted schema materialization.
+	'studio'=>[
+		'authorization'=>$studioAuthorizer,
+		'registry_version'=>'2026.1',
+		'required_publish_approvals'=>1,
+		'preview_keys'=>[
+			'2026-q2'=>$studioPreviewKey2026Q2,
+			'2026-q3'=>$studioPreviewKey2026Q3,
+		],
+		'current_preview_key'=>'2026-q3',
+	],
+	'media'=>[
+		'signing_key'=>$mediaSigningKey,
+	],
+	'security'=>[
+		// Strongly recommended: enables HMAC tamper evidence for the audit chain.
+		'audit_key'=>$securityAuditKey,
+	],
+	'platform'=>[
+		'csrf'=>$csrfValidator,
+		'authorize'=>$platformAbilityAuthorizer,
+	],
+]);
+
+$runner=$platform->operationRunner();
+$sources=$platform->dataSources();
+$preferences=$platform->preferences('operator-42', 'operations', 'desktop');
+$collaboration=$platform->collaboration();
+$tenantIam=$platform->iam()->scope('tenant-7', 'operator-42');
+$studio=$platform->studio();
+$capabilities=$platform->manifest()->jsonSerialize();
+```
+
+`state_root` is required, writable, and may not be a symbolic link.
+Authentication encryption/pepper and media signing values must be explicitly
+configured with at least 32 bytes. Security audit keys use the same minimum.
+IAM is opt-in and requires either `iam.audit_key` for a single key or a named
+`iam.audit_keys` keyring whose values are each at least 32 bytes. A keyring with
+more than one entry also requires `iam.current_audit_key_id`. Keep retired keys
+configured until every audit event signed by them has aged out of the retained
+chain; removing a still-required key makes verification fail closed. IAM
+manifests expose only key identifiers, counts, and rotation state, never key
+material. Top-level `iam_audit_key` and `iam_audit_keys` remain supported for
+hosts that inject secrets separately from domain options.
+Studio is also opt-in. Its authorization policy defaults to deny, and preview
+signing has no fallback key: each configured `studio.preview_keys` value must be
+at least 32 bytes and `studio.current_preview_key` selects the issuing key.
+Retain retired keys only for the short preview TTL in which their capabilities
+must remain valid. Preview nonces are bounded but reusable until expiry; there
+is no one-time consumption store. `PanelStudioManager::verifyPreview()` also
+requires the token's content hash and revision to remain the current document
+head and re-checks that head against the active registry/compiler/materializer,
+so any later save or stale execution contract invalidates the intent. Studio
+manifests never include private keys, raw tokens, idempotency keys, or host
+callbacks.
+`studio.registry` and `studio.materializer` may be injected as typed instances;
+otherwise Panel creates the default registry and audited materializer. A
+`studio.schemas` list may register typed, provenance-labelled schemas, but the
+materializer executes only schema contracts matching one of its audited kinds.
+New or semantically changed kinds therefore remain validation/portable work
+until a materializer release explicitly supports them.
+When `security.audit_key` is configured, audit events use HMAC-SHA-256 and
+reject checksum downgrade attempts; without it, the compatible SHA-256 chain is
+reported as integrity checking rather than tamper evidence. Configure the key
+before the first event; archive or explicitly migrate an existing checksum-only
+audit before enabling keyed verification. Set any domain to
+`false` when it is not required. Defaults never serialize those secrets or the
+raw configuration.
+
+Platform reads and mutations are fail-closed. Read pages require an authenticated
+security context plus the corresponding `<domain>.view` ability (for example
+`operations.view`, `authentication.view`, or `security.view`). Mutations retain
+their operation-specific abilities and require CSRF. A custom `platform.authorize`
+callback is evaluated only after identity and tenant equality have succeeded, so
+it cannot override tenant isolation. Mounted first-party pages pass the active
+request through the same controller boundary; a separate page authorizer may
+still impose stricter UI policy.
+
+Plugin registration, boot, unload, and reload are transactional across the
+surface registries and the platform container. A rollback restores service and
+factory structure plus nested services implementing
+`PanelCheckpointableService`, including the data-source and DataSurface
+registries and the agent tool catalog. Singleton factory resolution is itself a
+revisioned lifecycle mutation; rolling back a failed plugin restores the prior
+resolved-or-factory state and revision. Checkpoints are trusted, bounded,
+in-process transaction units that retain object and closure references. They
+are not persistence, cache, queue, or wire payloads. Arbitrary mutable service
+objects cannot be rewound automatically; a custom service that plugins may
+mutate should implement the typed checkpoint contract or be replaced
+atomically instead of being mutated in place. Platform diagnostics report this
+boundary rather than claiming full object-graph rollback.
+
+### Transactional adapter packs
+
+[`PanelAdapterPack`](../Framework/Platform/PanelAdapterPack.php) packages a
+dependency-ordered set of typed infrastructure integrations into the same
+transactional plugin boundary. A
+[`PanelAdapterPackBinding`](../Framework/Platform/PanelAdapterPackBinding.php)
+can contribute exactly one `platform:`, `search:`, `plugin:`, or `data:` target.
+Bindings declare their runtime contract, dependencies, optional framework
+classes, accepted configuration keys, replacement default, capabilities, and
+an optional production conformance suite. Factories remain process-local and
+are never executed by preview or manifest generation.
+
+The bundled [`PanelDataphyreAdapterPack`](../Framework/Adapters/PanelDataphyreAdapterPack.php)
+is an opt-in pack for Dataphyre Access, Fulltext, Mailer, and Storage-backed
+media. Each binding can be enabled independently:
+
+```php
+use Dataphyre\Panel\Panel;
+
+$panel=Panel::make('operations')->usePlatform($platform);
+$pack=$panel->dataphyreAdapterPack();
+
+$plan=$panel->planAdapterPack($pack, [
+	'adapters'=>[
+		'access'=>[
+			'options'=>$accessOptions,
+		],
+		'fulltext'=>[
+			'index'=>'orders',
+			'manager'=>$searchManager,
+			'map'=>$searchHitMapper,
+			'options'=>[
+				'tenant_scoped'=>true,
+				'criteria'=>$searchCriteria,
+			],
+		],
+		'mailer'=>[
+			'directory'=>$privateStateRoot.'/panel-notifications',
+			'manager'=>$mailerManager,
+			'recipient'=>$notificationRecipient,
+			'options'=>[
+				'provider'=>'transactional',
+			],
+		],
+		'storage_media'=>[
+			'storage_manager'=>$storageManager,
+			'disk'=>'private',
+			'prefix'=>'panel/media',
+			'catalog_directory'=>$privateStateRoot.'/panel-media-catalog',
+			'signing_key'=>$mediaSigningKey,
+			'options'=>[
+				'disk'=>[
+					'name'=>'private-media',
+					'default_max_bytes'=>1024 * 1024 * 1024,
+					'write_options'=>['visibility'=>'private'],
+				],
+				'manager'=>[
+					'delivery_url'=>'/panel/media/private',
+					'cleanup_grace'=>7 * 86400,
+				],
+				'retention'=>512,
+			],
+		],
+	],
+	'conformance'=>['fulltext', 'storage_media'],
+	'conformance_options'=>[
+		'fulltext'=>[
+			'query'=>'conformance',
+			'minimum_results'=>0,
+		],
+		'storage_media'=>[
+			'namespace'=>'panel_conformance_media',
+		],
+	],
+	'allow_destructive_conformance'=>true,
+]);
+
+if(!$plan->ready()){
+	throw new RuntimeException(implode(' ', $plan->errors()));
+}
+
+// Revalidates definition, private configuration, and current Panel state.
+$activation=$plan->apply();
+```
+
+The `storage_media` binding replaces `platform:media.manager` transactionally.
+It accepts an already composed `PanelMediaManager`, or composes
+`PanelDataphyreStorageMediaDisk` from a named `Dataphyre\Storage\StorageManager`
+disk plus either a `PanelSnapshotStore` or local atomic
+`catalog_directory`. Panel paths remain confined below the private prefix and
+every backend operation continues through `StorageManager`, preserving its
+guards, encryption, decorators, and events. Prefixes, credentials, signing
+keys, provider errors, and storage options are absent from public manifests.
+The generic Storage contract does not promise compare-and-swap or atomic
+rename, so this adapter reports atomic create/write/move as false and uses
+verified best-effort compensation for failed replacement and move operations.
+Run destructive conformance only in a disposable namespace.
+
+`PanelAdapterPackPlan` performs class, dependency, collision, contract, and
+target preflight without resolving an adapter. It records a process-keyed
+configuration digest and exact Panel-state fingerprint; applying a stale plan
+fails before registration. Public plan, pack, binding, and activation JSON
+contain configuration key names and typed target evidence, never raw
+configuration values, callback bodies, adapter objects, storage directories,
+or credentials. They are diagnostic manifests, not resumable installation
+payloads.
+
+Installation constructs bindings in topological order, runs selected
+conformance suites, and registers every contribution through rollback-aware
+Panel registries. A factory error, type mismatch, target-identity mismatch, or
+required conformance failure removes the parent pack and every contribution
+already installed in that transaction. Unloading the parent pack likewise
+removes its search, nested-plugin, and data-source contributions and restores
+replaced platform/data services. Plugin target collisions remain fail-closed;
+`replace` never silently swaps an existing nested plugin.
+
+The first-party Fulltext bridge converts bounded Dataphyre search results into
+typed `PanelSearchPage` values and isolates mapper/iteration failures as partial
+diagnostics. The Mailer bridge retains a durable filesystem inbox and delivery
+receipts while delegating the email channel to `MailerManager`; its manifest
+does not expose the state directory, resolver, message factory, provider
+configuration, or callbacks. The Access bridge registers only when
+`Dataphyre\Access\PanelAuth` is available. None of the three installs routes,
+credentials, identity, authorization policy, workers, indexes, provider
+accounts, or remote transports.
+
+`PanelAdapterConformanceCatalog::searchProvider()` is non-destructive.
+`notificationAdapter()` performs a reversible inbox lifecycle and is marked
+destructive, so adapter-pack installation runs it only when
+`allow_destructive_conformance=true` is explicit. Use that flag only against a
+disposable adapter namespace or isolated tenant. Keep
+`require_conformance=true` and `allow_skipped_conformance=false` for production
+activation unless an independently reviewed deployment policy requires a
+different gate.
+
+Authentication inventory and mutation surfaces are owner-bound. Self-service
+requests are scoped to the authenticated actor, and every factor, challenge,
+trusted-device, and session identifier is resolved through that scope so a
+foreign identifier is indistinguishable from a missing one. Targeting another
+user requires the operation-specific ability and a separate, audited
+`authentication.cross_user` decision. Authentication policy subjects expose
+the requested `target`, server-resolved `owner`, and referenced `id`; generated
+inventory actions preserve the authorized target user. Grant
+`authentication.cross_user` only to administrative roles whose primary
+identity policy already permits account recovery or security intervention.
+
+IAM complements, rather than replaces, Authentication, `PanelSecurityPolicy`,
+or `PanelTenantRegistry`. Authentication owns factors, challenges, trusted
+devices, and sessions; the host still owns primary identity and SSO. The IAM
+domain owns immutable tenant principal/service-account descriptors, versioned
+memberships, role and permission grants, service credential *metadata*, and a
+bounded tamper-evident audit chain. `PanelTenantRegistry` still resolves the
+active UI tenant; pass that resolved tenant to `iam()->scope()` for every
+request-facing read.
+
+IAM authorization is deliberately fail-closed. Every mutation requires an
+explicit tenant, actor, reason, idempotency key, and policy callback. Exact
+idempotent replays are fingerprint-bound and re-run the current policy before a
+receipt is returned. Request code must use `PanelScopedIamManager`; its tenant
+and actor cannot be replaced, and every read/list/audit operation is authorized.
+The unscoped manager read methods are trusted-internal APIs for already isolated
+maintenance processes. The default high-risk grant patterns are `iam.*`,
+`security.*`, and `tenant.owner`; matching grants require a distinct requester
+and acting approver unless that protection is explicitly disabled. Adding `*`
+to `high_risk_permissions` is an explicit choice to require two-person approval
+for every permission grant.
+
+When substituting a connected domain, replace its store, runner/manager, and
+related services together rather than leaving a default service bound to the
+old store.
+
+| Domain | Production contract and facade entry points |
+| --- | --- |
+| Platform UI | [`PanelPlatformManifest`](../Framework/Platform/PanelPlatformManifest.php) separates available, configured, and ready capabilities. [`PanelPlatformController`](../Framework/Http/PanelPlatformController.php) and [`PanelPlatformTemplate`](../Framework/Templates/PanelPlatformTemplate.php) expose guarded operations, workflow, automation, relation, notification, media, authentication, security, and developer pages. Use `controller()` and `templateClass()`. |
+| Operations | [`PanelOperationRecord`](../Framework/Operations/PanelOperationRecord.php), filesystem store, local queue, handler registry, runner, control, and data-job bridge provide persistent idempotent work, progress, checkpoints, retries, pause/resume/cancel, logs, and artifacts. Use `operationStore()`, `operationHandlers()`, `operationRunner()`, and `operationControl()`. |
+| Distributed operations | [`PanelAtomicLeasedOperationStore`](../Framework/Operations/PanelAtomicLeasedOperationStore.php), [`PanelPdoLeasedOperationStore`](../Framework/Operations/PanelPdoLeasedOperationStore.php), [`PanelOperationLease`](../Framework/Operations/PanelOperationLease.php), and [`PanelLeasedOperationRunner`](../Framework/Operations/PanelLeasedOperationRunner.php) provide at-least-once execution with expiring ownership, renewal, monotonic fencing, stale-worker rejection, deterministic recovery, token digests at rest, and bounded change feeds. The explicit-migration PDO adapter adds shared MySQL/PostgreSQL/SQLite durability, optimistic rows, hashed idempotency lookup, and skip-locked reservation without installing a connection, schema, service, or worker. Enable `distributed_operations`, then attach one cohesive graph through `distributedOperationStore()`, `distributedOperationHandlers()`, `distributedOperationRunner()`, and `distributedOperationControl()`. See the [distributed-operations guide](Dataphyre_Panel_Distributed_Operations.md) and run both operation-store conformance packs before activation. |
+| Distributed command fabric | [`PanelCommandFabric`](../Framework/Fabric/PanelCommandFabric.php) atomically binds its encrypted command journal, signed receipts, and tamper-evident event outbox. [`PanelPdoCommandFabricStore`](../Framework/Fabric/PanelPdoCommandFabricStore.php) adds explicit-migration MySQL/PostgreSQL/SQLite durability, bounded reset-aware metadata feeds, expiring subscriber leases, monotonic fences, token digests at rest, and cursor advancement atomically conditioned on the live fence. Delivery remains at least once and native handlers/projectors retain downstream idempotency responsibility; cross-database ACID and distributed exactly once are explicitly false. Inject it as `operations_os.fabric_store`, configure a process-specific subscriber worker and lease TTL, read the [distributed command-fabric guide](Dataphyre_Panel_Distributed_Command_Fabric.md), and run both command-fabric conformance packs before activation. |
+| Observability | [`PanelTelemetryRuntime`](../Framework/Observability/PanelTelemetryRuntime.php) composes an exporter, deterministic sampler, strict W3C propagator, lifecycle hub, and correlation bridge. Enable `observability`, then use `observability()`, `telemetryExporter()`, `telemetry()`, and `telemetryBridge()`. The bounded memory exporter is a reference/local sink; production deployments should inject their vendor or transport adapter and run `telemetryExporter()` conformance. |
+| State migrations | [`PanelMigrationDefinition`](../Framework/Migrations/PanelMigrationDefinition.php), registry, planner, integrity-bound plan, runner, report, [`PanelAtomicMigrationStore`](../Framework/Migrations/PanelAtomicMigrationStore.php), and [`PanelPdoMigrationStore`](../Framework/Migrations/PanelPdoMigrationStore.php) provide strict semantic/schema edges, dependency ordering, tenant scopes, dry-run preflight, bounded resumable batches, idempotency, fenced execution, backups, compensation, snapshot recovery, and redacted receipts. The explicit-migration PDO adapter adds independently locked MySQL/PostgreSQL/SQLite scope documents, same-connection handler/checkpoint transactions without unsafe handler replay, durable cross-node recovery, and a payload-free retained change feed. Enable `migrations`, optionally inject the exact host-owned store, then use `migrationStore()`, `migrationRegistry()`, `migrationRunner()`, `registerMigration()`, and `migrationPlan()`. See the [distributed-migrations guide](Dataphyre_Panel_Distributed_Migrations.md) and run the destructive conformance pack before activation. |
+| Filament resource migration | [`PanelFilamentSourceAnalyzer`](../Framework/Migrations/Filament/PanelFilamentSourceAnalyzer.php), [`PanelFilamentMigrationInventory`](../Framework/Migrations/Filament/PanelFilamentMigrationInventory.php), [`PanelFilamentMigrationPlan`](../Framework/Migrations/Filament/PanelFilamentMigrationPlan.php), and the preview-first CLI statically inventory Filament 3/4/5 sources, follow Filament 5 split schema/table companions, map verified literal resource/field/column declarations, and transactionally publish root-confined Panel resource drafts. Source files are never loaded or executed. Generated resources intentionally omit data, mutation, authorization, and tenancy adapters and always report `ready_to_activate=false`. See the [Filament migration guide](Dataphyre_Panel_Filament_Migration.md). |
+| Data sources | [`PanelDataSource`](../Framework/Data/PanelDataSource.php), query/result/cursor contracts, registry, array/callback/repository adapters, subscriptions, and [`PanelDataSourceResourceBridge`](../Framework/Data/PanelDataSourceResourceBridge.php) decouple resources from one ORM. The instance-owned registry validates and caches adapter capabilities at registration, supports provenance-aware contribution layers, and exposes exact checkpoint/restore for atomic plugin rollback; the root `data_sources` manifest uses those registration snapshots and never resolves a factory or executes adapter code. The [SQL/PDO guide](Dataphyre_Panel_SQL.md) covers the allowlisted compiler and signed keyset cursors. The [remote HTTP guide](Dataphyre_Panel_HTTP_Data_Source.md) covers the strict read-only POST/JSON adapter; its transport, credentials, DNS/proxy/egress policy, approved scope mapper, runtime, and immutable capability pin remain explicit host inputs. Use `dataSources()` and `registerDataSource()` only after attaching a platform whose `data.registry` service is ready. |
+| Data surfaces | [`PanelDataSurfaceRegistry`](../Framework/Data/Surface/PanelDataSurfaceRegistry.php) binds six collection surfaces and eight advanced DataCanvas surfaces to bounded, signed, tenant/principal-scoped window and interaction intents. Definition contributions are layered with provenance and exact checkpoint/restore; manifests use registration snapshots and never run adapter capability code. Attach only an explicitly secured registry with `useDataSurfaces()`, expose its framework-neutral endpoint with `dataSurfaceEndpoint()`, and see the [DataSurface guide](Dataphyre_Panel_Data_Surface.md). No permissive authorizer or signing key is synthesized. |
+| Realtime change streams | [`PanelRealtimeEndpoint`](../Framework/Realtime/PanelRealtimeEndpoint.php), signed connect/resume intents, bounded broker replay, reset semantics, framework-neutral SSE responses, and an optional Fetch-streamed client provide tenant/principal-bound at-least-once delivery. [`PanelPdoRealtimeAdapter`](../Framework/Realtime/PanelPdoRealtimeAdapter.php) adds explicit-migration MySQL/PostgreSQL/SQLite publication, retained replay, and distributed hashed connect-intent consumption. [`PanelRedisRealtimeAdapter`](../Framework/Realtime/PanelRedisRealtimeAdapter.php) adds Redis 6.2+ Streams, cluster-slot-safe fixed scripts, exact retention, integrity-checked replay, distributed nonce consumption, and callback/phpredis/Predis transports while leaving durability as an honest host-configured claim. The host must register the exact broker, signer, and endpoint graph, derive trusted subscriptions, authorize each open, and own connections/credentials, persistence/failover policy, schema or namespace rollout, the route, origin/CSRF policy, rate limits, timeouts, emitter, and infrastructure operations. See the [Realtime guide](Dataphyre_Panel_Realtime.md). |
+| Workflows | [`WorkflowEngine`](../Framework/Workflows/WorkflowEngine.php) and memory/filesystem stores provide guarded transitions, roles, drafts, assignments, SLA checks, quorum approvals, optimistic versions, idempotency, compensation, rollback, and hash-chained history. Use `workflowEngine()` and `registerWorkflow()`. |
+| Automation | [`AutomationExecutor`](../Framework/Automation/AutomationExecutor.php), action registry, schemas, policies, risk/confirmation, dry runs, approval handoffs, redacted receipts, idempotency, and rollback form the machine-readable action graph. Use `automationRegistry()`, `automationExecutor()`, and `registerAutomation()`. |
+| Agent-safe workflows | [`PanelAgentRuntime`](../Framework/Agents/PanelAgentRuntime.php) validates bounded structured proposals against an instance-owned catalog, re-evaluates host policy, verifies signed plan/approval intents and host-owned confirmation evidence, reserves idempotent execution, and records redacted hash-chained receipts. [`PanelAtomicAgentWorkflowStore`](../Framework/Agents/PanelAtomicAgentWorkflowStore.php) provides a crash-safe cross-process local adapter. [`PanelAgentWorkflowOperationBridge`](../Framework/Agents/PanelAgentWorkflowOperationBridge.php) adds optional at-least-once leased-worker delivery using a non-secret queued commitment and a host-owned secure resolver; agent-store idempotency converges lease-loss retries without repeating a completed executor call. The host still owns the model, identity, policy, confirmation ceremony, keyring, routes, downstream executors, secure pending-material repository, worker process, state roots, and remote multi-node adapters. Register one cohesive `agents.*` graph and see the [agent-safe workflow guide](Dataphyre_Panel_Agent_Safe_Workflows.md). |
+| Authentication | [`PanelAuthenticationManager`](../Framework/Authentication/PanelAuthenticationManager.php), [`PanelAuthenticationAccess`](../Framework/Authentication/PanelAuthenticationAccess.php), and [`PanelScopedAuthenticationManager`](../Framework/Authentication/PanelScopedAuthenticationManager.php) provide encrypted memory/filesystem stores, TOTP enrollment and verification, recovery codes, one-time step-up challenges, trusted devices, session revocation, non-enumerating object ownership, and explicitly audited cross-user elevation. Use `authentication()`; the host still owns primary identity, password, SSO, and administrative recovery policy. |
+| Tenant IAM | [`PanelIamManager`](../Framework/Iam/PanelIamManager.php), [`PanelScopedIamManager`](../Framework/Iam/PanelScopedIamManager.php), and memory/atomic stores provide tenant-bound principals, service accounts, versioned memberships, grants, suspension/restoration/revocation, credential-metadata rotation, optimistic revisions, policy-rechecked idempotency, two-person high-risk grants, and a rotating-key HMAC audit chain. Enable `iam`, then use `iam()` and request-facing `iam()->scope($tenantId, $actorId)`. Remote stores should implement `PanelIamStore` atomically and pass its destructive conformance pack. |
+| Studio composition and trusted materialization | [`PanelStudioManager`](../Framework/Studio/PanelStudioManager.php), [`PanelStudioSchemaRegistry`](../Framework/Studio/PanelStudioSchemaRegistry.php), [`PanelStudioMaterializer`](../Framework/Studio/PanelStudioMaterializer.php), and memory/filesystem stores provide tenant/principal-scoped immutable drafts, typed schema validation, actual callback-free Panel builders, artifact-bound approval/publication/rollback, optimistic/idempotent changes, impact plans, rotating preview capabilities, hash-chained history, and a portable reset feed. Enable `studio`, then use `studio()`, `studioRegistry()`, `studioMaterializer()`, and `studioStore()`. The compiler's portable envelope remains non-executable by itself; trusted execution requires the registry/materializer path. Connected stores should pass `studioStore()` conformance. |
+| Studio editor, signed collaboration transport, and visual runtime | [`PanelStudioEditor`](../Framework/Studio/Editor/PanelStudioEditor.php) adds an accessible SSR/no-JS workspace with progressive keyboard/pointer reordering, typed property controls, undo/redo, optimistic saves, and conflict handling. The optional [`PanelStudioCollaborationConnector`](../Framework/Studio/Connectors/PanelStudioCollaborationConnector.php) projects policy-guarded threads, comments, assignments, watches, presence, typing, and scoped IAM identities while deriving actor and document scope exclusively from the trusted editor session. [`PanelStudioCollaborationIntentSigner`](../Framework/Studio/Collaboration/PanelStudioCollaborationIntentSigner.php), [`PanelStudioCollaborationTransport`](../Framework/Studio/Collaboration/PanelStudioCollaborationTransport.php), and [`PanelStudioCollaborationEndpoint`](../Framework/Studio/Collaboration/PanelStudioCollaborationEndpoint.php) add rotating tenant/document/principal-bound browser intents, visibility-aware delta polling, CSRF-protected state changes, host-custodied presence, safe SSR fragment convergence, and single-attempt mutations. The opt-in [`PanelStudioVisualRuntime`](../Framework/Studio/Visual/PanelStudioVisualRuntime.php) renders unsaved authorized sessions, signed revisions, and published revisions as actual Panel surfaces in bounded empty-permissions frames. It strips executable/external document assets and embeds only allow-listed capability-scoped first-party Panel CSS, so previews remain styled without `allow-same-origin`. Enable `studio.visual_runtime`, then use `renderStudioVisualPreview()` or the runtime's signed/published methods. These adapters register no route and supply no authentication, host authorization policy, CSRF issuance, signing-key store, checkpoint store, presence-token store, or identity authority; those remain host-owned. The manager reports `visual_editor_runtime=true` only for an exact attached adapter. See the [Studio editor guide](Dataphyre_Panel_Studio_Editor.md). |
+| Notifications | [`PanelFilesystemNotificationAdapter`](../Framework/Notifications/PanelFilesystemNotificationAdapter.php) and [`PanelNotificationActivityStore`](../Framework/Notifications/PanelNotificationActivityStore.php) provide atomic inboxes, delivery receipts, cursors, preferences, subscriptions, watches, comments, mentions, assignments, and digests. Use `notificationAdapter()` and `notificationActivity()`. |
+| Media | [`PanelMediaManager`](../Framework/Media/PanelMediaManager.php) composes a `PanelMediaDisk`, transactional `PanelSnapshotStore`, resumable checksummed uploads, fail-closed scanner/transformer pipeline, quarantine, variants, signed private delivery, cleanup, catalogue, and change feed. [`PanelDataphyreStorageMediaDisk`](../Framework/Media/PanelDataphyreStorageMediaDisk.php) routes bounded verified streams through a named Dataphyre Storage disk, confines a private prefix, redacts provider failures, and compensates failed non-atomic replacements without claiming CAS or atomic rename. Use `media()` locally or activate the optional `storage_media` first-party adapter-pack binding for connected Storage infrastructure. |
+| Localization | [`PanelLocalizationRuntime`](../Framework/Localization/PanelLocalizationRuntime.php) combines file/package catalogue loading, namespaces, fallback chains, ICU messages, pluralization, number/currency/date formatting, locale metadata, and RTL attributes. Use `localization()` and `apply()` it to a `PanelInstance`. |
+| Relations | [`PanelRelationWorkspace`](../Framework/Relations/PanelRelationWorkspace.php) and `PanelRelationAdapter` provide authorized bulk attach/detach/reorder/pivot commands, idempotency, breadcrumbs, history, and undo; [`RelationManager`](../Framework/Resources/RelationManager.php) also covers associate/dissociate resource operations. Use `arrayRelation()` and `relation()` or supply another adapter. |
+| Preferences | [`PanelWorkspacePreferences`](../Framework/Preferences/PanelWorkspacePreferences.php) and memory/filesystem stores provide versioned appearance, density, locale/direction, saved views, recents, pins, notification settings, device overrides, conflicts, history, import/export, and change feeds. Use `preferenceStore()` and `preferences($userId, $profile, $device)`. |
+| Collaboration | [`PanelCollaborationManager`](../Framework/Collaboration/PanelCollaborationManager.php) and memory/filesystem stores provide policy-guarded threads, comments, mentions, assignments, watches, subscriptions, presence leases, typing, change feeds, and hash-chained receipts. Use `collaborationStore()` and `collaboration()`. |
+| Security | [`PanelSecurityPolicy`](../Framework/Security/PanelSecurityPolicy.php), context, decisions, impersonation sessions, permission simulation, and a permission-hardened hash chain with optional HMAC tamper evidence cover hierarchical permissions, tenant boundaries, MFA/trust gates, and scoped impersonation. Use `securityContext()`, `securityPolicy()`, and `securityAudit()`. |
+| Extensions | [`PanelExtensionRegistry`](../Framework/Extensions/PanelExtensionRegistry.php), descriptor, runtime, and optional client assets provide dependency/version ordering, declared assets/capabilities, scoped hooks, events, and browser lifecycle hooks. Use `extensions()`, `extensionRuntime()`, `registerExtension()`, and `onExtension()`. |
+| Application SDK compiler | [`PanelSdkContract`](../Framework/Sdk/PanelSdkContract.php), [`PanelSdkProtocolCatalog`](../Framework/Sdk/PanelSdkProtocolCatalog.php), [`PanelSdkGenerator`](../Framework/Sdk/PanelSdkGenerator.php), PHP/TypeScript target compilers, integrity-bound packages, and [`PanelSdkCompatibilityReport`](../Framework/Sdk/PanelSdkCompatibilityReport.php) turn explicitly supplied host routes into deterministic clients for DataSurface interactions, command dispatch, event envelopes, Studio artifacts, and custom operations. The closed schema grammar validates both sides with bounded runtime parity; compatibility is directional and enforces semantic version bumps. Use `PanelDeveloperToolkit::sdkContract()`, `sdkGenerator()`, and `sdkCompatibility()`. Panel does not register the routes, write generated files, open transport, or embed identity, CSRF, credentials, keys, retries, or telemetry. See the [application SDK guide](Dataphyre_Panel_Application_SDK.md). |
+| Developer and quality | [`PanelDeveloperToolkit`](../Framework/Development/PanelDeveloperToolkit.php) exposes manifest inspection/diffs, resource blueprints, the default 144-case responsive/accessibility matrix, and CLI JSON output. Generated PHP validates namespace and class identifiers before interpolation, including schema-qualified table names; blueprint metadata is bounded JSON-only data, so objects, closures, non-finite numbers, and `__set_state` expressions cannot enter generated source. Quality matrices canonicalize associative single values and reject empty, unsafe, oversized, non-JSON, or combinatorially over-budget axes. [`PanelQualityGate`](../Framework/Testing/PanelQualityGate.php) plus optional client audits cover semantics, contrast, target size, dialogs, overflow, forced colors, and reduced motion. Use `development()` or `dev/tools/panel_developer.php`. |
+| Reactor widget bridge | [`PanelReactorWidgetRuntimeAdapter`](../Framework/Bridges/Reactor/PanelReactorWidgetRuntimeAdapter.php) and [`PanelReactorWidgetController`](../Framework/Bridges/Reactor/PanelReactorWidgetController.php) map an explicitly bound Panel widget definition to one registered Reactor component with scope-bound snapshots, CAS rotation, and exact revocation. They install no route, authentication, CSRF/origin policy, version store, transport authorization, or business idempotency. See the [Reactor widget bridge guide](Dataphyre_Panel_Reactor_Widgets.md). |
+| Reactor transactions | [`ReactorTransactions`](../../reactor/Framework/Transactions/ReactorTransactions.php) is a separate Reactor facade for optimistic patches, exact rollback, compare-and-swap, conflict strategies, idempotency, offline queues, retries, atomic persistence, event streams, HTTP/SSE, and browser replay. |
+
+In distributed mode, `PanelOperationControl::recoverStale()` delegates to the
+leased store's expiry recovery so lease ownership and operation state cannot
+diverge. Heartbeat-timeout recovery remains the local-store fallback only;
+workers also recover expired leases before reserving a requested operation.
+
+### Panel Studio portable envelope and trusted materialization
+
+Studio separates safe, data-only composition from executable application code.
+`PanelStudioDefinition` accepts one allow-listed component tree, requires unique
+sibling keys, and recursively rejects objects, resources, callables, raw HTML,
+PHP, sensitive property names, embedded credential fragments, non-finite
+numbers, invalid UTF-8, and values beyond its depth/item/string/document bounds.
+`PanelStudioCompiler` preserves that deterministic framework-neutral portable
+envelope and never emits or evaluates PHP. `PanelStudioManager::saveDraft()`
+then requires the instance's typed registry and audited materializer to validate
+the same definition and bind an actual-builder contract before it stores a new
+draft:
+
+```php
+use Dataphyre\Panel\PanelStudioDocument;
+
+$document=PanelStudioDocument::make(
+	'tenant-7',
+	'orders-workspace',
+	'Orders workspace'
+);
+
+$saved=$platform->studio()->saveDraft(
+	$document,
+	[
+		'kind'=>'page',
+		'key'=>'orders',
+		'properties'=>['label'=>'Orders'],
+		'children'=>[
+			[
+				'kind'=>'table',
+				'key'=>'orders-table',
+				'properties'=>['density'=>'normal'],
+				'children'=>[
+					[
+						'kind'=>'column',
+						'key'=>'id',
+						'properties'=>['label'=>'Order ID','sortable'=>true],
+						'children'=>[],
+					],
+				],
+			],
+		],
+	],
+	0,                         // expected revision
+	$requestIdempotencyKey,
+	'operator-42'
+);
+
+$preview=$platform->studio()->preview(
+	'tenant-7',
+	'orders-workspace',
+	$saved->revision(),
+	'operator-42',
+	300
+);
+
+// The token is a bearer capability. Keep it out of logs and manifests.
+$token=$preview->token();
+
+$runtime=$platform->studio()->materialize(
+	'tenant-7',
+	'orders-workspace',
+	'operator-42',
+	$saved->revision()
+);
+
+// The root is a PanelStudioPageBundle for page definitions. It can be
+// registered with a PanelInstance or PanelManager at the trusted host boundary.
+$runtime->root()->register($panel);
+```
+
+The default registry covers all 30 envelope kinds: page, form/section/field,
+table/column/filter/view, show and first-class infolist surfaces,
+infolist-entry/section, board/board-column, DataSurface,
+workflow/state/transition, action/group, widget/grid, tabs, toolbar, and
+navigation contracts. Properties have explicit JSON types, required/default/
+nullable rules, enums, bounds, and patterns; child kinds and cardinalities are
+checked with path-addressed diagnostics. Identity is sibling-scoped by default,
+so two forms or tables may reuse field/column keys while duplicates inside one
+parent remain invalid. Registry manifests preserve schema/provider versions and
+a deterministic fingerprint. Conflicts reject by default; replacement requires
+the same provider and a higher component-schema version.
+
+The materializer uses a hard-coded callback-free mapping to Panel builders. It
+does not accept user class names, PHP, callbacks, raw HTML, or stored executable
+objects. `PanelStudioMaterialization` keeps runtime builder objects separate
+from its JSON manifest, indexes deterministic paths/identities, and carries
+`PanelStudioBuilderCollection` presentation bindings for grid, brick, and
+masonry-capable filter, table-view, widget, and navigation collections.
+`PanelStudioPageBundle` exposes forms, tables, DataSurface definitions,
+workflow definitions, infolists, board resources, action groups, and
+collections alongside its host-registerable `PanelPage`.
+`registerResources()` registers board resources explicitly; `registerAll()`
+can also receive an explicitly configured DataSurface registry and workflow
+engine, then registers those definitions, board resources, and the page in one
+host-bound operation. `registerDataSurfaces()` and `registerWorkflows()` expose
+the same boundaries separately.
+Studio `action` nodes create declarative `Action` builders only. They do not
+install or execute operator mutation handlers; applications must bind any real
+mutation behind their normal authorization, validation, CSRF, idempotency, and
+audit boundary.
+
+Studio `board` nodes materialize to real `Resource` builders and
+`board_column` nodes materialize to typed `PanelStudioBoardColumn` definitions.
+Lane/status metadata and brick, grid, or masonry presentation are immediately
+usable as a read-only board. Studio never installs a mutation callback. To
+enable moves, the trusted host retrieves the materialized resource, attaches
+its normal `transitionUsing()` or `saveUsing()` handler, and registers that
+derived resource:
+
+```php
+$board=$runtime->root(); // Resource when board is the definition root
+
+// Safe without a handler: lanes and cards render, but cannot be dragged.
+$panel->register($board);
+
+// Mutation authority remains application-owned.
+$panel->register($board->transitionUsing($authorizedTransitionHandler));
+```
+
+Every read or mutation crosses `PanelStudioAuthorization`; the platform default
+is deny. Saving uses an expected revision and a fingerprint-bound idempotency
+receipt. Approval, publication, and rollback append immutable revisions rather
+than mutating prior records. When `required_publish_approvals` is positive, the
+publisher cannot satisfy their own approval requirement. The history is an
+ordered SHA-256 chain that detects corruption and scope/revision reordering; it
+is described as tamper-evident, not as a substitute for a separately anchored
+audit signature.
+
+`PanelInMemoryStudioStore` and `PanelFilesystemStudioStore` implement the same
+`PanelStudioStore` contract. A stale cursor returns a
+`studio_state_envelope_v1` snapshot with `schema`, `sequence`, `committed_at`,
+`payload`, and `event`. That payload is the full trusted JSON-only document
+state, so expose `changesSince()` only behind the same tenant/principal host
+boundary as other Studio reads. Database-backed adapters must preserve atomic
+optimistic revisions, idempotent receipts, revision ordering, and the reset
+envelope, then pass `PanelAdapterConformanceCatalog::studioStore()` with explicit
+destructive-probe authority.
+
+Every new revision and receipt binds a `PanelStudioArtifact`: source and
+normalized definition hashes, registry version/fingerprint, compiler and
+materializer versions/fingerprints, plus the symbolic builder-contract hash.
+Approval and publication fail closed when the active registry or implementation
+changes. Rollback copies the target publication's artifact instead of silently
+recompiling it. Version-one stored revisions remain readable as
+`unbound_legacy`, but cannot be approved, published, or used as rollback targets
+until explicitly re-saved through the trusted manager.
+
+The portable compiler still validates only the envelope and JSON/security
+bounds; callers must not mistake `compile()` output for executable validation.
+Registry contract version 3 and materializer version 3 support all 30 envelope
+kinds. Their manifests report an empty `portable_only_envelope_kinds` list and
+`complete_definition_kind_coverage=true`. The `show` kind remains compatible;
+`infolist` now has its own executable schema identity and emits the same typed
+`Infolist` builder family. Property names such as `view`, `template`, `class`,
+and `html` remain forbidden.
+
+The version change intentionally changes registry and materializer
+fingerprints. Existing stored revisions remain immutable and readable, but an
+artifact bound to the earlier contract fails closed as stale. Re-save the
+definition through `PanelStudioManager`, repeat its normal independent approval
+and signed-preview flow, then publish the newly bound revision. A formerly
+portable board or infolist needs no JSON shape rewrite; the explicit re-save is
+the migration boundary.
+The first-party route-free `PanelStudioEditor` exposes that trusted composition
+core through accessible SSR and progressive enhancement, but it does not turn
+the manager into an installed application controller. The optional
+`PanelStudioVisualRuntime` maps all 30 trusted kinds to actual Panel rendering
+surfaces for unsaved authorized sessions, signed saved revisions, and published
+revisions. It uses recursively redacted bounded JSON datasets, empty-permissions
+sandboxed frames, strict byte/surface limits, stable content-free failures, and
+content-bound conditional responses. DataSurface previews use the supplied
+redacted preview dataset and never execute the configured source. Workflow
+previews expose structural reachability and approval information without
+executing guards, assignments, compensators, or mutations.
+`PanelStudioManager::manifest()` reports
+`visual_editor_runtime=true` only when that exact runtime is attached; the
+default remains false. The root `studio_editor` manifest reports editor/runtime
+availability and `routes_registered=false`. A host must still provide the
+authorized action and preview endpoints, identity, CSRF, transport, and trusted
+server-side checkpoint storage described in the
+[Studio editor guide](Dataphyre_Panel_Studio_Editor.md).
+
+### Tenant IAM control plane
+
+Create mutation envelopes at the outer authorization boundary. The raw
+idempotency key is hashed immediately and never appears in receipts, manifests,
+audit events, or stored state:
+
+```php
+use Dataphyre\Panel\PanelIamMutation;
+use Dataphyre\Panel\PanelIamPrincipal;
+
+$iam=$platform->iam();
+$principal=PanelIamPrincipal::make('user-42', 'Avery Stone', [
+	'email'=>'avery@example.test',
+]);
+
+$iam->createPrincipal(
+	PanelIamMutation::make(
+		'principal.create',
+		'tenant-7',
+		'principal',
+		'user-42',
+		'operator-42',
+		'Provision approved employee access.',
+		$requestId,
+	),
+	$principal,
+);
+
+$iam->grant(
+	PanelIamMutation::make(
+		'membership.grant',
+		'tenant-7',
+		'principal',
+		'user-42',
+		'security-approver-9',
+		'Approve tenant administration duties.',
+		$grantRequestId,
+		0,
+		[
+			'requester_id'=>'operator-42',
+			'approver_id'=>'security-approver-9',
+		],
+	),
+	roles:['tenant-admin'],
+	permissions:['iam.membership.read'],
+);
+
+$requestIam=$iam->scope('tenant-7', 'operator-42');
+$membership=$requestIam->membership('principal', 'user-42');
+```
+
+Treat service-account credentials like passwords: generate and deliver raw
+material outside Panel. `rotateServiceCredential()` accepts only bounded safe
+metadata such as key ID, version, algorithm, provider, state, rotation/expiry
+times, and last four characters. Credential-shaped keys and values are rejected
+recursively from general metadata. Stores receive one tenant state per
+transaction and must commit the new record revision, receipt, and audit event
+atomically. `PanelMemoryIamStore` is process-local reference behavior;
+`PanelAtomicIamStore` adds locked crash-safe filesystem snapshots. Distributed
+deployments should provide a database or broker implementation with equivalent
+atomicity and run the IAM conformance pack in a disposable tenant before use.
+
+### Transactional state and data migrations
+
+Panel migrations are executable framework definitions, not install-time file
+scripts. A definition owns one monotonic edge between strict semantic and state
+schema versions. Its scope and tenant mode prevent a plan made for shared state
+from being reused for a tenant, or the reverse. Dependencies must already be
+applied or appear earlier in the same contiguous version chain.
+
+```php
+use Dataphyre\Panel\PanelMigrationBatch;
+use Dataphyre\Panel\PanelMigrationContext;
+use Dataphyre\Panel\PanelMigrationDefinition;
+use Dataphyre\Panel\PanelMigrationVersion;
+
+$normalizeOrders=PanelMigrationDefinition::make(
+	'orders.normalize_customer_email',
+	'orders',
+	PanelMigrationVersion::make('2.3.0', 7),
+	PanelMigrationVersion::make('2.4.0', 8),
+	static function(PanelMigrationContext $context): PanelMigrationBatch {
+		$state=$context->data();
+		$offset=(int)($context->cursor() ?? 0);
+		$limit=$context->limit();
+		$end=min(count($state['orders']), $offset + $limit);
+
+		for($index=$offset; $index<$end; $index++){
+			$state['orders'][$index]['email_before_normalization']=
+				$state['orders'][$index]['email'];
+			$state['orders'][$index]['email']=strtolower(
+				trim((string)$state['orders'][$index]['email'])
+			);
+		}
+
+		return $end<count($state['orders'])
+			? PanelMigrationBatch::more($state, $end, $end-$offset)
+			: PanelMigrationBatch::complete($state, $end-$offset);
+	},
+	[
+		'batch_size'=>500,
+		'tenant_mode'=>'required',
+		'capabilities'=>['orders.write'],
+		'preflight'=>static fn(PanelMigrationContext $context): array => [
+			'ok'=>isset($context->data()['orders']),
+			'issues'=>['orders state is unavailable'],
+		],
+		'down'=>static function(PanelMigrationContext $context): PanelMigrationBatch {
+			$state=$context->data();
+			$offset=(int)($context->cursor() ?? 0);
+			$end=min(count($state['orders']), $offset + $context->limit());
+
+			for($index=$offset; $index<$end; $index++){
+				$state['orders'][$index]['email']=
+					$state['orders'][$index]['email_before_normalization'];
+				unset($state['orders'][$index]['email_before_normalization']);
+			}
+
+			return $end<count($state['orders'])
+				? PanelMigrationBatch::more($state, $end, $end-$offset)
+				: PanelMigrationBatch::complete($state, $end-$offset);
+		},
+	]
+);
+
+$platform->registerMigration($normalizeOrders);
+$plan=$platform->migrationPlan(
+	'orders',
+	$tenantId,
+	PanelMigrationVersion::make('2.4.0', 8)
+);
+
+$preview=$platform->migrationRunner()->execute(
+	$plan,
+	$operator,
+	['orders.write'],
+	dryRun: true
+);
+
+$report=$platform->migrationRunner()->execute(
+	$plan,
+	$operator,
+	['orders.write'],
+	maxBatches: 100
+);
+
+if($report->status()==='running'){
+	$report=$platform->migrationRunner()->resume(
+		$plan,
+		$operator,
+		['orders.write']
+	);
+}
+```
+
+Planning captures the exact state revision/digest and registry digest. Execution
+fails closed when either changes. A plan also carries every definition digest,
+required capability, and version edge in stable order. The runner evaluates the
+`panel.migrations.execute` authorization hook, capability grants, and all
+preflight callbacks before acquiring a lease. `dryRun: true` never calls an up
+handler or writes state. A missing authorizer denies execution and rollback;
+enabling the optional platform domain without `migrations.authorize` remains
+useful for inspection and planning but does not grant mutation authority.
+
+Trusted installers and isolated maintenance processes that already enforce an
+equivalent outer security boundary may explicitly clone a runner with
+`allowTrustedExecution()`. The original remains default-deny, and
+`manifest()['authorization']` exposes whether an authorizer or the trusted mode
+is active. Do not place the trusted clone in a request container, share it with
+untrusted jobs, or treat it as a replacement for tenant-aware authorization.
+Rollback uses the separate `panel.migrations.rollback` ability. Execute and
+rollback capability grants are normalized through the same safe identifier
+contract before policy checks.
+
+Each handler receives only one bounded batch and must return
+`PanelMigrationBatch`. The adapter commits the returned state, progress cursor,
+checkpoint, receipt, and new integrity digest in the same fenced transaction.
+Stopping at `maxBatches` intentionally leaves a resumable run. Replaying the
+same plan reuses its idempotency key and completed receipt; a failed or
+lease-expired run resumes from its last committed checkpoint. Expired leases
+are recovered as `paused`, and a later worker receives a larger fencing number.
+Raw bearer proofs are held by the worker only and stored as SHA-256 digests.
+
+The local adapter creates an integrity-checked pre-run backup. `rollback()`
+invokes completed and partially applied `down` handlers in reverse order. When
+a definition has no compensation handler, or compensation fails, the runner can
+atomically restore that backup. Disable snapshot fallback only when the host has
+an independently tested recovery procedure. Reports serialize status,
+checkpoints, state digests, and bounded receipts; state data, actor objects, and
+bearer proofs are excluded, and credential-shaped diagnostics are recursively
+redacted. Checkpoints and receipts are sanitized before persistence; keep
+credentials in the host's secret manager, never in a migration cursor or
+checkpoint. Pre-run backups necessarily contain the migrated state, so protect
+and encrypt `state_root` according to the same policy as the source database.
+
+`PanelMigrationStore` is the adapter contract for database and broker hosts. An
+implementation must provide one exclusive lease per scope/tenant, monotonic
+fences, atomic handler-plus-checkpoint commits, optimistic state digests,
+idempotent begin/replay, durable backups, compensation or restore, and expiry
+recovery. Do not run a handler outside the transaction and persist its cursor
+later: that breaks exactly the crash boundary the contract exists to protect.
+Run `PanelAdapterConformanceCatalog::migrationStore()` against a disposable
+namespace with `allow_destructive => true` before activation.
+
+`PanelPdoMigrationStore` is the first-party shared-SQL implementation. Inject it
+through `migrations.store`; `PanelPlatform` never creates its connection or
+schema. Handler-side SQL is atomic with its checkpoint only when it uses the
+exact constructor PDO connection, and handler transactions are deliberately not
+replayed after ambiguous database failures. Its scope documents include current
+state and restorable backups, while its global change feed remains payload-free.
+See [Dataphyre_Panel_Distributed_Migrations.md](Dataphyre_Panel_Distributed_Migrations.md)
+for schema rollout, topology, retention, encryption, reset, and operational
+responsibilities.
+
+Published migrations are immutable. Never change the versions, dependencies,
+tenant mode, batch semantics, or handler meaning under an existing migration
+ID. Add a new edge instead. To retire an unshipped or compatibility-only edge,
+set `deprecated_by` and non-empty `deprecation_guidance`; manifests then expose
+the replacement without executing or serializing callbacks. Re-plan after any
+registry, target-version, tenant, or state change. Existing ad hoc migration
+scripts should first be wrapped as a definition whose `from` version matches the
+last independently verified state, dry-run in each tenant, and only then be
+removed after its completed receipts and backup retention satisfy host policy.
+
+### Typed query expressions and nested-resource scope
+
+`PanelDataQuery` uses a versioned immutable expression tree while preserving the
+historical `where()`, `orWhere()`, `filters()`, `sort()`, `filterList()`, and
+`sortList()` APIs. New integrations should build explicit nodes so grouping and
+nested-resource intent cannot be lost in flat arrays:
+
+```php
+use Dataphyre\Panel\PanelDataQuery;
+use Dataphyre\Panel\PanelQueryBetween;
+use Dataphyre\Panel\PanelQueryComparison;
+use Dataphyre\Panel\PanelQueryGroup;
+use Dataphyre\Panel\PanelQueryRelation;
+use Dataphyre\Panel\PanelQuerySort;
+use Dataphyre\Panel\PanelQueryUrlCodec;
+
+$expression=PanelQueryGroup::all(
+	PanelQueryComparison::make('status', 'eq', 'open'),
+	PanelQueryBetween::make('total', 100, 500),
+	PanelQueryRelation::make(
+		'items',
+		PanelQueryComparison::make('sku', 'starts_with', 'EU-')
+	)
+);
+
+$query=PanelDataQuery::make()
+	->whereExpression($expression)
+	->sortBy(PanelQuerySort::make('created_at', 'desc', 'last'));
+
+$queryParameters=PanelQueryUrlCodec::toQuery($query); // dp_query=<versioned state>
+$restored=PanelQueryUrlCodec::fromQuery($queryParameters);
+```
+
+The public nodes are `PanelQueryGroup`, `PanelQueryComparison`,
+`PanelQueryNull`, `PanelQueryBetween`, `PanelQueryIn`, and
+`PanelQueryRelation`. `PanelQueryPath` validates field paths, and
+`PanelQuerySort` validates direction and explicit `native`, `first`, or `last`
+null placement. Their `JsonSerializable` output has a fixed key order;
+`PanelQueryExpressionCodec` accepts the same manifests and produces normalized
+nodes.
+
+Every data-source query is checked against `PanelQueryCapabilities` before an
+adapter callback or repository method runs. Adapters declare supported
+operators, AND/OR grouping, relation depth, sorting, and null-placement modes.
+An unsupported request throws `PanelUnsupportedQueryException`; adapters must
+not silently drop predicates or downgrade a nested query. The built-in array,
+callback, and repository adapters advertise the v2 contract. Restrictive
+callback/repository adapters should override `operators`, `groups`,
+`relations`, `relation_depth`, `sorts`, and `sort_nulls` in their capability
+map.
+
+Relation predicates are explicit instead of inferred from dotted field names.
+When a query crosses `PanelDataSourceResourceBridge`, every relation hop must be
+declared by the current `Resource`, pass `RelationManager::can('view')`, resolve
+its `relatedResource()`, and pass that resource's `view_any` policy. The bridge
+then injects the related resource's required tenant field into the nested
+expression. Missing tenant context, unknown relations, unresolved resources,
+and permission failures throw `PanelQueryScopeException` before the adapter is
+called. The resulting `nested_scope` metadata is a public
+`PanelQueryScopeManifest` audit DTO.
+
+`PanelQueryUrlCodec` is transport encoding, not authorization or a signature.
+Its URL state deliberately excludes tenant, authorization, metadata,
+aggregates, and cursor values. The server derives protected scope from the
+current `PanelRequest` and repeats capability and nested-resource authorization
+checks after decoding.
+
+For database-backed resources, `PanelSqlDataSource` and `PanelPdoDataSource`
+compile this same typed tree through an immutable `PanelSqlSchema`; requests
+cannot provide raw SQL, tables, columns, joins, or parameters. SQL access is
+deny-by-default, tenant requirements fail closed, authorization callbacks may
+return only `true`, `false`, or a typed expression, and every continuation is a
+rotating-key HMAC keyset cursor bound to the effective query and security
+scope. See [Dataphyre Panel SQL and PDO data sources](Dataphyre_Panel_SQL.md)
+for configuration, null semantics, relation behavior, key rotation, limits,
+and the real SQLite conformance gate.
+
+For a server-owned remote service, `PanelHttpDataSource` implements the same
+read contract over an exact, bounded POST/JSON protocol. An immutable definition
+pins capabilities and the endpoint, a required mapper projects only approved
+tenant/principal authorization scope, and local HMAC envelopes bind opaque
+upstream cursors to the query, scope, definition, and key rotation. Panel does
+not bundle an HTTP client, accept request-selected URLs or headers, discover
+capabilities, or supply credentials, DNS/proxy/egress policy, inbound routes,
+or distributed transactions. See the
+[remote HTTP data-source guide](Dataphyre_Panel_HTTP_Data_Source.md).
+
+#### Legacy filter migration
+
+Legacy filter lists and associative maps remain accepted through Dataphyre 2.x:
+
+```php
+PanelDataQuery::fromArray([
+	'filters'=>[
+		['field'=>'status', 'operator'=>'eq', 'value'=>'open', 'boolean'=>'and'],
+	],
+]);
+
+PanelQueryUrlCodec::legacy(['filters'=>['status'=>'open'], 'sort'=>'id']);
+```
+
+They are deprecated for new adapters as of query contract 2.0 and are planned
+for removal from public URL input in 3.0. Existing fluent calls are not
+deprecated: they build the same typed tree internally and still expose a flat
+compatibility projection when the expression can be represented without
+losing parentheses. Migrate stored URLs by decoding the legacy state once and
+re-encoding it with `PanelQueryUrlCodec::encode()`.
+
+### Vendor-neutral observability and correlation
+
+Panel observability is instance-owned and opt-in. `PanelTelemetrySignal` defines
+versioned, bounded envelopes for traces, spans, events, and measurements.
+`PanelTelemetryHub` owns explicit span lifecycle, status/error recording,
+deterministic trace-id sampling, current-scope correlation, exporter isolation,
+and secret-free manifests. Export failures are counted and swallowed so an
+unavailable monitoring backend cannot fail a Panel request or worker. Raw
+exception messages, stacks, form/query values, tokens, and credentials are not
+put into telemetry; errors carry type, numeric code, and a fingerprint of the
+sanitized message.
+
+```php
+use Dataphyre\Panel\PanelTelemetryRuntime;
+
+$runtime=PanelTelemetryRuntime::fromConfig([
+	'exporters'=>[$otlpExporter, $auditStreamExporter],
+	'sample_ratio'=>0.25,
+	'sampling_seed'=>'orders-panel',
+]);
+
+$result=$runtime->bridge()->request(
+	$request,
+	fn($request, $context)=>$ordersController($request)
+);
+
+$operationOptions=$runtime->bridge()->operationOptions([], $runtime->hub()->current());
+$instrumentedHandler=$runtime->bridge()->operationHandler($ordersExportHandler);
+```
+
+`PanelTelemetryPropagator` accepts lower/mixed-case W3C `traceparent`, validates
+current and forward-compatible versions, emits version `00`, and treats an
+invalid `tracestate` independently from a valid trace parent. `baggage` uses a
+documented defensive subset: whole entries only, 8 KiB total, 32 entries,
+bounded decoded values, valid percent encoding, duplicate removal, and removal
+of credential-shaped keys or redacted values. Baggage and tracestate are
+untrusted correlation hints, never identity, tenancy, policy, or authorization
+inputs. Context manifests expose baggage keys/counts rather than values.
+
+`PanelTelemetryBridge` carries the same trace across Panel requests/routes,
+signed-navigation issue/verification events, durable operation metadata and
+worker handlers, and Reactor transactions without retaining raw records,
+tokens, transaction ids, or user payloads. `PanelInMemoryTelemetryExporter` is
+bounded and useful for tests/local diagnostics. `PanelCompositeTelemetryExporter`
+attempts every sink and reports only a generic aggregate failure to the hub.
+Connected exporters implement `PanelTelemetryExporter`; the framework does not
+bundle vendor SDKs, network credentials, or a telemetry backend.
+
+### Production adapter conformance
+
+`PanelAdapterConformanceRunner` executes versioned, transport-neutral behavior
+contracts against production adapters without coupling the runtime to TestKit.
+The first-party catalogue covers `PanelDataSource`, `PanelMediaDisk`,
+`PanelMediaManager`,
+`PanelOperationStore`, `PanelLeasedOperationStore`, `PanelMigrationStore`,
+`PanelAgentWorkflowStore`, `PanelIamStore`, `PanelStudioStore`, and
+`PanelTelemetryExporter`, `PanelNotificationAdapter`, and
+`PanelSearchProvider`, including canonical query envelopes, path confinement,
+checksummed stream/file lifecycles, resumable upload assembly, transactional
+catalogues, signed delivery, change feeds, cleanup, idempotency, optimistic revisions,
+lease renewal, fencing, stale-worker rejection, agent reservation/replay and
+cancellation semantics, audit-chain integrity, migration backups, checkpoints,
+completion/compensation, tenant IAM isolation/rollback/lifecycle/audit behavior,
+Studio optimistic/idempotent publication, tenant isolation, hash-chain
+verification, rollback and reset-feed contracts, durable notification state and
+delivery receipts, bounded typed search pages, sanitized signal export/flush,
+secret-free manifests, and deletion visibility.
+
+```php
+use Dataphyre\Panel\PanelAdapterConformanceCatalog;
+use Dataphyre\Panel\PanelAdapterConformanceRunner;
+
+$runner=new PanelAdapterConformanceRunner();
+
+$readReport=$runner->run(
+	PanelAdapterConformanceCatalog::dataSource(),
+	$productionDataSource,
+	[
+		'query'=>$tenantScopedProbeQuery,
+		'find_scope'=>$tenantScopedProbeQuery,
+		'known_id'=>$knownRecordId,
+		'missing_id'=>'conformance-missing-record',
+	]
+);
+
+$mediaReport=$runner->run(
+	PanelAdapterConformanceCatalog::mediaDisk(),
+	$productionMediaDisk,
+	[
+		'allow_destructive'=>true,
+		'namespace'=>'panel_conformance_owned',
+		'meta'=>['deployment'=>$deploymentId],
+	]
+);
+
+$mediaManagerReport=$runner->run(
+	PanelAdapterConformanceCatalog::mediaManager(),
+	$productionMediaManager,
+	[
+		'allow_destructive'=>true,
+		'namespace'=>'panel_conformance_media_manager',
+		'meta'=>['deployment'=>$deploymentId],
+	]
+);
+
+$iamReport=$runner->run(
+	PanelAdapterConformanceCatalog::iamStore(),
+	$productionIamStore,
+	[
+		'allow_destructive'=>true,
+		'tenant'=>'panel-conformance-iam',
+	]
+);
+
+$agentStoreReport=$runner->run(
+	PanelAdapterConformanceCatalog::agentWorkflowStore(),
+	$disposableProductionAgentWorkflowStore,
+	['allow_destructive'=>true]
+);
+
+if(
+	!$readReport->passed()
+	|| !$mediaReport->passed()
+	|| !$mediaManagerReport->passed()
+	|| !$iamReport->passed()
+	|| !$agentStoreReport->passed()
+){
+	throw new RuntimeException('Panel adapter conformance failed.');
+}
+```
+
+Destructive cases never run unless `allow_destructive` is exactly `true`; use a
+dedicated, disposable namespace and least-privileged credentials. Capability
+requirements distinguish a failed required case from a visible optional skip,
+and `passed()` rejects skips by default. A probe that records a failure cannot
+later hide it by calling `skip()`. Probe time, evidence, and issue collections
+are bounded, malformed adapters are isolated to their case, and reports redact
+credential-shaped values recursively before JSON serialization. The runner
+does not provision infrastructure, grant permissions, or infer that a skipped
+probe passed.
+
+The agent-workflow store interface intentionally exposes no universal deletion
+primitive because silently removing replay, nonce, cancellation, or audit state
+would weaken its security contract. Run its destructive conformance pack only
+against an isolated disposable store or tenant/database reserved for adapter
+certification, then discard that complete scope.
+
+Hosts can compose additional immutable suites with
+`PanelAdapterConformanceSuite::make()` and
+`PanelAdapterConformanceCase::make()`. Keep each probe deterministic and
+idempotent, declare required capabilities explicitly, mark mutations as
+`destructive`, clean owned artifacts in `finally`, and give the case a bounded
+`maxMillis`. Persist the JSON report as deployment evidence rather than
+persisting adapter credentials or raw diagnostic payloads.
+
+Reactor transactions can be mounted behind the host's own HTTP boundary or used
+directly. The transaction payload is the same contract used for optimistic
+browser application, server commit, rollback, and offline replay.
+
+```php
+use Dataphyre\Reactor\ReactorTransactions;
+
+$transactions=ReactorTransactions::filesystem($stateRoot.'/reactor')
+	->authorize(fn($transaction, $state, $version, $context): bool =>
+		$context['user']?->can('update', $transaction->component()) === true
+	)
+	->authorizeStream(fn($component, $context): bool =>
+		$context['user']?->can('view', $component) === true
+	);
+$result=$transactions->dispatch(
+	ReactorTransactions::make('orders', $baseVersion)
+		->set('selection.order_id', $orderId)
+		->idempotencyKey($requestId)
+		->conflictStrategy('rebase')
+		->offlineCapable(),
+	true,
+	$verifiedSecurityContext
+);
+
+$endpoint=ReactorTransactions::endpoint($transactions)
+	->validateOrigin($hostOriginValidator)
+	->validateCsrf($hostCsrfValidator)
+	->authorizeTransport($hostTransportAuthorizer);
+```
+
+The endpoint and coordinator deny access until these host-owned security
+boundaries are installed. See the Reactor transaction security documentation for
+offline tenant/user/session/version scoping, queue limits, logout purge, and SSE
+cursor handling.
 
 ## Plugins
 
@@ -351,6 +1751,15 @@ final class AuditTrailPanelPlugin implements PanelPlugin {
 				->label('Audit events')
 				->value(fn() => AuditTrailRepository::todayCount())
 		);
+	}
+
+	public function extensionPermissions(): array {
+		return [
+			'render_hook.register',
+			'component.widget_types.register',
+			'extensible.macro.register',
+			'theme.theme.register',
+		];
 	}
 
 	public function boot(PanelInstance $panel): void {
@@ -395,32 +1804,54 @@ Use `pluginConfig($id)`, `hasPlugin($id)`, and `pluginIds()` from a
 `PanelInstance`. During rendering, `PanelConfig::pluginConfig($id)` and
 `PanelConfig::pluginIds()` read the active surface context. `describe()` includes
 loaded plugin ids, classes, config keys, and optional `label()`, `version()`, or
-`description()` metadata.
+`description()` metadata. Plugin manifests also expose effective extension
+permissions, contribution provenance, and the registry revision.
 
-## Global Configuration And Macros
+Plugin `register()` and `boot()` callbacks are transactional. A failure restores
+the manager, surface configuration, platform attachment, component descriptors,
+macros/configurators, and themes. A plugin may additionally expose a public
+`unregister(PanelInstance $panel)` callback for external cleanup. Use
+`unloadPlugin($id, cascade: true)` to unload a plugin and its dependants, or
+`reloadPlugin($id, $replacement)` to replace it in place. Reloads must preserve
+the stable id. Nested plugins are owned by their registering plugin and cannot be
+silently unloaded or reloaded around that owner.
 
-Core Panel builders can be configured globally or extended with macros. This is
-intended for plugins and application boot code that need consistent defaults
-without subclassing final builder objects.
+The surface replays remaining plugins from the checkpoint captured before the
+first plugin. Register application-owned resources and extensions before
+installing plugins when hot reload is enabled. Configure
+`extension_conflict_policy` as `reject` (default), `replace`, or `keep_first`.
+`replace` retains lower contribution layers, so unloading a replacement reveals
+the prior descriptor again.
+
+Extension permissions may come from `extensionPermissions()` or plugin config
+`extension_permissions`. Set `strict_extension_permissions` to require an
+explicit declaration. The host can narrow declarations with
+`plugin_extension_permissions`, as a list, plugin-id map, or callable allow-list.
+The result is the intersection of plugin and host patterns: policy cannot grant
+an unrequested permission, and an empty/missing map entry denies all extension
+registration.
+
+## Instance Configuration And Macros
+
+Panel builders are configured per `PanelInstance` by default. Two mounted
+surfaces do not share component descriptors, macros, configurators, or named
+themes. Static APIs outside a surface remain an explicit process-local migration
+adapter for older application boot code.
 
 ```php
-use Dataphyre\Panel\Action;
 use Dataphyre\Panel\Field;
-use Dataphyre\Panel\Resource;
 
-Resource::configureUsing(function(Resource $resource): Resource {
-	return $resource->navigationBadgeTone('info');
+$sellerPanel->configureExtensions(function(): void {
+	Field::configureUsing(function(Field $field): Field {
+		return $field->meta(['surface'=>'seller']);
+	});
+
+	Field::macro('opsHint', function(string $hint): Field {
+		return $this->help($hint)->meta(['ops_hint'=>$hint]);
+	});
 });
 
-Action::configureUsing(function(Action $action): Action {
-	return $action->modalWidth('lg');
-});
-
-Field::macro('opsHint', function(string $hint): Field {
-	return $this->help($hint)->meta(['ops_hint'=>$hint]);
-});
-
-$field=Field::make('next_step', 'select')
+$field=$sellerPanel->field('next_step', 'select')
 	->opsHint('Changes as the operator moves through the workflow.');
 ```
 
@@ -435,6 +1866,25 @@ bound to the builder instance, so `$this` is the field, action, resource, widget
 or table object being extended. Non-closure callables receive the builder as the
 first argument. Use `hasMacro()`, `flushMacros()`, and `flushConfigurators()` for
 package safety and tests.
+
+Builders returned by `$panel->field()`, `$panel->resource()`,
+`$panel->widget()`, and the other instance factories retain their registry for
+later macro dispatch. A static builder factory outside a surface is compatible
+only when exactly one live surface owns the requested macro/configurator; Panel
+throws on ambiguity instead of guessing. Prefer instance factories or
+`configureExtensions()` in multi-panel applications.
+
+`PanelComponentRegistry` is a compatibility facade. In a Panel context it reads
+and writes `$panel->extensions()`; outside one it uses the legacy adapter. This
+state registry is separate from the immutable dependency/asset catalog in
+`Framework/Extensions`.
+
+Custom widget, page, and relation renderers are active runtime extension points.
+Register their descriptor through `PanelComponentRegistry`, then select it with
+a widget `type`, page metadata `page_type`, or relation metadata
+`relation_type`. `authorize`, `before_render`, and `after_render` hooks wrap the
+custom renderer; normal Panel output remains the fallback when no renderer is
+provided.
 
 The extensible builders are `Resource`, `Field`, `Action`, `ActionGroup`,
 `Widget`, `PanelPage`, `Schema`, `SchemaComponent`, `FormSection`, `Column`,
@@ -494,7 +1944,10 @@ swap without forcing a full page redraw.
 
 Panel emits responsive shell styles with the generated workspace. The mobile
 layer is server-owned and does not require application routes or handwritten
-per-resource markup. At tablet and phone widths, the shell adapts by:
+per-resource markup. Form grids and compound fields also use named inline-size
+containers, so embedded panels, narrow modal forms, sidebars, and split panes
+adapt to the width they actually receive instead of relying only on the browser
+viewport. At tablet, phone, or constrained-container widths, the shell adapts by:
 
 - stacking the header, tools, search, filters, and page actions into touch-safe
   rows
@@ -1129,6 +2582,14 @@ custom pages can submit record identifiers without raw HTML. Empty array entries
 are ignored, which lets custom pages include optional sections without rendering
 blank fallback cards when the condition is not active.
 
+Table sections may provide a `pagination` descriptor with authorized
+`previous_url` and `next_url` values, `item_count`, optional `current_page`, and
+optional labels or summary copy. The template renders the same responsive
+`dp-panel-pagination` controls used by generated Panel tables, keeps unavailable
+directions visible but disabled to prevent layout movement, and rejects unsafe
+URL schemes. Data sources remain responsible for cursor validation, tenant
+scope, ordering, and query limits.
+
 `description_list` renders label/value/detail facts as carded rows with explicit
 block flow for labels, values, and help text. Labels and values wrap inside their
 item instead of relying on inline browser flow, so compact document metadata,
@@ -1207,10 +2668,13 @@ lifecycle behavior as standard template forms.
   deterministic package lock.
 - `Panel::packageTrustPolicy()` creates a host trust policy for package
   signatures, publishers, keys, statuses, and revocations.
+- `Panel::packageSignatureVerifier()` creates a host-keyed Ed25519, RSA-SHA256,
+  or ECDSA-SHA256 verifier for the complete canonical artifact bundle.
 - `Panel::packageInstallPlan()` creates an installer plan and can apply package
-  template artifacts with dry-run, overwrite, backup, and blocked-file metadata.
-- `Panel::packageRollbackPlan()` creates a dry-run rollback plan from an install
-  plan or a concrete package apply result.
+  template artifacts with signature gating, dry-run, atomic recovery, locking,
+  overwrite, backup, and blocked-file metadata.
+- `Panel::packageRollbackPlan()` creates a rollback plan from an install plan or
+  concrete apply result; concrete results can be executed transactionally.
 
 The first implementation focuses on resource metadata, authorization hooks,
 query factories, save handlers, action handlers, and generated HTML backed by the
@@ -1497,6 +2961,61 @@ state pills, email and URL entries as links, image entries as media previews,
 repeaters as compact lists, and copyable entries with a one-click clipboard
 control. `displayUsing()` still owns the resolved value, so resources can keep
 formatting logic close to the schema without making the show page route-aware.
+
+Copyable entries reserve a dedicated logical-inline-end action column. The Copy
+control remains a 44px touch target without increasing the card above sibling
+entries, and the value column wraps independently, including long unbroken
+identifiers. The column mirrors automatically in RTL and does not rely on a
+card-wide decorative overlay, so theme effects cannot turn the copy affordance
+into a tinted or unreadable region.
+
+### Safe HTML and trusted markup
+
+Panel treats HTML rendering intent and markup trust as separate contracts.
+`html(true)` and `htmlContent($string)` remain compatible rich-text APIs, but an
+ordinary string is always passed through the strict server-side DOM allow list.
+The sanitizer removes scriptable elements, event and style attributes, unsafe
+URL schemes, SVG/MathML, embedded documents, form controls, and markup that
+escapes its parse root. If DOM sanitization is unavailable or rejects the input,
+Panel escapes the entire value. A boolean `html` flag can therefore never make a
+record, request, translation, or remote-service string executable.
+
+Use `PanelSafeHtml::sanitize()` when application code wants to establish the
+sanitized boundary before handing rich text to a field or entry:
+
+```php
+use Dataphyre\Panel\PanelSafeHtml;
+
+$safeNotes=PanelSafeHtml::sanitize($record['operator_notes']);
+
+Panel::entry('operator_notes')
+	->displayUsing(fn() => $safeNotes);
+
+Panel::field('preview', 'display_only')
+	->htmlContent($safeNotes);
+```
+
+Markup generated entirely by trusted framework or application code can opt in
+to the sharper `PanelSafeHtml::trusted()` boundary. Every external value must be
+escaped before interpolation:
+
+```php
+$statusHtml=PanelSafeHtml::trusted(
+	'<span class="app-status">'.htmlspecialchars($statusLabel, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'</span>'
+);
+
+Panel::entry('status')->displayUsing(fn() => $statusHtml);
+Panel::entry('framework_note')->trustedHtml('<span class="app-note">Generated by the application</span>');
+Panel::field('framework_preview', 'display_only')->trustedHtmlContent($statusHtml);
+```
+
+Never wrap raw user or record data in `trusted()`, `trustedHtml()`, or
+`trustedHtmlContent()`. `PanelSafeHtml` JSON-serializes as a plain string on
+purpose, so trust does not survive persistence, manifests, queues, HTTP, or
+other transport boundaries. Receiving code must sanitize the string or make a
+new, explicit trusted-code decision. Display-field component manifests retain
+the broad `safe_html` capability for compatibility and add `sanitized_html` or
+`trusted_html` when the fixed content source is known in process.
 
 `Resource::infolistState()` returns the same server-owned snapshot used by the
 generated show page:
@@ -1979,9 +3498,300 @@ window.DataphyrePanel
 	});
 ```
 
-Rich text, markdown, and code fields are real field types with manifests and
-preview surfaces, but they are not yet full editor packages with toolbar
-plugins, upload adapters, or syntax engines.
+### Editor packages and persistence policy
+
+Rich text, HTML, markdown, and code fields expose framework-owned editor
+packages. `PanelEditorProfile` is the reusable contract for toolbars, named
+plugins, server normalization and validation, HTML allow-list policy, media and
+upload adapters, and token-stream syntax highlighting. The contract is not tied
+to a particular JavaScript editor, sanitizer library, storage disk, or cloud.
+
+```php
+use Dataphyre\Panel\PanelEditorMedia;
+use Dataphyre\Panel\PanelEditorBrowserAdapter;
+use Dataphyre\Panel\PanelEditorPlugin;
+use Dataphyre\Panel\PanelEditorProfile;
+use Dataphyre\Panel\PanelEditorSanitizationPolicy;
+use Dataphyre\Panel\PanelEditorToolbar;
+use Dataphyre\Panel\PanelEditorUpload;
+
+$policy=PanelEditorSanitizationPolicy::strict()
+	->allowElement('img', ['src', 'alt', 'title']);
+
+$profile=PanelEditorProfile::make('articles', 'rich_text')
+	->sanitizationPolicy($policy)
+	->toolbar(
+		PanelEditorToolbar::make('articles')
+			->command('bold', 'Bold', 'inline')
+			->command('mention', 'Mention', 'insert', 'Mention a teammate', 'mentions')
+	)
+	->plugin(PanelEditorPlugin::make('mentions')->commands('mention'))
+	->uploadAdapter(
+		PanelEditorUpload::make('article_media', '/panel/editor-media')
+			->accept(['image/*'])
+			->maxBytes(5 * 1024 * 1024)
+	)
+	->mediaAdapter(
+		PanelEditorMedia::make('article_media')->allowPrefixes('/uploads/articles/')
+	)
+	->browserAdapter(
+		PanelEditorBrowserAdapter::tinyMce(['menubar'=>false])
+	)
+	->browserSyntaxAdapter(
+		PanelEditorBrowserAdapter::prism(['html', 'php'])
+	);
+
+Panel::field('body')->richText()->editorProfile($profile);
+```
+
+Editors can use a single typed asset provider for browsing, upload validation,
+storage, deletion, delivery, and persisted-reference normalization. The generic
+callback pack adapts Flysystem, Spatie Media Library, Cloudinary, or an
+application repository without making any of them a Panel dependency:
+
+```php
+use Dataphyre\Panel\PanelEditorAsset;
+use Dataphyre\Panel\PanelEditorAssetPage;
+use Dataphyre\Panel\PanelEditorAssetResult;
+use Dataphyre\Panel\PanelEditorCallbackAssetProvider;
+use Dataphyre\Panel\PanelEditorContext;
+
+$assets=PanelEditorCallbackAssetProvider::make('article_library', '/panel/editor/assets')
+	->providerType('flysystem')
+	->browserDriver('http')
+	->accept(['image/jpeg', 'image/png', 'image/webp'])
+	->maxBytes(10 * 1024 * 1024)
+	->deletes()
+	->authorizeUsing(
+		static fn(string $operation, PanelEditorContext $context): bool =>
+			$assetPolicy->allows($operation, $context)
+	)
+	->browseUsing(
+		static fn(array $query, PanelEditorContext $context): PanelEditorAssetPage =>
+			$assetLibrary->browse($query, $context)
+	)
+	->findUsing(
+		static fn(string $id, PanelEditorContext $context): ?PanelEditorAsset =>
+			$assetLibrary->find($id, $context)
+	)
+	->storeUsing(
+		static fn(array $upload, PanelEditorContext $context): PanelEditorAssetResult =>
+			$assetLibrary->store($upload, $context)
+	)
+	->deleteUsing(
+		static fn(string $id, PanelEditorContext $context): bool =>
+			$assetLibrary->delete($id, $context)
+	)
+	->normalizeUsing(
+		static fn(string $url, PanelEditorContext $context): ?string =>
+			$assetLibrary->canonicalReference($url, $context)
+	);
+
+Panel::field('body')->richText()->editorAssetProvider($assets);
+```
+
+A provider-backed field automatically emits the `editor-assets` capability and
+loads `panel-editor-assets.js` after `panel-editor.js`. Ordinary rich-text,
+markdown, code, and plain editors load only the base editor package. Custom HTML
+can opt in with an `editor-assets` declaration or the generated
+`data-dp-panel-editor-assets-trigger` / `data-dp-panel-editor-assets-host`
+markers. Do not add the picker script manually to every editor page; use the
+capability manifest so ordering, hashes, SRI metadata, scoped CSS, and modal
+dependency closure remain deterministic.
+
+All callbacks are runtime-only and default-deny when missing or throwing.
+`fromArray()` deliberately restores an inert provider: a manifest never
+rehydrates authorization, storage, tenant scope, or other executable authority.
+Upload checks use the actual temporary file size and a server MIME detector;
+browser MIME metadata is not authoritative.
+
+Applications already using `PanelMediaManager` can use the first-party scoped
+pack. `scope` must resolve from trusted host context, never directly from an
+untrusted form value, and `authorize` is checked for every provider operation:
+
+```php
+use Dataphyre\Panel\PanelEditorContext;
+use Dataphyre\Panel\PanelEditorMediaManagerProvider;
+
+$assets=PanelEditorMediaManagerProvider::make(
+	$mediaManager,
+	'/panel/editor/assets',
+	$editorAssetScopeKey, // At least 32 secret bytes; never emitted to a manifest.
+	[
+		'scope'=>static fn(PanelEditorContext $context): string =>
+			$trustedTenancy->scopeFor($context),
+		'authorize'=>static fn(string $operation, PanelEditorContext $context, string $scope): bool =>
+			$assetPolicy->allows($operation, $context, $scope),
+		'accepted'=>['image/jpeg', 'image/png', 'image/webp'],
+		'max_bytes'=>10 * 1024 * 1024,
+		'prefix'=>'editor-assets',
+		'deletes'=>true,
+	]
+);
+```
+
+This pack binds assets, signed pagination cursors, canonical references,
+delivery grants, uploads, and deletion to the resolved scope. Uploads use the
+media manager's chunk, checksum, processing, and cancellation lifecycle. A
+scope resolver or authorizer is mandatory; omitting either leaves the provider
+unready.
+
+`PanelEditorAssetEndpoint` is a route-neutral transport helper. Its request
+verifier is mandatory and fail-closed. Mount it only after the host has
+authenticated the request, enforced same-origin and CSRF policy, resolved the
+tenant and principal, applied rate limits, and constructed a trusted
+`PanelEditorContext`:
+
+```php
+use Dataphyre\Panel\PanelEditorAssetEndpoint;
+
+$endpoint=new PanelEditorAssetEndpoint(
+	$assets,
+	static fn(string $operation, array $trusted_request): bool =>
+		$trusted_request['authenticated'] === true
+		&& $trusted_request['same_origin'] === true
+		&& $trusted_request['csrf_verified'] === true
+		&& $rateLimit->allows('editor-assets', $operation)
+);
+
+$result=$endpoint->handle($payload, $files, $editorContext, $trustedRequest);
+```
+
+The host remains responsible for installing the route and translating the
+returned `status`, `headers`, and JSON `body` into its HTTP response. Panel does
+not install a route, authentication, origin checks, CSRF verification, tenant
+resolution, rate limiting, or request-context trust. The built-in HTTP bridge
+sends same-origin credentials and verification metadata, but those browser
+signals are not proof. Provider endpoints and asset references accept only safe
+root-relative or HTTPS URLs, reject credentials, fragments, traversal, and
+secret-bearing query keys, and return bounded stable non-diagnostic envelopes.
+
+HTML and rich text use a strict server-side DOM sanitizer by default. The same
+policy runs in `validateValue()` and after `dehydrateUsing()`, so a custom
+dehydration callback cannot reintroduce unsafe markup. Unsafe tags, attributes,
+link schemes, protocol-relative URLs, and unapproved embedded media fail closed.
+Use `stripUnsafe()` explicitly when stripping with warnings is preferable to
+rejecting the value. Embedded media requires both an allow-listed element and a
+ready `PanelEditorMediaAdapter`. Media references are checked again after a
+custom resolver runs; an allowed root-relative prefix never authorizes other
+root-relative or protocol-relative destinations.
+
+Upload adapters are ready only when they declare a non-empty file-type
+allow-list. MIME rules use an explicit server detector or `finfo` against the
+temporary file rather than the browser-declared MIME value, and the temporary
+file's actual size is authoritative. Active document, script, executable, PHP,
+and SVG types remain blocked even when a broad wildcard is configured. Adapter
+endpoints reject credentials, fragments, traversal, and secret-bearing query
+keys, including nested or repeatedly encoded keys.
+
+Markdown, code, and plain editor content remains byte-for-byte unchanged by the
+built-in profile. Markdown link, image, reference, and autolink destinations are
+still checked against the URL policy. Syntax adapters return `{type, text}`
+tokens; Panel escapes every token and never accepts highlighted HTML.
+
+Callback normalizers, validators, resolvers, MIME detectors, and highlighters are
+runtime-only. Closures, objects, and secret-looking adapter metadata are omitted
+from manifests. A serialized profile that depended on a runtime callback must be
+rebound before it accepts content; importing its manifest does not silently drop
+the security hook.
+
+Explicit profiles are available to the browser through escaped editor data
+attributes. The runtime emits cancelable `dp-panel-editor:command` events and
+also exposes `dp-panel-editor:ready`, `dp-panel-editor:insert`, and
+`dp-panel-editor:highlight`. Inserted HTML passes through the client preview
+sanitizer, and syntax tokens are rendered with `textContent`; the server profile
+remains the persistence boundary. Fields without an explicit profile retain the
+legacy toolbar and markup contract.
+
+`PanelEditorBrowserAdapter` adds optional first-party browser bridges without
+adding a browser-editor dependency to Panel core. The built-in descriptors are:
+
+- `tinyMce()` and `ckEditor5()` for rich HTML surfaces loaded as browser globals;
+- `monaco()` for code, plain, markdown, and HTML source editing;
+- `tiptap()` and `codeMirror6()` for host-registered module builds;
+- `prism()` and `highlightJs()` for inert `{type, text}` syntax token streams.
+
+Panel does not download these packages or emit a CDN URL. A global build must be
+loaded by the host before `panel-editor.js`, or the host can load it later and
+call `DataphyrePanelEditors.mountAll(document)`. Module builds register an
+instance factory explicitly:
+
+```js
+const editors=window.DataphyrePanelEditors;
+
+editors.registerSurface(
+	'tiptap',
+	editors.createTiptapBridge(async context => {
+		const instance=await mountApplicationTiptap({
+			element: context.host,
+			content: context.read(),
+			onUpdate: html => context.change(html),
+			signal: context.signal,
+		});
+
+		return {
+			getValue: () => instance.getHTML(),
+			setValue: value => instance.commands.setContent(value, false),
+			command: command => runApplicationEditorCommand(instance, command),
+			destroy: () => instance.destroy(),
+		};
+	}),
+);
+```
+
+The same registry exposes `registerSyntax()`, `unregisterSurface()`,
+`unregisterSyntax()`, `mount()`, `unmount()`, `sync()`, `state()`, and `list()`.
+Every mount is async-safe and instance-owned. Panel keeps the submitted textarea
+canonical, flushes it before native or AJAX submission, releases detached roots,
+survives same-turn DOM moves and back/forward-cache restoration, and retires a
+stale async instance rather than attaching it to a replacement modal. A missing,
+unsupported, or failed adapter follows its explicit `native`, `source`, or
+`error` fallback and emits `dp-panel-editor:adapter-*` lifecycle events. Browser
+manifests report `runtime_probe=browser`; server code never claims a vendor
+engine is loaded.
+
+Asset libraries are implemented by `panel-editor-assets.js` and expose the
+parallel `registerAssets()`, `unregisterAssets()`, `openAssets()`,
+`closeAssets()`, `assetState()`, and `createHttpAssetBridge()` APIs through the
+same `DataphyrePanelEditors` namespace. The built-in `http` bridge activates
+automatically for a ready same-origin provider. A host-only provider can
+register an equivalent bridge after both editor packages are loaded; each
+method returns the same versioned `panel_editor_asset_result` envelope as the
+endpoint:
+
+```js
+window.DataphyrePanelEditors.registerAssets('host_assets', {
+	browse(context, query) {
+		return applicationAssets.browse(query, {signal: context.signal});
+	},
+	upload(context, file) {
+		return applicationAssets.upload(file, {signal: context.signal});
+	},
+	delete(context, id) {
+		return applicationAssets.delete(id, {signal: context.signal});
+	},
+	delivery(context, id) {
+		return applicationAssets.delivery(id, {signal: context.signal});
+	},
+});
+```
+
+Until a declared bridge is ready, Panel keeps the browse trigger hidden and
+disabled. The native picker is progressively enhanced, keyboard and dialog
+accessible, responsive through narrow embedded containers, focus-restoring,
+abortable, and released on editor unmount, detached roots, runtime disposal, or
+provider unregister. Provider-issued media references are tracked per editor;
+same-origin lookalike URLs, pasted image HTML, and stale or unapproved references
+are stripped client-side before preview or adapter insertion. The server
+sanitizer and provider normalization remain the final persistence authority.
+
+Browser options are inert, bounded, and secret-redacted. Runtime callbacks stay
+inside the host-registered bridge. TinyMCE, CKEditor, Monaco, Prism, and
+highlight.js adapters resolve only declared globals; no `eval` or remote loader
+is used. Highlight output is flattened and reconstructed with `textContent`, so
+vendor-highlighted HTML never crosses into the preview as trusted markup. Rich
+content is still accepted only after the server `PanelEditorProfile` sanitizer,
+normalizers, validators, media policy, and authorization path succeed.
 
 Select-like fields can use static options, option groups, or request-aware
 dynamic options:
@@ -2033,6 +3843,19 @@ multiple grid columns, and `columnSpan('full')` spans the whole form row.
 column counts, and collapsible/collapsed behavior. Generated show pages use the
 same field sections, form column count, section metadata, and column spans for
 the read-only record view. Hidden fields are omitted from the show view.
+
+Fields without an explicit `columnSpan()` or `columnStart()` use Panel's adaptive
+grid placement. The renderer derives a safe default span from each responsive
+column count (one track through four columns, two through eight, and three
+through twelve). Form and show sections resolve their intermediate layout from
+their own inline-size container: between `761px` and `1040px`, the `md` column,
+span, start, and row definitions are used even when the outer viewport is much
+wider; at `760px` and below, every item collapses to the complete row. Explicit
+placement is never rewritten. This keeps every declared track positive instead
+of producing implicit zero-width tracks when a shell or embedded surface
+reflows. The same contract applies to show/detail entries, so a dense
+twelve-track schema cannot squeeze an unconfigured native control or value card
+into an unusable single track.
 
 `displayUsing()` customizes a field's read-only value on show pages without
 changing form hydration, dehydration, validation, or save payloads:
@@ -2402,6 +4225,20 @@ Resources can define:
   optional related-resource metadata
 - dashboard widgets with lazy values, tones, icons, links, and descriptions
 
+Grouped dashboard navigation uses an intrinsic, container-safe card grid. Its
+declared card basis never becomes a hard minimum: cards collapse to one track
+and fill the available inline size when a Panel is embedded below that basis,
+independently of the browser viewport and in both LTR and RTL documents.
+
+The same container contract applies to ultra-narrow embedded resource surfaces,
+including hosts as small as 160 CSS pixels. Command-bar actions, per-page
+controls, grouped-table headings, summary values, copyable show entries,
+checkbox fields, and custom-page card grids collapse into bounded single-track
+layouts based on the Panel's inline size rather than the browser viewport.
+Controls remain operable and text wraps in place; these surfaces never require
+an accidental horizontal scrollbar merely because the surrounding application
+mounts Panel in a narrow split pane.
+
 Authorization is explicit. A global gate can deny the generated Panel surface
 before resources, widgets, or action handlers run:
 
@@ -2544,6 +4381,166 @@ storage, use `tenantUsing()` to resolve the tenant key per resource or
 The resolved tenant is exposed as `PanelRequest::tenantKey()` and included in
 `PanelRequest::toArray()` for custom renderers, tests, action handlers, relation
 queries, and widgets.
+
+### Tenant lifecycle and isolation
+
+For a multi-tenant operator surface, register tenants on the surface's manager
+and resolve membership explicitly. The registry belongs to that manager; two
+`PanelInstance` objects never share a mutable tenant registry unless the host
+deliberately gives them the same manager.
+
+```php
+use Dataphyre\Panel\PanelRequest;
+use Dataphyre\Panel\PanelTenant;
+use Dataphyre\Panel\PanelTenantMembership;
+
+$panel=Panel::make('operations');
+$panel->registerTenants([
+	PanelTenant::make('north')->label('North')->url('/panel?tenant=north'),
+	PanelTenant::make('south')->label('South')->url('/panel?tenant=south'),
+]);
+
+$panel->tenantMembershipsUsing(function($user, PanelRequest $request): array {
+	return TenantDirectory::forUser($user?->id)->map(
+		fn($row) => PanelTenantMembership::make(
+			tenant: $row->tenantKey,
+			roles: $row->roles,
+			permissions: $row->permissions,
+			preferred: $row->preferred,
+			expiresAt: $row->expiresAt,
+		)
+	)->all();
+});
+
+$panel->tenantAuthorizationUsing(function(
+	mixed $user,
+	PanelRequest $request,
+	PanelTenant $tenant,
+	PanelTenantMembership $membership,
+	string $ability,
+): bool {
+	return $user?->can($ability, $tenant->name()) === true;
+});
+```
+
+Configured registries fail closed. A tenant is active only when it is
+registered, has a live switchable membership, is visible, passes the optional
+authorization callback, and passes the optional entitlement hook. Invalid,
+expired, hidden, unknown, unauthorized, and blocked tenants produce immutable
+inactive contexts with deterministic codes. Search, navigation, commands,
+dispatch, page rendering, resource rendering, manifests, and the built-in
+switcher consume that authorized context; they do not fall back to an
+unvalidated request tenant.
+
+`tenantActiveUsing()` may resolve a tenant from host state. Without it, Panel
+uses the request tenant and then the preferred live membership. The callback is
+pure resolution: Panel does not read or write PHP sessions.
+
+```php
+$panel->tenantActiveUsing(
+	fn(PanelRequest $request, array $memberships) =>
+		ActiveWorkspace::forUser($request->user()?->id)
+);
+
+$context=$panel->tenantContext($request);
+if(!$context->isAuthorized()){
+	return deny($context->code());
+}
+```
+
+Switching also performs no implicit I/O. The host supplies the only persistence
+callback, and a successful result is returned only when that callback explicitly
+accepts the transition.
+
+```php
+$panel->tenantPersistenceUsing(function($next, $previous, PanelRequest $request): bool {
+	ActiveWorkspace::store(
+		userId: $request->user()->id,
+		tenant: $next->tenantKey(),
+	);
+	return true;
+});
+
+$result=$panel->switchTenant('south', $request);
+if(!$result->ok()){
+	logger()->notice('Tenant switch rejected', ['code'=>$result->code()]);
+}
+```
+
+Do not put credentials, session identifiers, or customer data in tenant
+metadata. Public tenant contracts still bound and redact metadata, lazy URLs
+accept only relative or HTTP(S) targets, lazy badges collapse to safe scalars,
+and exception traces retain the exception class plus a tenant hash instead of
+the raw tenant or exception message.
+
+#### Onboarding and compensation
+
+Onboarding is an ordered callback pipeline. Each completed step may define a
+compensating rollback; when a later step rejects or throws, compensation runs
+in reverse completion order. The result records completed and rolled-back step
+names without exposing exception messages.
+
+```php
+$panel->tenantOnboardingStep(
+	'provision-schema',
+	apply: fn(PanelTenant $tenant, PanelRequest $request) =>
+		TenantProvisioner::create($tenant->name()),
+	rollback: fn(PanelTenant $tenant) =>
+		TenantProvisioner::remove($tenant->name()),
+);
+
+$panel->tenantOnboardingStep(
+	'publish-domain',
+	apply: fn(PanelTenant $tenant) => DomainPublisher::publish($tenant->name()),
+	rollback: fn(PanelTenant $tenant) => DomainPublisher::unpublish($tenant->name()),
+);
+
+$result=$panel->onboardTenant(
+	PanelTenant::make('acme')->label('Acme'),
+	$request,
+	idempotencyKey: 'tenant-create:acme:2026-07-13',
+);
+```
+
+The registry replays the same result for the same idempotency key and pipeline
+fingerprint during its lifetime, and rejects reuse for a different tenant or
+step set. Hosts running across requests or nodes must also make each external
+step durably idempotent in their own transaction boundary. Apply callbacks
+receive the idempotency key as their fifth argument; rollback callbacks receive
+it as their sixth argument after the successful step metadata. Panel
+deliberately does not invent a database, distributed lock, or provisioning
+store.
+
+#### Storage namespaces
+
+`tenantStorageScope()` creates a storage descriptor, not a directory. Tenant
+and namespace segments reject traversal, encoded traversal, controls, padding,
+reserved device names, repository control directories, and unsupported
+characters. Filesystem resolution requires an existing base and tenant root,
+dereferences existing links and junctions, rejects aliased tenant roots, and
+keeps every resolved path inside the selected tenant root.
+
+```php
+$scope=$panel->tenantStorageScope('north', ['imports', 'orders'], $request);
+
+$scope->relativeRoot();                  // tenants/north/imports/orders
+$scope->namespaceKey();                   // north:imports:orders
+$target=$scope->resolvePath($storageRoot, 'batch-42.csv');
+
+if(!$scope->containsPath($storageRoot, $target)){
+	throw new RuntimeException('Storage path is outside the tenant scope.');
+}
+```
+
+Resolve again at the point of use and keep creation, permissions, locks,
+encryption, object storage, and retention in the host storage adapter. This
+avoids time-of-check/time-of-use assumptions and keeps Panel free of hidden I/O.
+
+The optional `tenantEntitlementUsing()` hook accepts a boolean, a recognized
+active status (`active`, `enabled`, `entitled`, `trialing`, or `grace`), or a
+sanitized status array with an explicit `allowed` boolean. Unknown statuses fail
+closed. It is a local authorization input only: Panel makes no billing, payment,
+subscription, or network call.
 
 Actions can also have their own authorizer:
 
@@ -2952,10 +4949,17 @@ resource names remain stable. A page renderer may return raw HTML, an array with
 
 ## Global Search
 
-Dashboard global search is opt-in. A resource becomes searchable with
-`globalSearchable()`, then uses `globalSearchColumns()` or searchable table
-columns to match array-backed records. Results link to the generated show page
-when a record exposes `id`, `key`, `uuid`, or `name`.
+Global search combines two first-class source types: opt-in resources and
+custom `PanelSearchProvider` adapters. Both flow through the same bounded
+`PanelSearchCoordinator`, immutable `PanelSearchResult`, and cursor-aware
+`PanelSearchPage` contracts. The legacy array-returning
+`Panel::globalSearch()` remains compatible; `Panel::globalSearchPage()` adds
+completeness, next-cursor, partial-error diagnostics, and execution metadata.
+
+A resource becomes searchable with `globalSearchable()`, then uses
+`globalSearchColumns()` or searchable table columns to match array-backed
+records. Results link to the generated show page when a record exposes `id`,
+`key`, `uuid`, or `name`.
 
 ```php
 Panel::resource('customers')
@@ -2980,7 +4984,110 @@ Panel::resource('orders')
 ```
 
 `Panel::globalSearch($query, $request, $limit)` returns the same normalized
-result shape used by the generated dashboard.
+result shape used by the generated dashboard. Resource handlers may also emit
+`score`, `dedupe_key`, `icon`, and JSON-safe `meta`; those fields participate in
+the shared ranking pipeline.
+
+Use a custom provider when search is backed by a repository, full-text index,
+remote service adapter, or precomputed async index:
+
+```php
+Panel::registerSearchProvider(
+	PanelSearchProvider::make('operations-index')
+		->label('Operations')
+		->limit(20)
+		->tenantScoped(required: true)
+		->visibleUsing(fn(PanelRequest $request) => $request->user() !== null)
+		->authorizeUsing(function($user, PanelRequest $request){
+			return $user->can('search-operations', $request->tenantKey()) === true;
+		})
+		->rankUsing(function(PanelSearchResult $result, string $query){
+			return SearchRanking::score($query, $result->title(), $result->score());
+		})
+		->deduplicateUsing(fn(PanelSearchResult $result) => $result->url())
+		->pageUsing(function(
+			string $query,
+			PanelRequest $request,
+			PanelSearchProvider $provider,
+			int $limit,
+			PanelManager $manager,
+			PanelSearchContext $context,
+		){
+			$page=OperationsIndex::search(
+				query: $query,
+				tenant: $context->tenant(),
+				cursor: $context->cursor(),
+				limit: $context->providerLimit(),
+			);
+
+			return PanelSearchPage::make(
+				results: array_map(
+					fn($hit) => PanelSearchResult::fromArray([
+						'title'=>$hit->title,
+						'subtitle'=>$hit->summary,
+						'url'=>$hit->panelUrl,
+						'record_key'=>$hit->id,
+						'score'=>$hit->score,
+					]),
+					$page->hits,
+				),
+				nextCursor: $page->nextCursor,
+				complete: $page->nextCursor === null,
+			);
+		})
+);
+```
+
+Provider callbacks may return a finite iterable of result-like arrays or a
+`PanelSearchPage`. Panel deliberately does not poll promises, futures, or jobs
+inside an HTTP request. An asynchronous ingestion pipeline should update its
+index independently and expose a synchronous, cursor-aware page adapter to the
+provider. Cursor accessors preserve the adapter payload, while public
+`toArray()`/JSON serialization redacts secret-like keys in cursor arrays.
+Applications should use signed opaque strings when a continuation token must be
+returned to a client unchanged, and must never put unsigned authority in a
+cursor.
+
+Visibility, required tenancy, provider authorization, manager authorization,
+and resource policies are evaluated before a registered source executes.
+Resolver exceptions deny access and are traced. Provider failures do not take
+down successful sources: the returned page is marked partial and contains
+bounded, redacted diagnostics. Result URLs reject scriptable/unknown schemes,
+metadata is recursively bounded and secret-like keys are redacted, and client
+diagnostics never expose exception messages. Search traces retain query length
+and exception class rather than raw query text or exception messages.
+
+Ranking is score-descending. Equal scores use provider sort, normalized provider
+name, source order, and local result order, so ties are deterministic. The
+highest-ranked duplicate wins. Explicit `dedupe_key`/`deduplicateUsing()` values
+take precedence, followed by normalized absolute URL, provider+record key, and
+provider+text identities. Per-provider results, participating sources,
+diagnostics, aggregate candidates, and the public result count all have hard
+budgets.
+
+```php
+$page=Panel::globalSearchPage(
+	'packing',
+	$request,
+	limit: 12,
+	cursor: ['operations-index'=>$priorCursor],
+);
+
+$page->results();       // list<PanelSearchResult>
+$page->nextCursor();    // provider-keyed cursor map or null
+$page->isComplete();    // false when more ranked/index results exist
+$page->isPartial();     // true when a participating source degraded
+$page->diagnostics();   // bounded JSON-safe adapter diagnostics
+iterator_to_array($page); // pages are directly iterable over results
+```
+
+`PanelManager`, the static `Panel` facade, and every `PanelInstance` expose
+`registerSearchProvider(s)`, `searchProvider()`, `hasSearchProvider()`,
+`searchProviders()`, `globalSearch()`, and `globalSearchPage()`. Direct
+`PanelSearchProvider::search()`/`searchPage()` calls remain raw adapter test
+primitives for backward compatibility. Use `searchAuthorizedPage()` when
+calling a provider directly from application code; normal UI code should enter
+through the manager/facade coordinator.
 
 Bulk actions render a selection column and receive the selected records as the
 first handler argument:
@@ -3106,16 +5213,20 @@ Panel::action('snapshot')
 
 Modal actions can declare explicit modal stack behavior with `modalStack()`.
 Use `modalStack('push')`, `stackedModal()`, `modalBack()`, or
-`preserveModalHistory()` when an action opened from inside a modal should expose
-a Back control. Use `replaceModal()` for one-way detail panels, and
-`clearModalStack()` for terminal actions such as workspace resets. Actions
-without explicit stack metadata replace the current modal, which keeps
-destructive confirmations and one-way flows direct.
+`preserveModalHistory()` when an action should always preserve the current
+dialog and expose a Back control. An action without explicit stack metadata
+replaces a top-level modal, but is automatically promoted to `push` when its
+trigger lives inside an already-open modal. That nested default makes ordinary
+daughter actions reversible without extra configuration. Use `replaceModal()`
+to opt into a one-way replacement even inside a modal, and `clearModalStack()`
+for terminal actions such as workspace resets.
 
 ```php
 Panel::action('assign')
 	->slideOver('Assign owner', 'Move ownership without leaving the record.', 'lg')
 	->stackedModal()
+	->backOnModalExit()
+	->backToParentModal()
 	->fields([
 		Panel::field('owner', 'select')->options($owners)->required(),
 	])
@@ -3127,6 +5238,134 @@ Panel::action('reset_workspace')
 	->requiresConfirmation()
 	->handle(fn() => Workspace::reset());
 ```
+
+`backOnModalExit()` controls dismissal: Cancel, Escape, and the close control
+restore the parent snapshot when one exists. `backToParentModal()` controls a
+successful submission: after the mutation and requested refreshes complete,
+the daughter modal is popped and the live parent modal is restored. For other
+dismissal policies, use `closeOnModalExit()` or `stayOnModalExit()`. For other
+successful-submit policies, use `modalNavigation('close')` or
+`modalNavigation('stay')`.
+
+The same action URLs remain usable as full server-rendered pages. Supply a
+panel-local `return_to` query or form value when opening a daughter page; Panel
+validates it, preserves it through validation errors, and uses it for Cancel
+and the successful POST redirect:
+
+```php
+$returnTo=PanelConfig::resourceUrl(
+	$orders,
+	'show/'.rawurlencode((string)$orderId),
+);
+
+$createSellerUrl=PanelConfig::resourceUrl($sellers, 'create', [
+	'return_to'=>$returnTo,
+]);
+```
+
+External, protocol-relative, traversal, and control-character return URLs are
+rejected. Unsigned migration targets must also remain inside the mounted Panel
+surface. Generated relation Create links already attach this `return_to`
+fallback automatically.
+
+### Signed navigation intents
+
+Production surfaces should bind every cross-page and modal return to a signed,
+short-lived navigation intent. A token covers the canonical return target,
+audience, panel and surface names, tenant and principal identities, operation,
+outcome, issue/not-before/expiry times, a nonce, and the bounded parent-modal
+chain. Changing either hidden field, replaying a consumed nonce, changing user
+or tenant, or moving the token to another surface fails closed before a
+mutation handler runs.
+
+Configure at least 32 bytes of application-managed secret material. Keep the
+secret outside source control; only the public key id and secret-free capability
+metadata appear in Panel manifests.
+
+```php
+$panel->navigationIntentKey(
+	$_ENV['PANEL_NAVIGATION_KEY'],
+	'2026-07',
+	[
+		'surface'=>'operations',
+		'ttl'=>900,
+		'unsigned_migration'=>'same_panel',
+	]
+);
+```
+
+For rotation, keep the retiring verification key in the provider until every
+token it issued has expired, while selecting the new id for issuance:
+
+```php
+use Dataphyre\Panel\PanelNavigationSigningKey;
+use Dataphyre\Panel\PanelStaticNavigationKeyProvider;
+
+$keys=new PanelStaticNavigationKeyProvider([
+	'2026-06'=>new PanelNavigationSigningKey(
+		'2026-06',
+		$_ENV['PANEL_NAVIGATION_KEY_2026_06'],
+		strtotime('2026-06-01T00:00:00Z'),
+		strtotime('2026-08-01T00:00:00Z'),
+	),
+	'2026-07'=>new PanelNavigationSigningKey(
+		'2026-07',
+		$_ENV['PANEL_NAVIGATION_KEY_2026_07'],
+		strtotime('2026-07-01T00:00:00Z'),
+	),
+], '2026-07');
+
+$panel->navigationIntentKeyProvider($keys, [
+	'surface'=>'operations',
+	'unsigned_migration'=>'disabled',
+]);
+```
+
+Multi-process deployments can implement `PanelNavigationKeyProvider` against a
+secret manager and `PanelNavigationReplayGuard` against an atomic shared store.
+`PanelInMemoryNavigationReplayGuard` is intentionally process-local and is best
+suited to tests or single-process applications. Attach a production guard with
+`navigationIntentReplayGuard()` when an intent must be single-use.
+
+Actions can narrow the signed context fluently. Generated action, page, form,
+relation, save, cancel, and exit flows then carry the paired hidden
+`return_to` and `navigation_intent` fields automatically:
+
+```php
+Panel::action('assign')
+	->slideOver('Assign owner')
+	->navigationIntent(true, 'assign', 'saved')
+	->navigationAudience('operations.navigation')
+	->navigationReturnTarget('/panel/orders?view=assigned')
+	->backToParentModal();
+```
+
+The modal runtime sends its live same-origin workspace target on the daughter
+GET. The server canonicalizes that target and signs the exact value returned in
+the form. On submit, the browser preserves the pair unchanged. It never signs
+targets and there is no client signing endpoint. Without a signed pair, the
+legacy runtime may replace `return_to` with its live same-panel URL only while
+the migration policy permits it.
+
+#### Unsigned migration
+
+`unsigned_migration => 'same_panel'` is a temporary compatibility mode. It
+accepts only unsigned, unprivileged same-panel navigation and emits a
+deprecation trace. Privileged or mutating requests, cross-context targets, and
+external targets still fail closed. Move generated and custom forms to paired
+fields, verify any hand-built page links, and then switch to:
+
+```php
+$panel->navigationIntentMigration('disabled');
+```
+
+Do not disable the feature to complete this migration: `disabled` here is the
+unsigned-migration policy, so configured signed intents remain required. A
+missing or inactive configured key prevents privileged navigation rather than
+silently trusting `return_to`. Applications can inspect
+`navigationIntentManifest()` for rollout diagnostics; manifests include key
+ids, time bounds, policies, and capabilities but never signing secrets or raw
+nonces.
 
 Actions can also declare client effects that are returned with fragment and
 modal responses. Effects are hints for the Panel shell after the server action
@@ -3154,10 +5393,13 @@ Panel::action('assign')
 
 Available helpers are `refresh()`, `refreshPanel()`, `refreshTable()`,
 `refreshWidgets()`, `refreshNavigation()`, `withoutRefresh()`, `closeModal()`,
-`keepModalOpen()`, and `dispatchBrowserEvent()`. Returned `effects` from the
-handler are merged with the action definition, so a generic action can declare
-its usual behavior while a specific outcome can add an event or override whether
-the modal closes.
+`keepModalOpen()`, `modalNavigation()`, `backToParentModal()`, and
+`dispatchBrowserEvent()`. Stack and dismissal helpers include `modalStack()`,
+`stackedModal()`, `replaceModal()`, `clearModalStack()`, `modalExit()`,
+`backOnModalExit()`, `closeOnModalExit()`, and `stayOnModalExit()`. Returned
+`effects` from the handler are merged with the action definition, so a generic
+action can declare its usual behavior while a specific outcome can add an event
+or override whether the modal goes back, closes, or stays open.
 
 Refresh targets are patch-aware. `refreshPanel()` updates the full Panel
 surface. Narrower targets such as `refreshTable('orders')`, `refreshWidgets()`,
@@ -3793,10 +6035,33 @@ $report=$policy->report($repository);
 $report->summary(); // total, trusted, blocked, signed
 ```
 
-This is a policy manifest, not cryptographic verification. Future marketplace
-and installer tooling can verify detached signatures or transparency logs, then
-feed the verified publisher, key, digest, and timestamp into the same package
-manifest shape.
+Trust policy evaluates identity metadata and revocations. Cryptographic package
+verification is a separate, stricter boundary because it must see the complete
+artifact bundle. The host supplies public keys; key material is never serialized:
+
+```php
+$verifier=$panel->packageSignatureVerifier([
+	'dp-release-2026'=>[
+		'algorithm'=>'ed25519',
+		'public_key'=>$releasePublicKey,
+	],
+]);
+
+$bytes=$verifier->payload($template); // exact domain-separated bytes to sign
+$verification=$verifier->verify($template);
+$verification->ok();                  // digest + key + detached signature
+```
+
+Signatures cover the manifest (excluding its signature field) and the sorted
+path, byte length, and SHA-256 digest of every artifact. Ed25519 is preferred;
+RSA-SHA256 and ECDSA-SHA256 use OpenSSL and enforce the corresponding OpenSSL
+key family, so an RSA key cannot be relabeled as ECDSA or vice versa. Embedded
+public keys are fail-closed by default. When explicitly enabled for development
+or migration, embedded-key fallback is accepted only for an anonymous signature:
+an unknown `key_id` never falls back to package-controlled key material.
+Malformed, unsafe, case-colliding, or secret-bearing signature bundles return
+check-level diagnostics, and verifier limits bound artifact count, signature/key
+size, and aggregate artifact bytes.
 
 Finally, installer tooling can ask for a dry-run plan before writing anything.
 `Panel::packageInstallPlan()` and `$panel->packageInstallPlan()` combine a
@@ -3807,6 +6072,7 @@ overwrite policy into a list of planned file operations:
 $plan=$panel->packageInstallPlan($template, app_path('Panel/Packages'), [
 	'overwrite_policy'=>'skip', // fail, skip, or replace
 	'trust_policy'=>$policy,
+	'signature_verifier'=>$verifier,
 	'runtime'=>PanelCompatibilityMatrix::defaultRuntime(),
 ]);
 
@@ -3814,29 +6080,40 @@ $manifest=$plan->manifest(); // ready, blocked, steps, conflicts, bytes
 ```
 
 The plan manifest never writes files. It resolves artifact target paths, counts
-creates, replacements, skips, conflicts, and bytes, and blocks when
-compatibility or trust checks fail. After a human or deployment policy approves
-the manifest, the same plan can produce a storage-safe apply result:
+creates, replacements, skips, conflicts, invalid artifacts, and bytes, and
+blocks the complete package when compatibility, trust, signature, path, or
+case-collision checks fail. After a human or deployment policy approves the
+manifest, the same plan can produce a storage-safe apply result:
 
 ```php
 $preview=$plan->apply(app_path('Panel/Packages'), [
 	'dry_run'=>true,
-	'overwrite'=>true,
+	'overwrite_policy'=>'replace',
 	'backup_root'=>storage_path('panel-package-backups'),
 ]);
 
-$preview->toArray(); // ok, written, skipped, backups, blocked, duration_ms
+$preview->toArray(); // ok, written, skipped, backups, blocked, verification
 ```
 
 `apply()` returns a `PanelPackageApplyResult`. With `dry_run` enabled it reports
 the same written and backup metadata without creating directories, copying
 backups, or writing package files. With `dry_run` disabled it creates missing
-target directories, writes template artifacts, and copies existing files into
-`backup_root` before replacement when a backup root is provided. Every artifact
-target is resolved under the requested target root; paths that would escape that
-root are added to `blocked` instead of being written. The per-call `overwrite`
-option can force replacement or fail-on-existing behavior without changing the
-stored install plan.
+target directories and copies existing files into a unique per-apply namespace
+under `backup_root` before replacement. Backup bytes are rehashed after copying.
+Every artifact is staged beside its destination, length/digest checked, and
+published atomically; planned replacement digests are revalidated under the lock
+and immediately before publication. Targets and ancestors that are symbolic
+links, escape the requested root, appear/disappear after planning, or change
+digest are added to `blocked`. Signed templates are also reverified after the
+before-apply hook, so a hook cannot mutate already-approved bytes. Apply is atomic
+by default: it shares an exclusive package-root lock with rollback, verifies
+private transaction snapshots, and removes creations/restores replacements if a
+later write fails. `attempted` and `reverted` preserve that recovery audit while
+`written` contains only committed writes. If recovery itself fails, the private
+snapshot location is preserved in result metadata for manual repair.
+`atomic=false` is an explicit compatibility escape hatch. The per-call
+`overwrite_policy` (or legacy `overwrite` boolean) can override the stored plan
+without mutating it.
 
 Every install plan can still produce a dry-run rollback plan:
 
@@ -3845,9 +6122,10 @@ $rollback=$panel->packageRollbackPlan($plan);
 $rollback->manifest(); // delete, restore, snapshot, leave, blocked counts
 ```
 
-Rollback plans are manifest-only. Created files become delete steps, replaced
-files require snapshots and restore steps, skipped files are left alone, and
-unresolved install conflicts block rollback readiness.
+Preview rollback plans are manifest-only because they have no concrete backup
+paths or installed digests. Created files become delete steps, replaced files
+require snapshots and restore steps, skipped files are left alone, and unresolved
+install conflicts block preview readiness.
 
 After an install is applied, rollback planning should consume the apply result
 instead of guessing what happened on disk:
@@ -3860,13 +6138,412 @@ $result=$plan->apply(app_path('Panel/Packages'), [
 
 $rollback=PanelPackageRollbackPlan::fromApplyResult($result);
 $rollback->manifest(); // restore when a backup exists, delete otherwise
+$rollbackResult=$rollback->apply([
+	'backup_root'=>storage_path('panel-package-backups'),
+]);
+
+// A deserialized result must re-establish caller-owned trust boundaries:
+$serializedRollback=PanelPackageRollbackPlan::make($storedApplyResult);
+$serializedRollback->apply([
+	'target_root'=>app_path('Panel/Packages'),
+	'backup_root'=>storage_path('panel-package-backups'),
+]);
 ```
 
 `Panel::packageRollbackPlan($result)` and `$panel->packageRollbackPlan($result)`
-accept the same apply result object. Each written file becomes a restore step
-when `apply()` captured a backup for that target; written files without a backup
-become delete steps. Skipped files become leave steps, and blocked apply entries
-remain blocked in the rollback manifest.
+accept the same apply result object. Replacement writes require a matching
+verified backup and become restore steps; creation writes become delete steps.
+Skipped files become leave steps, and blocked apply entries remain visible in the
+rollback manifest. Executable rollback validates the apply-result structure and
+unique targets, rejects incomplete transactions, validates every target against
+the original root, refuses symbolic-link targets and stale installed files,
+confines backup reads to an allowed backup root, verifies both installed and
+backup SHA-256 digests, preflights all steps before mutation, revalidates under
+the package lock, and verifies private snapshots so an execution failure is
+itself rolled back. Raw/deserialized result arrays require explicit trusted
+`target_root`/`target_roots` and backup roots; paths embedded in serialized data
+never expand caller authority. Use `dry_run=true` for an exact no-write preview.
+`force=true` can bypass stale installed bytes and the missing digest on a legacy
+create/delete record, but never backup integrity or path-confinement checks. If
+transaction recovery fails, `meta.transaction_snapshot` retains the private
+snapshot path for manual repair.
+
+### Signed remote package distribution
+
+For the complete first-party transparency, revocation, publisher-evidence, and
+install-time activation model, see
+[Dataphyre Panel Marketplace Trust](Dataphyre_Panel_Marketplace_Trust.md).
+
+Panel includes a signer-isolated publisher and a crash-safe filesystem registry
+operator. This is a complete first-party publication, discovery, and local
+transport path; it is not merely a registry wire-format reader. The signer
+callback and verification keys remain host-owned and are never serialized.
+Before publication, every package bundle is independently signature-verified,
+evaluated against trust policy, checked against the registry authority, and
+rebuilt from bounded canonical artifacts. The generated signed index is then
+self-verified before it can become a publication:
+
+```php
+$registry=Panel::filesystemPackageRegistry(
+	$privateRegistryRoot,
+	'shopiro_packages',
+	'shopiro',
+);
+
+$publisher=Panel::packageRegistryPublisher(
+	'shopiro_packages',
+	'shopiro',
+	'shopiro-registry-2027',
+	'ed25519',
+	$hostKeyService->detachedSigner('shopiro-registry-2027'),
+	$signatureVerifier,
+	$trustPolicy,
+	$trustedClock,
+	[
+		'ttl_seconds'=>3600,
+		'max_packages'=>2000,
+		'max_bundle_bytes'=>64 * 1024 * 1024,
+	],
+);
+
+$publication=$publisher->publish(
+	[
+		[
+			'template'=>$sellerTrustTemplate,
+			'dependencies'=>['audit_base'=>'^2.0.0'],
+			'listing'=>[
+				'tags'=>['trust', 'operations'],
+				'categories'=>['governance'],
+			],
+		],
+	],
+	$nextMonotonicSequence,
+	$registry->locatorFactory(),
+);
+
+$receipt=$registry->commit($publication);
+```
+
+`commit()` writes immutable content-addressed objects before atomically advancing
+the signed index pointer. It rejects rollback, same-sequence equivocation,
+foreign locators, changed registry roots, symlink ancestry, corrupt objects,
+unsafe locks, and malformed persisted state. Replaying the exact same
+publication is idempotent. `indexLocator()` and `fetch()` make the operator an
+existing `PanelPackageTransport`, so the same load, resolve, acquire, install,
+and rollback contracts work without a special local code path.
+
+Discovery uses a locator-free read model:
+
+```php
+$catalog=$registry->catalog();
+$page=$catalog->search(
+	'workflow',
+	['tag'=>'recommended', 'capability'=>'operator_actions'],
+	cursor: $opaqueCursor,
+	limit: 24,
+);
+
+$latest=$catalog->latest('seller_trust_pack');
+$history=$catalog->versions('seller_trust_pack', includeUnavailable: true);
+```
+
+Catalog cursors are bound to the exact signed index, query, and filter set.
+Search supports status, type, publisher, tag, category, capability, availability,
+and all-version filters plus deterministic facets. Catalog rows reconstruct a
+strict allowlist and never expose registry locators, package bytes, local paths,
+or unknown metadata fields.
+
+The optional Platform `packages` domain wires the same operator as both registry
+and transport and provides a responsive, read-only package browser. The page
+requires `packages.view`, accepts only bounded canonical search/filter values,
+and is mountable with the rest of the production platform pages:
+
+```php
+$platform=PanelPlatform::defaults([
+	'state_root'=>$privateStateRoot,
+	'packages'=>[
+		'registry_id'=>'shopiro_packages',
+		'publisher'=>'shopiro',
+		'snapshot_retention'=>256,
+	],
+]);
+
+$panel->usePlatform($platform)->mountPlatformPages([
+	'domains'=>['packages'],
+	'packages'=>['base_url'=>'/platform/packages'],
+]);
+```
+
+This operator is suitable for a single shared filesystem. Multi-host
+object-store replication, CDN publication, remote signing services, public
+catalog moderation, mirrors, credentials, monitoring, retention policy, and
+background refresh remain deployment concerns.
+
+Remote distribution remains an explicit adapter boundary. Panel does not ship
+an HTTP client, read a registry URL during boot, refresh in the background, or
+accept registry-provided public keys. A host implements `PanelPackageTransport`
+for its HTTP client, object store, authenticated gateway, or test fixture. The
+locator remains opaque and is passed only to that adapter:
+
+```php
+final class PackageGateway implements PanelPackageTransport {
+	public function fetch(string $locator, array $request=[]): array {
+		// Apply host credentials here. Do not put them in the returned envelope.
+		$response=$this->client->get($locator, $request['max_bytes'] ?? null);
+
+		return [
+			'ok'=>$response->ok(),
+			'status'=>$response->status(),
+			'body'=>$response->body(),
+			'bytes'=>strlen($response->body()),
+			'content_type'=>$response->contentType(),
+			'content_encoding'=>$response->contentEncoding(),
+		];
+	}
+}
+```
+
+Registry indexes use
+`application/vnd.dataphyre.panel-package-registry+json`. A publisher signs the
+canonical index payload returned by `PanelPackageRegistryIndex::signaturePayload()`.
+The signed body includes `registry`, `publisher`, a positive monotonic
+`sequence`, `generated_at`, `expires_at`, package descriptors, artifact SHA-256
+digests and sizes, and optional transparency proofs. Every entry is bound to the
+authenticated index publisher and key id. Package artifacts use
+`application/vnd.dataphyre.panel-package+json`; ZIP, TAR, GZIP, and other archive
+formats are deliberately unsupported. Registry times must be canonical RFC 3339
+date-times at exact-second precision with an explicit `Z` or numeric timezone;
+relative, timezone-free, normalized-invalid, or whitespace-padded values fail
+closed.
+
+Load plans make the network transition visible in code. Construction and
+`toArray()` do not call the transport. Only `load()` can do so:
+
+```php
+$registryLoad=PanelPackageRegistryLoadPlan::make(
+	'registry://panel/releases',
+	$packageGateway,
+	$signatureVerifier, // host-owned public keys
+	$trustPolicy,
+	[
+		'now'=>$trustedHostClock,
+		'minimum_sequence'=>$persistedSequence,
+		'previous_digest'=>$persistedIndexDigest,
+		'require_transparency'=>true,
+		'transparency_verifier'=>$hostTransparencyVerifier,
+		'require_revocation_check'=>true,
+		'revocation_checker'=>$marketplaceTrust->revocations(),
+		'require_publisher_trust'=>true,
+		'publisher_trust_resolver'=>$marketplaceTrust->publishers(),
+	]
+);
+
+$registryLoad->toArray(); // no I/O; locator is represented only by a digest
+$loaded=$registryLoad->load();
+if(!$loaded->ok()) {
+	throw new RuntimeException(implode(' ', $loaded->errors()));
+}
+
+$index=$loaded->index();
+$signedBytes=$loaded->body(); // explicit host-owned persistence, never serialized
+```
+
+Freshness is evaluated against the caller's trusted clock. Signed registry
+timestamps are evidence, not a clock source. Replay protection uses the
+host-persisted minimum sequence and previous canonical body digest. Reusing a
+sequence for different content or moving backwards fails closed. Offline mode
+never calls transport and requires the host to supply previously verified signed
+bytes explicitly:
+
+```php
+$offline=PanelPackageRegistryLoadPlan::make(
+	'registry://panel/releases',
+	$packageGateway,
+	$signatureVerifier,
+	$trustPolicy,
+	[
+		'offline'=>true,
+		'cached_body'=>$persistedSignedBytes,
+		'now'=>$trustedHostClock,
+		'minimum_sequence'=>$persistedSequence,
+		'previous_digest'=>$persistedIndexDigest,
+		'allow_stale_cache'=>true, // explicit offline-only emergency policy
+	]
+)->load();
+```
+
+Resolution is deterministic and confined to exact package ids present in the
+authenticated index. There are no capability aliases, implicit public-registry
+fallbacks, or external dependency lookups. The compact constraint language
+supports `*`, exact semantic versions, `=`, `==`, `>`, `>=`, `<`, `<=`, caret
+ranges, and comma-separated conjunctions. Carets follow SemVer rules, including
+`^0.2.3 <0.3.0` and `^0.0.3 <0.0.4`. Numeric prerelease identifiers with leading
+zeros are invalid, build metadata does not affect precedence, and comparisons do
+not use PHP's looser `version_compare()` behavior. Unsupported constraints fail
+closed. The resolver prefers the highest eligible version only when there is no
+existing pin or `update=true` is explicit. With the default `update=false`, an
+authenticated lock version is pinned first, otherwise the installed version is
+pinned; an unsatisfied pin fails rather than silently upgrading. It orders
+dependencies before dependants, bounds backtracking with `max_attempts`, blocks
+cycles and downgrades by default, blocks major upgrades unless allowed, and can
+enforce a frozen version-and-digest lock:
+
+```php
+$resolution=PanelPackageResolver::make($index)->resolve(
+	['seller_trust_pack'=>'^1.0.0'],
+	$installedPackages,
+	[
+		'update'=>false,
+		'lock'=>$persistedLock,
+		'frozen'=>true,
+		'allow_downgrade'=>false,
+		'allow_major_updates'=>false,
+	]
+);
+
+$resolution->toArray(); // deterministic CI manifest and checksum, no locators
+```
+
+Artifact acquisition is also explicit. The content-addressed cache derives local
+paths only from an authenticated SHA-256 digest; a registry locator is never a
+filesystem path. Cache reads rehash complete bytes, validate metadata, size,
+content type, symlink ancestry, and host-clock freshness. Writes use a per-digest
+lock and an atomically published staged body. A cache hit is not trusted by
+itself: the complete package signature, publisher policy, registry publisher/key
+binding, artifact paths, and optional transparency proof are reverified every
+time.
+
+```php
+$cache=PanelPackageArtifactCache::make($hostPrivateCacheDirectory);
+$acquisition=PanelPackageAcquisitionPlan::make(
+	$resolution,
+	$packageGateway,
+	$cache,
+	$signatureVerifier,
+	$trustPolicy,
+	[
+		'now'=>$trustedHostClock,
+		'require_transparency'=>true,
+		'transparency_verifier'=>$hostTransparencyVerifier,
+		'require_revocation_check'=>true,
+		'revocation_checker'=>$marketplaceTrust->revocations(),
+		'require_publisher_trust'=>true,
+		'publisher_trust_resolver'=>$marketplaceTrust->publishers(),
+	]
+);
+
+$acquisition->toArray(); // no transport or cache read
+$packages=$acquisition->acquire();
+$install=$packages->installPlan('seller_trust_pack', 'Panel/Packages', [
+	'overwrite_policy'=>'replace',
+]);
+$applied=$install?->apply($targetRoot, ['backup_root'=>$backupRoot]);
+$rollback=$applied?->ok() ? $packages->rollbackPlan($applied) : null;
+```
+
+The acquisition result retains a process-local live marketplace gate. Install
+preflight evaluates it, and `apply()` evaluates it again under the package lock
+immediately before publishing artifacts. A package or publisher revoked after
+resolution or download is therefore denied before any package artifact is
+written. The callback and its host trust objects are never serialized.
+
+A package bundle is a JSON object with format
+`dataphyre.panel.package.bundle.v1`, a signed `package` manifest, and a bounded
+list of `{path, contents}` artifacts. It must include
+`dataphyre-panel-package.json` with the exact same manifest. Paths must already
+be canonical forward-slash relative paths; absolute paths, traversal, Windows
+device names, control characters, case collisions, compression/encoding, and
+partially supported archives are rejected before installer handoff.
+
+Offline artifact acquisition accepts only a digest-valid cache entry and never
+calls transport. Stale cache use requires both `offline=true` and the explicit
+`allow_stale_cache=true` policy. Serialized load, resolution, cache,
+acquisition, verification, install, and rollback manifests omit raw registry
+locators, bundle bytes, local cache paths, signature bytes, public keys, and
+credential-shaped metadata. Transparency receipts and durable revocation and
+publisher-evidence projections are first-party contracts; remote log transport,
+witness operation, and trust-anchor distribution remain host-owned. There is
+intentionally no bundled HTTP transport, credential store, archive extractor,
+cache eviction daemon, automatic updater, or background refresh loop; hosts own
+those operational policies. The bundled filesystem operator is the first-party
+self-hosted transport, not an implicit public-registry client.
+
+### Package compatibility CI
+
+`PanelPackageCompatibilityPlan` turns package manifests and explicit runtime
+profiles into a transport-neutral conformance matrix. A plan accepts either a
+bounded list of runtime profiles or a Cartesian `runtime_axes` definition for
+PHP, Panel, Reactor, module-version profiles, theme sets, and feature sets. It
+sorts every dimension, orders known package dependencies before dependants, and
+produces stable case and plan fingerprints regardless of input order.
+
+```php
+$plan=PanelPackageCompatibilityPlan::make([
+	'runtime_axes'=>[
+		'php'=>['8.3.0', '8.4.0'],
+		'panel'=>['2.0.0'],
+		'reactor'=>['2.0.0'],
+		'modules'=>['standard'=>['panel'=>'2.0.0', 'reactor'=>'2.0.0']],
+		'themes'=>['built-in'=>['default', 'glass']],
+		'features'=>['signed'=>['signed_packages']],
+	],
+	'packages'=>[[
+		'manifest'=>$package,
+		'required_features'=>['signed_packages'],
+		'lock'=>$repositoryLock,
+		'distribution'=>$authenticatedRegistryIndex,
+		'verification'=>$verificationResult,
+		'trust'=>$trustPolicy,
+		'install_plan'=>$installPlan,
+	]],
+	'policy'=>[
+		'require_lock'=>true,
+		'require_authenticated_distribution'=>true,
+		'require_signature'=>true,
+		'require_trust'=>true,
+		'require_install_ready'=>true,
+	],
+]);
+
+$report=$plan->report($previousMachineReport);
+$report->ok();         // CI policy decision
+$report->comparison(); // newly blocked, regressions, recoveries, removals
+```
+
+Evidence provenance is deliberately explicit. A live
+`PanelPackageRegistryIndex` is `runtime_authenticated`; a resolution plan is
+`runtime_resolution` and is not promoted to authenticated evidence. Signature
+verification results are reported evidence rather than a claim that the matrix
+reran cryptography. Trust policies are evaluated locally, while install plans
+are inspected through `manifest()` only. Snapshot arrays retain a `snapshot`
+origin. Planning and reporting never fetch packages, read a cache, apply an
+install plan, or write a baseline.
+
+Machine reports omit registry locators, signature bytes, local paths, and
+credential-shaped metadata. Baseline comparison uses stable case keys and
+distinguishes added failures from newly blocked cases, recoveries, improvements,
+and removed cases. Package, runtime, expanded-case, baseline, input-byte,
+canonicalization-depth, and collection ceilings are enforced before expensive
+work.
+
+The contributor CLI exposes the same read-only contract:
+
+```console
+php dev/tools/panel_package_compatibility.php \
+  --root . \
+  --config dev/tools/panel_package_compatibility.example.json
+
+# Once CI has promoted a prior report as its baseline:
+php dev/tools/panel_package_compatibility.php \
+  --root . \
+  --config dev/tools/panel_package_compatibility.example.json \
+  --baseline var/panel-package-compatibility-baseline.json
+```
+
+Both JSON inputs must resolve to regular, non-symbolic-link files beneath
+`--root`. Exit code `0` means policy passed, `1` means the report is valid but
+policy failed, and `2` means the arguments or JSON input are invalid. The CLI
+does not update the baseline; CI owns artifact persistence and promotion.
 
 Global search has its own manifest as well. Use `Panel::searchManifest()` or
 `PanelInstance::searchManifest()` when a command palette, docs exporter,
@@ -3875,15 +6552,18 @@ Flightdeck tab, or test needs searchable providers without rendering the shell:
 ```php
 $manifest=$panel->searchManifest($request, query: 'SO-', limit: 5);
 
-$manifest['providers'];        // searchable resources keyed by resource name
+$manifest['providers'];        // visible resource and custom provider descriptors
 $manifest['resource_columns']; // indexed columns per provider
-$manifest['query'];            // optional sampled query metadata and results
-$manifest['capabilities'];     // provider, tenant, query, result, column counts
+$manifest['query'];            // results, cursor, completeness, partial diagnostics
+$manifest['capabilities'];     // ranking, paging, tenancy, budgets, provider counts
 ```
 
 The manifest is cheap when no query is passed. Supplying a query asks the same
-resource-backed global search path to return a bounded sample, which is useful
-for diagnostics and demos without hardcoding provider-specific behavior.
+coordinator to return a bounded sample. A sampled query with zero hits remains
+truthfully marked as sampled. Hidden or denied custom providers are omitted;
+tenant scope is reported only when the provider explicitly enables and enforces
+it. Provider metadata and diagnostics use the same bounded redaction contract as
+runtime pages.
 
 Tenant scope has a standalone manifest as well. Use
 `Panel::tenantManifest()` or `PanelInstance::tenantManifest()` when a shell,
@@ -3895,15 +6575,20 @@ $manifest=$panel->tenantManifest($request);
 
 $manifest['parameter'];     // request/query parameter name
 $manifest['current'];       // active tenant key, or null when unscoped
+$manifest['context'];       // resolution code, source, and authorization state
+$manifest['tenants'];       // authorized visible switcher definitions only
+$manifest['registry'];      // privacy-safe registry capability description
 $manifest['resources'];     // tenant-scoped resources keyed by resource name
 $manifest['search'];        // tenant-aware global search provider summary
 $manifest['propagation'];   // links, forms, actions, exports, imports, modals
-$manifest['capabilities'];  // scoped resources, resolvers, scopes, active state
+$manifest['capabilities'];  // lifecycle, onboarding, storage, billing, and scope
 ```
 
-The manifest is built from resource definitions, `PanelRequest::tenantKey()`,
-and panel configuration. It keeps tenant behavior inspectable without making
-themes or host routes understand application-specific tenancy.
+The manifest is built from resource definitions, the manager-owned tenant
+registry, the authorized request context, and panel configuration. Hidden,
+unknown, and unauthorized tenant definitions are not emitted through the
+switcher list. It keeps tenant behavior inspectable without making themes or
+host routes understand application-specific tenancy.
 
 Navigation has a standalone shell contract too. Use
 `NavigationItem::manifest()`, `Panel::navigationManifest()`, or
@@ -4234,8 +6919,274 @@ Panel::resource('orders')
 	])
 	->queryUsing(function(PanelRequest $request){
 		return OrderRepository::queryForPanelView((string)$request->query('view', 'all'));
-	});
+});
 ```
+
+### Collection presentation, brick, and row masonry layouts
+
+Collections are not locked to a single pill strip or row. Tables, page tables,
+forms, and schemas share a normalized presentation contract with `inline`,
+`segmented`, `brick`, `stack`, `grid`, and `masonry` display modes. The owning
+primitive controls the sibling layout; individual views, tabs, filters, or
+options keep their semantic state and content.
+
+Masonry has two deliberately different flows. The backward-compatible default,
+`masonry: columns`, is variable-height CSS-column masonry. `masonry: rows` is a
+row-filling control layout: items wrap in DOM order, every row consumes the
+available width, and an incomplete final row stretches instead of leaving a
+dead cell. Row masonry is normally the right choice for widgets, toolbars,
+table views, options, tabs, steps, form fields, and infolist entries. Column
+masonry remains the right choice for variable-height media and editorial cards.
+
+```php
+$table=ResourceTable::make()
+	->viewsPresentation([
+		'display'=>'brick',
+		'columns'=>['sm'=>2, 'lg'=>4],
+		'fit'=>'fixed',
+		'density'=>'normal',
+		'gap'=>'compact',
+		'min_width'=>160,
+	])
+	->brickGroups()
+	->summariesPresentation(['display'=>'masonry', 'masonry'=>'columns'])
+	->filtersDisplay('grid');
+
+$table=$table->masonryViews(true, [
+	'columns'=>['base'=>2, 'md'=>4, 'xl'=>6],
+	'min_width'=>138,
+	'gap'=>'compact',
+]);
+
+$form=ResourceForm::make()
+	->brickTabs()
+	->masonryFields(true, ['columns'=>['md'=>3]])
+	->masonrySections(true, ['min_width'=>280])
+	->stepsPresentation([
+		'display'=>'grid',
+		'columns'=>['md'=>3],
+		'fit'=>'fixed',
+	]);
+
+Field::make('channel', 'radio')
+	->options(['web'=>'Web', 'store'=>'Store', 'partner'=>'Partner'])
+	->masonryOptions(true, ['columns'=>2, 'min_width'=>150]);
+
+$page=PanelPage::make('operations')
+	->masonryWidgets(true, ['columns'=>['sm'=>2, 'lg'=>3]])
+	->masonryToolbar(true, ['min_width'=>160])
+	->masonryForms(true, ['columns'=>['lg'=>2]])
+	->masonryTables(true, ['columns'=>['xl'=>2]]);
+
+$section=FormSection::make('commercial')
+	->masonryFields(true, ['columns'=>['md'=>3]]);
+
+$infolist=Infolist::make()
+	->masonryEntries(true, ['columns'=>['md'=>3, 'xl'=>4]])
+	->masonrySections(true, ['min_width'=>300]);
+
+$orders=Resource::make('orders')
+	->masonryRecords('payments', true, ['columns'=>['md'=>2, 'xl'=>3]])
+	->recordItemPresentation('payments', 'manual-review', [
+		'span'=>['base'=>1, 'xl'=>2],
+	])
+	->recordFinalRow('payments', 'preserve')
+	->recordPresentation('shipments', [
+		'display'=>'masonry',
+		'masonry'=>'columns',
+		'min_width'=>260,
+	])
+	->masonryBoardColumns(true, ['columns'=>['md'=>2, 'xl'=>4]])
+	->boardColumnItemPresentation('review', ['span'=>['md'=>2, 'xl'=>1]])
+	->collectionFinalRow('board_columns', 'center')
+	->masonryBoardCards(true, ['columns'=>2])
+	->boardCardItemPresentation('SO-260505-0016', ['fill_remainder'=>true]);
+```
+
+Resources own the record-detail collection contract. The supported record
+collection keys are `relations`, `alerts`, `insights`, `links`, `contacts`,
+`locations`, `tags`, `items`, `totals`, `approvals`, `activity`, `changes`,
+`payments`, `shipments`, `notes`, `attachments`, `messages`, and `tasks`.
+`recordPresentation()`, `recordItemPresentation()`,
+`recordItemPresentations()`, `recordFinalRow()`, and `masonryRecords()` are the
+explicit record aliases; the generic collection methods remain available.
+Relation managers also expose the local `item*()` builders. Array payloads for
+the other record collections can declare `item_presentation` directly or under
+their associative `meta` key. Unconfigured record sections retain their legacy
+markup, including the historical unwrapped relation-manager sequence.
+
+Brick/Masonry v3 retains the v2 owner targeting contract: a wildcard (`*`), a zero-based
+rendered position (`#0`, `#1`, or an integer builder key), or a normalized item
+name. Named rules win over positional rules, positional rules win over the
+wildcard, and metadata declared on the item wins last. Every item control is
+responsive at `base`, `sm`, `md`, `lg`, `xl`, and `2xl`: `span`, `basis`,
+`min_width`, `max_width`, `grow`, `shrink`, `order`, `break_before`, and
+`fill_remainder`. Existing scalar values retain their original serialized and
+rendered contract. A breakpoint map is sparse and inherits its most recent
+configured value; precedence merges maps instead of discarding wildcard or
+positional breakpoints.
+
+```php
+$table=ResourceTable::make()
+	->masonryViews(true, ['columns'=>['base'=>2, 'lg'=>4]])
+	->viewItemPresentation('*', ['shrink'=>0])
+	->viewItemPresentation('attention', [
+		'span'=>['base'=>2, 'lg'=>1],
+		'grow'=>['base'=>1, 'md'=>2],
+		'shrink'=>['base'=>1, 'lg'=>0],
+		'order'=>['base'=>2, 'lg'=>-1],
+		'fill_remainder'=>['base'=>false, 'lg'=>true],
+	])
+	->viewItemPresentation(4, [
+		'break_before'=>['base'=>false, 'md'=>true],
+	])
+	->collectionFinalRow('views', 'preserve');
+
+$market=Field::make('market', 'radio')
+	->options([
+		'ca'=>'Canada',
+		'us'=>'United States',
+		'eu'=>[
+			'label'=>'European Union',
+			'item_presentation'=>['fill_remainder'=>true],
+		],
+	])
+	->masonryOptions(true, ['columns'=>2]);
+
+$widget=Widget::make('revenue')
+	->itemSpan(['base'=>1, 'lg'=>2])
+	->itemMinWidth('16rem')
+	->itemGrow(['base'=>1, 'md'=>2])
+	->itemShrink(0, 'xl')
+	->itemOrder(['base'=>2, 'lg'=>-1])
+	->itemBreakBefore(true, 'md')
+	->itemFillRemainder(['base'=>false, 'xl'=>true]);
+
+$lineItems=Field::make('line_items')->repeater([
+	Field::make('sku')->itemSpan(2),
+	Field::make('quantity', 'number'),
+])
+	->rowsPresentation(['display'=>'masonry', 'masonry'=>'rows'])
+	->fieldsPresentation(['display'=>'grid', 'columns'=>2]);
+
+$content=Field::make('content')->builder([
+	'hero'=>[
+		'label'=>'Hero',
+		'fields'=>[Field::make('headline')->itemFillRemainder()],
+		'item_presentation'=>['grow'=>2],
+	],
+	'copy'=>['label'=>'Copy', 'fields'=>[Field::make('body', 'textarea')]],
+])
+	->rowsPresentation(['display'=>'masonry', 'masonry'=>'rows'])
+	->fieldsPresentation(['display'=>'grid', 'columns'=>2])
+	->actionsPresentation(['display'=>'masonry', 'masonry'=>'rows']);
+```
+
+Every major item primitive exposes the same immutable local builders:
+`itemPresentation()`, `itemSpan()`, `itemBasis()`, `itemMinWidth()`,
+`itemMaxWidth()`, `itemGrow()`, `itemShrink()`, `itemOrder()`,
+`itemBreakBefore()`, and `itemFillRemainder()`. Owner-level convenience methods
+include `viewItemPresentation()`, `groupItemPresentation()`,
+`summaryItemPresentation()`, `filterItemPresentation()`,
+`actionItemPresentation()`, `tabItemPresentation()`,
+`stepItemPresentation()`, `optionItemPresentation()`,
+`widgetItemPresentation()`, `toolbarItemPresentation()`,
+`sectionItemPresentation()`, `fieldItemPresentation()`,
+`entryItemPresentation()`, `toolItemPresentation()`,
+`formItemPresentation()`, `tableItemPresentation()`,
+`boardColumnItemPresentation()`, and `boardCardItemPresentation()`. Use
+`collectionItemPresentation()` for extension-defined collections. Status-board
+lanes consume `board_columns`, while the cards within every lane consume
+`board_cards`. A `TableView` can use its local `item*()` builders to size its
+generated lane; owner rules can target cards by normalized record key. Board
+drag/drop remains DOM ordered, so presentation changes layout only and never
+change transition semantics.
+
+Board lanes can now be declared independently from transitions with
+`statusBoardColumns()` or `statusBoardColumn()`. `hasStatusBoard()` reports lane
+availability, while `canTransition()` continues to report mutation authority.
+This allows a read-only board to render and appear in index navigation without
+a callback; cards become draggable only after a save or transition handler is
+attached. Transition-derived lanes remain backward compatible and merge with
+explicit lanes by status value, so a custom lane key does not create a duplicate
+column.
+
+`collectionFinalRow()` accepts `fill`, `preserve`, `center`, or `end`. The
+default remains the existing fill behavior. Breaks are emitted as inert layout
+sentinels, responsive visual ordering never mutates DOM order, and all item
+lengths and numeric controls are normalized to bounded safe values; arbitrary
+CSS expressions are rejected. Responsive values resolve from the content
+container after viewport rules, so a narrow embedded Panel or modal cannot
+accidentally retain its desktop order, growth, break, or fill policy. No item
+attributes or extra markup are emitted for unconfigured collections.
+
+The convenience methods are symmetric across the built-in collections:
+`brickViews()`, `brickGroups()`, `brickSummaries()`, `brickFilters()`,
+`brickActions()`, `brickTabs()`, `brickSteps()`, `brickOptions()`,
+`brickWidgets()`, `brickToolbar()`, `brickSections()`, `brickFields()`,
+`brickEntries()`, `brickItems()`, `brickRows()`, `brickTools()`,
+`brickForms()`, `brickTables()`, `brickBoardColumns()`, and
+`brickBoardCards()`. Every major collection also has a `masonry*()` builder;
+`brickCollection()` and `rowMasonry()` cover extension-defined collections.
+Their corresponding `*Display()` and `*Presentation()` methods expose the
+complete contract. `PanelPage` serializes widget and toolbar presentation,
+`ResourceTable`/`PageTable` serialize table collections,
+`ResourceForm`/`Schema` serialize fields and section collections, each
+`FormSection` can override its own field collection, and `Infolist` forwards
+entry/section presentation to its schema. `Field` exposes meta-backed
+presentation for options, nested rows, fields, actions, items, and tools.
+Repeater and builder rows consume `rows`; their nested controls consume
+`fields`; builder add-block controls consume `actions`. Field groups use the
+same `fields` presentation, and local child-field item metadata wins after the
+owner wildcard, position, and named rules.
+`PanelPage` also owns its scaffold `forms` and page-level `tables`; these
+collections stay unwrapped until configured, while `masonryForms()`,
+`masonryTables()`, and the corresponding presentation/item builders opt them
+into responsive layout. A `PageTable` can declare local item presentation for
+its containing page without changing the table's internal row semantics.
+Resources likewise expose `boardColumnsPresentation()`,
+`masonryBoardColumns()`, `boardCardsPresentation()`, and
+`masonryBoardCards()`. Unconfigured boards retain their historical packed-grid
+markup byte for byte apart from unrelated page chrome.
+
+The `Resource` facade routes collection methods to the surface they actually
+control. Views, groups, summaries, filters, actions, and tools configure the
+resource table; fields, sections, tabs, and steps configure the resource form;
+entries configure the infolist; record-detail modules remain available through
+`recordPresentation()`, `brickRecords()`, and `masonryRecords()`. Explicit
+`tableCollection*()`, `formCollection*()`, and `infolistCollection*()` methods
+are available when a plugin needs to avoid any shorthand or target item/final
+row metadata directly. Presentation metadata does not leak between surfaces.
+
+`columns` accepts an
+integer or responsive `base`, `sm`, `md`, `lg`, `xl`, and `2xl` keys; counts are
+clamped from 1 to 12. For row masonry, responsive counts emit deterministic
+flex bases with the selected gap, so a 2-column target is exact rather than a
+best-effort `min-width` hint. When no count is configured, `min_width` drives
+automatic packing. `fit` may be `auto`, `fill`, or `fixed`; density and gap
+accept `compact`, `normal`, and `roomy` (`gap` also accepts `none`). Minimum
+widths are clamped to safe bounds. Row masonry, fill-mode brick/grid, and fixed
+brick/grid collections collapse to one full-width item below 640px; they never
+turn into horizontal control scrollers.
+
+Responsive collection and item breakpoints are resolved against the rendered
+Panel content surface, not only the browser viewport. A narrow slide-over,
+modal body, embedded Panel, or sidebar-constrained main region therefore uses
+its own `sm`/`md` configuration even on a wide desktop. The emergency
+single-column container guard applies below 400 pixels; between 400 and 639
+pixels, row masonry keeps a configured multi-item row when its minimum widths
+actually fit. This preserves useful layouts such as a 2+1 market selector in a
+medium modal while still making genuinely narrow embedded surfaces full-width.
+The renderer carries sparse item values into safe tier variables and marks the
+surface for `collection-layout`; direct asset consumers should request that
+capability instead of copying the generated marker or CSS variable protocol.
+
+Legacy aliases are normalized: `cards` and `tiles` become `brick`, `tabs` and
+`pills` become `segmented`, `row` becomes `inline`, and `stacked` becomes
+`stack`. `balanced`, `flow`, `row_masonry`, `masonry_rows`, and `row_fill`
+become row masonry. Existing `display('masonry')` remains column masonry, so
+upgrading does not change media/card reading order. Existing `choiceColumns()`, `inlineChoices()`, and segmented choice
+fields remain supported and are translated into the same renderer contract.
 
 Table summaries cover common aggregate values without a custom dashboard widget:
 
@@ -4983,6 +7934,44 @@ changing the action route or handler. Array-based definitions can use
 `Panel::actionGroupSection()` and `Panel::actionGroupDivider()` markers between
 child actions.
 
+Record headings use a bounded primary-action policy so a long workflow does not
+push the record itself below a wall of buttons on narrow screens. Two `auto`
+actions remain visible by default; every remaining permitted action is rendered
+server-side in one `More` disclosure with its count, descriptions, forms,
+confirmations, modal intent, disabled reasons, and authorization unchanged.
+Configure the policy at the resource and action boundaries:
+
+```php
+Panel::resource('orders')
+	->recordActionLimit(1)
+	->recordActionPlacements([
+		'edit' => 'primary',
+		'transition_cancel' => 'overflow',
+		'delete' => 'overflow',
+	])
+	->actions([
+		Panel::action('assign')->recordPrimary(),
+		Panel::action('risk_review')->recordOverflow(),
+		Panel::actionGroup('ops')->recordOverflow()->actions([...]),
+	]);
+```
+
+`recordActionLimit()` counts only actions whose placement remains `auto`.
+Explicit `primary` actions may exceed the limit intentionally. Resource
+overrides win over `Action::recordPlacement()` or
+`ActionGroup::recordPlacement()`; aliases `inline` / `visible` normalize to
+`primary`, while `menu` / `secondary` normalize to `overflow`. Built-in keys are
+`edit`, `preview`, `transition_<name>`, `duplicate`, `restore`, `delete`, and
+`force_delete`; custom actions and groups use their normalized names. A limit of
+zero is valid when every visible action should be chosen explicitly. The
+generated disclosure has menu semantics, Arrow Up/Down and Home/End traversal,
+Escape focus restoration, viewport-clamped desktop placement, and a capped
+in-flow container treatment on narrow record surfaces, including slide-overs.
+Action manifests expose the resolved policy as
+`presentation.record_placement`; action-group manifests expose
+`record_placement` at the group root, and resource manifests include
+`record_action_limit` plus `record_action_placements`.
+
 Generated action buttons use POST/redirect/get by default. If an action handler
 does not return a redirect, Panel redirects back to the current Panel table or
 record context and flashes the success message. Action forms carry the same
@@ -5277,6 +8266,22 @@ an associative array. `hidden`, `url`, `tel`, `time`, `color`, `range`,
 `rich_editor`, and `rich_text` are first-class field types, and custom field
 renderers registered through `PanelComponentRegistry::registerFieldType()` are
 consulted before the built-in renderer.
+
+Radio and checkbox-list options keep the native input at a fixed `20px` while
+the associated choice label remains the minimum `44px` interaction target.
+That geometry is identical on full pages and dynamically mounted modal forms;
+ordinary text inputs are explicitly excluded without increasing their cascade
+specificity. Checked, keyboard-focus, disabled, invalid, dark/system, and
+forced-colors states are visible on the complete label target. These rules ship
+with the `form` asset capability (and therefore with `modal`), not with unrelated
+shell, table, or navigation-only bundles.
+
+Boolean fields render a semantic outer `div` and one control-owning label (never
+nested labels). Their switch track is `42px` by `24px`, exposes checked, focus,
+disabled, dark/system, and forced-colors states, and participates in the same
+adaptive field-span contract. The hidden native checkbox retains submission and
+keyboard semantics while the complete switch card remains a minimum `52px`
+pointer target.
 
 Built-in field rules:
 
@@ -5720,23 +8725,176 @@ route. It exits `0` when checks pass, `1` when checks fail, and `2` when a suite
 cannot be loaded.
 
 ```powershell
-php common\dataphyre\runtime\modules\panel\kernel\panel_regression.php --example
-php common\dataphyre\runtime\modules\panel\kernel\panel_regression.php --example --json .tmp\panel-regression.json
+php dataphyre\runtime\modules\panel\kernel\panel_regression.php --example
+php dataphyre\runtime\modules\panel\kernel\panel_regression.php --example --json .tmp\panel-regression.json
 ```
 
 Regression suites are not a browser replacement. They sit between unit tests and
 browser checks: fast enough to run from generated package tests, rich enough for
 Flightdeck or docs tooling to show exactly which framework contract failed.
 
-For browser-backed editor coverage, run the consuming application's browser
-automation harness against the live debug or Panel URL. Keep those browser
-scripts application-owned so they can use the application's routes, auth setup,
-seed data, and CI artifact paths without becoming Dataphyre runtime API.
+### Exact PHP Coverage Gate
+
+`PanelCoverageGate` closes the blind spot in ordinary percentage-only coverage
+checks: an uncompiled source file cannot silently disappear from the denominator.
+It inventories every PHP file below Panel's production `Framework/` and `kernel/`
+directories, requires an exact Xdebug or phpdbg line map for every file, and
+fails when any executable line remains uncovered.
+
+Run the code tests through phpdbg when Xdebug is unavailable, then evaluate the
+result with the bundled gate:
+
+```powershell
+phpdbg -d memory_limit=1G -qrr bin/dataphyre-test run --scope=framework --owner=panel --kind=code `
+  --no-test-cache --parallel=1 --coverage=cache/ci/panel.coverage.json `
+  --coverage-require=phpdbg `
+  --coverage-source=runtime/modules/panel/Framework,runtime/modules/panel/kernel `
+  --coverage-closed-world --coverage-min-percent=100
+
+php -d memory_limit=1G runtime/modules/panel/testing/panel_php_coverage_gate.php `
+  --coverage=cache/ci/panel.coverage.json --require-engine=phpdbg `
+  --minimum-percent=100
+```
+
+The gate exits `0` only when the exact engine, complete source inventory, and
+line threshold all pass; `1` represents a coverage failure and `2` represents
+invalid input or environment configuration. Add `--json` for the complete
+machine-readable report, including missing files and uncovered line numbers.
+
+### Inclusive Quality Matrix
+
+`PanelDeveloperToolkit::inclusiveQualityMatrix()` creates a deterministic,
+versioned locale, input-method, display-preference, and assistive-technology
+evidence plan. Its default 126 cases keep 78 executable browser checks separate
+from 48 adapter/manual declarations. Browser accessibility-tree, switch-keyboard,
+voice-name, virtual-cursor, synthetic IME, and CSS-viewport zoom checks are
+explicit proxies; they do not prove execution in NVDA, JAWS, VoiceOver,
+TalkBack, Dragon, Voice Control, Voice Access, a native IME, a physical switch,
+or native browser zoom.
+
+```php
+$matrix=PanelDeveloperToolkit::inclusiveQualityMatrix('panel_release','/panel');
+$matrix->profiles();          // locale/script/direction/timezone/format metadata
+$matrix->contracts();         // execution channel, proof, limits, and caveats
+$matrix->browserManifests();  // browser cases only
+$matrix->digest();            // canonical matrix identity
+```
+
+The developer CLI emits the matrix, authenticates its canonical browser case
+mapping, and evaluates artifact-backed evidence. Every passed or failed record,
+including manual or adapter evidence, must carry the exact matrix digest so a
+stale report cannot satisfy a changed contract. Capability declarations require
+a source and execution channel; `declared` does not mean `available`.
+
+The browser runner validates the matrix through PHP before launch, compares the
+full case profile and contract to the authenticated top-level objects, uses a
+Chromium sandbox by default, and blocks non-allowlisted top-frame navigation
+before contact. Input and serialized output have explicit byte/case/depth
+budgets. Native AT evidence remains an application/lab adapter responsibility.
+
+### Unified Release Gate
+
+`testing/panel_release_gate.js` runs the asset-architecture, browser interaction,
+responsive/accessibility visual, and optional exact PHP coverage lanes with one
+fail-closed aggregate result. Each child report remains available beneath the
+artifact directory and the aggregate records commands, duration, bounded output
+tails, parsed reports, skips, and failures.
+
+```powershell
+node runtime/modules/panel/testing/panel_release_gate.js `
+  --base-url=http://127.0.0.1:8089/debug `
+  --coverage=cache/ci/panel.coverage.json --coverage-engine=phpdbg `
+  --require-coverage --artifact-dir=cache/ci/panel-release
+```
+
+For a route-free standalone asset check, snapshot the generated bundles and run
+only the release gate's asset lane:
+
+```powershell
+php runtime/modules/panel/testing/panel_asset_snapshot.php `
+  --output-dir=cache/ci/panel-assets
+
+node runtime/modules/panel/testing/panel_release_gate.js --lanes=asset `
+  --css-file=cache/ci/panel-assets/panel.css `
+  --js-file=cache/ci/panel-assets/panel.js `
+  --artifact-dir=cache/ci/panel-release-assets
+```
+
+`--css-file` and `--js-file` are a pair. Interaction and visual lanes still
+require a mounted `--base-url`; ShopiCore's live example is the primary
+integration fixture, while other consuming applications can supply their own
+routes, authentication, and seed state.
+
+From a Dataphyre source checkout with ShopiCore in a sibling directory, launch
+that live fixture through the adapter which forces the current Dataphyre root:
+
+```bash
+export DP_PANEL_LIVE_EXAMPLE_ENTRY="$(realpath \
+  ../ShopiCore/applications/shopiro/shared/debug/dataphyre-panel-live-example/index.php)"
+export DP_PANEL_RUNTIME_ROOT="$(pwd)"
+php -S 127.0.0.1:8097 dev/tools/public/panel_live_example_router.php
+```
+
+The equivalent PowerShell setup is:
+
+```powershell
+$env:DP_PANEL_LIVE_EXAMPLE_ENTRY = (Resolve-Path `
+  '..\ShopiCore\applications\shopiro\shared\debug\dataphyre-panel-live-example\index.php').Path
+$env:DP_PANEL_RUNTIME_ROOT = (Resolve-Path '.').Path
+php -S 127.0.0.1:8097 dev/tools/public/panel_live_example_router.php
+```
+
+In a second terminal, execute the complete interaction registry:
+
+```powershell
+node runtime/modules/panel/testing/panel_interaction_regression.js `
+  --base-url=http://127.0.0.1:8097/debug `
+  --report=cache/ci/panel-interaction.json
+```
+
+The runner needs `puppeteer-core` below `.tmp/puppeteer-check/`, `.tmp/`, or the
+Panel testing directory, plus a system Chrome or Edge executable (or an explicit
+`--browser`). The adapter lives under export-ignored `dev/` intentionally: it is
+a source-tree integration aid, not part of the distributed runtime contract.
+
+The default visual lane is audit-only, so it checks layout, overflow,
+accessibility, console errors, themes, and configured environment axes without
+rewriting screenshot baselines. Use `--visual-regression` for approved baseline
+comparison. `--update-baselines` is deliberately explicit and should only be
+used after visual review. Every scenario/environment combination runs in a
+fresh browser context, isolating cookies, server-side Panel preferences, local
+storage, and session storage so screenshots cannot depend on matrix order. The
+JSON report publishes this boundary under `isolation`. Visible component-level
+horizontal overflow is also fail-closed: hidden and off-canvas DOM is excluded,
+ordinary internal clipping is blocking, and intentional data-table scrolling
+must be owned by a rendered `data-dp-panel-overflow-policy="scroll-x"` region.
+The report separates `blockingOverflowSources` from
+`allowedOverflowSources`, retaining the complete counts in `overflowSummary`;
+single-line ellipsis, native text-control value scrolling, and positioned
+in-viewport children are classified rather than silently suppressing all
+`overflow: auto` elements. The canonical ultra-narrow rules continue stacking
+form actions, adornments, filter chips, modal content, and drawer navigation
+down to the 160 CSS-pixel effective viewport exercised by the 320px/200% zoom
+lane. Desktop table action columns reserve enough inline space for the complete
+normalized action cluster, while relation toolbars replace max-content action
+floors with a bounded grid once their shell reaches the responsive range.
+`--lanes` supports
+focused local runs, while
+`--report-only` preserves a zero process exit for diagnostic collection without
+changing the report's failed state.
+
+The first-party interaction suite includes
+`panel.editor-adapter.lifecycle`. It verifies asynchronous mount, canonical form
+submission, command routing, token rendering, late registration, fallback,
+same-turn moves, remount, and detached-root cleanup against the live showroom.
+Consuming applications should add route/auth/storage-specific probes for their
+chosen vendor package and configuration; those complement rather than replace
+the framework lifecycle contract.
 
 ## Scaffolding
 
 `Panel::scaffold()` and `$panel->scaffold()` generate starter artifacts without
-assuming any route, controller, or CLI. A scaffold result is inspectable first:
+assuming any route or controller. A scaffold result is inspectable first:
 it contains the artifact kind, normalized name, class, suggested path, contents,
 byte count, and metadata. Nothing is written until `write()` is called.
 
@@ -5769,8 +8927,40 @@ First-party scaffold kinds:
 - `suite()` generates several artifacts from a single blueprint array.
 
 This is deliberately not a CRM-specific generator and not tied to `/admin`.
-Applications or CLI wrappers can layer namespace discovery, overwrite prompts,
-dry-run diffs, and file placement policies on top of the same artifact contract.
+For production writes, prefer `PanelScaffoldWriter` over writing individual
+results. The writer resolves every destination below one existing workspace
+root, rejects traversal, NUL paths, symbolic-link escapes, directory collisions,
+duplicate case-folded targets, and stale preflight state. It stages the whole
+batch before publication, supports explicit `error`, `skip`, and `replace`
+conflict policies, rolls an incomplete commit back, and preserves recovery
+artifacts if the filesystem prevents rollback.
+
+```php
+$writer=$scaffold->writer($projectRoot); // or PanelScaffoldWriter::make(...)
+
+// No filesystem mutation.
+$plan=$writer->apply([$resource, $page], policy: 'error', dryRun: true);
+
+// Transactional publication after reviewing the plan.
+$result=$writer->apply([$resource, $page], policy: 'replace');
+```
+
+`PanelScaffoldWriter::discoverNamespace()` reads both Composer `autoload` and
+`autoload-dev` PSR-4 mappings, selecting the longest matching source path and
+falling back to a deterministic directory-to-namespace convention.
+
+The first-party CLI is preview-only unless `--write` is present:
+
+```text
+php dev/tools/panel_scaffold.php --kind resource --class OrderResource --root .
+php dev/tools/panel_scaffold.php --config panel-scaffold.json --policy error --write
+```
+
+A suite config contains an `artifacts` array using the same `kind`, `class`, and
+`options` definitions accepted by `suite()`. Global `namespace`, `base_path`,
+`test_namespace`, and `test_base_path` defaults can be overridden per artifact.
+Unknown flags, duplicate flags, unsupported kinds, malformed JSON, and ambiguous
+single-artifact/config combinations fail closed with machine-readable JSON.
 
 ## Data Jobs
 
@@ -5903,10 +9093,116 @@ Media collections expose:
 - image/document variants as declarative transform definitions.
 - previewable item metadata without assuming how the file is ultimately served.
 
-This layer deliberately does not store bytes yet. Production adapters can later
-attach local disks, Dataphyre CDN, S3-compatible storage, virus scanning,
-progress UI, derivative generation, and cleanup jobs without changing the form
-or resource definitions that declared the media collection.
+Collections remain the declarative policy layer; `PanelMediaManager` is the
+byte-owning runtime. `PanelLocalMediaDisk` provides a crash-safe local
+reference, while `PanelDataphyreStorageMediaDisk` connects the same manager to
+any named Dataphyre Storage disk, including decorated local, memory,
+S3-compatible, Vestra, mirrored, encrypted, policy, quota, retention, or
+failover compositions selected by the host. Applications install scanners and
+transformers on the manager without changing the form or resource definitions
+that declared the collection.
+
+### Storage-backed media runtime
+
+```php
+use Dataphyre\Panel\PanelAtomicSnapshotStore;
+use Dataphyre\Panel\PanelDataphyreStorageMediaDisk;
+use Dataphyre\Panel\PanelMediaManager;
+use Dataphyre\Panel\PanelPdoSnapshotStore;
+
+$disk=new PanelDataphyreStorageMediaDisk(
+	$storageManager,
+	'private',
+	'panel/media',
+	[
+		'name'=>'private-media',
+		'default_max_bytes'=>1024 * 1024 * 1024,
+		'write_options'=>['visibility'=>'private'],
+	]
+);
+
+$catalog=new PanelAtomicSnapshotStore(
+	$privateStateRoot.'/panel-media-catalog',
+	'panel.media.catalog',
+	['items'=>[], 'uploads'=>[]]
+);
+
+// Shared catalogue for multiple Panel nodes. The host owns the PDO connection
+// and runs this explicit, idempotent schema installation during deployment.
+$catalog=new PanelPdoSnapshotStore(
+	$pdo,
+	'tenant:'.$tenantId.':private-media',
+	'panel.media.catalog',
+	['items'=>[], 'uploads'=>[]],
+	[
+		'table_prefix'=>'panel_snapshot',
+		'change_retention'=>16384,
+	]
+);
+$catalog->installSchema();
+
+$media=PanelMediaManager::forDisk(
+	$disk,
+	$catalog,
+	$mediaSigningKey,
+	[
+		'delivery_url'=>'/panel/media/private',
+		'cleanup_grace'=>7 * 86400,
+	]
+);
+
+$media
+	->scanner($malwareScanner, 'malware')
+	->transformer($imageTransformer, 'images');
+
+$upload=$media->startUpload(
+	'orders/91/invoice.pdf',
+	$totalBytes,
+	[
+		'id'=>$uploadId,
+		'chunk_size'=>5 * 1024 * 1024,
+		'checksum'=>$sha256,
+	]
+);
+
+foreach($chunks as $index=>$bytes){
+	$media->receiveChunk(
+		$uploadId,
+		$index,
+		$bytes,
+		hash('sha256', $bytes)
+	);
+}
+
+$completion=$media->completeUpload($uploadId, context:[
+	'name'=>'Invoice 91',
+]);
+$delivery=$media->issue(
+	$completion['item']['id'],
+	ttl: 300,
+	disposition: 'attachment',
+	audience: $operatorId
+);
+```
+
+The adapter buffers each transfer only into bounded temporary streams, verifies
+size and SHA-256 after Storage accepts a write, and restores the previous object
+or removes a partial new object when verification fails. The manager catalogue
+is an explicit `PanelSnapshotStore`. Local atomic snapshots remain the
+single-node reference. `PanelPdoSnapshotStore` provides the bundled distributed
+catalogue for MySQL, PostgreSQL, and SQLite: one explicit-migration table set
+hosts SHA-256-isolated scopes, locked scope-row commits, canonical JSON and
+size/digest integrity, retained ordered changes, stale/future cursor resets,
+host-transaction savepoints, and PHP 8.2-safe manual SQLite write transactions.
+The caller mutation is never replayed inside one call; post-callback conflicts
+and uncertain commits are explicit retryable errors. Manifests expose
+fingerprints and capabilities, never scope/schema names, table prefixes, SQL,
+credentials, connection details, or provider errors.
+
+Panel does not create Storage disks, credentials, PDO connections, database
+schemas, object-store policies, routes, scanners, transformers, or workers.
+Hosts still operate schema rollout, database HA/backup/monitoring, and
+external-effect idempotency.
 
 ## Documentation Catalog
 
@@ -5935,10 +9231,74 @@ $catalog->search('resource'); // matching PanelDocumentationEntry objects
 $catalog->manifest();         // serializable reference/cookbook contract
 ```
 
-This is the first framework-level contract for the full API reference and
-cookbook. It does not replace the human documentation yet; it gives packages,
-examples, tests, and debug tooling a single shape to describe what exists, how
-complete it is, and where a developer should go next.
+`PanelDocumentationPublisher` turns that catalog into a real release artifact.
+It tokenizes PHP source without requiring or executing it, inventories public
+namespace-level types and their declared members, attributes, inheritance,
+interfaces, traits, public trait adaptations, promoted properties, deprecation
+state, and PHP 8.4 property hooks. It emits deterministic Markdown and JSON for
+the API, cookbook, and package compatibility matrix under a canonical lowercase
+SemVer directory. The returned `PanelDocumentationPublication` remains a dry
+plan until it is explicitly applied:
+
+```php
+$publication=PanelDocumentationPublisher::make(__DIR__.'/src/Panel')
+	->build(
+		'2.1.0',
+		$catalog,
+		Panel::compatibilityMatrix($packageManifests),
+		['base_path'=>'docs/panel', 'title'=>'Operations Panel'],
+	);
+
+// Optional: adapt Panel's verified corpus to Datadoc's universal portal.
+$publication=Panel::documentationPortal()->decorate($publication,[
+	'default_theme'=>'system',
+	'canonical_base_url'=>'https://docs.example.test/panel/2.1.0/',
+]);
+
+$preview=$publication->apply($projectRoot, 'error', true);
+$written=$publication->apply($projectRoot, 'error', false);
+```
+
+Every source path is realpath-confined, source symlinks are rejected, conditional
+and function-local classes are excluded, generated paths are portable and
+collision checked, unsafe link schemes are removed after fixed-point decoding,
+and secret-shaped manifest keys are redacted. The publication manifest records
+every artifact digest plus a deterministic source fingerprint. A write stages a
+private complete release tree, verifies its exact contents, and exposes the
+whole version with one final directory rename while holding a non-blocking
+publisher lock. Existing byte-identical releases are idempotent; partial,
+tampered, replacement, and skip publications fail closed and require a new
+version. On POSIX, a real write normalizes only the root-confined publication
+ancestors and the verified release tree to `0755` directories and `0644` files,
+so a separate static-web user can traverse output produced under a restrictive
+`umask`. An identical real write repairs legacy modes without claiming that
+artifact bytes changed; a dry run never repairs permissions, and the caller's
+workspace root is never chmodded. The equivalent CLI is preview-first:
+
+```text
+php dev/tools/panel_docs.php --version 2.1.0
+php dev/tools/panel_docs.php --version 2.1.0 --catalog docs-catalog.json --packages packages.json --write
+```
+
+`--write` is the only switch that publishes. CLI source/config inputs and all
+output remain confined to `--root`; there is intentionally no replace or skip
+policy for immutable version directories.
+
+Panel does not own a documentation-site renderer. `PanelDocumentationPortal`
+is a compatibility adapter: it extracts the Markdown corpus from a verified
+Panel publication, delegates HTML, navigation, local search, version metadata,
+browser assets, and security policy to Datadoc's `DocumentationPortal`, then
+returns the same immutable `PanelDocumentationPublication` type. The adapter
+requires the optional Datadoc Framework module only when the portal is
+requested. Other Dataphyre modules and products can use Datadoc directly via
+`DocumentationPortalPublication` or `dev/tools/datadoc_docs.php` without
+depending on Panel.
+
+The release workflow executes this boundary end to end rather than relying on
+the adapter's unit tests alone: `panel_docs.php --portal` generates the real
+Panel API corpus, Datadoc publishes its immutable version directory, and the
+shared browser regression exercises search, deep links, desktop/mobile
+navigation, themes, print, forced colors, reduced motion, overflow, and CSP.
 
 When Flightdeck is installed, `/dataphyre/panel` presents the Panel lifecycle
 summary, recent trace events, and the currently registered resources. The Panel

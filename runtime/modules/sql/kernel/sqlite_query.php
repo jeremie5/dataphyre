@@ -7,7 +7,7 @@
  */
 namespace dataphyre;
 
-register_shutdown_function(function(){
+function flush_sqlite_query_queue_at_shutdown(): void {
 	try{
 		do{
 			foreach(sqlite_query_builder::$queued_queries as $queue=>$queue_data){
@@ -21,7 +21,8 @@ register_shutdown_function(function(){
 	}catch(\Throwable $exception){
 		\dataphyre_shutdown_log('Exception on Dataphyre SQL SQLite shutdown callback', $exception);
 	}
-});
+}
+register_shutdown_function(__NAMESPACE__.'\\flush_sqlite_query_queue_at_shutdown');
 
 /**
  * SQLite-backed SQL queue executor for Dataphyre's SQL kernel.
@@ -88,20 +89,31 @@ class sqlite_query_builder {
 	 * @param string $dbms_cluster Cluster whose `database_name` points at the SQLite file.
 	 * @return object SQLite3 connection cached for the cluster; legacy failure paths return false before the caller can use it.
 	 */
-	private static function connect_to_endpoint(string $endpoint, string $dbms_cluster='default') : object {
+	private static function connect_to_endpoint(string $endpoint, string $dbms_cluster='default') : object|false {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(isset(self::$conns[$dbms_cluster])){
 			return self::$conns[$dbms_cluster];
 		}
 		$database=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['database_name'];
 		try{
-			$conn=new SQLite3($database);
-		}catch (Exception $e){
+			$conn=self::open_connection($database);
+		}catch (\Throwable $e){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Failed to connect to SQLite database: ".$e->getMessage(), $S="fatal");
 			return false;
 		}
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="SQLite connection to $database successful");
 		return self::$conns[$dbms_cluster]=$conn;
+	}
+
+	/**
+	 * Opens a native SQLite connection through the framework's injectable seam.
+	 *
+	 * Tests and alternate runtimes may provide an object through the dialback;
+	 * normal requests always resolve PHP's global SQLite3 extension class.
+	 */
+	private static function open_connection(string $database): object {
+		$injected=core::dialback('CALL_SQL_OPEN_SQLITE_CONNECTION', $database);
+		return is_object($injected) ? $injected : new \SQLite3($database);
 	}
 	
 	/**
@@ -350,7 +362,7 @@ class sqlite_query_builder {
 			}
 		}
 		$results=[];
-		$dbms_cluster=DP_SQL_CFG['tables']['raw']['cluster'] ?? DP_SQL_CFG['default_cluster'];
+		$dbms_cluster=sql::resolve_cluster(DP_SQL_CFG['tables']['raw']['cluster'] ?? DP_SQL_CFG['default_cluster']);
 		$endpoint=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'][0];
 		$conn=self::connect_to_endpoint($endpoint, $dbms_cluster);
 		if(!empty($prepared_statements)){
@@ -445,7 +457,7 @@ class sqlite_query_builder {
 			$endpoints=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
 			$results=[];
 			foreach($endpoints as $endpoint){
-				$conn=new SQLite3($endpoint);
+				$conn=self::open_connection($endpoint);
 				$results[]=$execute_query($conn);
 				$conn->close();
 			}
@@ -454,7 +466,7 @@ class sqlite_query_builder {
 		else
 		{
 			$endpoint=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'][0];
-			$conn=new SQLite3($endpoint);
+			$conn=self::open_connection($endpoint);
 			try {
 				$result=$execute_query($conn);
 			} catch (\Throwable $exception){
@@ -596,31 +608,22 @@ class sqlite_query_builder {
 		shuffle($endpoints);
 		$query="UPDATE ".$location." SET ".$fields." ".$params;
 		$execute_update=function($conn) use ($query, $vars): int {
-			if(is_array($vars)){
-				if(false===$stmt=$conn->prepare($query)){
-					throw new \Exception('Query preparation failed: '.$conn->lastErrorMsg());
-				}
-				foreach($vars as $index=>$value){
-					$stmt->bindValue($index + 1, $value);
-				}
-				if(false===$result=$stmt->execute()){
-					throw new \Exception('Query execution failed: '.$conn->lastErrorMsg());
-				}
-				$stmt->close();
-				return max(0, $conn->changes());
+			if(false===$stmt=$conn->prepare($query)){
+				throw new \Exception('Query preparation failed: '.$conn->lastErrorMsg());
 			}
-			else
-			{
-				if($conn->exec($query)===false){
-					throw new \Exception('Query execution failed: '.$conn->lastErrorMsg());
-				}
-				return max(0, $conn->changes());
+			foreach($vars as $index=>$value){
+				$stmt->bindValue($index + 1, $value);
 			}
+			if(false===$result=$stmt->execute()){
+				throw new \Exception('Query execution failed: '.$conn->lastErrorMsg());
+			}
+			$stmt->close();
+			return max(0, $conn->changes());
 		};
 		$succeeded=0;
 		$affected_rows=[];
 		foreach($endpoints as $endpoint){
-			$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint);
+			$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint, $dbms_cluster);
 			try {
 				$affected_rows[]=$execute_update($conn);
 				$succeeded++;
@@ -671,10 +674,10 @@ class sqlite_query_builder {
 			$stmt->close();
 			return $result !== false;
 		};
-		$result_key=true;
+		$result_key=false;
 		foreach($endpoints as $endpoint){
 			try{
-				$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint);
+				$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint, $dbms_cluster);
 				$result_key=$execute_insert($conn);
 			}catch(\Throwable $exception){
 				sql::log_query_error('SQLite', $dbms_cluster, $query, $vars, $exception);
@@ -724,7 +727,7 @@ class sqlite_query_builder {
 		};
 		foreach($endpoints as $endpoint){
 			try {
-				$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint);
+				$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint, $dbms_cluster);
 				$affected_rows[]=$execute_delete($conn);
 				$succeeded++;
 			} catch (\Throwable $exception){

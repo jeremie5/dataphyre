@@ -18,7 +18,7 @@ tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
  *
  * Dpanel coordinates verbose findings, tracelog buffering, module entrypoint
  * validation/loading, JSON unit-test execution, dynamic test generation,
- * diagnostic-class hooks, dependency-following scans, and memory/eval safety
+ * diagnostic-class hooks, dependency-following scans, and memory safety
  * gates used during local and diagnostic-mode runtime checks.
  */
 class dpanel{
@@ -33,7 +33,6 @@ class dpanel{
 	public static bool $run_unit_tests=true;
 	public static bool $load_module_entrypoints=true;
 	public static bool $follow_dependency_diagnostics=true;
-	public static bool $allow_eval_unit_tests=false;
 	public static bool $bootstrap_core_before_module=true;
 
 	/**
@@ -175,50 +174,18 @@ class dpanel{
 	}
 
 	/**
-	 * Checks whether legacy eval-based unit-test fields are allowed.
+	 * Resolves declarative values embedded in JSON test arguments.
 	 *
-	 * Eval support is disabled by default and can only be enabled through the
-	 * static flag, a trusted constant, or an explicit environment variable.
-	 *
-	 * @return bool True when eval-based test fields may execute.
+	 * A fixture references committed PHP by file and callable name. JSON never
+	 * contains executable PHP, while module-owned builders can still produce
+	 * dynamic values such as signed challenges.
 	 */
-	private static function eval_unit_tests_allowed(): bool {
-		if(self::$allow_eval_unit_tests===true){
-			return true;
-		}
-		if(defined('DPANEL_ALLOW_EVAL_UNIT_TESTS') && DPANEL_ALLOW_EVAL_UNIT_TESTS===true){
-			return true;
-		}
-		$env=getenv('DATAPHYRE_DPANEL_ALLOW_EVAL_TESTS');
-		return is_string($env) && in_array(strtolower(trim($env)), ['1', 'true', 'yes'], true);
-	}
-
-	/**
-	 * Records that a legacy eval-based unit-test field was skipped.
-	 *
-	 * @param string $json_file_path Unit-test definition file.
-	 * @param ?array<string, mixed> $test_case Test case being processed, when available.
-	 * @param string $field Eval-capable field that was skipped.
-	 * @return void
-	 */
-	private static function add_eval_skip(string $json_file_path, ?array $test_case, string $field): void {
-		self::$verbose[]=[
-			'type'=>'unit_test',
-			'test_name'=>(string)($test_case['name'] ?? 'Unknown'),
-			'file'=>basename($json_file_path),
-			'message'=>"Skipped legacy {$field} evaluation because Dpanel eval-based unit-test fields are disabled. Set DPANEL_ALLOW_EVAL_UNIT_TESTS=true or DATAPHYRE_DPANEL_ALLOW_EVAL_TESTS=1 in a trusted local environment to enable them.",
-			'level'=>'warning',
-			'passed'=>false,
-		];
-	}
-
 	private static function resolve_unit_test_value(mixed $value, string $json_file_path, array $test_case, string $field): mixed {
-		if(is_array($value) && array_key_exists('custom_script', $value) && count($value)===1){
-			if(self::eval_unit_tests_allowed()!==true){
-				self::add_eval_skip($json_file_path, $test_case, $field);
-				return null;
-			}
-			return eval((string)$value['custom_script']);
+		if(is_array($value) && array_key_exists('custom_script', $value)){
+			throw new \InvalidArgumentException("Dpanel JSON field {$field} uses unsupported executable PHP; use a declarative fixture or assertion.");
+		}
+		if(is_array($value) && array_key_exists('fixture', $value) && count($value)===1){
+			return self::resolve_unit_test_fixture($value['fixture'], $json_file_path, $test_case, $field);
 		}
 		if(is_array($value)){
 			foreach($value as $key=>$child){
@@ -226,6 +193,244 @@ class dpanel{
 			}
 		}
 		return $value;
+	}
+
+	/** Executes a committed fixture factory declared by a JSON argument. */
+	private static function resolve_unit_test_fixture(mixed $definition, string $json_file_path, array $test_case, string $field): mixed {
+		if(is_string($definition)){
+			$definition=['call'=>$definition];
+		}
+		if(!is_array($definition) || trim((string)($definition['call'] ?? ''))===''){
+			throw new \InvalidArgumentException("Dpanel JSON field {$field} contains an invalid fixture definition.");
+		}
+		$allowed=['call', 'args', 'file'];
+		$unknown=array_diff(array_keys($definition), $allowed);
+		if($unknown!==[]){
+			throw new \InvalidArgumentException('Unknown Dpanel fixture option: '.implode(', ', $unknown).'.');
+		}
+		$file=$definition['file'] ?? ($test_case['file'] ?? null);
+		if($file!==null){
+			$fixture_file=self::resolve_unit_test_file_definition($file);
+			if($fixture_file==='' || !is_readable($fixture_file)){
+				throw new \RuntimeException('Dpanel fixture file is unavailable: '.(is_scalar($file) ? (string)$file : json_encode($file)).'.');
+			}
+			include_once $fixture_file;
+		}
+		$call=(string)$definition['call'];
+		if(!is_callable($call)){
+			throw new \RuntimeException("Dpanel fixture callable is unavailable: {$call}.");
+		}
+		$args=self::resolve_unit_test_value($definition['args'] ?? [], $json_file_path, $test_case, $field.'.fixture.args');
+		if(!is_array($args) || !self::array_is_list_compatible($args)){
+			throw new \InvalidArgumentException('Dpanel fixture args must be a JSON list.');
+		}
+		return call_user_func_array($call, $args);
+	}
+
+	/** Resolves a static, runtime-relative, or module-entrypoint file definition. */
+	private static function resolve_unit_test_file_definition(mixed $definition): string {
+		if(is_string($definition)){
+			return self::resolve_unit_test_case_file($definition);
+		}
+		if(!is_array($definition) || count($definition)!==1){
+			throw new \InvalidArgumentException('Dpanel test file must be a path or one declarative resolver.');
+		}
+		if(array_key_exists('module', $definition)){
+			$module=strtolower(trim((string)$definition['module']));
+			if($module==='' || preg_match('/^[a-z][a-z0-9_]*$/', $module)!==1){
+				throw new \InvalidArgumentException('Dpanel module file resolver contains an invalid module name.');
+			}
+			$files=dp_module_present($module);
+			$file=is_array($files) ? reset($files) : null;
+			return is_string($file) ? self::resolve_unit_test_case_file($file) : '';
+		}
+		if(array_key_exists('runtime', $definition)){
+			$relative=ltrim(str_replace('\\', '/', trim((string)$definition['runtime'])), '/');
+			if($relative==='' || preg_match('#(^|/)\.\.(/|$)#', $relative)===1 || str_contains($relative, "\0")){
+				throw new \InvalidArgumentException('Dpanel runtime file resolver contains an unsafe path.');
+			}
+			$root=rtrim((string)(ROOTPATH['common_dataphyre_runtime'] ?? ''), '/\\');
+			return $root==='' ? '' : self::resolve_unit_test_case_file($root.'/'.$relative);
+		}
+		throw new \InvalidArgumentException('Unknown Dpanel test file resolver: '.implode(', ', array_keys($definition)).'.');
+	}
+
+	/**
+	 * Matches one result against the closed JSON assertion vocabulary.
+	 *
+	 * Every key is conjunctive. Nested `paths` assertions use slash-separated
+	 * segments, so keys containing dots remain unambiguous.
+	 *
+	 * @param array<string,mixed> $assertion
+	 */
+	private static function unit_test_assertion_matches(mixed $actual, array $assertion, bool $exists=true): bool {
+		$allowed=['exists', 'type', 'same', 'not_same', 'not_empty', 'matches', 'contains', 'not_contains', 'count', 'keys', 'paths', 'some', 'compare'];
+		$unknown=array_diff(array_keys($assertion), $allowed);
+		if($unknown!==[]){
+			throw new \InvalidArgumentException('Unknown Dpanel assertion operator: '.implode(', ', $unknown).'.');
+		}
+		if(array_key_exists('exists', $assertion) && $exists!==((bool)$assertion['exists'])){
+			return false;
+		}
+		if(!$exists){
+			return array_diff(array_keys($assertion), ['exists'])===[];
+		}
+		if(array_key_exists('type', $assertion) && !self::unit_test_assertion_type_matches($actual, (string)$assertion['type'])){
+			return false;
+		}
+		if(array_key_exists('same', $assertion) && $actual!==$assertion['same']){
+			return false;
+		}
+		if(array_key_exists('not_same', $assertion) && $actual===$assertion['not_same']){
+			return false;
+		}
+		if(($assertion['not_empty'] ?? false)===true && empty($actual)){
+			return false;
+		}
+		if(array_key_exists('matches', $assertion) && (!is_string($actual) || @preg_match((string)$assertion['matches'], $actual)!==1)){
+			return false;
+		}
+		foreach(['contains'=>true, 'not_contains'=>false] as $operator=>$should_contain){
+			if(!array_key_exists($operator, $assertion)){
+				continue;
+			}
+			$needles=is_array($assertion[$operator]) && self::array_is_list_compatible($assertion[$operator]) ? $assertion[$operator] : [$assertion[$operator]];
+			foreach($needles as $needle){
+				$contains=is_array($actual) ? in_array($needle, $actual, true) : (is_string($actual) && is_string($needle) && str_contains($actual, $needle));
+				if($contains!==$should_contain){
+					return false;
+				}
+			}
+		}
+		if(array_key_exists('count', $assertion)){
+			if(!is_countable($actual)){
+				return false;
+			}
+			$count=count($actual);
+			$constraint=$assertion['count'];
+			if(is_int($constraint) && $count!==$constraint){
+				return false;
+			}
+			if(is_array($constraint)){
+				$unknown_count_options=array_diff(array_keys($constraint), ['min', 'max', 'same']);
+				if($constraint===[] || $unknown_count_options!==[]){
+					throw new \InvalidArgumentException('Dpanel count assertion accepts only min, max, and same.');
+				}
+				if(isset($constraint['min']) && $count<(int)$constraint['min']){
+					return false;
+				}
+				if(isset($constraint['max']) && $count>(int)$constraint['max']){
+					return false;
+				}
+				if(isset($constraint['same']) && $count!==(int)$constraint['same']){
+					return false;
+				}
+			}
+			elseif(!is_int($constraint)){
+				throw new \InvalidArgumentException('Dpanel count assertion must be an integer or min/max/same map.');
+			}
+		}
+		if(array_key_exists('keys', $assertion) && (!is_array($actual) || !is_array($assertion['keys']) || array_keys($actual)!==array_values($assertion['keys']))){
+			return false;
+		}
+		if(array_key_exists('paths', $assertion)){
+			if(!is_array($assertion['paths'])){
+				throw new \InvalidArgumentException('Dpanel paths assertion must be a map.');
+			}
+			foreach($assertion['paths'] as $path=>$child){
+				if(!is_array($child)){
+					throw new \InvalidArgumentException('Each Dpanel path assertion must be an operator map.');
+				}
+				$path_exists=false;
+				$value=self::unit_test_assertion_path($actual, (string)$path, $path_exists);
+				if(!self::unit_test_assertion_matches($value, $child, $path_exists)){
+					return false;
+				}
+			}
+		}
+		if(array_key_exists('some', $assertion)){
+			if(!is_array($actual) || !is_array($assertion['some'])){
+				return false;
+			}
+			$matched=false;
+			foreach($actual as $item){
+				if(self::unit_test_assertion_matches($item, $assertion['some'])){
+					$matched=true;
+					break;
+				}
+			}
+			if(!$matched){
+				return false;
+			}
+		}
+		if(array_key_exists('compare', $assertion) && !self::unit_test_assertion_comparisons_match($actual, $assertion['compare'])){
+			return false;
+		}
+		return true;
+	}
+
+	private static function unit_test_assertion_type_matches(mixed $actual, string $type): bool {
+		$type=trim($type);
+		$aliases=['int'=>'integer', 'float'=>'double', 'bool'=>'boolean'];
+		$type=$aliases[$type] ?? $type;
+		if(in_array($type, ['integer', 'double', 'boolean', 'string', 'array', 'object', 'NULL', 'resource'], true)){
+			return gettype($actual)===$type;
+		}
+		return $type!=='' && class_exists($type) && $actual instanceof $type;
+	}
+
+	private static function unit_test_assertion_path(mixed $actual, string $path, bool &$exists): mixed {
+		$exists=true;
+		if($path==='' || $path==='$'){
+			return $actual;
+		}
+		foreach(explode('/', trim($path, '/')) as $segment){
+			$segment=str_replace(['~1', '~0'], ['/', '~'], $segment);
+			if(is_array($actual) && array_key_exists($segment, $actual)){
+				$actual=$actual[$segment];
+				continue;
+			}
+			if(is_object($actual) && property_exists($actual, $segment)){
+				$actual=$actual->{$segment};
+				continue;
+			}
+			$exists=false;
+			return null;
+		}
+		return $actual;
+	}
+
+	private static function unit_test_assertion_comparisons_match(mixed $actual, mixed $comparisons): bool {
+		if(!is_array($comparisons)){
+			throw new \InvalidArgumentException('Dpanel compare assertion must be a comparison or list of comparisons.');
+		}
+		if(!self::array_is_list_compatible($comparisons)){
+			$comparisons=[$comparisons];
+		}
+		foreach($comparisons as $comparison){
+			if(!is_array($comparison) || !isset($comparison['left'], $comparison['operator'], $comparison['right'])){
+				throw new \InvalidArgumentException('Dpanel comparison requires left, operator, and right paths.');
+			}
+			$left_exists=$right_exists=false;
+			$left=self::unit_test_assertion_path($actual, (string)$comparison['left'], $left_exists);
+			$right=self::unit_test_assertion_path($actual, (string)$comparison['right'], $right_exists);
+			if(!$left_exists || !$right_exists){
+				return false;
+			}
+			$matches=match((string)$comparison['operator']){
+				'greater_than'=>$left>$right,
+				'greater_than_or_equal'=>$left>=$right,
+				'less_than'=>$left<$right,
+				'less_than_or_equal'=>$left<=$right,
+				'same'=>$left===$right,
+				'not_same'=>$left!==$right,
+				default=>throw new \InvalidArgumentException('Unknown Dpanel comparison operator: '.(string)$comparison['operator'].'.'),
+			};
+			if(!$matches){
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -323,9 +528,9 @@ class dpanel{
 	 *
 	 * Test cases may target functions, static methods, or instance methods,
 	 * declare dependencies, include optional fixture files, assert exact values,
-	 * primitive types, class instances, regexes, ranges, or generated type shapes,
-	 * and enforce max execution time. Legacy eval fields are skipped unless
-	 * explicitly enabled in a trusted local environment.
+	 * primitive types, class instances, regexes, ranges, generated type shapes,
+	 * or closed declarative assertions, and enforce max execution time. Dynamic
+	 * arguments use committed fixture callables rather than embedded PHP.
 	 *
 	 * @param string $json_file_path Unit-test JSON definition path.
 	 * @return bool True when every runnable test case passes.
@@ -367,10 +572,7 @@ class dpanel{
 			];
 			return false;
 		}
-		$validate_array_structure=function($array, $structure)use(&$validate_array_structure){
-			if(!is_array($array) || !is_array($structure) || $structure[0] !== 'array'){
-				return false;
-			}
+		$validate_array_structure=function(array $array, array $structure)use(&$validate_array_structure){
 			$element_types=$structure[1];
 			foreach($array as $element){
 				$element_matched=false;
@@ -391,12 +593,14 @@ class dpanel{
 			return true;
 		};
 		$matches_expected=function($result, $expected, array $test_case=[])use($validate_array_structure, $json_file_path){
-			if(is_array($expected) && isset($expected['custom_script'])){
-				if(self::eval_unit_tests_allowed()!==true){
-					self::add_eval_skip($json_file_path, $test_case, 'custom_script');
-					return false;
+			if(is_array($expected) && array_key_exists('custom_script', $expected)){
+				throw new \InvalidArgumentException('Dpanel JSON custom_script assertions are no longer supported; use the declarative assert vocabulary.');
+			}
+			if(is_array($expected) && array_key_exists('assert', $expected)){
+				if(count($expected)!==1 || !is_array($expected['assert'])){
+					throw new \InvalidArgumentException('A Dpanel declarative assertion must contain only an assert operator map.');
 				}
-				return eval($expected['custom_script']);
+				return self::unit_test_assertion_matches($result, $expected['assert']);
 			}
 			if(is_array($expected) && isset($expected['min'], $expected['max']) && is_numeric($result)){
 				return $result>=$expected['min'] && $result<=$expected['max'];
@@ -476,18 +680,10 @@ class dpanel{
 				}
 				$test_case_file=null;
 				if(isset($test_case['file'])){
-					$test_case_file=self::resolve_unit_test_case_file((string)$test_case['file']);
+					$test_case_file=self::resolve_unit_test_file_definition($test_case['file']);
 				}
-				elseif(isset($test_case['file_dynamic'])){
-					if(self::eval_unit_tests_allowed()!==true){
-						self::add_eval_skip($json_file_path, $test_case, 'file_dynamic');
-						$all_passed=false;
-						continue;
-					}
-					$test_case_file=eval($test_case['file_dynamic']);
-					if(is_string($test_case_file)){
-						$test_case_file=self::resolve_unit_test_case_file($test_case_file);
-					}
+				elseif(array_key_exists('file_dynamic', $test_case)){
+					throw new \InvalidArgumentException('Dpanel JSON file_dynamic is no longer supported; use file.module, file.runtime, or a static path.');
 				}
 				if(!empty($test_case_file)){
 					if(!$test_case_file || !is_string($test_case_file) || !is_readable($test_case_file)){
@@ -508,12 +704,16 @@ class dpanel{
 				$expected_outcomes=[];
 				if(isset($test_case['expected'])){
 					$expected=$test_case['expected'];
+					$is_array_shape=is_array($expected)
+						&& self::array_is_list_compatible($expected)
+						&& count($expected)>1
+						&& $expected[0]==='array';
 					$is_record_list=is_array($expected)
 						&& self::array_is_list_compatible($expected)
 						&& $expected!==[]
 						&& count($expected)>1
-						&& count(array_filter($expected, static fn($item): bool=>is_array($item) && !self::array_is_list_compatible($item) && !isset($item['custom_script']) && !(isset($item['min']) && isset($item['max']))))===count($expected);
-					$expected_outcomes=is_array($expected) && self::array_is_list_compatible($expected) && $expected!==[] && $is_record_list!==true
+						&& count(array_filter($expected, static fn($item): bool=>is_array($item) && !self::array_is_list_compatible($item) && !isset($item['assert']) && !(isset($item['min']) && isset($item['max']))))===count($expected);
+					$expected_outcomes=is_array($expected) && self::array_is_list_compatible($expected) && $expected!==[] && $is_record_list!==true && $is_array_shape!==true
 						? $expected
 						: [$expected];
 				}
@@ -677,12 +877,19 @@ class dpanel{
 					$execution_time=microtime(true)-$start_time;
 				}
 				unit_test_result_ready:
-                if(isset($test_case['max_millis']) && $execution_time>($test_case['max_millis']/1000)){
-                    self::$verbose[]=[
+				$performance_grace_millis=PHP_OS_FAMILY==='Windows' ? 100.0 : 0.0;
+				if(defined('DATAPHYRE_DPANEL_PERFORMANCE_GRACE_MILLIS')){
+					$performance_grace_millis=max(0.0, min(1000.0, (float)DATAPHYRE_DPANEL_PERFORMANCE_GRACE_MILLIS));
+				}
+				$performance_limit_millis=isset($test_case['max_millis'])
+					? max(0.0, (float)$test_case['max_millis']) + $performance_grace_millis
+					: null;
+				if($performance_limit_millis!==null && $execution_time>($performance_limit_millis/1000)){
+					self::$verbose[]=[
                         'type'=>'performance_warning',
                         'test_name'=>$test_case['name'],
 						'test_case_file'=>$test_case_file,
-                        'message'=>"Execution time exceeded max_millis threshold: {$execution_time}s",
+						'message'=>"Execution time exceeded max_millis threshold: {$execution_time}s (declared ".(float)$test_case['max_millis']."ms + {$performance_grace_millis}ms scheduler grace)",
 						'level'=>'error',
 						'execution_time'=>$execution_time,
 						'file'=>basename($json_file_path),
@@ -926,7 +1133,7 @@ class dpanel{
 	 * Resolves a JSON unit-test fixture include path against the correct root.
 	 *
 	 * Runtime manifests use app-root paths for application fixtures and
-	 * rootpaths-defined shared paths for fixtures such as `/common/dataphyre/...`.
+	 * rootpaths-defined shared paths for fixtures such as `/dataphyre/...`.
 	 * `ROOTPATH['root']` may point at the active application, so shared paths
 	 * resolve through their dedicated ROOTPATH entries instead.
 	 *
@@ -939,6 +1146,8 @@ class dpanel{
 			return $normalized;
 		}
 		foreach([
+			'dataphyre/runtime/'=>'common_dataphyre_runtime',
+			'dataphyre/'=>'common_dataphyre',
 			'common/dataphyre/runtime/'=>'common_dataphyre_runtime',
 			'common/dataphyre/'=>'common_dataphyre',
 			'common/'=>'common_root',
@@ -958,6 +1167,12 @@ class dpanel{
 			return $file;
 		}
 		$relative=ltrim($normalized, '/');
+		if(str_starts_with($relative, 'dataphyre/runtime/')){
+			return rtrim((string)(ROOTPATH['common_dataphyre_runtime'] ?? ''), '/\\').'/'.substr($relative, strlen('dataphyre/runtime/'));
+		}
+		if(str_starts_with($relative, 'dataphyre/')){
+			return rtrim((string)(ROOTPATH['common_dataphyre'] ?? ''), '/\\').'/'.substr($relative, strlen('dataphyre/'));
+		}
 		if(str_starts_with($relative, 'common/dataphyre/runtime/')){
 			return rtrim((string)(ROOTPATH['common_dataphyre_runtime'] ?? ''), '/\\').'/'.substr($relative, strlen('common/dataphyre/runtime/'));
 		}
@@ -1000,7 +1215,7 @@ class dpanel{
 				];
 				return false;
 			}
-			if(false===$validation=self::validate_php($content)){
+			if(true!==$validation=self::validate_php($content)){
 				self::$verbose[]=[
 					'type'=>'php_validation_error', 
 					'level'=>'error',

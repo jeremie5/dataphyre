@@ -9,6 +9,7 @@
 $payload_path=(string)($argv[1] ?? '');
 $result_written=false;
 $started_at=microtime(true);
+$coverage_runtime=null;
 
 /**
  * Writes the worker result once.
@@ -16,11 +17,20 @@ $started_at=microtime(true);
  * @param array<string,mixed> $payload Result payload.
  * @return void
  */
-$write_result=function(array $payload)use(&$result_written, $payload_path, $started_at): void {
+$write_result=function(array $payload)use(&$result_written, $payload_path, $started_at, &$coverage_runtime): void {
 	if($result_written===true){
 		return;
 	}
 	$result_written=true;
+	if($coverage_runtime instanceof \Dataphyre\Test\WorkerCoverage){
+		try{
+			$coverage=$coverage_runtime->finish();
+			if(is_array($coverage)){$payload['coverage']=$coverage;}
+		}catch(\Throwable $throwable){
+			$payload['coverage_error']=$throwable->getMessage();
+		}
+		$coverage_runtime=null;
+	}
 	$payload['duration_seconds']=microtime(true)-$started_at;
 	$output_path='';
 	if($payload_path!=='' && is_file($payload_path)){
@@ -147,9 +157,24 @@ if(!is_array($rootpath)){
 	]);
 	exit(1);
 }
+require_once dirname(__DIR__).'/tooling/WorkerFixtureState.php';
+$workspace_manifest=(string)($payload['manifest_path'] ?? '');
+$workspace_case_index=isset($payload['case_index']) ? (int)$payload['case_index'] : -1;
+if($workspace_manifest!=='' && $workspace_case_index>=0 && is_file($workspace_manifest)){
+	$workspace_cases=json_decode((string)file_get_contents($workspace_manifest),true);
+	$workspace_cases=is_array($workspace_cases) && array_is_list($workspace_cases) ? $workspace_cases : [$workspace_cases];
+	$workspace_name=is_array($workspace_cases[$workspace_case_index] ?? null)
+		? trim((string)($workspace_cases[$workspace_case_index]['worker_workspace'] ?? ''))
+		: '';
+	if($workspace_name!==''){
+		$rootpath['dataphyre']=dataphyre_dpanel_worker_workspace::activate($workspace_name)->root().'/';
+	}
+}
 if(!defined('ROOTPATH')){
 	define('ROOTPATH', $rootpath);
 }
+require_once dirname(__DIR__,2).'/testing/tooling/WorkerCoverage.php';
+$coverage_runtime=\Dataphyre\Test\WorkerCoverage::start($rootpath,filter_var($payload['coverage'] ?? false,FILTER_VALIDATE_BOOL));
 if(!defined('RUN_MODE')){
 	define('RUN_MODE', 'diagnostic');
 }
@@ -314,45 +339,77 @@ if(!function_exists('pre_init_error')){
 		throw new \RuntimeException($exception!==null ? $message.': '.$exception->getMessage() : $message, 0, $exception);
 	}
 }
+dataphyre_dpanel_worker_fixture_state::resetSql();
 $worker_module_for_stubs=(string)($payload['module'] ?? '');
 if($worker_module_for_stubs!=='sql' && !function_exists('sql_insert')){
 	function sql_insert(...$arguments): mixed {
-		if(is_callable($GLOBALS['dp_unit_sql_insert'] ?? null)){
-			return $GLOBALS['dp_unit_sql_insert'](...$arguments);
-		}
 		$fields=is_array($arguments[1] ?? null) ? $arguments[1] : [];
-		if(($fields['userid'] ?? null)===999){
-			return false;
-		}
-		return ['unit_insert'=>true];
+		$default=($fields['userid'] ?? null)===999 ? false : ['unit_insert'=>true];
+		return dataphyre_dpanel_worker_fixture_state::dispatchSql('insert',$arguments,$default);
 	}
 }
 if($worker_module_for_stubs!=='sql' && !function_exists('sql_select')){
 	function sql_select(...$arguments): mixed {
-		if(is_callable($GLOBALS['dp_unit_sql_select'] ?? null)){
-			return $GLOBALS['dp_unit_sql_select'](...$arguments);
-		}
-		return $GLOBALS['dp_unit_sql_select_result'] ?? false;
+		return dataphyre_dpanel_worker_fixture_state::dispatchSql('select',$arguments,false);
 	}
 }
 if($worker_module_for_stubs!=='sql' && !function_exists('sql_update')){
 	function sql_update(...$arguments): mixed {
-		return is_callable($GLOBALS['dp_unit_sql_update'] ?? null)
-			? $GLOBALS['dp_unit_sql_update'](...$arguments)
-			: true;
+		return dataphyre_dpanel_worker_fixture_state::dispatchSql('update',$arguments,true);
 	}
 }
 if($worker_module_for_stubs!=='sql' && !function_exists('sql_delete')){
 	function sql_delete(...$arguments): mixed {
-		return is_callable($GLOBALS['dp_unit_sql_delete'] ?? null)
-			? $GLOBALS['dp_unit_sql_delete'](...$arguments)
-			: true;
+		return dataphyre_dpanel_worker_fixture_state::dispatchSql('delete',$arguments,true);
+	}
+}
+if($worker_module_for_stubs!=='sql' && !function_exists('sql_query')){
+	function sql_query(...$arguments): mixed {
+		return dataphyre_dpanel_worker_fixture_state::dispatchSql('query',$arguments,[]);
 	}
 }
 
 $module=(string)($payload['module'] ?? '');
 $manifest_path=(string)($payload['manifest_path'] ?? '');
 $case_index=isset($payload['case_index']) ? (int)$payload['case_index'] : -1;
+if($manifest_path!==''){
+	dataphyre_dpanel_worker_fixture_state::installDeterministicCoreConfig();
+}
+
+// Diagnostic workers are isolated processes, so establish their flight-sheet
+// policy before core or an autoloader can cache module availability. The owner
+// is always enabled; individual manifest cases may declare optional modules
+// needed to exercise a dependency-sensitive branch.
+if(!defined('DATAPHYRE_MODULE_POLICY')){
+	$enabled_modules=['core'=>true];
+	$policy_owner=$module;
+	if(in_array($policy_owner, ['', 'dynamic', 'manifest', 'unscoped'], true) && $manifest_path!==''){
+		$normalized_manifest=str_replace('\\', '/', $manifest_path);
+		if(preg_match('~/runtime/modules/([a-z0-9][a-z0-9_-]*)/unit_tests/~', $normalized_manifest, $owner_match)===1){
+			$policy_owner=(string)$owner_match[1];
+		}
+	}
+	if(preg_match('/^[a-z0-9][a-z0-9_-]*$/', $policy_owner)===1 && !in_array($policy_owner, ['dynamic', 'manifest', 'unscoped'], true)){
+		$enabled_modules[$policy_owner]=true;
+	}
+	if($manifest_path!=='' && is_file($manifest_path)){
+		$manifest_policy=json_decode((string)file_get_contents($manifest_path), true);
+		$manifest_case=is_array($manifest_policy) && $case_index>=0 && is_array($manifest_policy[$case_index] ?? null)
+			? $manifest_policy[$case_index]
+			: null;
+		foreach(is_array($manifest_case['modules'] ?? null) ? $manifest_case['modules'] : [] as $dependency){
+			$dependency=strtolower(trim((string)$dependency));
+			if(preg_match('/^[a-z0-9][a-z0-9_-]*$/', $dependency)===1){
+				$enabled_modules[$dependency]=true;
+			}
+		}
+	}
+	define('DATAPHYRE_MODULE_POLICY', [
+		'enabled'=>$enabled_modules,
+		'disabled'=>[],
+		'core_implicit'=>true,
+	]);
+}
 $dpanel_path=rtrim((string)(ROOTPATH['common_dataphyre_runtime'] ?? ''), '/\\').'/modules/dpanel/kernel/dpanel.main.php';
 if(($module==='' && $manifest_path==='') || !is_file($dpanel_path)){
 	$write_result([
@@ -378,7 +435,6 @@ if(is_file($helper_path)){
 \dataphyre\dpanel::$run_unit_tests=true;
 \dataphyre\dpanel::$load_module_entrypoints=true;
 \dataphyre\dpanel::$follow_dependency_diagnostics=false;
-\dataphyre\dpanel::$allow_eval_unit_tests=true;
 \dataphyre\dpanel::$bootstrap_core_before_module=$module==='core';
 \dataphyre\dpanel::get_verbose();
 

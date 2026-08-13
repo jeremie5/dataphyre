@@ -107,11 +107,13 @@ class aceit_engine{
 	 * imported runtime definitions. The JSON file acts as the fallback persistence
 	 * surface when an experiment does not supply its own save callback.
 	 */
-	private static function load_experiment_list() : void {
+	private static function load_experiment_list(?callable $reader=null) : void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		if(empty(self::$experiment_list)){
-			$data=file_get_contents(__DIR__."/experimentation_data.json");
-			self::$experiment_list=json_decode($data);
+			$reader??=static fn(string $path): string|false=>is_file($path) ? file_get_contents($path) : false;
+			$data=$reader(__DIR__."/experimentation_data.json");
+			$decoded=is_string($data) ? json_decode($data, true) : null;
+			self::$experiment_list=is_array($decoded) ? $decoded : [];
 		}
 	}
 	
@@ -122,21 +124,27 @@ class aceit_engine{
 	 * application state. Without a callback, the module rewrites the local JSON
 	 * registry so count, finished, and aggregated flags survive later requests.
 	 */
-	private static function save_experiment(string $experiment_name) : void {
+	private static function save_experiment(string $experiment_name, ?callable $reader=null, ?callable $writer=null) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
-		if(!empty(self::$experiment_list)){
-			if(is_callable($save_callback=self::$experiment_list[$experiment_name]['save_callback'])){
-				$save_callback(self::$experiment_list[$experiment_name]);
-			}
-			else
-			{
-				$data=file_get_contents(__DIR__."/experimentation_data.json", $data);
-				$data=json_decode($data,true);
-				$data[$experiment_name]=self::$experiment_list[$experiment_name];
-				$data=json_encode($data);
-				file_put_contents(__DIR__."/experimentation_data.json", $data);
-			}
+		if(!isset(self::$experiment_list[$experiment_name])){
+			return false;
 		}
+		$experiment=self::$experiment_list[$experiment_name];
+		$saveCallback=$experiment['save_callback'] ?? null;
+		if(is_callable($saveCallback)){
+			$saveCallback($experiment);
+			return true;
+		}
+		$path=__DIR__."/experimentation_data.json";
+		$reader??=static fn(string $file): string|false=>is_file($file) ? file_get_contents($file) : false;
+		$writer??=static fn(string $file, string $data): int|false=>file_put_contents($file, $data);
+		$stored=$reader($path);
+		$stored=is_string($stored) ? json_decode($stored, true) : [];
+		$stored=is_array($stored) ? $stored : [];
+		unset($experiment['save_callback']);
+		$stored[$experiment_name]=$experiment;
+		$encoded=json_encode($stored);
+		return is_string($encoded) && $writer($path, $encoded)!==false;
 	}
 	
 	/**
@@ -162,57 +170,62 @@ class aceit_engine{
 	 * stores callbacks/environmental factors in session state, and schedules
 	 * aggregation at shutdown when finished results still need compaction.
 	 */
-    public static function define_experiment(string $experiment_name, array $experiment_parameters, array $environmental_factors, callable $eligibility_callback, callable $metrification_callback, callable $reporting_callback, string $aggregation="hourly") : void {
+    public static function define_experiment(
+		string $experiment_name,
+		array $experiment_parameters,
+		array $environmental_factors,
+		callable $eligibility_callback,
+		callable $metrification_callback,
+		callable $reporting_callback,
+		string $aggregation="hourly",
+		array $runtime=[]
+	) : void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
-		self::load_experiment_list();
-		if(self::$experiment_list[$experiment_name]['start']<time()){
+		self::load_experiment_list($runtime['read_experiments'] ?? null);
+		$now=(int)(isset($runtime['clock']) ? $runtime['clock']() : time());
+		$existing=self::$experiment_list[$experiment_name] ?? null;
+		$start=(int)($experiment_parameters['start'] ?? ($existing['start'] ?? 0));
+		if($start>$now){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Experiment is not yet started');
 			return;
 		}
-        if(isset(self::$experiment_list[$experiment_name])){
-			if(isset(self::$experiment_list[$experiment_name]['is_finished'])){
-				$is_finished=true;
-			}
-			else
-			{
-				if(isset($experiment_parameters['start'])){
-					$experiment_start=$experiment_parameters['start'];
-					$period=$experiment_parameters['period'] ?? null;
-					if($period && (time()-$experiment_start>$period)){
-						$is_finished=true;
-					}
-				}
-				if(isset($experiment_parameters['required_sample_size'])){
-					if($experiment_parameters['required_sample_size']<=self::$experiment_list[$experiment_name]['count']){
-						$is_finished=true;
-					}
-				}
-				if($is_finished){
-					if(null!==$leading_group=self::get_leading_test_group($experiment_name)){
-						$reporting_callback($experiment_name, $leading_group);
-					}
+		$isFinished=(bool)($existing['is_finished'] ?? false);
+		if(is_array($existing)){
+			$period=(int)($experiment_parameters['period'] ?? ($existing['period'] ?? 0));
+			$requiredSampleSize=(int)($experiment_parameters['required_sample_size'] ?? ($existing['required_sample_size'] ?? 0));
+			$isFinished=$isFinished
+				|| ($period>0 && $now-$start>$period)
+				|| ($requiredSampleSize>0 && $requiredSampleSize<=(int)($existing['count'] ?? 0));
+			if($isFinished){
+				$leadingGroup=isset($runtime['leading_group'])
+					? $runtime['leading_group']($experiment_name)
+					: self::get_leading_test_group($experiment_name);
+				if($leadingGroup!==null){
+					$reporting_callback($experiment_name, $leadingGroup);
 				}
 			}
-        }
-		else
-		{
-			self::$experiment_list[$experiment_name]['count']=0;
-			if(is_callable($experiment_parameters['save_callback'])){
-				self::$experiment_list[$experiment_name]['save_callback']=$experiment_parameters['save_callback'];
-			}
-			self::save_experiment($experiment_name);
+		}else{
+			self::$experiment_list[$experiment_name]=[
+				...$experiment_parameters,
+				'count'=>0,
+			];
+			self::save_experiment(
+				$experiment_name,
+				$runtime['read_experiments'] ?? null,
+				$runtime['write_experiments'] ?? null
+			);
 		}
 		$group=$eligibility_callback()??"control";
 		$_SESSION['ongoing_experiments'][$experiment_name]=[
 			'events'=>[],
 			'group'=>$group,
-			'metrification_callback'=>$metrification_callback, 
-			'environmental_factors'=>$environmental_factors
+			'metrification_callback'=>$metrification_callback,
+			'environmental_factors'=>array_values($environmental_factors),
 		];
-		if($is_finished && !isset(self::$experiment_list[$experiment_name]['is_aggregated'])){
-			register_shutdown_function(function()use($experiment_name, $aggregation){
-				self::aggregate_experiment($experiment_name, $aggregation);
-			});
+		if($isFinished && empty(self::$experiment_list[$experiment_name]['is_aggregated'])){
+			$aggregate=$runtime['aggregate'] ?? [self::class, 'aggregate_experiment'];
+			$registerShutdown=$runtime['register_shutdown'] ?? 'register_shutdown_function';
+			$registerShutdown(static fn()=>$aggregate($experiment_name, $aggregation));
 		}
     }
 
@@ -224,64 +237,67 @@ class aceit_engine{
 	 * five environmental factors plus score/group metadata in SQL, increments the
 	 * experiment sample count, and persists definition state.
 	 */
-    public static function metricize($experiment_name) : bool {
+    public static function metricize(string $experiment_name, array $runtime=[]) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
-		self::load_experiment_list();
-		if(isset(self::$experiment_list[$experiment_name])){
-			if(isset(self::$experiment_list[$experiment_name]['is_finished'])){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Experiment is known as over');
-				return true;
-			}
-			if(isset($_SESSION['ongoing_experiments'][$experiment_name])){
-				$segment_identifier=md5(implode('', $environmental_factors));
-				if(false===sql_select(
-					$S="*",
-					$L="dataphyre.aceit_engine_experiments", 
-					$P="WHERE segment_identifier=? AND experiment_name=? LIMIT 1",
-					$V=[$segment_identifier, $experiment_name]
-				) && !isset($_SESSION['ongoing_experiments'][$experiment_name]['submitted'])){
-					$metrification=$_SESSION['ongoing_experiments'][$experiment_name]['metrification_callback'];
-					$events=$_SESSION['ongoing_experiments'][$experiment_name]['events'];
-					if(false!==$score=$metrification($events)){
-						$environmental_factors=[];
-						for($i=0; $i<5; $i++){
-							$environmental_factors["env_factor".($i+1)]=$_SESSION['ongoing_experiments'][$experiment_name]['environmental_factors'][$i];
-						}
-						sql_insert(
-							$L="dataphyre.aceit_engine_experiments", 
-							$F=array_merge($environmental_factors, [
-								"experiment_name"=>$experiment_name,
-								"group"=>$_SESSION['ongoing_experiments'][$experiment_name]['group'],
-								"segment_identifier"=>$segment_identifier,
-								"events"=>json_encode($events),
-								"score"=>$score
-							])
-						);
-						$_SESSION['ongoing_experiments'][$experiment_name]['submitted']=true;
-						self::$experiment_list[$experiment_name]['count']++;
-						self::save_experiment($experiment_name);
-						return true;
-					}
-					else
-					{
-						tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Cannot get score, metrification function returned false', $S='fatal');
-					}
-				}
-				else
-				{
-					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Patient has already been experimented upon for this experiment', $S='warning');
-				}
-			}
-			else
-			{
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Experiment is not ongoing', $S='warning');
-			}
-        }
-		else
-		{
+		self::load_experiment_list($runtime['read_experiments'] ?? null);
+		$experiment=self::$experiment_list[$experiment_name] ?? null;
+		if(!is_array($experiment)){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Experiment is not defined', $S='warning');
+			return false;
 		}
-        return false;
+		if(!empty($experiment['is_finished'])){
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Experiment is known as over');
+			return true;
+		}
+		$ongoing=$_SESSION['ongoing_experiments'][$experiment_name] ?? null;
+		if(!is_array($ongoing)){
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Experiment is not ongoing', $S='warning');
+			return false;
+		}
+		$environmentalFactors=array_values((array)($ongoing['environmental_factors'] ?? []));
+		$segmentIdentifier=md5((string)json_encode($environmentalFactors));
+		$alreadyStored=false!==sql_select(
+			$S="*",
+			$L="dataphyre.aceit_engine_experiments",
+			$P="WHERE segment_identifier=? AND experiment_name=? LIMIT 1",
+			$V=[$segmentIdentifier, $experiment_name]
+		);
+		if($alreadyStored || !empty($ongoing['submitted'])){
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Patient has already been experimented upon for this experiment', $S='warning');
+			return false;
+		}
+		$metrification=$ongoing['metrification_callback'] ?? null;
+		$events=(array)($ongoing['events'] ?? []);
+		$score=is_callable($metrification) ? $metrification($events) : false;
+		if($score===false){
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Cannot get score, metrification function returned false', $S='fatal');
+			return false;
+		}
+		$factorColumns=[];
+		for($i=0; $i<5; $i++){
+			$factorColumns["env_factor".($i+1)]=$environmentalFactors[$i] ?? null;
+		}
+		$inserted=sql_insert(
+			$L="dataphyre.aceit_engine_experiments",
+			$F=array_merge($factorColumns, [
+				"experiment_name"=>$experiment_name,
+				"group"=>(string)($ongoing['group'] ?? 'control'),
+				"segment_identifier"=>$segmentIdentifier,
+				"events"=>json_encode($events),
+				"score"=>$score,
+			])
+		);
+		if($inserted===false){
+			return false;
+		}
+		$_SESSION['ongoing_experiments'][$experiment_name]['submitted']=true;
+		self::$experiment_list[$experiment_name]['count']=(int)(self::$experiment_list[$experiment_name]['count'] ?? 0)+1;
+		self::save_experiment(
+			$experiment_name,
+			$runtime['read_experiments'] ?? null,
+			$runtime['write_experiments'] ?? null
+		);
+		return true;
     }
 	
 	/**
@@ -307,18 +323,25 @@ class aceit_engine{
 		}
 		$query="SELECT DISTINCT group FROM dataphyre.aceit_engine_experiments WHERE experiment_name=?";
 		$groups=sql_query($query, [$experiment_name]);
+		if(!is_iterable($groups)){
+			return;
+		}
 		foreach($groups as $group){
 			$query="SELECT group, $time_granulation_query as time_frame, SUM(score) as total_score, COUNT(*) as total_entries FROM dataphyre.aceit_engine_experiments WHERE experiment_name=? AND group=? GROUP BY group, time_frame";
 			$aggregate_result=sql_query($query, [$experiment_name, $group['group']]);
-			foreach($aggregate_result as $aggregated_row){
-				$query="INSERT INTO dataphyre.aceit_engine_experiments (group, score, experiment_name, is_aggregate) VALUES (?, ?, ?, ?)";
-				sql_query($query, [$aggregated_row['group'], $aggregated_row['total_score'], $experiment_name, true]);
+			if(is_iterable($aggregate_result)){
+				foreach($aggregate_result as $aggregated_row){
+					$query="INSERT INTO dataphyre.aceit_engine_experiments (group, score, experiment_name, is_aggregate) VALUES (?, ?, ?, ?)";
+					sql_query($query, [$aggregated_row['group'], $aggregated_row['total_score'], $experiment_name, true]);
+				}
 			}
 			$query="DELETE FROM dataphyre.aceit_engine_experiments WHERE experiment_name=? AND group=?";
 			sql_query($query, [$experiment_name, $group['group']]);
 		}
-		self::$experiment_list[$experiment_name]['is_aggregated']=true;
-		self::save_experiment($experiment_name);
+		if(isset(self::$experiment_list[$experiment_name])){
+			self::$experiment_list[$experiment_name]['is_aggregated']=true;
+			self::save_experiment($experiment_name);
+		}
 	}
 
 	/**
@@ -404,7 +427,7 @@ class aceit_engine{
 				if(!isset($grouped_results[$group])){
 					$grouped_results[$group]=$date_range;
 				}
-				if(array_key_exists($date, $grouped_results[$group])){
+				if($date_range===[] || array_key_exists($date, $grouped_results[$group])){
 					$grouped_results[$group][$date]=$score;
 				}
 			}

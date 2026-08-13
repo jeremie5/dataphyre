@@ -102,12 +102,17 @@ final class PanelTheme {
 	}
 
 	/**
-	 * Returns the shared Panel theme library.
+	 * Returns the active Panel theme library.
 	 *
-	 * The library is initialized lazily with built-in presets and then reused for preset/theme registration, loading, previews, and diagnostics.
-	 * @return PanelThemeLibrary Process-local theme library instance.
+	 * Surface work resolves its PanelInstance-owned library. Calls outside a
+	 * surface retain the legacy process-local library for source compatibility.
+	 * @return PanelThemeLibrary Active surface or legacy theme library.
 	 */
 	public static function themeLibrary(): PanelThemeLibrary {
+		$registry=PanelContext::config('__panel_extension_registry');
+		if($registry instanceof PanelInstanceExtensionRegistry){
+			return $registry->themeLibrary();
+		}
 		return self::$library ??= PanelThemeLibrary::make()
 			->register(PanelThemePreset::flatMinima())
 			->register(PanelThemePreset::brutalist())
@@ -123,6 +128,10 @@ final class PanelTheme {
 	 * @return PanelThemePreset Registered preset instance.
 	 */
 	public static function registerPreset(PanelThemePreset|array $preset): PanelThemePreset {
+		$registry=PanelContext::config('__panel_extension_registry');
+		if($registry instanceof PanelInstanceExtensionRegistry){
+			return $registry->registerThemePreset($preset);
+		}
 		$preset=$preset instanceof PanelThemePreset ? $preset : PanelThemePreset::fromArray($preset);
 		self::themeLibrary()->register($preset);
 		return $preset;
@@ -137,6 +146,10 @@ final class PanelTheme {
 	 * @return PanelTheme Registered theme instance.
 	 */
 	public static function registerTheme(PanelTheme|array $theme): PanelTheme {
+		$registry=PanelContext::config('__panel_extension_registry');
+		if($registry instanceof PanelInstanceExtensionRegistry){
+			return $registry->registerTheme($theme);
+		}
 		self::themeLibrary()->registerTheme($theme);
 		if($theme instanceof PanelTheme){
 			return $theme;
@@ -162,6 +175,10 @@ final class PanelTheme {
 	 * @return PanelThemeLibrary Theme library after loading matching preset files.
 	 */
 	public static function loadPresets(string|array $paths): PanelThemeLibrary {
+		$registry=PanelContext::config('__panel_extension_registry');
+		if($registry instanceof PanelInstanceExtensionRegistry){
+			return $registry->loadThemes($paths);
+		}
 		return self::themeLibrary()->loadFrom($paths);
 	}
 
@@ -173,6 +190,10 @@ final class PanelTheme {
 	 * @return PanelThemeLibrary Theme library after loading matching theme files.
 	 */
 	public static function loadThemes(string|array $paths): PanelThemeLibrary {
+		$registry=PanelContext::config('__panel_extension_registry');
+		if($registry instanceof PanelInstanceExtensionRegistry){
+			return $registry->loadThemes($paths);
+		}
 		return self::themeLibrary()->loadFrom($paths);
 	}
 
@@ -516,7 +537,6 @@ final class PanelTheme {
 					'logo'=>$this->brandLogo((string)$value),
 					'dark_logo'=>$this->darkModeBrandLogo((string)$value),
 					'logo_height'=>$this->brandLogoHeight((string)$value),
-					default=>null,
 				};
 			}
 		}
@@ -525,9 +545,6 @@ final class PanelTheme {
 		}
 		if(isset($data['css_assets'])){
 			$this->css($data['css_assets']);
-		}
-		elseif(isset($data['css'])){
-			$this->css($data['css']);
 		}
 		return $this;
 	}
@@ -1200,11 +1217,17 @@ final class PanelTheme {
 	public static function styleVariablesFor(array $colors, array $tokens=[], bool $darkMode=true, array $darkTokens=[]): string {
 		$lines=[':root{'];
 		foreach($tokens as $name=>$value){
-			$lines[]='--dp-'.$name.':'.$value.';';
+			$value=self::safeCssValue($value);
+			if($value!==null){
+				$lines[]='--dp-'.$name.':'.$value.';';
+			}
 		}
 		foreach($colors as $name=>$palette){
 			foreach($palette as $shade=>$value){
-				$lines[]='--dp-'.$name.'-'.$shade.':'.$value.';';
+				$value=self::safeCssValue($value);
+				if($value!==null){
+					$lines[]='--dp-'.$name.'-'.$shade.':'.$value.';';
+				}
 			}
 		}
 		$lines[]='--dp-primary:var(--dp-primary-600);';
@@ -1216,12 +1239,39 @@ final class PanelTheme {
 		if($darkMode){
 			$dark='';
 			foreach(array_replace(self::defaultDarkTokens(), $darkTokens) as $name=>$value){
-				$dark.='--dp-'.$name.':'.$value.';';
+				$value=self::safeCssValue($value);
+				if($value!==null){
+					$dark.='--dp-'.$name.':'.$value.';';
+				}
 			}
 			$lines[]='[data-dp-theme-mode="dark"]{'.$dark.'}';
 			$lines[]='@media (prefers-color-scheme:dark){[data-dp-theme-mode="system"]{'.$dark.'}}';
 		}
 		return implode('', $lines);
+	}
+
+	/**
+	 * Validates one CSS custom-property value for inline style output.
+	 *
+	 * Custom properties may contain rich CSS expressions, but never need to
+	 * contain declaration terminators, block delimiters, HTML markup, controls,
+	 * or legacy script-capable CSS constructs. Invalid values are omitted.
+	 *
+	 * @param mixed $value Candidate theme token or palette value.
+	 * @return string|null Safe trimmed CSS value, or null when unsafe.
+	 */
+	private static function safeCssValue(mixed $value): ?string {
+		if(!is_scalar($value) && !$value instanceof \Stringable){
+			return null;
+		}
+		$value=trim((string)$value);
+		if($value==='' || preg_match('/[\x00-\x1F\x7F;<>{}]/', $value)===1){
+			return null;
+		}
+		if(preg_match('/(?:expression\s*\(|javascript\s*:|-moz-binding|@import)/i', $value)===1){
+			return null;
+		}
+		return $value;
 	}
 
 	/**

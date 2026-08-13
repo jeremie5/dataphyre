@@ -15,16 +15,23 @@ namespace Dataphyre\Panel;
  * structure while still exposing flat field and section lists for renderers,
  * validation, and manifest generation. Components are immutable: mutators clone
  * and return updated trees.
+ *
+ * @template TRecord = mixed
+ * @template TValue = mixed
+ * @template TState of array<string, mixed> = array<string, mixed>
  */
 final class SchemaComponent {
 	use PanelExtensible;
+	use HasCollectionItemPresentation;
 
 	private string $kind;
 	private string $name;
 	private string $label;
+	/** @var Field<TRecord, TValue, TState>|null */
 	private ?Field $field=null;
+	/** @var FormSection<TRecord, TState>|null */
 	private ?FormSection $section=null;
-	/** @var array<int, self> */
+	/** @var list<self<TRecord, mixed, TState>> */
 	private array $children=[];
 	private array $meta=[];
 
@@ -45,7 +52,7 @@ final class SchemaComponent {
 	 *
 	 * @param string $kind Component kind.
 	 * @param string $name Component name.
-	 * @return self New schema component.
+	 * @return self<TRecord, TValue, TState> New schema component.
 	 */
 	public static function make(string $kind, string $name=''): self {
 		return self::configured(new self($kind, $name));
@@ -57,9 +64,9 @@ final class SchemaComponent {
 	 * Infolist entries are unwrapped to their underlying read-only field before the
 	 * component is created.
 	 *
-	 * @param Field|InfolistEntry|array<string, mixed>|string $field Field definition.
+	 * @param Field<TRecord, TValue, TState>|InfolistEntry<TRecord, TValue, TState>|array<string, mixed>|string $field Field definition.
 	 * @param string|null $type Field type used when field is a string.
-	 * @return self Field component wrapping the normalized Field.
+	 * @return self<TRecord, TValue, TState> Field component wrapping the normalized Field.
 	 */
 	public static function field(Field|InfolistEntry|array|string $field, ?string $type=null): self {
 		if($field instanceof InfolistEntry){
@@ -78,9 +85,9 @@ final class SchemaComponent {
 	 * Field children inherit the section label as their field section when they do
 	 * not already carry explicit section metadata.
 	 *
-	 * @param FormSection|array<string, mixed>|string $section Section definition.
-	 * @param array<int, mixed> $children Child component definitions.
-	 * @return self Section component.
+	 * @param FormSection<TRecord, TState>|array<string, mixed>|string $section Section definition.
+	 * @param list<self<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|FormSection<TRecord, TState>|InfolistEntry<TRecord, mixed, TState>|array<string, mixed>|string> $children Child component definitions.
+	 * @return self<TRecord,TValue,TState> Section component.
 	 */
 	public static function section(FormSection|array|string $section, array $children=[]): self {
 		$section=$section instanceof FormSection
@@ -98,7 +105,7 @@ final class SchemaComponent {
 	 *
 	 * @param string $name Group name.
 	 * @param array<int, mixed> $children Child component definitions.
-	 * @return self Group component.
+	 * @return self<TRecord,TValue,TState> Group component.
 	 */
 	public static function group(string $name, array $children=[]): self {
 		return self::make('group', $name)->children($children);
@@ -111,7 +118,7 @@ final class SchemaComponent {
 	 *
 	 * @param string $name Tab name.
 	 * @param array<int, mixed> $children Child component definitions.
-	 * @return self Tab component.
+	 * @return self<TRecord,TValue,TState> Tab component.
 	 */
 	public static function tab(string $name, array $children=[]): self {
 		return self::make('tab', $name)->children($children);
@@ -124,7 +131,7 @@ final class SchemaComponent {
 	 *
 	 * @param string $name Step name.
 	 * @param array<int, mixed> $children Child component definitions.
-	 * @return self Step component.
+	 * @return self<TRecord,TValue,TState> Step component.
 	 */
 	public static function step(string $name, array $children=[]): self {
 		return self::make('step', $name)->children($children);
@@ -138,7 +145,7 @@ final class SchemaComponent {
 	 * can safely filter invalid schema entries.
 	 *
 	 * @param mixed $component Component definition.
-	 * @return self|null Normalized component, or null when the input is unsupported.
+	 * @return self<TRecord, TValue, TState>|null Normalized component, or null when the input is unsupported.
 	 */
 	public static function from(mixed $component): ?self {
 		if($component instanceof self){
@@ -195,7 +202,7 @@ final class SchemaComponent {
 	 * Sets the display label for this component.
 	 *
 	 * @param string $label Operator-facing label.
-	 * @return self Cloned component with updated label.
+	 * @return self<TRecord,TValue,TState> Cloned component with updated label.
 	 */
 	public function label(string $label): self {
 		$clone=clone $this;
@@ -207,7 +214,7 @@ final class SchemaComponent {
 	 * Merges renderer metadata into the component.
 	 *
 	 * @param array<string, mixed> $meta Metadata consumed by panel renderers.
-	 * @return self Cloned component with merged metadata.
+	 * @return self<TRecord,TValue,TState> Cloned component with merged metadata.
 	 */
 	public function meta(array $meta): self {
 		$clone=clone $this;
@@ -221,8 +228,8 @@ final class SchemaComponent {
 	 * Section parents apply their label to child fields. Tab and step parents
 	 * propagate tab/step metadata recursively through children.
 	 *
-	 * @param array<int, mixed> $children Child component definitions.
-	 * @return self Cloned component with normalized children.
+	 * @param list<self<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|FormSection<TRecord, TState>|InfolistEntry<TRecord, mixed, TState>|array<string, mixed>|string> $children Child component definitions.
+	 * @return self<TRecord,TValue,TState> Cloned component with normalized children.
 	 */
 	public function children(array $children): self {
 		$clone=clone $this;
@@ -248,14 +255,11 @@ final class SchemaComponent {
 	/**
 	 * Appends one normalized child component.
 	 *
-	 * @param self|Field|FormSection|InfolistEntry|array<string, mixed>|string $child Child definition.
-	 * @return self Cloned component with the child appended, or unchanged for unsupported input.
+	 * @param self<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|FormSection<TRecord, TState>|InfolistEntry<TRecord, mixed, TState>|array<string, mixed>|string $child Child definition.
+	 * @return self<TRecord,TValue,TState> Cloned component with the normalized child appended.
 	 */
 	public function child(self|Field|FormSection|InfolistEntry|array|string $child): self {
 		$child=self::from($child);
-		if(!$child instanceof self){
-			return $this;
-		}
 		$clone=clone $this;
 		if($clone->kind==='section' && $child->field instanceof Field){
 			$child=self::field($child->field->section($clone->label));
@@ -273,7 +277,7 @@ final class SchemaComponent {
 	/**
 	 * Returns the field wrapped by this component.
 	 *
-	 * @return Field|null Field definition for field components.
+	 * @return Field<TRecord, TValue, TState>|null Field definition for field components.
 	 */
 	public function fieldDefinition(): ?Field {
 		return $this->field;
@@ -282,7 +286,7 @@ final class SchemaComponent {
 	/**
 	 * Returns the section wrapped by this component.
 	 *
-	 * @return FormSection|null Section definition for section components.
+	 * @return FormSection<TRecord, TState>|null Section definition for section components.
 	 */
 	public function sectionDefinition(): ?FormSection {
 		return $this->section;
@@ -291,7 +295,7 @@ final class SchemaComponent {
 	/**
 	 * Returns direct child components.
 	 *
-	 * @return array<int, self> Normalized direct children.
+	 * @return list<self<TRecord, mixed, TState>> Normalized direct children.
 	 */
 	public function childrenList(): array {
 		return $this->children;
@@ -303,12 +307,21 @@ final class SchemaComponent {
 	 * Later fields with the same name replace earlier entries, matching manifest
 	 * key semantics.
 	 *
-	 * @return array<string, Field> Fields keyed by field name.
+	 * @return array<string, Field<TRecord, mixed, TState>> Fields keyed by field name.
 	 */
 	public function fieldsList(): array {
 		$fields=[];
 		if($this->field instanceof Field){
-			$fields[$this->field->name()]=$this->field;
+			$field=$this->field;
+			$componentItem=PanelCollectionItemPresentation::fromMeta($this->meta);
+			if($componentItem!==[]){
+				$fieldMeta=$field->toArray()['meta'] ?? [];
+				$field=$field->itemPresentation(PanelCollectionItemPresentation::merge(
+					PanelCollectionItemPresentation::fromMeta(is_array($fieldMeta) ? $fieldMeta : []),
+					$componentItem,
+				));
+			}
+			$fields[$field->name()]=$field;
 		}
 		foreach($this->children as $child){
 			foreach($child->fieldsList() as $name=>$field){
@@ -324,7 +337,7 @@ final class SchemaComponent {
 	 * Tab and step components synthesize lightweight sections when they directly
 	 * contain fields, preserving layout context for renderers that expect sections.
 	 *
-	 * @return array<string, FormSection> Sections keyed by section name.
+	 * @return array<string, FormSection<TRecord, TState>> Sections keyed by section name.
 	 */
 	public function sectionsList(): array {
 		$sections=[];
@@ -347,11 +360,27 @@ final class SchemaComponent {
 			}
 		}
 		if($this->section instanceof FormSection){
-			$sections[$this->section->name()]=$this->section;
+			$section=$this->section;
+			$componentItem=PanelCollectionItemPresentation::fromMeta($this->meta);
+			if($componentItem!==[]){
+				$sectionMeta=$section->toArray()['meta'] ?? [];
+				$section=$section->itemPresentation(PanelCollectionItemPresentation::merge(
+					PanelCollectionItemPresentation::fromMeta(is_array($sectionMeta) ? $sectionMeta : []),
+					$componentItem,
+				));
+			}
+			$sections[$section->name()]=$section;
 		}
 		foreach($this->children as $child){
 			foreach($child->sectionsList() as $name=>$section){
 				$sections[$name]=$section;
+			}
+		}
+		$componentItem=PanelCollectionItemPresentation::fromMeta($this->meta);
+		if($componentItem!==[] && in_array($this->kind, ['tab', 'step'], true)){
+			$key=$this->kind.'_item_presentation';
+			foreach($sections as $name=>$section){
+				$sections[$name]=$section->meta([$key=>$componentItem]);
 			}
 		}
 		return $sections;
@@ -396,7 +425,7 @@ final class SchemaComponent {
 	 * Applies tab metadata recursively to this component tree.
 	 *
 	 * @param string $tab Tab label/name to propagate.
-	 * @return self Cloned component with tab metadata applied.
+	 * @return self<TRecord,TValue,TState> Cloned component with tab metadata applied.
 	 */
 	private function withTab(string $tab): self {
 		$clone=clone $this;
@@ -424,7 +453,7 @@ final class SchemaComponent {
 	 * Applies step metadata recursively to this component tree.
 	 *
 	 * @param string $step Step label/name to propagate.
-	 * @return self Cloned component with step metadata applied.
+	 * @return self<TRecord,TValue,TState> Cloned component with step metadata applied.
 	 */
 	private function withStep(string $step): self {
 		$clone=clone $this;

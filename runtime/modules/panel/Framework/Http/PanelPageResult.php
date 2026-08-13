@@ -82,7 +82,7 @@ final class PanelPageResult implements \Stringable, \JsonSerializable {
 	public static function jsonDownload(mixed $payload, string $filename='panel-export.json', array $data=[]): self {
 		$filename=trim($filename) ?: 'panel-export.json';
 		$filename=preg_replace('/[^a-zA-Z0-9_.-]+/', '-', $filename) ?: 'panel-export.json';
-		$content=json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}';
+		$content=json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) ?: '{}';
 		return new self($content, 200, [
 			'Content-Type'=>'application/json; charset=utf-8',
 			'Content-Disposition'=>'attachment; filename="'.$filename.'"',
@@ -100,7 +100,7 @@ final class PanelPageResult implements \Stringable, \JsonSerializable {
 	 * @return self JSON response result.
 	 */
 	public static function json(mixed $payload, int $status=200, array $headers=[]): self {
-		$content=json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}';
+		$content=json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) ?: '{}';
 		return new self($content, $status, array_replace([
 			'Content-Type'=>'application/json; charset=utf-8',
 		], $headers));
@@ -119,12 +119,34 @@ final class PanelPageResult implements \Stringable, \JsonSerializable {
 	 * @return self Redirect result.
 	 */
 	public static function redirect(string $to, array $data=[], array $notifications=[], int $status=303): self {
+		$to=self::redirectTarget($to);
 		$headers=[
 			'Location'=>$to,
 			'Content-Type'=>'text/html; charset=utf-8',
 		];
 		$content='<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url='.self::e($to).'"></head><body><p>Redirecting...</p></body></html>';
 		return new self($content, $status, $headers, $data, self::normalizeNotifications($notifications), $to);
+	}
+
+	/**
+	 * Normalizes a redirect target before it reaches Location or meta refresh.
+	 *
+	 * Relative destinations and explicit HTTP(S) URLs are supported. Scriptable,
+	 * data, protocol-relative, and backslash-relative targets fail closed to the
+	 * current document fragment.
+	 *
+	 * @param string $target Candidate redirect destination.
+	 * @return string Safe single-line redirect target.
+	 */
+	private static function redirectTarget(string $target): string {
+		$target=self::singleLine($target, '#');
+		if($target==='#' || str_starts_with($target, '//') || str_starts_with($target, '\\')){
+			return '#';
+		}
+		if(preg_match('/\A([A-Za-z][A-Za-z0-9+.-]*):/', $target, $match)===1 && !in_array(strtolower($match[1]), ['http', 'https'], true)){
+			return '#';
+		}
+		return $target;
 	}
 
 	/**
@@ -258,5 +280,19 @@ final class PanelPageResult implements \Stringable, \JsonSerializable {
 	 */
 	private static function e(string $value): string {
 		return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+	}
+
+	/**
+	 * Reduces a header-bound value to its first non-empty line.
+	 *
+	 * @param string $value Candidate value.
+	 * @param string $fallback Value returned when the first line is empty.
+	 * @return string Single-line value safe to store in response headers.
+	 */
+	private static function singleLine(string $value, string $fallback=''): string {
+		$parts=preg_split('/[\r\n]/', $value, 2);
+		$value=trim((string)($parts[0] ?? ''));
+		$value=preg_replace('/[\x00-\x1F\x7F]+/', '', $value) ?? '';
+		return $value!=='' ? $value : $fallback;
 	}
 }

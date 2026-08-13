@@ -341,8 +341,7 @@ final class CurrencyBridge {
 		if(is_int($value) || (is_string($value) && is_numeric(trim($value)))){
 			if($fixedCurrency===null){
 				throw SqlError::invalidMoneyComparison(
-					$owner,
-					$amountColumn,
+					$owner, $amountColumn,
 					'Scalar comparisons need a fixed storage currency.',
 					'Pass a Money object for same-currency row filtering, or use whereMoney...In(..., $currency) when the stored amount column is already normalized to one currency.'
 				);
@@ -354,8 +353,7 @@ final class CurrencyBridge {
 			];
 		}
 		throw SqlError::invalidMoneyComparison(
-			$owner,
-			$amountColumn,
+			$owner, $amountColumn,
 			'Unsupported money comparison value.',
 			'Pass a Dataphyre\\Currency\\Money object, or an integer or numeric-string scalar amount together with a fixed storage currency.'
 		);
@@ -405,7 +403,7 @@ final class CurrencyBridge {
 				\dataphyre\core::load_framework_module('currency');
 			}
 		}
-		if(!class_exists(self::CURRENCY_FACADE, false)){
+		if(!class_exists(self::CURRENCY_FACADE)){
 			throw SqlError::missingFrameworkModule(
 				'Dataphyre SQL',
 				'currency',

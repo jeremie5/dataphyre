@@ -9,7 +9,9 @@ namespace dataphyre;
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
+require_once dirname(__DIR__, 3).'/http.php';
 require_once(__DIR__.'/access.qr.php');
+require_once(__DIR__.'/access.configuration.php');
 
 dp_define_module_config('access', 'DP_ACCESS_CFG', [
 	'sanction_on_useragent_change'=>false,
@@ -62,26 +64,10 @@ if(defined('DP_ACCESS_CFG') && !defined('Dataphyre\\Access\\DP_ACCESS_CFG')){
 	define('Dataphyre\\Access\\DP_ACCESS_CFG', DP_ACCESS_CFG);
 }
 
-$dp_access_sessions_table_name=(string)DP_ACCESS_CFG['sessions_table_name'];
-$configured_auth_types=DP_ACCESS_CFG['auth_types']
-	?? DP_ACCESS_CFG['enabled_auth_types'];
-if(!is_array($configured_auth_types) || $configured_auth_types===[]){
-	$configured_auth_types=['session'];
-}
-$configured_auth_types=array_values(array_unique(array_filter(array_map(
-	static fn(mixed $auth_type): string=>strtolower(trim((string)$auth_type)),
-	$configured_auth_types
-), static fn(string $auth_type): bool=>$auth_type!=='')));
-if($configured_auth_types===[]){
-	$configured_auth_types=['session'];
-}
-$default_auth_type=strtolower(trim((string)DP_ACCESS_CFG['default_auth_type']));
-if($default_auth_type===''){
-	$default_auth_type='session';
-}
-if(!in_array($default_auth_type, $configured_auth_types, true)){
-	array_unshift($configured_auth_types, $default_auth_type);
-}
+$dp_access_configuration=access_configuration::normalize(DP_ACCESS_CFG);
+$dp_access_sessions_table_name=$dp_access_configuration['sessions_table'];
+$configured_auth_types=$dp_access_configuration['auth_types'];
+$default_auth_type=$dp_access_configuration['default_auth_type'];
 if(!defined('DP_ACCESS_SESSIONS_TABLE_NAME')){
 	define('DP_ACCESS_SESSIONS_TABLE_NAME', $dp_access_sessions_table_name);
 }
@@ -93,8 +79,7 @@ if(!defined('DP_ACCESS_AUTH_TYPES')){
 }
 if(function_exists('sql_define_table')){
 	sql_define_table(DP_ACCESS_SESSIONS_TABLE_NAME, __DIR__.'/access.tables.php', 'sessions');
-	$dp_access_tokens_table_name=(string)(DP_ACCESS_CFG['identity']['tokens_table'] ?? 'dataphyre.access_tokens');
-	sql_define_table($dp_access_tokens_table_name, __DIR__.'/access.tables.php', 'tokens');
+	sql_define_table($dp_access_configuration['token_table'], __DIR__.'/access.tables.php', 'tokens');
 }
 
 \heisenconstant('DPID', fn()=>$_SESSION['dp_access']['dpid']);
@@ -115,9 +100,11 @@ if(RUN_MODE==='diagnostic'){
  */
 class access{
 	
-	private static $session_cookie='__Secure-DPID';
+	private static $session_cookie='__Host-DPID';
 	private static $fingerprint=[];
 	private static ?string $current_auth_type=null;
+	/** @var array<string,bool> */
+	private static array $user_agent_match_cache=[];
 	private const BASE32_ALPHABET='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 	private static array $auth_type_prefix_map=[
 		'session'=>'DPID',
@@ -132,7 +119,7 @@ class access{
 	 */
 	public  function __construct(){
 		if(isset(DP_ACCESS_CFG['sessions_cookie_name'])){
-			self::$session_cookie='__Secure-'.DP_ACCESS_CFG['sessions_cookie_name'];
+			self::$session_cookie='__Host-'.DP_ACCESS_CFG['sessions_cookie_name'];
 		}
 		self::mark_auth_type(self::current_auth_type());
 		if(isset($_SESSION)){
@@ -162,8 +149,7 @@ class access{
 			if(self::validate_session()===false){
 				if(self::recover_session()===false){
 					if(self::disable_session()===false){
-						core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreAccess: User session is invalid, unrecoverable and couldn\'t be destroyed.', 'safemode');
-						exit();
+							core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreAccess: User session is invalid, unrecoverable and couldn\'t be destroyed.', 'safemode');
 					}
 				}
 			}
@@ -185,8 +171,10 @@ class access{
 	 * @return string Lowercase default auth type.
 	 */
 	public static function default_auth_type(): string {
-		$auth_type=strtolower(trim((string)(DP_ACCESS_DEFAULT_AUTH_TYPE ?? 'session')));
-		return $auth_type!=='' ? $auth_type : 'session';
+		return access_configuration::normalize([
+			'auth_types'=>DP_ACCESS_AUTH_TYPES ?? [],
+			'default_auth_type'=>DP_ACCESS_DEFAULT_AUTH_TYPE ?? 'session',
+		])['default_auth_type'];
 	}
 
 	/**
@@ -198,18 +186,10 @@ class access{
 	 * @return array<int, string> Enabled auth type names in resolution order.
 	 */
 	public static function enabled_auth_types(): array {
-		$auth_types=DP_ACCESS_AUTH_TYPES ?? ['session'];
-		if(!is_array($auth_types) || $auth_types===[]){
-			return [self::default_auth_type()];
-		}
-		$normalized=array_values(array_unique(array_filter(array_map(
-			static fn(mixed $auth_type): string=>strtolower(trim((string)$auth_type)),
-			$auth_types
-		), static fn(string $auth_type): bool=>$auth_type!=='')));
-		if($normalized===[]){
-			return [self::default_auth_type()];
-		}
-		return $normalized;
+		return access_configuration::normalize([
+			'auth_types'=>DP_ACCESS_AUTH_TYPES ?? [],
+			'default_auth_type'=>DP_ACCESS_DEFAULT_AUTH_TYPE ?? 'session',
+		])['auth_types'];
 	}
 
 	/**
@@ -270,12 +250,98 @@ class access{
 	 * Returns the secure cookie name used by the session guard.
 	 *
 	 * The constructor applies the configured base name and always prefixes it as
-	 * a `__Secure-` cookie for browser delivery.
+	 * a host-only `__Host-` cookie for browser delivery.
 	 *
 	 * @return string Session guard cookie name.
 	 */
 	public static function get_session_cookie_name(): string {
 		return self::$session_cookie;
+	}
+
+	private static function session_cookie_domain(): string {
+		$host=(string)($_SERVER['HTTP_HOST'] ?? '');
+		$domain=parse_url('https://'.$host, PHP_URL_HOST);
+		return is_string($domain) ? strtolower($domain) : '';
+	}
+
+	/** @return array{expires:int,path:string,secure:bool,httponly:bool,samesite:string} */
+	private static function session_cookie_options(int $expires): array {
+		return [
+			'expires'=>$expires,
+			'path'=>'/',
+			'secure'=>true,
+			'httponly'=>true,
+			'samesite'=>'Lax',
+		];
+	}
+
+	/** @return array{expires:int,path:string,secure:bool,httponly:bool,samesite:string,domain?:string} */
+	private static function legacy_session_cookie_options(int $expires, bool $domain_scoped): array {
+		$options=self::session_cookie_options($expires);
+		$domain=self::session_cookie_domain();
+		if($domain_scoped && $domain!==''){
+			$options['domain']=$domain;
+		}
+		return $options;
+	}
+
+	/** @return list<string> */
+	private static function legacy_session_cookie_names(): array {
+		$configured_name=trim((string)(DP_ACCESS_CFG['sessions_cookie_name'] ?? 'DPID'));
+		if($configured_name===''){
+			$configured_name='DPID';
+		}
+		return array_values(array_unique([
+			'__Secure-'.$configured_name,
+			'__Secure-DPID',
+		]));
+	}
+
+	/** @return list<array{name:string,options:array<string,mixed>}> */
+	private static function session_cookie_expiry_variants(int $expires, bool $include_current=true): array {
+		$variants=[];
+		if($include_current){
+			$variants[]=[
+				'name'=>self::$session_cookie,
+				'options'=>self::session_cookie_options($expires),
+			];
+		}
+		foreach(self::legacy_session_cookie_names() as $legacy_name){
+			$variants[]=[
+				'name'=>$legacy_name,
+				'options'=>self::legacy_session_cookie_options($expires, false),
+			];
+			$domain_options=self::legacy_session_cookie_options($expires, true);
+			if(isset($domain_options['domain'])){
+				$variants[]=[
+					'name'=>$legacy_name,
+					'options'=>$domain_options,
+				];
+			}
+		}
+		return $variants;
+	}
+
+	/** @param list<array{name:string,options:array<string,mixed>}> $variants */
+	private static function expire_session_cookie_variants(array $variants): bool {
+		$result=true;
+		foreach($variants as $variant){
+			$result=setcookie($variant['name'], '', $variant['options']) && $result;
+			unset($_COOKIE[$variant['name']]);
+		}
+		return $result;
+	}
+
+	private static function expire_legacy_session_cookies(): bool {
+		return self::expire_session_cookie_variants(
+			self::session_cookie_expiry_variants(time()-3600, false)
+		);
+	}
+
+	public static function expire_session_cookie(): bool {
+		return self::expire_session_cookie_variants(
+			self::session_cookie_expiry_variants(time()-3600)
+		);
 	}
 
 	/**
@@ -401,7 +467,7 @@ class access{
 		if(isset(self::$auth_type_prefix_map[$auth_type])){
 			return self::$auth_type_prefix_map[$auth_type];
 		}
-		$prefix=strtoupper(preg_replace('/[^A-Z0-9]/', '', substr($auth_type, 0, 4)));
+		$prefix=preg_replace('/[^A-Z0-9]/', '', strtoupper(substr($auth_type, 0, 4)));
 		$prefix=substr($prefix.'XXXX', 0, 4);
 		self::$auth_type_prefix_map[$auth_type]=$prefix;
 		return $prefix;
@@ -566,12 +632,9 @@ class access{
 			$V=null,
 			$CC=true
 		)){
-			$website_name=parse_url($_SERVER['HTTP_HOST'], PHP_URL_HOST);
-			if(!is_string($website_name) || $website_name===''){
-				$website_name=explode(':', (string)$_SERVER['HTTP_HOST'], 2)[0] ?? '';
-			}
-			$website_name=strtolower($website_name);
-			setcookie(self::$session_cookie, $dpid, time()+(86400*7), '/', strtolower($website_name), true, true);
+			self::expire_legacy_session_cookies();
+			$cookie_expires=$keepalive ? time()+(86400*7) : 0;
+			setcookie(self::$session_cookie, $dpid, self::session_cookie_options($cookie_expires));
 			$_SESSION['dp_access']['userid']=$userid;
 			$_SESSION['dp_access']['dpid']=$dpid;
 			$_SESSION['dp_access']['ip_address']=REQUEST_IP_ADDRESS;
@@ -668,9 +731,6 @@ class access{
 		}
 		$chunks=str_split($bit_buffer, 5);
 		foreach($chunks as $chunk){
-			if($chunk===''){
-				continue;
-			}
 			if(strlen($chunk)<5){
 				$chunk=str_pad($chunk, 5, '0', STR_PAD_RIGHT);
 			}
@@ -728,8 +788,7 @@ class access{
 			return false;
 		}
 		if(preg_match('/^[a-f0-9]+$/', $secret)===1 && strlen($secret)%2===0){
-			$binary=hex2bin($secret);
-			return $binary!==false ? $binary : false;
+			return hex2bin($secret);
 		}
 		return self::base32_decode($secret);
 	}
@@ -744,14 +803,15 @@ class access{
 	 * @param int $bytes Requested random byte length before Base32 encoding.
 	 * @return string|false Base32 secret suitable for authenticator apps, or false on entropy failure.
 	 */
-	public static function create_totp_secret(int $bytes=20): string|false {
+	public static function create_totp_secret(int $bytes=20, ?callable $entropy=null): string|false {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
-		if(null!==$early_return=core::dialback("CALL_ACCESS_CREATE_TOTP_SECRET",...func_get_args())) return $early_return;
+		if(null!==$early_return=core::dialback("CALL_ACCESS_CREATE_TOTP_SECRET",$bytes)) return $early_return;
 		if($bytes<10){
 			$bytes=10;
 		}
+		$entropy ??= 'random_bytes';
 		try{
-			return self::base32_encode(random_bytes($bytes));
+			return self::base32_encode($entropy($bytes));
 		} catch(\Throwable $exception){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Failed generating TOTP secret: ".$exception->getMessage(), $S='warning');
 			return false;
@@ -787,9 +847,6 @@ class access{
 		$hash=hash_hmac('sha1', $counter_bytes, $binary_secret, true);
 		$offset=ord(substr($hash, -1)) & 0x0F;
 		$segment=substr($hash, $offset, 4);
-		if($segment===false || strlen($segment)!==4){
-			return false;
-		}
 		$value=unpack('N', $segment)[1] & 0x7FFFFFFF;
 		$modulus=10 ** $digits;
 		return str_pad((string)($value % $modulus), $digits, '0', STR_PAD_LEFT);
@@ -918,20 +975,11 @@ class access{
 	  */
 	public static function is_bot() : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		static $cache=null;
-		if($cache!==null)return $cache;
 		if(null!==$early_return=core::dialback("CALL_ACCESS_IS_BOT",...func_get_args())) return $early_return;
 		$user_agent=(string)($_SERVER['HTTP_USER_AGENT'] ?? (defined('REQUEST_USER_AGENT') ? REQUEST_USER_AGENT : ''));
-		foreach((DP_ACCESS_CFG['botlist'] ?? []) as $bl){
-			if(stripos(strtolower($user_agent), strtolower($bl))!==false){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="User is a bot");
-				$cache=true;
-				return true;
-			}
-		}
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="User is not a bot");
-		$cache=false;
-		return false;
+		$result=self::user_agent_matches('bot', $user_agent, DP_ACCESS_CFG['botlist'] ?? []);
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=$result ? "User is a bot" : "User is not a bot");
+		return $result;
 	}
 	
 	/**
@@ -943,21 +991,34 @@ class access{
 	  */
 	public static function is_mobile() : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		static $cache=null;
-		if($cache!==null)return $cache;
 		if(null!==$early_return=core::dialback("CALL_ACCESS_IS_MOBILE",...func_get_args())) return $early_return;
 		$user_agent=(string)($_SERVER['HTTP_USER_AGENT'] ?? (defined('REQUEST_USER_AGENT') ? REQUEST_USER_AGENT : ''));
 		$mobile_list=['Android', 'iOS', 'iPhone', 'iPad', 'Windows Phone', 'Opera Mini', 'IEMobile', 'Mobile'];
-		foreach($mobile_list as $mobile){
-			if(stripos($user_agent, $mobile)!==false){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="User is on a mobile device");
-				$cache=true;
-				return true;
+		$result=self::user_agent_matches('mobile', $user_agent, $mobile_list);
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=$result ? "User is on a mobile device" : "User is not using a mobile device");
+		return $result;
+	}
+
+	/** @param iterable<mixed> $needles */
+	private static function user_agent_matches(string $kind, string $user_agent, iterable $needles): bool {
+		$normalized_needles=[];
+		foreach($needles as $needle){
+			$needle=strtolower(trim((string)$needle));
+			if($needle!==''){
+				$normalized_needles[]=$needle;
 			}
 		}
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="User is not using a mobile device");
-		$cache=false;
-		return false;
+		$cache_key=$kind."\0".strtolower($user_agent)."\0".implode("\0", $normalized_needles);
+		if(array_key_exists($cache_key, self::$user_agent_match_cache)){
+			return self::$user_agent_match_cache[$cache_key];
+		}
+		$haystack=strtolower($user_agent);
+		foreach($normalized_needles as $needle){
+			if(str_contains($haystack, $needle)){
+				return self::$user_agent_match_cache[$cache_key]=true;
+			}
+		}
+		return self::$user_agent_match_cache[$cache_key]=false;
 	}
 	
 	/**
@@ -978,8 +1039,12 @@ class access{
 			return (bool)self::unsupported_auth_type('DISABLE_SESSION', $auth_type, false);
 		}
 		$cookie_name=self::get_auth_cookie_name($auth_type);
-		if($cookie_name!==null && isset($_COOKIE[$cookie_name])){
-			$dpid=$_COOKIE[$cookie_name];
+		$disabled=true;
+		$session_dpid=$_SESSION['dp_access']['dpid'] ?? null;
+		$dpid=$cookie_name!==null && is_string($_COOKIE[$cookie_name] ?? null)
+			? trim((string)$_COOKIE[$cookie_name])
+			: (is_string($session_dpid) ? trim($session_dpid) : '');
+		if($dpid!==''){
 			if(false!==sql_update(
 				$L=DP_ACCESS_SESSIONS_TABLE_NAME, 
 				$F=[
@@ -995,13 +1060,22 @@ class access{
 				unset($_SESSION['dp_access']['auth_type']);
 				$_SESSION['dp_access']['no_known_recoverable_session']=true;
 				unset($_SESSION['dp_access']['last_valid_session']);
-				setcookie($cookie_name, "", time()-3600, '/');
-				setcookie("__Secure-DPID", "", time()-3600, '/');
-				setcookie("__Secure-SID", "", time()-3600, '/');
+				self::expire_session_cookie();
+				$php_session_options=self::session_cookie_options(time()-3600);
+				$php_session_options['samesite']='Strict';
+				setcookie("__Secure-SID", "", $php_session_options);
+			}
+			else
+			{
+				$disabled=false;
 			}
 		}
+		else
+		{
+			self::expire_session_cookie();
+		}
 		self::$current_auth_type=null;
-		return true;
+		return $disabled;
 	}
 	
 	/**
@@ -1242,98 +1316,59 @@ class access{
 	  * @param bool $prevent_robot			If user must not be a robot to display the page
 	  * @return bool		True on success, false on failure
 	  */
-	public static function access(bool $session_required=true, bool $must_no_session=false, bool $prevent_mobile=false, bool $prevent_robot=false) : bool {
+	public static function access(bool $session_required=true, bool $must_no_session=false, bool $prevent_mobile=false, bool $prevent_robot=false, ?callable $denial_responder=null) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		if(null!==$early_return=core::dialback("CALL_ACCESS_ACCESS",...func_get_args()))return $early_return;
-		$error=function(string $error_string='Unknown error', int $response_code=403){
-			if(defined('RUN_MODE') && RUN_MODE==='diagnostic'){
-				return false;
-			}
-			ob_end_clean();
-			flush();
-			http_response_code($response_code);
-			header('Content-Type:text/html; charset=UTF-8');
-			header('Server: Dataphyre');
-			echo'<!DOCTYPE html>';
-			echo'<html>';
-			echo'<head>';
-			echo'<link rel="preconnect" href="https://fonts.googleapis.com">';
-			echo'<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>';
-			echo'<link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">';
-			echo'<style>@import url("https://fonts.googleapis.com/css2?family=Roboto&display=swap");</style>';
-			echo'<style>'.minified_font().'</style>';
-			echo'<style>h1,h2,h3,h4,h5.h6{font-family:"Roboto", sans-serif;}</style>';
-			echo'</head>';
-			echo'<body>';
-			echo'<h1 style="font-size:60px" class="phyro-bold"><i><b>DATAPHYRE</b></i></h1>';
-			echo'<h3>'.$error_string.'</h3>';
-			exit();
-		};
-		if($prevent_robot===true && self::is_bot()===true){
-			if(!(defined('RUN_MODE') && RUN_MODE==='diagnostic') && !empty(DP_ACCESS_CFG['requires_app_redirect'])){
-				header('Location: '.(string)(DP_ACCESS_CFG['robot_redirect'] ?? ''));
-				exit();
-			}
-			return $error('This page cannot be selfed by robots.', 403);
+		if(null!==$early_return=core::dialback("CALL_ACCESS_ACCESS",$session_required,$must_no_session,$prevent_mobile,$prevent_robot))return $early_return;
+		$decision=self::access_policy($session_required, $must_no_session, $prevent_mobile, $prevent_robot);
+		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=$decision['trace']);
+		if($decision['allowed']){
+			return true;
 		}
-		else
-		{
-			if($prevent_mobile===true && self::is_mobile()===true){
-				if(!(defined('RUN_MODE') && RUN_MODE==='diagnostic') && !empty(DP_ACCESS_CFG['requires_app_redirect'])){
-					header('Location: '.(string)DP_ACCESS_CFG['requires_app_redirect']);
-					exit();
-				}
-				return $error('This page cannot be selfed by mobile devices without an application.', 403);
-			}
-			else
-			{
-				if($must_no_session===true){
-					if(self::logged_in()===true){
-						tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="File ".basename($_SERVER["SCRIPT_FILENAME"])." can't be loaded as user is logged in, redirecting to homepage");
-						if(!(defined('RUN_MODE') && RUN_MODE==='diagnostic') && !empty(DP_ACCESS_CFG['must_no_session_redirect'])){
-							header('Location: '.(string)DP_ACCESS_CFG['must_no_session_redirect']);
-							exit();
-						}
-						return $error('This page requires you to not have an active session.', 401);
-					}
-					else
-					{
-						tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="File ".basename($_SERVER["SCRIPT_FILENAME"])." can be loaded, not logged in");
-						return true;
-					}
-				}
-				else
-				{	
-					if($session_required===false){
-						if(self::logged_in()===false){
-							tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="File ".basename($_SERVER["SCRIPT_FILENAME"])." can be loaded, not logged in");
-							return true;
-						}
-						else
-						{
-							tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="File ".basename($_SERVER["SCRIPT_FILENAME"])." can be loaded, logged in");
-							return true;
-						}
-					}
-					else
-					{
-						if(self::logged_in()===false){
-							tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="User needs to be logged in, redirecting to login page");
-							if(!(defined('RUN_MODE') && RUN_MODE==='diagnostic') && !empty(DP_ACCESS_CFG['require_session_redirect'])){
-								header('Location: '.(string)DP_ACCESS_CFG['require_session_redirect'].'?redir='.rtrim(base64_encode(ltrim($_SERVER["REQUEST_URI"], "/")), '='));
-								exit();
-							}
-							return $error('This page requires authentication.', 401);
-						}
-						else
-						{
-							tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="File ".basename($_SERVER["SCRIPT_FILENAME"])." can be loaded, logged in");
-							return true;
-						}
-					}
-				}
-			}
+		$denial_responder ??= '\\dataphyre_access_denial';
+		return (bool)$denial_responder($decision['message'], $decision['status'], $decision['redirect']);
+	}
+
+	/**
+	 * @return array{allowed:bool,message:string,status:int,redirect:?string,trace:string}
+	 */
+	private static function access_policy(bool $session_required, bool $must_no_session, bool $prevent_mobile, bool $prevent_robot): array {
+		if($prevent_robot && self::is_bot()){
+			$redirect=!empty(DP_ACCESS_CFG['requires_app_redirect']) ? trim((string)(DP_ACCESS_CFG['robot_redirect'] ?? '')) : '';
+			return self::access_policy_denial('This page cannot be selfed by robots.', 403, $redirect, 'Robot access denied.');
 		}
+		if($prevent_mobile && self::is_mobile()){
+			$redirect=!empty(DP_ACCESS_CFG['requires_app_redirect']) ? trim((string)DP_ACCESS_CFG['requires_app_redirect']) : '';
+			return self::access_policy_denial('This page cannot be selfed by mobile devices without an application.', 403, $redirect, 'Mobile access denied.');
+		}
+		$logged_in=self::logged_in();
+		if($must_no_session){
+			if($logged_in){
+				$redirect=trim((string)(DP_ACCESS_CFG['must_no_session_redirect'] ?? ''));
+				return self::access_policy_denial('This page requires you to not have an active session.', 401, $redirect, 'Authenticated user denied by guest-only policy.');
+			}
+			return self::access_policy_allow('Guest-only policy accepted an unauthenticated request.');
+		}
+		if(!$session_required){
+			return self::access_policy_allow($logged_in ? 'Public policy accepted an authenticated request.' : 'Public policy accepted an unauthenticated request.');
+		}
+		if($logged_in){
+			return self::access_policy_allow('Authenticated policy accepted the active session.');
+		}
+		$redirect=trim((string)(DP_ACCESS_CFG['require_session_redirect'] ?? ''));
+		if($redirect!==''){
+			$redirect.='?redir='.rtrim(base64_encode(ltrim((string)($_SERVER['REQUEST_URI'] ?? '/'), '/')), '=');
+		}
+		return self::access_policy_denial('This page requires authentication.', 401, $redirect, 'Unauthenticated request denied by session policy.');
+	}
+
+	/** @return array{allowed:bool,message:string,status:int,redirect:?string,trace:string} */
+	private static function access_policy_allow(string $trace): array {
+		return ['allowed'=>true, 'message'=>'', 'status'=>200, 'redirect'=>null, 'trace'=>$trace];
+	}
+
+	/** @return array{allowed:bool,message:string,status:int,redirect:?string,trace:string} */
+	private static function access_policy_denial(string $message, int $status, string $redirect, string $trace): array {
+		return ['allowed'=>false, 'message'=>$message, 'status'=>$status, 'redirect'=>$redirect!=='' ? $redirect : null, 'trace'=>$trace];
 	}
 	
 }

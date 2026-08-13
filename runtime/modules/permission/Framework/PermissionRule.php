@@ -89,8 +89,9 @@ final class PermissionRule {
 	 * @return array<int, string> Normalized rules derived from the definition.
 	 */
 	public static function fromDefinition(array $definition): array {
-		$cacheKey=serialize($definition);
-		if(isset(self::$definitionCache[$cacheKey])){
+		$cacheable=self::isCacheableDefinition($definition);
+		$cacheKey=$cacheable ? serialize($definition) : null;
+		if($cacheKey!==null && isset(self::$definitionCache[$cacheKey])){
 			return self::$definitionCache[$cacheKey];
 		}
 		$rules=[];
@@ -113,7 +114,8 @@ final class PermissionRule {
 				}
 			}
 		}
-		return self::rememberDefinition($cacheKey, self::many($rules));
+		$rules=self::many($rules);
+		return $cacheKey!==null ? self::rememberDefinition($cacheKey, $rules) : $rules;
 	}
 
 	/**

@@ -98,6 +98,107 @@ final class Panel {
 	}
 
 	/**
+	 * Attaches a production platform container to the default Panel surface.
+	 *
+	 * @param PanelPlatform|array<string,mixed> $platform Existing container or filesystem-default configuration.
+	 * @param bool $replace Whether an existing attachment may be replaced.
+	 */
+	public static function usePlatform(PanelPlatform|array $platform, bool $replace=false): PanelInstance {
+		return self::default()->usePlatform($platform, $replace);
+	}
+
+	/** Returns the platform attached to the default Panel surface. */
+	public static function platform(): PanelPlatform {
+		return self::default()->platform();
+	}
+
+	/** Creates a composable transactional framework adapter pack. @param array<string,mixed> $options */
+	public static function adapterPack(string $id,string $version='1.0.0',array $options=[]):PanelAdapterPack {
+		return PanelAdapterPack::make($id,$version,$options);
+	}
+
+	/** Returns the first-party Access, Fulltext, and Mailer adapter pack. */
+	public static function dataphyreAdapterPack():PanelAdapterPack {
+		return PanelDataphyreAdapterPack::make();
+	}
+
+	/** @param array<string,mixed> $config */
+	public static function planAdapterPack(PanelAdapterPack $pack,array $config=[]):PanelAdapterPackPlan {
+		return $pack->plan(self::default(),$config);
+	}
+
+	/** @param array<string,mixed> $config */
+	public static function installAdapterPack(PanelAdapterPack $pack,array $config=[]):PanelAdapterPackActivation {
+		return $pack->install(self::default(),$config);
+	}
+
+	/** Returns the cohesive governed Operations OS attached to the default surface. */
+	public static function operationsOs(): PanelOperationsOs {return self::default()->operationsOs();}
+	public static function complianceLedger(): PanelComplianceLedger {return self::default()->complianceLedger();}
+	public static function complianceAutomation(): PanelComplianceAutomation {return self::default()->complianceAutomation();}
+	public static function localReplica(string|int $actorId): PanelLocalReplica {return self::default()->localReplica($actorId);}
+
+	/** Detaches the default surface platform while leaving the container intact. */
+	public static function withoutPlatform(): PanelInstance {
+		return self::default()->withoutPlatform();
+	}
+
+	/** Returns the default surface's fail-closed data-source registry. */
+	public static function dataSources(): PanelDataSourceRegistry {return self::default()->dataSources();}
+	/** @param array<string,mixed> $meta */
+	public static function registerDataSource(string $name,PanelDataSource $source,bool $replace=false,array $meta=[]): PanelInstance {return self::default()->registerDataSource($name,$source,$replace,$meta);}
+	/** @return array<string,mixed> */ public static function dataSourceManifest(): array {return self::default()->dataSourceManifest();}
+	public static function hasRealtime(): bool {return self::default()->hasRealtime();}
+	public static function realtime(): PanelRealtimeEndpoint {return self::default()->realtime();}
+	/** @return array<string,mixed> */ public static function realtimeManifest(): array {return self::default()->realtimeManifest();}
+	public static function hasAgentWorkflows(): bool {return self::default()->hasAgentWorkflows();}
+	public static function agentRuntime(): PanelAgentRuntime {return self::default()->agentRuntime();}
+	public static function registerAgentTool(PanelAgentTool $tool,PanelAgentToolExecutor $executor,int $priority=0): PanelInstance {return self::default()->registerAgentTool($tool,$executor,$priority);}
+	/** @return array<string,mixed> */ public static function agentWorkflowManifest(): array {return self::default()->agentWorkflowManifest();}
+
+	/** Attaches an explicitly secured DataSurface registry to the default surface. */
+	public static function useDataSurfaces(PanelDataSurfaceRegistry $registry,bool $replace=false): PanelInstance {
+		return self::default()->useDataSurfaces($registry,$replace);
+	}
+	public static function dataSurfaces(): PanelDataSurfaceRegistry {return self::default()->dataSurfaces();}
+	public static function withoutDataSurfaces(): PanelInstance {return self::default()->withoutDataSurfaces();}
+	/** @param array<string,mixed> $meta */
+	public static function registerDataSurface(PanelDataSurfaceDefinition $definition,bool $replace=false,array $meta=[]): PanelInstance {return self::default()->registerDataSurface($definition,$replace,$meta);}
+	public static function dataSurfaceEndpoint(): PanelDataSurfaceEndpoint {return self::default()->dataSurfaceEndpoint();}
+	/** @return array<string,mixed> */ public static function dataSurfaceManifest(): array {return self::default()->dataSurfaceManifest();}
+
+	/** Returns the default surface's configured platform controller. */
+	public static function platformController(): PanelPlatformController {
+		return self::default()->platformController();
+	}
+
+	/** @param array<string,mixed> $options @return array<string,PanelPage> */
+	public static function platformPages(array $options=[]): array {
+		return self::default()->platformPages($options);
+	}
+
+	/** @param array<string,mixed> $options */
+	public static function mountPlatformPages(array $options=[]): PanelInstance {
+		return self::default()->mountPlatformPages($options);
+	}
+
+	public static function openStudioEditor(PanelStudioDocument $document,string $principalId,?PanelStudioDefinition $initial=null): PanelStudioEditorSession {return self::default()->openStudioEditor($document,$principalId,$initial);}
+	/** @param array<string,mixed> $checkpoint */ public static function resumeStudioEditor(PanelStudioDocument $document,string $principalId,array $checkpoint): PanelStudioEditorSession {return self::default()->resumeStudioEditor($document,$principalId,$checkpoint);}
+	public static function renderStudioEditor(PanelStudioEditorSession $session,PanelStudioEditorOptions $options): string {return self::default()->renderStudioEditor($session,$options);}
+	public static function renderStudioVisualPreview(PanelStudioEditorSession $session,?PanelStudioVisualDataset $dataset=null,?PanelRequest $request=null): PanelStudioVisualPreview {return self::default()->renderStudioVisualPreview($session,$dataset,$request);}
+	/** @return array<string,mixed> */ public static function studioEditorManifest(?PanelStudioEditorSession $session=null): array {return self::default()->studioEditorManifest($session);}
+
+	/** @return array<string,mixed> */
+	public static function platformManifest(): array {
+		return self::default()->platformManifest();
+	}
+
+	/** @return array<string,mixed> */
+	public static function platformDiagnostics(): array {
+		return self::default()->platformDiagnostics();
+	}
+
+	/**
 	 * Registers a provider on the default Panel surface.
 	 *
 	 * Providers are delegated to the stateful surface so they can register resources, pages, hooks, plugins, or config during boot.
@@ -210,6 +311,42 @@ final class Panel {
 	 */
 	public static function packageTrustPolicy(array $policy=[]): PanelPackageTrustPolicy {
 		return PanelPackageTrustPolicy::make($policy);
+	}
+
+	/**
+	 * Builds a host-keyed cryptographic verifier for signed package bundles.
+	 *
+	 * @param array<string,mixed> $keys Public keys indexed by stable key id.
+	 * @param array<string,mixed> $options Verification limits and embedded-key policy.
+	 */
+	public static function packageSignatureVerifier(array $keys=[], array $options=[]): PanelPackageSignatureVerifier {
+		return PanelPackageSignatureVerifier::make($keys, $options);
+	}
+
+	/**
+	 * Creates a signer-isolated publisher for a production package registry.
+	 *
+	 * @param callable $signer Host-owned detached-signature callback.
+	 * @param ?callable $clock Trusted publication clock.
+	 * @param array<string,mixed> $options Publication limits and expiry policy.
+	 */
+	public static function packageRegistryPublisher(
+		string $registry,
+		string $publisher,
+		string $keyId,
+		string $algorithm,
+		callable $signer,
+		PanelPackageSignatureVerifier $verifier,
+		PanelPackageTrustPolicy $trustPolicy,
+		?callable $clock=null,
+		array $options=[]
+	): PanelPackageRegistryPublisher {
+		return PanelPackageRegistryPublisher::make($registry, $publisher, $keyId, $algorithm, $signer, $verifier, $trustPolicy, $clock, $options);
+	}
+
+	/** Creates a crash-safe standalone registry operator and local transport. */
+	public static function filesystemPackageRegistry(string $root, string $registry, string $publisher, int $retention=256): PanelFilesystemPackageRegistry {
+		return PanelFilesystemPackageRegistry::make($root, $registry, $publisher, $retention);
 	}
 
 	/**
@@ -437,6 +574,11 @@ final class Panel {
 	 */
 	public static function homeNavigation(bool $enabled=true): PanelInstance {
 		return self::default()->homeNavigation($enabled);
+	}
+
+	/** Mounts a registered custom page at the default surface root. */
+	public static function homePage(string|PanelPage|null $page): PanelInstance {
+		return self::default()->homePage($page);
 	}
 
 	/**
@@ -695,6 +837,20 @@ final class Panel {
 	 */
 	public static function host(PanelInstance|string|null $surface=null, mixed $user=null): PanelHost {
 		return PanelHost::surface($surface, $user);
+	}
+
+	/**
+	 * Creates a secure front-controller host that runs Panel without MVC or Routing.
+	 *
+	 * Standalone hosts are read-only by default. Applications opt into mutations
+	 * and uploads only after configuring authentication, authorization, rate,
+	 * origin, and CSRF policies on the returned immutable host.
+	 *
+	 * @param PanelInstance|string|null $surface Panel surface instance or registry name.
+	 * @param string $prefix Exact absolute path under which the Panel is mounted.
+	 */
+	public static function standaloneHost(PanelInstance|string|null $surface=null, string $prefix='/panel'): PanelStandaloneHost {
+		return PanelStandaloneHost::surface($surface, $prefix);
 	}
 
 	/**
@@ -1085,6 +1241,18 @@ final class Panel {
 	}
 
 	/**
+	 * Creates the opt-in static documentation portal decorator.
+	 *
+	 * The decorator consumes an already verified documentation publication and
+	 * preserves its immutable, version-directory-atomic publication contract.
+	 *
+	 * @return PanelDocumentationPortal.
+	 */
+	public static function documentationPortal(): PanelDocumentationPortal {
+		return PanelDocumentationPortal::make();
+	}
+
+	/**
 	 * Forwards `localization()` to the appropriate Panel surface, registry, or manifest object.
 	 *
 	 * This facade keeps application boot code compact while preserving typed Panel Framework return values.
@@ -1241,7 +1409,7 @@ final class Panel {
 	 * @return PanelThemePreset.
 	 */
 	public static function registerThemePreset(PanelThemePreset|array $preset): PanelThemePreset {
-		return PanelTheme::register_preset($preset);
+		return PanelTheme::registerPreset($preset);
 	}
 
 	/**
@@ -2027,6 +2195,40 @@ final class Panel {
 		return self::manager()->registerCommands($commands);
 	}
 
+	/** Registers one custom global-search provider on the default surface. */
+	public static function registerSearchProvider(PanelSearchProvider|array $provider): PanelSearchProvider {
+		return self::manager()->registerSearchProvider($provider);
+	}
+
+	/** @param list<PanelSearchProvider|array<string,mixed>> $providers @return list<PanelSearchProvider> */
+	public static function registerSearchProviders(array $providers): array {
+		return self::manager()->registerSearchProviders($providers);
+	}
+
+	public static function tenantRegistry(): PanelTenantRegistry { return self::manager()->tenantRegistry(); }
+	public static function registerTenant(PanelTenant|array $tenant): PanelTenant { return self::manager()->registerTenant($tenant); }
+	/** @param list<PanelTenant|array<string,mixed>> $tenants @return list<PanelTenant> */
+	public static function registerTenants(array $tenants): array { return self::manager()->registerTenants($tenants); }
+	public static function tenantDefinition(string $name): ?PanelTenant { return self::manager()->tenant($name); }
+	public static function hasTenant(string $name): bool { return self::manager()->hasTenant($name); }
+	/** @return array<string,PanelTenant> */
+	public static function tenants(): array { return self::manager()->tenants(); }
+	public static function tenantMembershipsUsing(callable $resolver): PanelManager { return self::manager()->tenantMembershipsUsing($resolver); }
+	public static function tenantAuthorizationUsing(callable $resolver): PanelManager { return self::manager()->tenantAuthorizationUsing($resolver); }
+	public static function tenantActiveUsing(callable $resolver): PanelManager { return self::manager()->tenantActiveUsing($resolver); }
+	public static function tenantPersistenceUsing(callable $resolver): PanelManager { return self::manager()->tenantPersistenceUsing($resolver); }
+	public static function tenantEntitlementUsing(callable $resolver): PanelManager { return self::manager()->tenantEntitlementUsing($resolver); }
+	public static function tenantOnboardingStep(string $name, callable $apply, ?callable $rollback=null): PanelManager { return self::manager()->tenantOnboardingStep($name,$apply,$rollback); }
+	/** @return array<string,PanelTenantMembership> */
+	public static function tenantMemberships(PanelRequest $request): array { return self::manager()->tenantMemberships($request); }
+	public static function tenantContext(PanelRequest $request): PanelTenantContext { return self::manager()->tenantContext($request); }
+	public static function switchTenant(string $tenant, PanelRequest $request): PanelTenantSwitchResult { return self::manager()->switchTenant($tenant,$request); }
+	/** @return list<array<string,mixed>> */
+	public static function tenantSwitcher(PanelRequest $request): array { return self::manager()->tenantSwitcher($request); }
+	public static function onboardTenant(PanelTenant|array $tenant, PanelRequest $request, string $idempotencyKey): PanelTenantOnboardingResult { return self::manager()->onboardTenant($tenant,$request,$idempotencyKey); }
+	/** @param string|list<string> $namespace */
+	public static function tenantStorageScope(string $tenant, string|array $namespace, PanelRequest $request): PanelTenantStorageScope { return self::manager()->tenantStorageScope($tenant,$namespace,$request); }
+
 	/**
 	 * Forwards `authorize()` to the appropriate Panel surface, registry, or manifest object.
 	 *
@@ -2107,6 +2309,19 @@ final class Panel {
 	 */
 	public static function resources(): array {
 		return self::manager()->resources();
+	}
+
+	public static function searchProvider(string $name): ?PanelSearchProvider {
+		return self::manager()->searchProvider($name);
+	}
+
+	public static function hasSearchProvider(string $name): bool {
+		return self::manager()->hasSearchProvider($name);
+	}
+
+	/** @return array<string,PanelSearchProvider> */
+	public static function searchProviders(?PanelRequest $request=null, bool $visibleOnly=false): array {
+		return self::manager()->searchProviders($request, $visibleOnly);
 	}
 
 	/**
@@ -2216,6 +2431,11 @@ final class Panel {
 		return self::manager()->globalSearch($query, $request ?? PanelRequest::fromArray([]), $limit);
 	}
 
+	/** Returns results plus cursors, completeness, and partial diagnostics. */
+	public static function globalSearchPage(string $query, ?PanelRequest $request=null, int $limit=12, string|array|null $cursor=null): PanelSearchPage {
+		return self::manager()->globalSearchPage($query, $request ?? PanelRequest::fromArray([]), $limit, $cursor);
+	}
+
 	/**
 	 * Forwards `searchManifest()` to the appropriate Panel surface, registry, or manifest object.
 	 *
@@ -2287,7 +2507,8 @@ final class Panel {
 	 * @return array.
 	 */
 	public static function describe(): array {
-		return self::manager()->describe();
+		$surface=PanelRegistry::get('default');
+		return $surface instanceof PanelInstance ? $surface->describe() : self::manager()->describe();
 	}
 
 	/**
@@ -2300,7 +2521,8 @@ final class Panel {
 	 * @return array.
 	 */
 	public static function panelManifest(?PanelRequest $request=null, array $meta=[]): array {
-		return PanelManifest::from(self::manager(), $request, $meta)->toArray();
+		$surface=PanelRegistry::get('default');
+		return PanelManifest::from($surface instanceof PanelInstance ? $surface : self::manager(), $request, $meta)->toArray();
 	}
 
 	/**
