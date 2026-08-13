@@ -46,6 +46,21 @@ through a fixed loopback router, and probes only `GET /health`. It does not
 accept an application release script, command,
 executable path, health path, or migration mode.
 
+After health succeeds, the same preflight loads the application's ordinary
+Framework bootstrap in the fixed realtime-registration context. Evidence
+contains the route count and a SHA-256 of the sorted paths plus the scheduler
+definition count and a path-independent SHA-256 over task/dependency contents
+and scheduling semantics. Scheduling runs in `record_only` mode under a private
+temporary state root; application cache/config/log bytes are unchanged, no
+lock, cadence timestamp, task, or shutdown callback can be created, and an
+ignored invalid, duplicate, or unpersisted registration fails the preflight.
+Callbacks, credentials, headers, task paths, and event payloads never enter the
+report. Cloud must add exact-image proof of the three fixed child identities,
+scheduler callback execution, a framework listener roundtrip, execution and
+strict invalid-Origin rejection by every registered application authorization
+callback, and WebSocket ping/pong and close
+before promotion.
+
 The conventional PostgreSQL profile and manifest are executable migration
 inputs, so they must be present together as readable regular files beneath
 non-symbolic-link directories. One-sided pairs, symbolic links, broken links,
@@ -83,6 +98,63 @@ is invalid. Dataphyre Cloud must run this exact command inside the exact built
 candidate and preserve source, image, environment, and traffic identity before
 promotion; a local pass is a prediction, not proof that a different image will
 work.
+
+## Fixed Realtime Runtime
+
+Dataphyre application images have exactly three framework-owned child roles:
+private web on `127.0.0.1:8083`, private scheduler on `127.0.0.1:8081`, and the
+public realtime ingress on `0.0.0.0:8080`. The realtime ingress handles
+authenticated WebSocket upgrades and safely forwards ordinary HTTP to the
+private web child. Status remains private on `127.0.0.1:8082`. Applications do
+not declare processes, commands, listeners, ports, or sidecars.
+
+Applications register realtime code while their normal `framework_bootstrap.php`
+is loaded with `$_SERVER['DATAPHYRE_RUNTIME_REALTIME_BOOTSTRAP'] === '1'`:
+
+```php
+\dataphyre\realtime::register(
+    '/orders/events',
+    static function (array $handshake): array|false {
+        // Validate the required Origin and an application credential here.
+        return $authorized ? ['subject' => $subjectId] : false;
+    },
+    static function (array $authorization, ?string $cursor): array {
+        return ['cursor' => $nextCursor, 'events' => $events];
+    },
+);
+```
+
+The authorization callback runs before the `101` response. It receives a
+bounded handshake containing `path`, required `origin`, normalized lowercase
+`headers`, parsed scalar `query`, and `remote_address`; it returns `false` or a
+bounded authorization-context array. The event callback returns exactly a
+cursor and a list of JSON-serializable events. Dataphyre owns client, header,
+frame, queue, callback-time, polling, ping/pong, and backpressure limits.
+Inbound application data frames are rejected; control ping, pong, and close
+frames follow the WebSocket protocol. The reserved
+`/dataphyre/runtime/realtime/probe` path is framework-owned and cannot be
+registered by applications.
+
+Inside a running exact candidate image, the platform runs:
+
+```text
+php runtime/modules/core/kernel/application_runtime_realtime_probe.php
+```
+
+The command accepts no arguments, ports, paths, or credentials. Through the
+private supervisor it exercises the fixed public listener on loopback, verifies
+the `101` handshake, receives one framework-owned event, and proves ping/pong
+and close frames. Realtime startup separately invokes every application
+authorization callback with the reserved invalid Origin
+`https://dataphyre.invalid` and requires strict rejection. Its bounded evidence
+separates `framework_listener_roundtrip` from
+`application_authorization_rejections`; neither is a claim that a production
+application credential was accepted. Applications requiring a successful-auth
+release assertion must supply that application-owned proof separately.
+
+TLS terminates at the Dataphyre Cloud edge. The fixed container ingress accepts
+the edge's plain HTTP connection and must never be published directly without
+that platform TLS and traffic-identity boundary.
 
 ## Kernel Config Topology
 

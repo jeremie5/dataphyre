@@ -8,6 +8,15 @@
 global $modcache;
 $modcache=is_array($modcache ?? null) ? $modcache : [];
 
+/** @return null|array{state_root:string,private_key:string,project_root:string,token:string} */
+function dp_application_release_preflight_context(): ?array {
+	if(!function_exists('dataphyre_internal_application_release_preflight_context')){
+		return null;
+	}
+	$context=dataphyre_internal_application_release_preflight_context();
+	return is_array($context) ? $context : null;
+}
+
 /**
  * Returns the root-path map used by bootstrap helpers.
  *
@@ -74,6 +83,9 @@ function dp_helper_config_all(): array {
  * @return void
  */
 function dp_modcache_save_if_changed(array $modcache): void {
+	if(dp_application_release_preflight_context()!==null){
+		return;
+	}
 	$rootpath=dp_helper_rootpath();
 	if($rootpath===null || empty($rootpath['dataphyre'])){
 		return;
@@ -323,6 +335,9 @@ function dp_module_config_template(string $module, array $defaults): string {
  * @return bool True when a new defaults file was written.
  */
 function dp_write_module_config_defaults(string $module, array $defaults): bool {
+	if(dp_application_release_preflight_context()!==null){
+		return false;
+	}
 	if($defaults===[]){
 		return false;
 	}
@@ -404,6 +419,10 @@ function dp_define_module_config(string $module, ?string $constant=null, array $
  * @return array<int, string> Private keys in rotation order.
  */
 function dpvks(): array {
+	$application_release_preflight=dp_application_release_preflight_context();
+	if($application_release_preflight!==null){
+		return [$application_release_preflight['private_key']];
+	}
 	$rootpath=dp_helper_rootpath();
 	if(!defined('DP_CORE_CFG') && $rootpath!==null){
 		dp_define_core_config();

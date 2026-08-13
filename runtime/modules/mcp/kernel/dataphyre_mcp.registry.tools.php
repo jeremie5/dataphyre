@@ -455,7 +455,7 @@ trait dataphyre_mcp_registry_tool_surfaces {
 			$this->tool('dataphyre_php_lint', 'Run php -l for explicitly provided repo-local PHP files when local verification is requested.', [
 				'paths'=>['type'=>'array', 'items'=>['type'=>'string'], 'description'=>'Repo-relative PHP files.'],
 			], ['paths']),
-			$this->tool('dataphyre_release_check', 'Execute the fixed Dataphyre application release preflight, including application-resolved managed database identity when declared, and return a deterministic boolean deployment prediction with actionable configuration, dependency, or verification failures.', [
+			$this->tool('dataphyre_release_check', 'Execute the fixed Dataphyre application release preflight, including application-resolved managed database identity when declared plus deterministic realtime callback and scheduler definition registration, and return a deterministic boolean deployment prediction with actionable configuration, dependency, or verification failures.', [
 				'project_root'=>['type'=>'string', 'description'=>'Optional repository-local application project root. Defaults to the MCP workspace root.'],
 				'application'=>['type'=>'string', 'description'=>'Dataphyre application id. Missing or invalid configuration returns likely_to_deploy=false.'],
 				'environment'=>['type'=>'string', 'description'=>'Dataphyre runtime environment. Missing or invalid configuration returns likely_to_deploy=false.'],

@@ -1658,7 +1658,7 @@ final class McpInspectionBoundaryHarness {
 		$duplicateRollingIssuePlan['rolling_scan']['issues'][]=$duplicateRollingIssuePlan['rolling_scan']['issues'][0];
 		$duplicateRollingIssueChecks=$migrationFailureChecks;
 		$duplicateRollingIssueChecks[1]['evidence']['plan']=$duplicateRollingIssuePlan;
-		$healthBootAfterRejectionChecks=$base['checks'];
+		$healthBootAfterRejectionChecks=array_slice($base['checks'],0,4);
 		$healthBootAfterRejectionChecks[3]=[
 			'id'=>'application_health',
 			'status'=>'failed',
@@ -1671,7 +1671,7 @@ final class McpInspectionBoundaryHarness {
 				'missing_environment_keys'=>[],
 			],
 		];
-		$healthFallbackChecks=$base['checks'];
+		$healthFallbackChecks=array_slice($base['checks'],0,4);
 		$healthFallbackChecks[3]=[
 			'id'=>'application_health',
 			'status'=>'failed',
@@ -2272,9 +2272,24 @@ final class McpInspectionBoundaryHarness {
 						'missing_environment_keys'=>[],
 					],
 				],
+				[
+					'id'=>'realtime_registration',
+					'status'=>'passed',
+					'evidence'=>[
+						'authorization_before_upgrade'=>true,
+						'fixed_public_port'=>8080,
+						'origin_required'=>true,
+						'private_web_port'=>8083,
+						'registration_sha256'=>'sha256:'.hash('sha256','[]'),
+						'route_count'=>0,
+						'scheduler_definition_count'=>0,
+						'scheduler_definition_sha256'=>'sha256:'.hash('sha256','[]'),
+						'tls_termination'=>'platform_edge',
+					],
+				],
 			],
 			'failures'=>[],
-			'claim_boundary'=>'This verdict covers local configuration bootstrap, the native PostgreSQL migration dry-run when declared, application startup, and GET /health. A release platform must run this same command inside the exact candidate image and separately preserve source, image, environment, and traffic identity.',
+			'claim_boundary'=>'This verdict covers local configuration bootstrap, the native PostgreSQL migration dry-run when declared, application startup, GET /health, and deterministic realtime callback and scheduler definition registration. A release platform must run this same command inside the exact candidate image and separately prove the three fixed process identities, scheduler callback execution, a framework listener roundtrip, execution and strict invalid-Origin rejection by every registered application authorization callback, WebSocket ping/pong and close, signal lifecycle, and source, image, environment, database, and traffic identity.',
 		], $overrides);
 	}
 
@@ -2289,7 +2304,9 @@ final class McpInspectionBoundaryHarness {
 	}
 
 	private function failedPreflightRunner(string $kind,string $code,int $exitStatus): \Closure {
-		$message=match($exitStatus){
+		$message=$code==='application_realtime_registration_failed'
+			? 'The application realtime callbacks or scheduler definitions did not load through the fixed framework bootstrap.'
+			: match($exitStatus){
 			64=>'Use only the documented typed application release preflight options.',
 			66=>'The selected application project root is unavailable.',
 			69=>'The configured PostgreSQL dependency could not be verified.',

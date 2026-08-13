@@ -30,8 +30,9 @@ trait dataphyre_mcp_inspection_surfaces {
 	 *
 	 * Callers select only a repository-local project root, application id, and
 	 * environment. The executable owns migration dry-run, application-resolved
-	 * managed database identity verification, application boot, and the loopback
-	 * health probe; arbitrary release commands are never accepted.
+	 * managed database identity verification, application boot, the loopback
+	 * health probe, and deterministic realtime callback plus scheduler definition registration; arbitrary
+	 * release commands are never accepted.
 	 *
 	 * @param array<string,mixed> $args
 	 * @param null|callable(list<string>):array<string,mixed> $runner Test seam for the fixed command.
@@ -146,7 +147,7 @@ trait dataphyre_mcp_inspection_surfaces {
 		$result['maintainer_tool_boundary']=[
 			'tool_scope'=>'application_release_preflight',
 			'app_agent_default'=>'run_before_proposing_or_promoting_an_application_release',
-			'claim_boundary'=>'The boolean predicts from local configuration bootstrap, the native migration dry-run, application-resolved managed database identity when declared, application startup, and GET /health. Dataphyre Cloud must run the same command inside the exact built candidate and preserve source, image, environment, and traffic identity before promotion.',
+			'claim_boundary'=>$this->release_preflight_claim_boundary(),
 		];
 		return $result;
 	}
@@ -391,6 +392,7 @@ trait dataphyre_mcp_inspection_surfaces {
 		$migrationVerificationMessage='The PostgreSQL migration dry-run found drift or an ineligible migration plan.';
 		$databaseIdentityMessage='The application-resolved managed database identity could not be verified.';
 		$healthMessage='The application did not become healthy through the fixed loopback probe.';
+		$realtimeMessage='The application realtime callbacks or scheduler definitions did not load through the fixed framework bootstrap.';
 		$tuples=[
 			'64:invalid_runtime'=>['configuration','Application release preflight is available only through the CLI.'],
 			'64:invalid_invocation'=>['configuration','Use only the documented typed application release preflight options.'],
@@ -401,6 +403,7 @@ trait dataphyre_mcp_inspection_surfaces {
 			'70:migration_failed'=>['verification',$migrationVerificationMessage],
 			'70:migration_plan_ineligible'=>['verification',$migrationVerificationMessage],
 			'70:migration_preflight_failed'=>['verification',$migrationVerificationMessage],
+			'70:application_realtime_registration_failed'=>['verification',$realtimeMessage],
 			'75:preflight_router_missing'=>['verification',$healthMessage],
 			'75:application_server_unavailable'=>['verification',$healthMessage],
 			'75:application_health_evidence_invalid'=>['verification',$healthMessage],
@@ -477,13 +480,17 @@ trait dataphyre_mcp_inspection_surfaces {
 				&& $code==='application_database_identity_failed'
 				&& ($checks[2]['status'] ?? null)==='failed';
 		}
-		return count($checks)===4 && $exitStatus===75;
+		if(count($checks)===4) return $exitStatus===75;
+		return count($checks)===5
+			&& $exitStatus===70
+			&& $code==='application_realtime_registration_failed'
+			&& ($checks[4]['status'] ?? null)==='failed';
 	}
 
 	/** @param list<mixed> $checks @param list<mixed> $failures */
 	private function release_preflight_checks_are_valid(array $checks, array $failures, int $exitStatus, bool $ok): bool {
-		if(!array_is_list($checks) || count($checks)>4) return false;
-		$expectedIds=['configuration_bootstrap','database_migrations','database_runtime','application_health'];
+		if(!array_is_list($checks) || count($checks)>5) return false;
+		$expectedIds=['configuration_bootstrap','database_migrations','database_runtime','application_health','realtime_registration'];
 		foreach($checks as $index=>$check){
 			if(
 				!is_array($check)
@@ -499,12 +506,14 @@ trait dataphyre_mcp_inspection_surfaces {
 		if(isset($checks[1]) && !$this->release_preflight_database_check_is_valid($checks[1], $failureCode, $exitStatus)) return false;
 		if(isset($checks[2]) && !$this->release_preflight_database_runtime_check_is_valid($checks[2], $failureCode)) return false;
 		if(isset($checks[3]) && !$this->release_preflight_health_check_is_valid($checks[3], $failureCode)) return false;
+		if(isset($checks[4]) && !$this->release_preflight_realtime_check_is_valid($checks[4], $failureCode)) return false;
 
 		if($ok){
-			return count($checks)===4
+			return count($checks)===5
 				&& in_array($checks[1]['status'], ['passed','not_applicable'], true)
 				&& in_array($checks[2]['status'], ['passed','not_applicable'], true)
-				&& $checks[3]['status']==='passed';
+				&& $checks[3]['status']==='passed'
+				&& $checks[4]['status']==='passed';
 		}
 		if($checks===[]) return in_array($exitStatus, [64,66,78], true);
 		if(count($checks)===2){
@@ -516,11 +525,51 @@ trait dataphyre_mcp_inspection_surfaces {
 				&& $failureCode==='application_database_identity_failed'
 				&& $exitStatus===69;
 		}
-		return count($checks)===4
+		if(count($checks)===4){
+			return in_array($checks[1]['status'], ['passed','not_applicable'], true)
+				&& in_array($checks[2]['status'], ['passed','not_applicable'], true)
+				&& $checks[3]['status']==='failed'
+				&& $exitStatus===75;
+		}
+		return count($checks)===5
 			&& in_array($checks[1]['status'], ['passed','not_applicable'], true)
 			&& in_array($checks[2]['status'], ['passed','not_applicable'], true)
-			&& $checks[3]['status']==='failed'
-			&& $exitStatus===75;
+			&& $checks[3]['status']==='passed'
+			&& $checks[4]['status']==='failed'
+			&& $failureCode==='application_realtime_registration_failed'
+			&& $exitStatus===70;
+	}
+
+	/** @param array<string,mixed> $check */
+	private function release_preflight_realtime_check_is_valid(array $check, string $failureCode): bool {
+		$evidence=$check['evidence'];
+		if(!in_array($check['status'], ['passed','failed'], true)
+			|| !$this->release_preflight_exact_object($evidence, [
+				'authorization_before_upgrade','fixed_public_port','origin_required','private_web_port',
+				'registration_sha256','route_count','scheduler_definition_count',
+				'scheduler_definition_sha256','tls_termination',
+			])
+			|| $evidence['authorization_before_upgrade']!==true
+			|| $evidence['fixed_public_port']!==8080
+			|| $evidence['origin_required']!==true
+			|| $evidence['private_web_port']!==8083
+			|| !is_int($evidence['route_count']) || $evidence['route_count']<0 || $evidence['route_count']>128
+			|| !is_int($evidence['scheduler_definition_count'])
+			|| $evidence['scheduler_definition_count']<0 || $evidence['scheduler_definition_count']>256
+			|| $evidence['tls_termination']!=='platform_edge'){
+			return false;
+		}
+		if($check['status']==='passed'){
+			return is_string($evidence['registration_sha256'])
+				&& preg_match('/^sha256:[0-9a-f]{64}$/D',$evidence['registration_sha256'])===1
+				&& is_string($evidence['scheduler_definition_sha256'])
+				&& preg_match('/^sha256:[0-9a-f]{64}$/D',$evidence['scheduler_definition_sha256'])===1;
+		}
+		return $evidence['route_count']===0
+			&& $evidence['registration_sha256']===null
+			&& $evidence['scheduler_definition_count']===0
+			&& $evidence['scheduler_definition_sha256']===null
+			&& $failureCode==='application_realtime_registration_failed';
 	}
 
 	/** @param array<string,mixed> $check */
@@ -937,7 +986,7 @@ trait dataphyre_mcp_inspection_surfaces {
 	}
 
 	private function release_preflight_claim_boundary(): string {
-		return 'This verdict covers local configuration bootstrap, the native PostgreSQL migration dry-run when declared, application startup, and GET /health. A release platform must run this same command inside the exact candidate image and separately preserve source, image, environment, and traffic identity.';
+		return 'This verdict covers local configuration bootstrap, the native PostgreSQL migration dry-run when declared, application startup, GET /health, and deterministic realtime callback and scheduler definition registration. A release platform must run this same command inside the exact candidate image and separately prove the three fixed process identities, scheduler callback execution, a framework listener roundtrip, execution and strict invalid-Origin rejection by every registered application authorization callback, WebSocket ping/pong and close, signal lifecycle, and source, image, environment, database, and traffic identity.';
 	}
 
 	/**

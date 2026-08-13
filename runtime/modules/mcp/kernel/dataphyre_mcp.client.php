@@ -566,7 +566,7 @@ trait dataphyre_mcp_client_surfaces {
 			],
 			'dataphyre_release_check'=>[
 				'audience_scope'=>'application_release_preflight',
-				'claim_boundary'=>'Deterministic local prediction from the fixed configuration, migration dry-run, application-resolved managed database identity, application boot, and GET /health checks; Cloud must repeat it inside the exact built candidate before promotion.',
+				'claim_boundary'=>'Deterministic local prediction from fixed configuration, migration dry-run, application-resolved managed database identity, application boot, GET /health, realtime callback registration, and scheduler definition registration checks; Cloud must repeat it inside the exact built candidate and prove the three fixed pools, scheduler callback execution, and authenticated event roundtrip before promotion.',
 				'not_app_behavior_proof'=>true,
 			],
 			'dataphyre_release_triage_summary'=>[

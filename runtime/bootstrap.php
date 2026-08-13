@@ -7,6 +7,43 @@
  */
 require_once __DIR__.'/shared_request_keys.php';
 
+/**
+ * Returns the private context installed only by fixed release-preflight health
+ * and registration children. It is unavailable to ordinary web, scheduler,
+ * realtime, and CLI application processes.
+ *
+ * @return null|array{state_root:string,private_key:string,project_root:string,token:string}
+ */
+function dataphyre_internal_application_release_preflight_context(): ?array {
+	$context=$GLOBALS['DATAPHYRE_INTERNAL_APPLICATION_RELEASE_PREFLIGHT'] ?? null;
+	$pool=(string)(getenv('DATAPHYRE_RUNTIME_POOL') ?: '');
+	$sapiMatches=($pool==='realtime-preflight' && PHP_SAPI==='cli')
+		|| ($pool==='health-preflight' && PHP_SAPI==='cli-server');
+	if($sapiMatches!==true || !is_array($context)
+		|| !in_array($pool,['health-preflight','realtime-preflight'],true)
+		|| (string)(getenv('DATAPHYRE_RUNTIME_POOL_ROLE') ?: '')!==$pool
+		|| (string)(getenv('DATAPHYRE_SCHEDULER_ACTIVATION_MODE') ?: '')!=='record_only'){
+		return null;
+	}
+	$stateRoot=realpath((string)($context['state_root'] ?? ''));
+	$projectRoot=realpath((string)($context['project_root'] ?? ''));
+	$environmentProjectRoot=realpath((string)(getenv('DATAPHYRE_RUNTIME_PROJECT_ROOT') ?: ''));
+	$privateKey=(string)($context['private_key'] ?? '');
+	$token=(string)($context['token'] ?? '');
+	if($stateRoot===false || $projectRoot===false || $environmentProjectRoot===false
+		|| $projectRoot!==$environmentProjectRoot || is_link($stateRoot)
+		|| preg_match('/^[a-f0-9]{64}$/D',$privateKey)!==1
+		|| preg_match('/^[a-f0-9]{64}$/D',$token)!==1){
+		return null;
+	}
+	return [
+		'state_root'=>$stateRoot,
+		'private_key'=>$privateKey,
+		'project_root'=>$projectRoot,
+		'token'=>$token,
+	];
+}
+
 try{
 	bootstrap();
 }catch(\Throwable $exception){
@@ -31,6 +68,7 @@ try{
 function bootstrap(){
  
 	tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Let there be light');
+	$application_release_preflight=dataphyre_internal_application_release_preflight_context();
  
 	ini_set('display_errors', 0);
  	set_error_handler(function(...$args){ return;}, E_ALL);
@@ -127,7 +165,7 @@ function bootstrap(){
 		}
 		else
 		{
-		if($bootstrap_config['prevent_keyless_direct_access']===true && DATAPHYRE_FLIGHTDECK_REPLAY!==true){
+		if($application_release_preflight===null && $bootstrap_config['prevent_keyless_direct_access']===true && DATAPHYRE_FLIGHTDECK_REPLAY!==true){
 			if(!file_exists($file=$project_root.'/direct_access_key')){
 				file_put_contents($file, bin2hex(openssl_random_pseudo_bytes(32)));
 			}
@@ -151,7 +189,7 @@ function bootstrap(){
 		}
 	}
 
-	if($bootstrap_config['allow_app_override']===true){
+	if($application_release_preflight===null && $bootstrap_config['allow_app_override']===true){
 		if(!file_exists($file=$project_root.'/app_override_key')){
 			file_put_contents($file, bin2hex(openssl_random_pseudo_bytes(32)));
 		}
@@ -1048,6 +1086,10 @@ function minified_font(){
  * root logs folder for failures before the runtime is fully available.
  */
 function bootstrap_log_directory(): string {
+	$application_release_preflight=dataphyre_internal_application_release_preflight_context();
+	if($application_release_preflight!==null){
+		return rtrim($application_release_preflight['state_root'], '/\\').'/logs/';
+	}
 	if(defined('ROOTPATH') && !empty(ROOTPATH['dataphyre'])){
 		return rtrim((string)ROOTPATH['dataphyre'], '/\\').'/logs/';
 	}

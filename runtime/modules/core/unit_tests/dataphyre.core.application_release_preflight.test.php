@@ -62,7 +62,20 @@ PHP);
 /** @param list<string> $arguments @param array<string,mixed> $runtime @return array{status:int,output:string,payload:array<string,mixed>} */
 function dp_application_preflight_run(array $arguments, array $runtime=[]): array {
 	$output='';
-	$status=ApplicationReleasePreflightCommand::main($arguments, array_replace($runtime, [
+	$status=ApplicationReleasePreflightCommand::main($arguments, array_replace([
+		'realtime_runner'=>static fn(): array=>[
+			'exit_code'=>0,
+			'stdout'=>json_encode([
+				'contract'=>'dataphyre.application_realtime_registration.v1',
+				'ok'=>true,
+				'route_count'=>0,
+				'registration_sha256'=>'sha256:'.hash('sha256','[]'),
+				'scheduler_definition_count'=>0,
+				'scheduler_definition_sha256'=>'sha256:'.hash('sha256','[]'),
+			],JSON_THROW_ON_ERROR),
+			'stderr'=>'',
+		],
+	], $runtime, [
 		'write_out'=>static function(string $value) use (&$output): int {
 			$output.=$value;
 			return strlen($value);
@@ -122,8 +135,9 @@ test('application release preflight returns one deterministic boolean verdict wi
 		'database_migrations',
 		'database_runtime',
 		'application_health',
+		'realtime_registration',
 	], array_column($run['payload']['checks'], 'id'));
-	$t->same(['passed','not_applicable','not_applicable','passed'], array_column($run['payload']['checks'], 'status'));
+	$t->same(['passed','not_applicable','not_applicable','passed','passed'], array_column($run['payload']['checks'], 'status'));
 	$t->same([
 		'connection_sha256'=>null,
 		'declared'=>false,
@@ -133,6 +147,17 @@ test('application release preflight returns one deterministic boolean verdict wi
 	$t->same(204, $run['payload']['checks'][3]['evidence']['http_status']);
 	$t->same(true, $run['payload']['checks'][3]['evidence']['response_contract_valid']);
 	$t->same([], $run['payload']['checks'][3]['evidence']['missing_environment_keys']);
+	$t->same([
+		'authorization_before_upgrade'=>true,
+		'fixed_public_port'=>8080,
+		'origin_required'=>true,
+		'private_web_port'=>8083,
+		'registration_sha256'=>'sha256:'.hash('sha256','[]'),
+		'route_count'=>0,
+		'scheduler_definition_count'=>0,
+		'scheduler_definition_sha256'=>'sha256:'.hash('sha256','[]'),
+		'tls_termination'=>'platform_edge',
+	],$run['payload']['checks'][4]['evidence']);
 	$t->contains('exact candidate image', $run['payload']['claim_boundary']);
 	$t->isFalse(str_contains($run['output'], $workspace->root()));
 })->tag('core','release','preflight','health','cli','security')->group('framework-coverage');

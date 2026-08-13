@@ -7,7 +7,7 @@
  */
 declare(strict_types=1);
 
-/** Dataphyre-owned PID 1 for the public web and private scheduler pools. */
+/** Dataphyre-owned PID 1 for fixed web, scheduler, and realtime pools. */
 
 if (PHP_SAPI !== 'cli') {
     fwrite(STDERR, "application_runtime_supervisor.php is CLI-only\n");
@@ -64,7 +64,7 @@ function dataphyre_runtime_spawn(
     $childEnvironment=$environment;
     $childEnvironment['DATAPHYRE_RUNTIME_POOL']=$pool;
     $childEnvironment['DATAPHYRE_RUNTIME_POOL_ROLE']=$pool;
-    $childEnvironment['DATAPHYRE_SCHEDULER_ACTIVATION_MODE']='supervisor';
+	if($pool!=='realtime') unset($childEnvironment['DATAPHYRE_RUNTIME_REALTIME_PROBE_SECRET']);
     $process=proc_open($command,$descriptors,$pipes,$projectRoot,$childEnvironment,['bypass_shell'=>true]);
     if (!is_resource($process)) throw new RuntimeException("Unable to start {$pool} runtime pool");
     $status=proc_get_status($process);
@@ -107,9 +107,10 @@ function dataphyre_runtime_status(array $runtime): array
         'supervisor_uid'=>function_exists('posix_geteuid') ? posix_geteuid() : -1,
         'supervisor_gid'=>function_exists('posix_getegid') ? posix_getegid() : -1,
         'activation_mode'=>$runtime['activation_mode'],
-        'active'=>$runtime['active'],
-        'web'=>dataphyre_runtime_pool_identity($runtime['web_pid']),
-        'scheduler'=>dataphyre_runtime_pool_identity($runtime['scheduler_pid']),
+		'active'=>$runtime['active'],
+		'web'=>dataphyre_runtime_pool_identity($runtime['web_pid']),
+		'scheduler'=>dataphyre_runtime_pool_identity($runtime['scheduler_pid']),
+		'realtime'=>dataphyre_runtime_pool_identity($runtime['realtime_pid']),
         'cadence'=>[
             'count'=>$runtime['count'],
             'last_at'=>$runtime['last_at'],
@@ -151,20 +152,22 @@ function dataphyre_runtime_read_private_request(mixed $connection): ?array
 {
     stream_set_timeout($connection,1,0);
     $line=fgets($connection,2049);
-    if (!is_string($line) || preg_match('#^(GET|POST) (/dataphyre/runtime/(?:status|tick/claim)) HTTP/1\.[01]\r?\n$#D',$line,$matches)!==1) {
+    if (!is_string($line) || preg_match('#^(GET|POST) (/dataphyre/runtime/(?:status|tick/claim|realtime/probe)) HTTP/1\.[01]\r?\n$#D',$line,$matches)!==1) {
         return null;
     }
     $headers=[];
     $headerBytes=strlen($line);
+	$headersComplete=false;
     while (is_string($header=fgets($connection,2049))) {
         $headerBytes+=strlen($header);
         if ($headerBytes>8192) return null;
-        if ($header==="\r\n" || $header==="\n") break;
+        if ($header==="\r\n" || $header==="\n") {$headersComplete=true;break;}
         if (preg_match('/^([A-Za-z0-9-]+):\s*([^\r\n]*)\r?\n$/D',$header,$headerMatch)!==1) return null;
         $name=strtolower($headerMatch[1]);
         if (isset($headers[$name])) return null;
         $headers[$name]=$headerMatch[2];
     }
+	if ($headersComplete!==true) return null;
     $body='';
     if ($matches[1]==='POST') {
         $lengthRaw=$headers['content-length'] ?? '';
@@ -185,16 +188,131 @@ function dataphyre_runtime_private_response(mixed $connection, int $status, arra
     fwrite($connection,"HTTP/1.1 {$status} {$reason}\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: ".strlen($body)."\r\n\r\n".$body);
 }
 
+function dataphyre_runtime_write_websocket_frame(mixed $socket, int $opcode, string $payload): void
+{
+    if (strlen($payload)>125) throw new RuntimeException('Realtime probe frame exceeded its fixed bound');
+    $mask=random_bytes(4);
+    $masked=$payload;
+    for ($position=0;$position<strlen($payload);$position++) $masked[$position]=$payload[$position]^$mask[$position%4];
+    $frame=chr(0x80|$opcode).chr(0x80|strlen($payload)).$mask.$masked;
+    $offset=0;
+    while ($offset<strlen($frame)) {
+        $written=fwrite($socket,substr($frame,$offset));
+        if (!is_int($written) || $written<1) throw new RuntimeException('Realtime probe frame write failed');
+        $offset+=$written;
+    }
+}
+
+function dataphyre_runtime_read_websocket_frame(mixed $socket, string &$buffer): array
+{
+    $read=static function(int $required) use ($socket,&$buffer): void {
+        while (strlen($buffer)<$required) {
+            $chunk=fread($socket,8192);
+            if (!is_string($chunk) || $chunk==='') throw new RuntimeException('Realtime probe frame was incomplete');
+            $buffer.=$chunk;
+            if (strlen($buffer)>65536) throw new RuntimeException('Realtime probe frame exceeded its fixed bound');
+        }
+    };
+    $read(2);
+    $first=ord($buffer[0]);$second=ord($buffer[1]);
+    if (($first&0x80)===0 || ($first&0x70)!==0 || ($second&0x80)!==0) {
+        throw new RuntimeException('Realtime probe frame metadata was invalid');
+    }
+    $length=$second&0x7f;$offset=2;
+    if ($length===126) {
+        $read(4);$length=(int)unpack('nlength',substr($buffer,2,2))['length'];$offset=4;
+    } elseif ($length===127) {
+        $read(10);$parts=unpack('Nhigh/Nlow',substr($buffer,2,8));
+        if (($parts['high'] ?? 1)!==0) throw new RuntimeException('Realtime probe frame was oversized');
+        $length=(int)$parts['low'];$offset=10;
+    }
+    if ($length>65536) throw new RuntimeException('Realtime probe frame was oversized');
+    $read($offset+$length);
+    $payload=substr($buffer,$offset,$length);
+    $buffer=substr($buffer,$offset+$length);
+    return ['opcode'=>$first&0x0f,'payload'=>$payload];
+}
+
+function dataphyre_runtime_realtime_probe(string $secret): array
+{
+    $failure=[
+        'contract'=>'dataphyre.application_realtime_probe.v1',
+        'ok'=>false,
+        'framework_listener_roundtrip'=>false,
+        'application_authorization_rejections'=>false,
+        'application_authorization_rejection_count'=>0,
+        'ping_pong'=>false,
+        'close_handshake'=>false,
+    ];
+    $socket=@stream_socket_client('tcp://127.0.0.1:8080',$errno,$error,2,STREAM_CLIENT_CONNECT);
+    if (!is_resource($socket)) return $failure;
+    try {
+        stream_set_timeout($socket,3,0);
+        $key=base64_encode(random_bytes(16));
+        $request="GET /dataphyre/runtime/realtime/probe HTTP/1.1\r\n".
+            "Host: 127.0.0.1:8080\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n".
+            "Sec-WebSocket-Key: {$key}\r\nSec-WebSocket-Version: 13\r\n".
+            "Origin: https://dataphyre.invalid\r\nX-Dataphyre-Runtime-Probe: {$secret}\r\n\r\n";
+        $offset=0;
+        while ($offset<strlen($request)) {
+            $written=fwrite($socket,substr($request,$offset));
+            if (!is_int($written) || $written<1) return $failure;
+            $offset+=$written;
+        }
+        $buffer='';
+        while (($headerEnd=strpos($buffer,"\r\n\r\n"))===false) {
+            $chunk=fread($socket,4096);
+            if (!is_string($chunk) || $chunk==='') return $failure;
+            $buffer.=$chunk;
+            if (strlen($buffer)>16384) return $failure;
+        }
+        $head=substr($buffer,0,$headerEnd);
+        $buffer=substr($buffer,$headerEnd+4);
+        $accept=base64_encode(sha1($key.'258EAFA5-E914-47DA-95CA-C5AB0DC85B11',true));
+        if (preg_match('/^HTTP\/1\.1 101 Switching Protocols\r\n/D',$head)!==1
+            || preg_match('/^Sec-WebSocket-Accept:\s*'.preg_quote($accept,'/').'\s*$/mi',$head)!==1) return $failure;
+        $eventFrame=dataphyre_runtime_read_websocket_frame($socket,$buffer);
+        $event=json_decode($eventFrame['payload'],true);
+        if ($eventFrame['opcode']!==0x1 || !is_array($event)
+            || array_keys($event)!==[
+                'contract','ok','framework_listener_roundtrip','application_authorization_rejections',
+                'application_authorization_rejection_count',
+            ]
+            || ($event['contract'] ?? null)!=='dataphyre.application_realtime_probe.v1'
+            || ($event['ok'] ?? null)!==true || ($event['framework_listener_roundtrip'] ?? null)!==true
+            || ($event['application_authorization_rejections'] ?? null)!==true
+            || !is_int($event['application_authorization_rejection_count'] ?? null)
+            || $event['application_authorization_rejection_count']<0
+            || $event['application_authorization_rejection_count']>128) return $failure;
+        $ping=random_bytes(8);
+        dataphyre_runtime_write_websocket_frame($socket,0x9,$ping);
+        $pong=dataphyre_runtime_read_websocket_frame($socket,$buffer);
+        if ($pong['opcode']!==0xA || !hash_equals($ping,$pong['payload'])) return $failure;
+        dataphyre_runtime_write_websocket_frame($socket,0x8,pack('n',1000));
+        $close=dataphyre_runtime_read_websocket_frame($socket,$buffer);
+        if ($close['opcode']!==0x8) return $failure;
+        return $event+['ping_pong'=>true,'close_handshake'=>true];
+    } catch (Throwable) {
+        return $failure;
+    } finally {
+        fclose($socket);
+    }
+}
+
 function dataphyre_runtime_serve_status(
     mixed $listener,
     array $runtime,
     array &$pendingTicks,
-    string $publicKey
+    string $publicKey,
+    string $realtimeProbeSecret
 ): void {
     while (is_resource($connection=@stream_socket_accept($listener,0))) {
         $request=dataphyre_runtime_read_private_request($connection);
         if (is_array($request) && $request['method']==='GET' && $request['path']==='/dataphyre/runtime/status') {
             dataphyre_runtime_private_response($connection,200,dataphyre_runtime_status($runtime));
+        } elseif (is_array($request) && $request['method']==='GET' && $request['path']==='/dataphyre/runtime/realtime/probe') {
+            $probe=dataphyre_runtime_realtime_probe($realtimeProbeSecret);
+            dataphyre_runtime_private_response($connection,($probe['ok'] ?? false)===true ? 200 : 409,$probe);
         } elseif (is_array($request) && $request['method']==='POST' && $request['path']==='/dataphyre/runtime/tick/claim') {
             $candidate=json_decode($request['body'],true);
             $consumed=is_array($candidate)
@@ -216,7 +334,8 @@ function dataphyre_runtime_tick(
     string $publicKey,
     mixed $statusListener,
     array $runtime,
-    array &$pendingTicks
+    array &$pendingTicks,
+    string $realtimeProbeSecret
 ): void {
     $tick=DataphyreApplicationRuntimeTickProtocol::issue($application,$environment,$counter,$secretKey);
     $pendingTicks[$tick['counter']]=$tick;
@@ -248,7 +367,7 @@ function dataphyre_runtime_tick(
         $response='';
         $deadline=microtime(true)+30.0;
         while (microtime(true)<$deadline) {
-            dataphyre_runtime_serve_status($statusListener,$runtime,$pendingTicks,$publicKey);
+            dataphyre_runtime_serve_status($statusListener,$runtime,$pendingTicks,$publicKey,$realtimeProbeSecret);
             $chunk=fread($socket,8192);
             if (is_string($chunk) && $chunk!=='') {
                 $response.=$chunk;
@@ -286,31 +405,42 @@ try {
     }
     $activationMode=strtolower(dataphyre_runtime_env('DATAPHYRE_RUNTIME_ACTIVATION_MODE','active'));
     if (!in_array($activationMode,['active','signal'],true)) throw new RuntimeException('Invalid runtime activation mode');
-    $webHost=dataphyre_runtime_env('DATAPHYRE_RUNTIME_WEB_HOST','0.0.0.0');
-    if (!in_array($webHost,['0.0.0.0','127.0.0.1','::'],true)) throw new RuntimeException('Invalid web bind address');
-    $webPort=dataphyre_runtime_integer('DATAPHYRE_RUNTIME_WEB_PORT',8080,1,65535);
-    $schedulerHost=dataphyre_runtime_env('DATAPHYRE_RUNTIME_SCHEDULER_HOST','127.0.0.1');
-    $statusHost=dataphyre_runtime_env('DATAPHYRE_RUNTIME_STATUS_HOST','127.0.0.1');
-    if ($schedulerHost!=='127.0.0.1' || $statusHost!=='127.0.0.1') throw new RuntimeException('Private runtime hosts must be 127.0.0.1');
-    $schedulerPort=dataphyre_runtime_integer('DATAPHYRE_RUNTIME_SCHEDULER_PORT',8081,1,65535);
-    $statusPort=dataphyre_runtime_integer('DATAPHYRE_RUNTIME_STATUS_PORT',8082,1,65535);
-    if ($statusPort!==8082) throw new RuntimeException('DATAPHYRE_RUNTIME_STATUS_PORT must be 8082');
-    if (count(array_unique([$webPort,$schedulerPort,$statusPort]))!==3) throw new RuntimeException('Runtime ports must be distinct');
+	$webHost=dataphyre_runtime_env('DATAPHYRE_RUNTIME_WEB_HOST','127.0.0.1');
+	$webPort=dataphyre_runtime_integer('DATAPHYRE_RUNTIME_WEB_PORT',8083,1,65535);
+	$schedulerHost=dataphyre_runtime_env('DATAPHYRE_RUNTIME_SCHEDULER_HOST','127.0.0.1');
+	$statusHost=dataphyre_runtime_env('DATAPHYRE_RUNTIME_STATUS_HOST','127.0.0.1');
+	$realtimeHost=dataphyre_runtime_env('DATAPHYRE_RUNTIME_REALTIME_HOST','0.0.0.0');
+	if ($webHost!=='127.0.0.1' || $schedulerHost!=='127.0.0.1' || $statusHost!=='127.0.0.1'
+		|| $realtimeHost!=='0.0.0.0') throw new RuntimeException('Runtime hosts must match the fixed ingress boundary');
+	$schedulerPort=dataphyre_runtime_integer('DATAPHYRE_RUNTIME_SCHEDULER_PORT',8081,1,65535);
+	$statusPort=dataphyre_runtime_integer('DATAPHYRE_RUNTIME_STATUS_PORT',8082,1,65535);
+	$realtimePort=dataphyre_runtime_integer('DATAPHYRE_RUNTIME_REALTIME_PORT',8080,1,65535);
+	if ($webPort!==8083 || $schedulerPort!==8081 || $statusPort!==8082 || $realtimePort!==8080) {
+		throw new RuntimeException('Runtime ports must match the fixed Dataphyre contract');
+	}
+	if (count(array_unique([$webPort,$schedulerPort,$statusPort,$realtimePort]))!==4) throw new RuntimeException('Runtime ports must be distinct');
     $interval=dataphyre_runtime_integer('DATAPHYRE_RUNTIME_SCHEDULER_INTERVAL_SECONDS',1,1,60);
     $uid=dataphyre_runtime_integer('DATAPHYRE_RUNTIME_POOL_UID',10001,1,2147483647);
     $gid=dataphyre_runtime_integer('DATAPHYRE_RUNTIME_POOL_GID',10001,1,2147483647);
-    $router=__DIR__.'/application_runtime_router.php';
-    $launcher=__DIR__.'/application_runtime_pool_launcher.php';
-    if (!is_file($router) || !is_file($launcher)) throw new RuntimeException('Runtime launcher files are missing');
+	$router=__DIR__.'/application_runtime_router.php';
+	$realtimeServer=__DIR__.'/application_runtime_realtime_server.php';
+	$launcher=__DIR__.'/application_runtime_pool_launcher.php';
+	if (!is_file($router) || !is_file($realtimeServer) || !is_file($launcher)) throw new RuntimeException('Runtime launcher files are missing');
 
     $keypair=sodium_crypto_sign_keypair();
     $secretKey=sodium_crypto_sign_secretkey($keypair);
     $publicKey=sodium_crypto_sign_publickey($keypair);
+    $realtimeProbeSecret=bin2hex(random_bytes(32));
     $childEnvironment=getenv();
     $childEnvironment=is_array($childEnvironment) ? $childEnvironment : [];
-    $childEnvironment['DATAPHYRE_RUNTIME_PROJECT_ROOT']=$projectRoot;
-    $childEnvironment['DATAPHYRE_RUNTIME_SCHEDULER_HOST']=$schedulerHost;
-    $childEnvironment['DATAPHYRE_RUNTIME_SCHEDULER_PORT']=(string)$schedulerPort;
+	$childEnvironment['DATAPHYRE_RUNTIME_PROJECT_ROOT']=$projectRoot;
+	$childEnvironment['DATAPHYRE_RUNTIME_WEB_HOST']=$webHost;
+	$childEnvironment['DATAPHYRE_RUNTIME_WEB_PORT']=(string)$webPort;
+	$childEnvironment['DATAPHYRE_RUNTIME_SCHEDULER_HOST']=$schedulerHost;
+	$childEnvironment['DATAPHYRE_RUNTIME_SCHEDULER_PORT']=(string)$schedulerPort;
+	$childEnvironment['DATAPHYRE_RUNTIME_REALTIME_HOST']=$realtimeHost;
+	$childEnvironment['DATAPHYRE_RUNTIME_REALTIME_PORT']=(string)$realtimePort;
+	$childEnvironment['DATAPHYRE_RUNTIME_REALTIME_PROBE_SECRET']=$realtimeProbeSecret;
     $childEnvironment['DATAPHYRE_SCHEDULER_SELF_ADDRESS']=$schedulerHost.':'.$schedulerPort;
     $childEnvironment['DATAPHYRE_SCHEDULER_SELF_SCHEME']='http';
     $childEnvironment['DATAPHYRE_RUNTIME_TICK_PUBLIC_KEY']=sodium_bin2base64($publicKey,SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING);
@@ -319,14 +449,16 @@ try {
     $statusListener=@stream_socket_server('tcp://'.$statusHost.':'.$statusPort,$errno,$error,STREAM_SERVER_BIND|STREAM_SERVER_LISTEN);
     if (!is_resource($statusListener)) throw new RuntimeException('Unable to bind supervisor status listener');
     stream_set_blocking($statusListener,false);
-    $children[]=dataphyre_runtime_spawn($launcher,$router,$projectRoot,'web',$webHost,$webPort,$uid,$gid,$childEnvironment);
-    $children[]=dataphyre_runtime_spawn($launcher,$router,$projectRoot,'scheduler',$schedulerHost,$schedulerPort,$uid,$gid,$childEnvironment);
+	$children[]=dataphyre_runtime_spawn($launcher,$router,$projectRoot,'web',$webHost,$webPort,$uid,$gid,$childEnvironment);
+	$children[]=dataphyre_runtime_spawn($launcher,$router,$projectRoot,'scheduler',$schedulerHost,$schedulerPort,$uid,$gid,$childEnvironment);
+	$children[]=dataphyre_runtime_spawn($launcher,$realtimeServer,$projectRoot,'realtime',$realtimeHost,$realtimePort,$uid,$gid,$childEnvironment);
 
     $runtime=[
         'activation_mode'=>$activationMode,
         'active'=>$activationMode==='active',
-        'web_pid'=>$children[0]['pid'],
-        'scheduler_pid'=>$children[1]['pid'],
+		'web_pid'=>$children[0]['pid'],
+		'scheduler_pid'=>$children[1]['pid'],
+		'realtime_pid'=>$children[2]['pid'],
         'count'=>0,'last_at'=>null,'last_result'=>'never',
     ];
     $stopping=false;
@@ -347,14 +479,14 @@ try {
                 throw new RuntimeException($child['pool'].' runtime pool exited unexpectedly');
             }
         }
-        dataphyre_runtime_serve_status($statusListener,$runtime,$pendingTicks,$publicKey);
+        dataphyre_runtime_serve_status($statusListener,$runtime,$pendingTicks,$publicKey,$realtimeProbeSecret);
         $now=microtime(true);
         if ($runtime['active'] && $now>=$nextTick) {
             $counter=$runtime['count']+1;
             try {
                 dataphyre_runtime_tick(
                     $schedulerPort,$application,$environment,$counter,$secretKey,$publicKey,
-                    $statusListener,$runtime,$pendingTicks,
+                    $statusListener,$runtime,$pendingTicks,$realtimeProbeSecret,
                 );
                 $runtime['last_result']='ok';
             }

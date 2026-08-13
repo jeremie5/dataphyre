@@ -39,9 +39,11 @@ final class ApplicationReleasePreflightCommand {
 	private const MAX_MISSING_ENVIRONMENT_KEYS=64;
 	private const MIGRATION_TIMEOUT_MILLISECONDS=180000;
 	private const DATABASE_RUNTIME_TIMEOUT_MILLISECONDS=30000;
+	private const REALTIME_REGISTRATION_TIMEOUT_MILLISECONDS=30000;
 	private const MAX_PROCESS_OUTPUT_BYTES=262144;
 	private const DATABASE_RUNTIME_MARKER='DATAPHYRE_CLOUD_DATABASE_BINDING_PRIMARY_SHA256';
 	private const DATABASE_RUNTIME_CONTRACT='dataphyre.application_database_runtime.v1';
+	private const REALTIME_REGISTRATION_CONTRACT='dataphyre.application_realtime_registration.v1';
 
 	/**
 	 * Execute through native process/stream functions or explicit test seams.
@@ -312,6 +314,60 @@ final class ApplicationReleasePreflightCommand {
 			'evidence'=>$healthEvidence,
 		];
 
+		$realtimeRunner=$runtime['realtime_runner'] ?? [self::class, 'runRealtimeRegistration'];
+		try{
+			$realtime=self::normalizeProcessResult($realtimeRunner(
+				$projectRoot,
+				$application,
+				$environment,
+				self::REALTIME_REGISTRATION_TIMEOUT_MILLISECONDS
+			));
+		}catch(Throwable){
+			$realtime=['exit_code'=>self::EXIT_VERIFICATION, 'stdout'=>'', 'stderr'=>''];
+		}
+		$realtimePayload=self::decodeProcessPayload($realtime);
+		$routeCount=$realtimePayload['route_count'] ?? null;
+		$registrationSha=$realtimePayload['registration_sha256'] ?? null;
+		$schedulerDefinitionCount=$realtimePayload['scheduler_definition_count'] ?? null;
+		$schedulerDefinitionSha=$realtimePayload['scheduler_definition_sha256'] ?? null;
+		$realtimeValid=$realtime['exit_code']===0
+			&& ($realtimePayload['ok'] ?? null)===true
+			&& ($realtimePayload['contract'] ?? null)===self::REALTIME_REGISTRATION_CONTRACT
+			&& is_int($routeCount) && $routeCount>=0 && $routeCount<=128
+			&& is_string($registrationSha)
+			&& preg_match('/^sha256:[0-9a-f]{64}$/D',$registrationSha)===1
+			&& is_int($schedulerDefinitionCount) && $schedulerDefinitionCount>=0 && $schedulerDefinitionCount<=256
+			&& is_string($schedulerDefinitionSha)
+			&& preg_match('/^sha256:[0-9a-f]{64}$/D',$schedulerDefinitionSha)===1;
+		$realtimeEvidence=self::realtimeEvidence(
+			$realtimeValid ? $routeCount : 0,
+			$realtimeValid ? $registrationSha : null,
+			$realtimeValid ? $schedulerDefinitionCount : 0,
+			$realtimeValid ? $schedulerDefinitionSha : null,
+		);
+		if(!$realtimeValid){
+			$checks[]=[
+				'id'=>'realtime_registration',
+				'status'=>'failed',
+				'evidence'=>$realtimeEvidence,
+			];
+			return self::emitFailure(
+				$write,
+				self::EXIT_VERIFICATION,
+				$application,
+				$environment,
+				$checks,
+				'verification',
+				'application_realtime_registration_failed',
+				'The application realtime callbacks or scheduler definitions did not load through the fixed framework bootstrap.'
+			);
+		}
+		$checks[]=[
+			'id'=>'realtime_registration',
+			'status'=>'passed',
+			'evidence'=>$realtimeEvidence,
+		];
+
 		self::writeJson($write, self::resultEnvelope(
 			self::EXIT_SUCCESS,
 			true,
@@ -542,6 +598,26 @@ final class ApplicationReleasePreflightCommand {
 	}
 
 	/** @return array<string,mixed> */
+	private static function runRealtimeRegistration(
+		string $projectRoot,
+		string $application,
+		string $environment,
+		int $timeoutMilliseconds
+	): array {
+		$command=dirname(__DIR__).'/kernel/application_release_preflight_realtime.php';
+		if(!is_file($command)){
+			return ['exit_code'=>self::EXIT_CONFIGURATION, 'stdout'=>'', 'stderr'=>''];
+		}
+		return self::runProcess([
+			self::phpBinary(),
+			$command,
+			'--project-root='.$projectRoot,
+			'--application='.$application,
+			'--environment='.$environment,
+		], $projectRoot, $timeoutMilliseconds);
+	}
+
+	/** @return array<string,mixed> */
 	private static function runHealth(
 		string $projectRoot,
 		string $application,
@@ -554,10 +630,17 @@ final class ApplicationReleasePreflightCommand {
 			return ['ok'=>false, 'code'=>'preflight_router_missing', 'attempts'=>0, 'http_status'=>null];
 		}
 		$port=self::reserveLoopbackPort();
+		$stateRoot=self::createIsolatedStateRoot();
 		$environmentValues=self::processEnvironment();
 		$environmentValues['DATAPHYRE_PREFLIGHT_PROJECT_ROOT']=$projectRoot;
 		$environmentValues['DATAPHYRE_PREFLIGHT_APPLICATION']=$application;
+		$environmentValues['DATAPHYRE_PREFLIGHT_STATE_ROOT']=$stateRoot;
 		$environmentValues['DATAPHYRE_ENVIRONMENT']=$environment;
+		$environmentValues['DATAPHYRE_RUNTIME_POOL']='health-preflight';
+		$environmentValues['DATAPHYRE_RUNTIME_POOL_ROLE']='health-preflight';
+		$environmentValues['DATAPHYRE_RUNTIME_PROJECT_ROOT']=$projectRoot;
+		$environmentValues['DATAPHYRE_SCHEDULER_ACTIVATION_MODE']='record_only';
+		$environmentValues['DATAPHYRE_SCHEDULER_STATE_ROOT']=$stateRoot;
 		$descriptor=[
 			0=>['file', self::nullDevice(), 'r'],
 			1=>['pipe', 'w'],
@@ -572,6 +655,7 @@ final class ApplicationReleasePreflightCommand {
 			$router,
 		], $descriptor, $pipes, $projectRoot, $environmentValues);
 		if(!is_resource($process)){
+			self::removeIsolatedStateRoot($stateRoot);
 			return ['ok'=>false, 'code'=>'application_server_unavailable', 'attempts'=>0, 'http_status'=>null];
 		}
 		foreach($pipes as $pipe){
@@ -640,7 +724,35 @@ final class ApplicationReleasePreflightCommand {
 			];
 		}finally{
 			self::stopProcess($process, $pipes);
+			self::removeIsolatedStateRoot($stateRoot);
 		}
+	}
+
+	private static function createIsolatedStateRoot(): string {
+		$root=rtrim(sys_get_temp_dir(),'/\\').'/dataphyre-release-preflight-'.bin2hex(random_bytes(16));
+		if(!mkdir($root,0700,true) || !is_dir($root) || is_link($root)){
+			throw new RuntimeException('Unable to create isolated application preflight state.');
+		}
+		return $root;
+	}
+
+	private static function removeIsolatedStateRoot(string $root): void {
+		$real=realpath($root);
+		$temp=realpath(sys_get_temp_dir());
+		if($real===false || $temp===false || is_link($root)
+			|| dirname($real)!==$temp || !str_starts_with(basename($real),'dataphyre-release-preflight-')){
+			return;
+		}
+		$iterator=new \RecursiveIteratorIterator(
+			new \RecursiveDirectoryIterator($real,\FilesystemIterator::SKIP_DOTS),
+			\RecursiveIteratorIterator::CHILD_FIRST,
+		);
+		foreach($iterator as $entry){
+			$path=$entry->getPathname();
+			if($entry->isLink() || $entry->isFile()) @unlink($path);
+			elseif($entry->isDir()) @rmdir($path);
+		}
+		@rmdir($real);
 	}
 
 	/** @param list<string> $command @return array{exit_code:int,stdout:string,stderr:string} */
@@ -989,6 +1101,26 @@ final class ApplicationReleasePreflightCommand {
 		];
 	}
 
+	/** @return array<string,mixed> */
+	private static function realtimeEvidence(
+		int $routeCount,
+		?string $registrationSha256,
+		int $schedulerDefinitionCount,
+		?string $schedulerDefinitionSha256
+	): array {
+		return [
+			'authorization_before_upgrade'=>true,
+			'fixed_public_port'=>8080,
+			'origin_required'=>true,
+			'private_web_port'=>8083,
+			'registration_sha256'=>$registrationSha256,
+			'route_count'=>$routeCount,
+			'scheduler_definition_count'=>$schedulerDefinitionCount,
+			'scheduler_definition_sha256'=>$schedulerDefinitionSha256,
+			'tls_termination'=>'platform_edge',
+		];
+	}
+
 	private static function safeCode(string $value, string $fallback): string {
 		$value=trim($value);
 		return preg_match('/^[a-z][a-z0-9_]{2,119}$/D', $value)===1 ? $value : $fallback;
@@ -1042,7 +1174,7 @@ final class ApplicationReleasePreflightCommand {
 			'write_policy'=>'database_dry_run_and_ephemeral_application_boot',
 			'checks'=>$checks,
 			'failures'=>$failures,
-			'claim_boundary'=>'This verdict covers local configuration bootstrap, the native PostgreSQL migration dry-run when declared, application startup, and GET /health. A release platform must run this same command inside the exact candidate image and separately preserve source, image, environment, and traffic identity.',
+			'claim_boundary'=>'This verdict covers local configuration bootstrap, the native PostgreSQL migration dry-run when declared, application startup, GET /health, and deterministic realtime callback and scheduler definition registration. A release platform must run this same command inside the exact candidate image and separately prove the three fixed process identities, scheduler callback execution, a framework listener roundtrip, execution and strict invalid-Origin rejection by every registered application authorization callback, WebSocket ping/pong and close, signal lifecycle, and source, image, environment, database, and traffic identity.',
 		];
 	}
 

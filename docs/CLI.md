@@ -26,7 +26,7 @@ consumer project root.
 
 | Command | Purpose |
 | --- | --- |
-| `php runtime/modules/core/kernel/application_release_preflight.php --project-root=<application-project> --application=<id> --environment=<id>` | Predict whether an application can release by validating bootstrap configuration, dry-running its declared native PostgreSQL migration plan, booting it over loopback, and probing the fixed `GET /health` route. The command accepts no scripts, executable paths, custom commands, health paths, or migration modes. |
+| `php runtime/modules/core/kernel/application_release_preflight.php --project-root=<application-project> --application=<id> --environment=<id>` | Predict whether an application can release by validating bootstrap configuration, dry-running its declared native PostgreSQL migration plan, booting it over loopback, probing fixed `GET /health`, and loading deterministic realtime callback and scheduler definition registration in isolated record-only state. The command accepts no scripts, executable paths, custom commands, health paths, process definitions, ports, or migration modes. |
 | `php runtime/modules/routing/kernel/compile_app_routes.php <application>` | Compile routes for an application. |
 | `php runtime/modules/mvc/kernel/route_list.php [app] [--json]` | List MVC routes as a table or JSON. |
 | `php runtime/modules/mvc/kernel/cache_routes.php [app]` | Write the configured MVC route manifest cache. |

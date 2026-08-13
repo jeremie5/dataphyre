@@ -552,14 +552,22 @@ boundaries. `dataphyre_release_check` now executes
 validates configuration bootstrap, runs the native PostgreSQL migration plan in
 automatic dry-run mode when declared, verifies the application-resolved managed
 primary database identity when Cloud declares one, boots the application through
-a fixed loopback router, and probes `GET /health`. Managed database evidence is
+a fixed loopback router, probes `GET /health`, and loads deterministic realtime
+callback and scheduler definition registration in private record-only state.
+The registration evidence exposes counts and content-addressed hashes without
+task paths, callback bodies, credentials, or event payloads. Managed database evidence is
 an exact `connection_sha256`, `declared`, and `purpose` object; it never contains
 a DSN, credential, query output, or driver error. Its `likely_to_deploy` field is always
 `true` or `false`; missing configuration and an unavailable executable or
 dependency are deterministic failures, never an unknown state. Dataphyre Cloud
 must invoke the same command inside the exact built candidate and separately
 preserve source commit, image digest, environment, and traffic identity before
-promotion. Aggregate MCP verification remains maintainer proof for MCP wiring
+promotion. The fixed no-argument
+`application_runtime_realtime_probe.php` exact-image command proves the
+framework listener/event/control-frame roundtrip and strict rejection by each
+application authorization callback of a reserved invalid Origin. Those are
+separate bounded facts, not generic proof of a successful production-app
+credential. Aggregate MCP verification remains maintainer proof for MCP wiring
 or public framework claims, not a routine requirement for application agents or
 proof of broader application behavior.
 
@@ -941,4 +949,3 @@ Before publishing MCP surface changes, confirm MCP self-test evidence. Do not tu
 Run live stdio validation through a spawned MCP process:
 
 Use `dataphyre_mcp_live_validate` where available, or collect live validation evidence.
-

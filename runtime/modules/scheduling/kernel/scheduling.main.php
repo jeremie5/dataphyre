@@ -56,6 +56,10 @@ class scheduling {
 		if($mode===null){
 			$value=getenv('DATAPHYRE_SCHEDULER_ACTIVATION_MODE');
 			$mode=is_string($value) ? strtolower(trim($value)) : '';
+			$runtime_role=strtolower(trim((string)(getenv('DATAPHYRE_RUNTIME_POOL_ROLE') ?: '')));
+			if($mode==='' && in_array($runtime_role, ['web','scheduler','realtime'], true)){
+				$mode='supervisor';
+			}
 		}
 		return match($mode){
 			'', 'default'=>'default',
@@ -69,7 +73,7 @@ class scheduling {
 	public static function dispatch_enabled(): bool {
 		return match(self::activation_mode()){
 			'default'=>true,
-			'supervisor'=>(string)(getenv('DATAPHYRE_RUNTIME_POOL_ROLE') ?: '')==='scheduler',
+			'supervisor'=>strtolower(trim((string)(getenv('DATAPHYRE_RUNTIME_POOL_ROLE') ?: '')))==='scheduler',
 			default=>false,
 		};
 	}
@@ -116,6 +120,7 @@ class scheduling {
 		if(!isset($app_override))$app_override=APP;
 		$name=self::normalize_scheduler_name($name);
 		if($name===''){
+			self::record_preflight_registration(false);
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Scheduler name is invalid', $T='warning');
 			return false;
 		}
@@ -129,9 +134,14 @@ class scheduling {
 			$app_override,
 		);
 		if($scheduler===null){
+			self::record_preflight_registration(false);
 			return false;
 		}
-		self::persist_scheduler_definition($scheduler);
+		if(self::persist_scheduler_definition($scheduler)!==true){
+			self::record_preflight_registration(false);
+			return false;
+		}
+		self::record_preflight_registration(true);
 		if(self::dispatch_enabled()!==true){
 			return true;
 		}
@@ -596,17 +606,34 @@ class scheduling {
 	 *
 	 * @param array<string, mixed> $scheduler Normalized scheduler definition.
 	 */
-	private static function persist_scheduler_definition(array $scheduler): void {
+	private static function persist_scheduler_definition(array $scheduler): bool {
 		$properties_file=self::scheduler_properties_file((string)$scheduler['name']);
 		$payload=json_encode($scheduler, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES);
 		if(!is_string($payload)){
-			return;
+			return false;
 		}
 		$existing=@file_get_contents($properties_file);
 		if($existing===$payload){
+			return true;
+		}
+		return core::file_put_contents_forced($properties_file, $payload)!==false;
+	}
+
+	/** Records ignored registration failures only inside the fixed isolated preflight child. */
+	private static function record_preflight_registration(bool $accepted): void {
+		if(!function_exists('dp_application_release_preflight_context')
+			|| dp_application_release_preflight_context()===null){
 			return;
 		}
-		core::file_put_contents_forced($properties_file, $payload);
+		$context=&$GLOBALS['DATAPHYRE_INTERNAL_APPLICATION_RELEASE_PREFLIGHT'];
+		$context['scheduler_attempt_count']=is_int($context['scheduler_attempt_count'] ?? null)
+			? $context['scheduler_attempt_count']+1
+			: 1;
+		if($accepted!==true){
+			$context['scheduler_failure_count']=is_int($context['scheduler_failure_count'] ?? null)
+				? $context['scheduler_failure_count']+1
+				: 1;
+		}
 	}
 
 	/**

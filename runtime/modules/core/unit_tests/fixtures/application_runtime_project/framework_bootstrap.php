@@ -13,6 +13,65 @@ if (\dataphyre\core::load_framework_module('scheduling') !== true) {
     throw new RuntimeException('Scheduling module was not loaded.');
 }
 
+if((string)getenv('DATAPHYRE_RUNTIME_POOL_ROLE')==='health-preflight'){
+	\dataphyre\scheduling::run(
+		'runtime.health.preflight',
+		__DIR__.'/scheduled_task.php',
+		3600,
+		30,
+		'64M',
+		[],
+		'',
+		static function(): void {
+			$sideEffectPath=(string)getenv('DATAPHYRE_RUNTIME_TEST_HEALTH_SIDE_EFFECT_PATH');
+			if($sideEffectPath!=='') file_put_contents($sideEffectPath,'health-dispatch-registered',LOCK_EX);
+		},
+	);
+}
+
+if ((string) ($_SERVER['DATAPHYRE_RUNTIME_REALTIME_BOOTSTRAP'] ?? '') === '1') { // dataphyre-test-architecture: exempt[raw-superglobal] reason="Exact-image fixture observes the framework-owned realtime bootstrap boundary."
+	\dataphyre\scheduling::run(
+		'runtime.realtime.preflight',
+		__DIR__ . '/scheduled_task.php',
+		3600,
+		30,
+		'64M',
+		[],
+		'',
+		static function() : void {
+			$sideEffectPath=(string)getenv('DATAPHYRE_RUNTIME_TEST_REALTIME_SIDE_EFFECT_PATH');
+			if($sideEffectPath!=='') file_put_contents($sideEffectPath,'dispatch-callback-registered',LOCK_EX);
+		},
+	);
+	if((string)getenv('DATAPHYRE_RUNTIME_TEST_INVALID_SCHEDULER_REGISTRATION')==='1'){
+		\dataphyre\scheduling::run(
+			'runtime.realtime.invalid',
+			__DIR__.'/missing.scheduler.php',
+			3600,
+			30,
+			'64M',
+			[],
+			'',
+		);
+	}
+    \dataphyre\realtime::register(
+        '/runtime/realtime',
+        static function(array $handshake): array|false {
+            $expectedToken=(string)(getenv('DATAPHYRE_RUNTIME_TEST_REALTIME_TOKEN') ?: 'runtime-fixture-token');
+            return ($handshake['origin'] ?? null)==='https://runtime.test'
+                && ($handshake['query']['token'] ?? null)===$expectedToken
+                ? ['fixture'=>'authorized']
+                : false;
+        },
+        static fn(array $authorization, ?string $cursor): array=>[
+            'cursor'=>$cursor ?? 'delivered',
+            'events'=>$cursor===null && ($authorization['fixture'] ?? null)==='authorized'
+                ? [['type'=>'runtime.ready','pool'=>'realtime']]
+                : [],
+        ],
+    );
+}
+
 if ((string) ($_SERVER['DATAPHYRE_RUNTIME_SCHEDULER_TICK'] ?? '') === '1') { // dataphyre-test-architecture: exempt[raw-superglobal] reason="Exact-image fixture must observe the framework router's native request boundary."
     $tickPath = (string) getenv('DATAPHYRE_RUNTIME_TEST_TICK_PATH');
     if ($tickPath !== '') {

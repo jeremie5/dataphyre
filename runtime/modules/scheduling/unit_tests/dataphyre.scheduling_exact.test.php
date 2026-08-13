@@ -98,6 +98,42 @@ suite('Scheduling exact runtime behavior')
 	->through('validated definitions','frequency locks','bounded dispatch','task-runner state')
 	->isolation('case');
 
+test('fixed managed pool role alone owns scheduler activation and ordinary bootstrap stays unconditional',static function(Context $t): void {
+	\dataphyre\scheduling::use_activation_mode(null);
+	$t->environment([
+		'DATAPHYRE_SCHEDULER_ACTIVATION_MODE'=>null,
+		'DATAPHYRE_RUNTIME_POOL_ROLE'=>'web',
+	]);
+	$t->same('supervisor',\dataphyre\scheduling::activation_mode());
+	$t->isFalse(\dataphyre\scheduling::dispatch_enabled());
+	$workspace=$t->workspace('managed-web-registration');
+	\dataphyre\scheduling::use_state_root($workspace->root());
+	$task=$workspace->file('tasks/run.php','<?php return true;');
+	$shutdownRegistrations=0;
+	$t->isTrue(\dataphyre\scheduling::run(
+		'managed.web',$task,0,30,'128M',[],'test-app',
+		static function() use (&$shutdownRegistrations): void {$shutdownRegistrations++;},
+	));
+	$t->same(0,$shutdownRegistrations);
+	$t->isTrue(is_file(\dataphyre\scheduling::scheduler_properties_file('managed.web')));
+	$t->isFalse(is_file(\dataphyre\scheduling::running_lock_file('managed.web')));
+	$t->isFalse(is_file(\dataphyre\scheduling::last_run_file('managed.web')));
+	$t->environment(['DATAPHYRE_RUNTIME_POOL_ROLE'=>'realtime']);
+	$t->same('supervisor',\dataphyre\scheduling::activation_mode());
+	$t->isFalse(\dataphyre\scheduling::dispatch_enabled());
+	$t->environment(['DATAPHYRE_RUNTIME_POOL_ROLE'=>'scheduler']);
+	$t->same('supervisor',\dataphyre\scheduling::activation_mode());
+	$t->isTrue(\dataphyre\scheduling::dispatch_enabled());
+	$t->environment(['DATAPHYRE_RUNTIME_POOL_ROLE'=>null]);
+	$t->same('default',\dataphyre\scheduling::activation_mode());
+	$t->isTrue(\dataphyre\scheduling::dispatch_enabled());
+	\dataphyre\scheduling::use_activation_mode('record_only');
+	$t->same('record_only',\dataphyre\scheduling::activation_mode());
+	$t->isFalse(\dataphyre\scheduling::dispatch_enabled());
+	\dataphyre\scheduling::use_state_root(null);
+	\dataphyre\scheduling::use_activation_mode(null);
+});
+
 test('scheduler names paths and persisted definitions have a closed normalized shape',static function(Context $t): void {
 	\dataphyre\SchedulingRuntimeProbe::reset();
 	$workspace=$t->workspace('scheduling-state');

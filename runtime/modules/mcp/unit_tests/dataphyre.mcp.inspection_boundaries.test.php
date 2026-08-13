@@ -54,7 +54,7 @@ test('each inspection boundary reads as a release diagnostic contract',static fu
 		$t->same('fixed_dataphyre_commands_and_loopback_application_boot',$release['preflight']['execution_boundary']);
 		$t->same('database_dry_run_and_ephemeral_application_boot',$release['preflight']['write_policy']);
 		$t->same([
-			'configuration_bootstrap','database_migrations','database_runtime','application_health',
+			'configuration_bootstrap','database_migrations','database_runtime','application_health','realtime_registration',
 		],array_column($release['preflight']['checks'],'id'));
 		$t->same([
 			'connection_sha256'=>null,
@@ -64,7 +64,10 @@ test('each inspection boundary reads as a release diagnostic contract',static fu
 		$t->same('/health',$release['preflight']['checks'][3]['evidence']['path']);
 		$t->same(true,$release['preflight']['checks'][3]['evidence']['response_contract_valid']);
 		$t->same([],$release['preflight']['checks'][3]['evidence']['missing_environment_keys']);
-		$t->contains('exact built candidate',$release['maintainer_tool_boundary']['claim_boundary']);
+		$t->contains('exact candidate image',$release['maintainer_tool_boundary']['claim_boundary']);
+		$t->contains('a framework listener roundtrip',$release['maintainer_tool_boundary']['claim_boundary']);
+		$t->contains('strict invalid-Origin rejection by every registered application authorization callback',$release['maintainer_tool_boundary']['claim_boundary']);
+		$t->contains('WebSocket ping/pong and close',$release['maintainer_tool_boundary']['claim_boundary']);
 		$t->count(1,$contract['commands']);
 		$command=$contract['commands'][0];
 		$t->endsWith('/runtime/modules/core/kernel/application_release_preflight.php',$command[1]);

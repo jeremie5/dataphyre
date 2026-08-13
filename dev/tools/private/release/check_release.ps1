@@ -1053,6 +1053,7 @@ if (Test-Path $devDirectory -PathType Container) {
 	if (Test-Path $publicExportCheckFile -PathType Leaf) {
 		$publicExportCheckText = Get-Content -Raw $publicExportCheckFile
 		foreach ($term in @(
+			'runtime/modules/core/kernel/application_runtime_realtime_probe.php',
 			'Prepared public export docs/README.md still contains non-shipped helper commands',
 			'Prepared public export docs/CONTRIBUTING.md still contains non-shipped helper commands',
 			'Prepared public export docs/README.md is missing public overview guidance',

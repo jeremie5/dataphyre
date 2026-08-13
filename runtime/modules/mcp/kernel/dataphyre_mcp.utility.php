@@ -1190,7 +1190,7 @@ trait dataphyre_mcp_utility_methods {
 			'#\b([a-z][a-z0-9+.-]*://)([^\s/@:]+):([^\s/@]+)@([^\s<>"\']+)#i'=>'$1[REDACTED]',
 			'#[A-Za-z]:\\\\(?:[^\s<>"\'|?*]+\\\\)*[^\s<>"\'|?*]*#'=>'[REDACTED_PATH]',
 			'#[A-Za-z]:/(?:[^\s<>"\'|?*]+/)*[^\s<>"\'|?*]*#'=>'[REDACTED_PATH]',
-			'#(?<![A-Za-z0-9_])/(?:home|Users|var|tmp|etc|opt|srv|mnt|Volumes|workspace|root)/[^\s<>"\']+#'=>'[REDACTED_PATH]',
+			'#(?<![A-Za-z0-9_])/(?:home|Users|var|tmp|etc|opt|srv|mnt|Volumes|workspace|repositories|repo|root)/[^\s<>"\']+#'=>'[REDACTED_PATH]',
 		];
 		foreach($patterns as $pattern=>$replacement){
 			$text=preg_replace($pattern, $replacement, $text) ?? $text;

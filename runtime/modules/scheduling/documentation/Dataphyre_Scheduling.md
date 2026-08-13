@@ -30,6 +30,13 @@ The module does **not** provide a full queue abstraction. It is a scheduler that
 /dataphyre/scheduler/{scheduler}
 ```
 
+Applications register schedules unconditionally during their ordinary bootstrap.
+In Dataphyre's fixed managed runtime, the framework derives ownership from the
+fixed pool role: web and realtime processes persist definitions without claiming
+or dispatching work, while only the scheduler process may dispatch due tasks.
+Applications must not branch on Dataphyre's internal pool or bootstrap variables.
+Outside the managed runtime, the legacy request-driven behavior remains available.
+
 ---
 
 #### Public API

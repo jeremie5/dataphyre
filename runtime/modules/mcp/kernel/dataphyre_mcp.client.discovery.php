@@ -358,7 +358,9 @@ trait dataphyre_mcp_client_discovery_surfaces {
 				];
 			}
 			foreach(array_values(array_unique($app_modules)) as $module){
-				$description=$this->describe_module($module, 20);
+				// Collect the bounded module inventory before applying the caller's
+				// result limit so canonical docs cannot disappear with filesystem order.
+				$description=$this->describe_module($module, 250);
 				foreach($description['files']['documentation'] ?? [] as $path){
 					if($app_builder_task && $this->docs_chunk_builder_skip_path((string)$path)){
 						continue;

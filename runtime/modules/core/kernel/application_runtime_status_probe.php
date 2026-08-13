@@ -55,16 +55,21 @@ $count = is_array($cadence) ? ($cadence['count'] ?? null) : null;
 $lastAt = is_array($cadence) ? ($cadence['last_at'] ?? null) : null;
 $lastResult = is_array($cadence) ? ($cadence['last_result'] ?? null) : null;
 $valid = is_array($decoded)
-    && array_keys($decoded) === ['contract', 'supervisor_pid', 'supervisor_uid', 'supervisor_gid', 'activation_mode', 'active', 'web', 'scheduler', 'cadence']
+	&& array_keys($decoded) === ['contract', 'supervisor_pid', 'supervisor_uid', 'supervisor_gid', 'activation_mode', 'active', 'web', 'scheduler', 'realtime', 'cadence']
     && $decoded['contract'] === 'dataphyre.application_runtime.v1'
     && $decoded['supervisor_pid'] === 1
     && $decoded['supervisor_uid'] === 0
     && $decoded['supervisor_gid'] === 0
     && in_array($decoded['activation_mode'], ['active', 'signal'], true)
     && is_bool($decoded['active'])
-    && $validPool($decoded['web'])
-    && $validPool($decoded['scheduler'])
-    && $decoded['web']['pid'] !== $decoded['scheduler']['pid']
+	&& $validPool($decoded['web'])
+	&& $validPool($decoded['scheduler'])
+	&& $validPool($decoded['realtime'])
+	&& count(array_unique([
+		$decoded['web']['pid'],
+		$decoded['scheduler']['pid'],
+		$decoded['realtime']['pid'],
+	], SORT_NUMERIC)) === 3
     && is_array($cadence)
     && array_keys($cadence) === ['count', 'last_at', 'last_result']
     && is_int($count)
