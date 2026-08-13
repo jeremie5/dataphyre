@@ -64,6 +64,7 @@ trait dataphyre_mcp_inspection_data_surfaces {
 				'driver names and public method contracts',
 				'table names, schema columns, and cluster aliases',
 				'bounded SQL read plans that do not execute',
+				'migration manifest shapes, immutable checksums, and no-write scaffold plans',
 			],
 			'not_returned'=>[
 				'passwords',
@@ -242,7 +243,7 @@ trait dataphyre_mcp_inspection_data_surfaces {
 	private function storage_config_summary(array $args): array {
 		$config_path=trim((string)($args['config_path'] ?? ''));
 		if($config_path===''){
-			$config_path='common/dataphyre/config/storage.example.php';
+			$config_path='dataphyre/config/storage.example.php';
 		}
 		$path=$this->safe_repo_path($config_path);
 		if(!is_file($path) || strtolower(pathinfo($path, PATHINFO_EXTENSION))!=='php'){
@@ -301,7 +302,7 @@ trait dataphyre_mcp_inspection_data_surfaces {
 	 * @return array{write_policy: string, execution: string, module: string, contract: array, driver_count: int, drivers: array, safety_notes: array<int, string>} Storage driver catalog.
 	 */
 	private function storage_driver_catalog(): array {
-		$contract_path='common/dataphyre/runtime/modules/storage/Framework/Contracts/StorageDriver.php';
+		$contract_path='dataphyre/runtime/modules/storage/Framework/Contracts/StorageDriver.php';
 		$contract=$this->php_source_api_file_summary($this->safe_repo_path($contract_path));
 		$contract_methods=[];
 		foreach($contract['classes'][0]['methods'] ?? [] as $method){
@@ -716,9 +717,7 @@ trait dataphyre_mcp_inspection_data_surfaces {
 	 */
 	private function sql_referenced_tables(string $sql): array {
 		$tables=[];
-		if(preg_match_all('/\b(?:from|join)\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?)/i', $sql, $matches)===false){
-			return [];
-		}
+		preg_match_all('/\b(?:from|join)\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?)/i', $sql, $matches);
 		foreach($matches[1] ?? [] as $table){
 			$tables[]=$this->normalizeSqlIdentifier((string)$table);
 		}
@@ -944,6 +943,491 @@ trait dataphyre_mcp_inspection_data_surfaces {
 				'Runtime SQL execution remains intentionally outside default read-only MCP behavior.',
 				'Keep shared MCP plans product-neutral; config_path and cluster are caller-owned placeholders unless an explicit unsafe workflow validates them.',
 			],
+		];
+	}
+
+	/**
+	 * Lists the application-neutral PostgreSQL migration contracts supplied by
+	 * Dataphyre SQL. Discovery is static and never loads application code.
+	 *
+	 * @param array{query?:string,kind?:string,limit?:int} $args Catalog filters.
+	 * @return array<string,mixed> Migration capability catalog.
+	 */
+	private function sql_migration_catalog(array $args): array {
+		$query=strtolower(trim((string)($args['query'] ?? '')));
+		$kind=strtolower(trim((string)($args['kind'] ?? '')));
+		$limit=max(1, min((int)($args['limit'] ?? 20) ?: 20, 50));
+		$records=array_values($this->sql_migration_contracts());
+		$records=array_values(array_filter(
+			$records,
+			static function(array $record) use ($query, $kind): bool {
+				if($kind!=='' && ($record['kind'] ?? null)!==$kind){
+					return false;
+				}
+				if($query===''){
+					return true;
+				}
+				return str_contains(strtolower(implode(' ', [
+					(string)($record['id'] ?? ''),
+					(string)($record['title'] ?? ''),
+					(string)($record['summary'] ?? ''),
+					implode(' ', (array)($record['capabilities'] ?? [])),
+				])), $query);
+			}
+		));
+		$total=count($records);
+		$records=array_slice($records, 0, $limit);
+		return [
+			'catalog_type'=>'dataphyre_sql_migration_catalog',
+			'write_policy'=>'read_only',
+			'execution'=>'not_executed',
+			'database_connection'=>'not_opened',
+			'application_code'=>'not_loaded',
+			'filters'=>['query'=>$query, 'kind'=>$kind, 'limit'=>$limit],
+			'total_matches'=>$total,
+			'returned_count'=>count($records),
+			'contracts'=>$records,
+			'deployment_contract'=>$this->sql_migration_deployment_contract(),
+			'resources'=>[
+				'guide'=>'dataphyre://sql-migrations',
+				'manifest_schema'=>'dataphyre://sql-migrations/manifest-v3-schema',
+			],
+		];
+	}
+
+	/**
+	 * Describes one stable PostgreSQL migration framework contract.
+	 *
+	 * @param array{id?:string} $args Stable contract id.
+	 * @return array<string,mixed> Contract details.
+	 */
+	private function sql_migration_describe(array $args): array {
+		$id=trim((string)($args['id'] ?? ''));
+		$contract=$this->sql_migration_contracts()[$id] ?? null;
+		if(!is_array($contract)){
+			throw new InvalidArgumentException('Unknown SQL migration contract id: '.$id.'.');
+		}
+		return [
+			'describe_type'=>'dataphyre_sql_migration_contract',
+			'write_policy'=>'read_only',
+			'execution'=>'not_executed',
+			'database_connection'=>'not_opened',
+			'application_code'=>'not_loaded',
+			'contract'=>$contract,
+			'deployment_contract'=>$this->sql_migration_deployment_contract(),
+			'workflow'=>[
+				'profile'=>'Construct one immutable application policy with PostgreSqlMigrationProfile.',
+				'manifest'=>'Validate the checksummed schema-v3 manifest before opening a database connection.',
+				'inspect'=>'Call status and deploymentEvidence to establish drift and rollout eligibility.',
+				'maintenance'=>'A post-cutoff maintenance suffix may contain rolling_expand and rolling_contract entries and is applied in one Dataphyre-owned transaction only after the caller has established its drain/barrier.',
+				'contract_floor'=>'For a pending rolling_contract, application release code supplies its caller-verified minimum active release; exact SemVer precedence must meet the manifest minimum_compatible_release, with +build metadata ignored.',
+				'mutate'=>'Call apply or rollback only from an application-owned, externally authorized release workflow.',
+			],
+			'resources'=>[
+				'guide'=>'dataphyre://sql-migrations',
+				'manifest_schema'=>'dataphyre://sql-migrations/manifest-v3-schema',
+			],
+		];
+	}
+
+	/**
+	 * Validates a repo-local migration manifest and immutable SQL files without
+	 * opening a database connection or executing migration SQL.
+	 *
+	 * @param array{database_root?:string,profile?:array<string,mixed>} $args Validation request.
+	 * @return array<string,mixed> Validation report.
+	 */
+	private function sql_migration_manifest_validate(array $args): array {
+		$database_root=$this->safe_repo_path((string)($args['database_root'] ?? ''));
+		$profile_data=$args['profile'] ?? null;
+		if(!is_array($profile_data) || array_is_list($profile_data)){
+			throw new InvalidArgumentException('profile must be a JSON object.');
+		}
+		$this->load_sql_migration_framework();
+		$schema=$this->sql_migration_manifest_schema();
+		try{
+			$profile=\Dataphyre\Database\Migrations\PostgreSqlMigrationProfile::fromArray($profile_data);
+			$manifest=\Dataphyre\Database\Migrations\PostgreSqlMigrationManifest::load(
+				$database_root,
+				$profile
+			);
+			return [
+				'validation_type'=>'dataphyre_sql_migration_manifest_validation',
+				'valid'=>true,
+				'write_policy'=>'read_only',
+				'execution'=>'static_validation_only',
+				'database_connection'=>'not_opened',
+				'sql_execution'=>'not_performed',
+				'application_code'=>'not_loaded',
+				'database_root'=>$this->relative_path($database_root),
+				'profile'=>$profile->jsonSerialize(),
+				'manifest'=>$manifest->publicSummary(),
+				'manifest_schema'=>[
+					'id'=>(string)($schema['$id'] ?? ''),
+					'schema_version'=>
+						\Dataphyre\Database\Migrations\PostgreSqlMigrationProfile::MANIFEST_SCHEMA_VERSION,
+					'sha256'=>$this->sql_migration_manifest_schema_sha256(),
+					'resource'=>'dataphyre://sql-migrations/manifest-v3-schema',
+				],
+					'validated'=>[
+						'exact_top_level_and_entry_keys',
+						'phase_and_compatibility_contract',
+						'stable_ordered_migration_ids',
+						'repo-confined_non_symlink_sql_paths',
+						'immutable_sha256_checksums',
+						'complete_bootstrap_boundary',
+						'transaction_and_psql_command_ownership',
+						'concurrent_index_transaction_compatibility',
+						'no_unlisted_sql_files',
+					],
+				'errors'=>[],
+			];
+		}catch(InvalidArgumentException|RuntimeException $exception){
+			return [
+				'validation_type'=>'dataphyre_sql_migration_manifest_validation',
+				'valid'=>false,
+				'write_policy'=>'read_only',
+				'execution'=>'static_validation_only',
+				'database_connection'=>'not_opened',
+				'sql_execution'=>'not_performed',
+				'application_code'=>'not_loaded',
+				'database_root'=>$this->relative_path($database_root),
+				'manifest_schema'=>[
+					'id'=>(string)($schema['$id'] ?? ''),
+					'sha256'=>$this->sql_migration_manifest_schema_sha256(),
+					'resource'=>'dataphyre://sql-migrations/manifest-v3-schema',
+				],
+				'errors'=>[$exception->getMessage()],
+			];
+		}
+	}
+
+	/**
+	 * Generates an exact no-write plan for adding one manifest-v3 migration.
+	 *
+	 * @param array<string,mixed> $args Neutral profile and migration inputs.
+	 * @return array<string,mixed> Scaffold/upgrade plan.
+	 */
+	private function sql_migration_scaffold_plan(array $args): array {
+		$this->load_sql_migration_framework();
+		$profile_data=[
+			'application_id'=>$args['application_id'] ?? '',
+			'schema'=>$args['schema'] ?? '',
+			'journal_table'=>$args['journal_table'] ?? 'schema_migrations',
+			'event_table'=>$args['event_table'] ?? 'schema_migration_events',
+			'release_digest_column'=>$args['release_digest_column'] ?? 'release_sha256',
+			'advisory_lock'=>$args['advisory_lock'] ?? '',
+			'bootstrap_ids'=>$args['bootstrap_ids'] ?? [],
+			'bootstrap_cutoff'=>$args['bootstrap_cutoff'] ?? '',
+			'manifest_public_path'=>$args['manifest_public_path']
+				?? 'database/postgresql/manifest.json',
+			'lock_timeout'=>$args['lock_timeout'] ?? '5s',
+			'statement_timeout'=>$args['statement_timeout'] ?? '120s',
+		];
+		$profile=\Dataphyre\Database\Migrations\PostgreSqlMigrationProfile::fromArray($profile_data);
+		$id=trim((string)($args['migration_id'] ?? ''));
+		$phase=trim((string)($args['phase'] ?? ''));
+		$description=trim((string)($args['description'] ?? ''));
+		$up_sql=(string)($args['up_sql'] ?? '');
+		if(preg_match($profile::MIGRATION_ID_PATTERN, $id)!==1){
+			throw new InvalidArgumentException('migration_id must match NNN_lowercase_name.');
+		}
+		if(!in_array($phase, $profile::PHASES, true)){
+			throw new InvalidArgumentException('phase must be bootstrap, rolling_expand, or rolling_contract.');
+		}
+		if($description===''){
+			throw new InvalidArgumentException('description must not be empty.');
+		}
+		if(trim($up_sql)===''){
+			throw new InvalidArgumentException('up_sql must not be empty.');
+		}
+		$down_sql=array_key_exists('down_sql', $args) ? (string)$args['down_sql'] : null;
+		if($down_sql!==null && trim($down_sql)===''){
+			$down_sql=null;
+		}
+		$down_safety=$args['down_safety'] ?? null;
+		$irreversible_reason=$args['irreversible_reason'] ?? null;
+		$minimum_compatible_release=$args['minimum_compatible_release'] ?? null;
+		if($phase==='bootstrap' && $down_sql!==null){
+			throw new InvalidArgumentException('Bootstrap migrations are grandfathered and cannot declare down_sql.');
+		}
+		if($down_sql!==null){
+			if(!is_string($down_safety) || !in_array($down_safety, $profile::DOWN_SAFETY, true)){
+				throw new InvalidArgumentException('down_safety must be lossless or data_loss when down_sql is present.');
+			}
+			if($irreversible_reason!==null){
+				throw new InvalidArgumentException('irreversible_reason must be omitted when down_sql is present.');
+			}
+		}else{
+			if(!is_string($irreversible_reason) || trim($irreversible_reason)===''){
+				throw new InvalidArgumentException('irreversible_reason is required when down_sql is absent.');
+			}
+			$irreversible_reason=trim($irreversible_reason);
+			if($down_safety!==null){
+				throw new InvalidArgumentException('down_safety must be omitted when down_sql is absent.');
+			}
+		}
+		if($phase==='rolling_contract'){
+			if(!$profile::validVersion(is_string($minimum_compatible_release) ? $minimum_compatible_release : null)){
+				throw new InvalidArgumentException(
+					'rolling_contract requires an exact semantic minimum_compatible_release.'
+				);
+			}
+		}elseif($minimum_compatible_release!==null){
+			throw new InvalidArgumentException(
+				'minimum_compatible_release is only valid for rolling_contract.'
+			);
+		}
+		$up_name=$phase==='bootstrap' ? $id.'.sql' : $id.'.up.sql';
+		$down_name=$down_sql===null ? null : $id.'.down.sql';
+		$entry=[
+			'id'=>$id,
+			'phase'=>$phase,
+			'up'=>['path'=>$up_name, 'sha256'=>hash('sha256', $up_sql)],
+			'down'=>$down_sql===null
+				? null
+				: ['path'=>$down_name, 'sha256'=>hash('sha256', $down_sql), 'safety'=>$down_safety],
+		];
+		if($down_sql===null){
+			$entry['irreversible_reason']=$irreversible_reason;
+		}
+		$entry['minimum_compatible_release']=$minimum_compatible_release;
+		$entry['description']=$description;
+
+		$existing=null;
+		$upgrade_issues=[];
+		$sql_safety_issues=[];
+		foreach(['up'=>$up_sql, 'down'=>$down_sql] as $direction=>$sql){
+			if(!is_string($sql)){
+				continue;
+			}
+			foreach(
+				\Dataphyre\Database\Migrations\PostgreSqlMigrationManifest::sqlSafetyIssues($sql)
+				as $issue
+			){
+				$sql_safety_issues[]=['direction'=>$direction]+$issue;
+			}
+		}
+		$database_root=trim((string)($args['database_root'] ?? ''));
+		if($database_root!==''){
+			$database_root=$this->safe_repo_path($database_root);
+			try{
+				$manifest=\Dataphyre\Database\Migrations\PostgreSqlMigrationManifest::load(
+					$database_root,
+					$profile
+				);
+				$entries=$manifest->entries();
+				$expected_prefix=sprintf('%03d_', count($entries)+1);
+				if(!str_starts_with($id, $expected_prefix)){
+					$upgrade_issues[]='migration_id must use the next manifest sequence '.$expected_prefix.'*.';
+				}
+				if($phase==='bootstrap'){
+					$upgrade_issues[]=
+						'bootstrap phase is immutable after the existing manifest cutoff.';
+				}
+				$existing=$manifest->publicSummary();
+			}catch(RuntimeException $exception){
+				$upgrade_issues[]='existing manifest is not valid: '.$exception->getMessage();
+			}
+		}elseif(
+			$phase!=='bootstrap'
+			|| !str_starts_with($id, '001_')
+			|| $id!==$profile->bootstrapCutoff()
+			|| !in_array($profile->bootstrapIds(), [[], [$id]], true)
+		){
+			$upgrade_issues[]=
+				'database_root is required to certify an append plan; without history only '.
+				'the self-contained initial 001 bootstrap matching bootstrap_cutoff can be ready.';
+		}
+		$rolling_issues=$phase==='rolling_expand'
+			? \Dataphyre\Database\Migrations\PostgreSqlMigrationRunner::rollingSqlIssues($up_sql)
+			: [];
+		$ready=$upgrade_issues===[] && $rolling_issues===[] && $sql_safety_issues===[];
+		return [
+			'plan_type'=>'dataphyre_sql_migration_scaffold_plan',
+			'write_policy'=>'dry_run_no_writes',
+			'execution'=>'not_executed',
+			'database_connection'=>'not_opened',
+			'sql_execution'=>'not_performed',
+			'application_code'=>'not_loaded',
+			'ready'=>$ready,
+			'profile'=>$profile->jsonSerialize(),
+			'existing_manifest'=>$existing,
+			'files'=>array_values(array_filter([
+				[
+					'path'=>'postgresql/'.$up_name,
+					'bytes'=>strlen($up_sql),
+					'sha256'=>$entry['up']['sha256'],
+					'content'=>$up_sql,
+				],
+				$down_sql===null ? null : [
+					'path'=>'postgresql/'.$down_name,
+					'bytes'=>strlen($down_sql),
+					'sha256'=>$entry['down']['sha256'],
+					'content'=>$down_sql,
+				],
+			])),
+			'manifest_entry'=>$entry,
+			'upgrade_issues'=>$upgrade_issues,
+			'rolling_expand_issues'=>$rolling_issues,
+			'sql_safety_issues'=>$sql_safety_issues,
+			'next_steps'=>[
+				'Write the planned SQL files exactly as shown; preserve their byte-level checksums.',
+				'Append manifest_entry to migrations without rewriting existing entries.',
+				'Run dataphyre_sql_migration_manifest_validate against the completed database root.',
+				'Open a PostgreSQL connection only in the application-owned release workflow.',
+				'Inspect status and deployment evidence before any apply or rollback.',
+			],
+			'safety_notes'=>[
+				'This tool does not create files, rewrite a manifest, connect to PostgreSQL, or execute SQL.',
+				'ready is false when the shared manifest SQL-safety contract rejects transaction control, concurrent index operations, or psql meta-commands in either direction.',
+				'maintenance applies the pending post-cutoff rolling_expand and rolling_contract suffix transactionally; this planner only describes that runtime contract.',
+				'rolling_contract requires a caller-verified minimum active release meeting its manifest floor under exact SemVer precedence; +build metadata does not affect precedence.',
+				'Apply/rollback authorization, maintenance windows, drain/barrier completion, and release coordination remain application-owned.',
+			],
+		];
+	}
+
+	/** @return array<string,array<string,mixed>> */
+	private function sql_migration_contracts(): array {
+		return [
+			'postgresql-migration-profile'=>[
+				'id'=>'postgresql-migration-profile',
+				'kind'=>'configuration',
+				'title'=>'PostgreSQL migration profile',
+				'summary'=>'Immutable application policy for schema, journals, advisory lock, release digest, bootstrap boundary, manifest location, and timeouts.',
+				'php_type'=>'Dataphyre\\Database\\Migrations\\PostgreSqlMigrationProfile',
+				'capabilities'=>['identifier validation', 'quoted SQL names', 'quoted regclass names', 'collision-safe event digest column', 'bounded timeouts'],
+			],
+			'postgresql-manifest-v3'=>[
+				'id'=>'postgresql-manifest-v3',
+				'kind'=>'manifest',
+				'title'=>'PostgreSQL migration manifest v3',
+				'summary'=>'Ordered immutable migration inventory with SHA-256 SQL identities, explicit phases, rollback safety, and a complete bootstrap boundary.',
+				'php_type'=>'Dataphyre\\Database\\Migrations\\PostgreSqlMigrationManifest',
+				'manifest_schema_resource'=>'dataphyre://sql-migrations/manifest-v3-schema',
+				'capabilities'=>['path confinement', 'symlink denial', 'checksum verification', 'unlisted SQL rejection', 'transaction ownership'],
+			],
+			'postgresql-migration-runner'=>[
+				'id'=>'postgresql-migration-runner',
+				'kind'=>'runtime',
+				'title'=>'PostgreSQL migration runner',
+				'summary'=>'Transactional PostgreSQL state machine for status, drift, advisory locking, deployment evidence, post-cutoff rolling or maintenance apply, rollback, and append-only audit events.',
+				'php_type'=>'Dataphyre\\Database\\Migrations\\PostgreSqlMigrationRunner',
+				'capabilities'=>['pgsql enforcement', 'transaction-scoped advisory lock', 'schema drift detection', 'rolling expansion checks', 'maintenance expand/contract transaction', 'caller-verified contract floor', 'exact SemVer precedence without build metadata', 'release provenance'],
+			],
+			'postgresql-schema-inspector'=>[
+				'id'=>'postgresql-schema-inspector',
+				'kind'=>'inspection',
+				'title'=>'PostgreSQL schema inspector',
+				'summary'=>'Derives schema contracts from migration SQL, compares PostgreSQL catalogs, fingerprints data, and certifies reversible down/up/down paths.',
+				'php_type'=>'Dataphyre\\Database\\Migrations\\PostgreSqlSchemaInspector',
+				'capabilities'=>['expected schema derivation', 'catalog comparison', 'structural fingerprint', 'row fingerprint', 'rollback certification'],
+			],
+		];
+	}
+
+	/** @return array<string,mixed> */
+	private function sql_migration_deployment_contract(): array {
+			return [
+				'selection'=>[
+					'evidence_fields'=>[
+						'pending_migrations',
+						'selected_migrations',
+						'selected_phases',
+						'deferred_migrations',
+					],
+					'bootstrap'=>'Select the leading pending bootstrap/rolling_expand prefix and defer the first rolling_contract plus its tail.',
+					'rolling'=>'Select the leading pending rolling_expand prefix and defer the first rolling_contract plus its tail.',
+					'maintenance'=>'Select the complete pending post-cutoff rolling_expand/rolling_contract suffix.',
+					'empty_selection'=>'A mode is ineligible when pending migrations remain but that mode selects none.',
+				],
+				'maintenance'=>[
+				'pending_scope'=>'post_bootstrap_cutoff_suffix',
+				'accepted_phases'=>['rolling_expand', 'rolling_contract'],
+				'transaction'=>'one Dataphyre-owned PostgreSQL transaction',
+				'caller_assertion'=>'The application-owned maintenance drain/barrier has already succeeded.',
+			],
+			'rolling_contract_gate'=>[
+				'input'=>'caller_verified_minimum_active_release',
+				'rule'=>'Exact SemVer precedence must be greater than or equal to every pending rolling_contract minimum_compatible_release.',
+				'missing_or_below_floor'=>'ineligible_fail_closed',
+			],
+			'semantic_version_precedence'=>[
+				'format'=>'exact_semver',
+				'build_metadata'=>'accepted_but_ignored_for_precedence',
+				'example_equal_precedence'=>['2.4.0+build.1', '2.4.0+build.9'],
+			],
+			'authority'=>[
+				'dataphyre_runtime_owned'=>['transaction boundary', 'advisory lock', 'manifest-floor comparison', 'journal and audit events'],
+				'application_owned'=>['derive and verify the fleet minimum active release', 'drain and barrier', 'apply/rollback authorization', 'PDO connection and release coordination'],
+				'mcp'=>'read-only description, static validation, and no-write planning only',
+			],
+		];
+	}
+
+	/** Loads only Dataphyre's four migration framework classes. */
+	private function load_sql_migration_framework(): void {
+		$directory=$this->common_root.'/dataphyre/runtime/modules/sql/Framework/Migrations';
+		foreach([
+			'PostgreSqlMigrationProfile.php',
+			'PostgreSqlMigrationManifest.php',
+			'PostgreSqlSchemaInspector.php',
+			'PostgreSqlMigrationRunner.php',
+		] as $file){
+			$path=$directory.'/'.$file;
+			if(!is_file($path)){
+				throw new RuntimeException('Dataphyre PostgreSQL migration framework is unavailable.');
+			}
+			require_once $path;
+		}
+	}
+
+	/** @return array<string,mixed> */
+	private function sql_migration_manifest_schema(): array {
+		$path=$this->common_root.
+			'/dataphyre/runtime/modules/sql/documentation/postgresql-migration-manifest-v3.schema.json';
+		$json=@file_get_contents($path);
+		$decoded=is_string($json) ? json_decode($json, true) : null;
+		if(!is_array($decoded) || array_is_list($decoded)){
+			throw new RuntimeException('Dataphyre PostgreSQL manifest-v3 JSON Schema is unavailable.');
+		}
+		return $decoded;
+	}
+
+	private function sql_migration_manifest_schema_sha256(): string {
+		$path=$this->common_root.
+			'/dataphyre/runtime/modules/sql/documentation/postgresql-migration-manifest-v3.schema.json';
+		$bytes=@file_get_contents($path);
+		if(!is_string($bytes)){
+			throw new RuntimeException('Dataphyre PostgreSQL manifest-v3 JSON Schema is unavailable.');
+		}
+		return hash('sha256', $bytes);
+	}
+
+	/** @return array<string,mixed> */
+	private function sql_migration_resource_snapshot(): array {
+		return [
+			'resource_type'=>'dataphyre_sql_migrations',
+			'write_policy'=>'read_only',
+			'execution'=>'not_executed',
+			'database_connection'=>'not_opened',
+			'guide'=>'dataphyre://doc/dataphyre/runtime/modules/sql/documentation/Dataphyre_PostgreSQL_Migrations.md',
+			'manifest_schema'=>[
+				'resource'=>'dataphyre://sql-migrations/manifest-v3-schema',
+				'sha256'=>$this->sql_migration_manifest_schema_sha256(),
+				'schema'=>$this->sql_migration_manifest_schema(),
+			],
+			'contracts'=>array_values($this->sql_migration_contracts()),
+			'deployment_contract'=>$this->sql_migration_deployment_contract(),
+			'tools'=>[
+				'dataphyre_sql_migration_catalog',
+				'dataphyre_sql_migration_describe',
+				'dataphyre_sql_migration_manifest_validate',
+				'dataphyre_sql_migration_scaffold_plan',
+			],
+			'prompt'=>'dataphyre_sql_migration_workflow',
+			'skill'=>'dataphyre-sql-migrations',
 		];
 	}
 }

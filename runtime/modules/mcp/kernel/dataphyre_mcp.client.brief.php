@@ -20,19 +20,12 @@ trait dataphyre_mcp_client_brief_surfaces {
 	 */
 	private function mcp_agent_brief_export(array $args): array {
 		$task=trim((string)($args['task'] ?? ''));
-		$target=strtolower(trim((string)($args['target'] ?? 'generic')));
-		if(!in_array($target, ['codex', 'claude', 'cursor', 'generic'], true)){
-			$target='generic';
-		}
+		$target=$this->mcp_client_target($args['target'] ?? 'generic');
 		$limit=max(1, min(8, (int)($args['limit'] ?? 4)));
-		$app_builder_task=$this->mcp_task_implies_app_builder($task);
-		if($app_builder_task){
+		if($this->mcp_task_implies_app_builder($task)){
 			$workflow_recommendation=$this->mcp_workflow_recommend(['task'=>$task, 'limit'=>$limit]);
 			$top_recommendation=is_array($workflow_recommendation['recommendations'][0] ?? null) ? $workflow_recommendation['recommendations'][0] : [];
 			$selected_workflow=(string)($top_recommendation['workflow'] ?? 'feature');
-			if($selected_workflow===''){
-				$selected_workflow='feature';
-			}
 			$builder_args=$args;
 			$builder_args['task']=$task;
 			$app_builder_lane=$this->app_builder_lane($task, $builder_args);
@@ -45,9 +38,7 @@ trait dataphyre_mcp_client_brief_surfaces {
 				'controls'=>'dataphyre_app_builder_plan_generate payload_profile=compact detail_page=controls only when signaled by write_readiness or policy_decision_register',
 				'full_plan'=>'dataphyre_app_builder_plan_generate payload_profile=full',
 			]);
-			$builder_governance_notes=is_array($builder_start['governance_notes'] ?? null)
-				? $builder_start['governance_notes']
-				: 'none triggered';
+			$builder_governance_notes=$this->mcp_agent_brief_governance_notes($builder_start);
 			$proportional_guidance=$this->mcp_task_proportional_guidance($task);
 			return $this->mcp_agent_brief_compact_app_payload(
 				$task,
@@ -82,48 +73,10 @@ trait dataphyre_mcp_client_brief_surfaces {
 		}
 		$app_builder_lane=is_array($start_pack['app_builder_lane'] ?? null) ? $start_pack['app_builder_lane'] : $this->app_builder_lane($task, $args);
 		$builder_start=is_array($start_pack['builder_start'] ?? null) ? $start_pack['builder_start'] : $this->mcp_app_builder_start_summary($app_builder_lane);
-		$builder_write_readiness=is_array($builder_start['write_readiness'] ?? null) && $builder_start['write_readiness']!==[]
-			? $builder_start['write_readiness']
-			: $this->app_builder_write_readiness($builder_start['scaffold_completion_summary'] ?? $this->mcp_app_builder_scaffold_completion_summary($app_builder_lane['entity_planning'] ?? []), $builder_start['prewrite_checklist'] ?? []);
-		$builder_governance_notes=is_array($builder_start['governance_notes'] ?? null)
-			? $builder_start['governance_notes']
-			: 'none triggered';
-		$builder_preview_summaries=is_array($builder_start['preview_summaries'] ?? null) ? $builder_start['preview_summaries'] : [];
+		$builder_governance_notes=$this->mcp_agent_brief_governance_notes($builder_start);
 		$builder_first_read=is_array($start_pack['builder_first_read'] ?? null) ? $start_pack['builder_first_read'] : [];
 		$proportional_guidance=is_array($start_pack['proportional_guidance'] ?? null) ? $start_pack['proportional_guidance'] : $this->mcp_task_proportional_guidance($task);
 		$enterprise_required=($proportional_guidance['enterprise_review_required'] ?? false)===true;
-		$compact_app_builder_lane=$app_builder_task
-			? $this->mcp_app_builder_compact_lane(
-				$app_builder_lane,
-				$builder_start,
-				$builder_first_read,
-				$builder_preview_summaries,
-				$builder_write_readiness,
-				$builder_governance_notes
-			)
-			: [];
-		$compact_builder_view=$app_builder_task
-			? $this->mcp_app_builder_compact_builder_view(
-				$builder_start,
-				$app_builder_lane,
-				$builder_first_read,
-				$builder_preview_summaries,
-				$builder_write_readiness,
-				$builder_governance_notes
-			)
-			: [];
-		if(!$enterprise_required && is_array($builder_first_read) && ($builder_first_read['title'] ?? null)==='Builder first read'){
-			return $this->mcp_agent_brief_compact_app_payload(
-				$task,
-				$target,
-				$selected_workflow,
-				($start_pack['workflow_handoff']['ready_to_run'] ?? false)===true,
-				$builder_first_read,
-				$builder_start,
-				$builder_governance_notes,
-				false
-			);
-		}
 		$enterprise_audit=$enterprise_required ? [
 			'collapsed'=>!isset($start_pack['enterprise_audit']),
 			'tool'=>'dataphyre_mcp_enterprise_adoption_audit',
@@ -152,40 +105,8 @@ trait dataphyre_mcp_client_brief_surfaces {
 			'next_read'=>'Skip for ordinary app work unless the task matches escalation triggers: '.$this->mcp_escalation_trigger_summary().'.',
 		];
 		$payload=[
-			'inspection_view'=>$start_pack['inspection_view'] ?? [
-				'title'=>'Inspection plan',
-				'active'=>$app_builder_task===false,
-				'task'=>$task,
-				'workflow'=>$selected_workflow,
-				'tool_matches'=>[],
-				'resource_matches'=>[],
-				'verification'=>'focused application or module checks',
-				'write_policy'=>'read_only',
-				'next_reads'=>['Use focused read-only discovery before editing.'],
-			],
-			'builder_view'=>$start_pack['builder_view'] ?? [
-				'title'=>'Builder plan',
-				'first_read'=>$builder_first_read,
-				'next_action'=>$builder_start['next_action'] ?? [],
-				'files'=>$this->mcp_app_builder_compact_file_preview(is_array($app_builder_lane['files_to_create'] ?? null) ? $app_builder_lane['files_to_create'] : []),
-				'files_summary'=>$builder_preview_summaries['files'] ?? [],
-				'app_path_context'=>$app_builder_task ? ($builder_start['app_path_context'] ?? ($app_builder_lane['app_path_context'] ?? [])) : [],
-				'schema'=>[],
-				'schema_summary'=>$builder_preview_summaries['schema'] ?? [],
-				'panel_fields'=>[],
-				'panel_fields_summary'=>$builder_preview_summaries['panel_fields'] ?? [],
-				'filters'=>[],
-				'filters_summary'=>$builder_preview_summaries['filters'] ?? [],
-				'actions'=>[],
-				'actions_summary'=>$builder_preview_summaries['actions'] ?? [],
-				'field_metadata_summary'=>[],
-				'verification'=>array_values(array_slice(array_map('strval', is_array($app_builder_lane['verification'] ?? null) ? $app_builder_lane['verification'] : []), 0, 8)),
-				'verification_todo'=>$builder_start['verification_todo'] ?? [],
-				'verification_evidence_summary'=>$builder_preview_summaries['verification_evidence'] ?? [],
-				'next_edits'=>array_values(array_slice(array_map('strval', is_array($app_builder_lane['next_edits'] ?? null) ? $app_builder_lane['next_edits'] : []), 0, 6)),
-				'governance_notes'=>$builder_governance_notes,
-				'secondary_context'=>'Use first_read for the default pass; app_builder_summary, app_builder_lane, workflow summary, and collapsed enterprise link follow.',
-			],
+			'inspection_view'=>$start_pack['inspection_view'],
+			'builder_view'=>$start_pack['builder_view'],
 			'export_type'=>'dataphyre_mcp_agent_brief_export',
 			'write_policy'=>'read_only',
 			'execution'=>'not_executed',
@@ -196,29 +117,7 @@ trait dataphyre_mcp_client_brief_surfaces {
 			'selected_score'=>(int)($start_pack['workflow_handoff']['selected_score'] ?? 0),
 			'ready_to_run'=>($start_pack['workflow_handoff']['ready_to_run'] ?? false)===true,
 			'builder_first_read'=>$builder_first_read,
-			'app_builder_summary'=>$app_builder_task ? array_replace($compact_app_builder_lane, [
-				'default_lane'=>'app_builder_lane',
-				'payload_profiles'=>[
-					'start_pack'=>[
-						'builder'=>'compact ordinary app startup',
-						'detail'=>'full contracts, tool audience boundaries, and discovery matches',
-						'deep'=>'detail plus status board, safety boundary, enterprise audit, and full workflow handoff',
-					],
-					'task_pack'=>[
-						'builder'=>'builder_first_read, compact builder_response, docs, and focused verification',
-						'governance'=>'builder plus extension boundary, publication validation, and guardrails',
-					],
-				],
-				'first_read_ref'=>'builder_first_read',
-				'next_action'=>$this->mcp_app_builder_next_action(is_array($builder_start['next_action'] ?? null) ? $builder_start['next_action'] : []),
-				'agent_workload'=>$this->mcp_app_builder_workload_budget(),
-				'detail_refs'=>[
-					'planning'=>'detail_pagination.pages.planning',
-					'implementation'=>'detail_pagination.pages.implementation',
-					'verification'=>'detail_pagination.pages.verification',
-					'controls'=>'detail_pagination.pages.controls',
-				],
-			]) : [
+			'app_builder_summary'=>[
 				'default_lane'=>'app_builder_lane',
 				'active'=>false,
 				'payload_profiles'=>[
@@ -240,8 +139,8 @@ trait dataphyre_mcp_client_brief_surfaces {
 				'scaffold_tool'=>'dataphyre_scaffold_plan_generate',
 				'follow_up_tools'=>['dataphyre_task_pack_generate'],
 			],
-			'app_builder_next_action'=>$app_builder_task ? $this->mcp_app_builder_next_action(is_array($builder_start['next_action'] ?? null) ? $builder_start['next_action'] : []) : null,
-			'app_builder_lane'=>$app_builder_task ? $compact_app_builder_lane : [
+			'app_builder_next_action'=>null,
+			'app_builder_lane'=>[
 				'active'=>false,
 				'lane'=>'inspection',
 				'purpose'=>'Not active for read-only inspection tasks.',
@@ -278,7 +177,7 @@ trait dataphyre_mcp_client_brief_surfaces {
 			],
 			'enterprise_audit'=>$enterprise_audit,
 			'next_actions'=>array_values(array_filter([
-				$app_builder_task ? 'Use builder_first_read first; open only the needed detail_pagination page or dataphyre_app_builder_plan_generate detail/full response when blockers, continuation calls, companion surfaces, implementation, or verification need expansion.' : 'Use inspection_view first for read-only discovery; do not create files unless the task changes into build/scaffold work.',
+				'Use inspection_view first for read-only discovery; do not create files unless the task changes into build/scaffold work.',
 				'Use dataphyre_mcp_agent_brief_export for compact cold starts or handoffs; use dataphyre_mcp_task_start_pack_export payload_profile=builder only when broader bounded workflow context is needed. Open payload_profile=detail for full contracts/discovery and payload_profile=deep only for elevated governance/status context.',
 				'Use dataphyre_task_pack_generate payload_profile=builder only when focused module docs or a ready prompt are needed; use payload_profile=governance only when inline extension boundary and publication guardrails must be inline.',
 				'Review safety default and redaction policy before sharing diagnostics, configs, or paths.',
@@ -312,14 +211,10 @@ trait dataphyre_mcp_client_brief_surfaces {
 		if(!$enterprise_required){
 			unset($payload['application_agent_operating_contract'], $payload['ordinary_app_work'], $payload['tool_audience_boundaries'], $payload['enterprise_audit']);
 			unset($payload['agent_context']['source_documents'], $payload['agent_context']['application_agent_operating_contract'], $payload['agent_context']['ordinary_app_work']);
-			$payload['governance_notes']=is_array($builder_governance_notes) ? $builder_governance_notes+[
-				'default_lane'=>$app_builder_task ? 'builder' : 'inspection',
-				'open_only_for'=>$start_pack['governance_notes']['open_only_for'] ?? $this->mcp_escalation_triggers(),
-			] : [
-				'status'=>'none triggered',
-				'default_lane'=>$app_builder_task ? 'builder' : 'inspection',
-				'open_only_for'=>$start_pack['governance_notes']['open_only_for'] ?? $this->mcp_escalation_triggers(),
-			];
+			$payload['governance_notes']=$this->mcp_agent_brief_compact_governance_notes(
+				$builder_governance_notes,
+				is_array($start_pack['governance_notes']['open_only_for'] ?? null) ? $start_pack['governance_notes']['open_only_for'] : $this->mcp_escalation_triggers()
+			);
 			$payload['context_links']=[
 				'compact_app_builder_plan'=>'dataphyre_app_builder_plan_generate payload_profile=compact',
 				'broader_builder_context'=>'dataphyre_mcp_task_start_pack_export payload_profile=builder',
@@ -328,6 +223,25 @@ trait dataphyre_mcp_client_brief_surfaces {
 			];
 		}
 		return $payload;
+	}
+
+	/** Normalizes first-party builder governance notes for both brief lanes. */
+	private function mcp_agent_brief_governance_notes(array $builder_start): array|string {
+		return is_array($builder_start['governance_notes'] ?? null)
+			? $builder_start['governance_notes']
+			: 'none triggered';
+	}
+
+	/** Produces one compact inspection-lane governance pointer. */
+	private function mcp_agent_brief_compact_governance_notes(array|string $notes,array $open_only_for): array {
+		return is_array($notes) ? $notes+[
+			'default_lane'=>'inspection',
+			'open_only_for'=>$open_only_for,
+		] : [
+			'status'=>'none triggered',
+			'default_lane'=>'inspection',
+			'open_only_for'=>$open_only_for,
+		];
 	}
 
 	/**

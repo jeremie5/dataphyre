@@ -24,7 +24,7 @@ class coroutine{
 	protected static $tasks=[];
 	/** @var int Monotonic identifier assigned to Fibers, timers, deferred work, and waiting entries. */
 	protected static $id=0;
-	/** @var array<int, array{time:float, task:\Fiber}> Sleeping Fibers keyed by scheduler id. */
+	/** @var array<int, array{time:float, task:\Fiber, priority:int}> Sleeping Fibers keyed by scheduler id. */
 	protected static $waiting=[];
 	/** @var array<int, \Fiber> Runnable Fibers keyed by scheduler id. */
 	protected static $fibers=[];
@@ -50,7 +50,16 @@ class coroutine{
 	public static function create(callable $callable, int $priority=0): int {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$id=self::$id++;
-		self::$fibers[$id]=new \Fiber($callable);
+		self::$fibers[$id]=new \Fiber(static function()use($callable): mixed {
+			$result=$callable();
+			if($result instanceof \Generator){
+				foreach($result as $_){
+					// Generator values are cooperative checkpoints; completion supplies the task result.
+				}
+				return $result->getReturn();
+			}
+			return $result;
+		});
 		self::$prioritized_tasks[$priority][$id]=$id;
 		return $id;
 	}
@@ -102,11 +111,14 @@ class coroutine{
 			foreach(self::$waiting as $id=>$waiting_task){
 				if(microtime(true) >= $waiting_task['time']){
 					self::$fibers[$id]=$waiting_task['task'];
+					$priority=$waiting_task['priority'];
+					self::$prioritized_tasks[$priority][$id]=$id;
 					unset(self::$waiting[$id]);
 				}
 			}
 			foreach(self::$deferred as $id=>$deferred_task){
 				self::$fibers[$id]=$deferred_task['task'];
+				self::$prioritized_tasks[0][$id]=$id;
 				unset(self::$deferred[$id]);
 			}
 			usleep(1000);
@@ -126,10 +138,29 @@ class coroutine{
 	public static function sleep(float $seconds): void {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null);
 		$fiber=\Fiber::getCurrent();
-		$id=self::$id++;
+		$id=array_search($fiber, self::$fibers, true);
+		$priority=0;
+		if($id===false){
+			$id=self::$id++;
+		}
+		else
+		{
+			unset(self::$fibers[$id]);
+			foreach(self::$prioritized_tasks as $candidate_priority=>$task_ids){
+				if(isset($task_ids[$id])){
+					$priority=(int)$candidate_priority;
+					unset(self::$prioritized_tasks[$candidate_priority][$id]);
+					if(self::$prioritized_tasks[$candidate_priority]===[]){
+						unset(self::$prioritized_tasks[$candidate_priority]);
+					}
+					break;
+				}
+			}
+		}
 		self::$waiting[$id]=[
 			'time'=>microtime(true)+$seconds,
-			'task'=>$fiber
+			'task'=>$fiber,
+			'priority'=>$priority,
 		];
 		\Fiber::suspend();
 	}
@@ -150,7 +181,10 @@ class coroutine{
 				try{
 					$result=$callable();
 					if($result instanceof \Generator){
-						$result=yield from $result;
+						foreach($result as $_){
+							// Advancing the generator runs its cooperative work inside this Fiber.
+						}
+						$result=$result->getReturn();
 					}
 					$resolve($result);
 				}catch(\Throwable $throwable){

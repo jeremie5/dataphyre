@@ -53,13 +53,11 @@ function scheduling_path_summary_json(): string {
 
 function scheduling_read_scheduler_normalizes_properties_json(): string {
 	$name='unit_read_scheduler';
-	$directory=\dataphyre\scheduling::scheduler_directory($name);
-	if(!is_dir($directory)){
-		mkdir($directory, 0775, true);
-	}
+	$workspace=\dataphyre_dpanel_worker_workspace::active();
+	$workspace->directory('cache/scheduling/'.$name);
 	$properties_file=\dataphyre\scheduling::scheduler_properties_file($name);
 	$helper_file=realpath(__FILE__) ?: __FILE__;
-	file_put_contents($properties_file, json_encode([
+	$workspace->file('cache/scheduling/'.$name.'/properties.json', json_encode([
 		'file_path'=>$helper_file,
 		'frequency'=>-25,
 		'dependencies'=>[$helper_file, $helper_file],
@@ -68,7 +66,6 @@ function scheduling_read_scheduler_normalizes_properties_json(): string {
 		'app_override'=>'unit-app',
 	], JSON_UNESCAPED_SLASHES));
 	$scheduler=\dataphyre\scheduling::read_scheduler($name);
-	@unlink($properties_file);
 	return json_encode([
 		'name'=>$scheduler['name'] ?? null,
 		'file_is_helper'=>($scheduler['file_path'] ?? null)===$helper_file,
@@ -82,16 +79,14 @@ function scheduling_read_scheduler_normalizes_properties_json(): string {
 
 function scheduling_read_scheduler_rejects_invalid_payloads_json(): string {
 	$name='unit_invalid_scheduler';
-	$directory=\dataphyre\scheduling::scheduler_directory($name);
-	if(!is_dir($directory)){
-		mkdir($directory, 0775, true);
-	}
+	$workspace=\dataphyre_dpanel_worker_workspace::active();
+	$workspace->directory('cache/scheduling/'.$name);
 	$properties_file=\dataphyre\scheduling::scheduler_properties_file($name);
-	file_put_contents($properties_file, '{not-json');
+	$workspace->file('cache/scheduling/'.$name.'/properties.json', '{not-json');
 	$invalid_json=\dataphyre\scheduling::read_scheduler($name);
-	file_put_contents($properties_file, '');
+	$workspace->file('cache/scheduling/'.$name.'/properties.json', '');
 	$empty_file=\dataphyre\scheduling::read_scheduler($name);
-	@unlink($properties_file);
+	$workspace->removeFile('cache/scheduling/'.$name.'/properties.json');
 	return json_encode([
 		'invalid_json'=>$invalid_json,
 		'empty_file'=>$empty_file,
@@ -101,12 +96,17 @@ function scheduling_read_scheduler_rejects_invalid_payloads_json(): string {
 }
 
 function scheduling_normalize_definition_summary_json(): string {
-	$reflection=new \ReflectionClass(\dataphyre\scheduling::class);
-	$method=$reflection->getMethod('normalize_scheduler_definition');
-	$method->setAccessible(true);
 	$helper_file=realpath(__FILE__) ?: __FILE__;
-	$normalized=$method->invoke(null, 'unit_normalize', $helper_file, -3.5, 0.25, '', [$helper_file, $helper_file], 'unit-app');
-	$missing=$method->invoke(null, 'unit_normalize', $helper_file.'.missing', 1.0, 1.0, '64M', [], 'unit-app');
+	$normalized=\dataphyre_dpanel_worker_fixture_state::invokeNonPublic(
+		\dataphyre\scheduling::class,
+		'normalize_scheduler_definition',
+		['unit_normalize', $helper_file, -3.5, 0.25, '', [$helper_file, $helper_file], 'unit-app']
+	);
+	$missing=\dataphyre_dpanel_worker_fixture_state::invokeNonPublic(
+		\dataphyre\scheduling::class,
+		'normalize_scheduler_definition',
+		['unit_normalize', $helper_file.'.missing', 1.0, 1.0, '64M', [], 'unit-app']
+	);
 	return json_encode([
 		'name'=>$normalized['name'] ?? null,
 		'file_is_helper'=>($normalized['file_path'] ?? null)===$helper_file,
@@ -119,16 +119,23 @@ function scheduling_normalize_definition_summary_json(): string {
 }
 
 function scheduling_dispatch_url_summary_json(): string {
-	$reflection=new \ReflectionClass(\dataphyre\scheduling::class);
-	$method=$reflection->getMethod('scheduler_dispatch_url');
-	$method->setAccessible(true);
-	$original_server=$_SERVER;
-	unset($_SERVER['SELF_ADDR'], $_SERVER['HTTPS'], $_SERVER['REQUEST_SCHEME']);
-	$missing=$method->invoke(null, 'nightly.export', '');
-	$_SERVER['SELF_ADDR']='example.test:8443';
-	$_SERVER['REQUEST_SCHEME']='https';
-	$https=$method->invoke(null, 'nightly.export', '');
-	$_SERVER=$original_server;
+	$original_server=\dataphyre_dpanel_worker_application_state::server();
+	\dataphyre_dpanel_worker_application_state::forgetServer('SELF_ADDR');
+	\dataphyre_dpanel_worker_application_state::forgetServer('HTTPS');
+	\dataphyre_dpanel_worker_application_state::forgetServer('REQUEST_SCHEME');
+	$missing=\dataphyre_dpanel_worker_fixture_state::invokeNonPublic(
+		\dataphyre\scheduling::class,
+		'scheduler_dispatch_url',
+		['nightly.export', '']
+	);
+	\dataphyre_dpanel_worker_application_state::replaceServerValue('SELF_ADDR', 'example.test:8443');
+	\dataphyre_dpanel_worker_application_state::replaceServerValue('REQUEST_SCHEME', 'https');
+	$https=\dataphyre_dpanel_worker_fixture_state::invokeNonPublic(
+		\dataphyre\scheduling::class,
+		'scheduler_dispatch_url',
+		['nightly.export', '']
+	);
+	\dataphyre_dpanel_worker_application_state::replaceServer($original_server);
 	return json_encode([
 		'missing'=>$missing,
 		'https'=>$https,

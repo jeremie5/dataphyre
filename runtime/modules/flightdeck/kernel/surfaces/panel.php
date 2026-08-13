@@ -46,7 +46,7 @@ final class dataphyre_flightdeck_panel_surface {
 			return;
 		}
 
-		$summary=\Dataphyre\Panel\Panel::trace_summary();
+		$summary=\Dataphyre\Panel\Panel::traceSummary();
 		$events=\Dataphyre\Panel\Panel::trace();
 		$resources=\Dataphyre\Panel\Panel::describe();
 		$content=self::summary_cards($summary, $resources);

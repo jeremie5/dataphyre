@@ -37,10 +37,10 @@ The request boot path is:
    installs sets `$_SERVER['DATAPHYRE_PROJECT_ROOT']` and requires
    `vendor/dataphyre/dataphyre/runtime/bootstrap.php`.
 2. `bootstrap_config::resolve()` loads `flight_sheet.php`, merges defaults, and
-   normalizes configured application roots.
+   normalizes application roots plus module enabled/disabled lookup sets.
 3. `runtime/bootstrap.php` defines constants such as `DATAPHYRE_PROJECT_ROOT`,
    `DATAPHYRE_RUNTIME_ROOT`, `DATAPHYRE_APPLICATION_ROOTS`, `IS_PRODUCTION`,
-   `LICENSE`, and `APP`.
+   `DATAPHYRE_MODULE_POLICY`, `LICENSE`, and `APP`.
 4. Direct-access and application-override guards are applied when enabled.
 5. `runtime/modules/core/kernel/bootstrap.php` loads the small core kernel
    classes used for application discovery.
@@ -74,7 +74,7 @@ Applications are searched under:
 
 Relative roots in `flight_sheet.php` are resolved from the Dataphyre project
 root. Standalone installs use the install root as the project root; embedded
-`common/dataphyre` installs use the directory above `common`; Composer vendor
+`<project>/dataphyre` installs use its parent directory; Composer vendor
 installs can set `$_SERVER['DATAPHYRE_PROJECT_ROOT']` to the consumer project
 directory before requiring the package runtime. The environment variable
 `DATAPHYRE_APPLICATION_ROOTS` can append more roots using the platform path
@@ -112,11 +112,41 @@ Runtime modules live under `runtime/modules/<module>/`. A module may include:
 kernel/          legacy/runtime entry files
 Framework/       framework-facing classes
 documentation/   module docs
+tooling/         developer-only CLI and test-harness entrypoints
 unit_tests/      JSON manifests, code-defined tests, fixtures, or smoke assets
 third_party/     bundled upstream code, when needed
 ```
 
 The complete public module status table is in [MODULES.md](MODULES.md).
+
+The `testing` module is deliberately tooling-only. Its TestKit and isolated PHP
+worker live under `runtime/modules/testing/tooling/`, while each module owns its
+tests and fixtures in its own `unit_tests/` directory. The testing module has no
+kernel or Framework entrypoint, so normal requests neither discover nor load the
+test harness.
+
+Its sole entrypoint is `tooling/bootstrap.php`. A scoped autoloader maps each
+`Dataphyre\Test` type to one source under `tooling/TestKit/`; only the function
+DSL is loaded eagerly. `Context` extends the lifecycle-owning `AbstractContext`,
+implements the aggregate `Contracts\TestContext`, and receives built-in behavior
+from explicit capability traits with direct method dispatch. No compatibility
+wrapper preserves the removed monolithic `TestKit.php` path.
+
+## Module Enablement
+
+The selected flight sheet's `bootstrap.modules.enabled` list is authoritative.
+`bootstrap.modules.disabled` removes matching entries, and omitted names remain
+disabled regardless of directory, kernel, Framework, or bootstrap-file
+presence. Bootstrap normalizes both lists once into associative sets.
+
+`module_enabled()` is therefore an O(1) policy lookup. Kernel and Framework
+presence methods consult it before resolving paths, and the autoloader only
+registers prefixes for enabled names. Explicit catalog operations iterate the
+enabled set; they never discover candidates by scanning the modules directory.
+
+`core` is the reserved bootstrap dependency and is implicitly enabled. All
+other modules, including debug and Flightdeck surfaces, must be listed by the
+selected application's flight sheet.
 
 ## Configuration Layers
 

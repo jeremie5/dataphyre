@@ -7,17 +7,19 @@
  */
 if(dataphyre\datadoc::logged_in()!==true){
 	require_once(__DIR__."/login.php");
-	exit();
+	return;
 }
 
-require_once(__DIR__."/header.php");
+$datadoc_header_ready=require __DIR__."/header.php";
+if($datadoc_header_ready===false){
+	return;
+}
 
 $project=\dataphyre\datadoc::get_project(\dataphyre\routing::$bindings['project'] ?? '');
 if ($project===null) {
-	exit('Project not found.');
+	echo 'Project not found.';
+	return;
 }
-$sections=[];
-
 // Build dynamic conditions
 $conditions = ['project = ?'];
 $vars = [$project['name']];
@@ -205,20 +207,6 @@ if(is_array($dynadoc_record) && !empty($dynadoc_record['file'])){
 		?>
 		</div>
 		
-		<div class="col-md right-col">
-			<div class="position-sticky">
-				<?php if(!empty($sections)){ ?>
-				<h5 class="py-3 <?=adapt(["dark"=>"text-white"]);?>">On this page</h5>
-				<div class="ml-2 pb-3">
-					<?php
-						foreach($sections as $id=>$name){
-							echo'<a href="javascript:void(0);" onclick="$(\'html, body\').animate({scrollTop: $(\'#'.$id.'\').offset().top}, 500);" class="'.adapt(["light"=>"text-body","dark"=>"text-white"]).'">'.$name.'</a><br>';
-						}
-					?>
-				</div>
-				<?php } ?>
-			</div>
-		</div>
 	</div>
 </div>
 <?php

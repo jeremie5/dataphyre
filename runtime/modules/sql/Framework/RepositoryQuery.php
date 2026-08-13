@@ -23,9 +23,10 @@ final class RepositoryQuery extends QuerySpec {
 	use TransformsRows;
 
 	private array|string $columns='*';
-	private bool|array|string|null $caching=[true];
+	private bool|array|string|null $caching=null;
+	private bool $failOnReadError=false;
 	private mixed $hydrator=null;
-	private bool|array|null $clearCacheOnWrite=false;
+	private bool|array|null $clearCacheOnWrite=null;
 	/** @var array<int,array<string,mixed>> */
 	private array $writeMoneyMappings=[];
 	/** @var array<int,array<string,mixed>> */
@@ -40,17 +41,29 @@ final class RepositoryQuery extends QuerySpec {
 	/**
 	 * Creates a fluent SQL repository query object.
 	 *
-	 * Initial state captures repository identity, schema metadata, primary-key
-	 * handling, cache defaults, and write invalidation policy.
+	 * Initial state captures repository identity, an optional repository-owned
+	 * base specification, and the effective repository cache policies supplied by
+	 * TableRepository::query(). Direct construction may leave those policies null.
 	 *
 	 * @param string $repositoryClass Repository class extending `TableRepository`.
+	 * @param ?QuerySpec $spec Optional repository-owned base query specification.
+	 * @param bool|array|string|null $caching Effective repository read-cache policy.
+	 * @param bool|array|null $clearCacheOnWrite Effective repository write invalidation policy.
 	 */
 	public function __construct(
-		private readonly string $repositoryClass
+		private readonly string $repositoryClass,
+		?QuerySpec $spec=null,
+		bool|array|string|null $caching=null,
+		bool|array|null $clearCacheOnWrite=null
 	){
 		if(!class_exists($this->repositoryClass) || !is_subclass_of($this->repositoryClass, TableRepository::class)){
 			throw SqlError::invalidRepositoryClass($this->repositoryClass);
 		}
+		if($spec!==null){
+			$this->applyBuilderState($spec->builderState());
+		}
+		$this->caching=$caching;
+		$this->clearCacheOnWrite=$clearCacheOnWrite;
 	}
 
 	/**
@@ -142,6 +155,20 @@ final class RepositoryQuery extends QuerySpec {
 	 */
 	public function withoutCaching(): self {
 		$this->caching=false;
+		return $this;
+	}
+
+	/**
+	 * Preserves SQL read failures instead of normalizing them as empty results.
+	 *
+	 * The policy applies to the parent repository read and to eager relation row
+	 * reads. Successful no-match reads still return [] or null.
+	 *
+	 * @param bool $enabled Whether read failures should raise a structured exception.
+	 * @return self Current repository query instance.
+	 */
+	public function failOnReadError(bool $enabled=true): self {
+		$this->failOnReadError=$enabled;
 		return $this;
 	}
 
@@ -558,7 +585,7 @@ final class RepositoryQuery extends QuerySpec {
 	 * @return self Current repository query instance.
 	 */
 	public function requireWhereForWrite(bool $required=true): self {
-		$this->requireWhereForWrite($required);
+		parent::requireWhereForWrite($required);
 		return $this;
 	}
 
@@ -569,7 +596,7 @@ final class RepositoryQuery extends QuerySpec {
 	 * @return self Current repository query instance.
 	 */
 	public function allowUnscopedWrite(): self {
-		$this->allowUnscopedWrite();
+		parent::allowUnscopedWrite();
 		return $this;
 	}
 
@@ -581,7 +608,7 @@ final class RepositoryQuery extends QuerySpec {
 	 * @return self Current repository query instance.
 	 */
 	public function forUpdate(): self {
-		$this->forUpdate();
+		parent::forUpdate();
 		return $this;
 	}
 
@@ -593,7 +620,7 @@ final class RepositoryQuery extends QuerySpec {
 	 * @return self Current repository query instance.
 	 */
 	public function sharedLock(): self {
-		$this->sharedLock();
+		parent::sharedLock();
 		return $this;
 	}
 
@@ -606,7 +633,7 @@ final class RepositoryQuery extends QuerySpec {
 	 * @return self Current repository query instance.
 	 */
 	public function lockRaw(string|array $fragment): self {
-		$this->lockRaw($fragment);
+		parent::lockRaw($fragment);
 		return $this;
 	}
 
@@ -671,13 +698,7 @@ final class RepositoryQuery extends QuerySpec {
 	 * @return self Current repository query instance.
 	 */
 	public function asMoney(string $amountColumn, string $currencyColumn='currency', ?string $targetColumn=null): self {
-		$mapping=CurrencyBridge::normalizeMoneyMapping(
-			$amountColumn,
-			$currencyColumn,
-			null,
-			$targetColumn,
-			$this->repositoryClass
-		);
+		$mapping=CurrencyBridge::normalizeMoneyMapping($amountColumn, $currencyColumn, null, $targetColumn, $this->repositoryClass);
 		$this->addRowTransformer(
 			fn(array $row): array => CurrencyBridge::applyMoneyMapping($row, $mapping, $this->repositoryClass)
 		);
@@ -696,13 +717,7 @@ final class RepositoryQuery extends QuerySpec {
 	 * @return self Current repository query instance.
 	 */
 	public function asMoneyIn(string $amountColumn, string $currency, ?string $targetColumn=null): self {
-		$mapping=CurrencyBridge::normalizeMoneyMapping(
-			$amountColumn,
-			null,
-			$currency,
-			$targetColumn,
-			$this->repositoryClass
-		);
+		$mapping=CurrencyBridge::normalizeMoneyMapping($amountColumn, null, $currency, $targetColumn, $this->repositoryClass);
 		$this->addRowTransformer(
 			fn(array $row): array => CurrencyBridge::applyMoneyMapping($row, $mapping, $this->repositoryClass)
 		);
@@ -724,11 +739,7 @@ final class RepositoryQuery extends QuerySpec {
 			$definition=$targetColumn;
 			$targetColumn='stored_money';
 		}
-		$mapping=CurrencyBridge::normalizeStoredMoneyMapping(
-			$definition,
-			$targetColumn,
-			$this->repositoryClass
-		);
+		$mapping=CurrencyBridge::normalizeStoredMoneyMapping($definition, $targetColumn, $this->repositoryClass);
 		$this->addRowTransformer(
 			fn(array $row): array => CurrencyBridge::applyStoredMoneyMapping($row, $mapping, $this->repositoryClass)
 		);
@@ -917,6 +928,8 @@ final class RepositoryQuery extends QuerySpec {
 			'repository_class'=>$this->repositoryClass,
 			'columns'=>$this->columns,
 			'caching'=>$this->caching,
+			'fail_on_read_error'=>$this->failOnReadError,
+			'clear_cache_on_write'=>$this->clearCacheOnWrite,
 			'hydrator'=>$this->hydratorDescriptor($this->hydrator),
 			'eager_relations'=>$this->eagerRelationDescriptors(),
 			'eager_counts'=>$this->eagerCountDescriptors(),
@@ -970,7 +983,9 @@ final class RepositoryQuery extends QuerySpec {
 		}
 		$query=new self($repositoryClass);
 		$query->columns=self::columns($state['columns'] ?? '*');
-		$query->caching=$state['caching'] ?? [true];
+		$query->caching=$state['caching'] ?? null;
+		$query->failOnReadError=(bool)($state['fail_on_read_error'] ?? false);
+		$query->clearCacheOnWrite=$state['clear_cache_on_write'] ?? null;
 		$query->hydrator=$state['hydrator'] ?? null;
 		$query->applyBuilderState(is_array($state['builder_state'] ?? null) ? $state['builder_state'] : []);
 		$query->restoreCompiledTransforms(
@@ -993,12 +1008,13 @@ final class RepositoryQuery extends QuerySpec {
 	 */
 	public function get(array|string|null $columns=null, bool|array|string|null $caching=null): array {
 		$repository=$this->repositoryClass();
+		$selectedColumns=$this->columnsWithEagerParentKeys($columns ?? $this->columns);
+		$spec=clone $this;
+		$resolvedCaching=$caching ?? $this->caching;
 		$rows=$this->transformRows(
-			$repository::all(
-				$this->columnsWithEagerParentKeys($columns ?? $this->columns),
-				clone $this,
-				$caching ?? $this->caching
-			)
+			$this->failOnReadError
+				? $repository::allOrFailOnReadError($selectedColumns,$spec,$resolvedCaching)
+				: $repository::all($selectedColumns,$spec,$resolvedCaching)
 		);
 		return $this->applyEagerRelations($rows);
 	}
@@ -1027,11 +1043,12 @@ final class RepositoryQuery extends QuerySpec {
 	 */
 	public function first(array|string|null $columns=null, bool|array|string|null $caching=null): ?array {
 		$repository=$this->repositoryClass();
-		$row=$repository::first(
-			$this->columnsWithEagerParentKeys($columns ?? $this->columns),
-			clone $this,
-			$caching ?? $this->caching
-		);
+		$selectedColumns=$this->columnsWithEagerParentKeys($columns ?? $this->columns);
+		$spec=clone $this;
+		$resolvedCaching=$caching ?? $this->caching;
+		$row=$this->failOnReadError
+			? $repository::firstOrFailOnReadError($selectedColumns,$spec,$resolvedCaching)
+			: $repository::first($selectedColumns,$spec,$resolvedCaching);
 		if($row===null){
 			return null;
 		}
@@ -1060,8 +1077,7 @@ final class RepositoryQuery extends QuerySpec {
 		}
 		throw SqlError::recordNotFound(
 			$this->repositoryClass,
-			$this->notFoundContext($columns),
-			$message
+			$this->notFoundContext($columns), $message
 		);
 	}
 
@@ -1161,16 +1177,14 @@ final class RepositoryQuery extends QuerySpec {
 		if($rows===[]){
 			throw SqlError::recordNotFound(
 				$this->repositoryClass,
-				$this->notFoundContext($columns),
-				$message,
+				$this->notFoundContext($columns), $message,
 				'Use first() when zero matches are acceptable, or tighten the query before calling sole().'
 			);
 		}
 		if(count($rows)>1){
 			throw SqlError::multipleRecordsFound(
 				$this->repositoryClass,
-				$this->notFoundContext($columns, ['matched_rows_sample'=>count($rows)]),
-				$message,
+				$this->notFoundContext($columns, ['matched_rows_sample'=>count($rows)]), $message,
 				'Use get()/all() when multiple matches are expected, or tighten the query until it uniquely identifies a single row.'
 			);
 		}
@@ -1576,8 +1590,7 @@ final class RepositoryQuery extends QuerySpec {
 		}
 		throw SqlError::recordNotFound(
 			$this->repositoryClass,
-			$this->notFoundContext($columns),
-			$message
+			$this->notFoundContext($columns), $message
 		);
 	}
 
@@ -1666,8 +1679,7 @@ final class RepositoryQuery extends QuerySpec {
 		}
 		return throw SqlError::recordNotFound(
 			$this->repositoryClass,
-			$this->notFoundContext($columns, ['id'=>$id]),
-			$message,
+			$this->notFoundContext($columns, ['id'=>$id]), $message,
 			'Use find() when a missing record is acceptable, or verify the primary key and active filters before calling findOrFail().'
 		);
 	}
@@ -1713,8 +1725,7 @@ final class RepositoryQuery extends QuerySpec {
 		}
 		return throw SqlError::recordNotFound(
 			$this->repositoryClass,
-			$this->notFoundContext($columns, ['id'=>$id]),
-			$message,
+			$this->notFoundContext($columns, ['id'=>$id]), $message,
 			'Use findHydrated() when a missing record is acceptable, or verify the primary key and active filters before calling findHydratedOrFail().'
 		);
 	}
@@ -1764,8 +1775,7 @@ final class RepositoryQuery extends QuerySpec {
 		}
 		return throw SqlError::recordNotFound(
 			$this->repositoryClass,
-			$this->notFoundContext($columns, ['id'=>$id]),
-			$message,
+			$this->notFoundContext($columns, ['id'=>$id]), $message,
 			'Use findRecord() when a missing record is acceptable, or verify the primary key and active filters before calling findRecordOrFail().'
 		);
 	}
@@ -2225,13 +2235,18 @@ final class RepositoryQuery extends QuerySpec {
 	 *
 	 * @param array<int,array<string,mixed>> $rows Write rows before money and schema normalization.
 	 * @param bool|array|null $clearCache Dataphyre write invalidation policy.
+	 * @param ?BulkMutationOptions $options Optional bounded-statement and PostgreSQL insert-correlation configuration.
 	 * @return MutationBatchResult Batched repository mutation result.
 	 */
-	public function createMany(array $rows, bool|array|null $clearCache=null): MutationBatchResult {
+	public function createMany(
+		array $rows,
+		bool|array|null $clearCache=null,
+		?BulkMutationOptions $options=null
+	): MutationBatchResult {
 		$repository=$this->repositoryClass();
 		$resolvedClearCache=$clearCache===null ? $this->clearCacheOnWrite : $clearCache;
 		$this->warnIfWriteInvalidationMissing('create_many', $resolvedClearCache);
-		return $repository::createMany($this->resolvedWriteRows($rows), $resolvedClearCache);
+		return $repository::createMany($this->resolvedWriteRows($rows), $resolvedClearCache, $options);
 	}
 
 	/**
@@ -2385,18 +2400,20 @@ final class RepositoryQuery extends QuerySpec {
 	 * @param string|array|null $updateParams UpdateParams.
 	 * @param ?array<string,mixed> $updateVars Bound variables for custom upsert update expressions.
 	 * @param bool|array|null $clearCache Dataphyre write invalidation policy.
+	 * @param ?BulkMutationOptions $options Optional upsert conflict and bounded-statement configuration.
 	 * @return MutationBatchResult Batched repository mutation result.
 	 */
 	public function upsertMany(
 		array $rows,
 		string|array|null $updateParams=null,
 		?array $updateVars=null,
-		bool|array|null $clearCache=null
+		bool|array|null $clearCache=null,
+		?BulkMutationOptions $options=null
 	): MutationBatchResult {
 		$repository=$this->repositoryClass();
 		$resolvedClearCache=$clearCache===null ? $this->clearCacheOnWrite : $clearCache;
 		$this->warnIfWriteInvalidationMissing('upsert_many', $resolvedClearCache);
-		return $repository::upsertMany($this->resolvedWriteRows($rows), $updateParams, $updateVars, $resolvedClearCache);
+		return $repository::upsertMany($this->resolvedWriteRows($rows), $updateParams, $updateVars, $resolvedClearCache, $options);
 	}
 
 	/**
@@ -2576,8 +2593,7 @@ final class RepositoryQuery extends QuerySpec {
 				}
 				throw SqlError::recordNotFound(
 					$this->repositoryClass,
-					$this->notFoundContext($columns),
-					$message
+					$this->notFoundContext($columns), $message
 				);
 			},
 			$queue,
@@ -2614,8 +2630,7 @@ final class RepositoryQuery extends QuerySpec {
 				}
 				throw SqlError::recordNotFound(
 					$this->repositoryClass,
-					$this->notFoundContext($columns),
-					$message
+					$this->notFoundContext($columns), $message
 				);
 			},
 			$queue,
@@ -2674,8 +2689,7 @@ final class RepositoryQuery extends QuerySpec {
 				}
 				throw SqlError::recordNotFound(
 					$this->repositoryClass,
-					$this->notFoundContext($columns, ['id'=>$id]),
-					$message,
+					$this->notFoundContext($columns, ['id'=>$id]), $message,
 					'Use queueFind() when a missing record is acceptable, or verify the primary key and active filters before calling queueFindOrFail().'
 				);
 			},
@@ -2738,8 +2752,7 @@ final class RepositoryQuery extends QuerySpec {
 				}
 				throw SqlError::recordNotFound(
 					$this->repositoryClass,
-					$this->notFoundContext($columns, ['id'=>$id]),
-					$message,
+					$this->notFoundContext($columns, ['id'=>$id]), $message,
 					'Use queueFindHydrated() when a missing record is acceptable, or verify the primary key and active filters before calling queueFindHydratedOrFail().'
 				);
 			},
@@ -2875,16 +2888,14 @@ final class RepositoryQuery extends QuerySpec {
 				if($rows===[]){
 					throw SqlError::recordNotFound(
 						$this->repositoryClass,
-						$this->notFoundContext($columns),
-						$message,
+						$this->notFoundContext($columns), $message,
 						'Use queueFirst() when zero matches are acceptable, or tighten the repository query before calling queueSole().'
 					);
 				}
 				if(count($rows)>1){
 					throw SqlError::multipleRecordsFound(
 						$this->repositoryClass,
-						$this->notFoundContext($columns, ['matched_rows_sample'=>count($rows)]),
-						$message,
+						$this->notFoundContext($columns, ['matched_rows_sample'=>count($rows)]), $message,
 						'Use queueGet()/queueAll() when multiple matches are expected, or tighten the repository query until it uniquely identifies a single row.'
 					);
 				}
@@ -2922,16 +2933,14 @@ final class RepositoryQuery extends QuerySpec {
 				if($records===[]){
 					throw SqlError::recordNotFound(
 						$this->repositoryClass,
-						$this->notFoundContext($columns),
-						$message,
+						$this->notFoundContext($columns), $message,
 						'Use queueFirstRecord() when zero matches are acceptable, or tighten the repository query before calling queueSoleRecord().'
 					);
 				}
 				if(count($records)>1){
 					throw SqlError::multipleRecordsFound(
 						$this->repositoryClass,
-						$this->notFoundContext($columns, ['matched_rows_sample'=>count($records)]),
-						$message,
+						$this->notFoundContext($columns, ['matched_rows_sample'=>count($records)]), $message,
 						'Use queueGetRecords() when multiple matches are expected, or tighten the repository query until it uniquely identifies a single record.'
 					);
 				}
@@ -3852,13 +3861,7 @@ final class RepositoryQuery extends QuerySpec {
 		?string $currencyColumn,
 		?string $currency
 	): self {
-		$mapping=CurrencyBridge::normalizeMoneyMapping(
-			$amountColumn,
-			$currencyColumn,
-			$currency,
-			null,
-			$this->repositoryClass
-		);
+		$mapping=CurrencyBridge::normalizeMoneyMapping($amountColumn, $currencyColumn, $currency, null, $this->repositoryClass);
 		$comparison=CurrencyBridge::normalizeComparableValue(
 			$value,
 			$mapping['currency'],
@@ -4274,9 +4277,10 @@ final class RepositoryQuery extends QuerySpec {
 			if(!$relation instanceof Relation){
 				continue;
 			}
+			$constraint=$this->relationReadConstraint($entry['constraint']);
 			$parents=$entry['records']
-				? $relation->attachRecords($parents, $entry['name'], $entry['columns'], $entry['hydrator'], $entry['caching'], $entry['constraint'])
-				: $relation->attach($parents, $entry['name'], $entry['columns'], $entry['caching'], $entry['constraint']);
+				? $relation->attachRecords($parents, $entry['name'], $entry['columns'], $entry['hydrator'], $entry['caching'], $constraint)
+				: $relation->attach($parents, $entry['name'], $entry['columns'], $entry['caching'], $constraint);
 		}
 		foreach($this->eagerCounts as $entry){
 			$relation=$entry['relation'];
@@ -4301,6 +4305,19 @@ final class RepositoryQuery extends QuerySpec {
 			);
 		}
 		return $parents;
+	}
+
+	/**
+	 * Carries strict read policy into a related RepositoryQuery without changing
+	 * the public Relation descriptor shape.
+	 */
+	private function relationReadConstraint(?callable $constraint): ?callable {
+		if(!$this->failOnReadError) return $constraint;
+		return static function(RepositoryQuery $query) use ($constraint): RepositoryQuery {
+			$result=$constraint!==null ? $constraint($query) : $query;
+			$related=$result instanceof RepositoryQuery ? $result : $query;
+			return $related->failOnReadError();
+		};
 	}
 
 	/**
@@ -4791,10 +4808,7 @@ final class RepositoryQuery extends QuerySpec {
 		if($callback instanceof \Closure){
 			return 'Closure';
 		}
-		if(is_object($callback)){
-			return $callback::class;
-		}
-		return get_debug_type($callback);
+		return $callback::class;
 	}
 
 	/**
@@ -4989,15 +5003,18 @@ final class RepositoryQuery extends QuerySpec {
 	 * Reports a guardrail warning when named read caches lack write invalidation.
 	 *
 	 * The warning is emitted only when this query uses named read cache scopes
-	 * and the write path neither clears all caches nor supplies named
-	 * invalidation scopes. The mutation still proceeds, but stale-cache risk is
-	 * visible through Dataphyre diagnostics.
+	 * and a known write policy neither clears all caches nor supplies named
+	 * invalidation scopes. An unresolved null policy is left to the repository
+	 * execution path instead of producing a premature warning.
 	 *
 	 * @param string $operation Mutation operation name.
 	 * @param bool|array|null $clearCache Resolved write invalidation policy.
 	 * @return void
 	 */
 	private function warnIfWriteInvalidationMissing(string $operation, bool|array|null $clearCache): void {
+		if($clearCache===null){
+			return;
+		}
 		$cacheNames=$this->namedReadCacheNames();
 		if($cacheNames===[] || $clearCache===true || $this->invalidationNamesFromValue($clearCache)!==[]){
 			return;

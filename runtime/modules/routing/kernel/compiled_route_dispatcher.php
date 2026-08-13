@@ -241,7 +241,7 @@ final class compiled_route_dispatcher {
 		if(substr_count($host, ':')===1){
 			$host=explode(':', $host, 2)[0];
 		}
-		return $host;
+		return trim($host, '.');
 	}
 
 	/**
@@ -381,9 +381,17 @@ final class compiled_route_dispatcher {
 		};
 		$pipeline=$terminal;
 		for($index=count($resolved_middleware)-1; $index>=0; $index--){
-			$instance=self::instantiate_middleware($resolved_middleware[$index]);
-			$parameters=$resolved_middleware[$index]['parameters'] ?? [];
+			$definition=$resolved_middleware[$index];
+			$parameters=$definition['parameters'] ?? [];
 			$next=$pipeline;
+			if(isset($definition['target']) && is_callable($definition['target'])){
+				$target=$definition['target'];
+				$pipeline=static function(mixed $request) use ($target, $next, $parameters): mixed {
+					return $target($request, $next, ...$parameters);
+				};
+				continue;
+			}
+			$instance=self::instantiate_middleware($definition);
 			$pipeline=static function(mixed $request) use ($instance, $next, $parameters): mixed {
 				return $instance->handle($request, $next, ...$parameters);
 			};

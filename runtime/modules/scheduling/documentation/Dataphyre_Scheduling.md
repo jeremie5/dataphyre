@@ -10,6 +10,9 @@ The module is intentionally small, but now has two surfaces:
 - persist the task definition under Dataphyre cache
 - trigger the internal scheduler route on shutdown when the task is due
 - run the task file once the scheduler request reaches `task_runner.php`
+- continue task execution after the short-lived internal dispatcher disconnects
+- load the policy-enabled Core and Scheduling lifecycles at Dataphyre's internal runtime boundary
+- authenticate each callback with internal-traffic provenance, a one-time claim, and a short-lived purpose-bound signature
 
 ---
 
@@ -172,7 +175,7 @@ register_shutdown_function(function(){
 
 ##### Task runner pattern
 
-Scheduler requests enter legacy bootstrap as `RUN_MODE='headless'`, and the scheduling module also exposes an explicit runner context. Task files can branch on either, but the scheduler context is the safer scheduling-specific signal:
+Scheduler requests enter Dataphyre's internal runtime route before compiled or application MVC routes. The runtime initializes the policy-enabled Core and Scheduling lifecycles, and the scheduling module exposes an explicit runner context:
 
 ```php
 if(\dataphyre\scheduling::in_task_runner()){
@@ -186,10 +189,12 @@ if(\dataphyre\scheduling::in_task_runner()){
 
 1. A normal request calls `\dataphyre\scheduling::run(...)`.
 2. The scheduler definition is written to `cache/scheduling/<name>/properties.json`.
-3. If the task is due and not actively locked, the module creates `running_lock` and records `last_run`.
-4. On shutdown, Dataphyre dispatches an internal HTTP request to `/dataphyre/scheduler/<name>`.
-5. `task_runner.php` loads the persisted definition, applies timeout and memory settings, loads dependencies, and includes the task file.
-6. On shutdown, the runner writes `last_run`, clears the lock, and persists tracelog output when available.
+3. If the task is due and not actively locked, the module atomically creates `running_lock` with a cryptographically random one-time claim and records `last_run`.
+4. On shutdown, Dataphyre binds that claim and scheduler name into a short-lived signature and dispatches an internal HTTP request to `/dataphyre/scheduler/<name>`.
+5. The common runtime accepts only the exact GET route with internal-traffic provenance, the exact claim, and a valid purpose-bound signature.
+6. The runtime initializes Core and the policy-enabled Scheduling module before application routing can take over.
+7. `task_runner.php` verifies the pending claim and holds a non-blocking exclusive lock while it loads dependencies and executes the task, so a captured callback cannot run concurrently.
+8. On shutdown, the runner writes `last_run`, clears the claim lock, and persists tracelog output when available.
 
 ---
 
@@ -198,7 +203,7 @@ if(\dataphyre\scheduling::in_task_runner()){
 Each scheduler lives under:
 
 ```text
-common/dataphyre/cache/scheduling/<name>/
+dataphyre/cache/scheduling/<name>/
 ```
 
 Files:
@@ -213,6 +218,9 @@ Files:
 #### Design Notes
 
 - Scheduler names are validated before they touch the filesystem.
+- Internal callback signatures are purpose-, scheduler-name-, and one-time-claim-bound, time limited, and transported in request headers rather than the URL.
+- Pending dispatch creation is atomic across PHP workers, and the task runner holds the claim lock through execution to reject concurrent replay.
+- Framework-only and legacy applications share the same authenticated runtime route, so application routing cannot accidentally shadow scheduler execution.
 - Task definitions are rewritten when their configuration changes; the cache is not write-once.
 - The internal runner validates dependency and task-file paths before requiring them.
 - Stale locks are treated as timed out instead of blocking the task forever.

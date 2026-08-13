@@ -16,7 +16,7 @@
 				}
 			}
 		],
-		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"file": "/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
 		"max_millis": 10
 	},
 	{
@@ -36,7 +36,7 @@
 				}
 			}
 		],
-		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"file": "/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
 		"max_millis": 10
 	},
 	{
@@ -44,7 +44,7 @@
 		"function": "dp_flightdeck_unit_response_json_summary",
 		"args": [],
 		"expected": "{\"body_kind\":\"json\",\"is_json\":true,\"json_valid\":true,\"top_level\":\"object\",\"key_count\":3,\"item_count\":3,\"batch_route_count\":2,\"first_route\":\"/api/orders\",\"first_status\":\"failed\",\"first_failed\":1,\"second_route\":\"/api/customers\",\"second_status\":\"failed\",\"failure_count\":4,\"preview_api_key\":\"[redacted]\"}",
-		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"file": "/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
 		"max_millis": 10
 	},
 	{
@@ -67,7 +67,7 @@
 				}
 			}
 		],
-		"file": "/common/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
+		"file": "/dataphyre/runtime/modules/flightdeck/unit_tests/flightdeck_test_helpers.php",
 		"max_millis": 10
 	}
 ]

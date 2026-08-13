@@ -23,7 +23,8 @@ namespace {
 	}
 	if(!function_exists('config')){
 		function config(string $key): mixed {
-			if($key==='vestra_write_token' && empty($GLOBALS['dataphyre_vestra_disable_legacy_write_token'])){
+			$state=\Dataphyre\Test\TestState::channelIfActive('vestra.credentials');
+			if($key==='vestra_write_token' && $state?->get('disable_legacy_write_token', false)!==true){
 				return 'config-write-fallback';
 			}
 			return '';
@@ -118,17 +119,23 @@ namespace dataphyre {
 
 	function curl_setopt(\CurlHandle $handle, int $option, mixed $value): bool {
 		$id=spl_object_id($handle);
-		$GLOBALS['dataphyre_vestra_curl_options'][$id][$option]=$value;
+		$state=\Dataphyre\Test\TestState::channel('vestra.http');
+		$options=$state->get('options', []);
+		$options[$id][$option]=$value;
+		$state->put('options', $options);
 		return true;
 	}
 
 	function curl_exec(\CurlHandle $handle): string|bool {
 		$id=spl_object_id($handle);
-		$GLOBALS['dataphyre_vestra_curl_calls'][]=$GLOBALS['dataphyre_vestra_curl_options'][$id] ?? [];
-		if(is_array($GLOBALS['dataphyre_vestra_curl_responses'] ?? null) && $GLOBALS['dataphyre_vestra_curl_responses']!==[]){
-			return (string)array_shift($GLOBALS['dataphyre_vestra_curl_responses']);
+		$state=\Dataphyre\Test\TestState::channel('vestra.http');
+		$options=$state->get('options', []);
+		$state->append('calls', $options[$id] ?? []);
+		$responses=$state->get('responses', []);
+		if(is_array($responses) && $responses!==[]){
+			return (string)$state->shift('responses');
 		}
-		return (string)($GLOBALS['dataphyre_vestra_curl_response'] ?? '{"ok":false}');
+		return (string)$state->get('response', '{"ok":false}');
 	}
 
 	function curl_getinfo(\CurlHandle $handle, ?int $option=null): mixed {
@@ -136,7 +143,10 @@ namespace dataphyre {
 	}
 
 	function curl_close(\CurlHandle $handle): void {
-		unset($GLOBALS['dataphyre_vestra_curl_options'][spl_object_id($handle)]);
+		$state=\Dataphyre\Test\TestState::channel('vestra.http');
+		$options=$state->get('options', []);
+		unset($options[spl_object_id($handle)]);
+		$state->put('options', $options);
 		\curl_close($handle);
 	}
 
@@ -155,34 +165,34 @@ namespace dataphyre {
 
 namespace DataphyreUnitTests {
 	use Dataphyre\Test\Context;
-	use ReflectionClass;
+	use Dataphyre\Test\TestState;
 	use function Dataphyre\Test\test;
 
 	require_once __DIR__.'/../kernel/vestra.main.php';
 
 	/** @param list<mixed> $arguments */
-	function vestra_private_call(string $method, array $arguments=[]): mixed {
-		$reflection=new ReflectionClass(\dataphyre\vestra::class);
-		return $reflection->getMethod($method)->invokeArgs(null, $arguments);
+	function vestra_private_call(Context $context, string $method, array $arguments=[]): mixed {
+		return $context->nonPublic(\dataphyre\vestra::class)->invokeWithArguments($method, $arguments);
 	}
 
 	/** @return array{api_token:string,write_api_token:string,tenant_read_token:string,write_token:string,node_token:string} */
-	function vestra_resolved_credentials(string $profile): array {
+	function vestra_resolved_credentials(Context $context, string $profile): array {
 		return [
-			'api_token'=>(string)vestra_private_call('vestra_api_token', [$profile]),
-			'write_api_token'=>(string)vestra_private_call('vestra_write_api_token', [$profile]),
-			'tenant_read_token'=>(string)vestra_private_call('vestra_tenant_read_token', [$profile]),
-			'write_token'=>(string)vestra_private_call('vestra_write_token', [$profile]),
-			'node_token'=>(string)vestra_private_call('vestra_node_token', [$profile]),
+			'api_token'=>(string)vestra_private_call($context, 'vestra_api_token', [$profile]),
+			'write_api_token'=>(string)vestra_private_call($context, 'vestra_write_api_token', [$profile]),
+			'tenant_read_token'=>(string)vestra_private_call($context, 'vestra_tenant_read_token', [$profile]),
+			'write_token'=>(string)vestra_private_call($context, 'vestra_write_token', [$profile]),
+			'node_token'=>(string)vestra_private_call($context, 'vestra_node_token', [$profile]),
 		];
 	}
 
 	/** @param list<string> $responses */
-	function vestra_reset_http_spy(array $responses=[]): void {
-		$GLOBALS['dataphyre_vestra_curl_options']=[];
-		$GLOBALS['dataphyre_vestra_curl_calls']=[];
-		$GLOBALS['dataphyre_vestra_curl_responses']=$responses;
-		$GLOBALS['dataphyre_vestra_curl_response']=json_encode([
+	function vestra_reset_http_spy(Context $context, array $responses=[]): void {
+		$initial=[
+			'options'=>[],
+			'calls'=>[],
+			'responses'=>$responses,
+			'response'=>json_encode([
 			'ok'=>true,
 			'data'=>[
 				'write_token'=>[
@@ -190,34 +200,41 @@ namespace DataphyreUnitTests {
 					'expires_at'=>4102444800,
 				],
 			],
-		], JSON_UNESCAPED_SLASHES);
+			], JSON_UNESCAPED_SLASHES),
+		];
+		$state=TestState::channelIfActive('vestra.http');
+		$state===null
+			? $context->state('vestra.http', $initial)
+			: $state->replace($initial);
 	}
 
 	/** @return list<array<int,mixed>> */
 	function vestra_http_calls(): array {
-		return is_array($GLOBALS['dataphyre_vestra_curl_calls'] ?? null) ? $GLOBALS['dataphyre_vestra_curl_calls'] : [];
+		$calls=TestState::channelIfActive('vestra.http')?->get('calls', []);
+		return is_array($calls) ? $calls : [];
 	}
 
-	function vestra_without_legacy_write_token(callable $callback): mixed {
-		$had_flag=array_key_exists('dataphyre_vestra_disable_legacy_write_token', $GLOBALS);
-		$previous_flag=$GLOBALS['dataphyre_vestra_disable_legacy_write_token'] ?? null;
+	function vestra_without_legacy_write_token(Context $context, callable $callback): mixed {
+		$state=TestState::channelIfActive('vestra.credentials') ?? $context->state('vestra.credentials');
+		$had_flag=$state->has('disable_legacy_write_token');
+		$previous_flag=$state->get('disable_legacy_write_token');
 		$previous_environment=getenv('VESTRA_WRITE_TOKEN');
-		$GLOBALS['dataphyre_vestra_disable_legacy_write_token']=true;
-		putenv('VESTRA_WRITE_TOKEN');
+		$state->put('disable_legacy_write_token', true);
+		$context->environment(['VESTRA_WRITE_TOKEN'=>null]);
 		try{
 			return $callback();
 		}
 		finally{
 			if($had_flag){
-				$GLOBALS['dataphyre_vestra_disable_legacy_write_token']=$previous_flag;
+				$state->put('disable_legacy_write_token', $previous_flag);
 			}
 			else
 			{
-				unset($GLOBALS['dataphyre_vestra_disable_legacy_write_token']);
+				$state->forget('disable_legacy_write_token');
 			}
-			$previous_environment===false
-				? putenv('VESTRA_WRITE_TOKEN')
-				: putenv('VESTRA_WRITE_TOKEN='.$previous_environment);
+			$context->environment([
+				'VESTRA_WRITE_TOKEN'=>$previous_environment===false ? null : $previous_environment,
+			]);
 		}
 	}
 
@@ -229,8 +246,8 @@ namespace DataphyreUnitTests {
 			'write_token'=>'',
 			'node_token'=>'',
 		];
-		$t->same($expected, vestra_resolved_credentials('empty-profile'));
-		$t->same($expected, vestra_resolved_credentials(''));
+		$t->same($expected, vestra_resolved_credentials($t, 'empty-profile'));
+		$t->same($expected, vestra_resolved_credentials($t, ''));
 	})->tag('vestra', 'credentials', 'tenant-isolation');
 
 	test('explicit null tenant credentials fail closed and survive profile aliases', static function(Context $t): void {
@@ -241,9 +258,9 @@ namespace DataphyreUnitTests {
 			'write_token'=>'',
 			'node_token'=>'',
 		];
-		$t->same($expected, vestra_resolved_credentials('null-profile'));
+		$t->same($expected, vestra_resolved_credentials($t, 'null-profile'));
 
-		$context=vestra_private_call('tenant_context', [['tenant'=>'null-profile'], []]);
+		$context=vestra_private_call($t, 'tenant_context', [['tenant'=>'null-profile'], []]);
 		$t->same('null-canonical', $context['tenant'] ?? null);
 		foreach(array_keys($expected) as $key){
 			$t->isTrue(array_key_exists($key, $context));
@@ -259,9 +276,9 @@ namespace DataphyreUnitTests {
 			'write_token'=>'config-write-fallback',
 			'node_token'=>'environment-node-fallback',
 		];
-		$t->same($expected, vestra_resolved_credentials('omitted-profile'));
+		$t->same($expected, vestra_resolved_credentials($t, 'omitted-profile'));
 
-		$context=vestra_private_call('tenant_context', [['tenant'=>'omitted-profile'], []]);
+		$context=vestra_private_call($t, 'tenant_context', [['tenant'=>'omitted-profile'], []]);
 		$t->same('omitted-canonical', $context['tenant'] ?? null);
 		foreach(array_keys($expected) as $key){
 			$t->isFalse(array_key_exists($key, $context));
@@ -275,42 +292,42 @@ namespace DataphyreUnitTests {
 			'tenant_read_token'=>'legacy-read-fallback',
 			'write_token'=>'config-write-fallback',
 			'node_token'=>'environment-node-fallback',
-		], vestra_resolved_credentials('partial-profile'));
+		], vestra_resolved_credentials($t, 'partial-profile'));
 	})->tag('vestra', 'credentials', 'compatibility');
 
 	test('split Control credentials route access and write authority independently', static function(Context $t): void {
 		$t->same(1, \dataphyre\vestra::SEPARATE_CONTROL_CREDENTIALS_VERSION);
-		$write_path=vestra_private_call('tenant_control_path', ['split-profile', 'tokens/write']);
-		$reserve_path=vestra_private_call('tenant_control_path', ['split-profile', 'objects/reserve']);
+		$write_path=vestra_private_call($t, 'tenant_control_path', ['split-profile', 'tokens/write']);
+		$reserve_path=vestra_private_call($t, 'tenant_control_path', ['split-profile', 'objects/reserve']);
 		$t->same('/tenants/split-canonical/tokens/write', $write_path);
 		$t->same('/tenants/split-canonical/objects/reserve', $reserve_path);
-		$t->same('access-control-token', vestra_private_call('control_api_token', [
+		$t->same('access-control-token', vestra_private_call($t, 'control_api_token', [
 			'/tenants/split-canonical/tokens/access',
 			'split-profile',
 		]));
-		$t->same('write-control-token', vestra_private_call('control_api_token', [
+		$t->same('write-control-token', vestra_private_call($t, 'control_api_token', [
 			$write_path,
 			'split-profile',
 		]));
-		$t->same('write-control-token', vestra_private_call('control_api_token', [
+		$t->same('write-control-token', vestra_private_call($t, 'control_api_token', [
 			$reserve_path,
 			'split-profile',
 		]));
-		$t->same('/v/split-canonical/s/*', vestra_private_call('write_token_path', [
+		$t->same('/v/split-canonical/s/*', vestra_private_call($t, 'write_token_path', [
 			'/v/{tenant}/{rate}/*',
 			'split-profile',
 			's',
 		]));
-		$reference=vestra_private_call('reference_from_response', [[
+		$reference=vestra_private_call($t, 'reference_from_response', [[
 			'ok'=>true,
 			'tenant'=>'split-profile',
 			'data'=>['object_id'=>123456789],
 		]]);
 		$t->same('split-canonical', $reference['tenant'] ?? null);
 		$t->same('split-profile', $reference['tenant_profile'] ?? null);
-		$t->same('split-profile', vestra_private_call('reference_tenant_profile', [$reference]));
+		$t->same('split-profile', vestra_private_call($t, 'reference_tenant_profile', [$reference]));
 
-		vestra_reset_http_spy([
+		vestra_reset_http_spy($t, [
 			json_encode([
 				'ok'=>true,
 				'data'=>[
@@ -331,8 +348,8 @@ namespace DataphyreUnitTests {
 		$headers=is_array($calls[0][CURLOPT_HTTPHEADER] ?? null) ? $calls[0][CURLOPT_HTTPHEADER] : [];
 		$t->isTrue(in_array('X-Vestra-Control-Key: access-control-token', $headers, true));
 
-		vestra_reset_http_spy();
-		$t->type('array', vestra_private_call('control_request', [
+		vestra_reset_http_spy($t);
+		$t->type('array', vestra_private_call($t, 'control_request', [
 			'POST',
 			$reserve_path,
 			[],
@@ -346,8 +363,8 @@ namespace DataphyreUnitTests {
 		$headers=is_array($calls[0][CURLOPT_HTTPHEADER] ?? null) ? $calls[0][CURLOPT_HTTPHEADER] : [];
 		$t->isTrue(in_array('X-Vestra-Control-Key: write-control-token', $headers, true));
 
-		vestra_reset_http_spy();
-		$t->isFalse(vestra_private_call('control_request', [
+		vestra_reset_http_spy($t);
+		$t->isFalse(vestra_private_call($t, 'control_request', [
 			'POST',
 			$reserve_path,
 			[],
@@ -360,14 +377,9 @@ namespace DataphyreUnitTests {
 	})->tag('vestra', 'credentials', 'tenant-isolation');
 
 	test('reserve uploads send canonical tenant identity while resolving the alias credential', static function(Context $t): void {
-		$file=tempnam(sys_get_temp_dir(), 'dataphyre-vestra-alias-');
-		if(!is_string($file)){
-			throw new \RuntimeException('Unable to create the Vestra reserve fixture.');
-		}
 		$contents='canonical alias upload';
-		file_put_contents($file, $contents);
-		try{
-			vestra_reset_http_spy([
+		$file=$t->tempFile($contents, 'dataphyre-vestra-alias');
+		vestra_reset_http_spy($t, [
 				json_encode([
 					'ok'=>true,
 					'data'=>[
@@ -381,36 +393,32 @@ namespace DataphyreUnitTests {
 				], JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES),
 				json_encode(['ok'=>true], JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES),
 			]);
-			$reference=vestra_private_call('fabric_reserve_upload', [
+		$reference=vestra_private_call($t, 'fabric_reserve_upload', [
 				$file,
 				str_repeat('a', 64),
 				'split-profile',
 				strlen($contents),
 				'text/plain',
 			]);
-			$t->type('array', $reference);
-			$t->same('split-canonical', $reference['tenant'] ?? null);
-			$t->same('split-profile', $reference['tenant_profile'] ?? null);
+		$t->type('array', $reference);
+		$t->same('split-canonical', $reference['tenant'] ?? null);
+		$t->same('split-profile', $reference['tenant_profile'] ?? null);
 
-			$calls=vestra_http_calls();
-			$t->count(2, $calls);
-			$t->same('https://control.example.test/api/tenants/split-canonical/objects/reserve', $calls[0][CURLOPT_URL] ?? null);
-			$t->same('https://upload.example.test/object', $calls[1][CURLOPT_URL] ?? null);
-			$headers=is_array($calls[0][CURLOPT_HTTPHEADER] ?? null) ? $calls[0][CURLOPT_HTTPHEADER] : [];
-			$t->isTrue(in_array('X-Vestra-Control-Key: write-control-token', $headers, true));
-			$t->isTrue(count(array_filter($headers, static fn(mixed $header): bool=>is_string($header) && str_starts_with($header, 'Idempotency-Key: dataphyre_split-canonical_')))===1);
-		}
-		finally{
-			@unlink($file);
-		}
+		$calls=vestra_http_calls();
+		$t->count(2, $calls);
+		$t->same('https://control.example.test/api/tenants/split-canonical/objects/reserve', $calls[0][CURLOPT_URL] ?? null);
+		$t->same('https://upload.example.test/object', $calls[1][CURLOPT_URL] ?? null);
+		$headers=is_array($calls[0][CURLOPT_HTTPHEADER] ?? null) ? $calls[0][CURLOPT_HTTPHEADER] : [];
+		$t->isTrue(in_array('X-Vestra-Control-Key: write-control-token', $headers, true));
+		$t->isTrue(count(array_filter($headers, static fn(mixed $header): bool=>is_string($header) && str_starts_with($header, 'Idempotency-Key: dataphyre_split-canonical_')))===1);
 	})->tag('vestra', 'credentials', 'tenant-isolation');
 
 	test('write-only Control credentials can mint when access authority is explicitly denied', static function(Context $t): void {
-		vestra_without_legacy_write_token(static function() use ($t): void {
-			vestra_reset_http_spy();
-			$t->same('', vestra_private_call('vestra_api_token', ['write-only-profile']));
-			$t->same('write-only-control-token', vestra_private_call('vestra_write_api_token', ['write-only-profile']));
-			$t->same('w1.minted-test', vestra_private_call('vestra_write_token', [
+		vestra_without_legacy_write_token($t, static function() use ($t): void {
+			vestra_reset_http_spy($t);
+			$t->same('', vestra_private_call($t, 'vestra_api_token', ['write-only-profile']));
+			$t->same('write-only-control-token', vestra_private_call($t, 'vestra_write_api_token', ['write-only-profile']));
+			$t->same('w1.minted-test', vestra_private_call($t, 'vestra_write_token', [
 				'write-only-profile',
 				'PUT',
 				'/objects/fetch',
@@ -427,42 +435,34 @@ namespace DataphyreUnitTests {
 	})->tag('vestra', 'credentials', 'tenant-isolation');
 
 	test('explicit write Control denial cannot fall back to access authority', static function(Context $t): void {
-		$previous=getenv('VESTRA_WRITE_API_TOKEN');
-		putenv('VESTRA_WRITE_API_TOKEN=environment-write-control-fallback');
-		try{
-			$t->same('', vestra_private_call('vestra_write_api_token', ['write-api-denied-profile']));
-			$t->same('', vestra_private_call('control_api_token', [
+		$t->environment(['VESTRA_WRITE_API_TOKEN'=>'environment-write-control-fallback']);
+		$t->same('', vestra_private_call($t, 'vestra_write_api_token', ['write-api-denied-profile']));
+		$t->same('', vestra_private_call($t, 'control_api_token', [
 				'/tenants/write-api-denied-canonical/objects/reserve',
 				'write-api-denied-profile',
-			]));
-			$t->same('', vestra_private_call('control_api_token', [
+		]));
+		$t->same('', vestra_private_call($t, 'control_api_token', [
 				'/tenants/split-canonical/objects/reserve',
 				'split-profile',
 				['write_api_token'=>null],
-			]));
+		]));
 
-			vestra_without_legacy_write_token(static function() use ($t): void {
-				vestra_reset_http_spy();
-				$t->same('', vestra_private_call('vestra_write_token', [
+		vestra_without_legacy_write_token($t, static function() use ($t): void {
+			vestra_reset_http_spy($t);
+			$t->same('', vestra_private_call($t, 'vestra_write_token', [
 					'write-api-denied-profile',
 					'PUT',
 					'/objects/fetch',
 					['rate'=>'s', 'max_bytes'=>64],
 				]));
-				$t->count(0, vestra_http_calls());
-			});
-		}
-		finally{
-			$previous===false
-				? putenv('VESTRA_WRITE_API_TOKEN')
-				: putenv('VESTRA_WRITE_API_TOKEN='.$previous);
-		}
+			$t->count(0, vestra_http_calls());
+		});
 	})->tag('vestra', 'credentials', 'tenant-isolation');
 
 	test('explicit static write-token denial still prevents Control minting', static function(Context $t): void {
-		vestra_reset_http_spy();
-		$t->same('write-control-token', vestra_private_call('vestra_write_api_token', ['write-token-denied-profile']));
-		$t->same('', vestra_private_call('vestra_write_token', [
+		vestra_reset_http_spy($t);
+		$t->same('write-control-token', vestra_private_call($t, 'vestra_write_api_token', ['write-token-denied-profile']));
+		$t->same('', vestra_private_call($t, 'vestra_write_token', [
 			'write-token-denied-profile',
 			'PUT',
 			'/objects/fetch',
@@ -472,21 +472,13 @@ namespace DataphyreUnitTests {
 	})->tag('vestra', 'credentials', 'tenant-isolation');
 
 	test('omitted write Control credentials retain dedicated and legacy fallback order', static function(Context $t): void {
-		$t->same('flat-api-fallback', vestra_private_call('vestra_write_api_token', ['omitted-profile']));
-		$t->same('flat-api-fallback', vestra_private_call('control_api_token', [
+		$t->same('flat-api-fallback', vestra_private_call($t, 'vestra_write_api_token', ['omitted-profile']));
+		$t->same('flat-api-fallback', vestra_private_call($t, 'control_api_token', [
 			'/tenants/omitted-canonical/objects/reserve',
 			'omitted-profile',
 		]));
 
-		$previous=getenv('VESTRA_WRITE_API_TOKEN');
-		putenv('VESTRA_WRITE_API_TOKEN=environment-write-control-fallback');
-		try{
-			$t->same('environment-write-control-fallback', vestra_private_call('vestra_write_api_token', ['omitted-profile']));
-		}
-		finally{
-			$previous===false
-				? putenv('VESTRA_WRITE_API_TOKEN')
-				: putenv('VESTRA_WRITE_API_TOKEN='.$previous);
-		}
+		$t->environment(['VESTRA_WRITE_API_TOKEN'=>'environment-write-control-fallback']);
+		$t->same('environment-write-control-fallback', vestra_private_call($t, 'vestra_write_api_token', ['omitted-profile']));
 	})->tag('vestra', 'credentials', 'compatibility');
 }

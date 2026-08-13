@@ -32,15 +32,13 @@ trait dataphyre_flightdeck_debugbar_assets {
 	private static function response_assets(string $buffer): array {
 		$assets=[];
 		$patterns=[
-			'stylesheet'=>'/<link\b(?=[^>]*\brel=["\']?stylesheet\b)[^>]*\bhref=["\']([^"\']+)["\'][^>]*>/i',
-			'script'=>'/<script\b[^>]*\bsrc=["\']([^"\']+)["\'][^>]*>/i',
-			'image'=>'/<img\b[^>]*\bsrc=["\']([^"\']+)["\'][^>]*>/i',
-			'source'=>'/<source\b[^>]*\bsrc=["\']([^"\']+)["\'][^>]*>/i',
+			'stylesheet'=>'/<link\b(?=[^>]*\brel=["\']?stylesheet\b)[^>]*\bhref=["\']([^"\']*)["\'][^>]*>/i',
+			'script'=>'/<script\b[^>]*\bsrc=["\']([^"\']*)["\'][^>]*>/i',
+			'image'=>'/<img\b[^>]*\bsrc=["\']([^"\']*)["\'][^>]*>/i',
+			'source'=>'/<source\b[^>]*\bsrc=["\']([^"\']*)["\'][^>]*>/i',
 		];
 		foreach($patterns as $kind=>$pattern){
-			if(preg_match_all($pattern, $buffer, $matches)===false){
-				continue;
-			}
+			preg_match_all($pattern, $buffer, $matches);
 			foreach($matches[1] ?? [] as $url){
 				$url=html_entity_decode(trim((string)$url), ENT_QUOTES | ENT_HTML5, 'UTF-8');
 				if($url===''){
@@ -339,9 +337,7 @@ trait dataphyre_flightdeck_debugbar_assets {
 	 */
 	private static function duplicate_html_ids(string $buffer): array {
 		$counts=[];
-		if(preg_match_all('/\bid=(["\'])(.*?)\1/i', $buffer, $matches)===false){
-			return [];
-		}
+		preg_match_all('/\bid=(["\'])(.*?)\1/i', $buffer, $matches);
 		foreach($matches[2] ?? [] as $id){
 			$id=trim((string)$id);
 			if($id===''){

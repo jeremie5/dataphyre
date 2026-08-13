@@ -8,25 +8,9 @@
 
 require_once(dirname(__DIR__).'/view.php');
 
-$datadoc_main=ROOTPATH['common_dataphyre_runtime'].'modules/datadoc/kernel/datadoc.main.php';
-if(class_exists('\dataphyre\datadoc', false)!==true && is_file($datadoc_main)){
-	require_once($datadoc_main);
-}
-
-$datadoc_wrapper=ROOTPATH['common_dataphyre_runtime'].'modules/datadoc/kernel/wrapper.php';
-if(is_file($datadoc_wrapper)){
-	require_once($datadoc_wrapper);
-}
-
-$datadoc_assets_support=ROOTPATH['common_dataphyre_runtime'].'modules/datadoc/ui/assets_support.php';
-if(is_file($datadoc_assets_support)){
-	require_once($datadoc_assets_support);
-}
-
+$datadoc_surface_asset_request=defined('DATAPHYRE_FLIGHTDECK_ASSET_REQUEST')===true;
 if(defined('DATAPHYRE_FLIGHTDECK_DATADOC_SURFACE_LOADED')){
-	if(defined('DATAPHYRE_FLIGHTDECK_ASSET_REQUEST')!==true){
-		dataphyre_flightdeck_datadoc_surface::dispatch();
-	}
+	dataphyre_flightdeck_datadoc_surface::dispatch_entrypoint($datadoc_surface_asset_request);
 	return;
 }
 define('DATAPHYRE_FLIGHTDECK_DATADOC_SURFACE_LOADED', true);
@@ -39,6 +23,46 @@ define('DATAPHYRE_FLIGHTDECK_DATADOC_SURFACE_LOADED', true);
  * actions, while restricting project creation to known Dataphyre roots.
  */
 final class dataphyre_flightdeck_datadoc_surface {
+
+	/**
+	 * Loads DataDoc dependencies and dispatches when this file is mounted as a page.
+	 *
+	 * Asset requests intentionally skip the DataDoc module bootstrap because the
+	 * Flightdeck asset endpoint can serve the surface stylesheet independently.
+	 * Optional paths make bootstrap behavior deterministic for embedded runtimes.
+	 *
+	 * @param bool $asset_request Whether the caller is resolving an asset only.
+	 * @param ?array{main?:string,wrapper?:string,assets?:string} $paths Optional dependency paths.
+	 * @return void
+	 */
+	public static function dispatch_entrypoint(bool $asset_request, ?array $paths=null, ?callable $loader=null): void {
+		if($asset_request===true){
+			return;
+		}
+		self::load_runtime($paths, $loader);
+		self::dispatch();
+	}
+
+	/** Loads the optional DataDoc facade, wrapper, and shared UI assets. */
+	private static function load_runtime(?array $paths=null, ?callable $loader=null): void {
+		$runtime=rtrim((string)(ROOTPATH['common_dataphyre_runtime'] ?? ''), '/\\').'/';
+		$paths ??=[
+			'main'=>$runtime.'modules/datadoc/kernel/datadoc.main.php',
+			'wrapper'=>$runtime.'modules/datadoc/kernel/wrapper.php',
+			'assets'=>$runtime.'modules/datadoc/ui/assets_support.php',
+		];
+		$loader ??= static function(string $path): void { require_once $path; };
+		$main=(string)($paths['main'] ?? '');
+		if(class_exists('\dataphyre\datadoc', false)!==true && is_file($main)){
+			$loader($main);
+		}
+		foreach(['wrapper', 'assets'] as $dependency){
+			$path=(string)($paths[$dependency] ?? '');
+			if(is_file($path)){
+				$loader($path);
+			}
+		}
+	}
 
 	/**
 	 * Dispatches the DataDoc Flightdeck surface route.
@@ -117,8 +141,8 @@ final class dataphyre_flightdeck_datadoc_surface {
 	 *
 	 * @return list<string> Ordered route fragments with empty path elements removed.
 	 */
-	private static function segments(): array {
-		$path=(string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? '/dataphyre/datadoc'), PHP_URL_PATH) ?: '');
+	private static function segments(?string $request_uri=null): array {
+		$path=(string)(parse_url($request_uri ?? (string)($_SERVER['REQUEST_URI'] ?? '/dataphyre/datadoc'), PHP_URL_PATH) ?: '');
 		$base='/dataphyre/datadoc';
 		if(str_starts_with($path, $base)){
 			$path=substr($path, strlen($base));
@@ -229,9 +253,9 @@ final class dataphyre_flightdeck_datadoc_surface {
 	 * @param array<string,array<string,mixed>> $projects_by_name Registered projects keyed by project name.
 	 * @return string Flightdeck card HTML for application project management.
 	 */
-	private static function application_management_card(array $projects_by_name): string {
+	private static function application_management_card(array $projects_by_name, ?array $applications=null): string {
 		$rows=[];
-		foreach(self::discovered_applications() as $app){
+		foreach($applications ?? self::discovered_applications() as $app){
 			$project_key=(string)$app['project'];
 			$project=$projects_by_name[$project_key] ?? null;
 			$state=is_array($project)
@@ -266,8 +290,8 @@ final class dataphyre_flightdeck_datadoc_surface {
 	 *
 	 * @return string Flightdeck card HTML containing the project creation form.
 	 */
-	private static function project_create_card(): string {
-		$default_path=self::current_application_path() ?? (defined('DATAPHYRE_PROJECT_ROOT') ? rtrim((string)DATAPHYRE_PROJECT_ROOT, '/\\') : '');
+	private static function project_create_card(?string $default_path=null): string {
+		$default_path ??= self::current_application_path() ?? (defined('DATAPHYRE_PROJECT_ROOT') ? rtrim((string)DATAPHYRE_PROJECT_ROOT, '/\\') : '');
 		$html='<form id="fd-datadoc-create" method="post" class="fd-management-form">';
 		$html.=self::csrf_input();
 		$html.='<input type="hidden" name="fd_datadoc_index_action" value="create_project">';
@@ -1006,21 +1030,16 @@ HTML;
 	 * @param ?string $error Populated with a readable discovery failure reason.
 	 * @return list<array<string,mixed>> Registered DataDoc project rows.
 	 */
-	private static function projects(?string &$error=null): array {
+	private static function projects(?string &$error=null, ?callable $selector=null, ?bool $sql_available=null): array {
 		$error=null;
-		if(function_exists('sql_select')!==true){
+		$sql_available ??= $selector!==null || function_exists('sql_select');
+		if($sql_available!==true){
 			$error='SQL helpers are not loaded.';
 			return [];
 		}
+		$selector ??= static fn(...$arguments)=>sql_select(...$arguments);
 		try{
-			$projects=sql_select(
-				$S='*',
-				$L='datadoc.projects',
-				$P='ORDER BY title, name',
-				$V=[],
-				$F=true,
-				$C=false
-			);
+			$projects=$selector('*', 'datadoc.projects', 'ORDER BY title, name', [], true, false);
 			return is_array($projects) ? $projects : [];
 		}catch(\Throwable $exception){
 			$error=self::project_storage_error($exception);
@@ -1089,8 +1108,8 @@ HTML;
 	 * @param string $project DataDoc project key.
 	 * @return string Flightdeck card HTML for index progress.
 	 */
-	private static function index_progress_card(string $project): string {
-		$progress=self::index_progress($project);
+	private static function index_progress_card(string $project, ?array $progress=null): string {
+		$progress ??= self::index_progress($project);
 		$percent=$progress['files']>0 ? min(100, round((($progress['files'] - $progress['stale']) / $progress['files']) * 100, 1)) : 0;
 		$rows=[
 			['Known PHP Files', number_format($progress['files'])],
@@ -1211,12 +1230,14 @@ HTML;
 	 * @param list<mixed> $vars Bound SQL variables.
 	 * @return int Non-negative count, or zero when counting is unavailable.
 	 */
-	private static function count_rows(string $table, string $where, array $vars): int {
-		if(function_exists('sql_count')!==true){
+	private static function count_rows(string $table, string $where, array $vars, ?callable $counter=null, ?bool $sql_available=null): int {
+		$sql_available ??= $counter!==null || function_exists('sql_count');
+		if($sql_available!==true){
 			return 0;
 		}
+		$counter ??= static fn(...$arguments)=>sql_count(...$arguments);
 		try{
-			$count=sql_count($table, $where, $vars, false);
+			$count=$counter($table, $where, $vars, false);
 			return is_numeric($count) ? (int)$count : 0;
 		}catch(\Throwable){
 			return 0;
@@ -1308,12 +1329,14 @@ HTML;
 	 * @param string $project DataDoc project key.
 	 * @return string Last indexed filepath in discovery order, or an empty cursor.
 	 */
-	private static function last_indexed_file(string $project): string {
-		if(function_exists('sql_select')!==true){
+	private static function last_indexed_file(string $project, ?callable $selector=null, ?bool $sql_available=null): string {
+		$sql_available ??= $selector!==null || function_exists('sql_select');
+		if($sql_available!==true){
 			return '';
 		}
+		$selector ??= static fn(...$arguments)=>sql_select(...$arguments);
 		try{
-			$rows=sql_select('MAX(filepath) AS cursor', 'dataphyre.datadoc_files', 'WHERE project=?', [$project], true, false);
+			$rows=$selector('MAX(filepath) AS cursor', 'dataphyre.datadoc_files', 'WHERE project=?', [$project], true, false);
 			if(is_array($rows) && isset($rows[0]) && is_array($rows[0])){
 				return self::normalize_path((string)($rows[0]['cursor'] ?? ''));
 			}
@@ -1329,13 +1352,13 @@ HTML;
 	 * @param string $after Cursor filepath already discovered.
 	 * @return ?string Next discoverable PHP filepath, or null when discovery is complete.
 	 */
-	private static function next_discoverable_file_after(string $dirpath, string $after): ?string {
+	private static function next_discoverable_file_after(string $dirpath, string $after, ?callable $scanner=null, ?callable $exclude=null): ?string {
 		$dirpath=rtrim(self::normalize_path($dirpath), '/');
 		$after=self::normalize_path($after);
 		if($dirpath==='' || !is_dir($dirpath)){
 			return null;
 		}
-		return self::next_discoverable_file_after_walk($dirpath, $after);
+		return self::next_discoverable_file_after_walk($dirpath, $after, $scanner, $exclude);
 	}
 
 	/**
@@ -1345,8 +1368,11 @@ HTML;
 	 * @param string $after Cursor filepath already discovered.
 	 * @return ?string First indexable PHP filepath after the cursor.
 	 */
-	private static function next_discoverable_file_after_walk(string $dirpath, string $after): ?string {
-		$entries=scandir($dirpath);
+	private static function next_discoverable_file_after_walk(string $dirpath, string $after, ?callable $scanner=null, ?callable $exclude=null): ?string {
+		$scanner ??= static fn(string $path): array|false => scandir($path);
+		$exclude ??= static fn(string $path): bool =>
+			class_exists('\dataphyre\datadoc', false) && \dataphyre\datadoc::should_exclude_index_file($path);
+		$entries=$scanner($dirpath);
 		if(!is_array($entries)){
 			return null;
 		}
@@ -1360,7 +1386,7 @@ HTML;
 				if(self::should_skip_discovery_directory($entry)){
 					continue;
 				}
-				$next=self::next_discoverable_file_after_walk($filepath, $after);
+				$next=self::next_discoverable_file_after_walk($filepath, $after, $scanner, $exclude);
 				if($next!==null){
 					return $next;
 				}
@@ -1369,7 +1395,7 @@ HTML;
 			if(!is_file($filepath) || !str_ends_with($filepath, '.php')){
 				continue;
 			}
-			if(class_exists('\dataphyre\datadoc', false) && \dataphyre\datadoc::should_exclude_index_file($filepath)){
+			if($exclude($filepath)===true){
 				continue;
 			}
 			if($after==='' || strcmp($filepath, $after)>0){
@@ -1413,7 +1439,7 @@ HTML;
 	private static function excluded_index_path_patterns(): array {
 		$patterns=[
 			'%/unit_tests/%',
-			'%/common/dataphyre/runtime/modules/stripe/src/lib/%',
+			'%/dataphyre/runtime/modules/stripe/src/lib/%',
 		];
 		$configured=defined('DATAPHYRE_DATADOC_EXCLUDED_INDEX_PATH_PATTERNS')
 			? constant('DATAPHYRE_DATADOC_EXCLUDED_INDEX_PATH_PATTERNS')
@@ -1471,10 +1497,12 @@ HTML;
 	 * @param array{q:string,type:string,active:bool} $filters Optional search/type filters from the project overview.
 	 * @return list<array<string,mixed>> Recent indexed records.
 	 */
-	private static function dynamic_records(string $project, int $limit=50, array $filters=['q'=>'', 'type'=>'', 'active'=>false]): array {
-		if(function_exists('sql_select')!==true){
+	private static function dynamic_records(string $project, int $limit=50, array $filters=['q'=>'', 'type'=>'', 'active'=>false], ?callable $selector=null, ?bool $sql_available=null): array {
+		$sql_available ??= $selector!==null || function_exists('sql_select');
+		if($sql_available!==true){
 			return [];
 		}
+		$selector ??= static fn(...$arguments)=>sql_select(...$arguments);
 		$parts=self::dynamic_record_conditions($project, $filters);
 		$conditions=$parts['conditions'];
 		$vars=$parts['vars'];
@@ -1482,13 +1510,13 @@ HTML;
 			? 'type, namespace, class, function, content, file'
 			: "CASE type WHEN 'class' THEN 0 WHEN 'function' THEN 1 WHEN 'namespace' THEN 2 ELSE 3 END, CASE WHEN phpdoc_description IS NOT NULL AND phpdoc_description<>'' AND phpdoc_description<>'0' THEN 0 ELSE 1 END, namespace, class, function, content, file";
 		try{
-			$records=sql_select(
-				$S='*',
-				$L='dataphyre.datadoc_data',
-				$P='WHERE '.implode(' AND ', $conditions).' ORDER BY '.$order.' LIMIT '.max(1, $limit),
-				$V=$vars,
-				$F=true,
-				$C=false
+			$records=$selector(
+				'*',
+				'dataphyre.datadoc_data',
+				'WHERE '.implode(' AND ', $conditions).' ORDER BY '.$order.' LIMIT '.max(1, $limit),
+				$vars,
+				true,
+				false
 			);
 			return is_array($records) ? $records : [];
 		}catch(\Throwable){
@@ -1654,10 +1682,12 @@ HTML;
 	 * @param string $project DataDoc project key.
 	 * @return list<array<string,mixed>> Matching dynamic documentation records.
 	 */
-	private static function matching_dynamic_records(string $project): array {
-		if(function_exists('sql_select')!==true){
+	private static function matching_dynamic_records(string $project, ?callable $selector=null, ?bool $sql_available=null): array {
+		$sql_available ??= $selector!==null || function_exists('sql_select');
+		if($sql_available!==true){
 			return [];
 		}
+		$selector ??= static fn(...$arguments)=>sql_select(...$arguments);
 		$conditions=['project=?'];
 		$vars=[$project];
 		$excluded_functions=self::excluded_dynamic_record_functions();
@@ -1680,13 +1710,13 @@ HTML;
 			array_push($vars, 'class', $class_name, $class_name);
 		}
 		try{
-			$records=sql_select(
-				$S='*',
-				$L='dataphyre.datadoc_data',
-				$P='WHERE '.implode(' AND ', $conditions).' ORDER BY namespace, class, function, type, content LIMIT 100',
-				$V=$vars,
-				$F=true,
-				$C=false
+			$records=$selector(
+				'*',
+				'dataphyre.datadoc_data',
+				'WHERE '.implode(' AND ', $conditions).' ORDER BY namespace, class, function, type, content LIMIT 100',
+				$vars,
+				true,
+				false
 			);
 			return is_array($records) ? $records : [];
 		}catch(\Throwable){
@@ -1841,27 +1871,34 @@ HTML;
 	 * @param bool $show_lines Whether to render source line numbers.
 	 * @return string Highlighted and linkified code HTML, or escaped fallback code HTML.
 	 */
-	private static function highlight_code(string $code, array $record, bool $show_lines): string {
+	private static function highlight_code(string $code, array $record, bool $show_lines, array $runtime=[]): string {
 		if($show_lines && strlen($code)>24000){
 			return '<div class="fd-datadoc-code">'.dataphyre_flightdeck_view::code($code).'</div>';
 		}
-		if(class_exists('\dataphyre\datadoc\highlighter', false)!==true){
+		$available=array_key_exists('available',$runtime)
+			? (bool)$runtime['available']
+			: class_exists('\dataphyre\datadoc\highlighter', false);
+		if($available!==true){
 			return dataphyre_flightdeck_view::code($code);
 		}
+		$highlight=$runtime['highlight'] ?? static fn(string $source, array $options): string =>
+			\dataphyre\datadoc\highlighter::highlight_code($source, 'php', $options);
+		$linkify=$runtime['linkify'] ?? static fn(string $html, array $identity): string =>
+			\dataphyre\datadoc\highlighter::linkify_php(
+				$html,
+				(string)($identity['project'] ?? ''),
+				(string)($identity['namespace'] ?? ''),
+				(string)($identity['class'] ?? ''),
+				(string)($identity['function'] ?? '')
+			);
 		try{
 			$options=$show_lines ? [
 				'show_lines'=>true,
 				'start_line'=>(int)($record['line'] ?? 1),
 				'line_number_start'=>(int)($record['line'] ?? 1),
 			] : [];
-			$highlighted=\dataphyre\datadoc\highlighter::highlight_code($code, 'php', $options);
-			$highlighted=\dataphyre\datadoc\highlighter::linkify_php(
-				$highlighted,
-				(string)($record['project'] ?? ''),
-				(string)($record['namespace'] ?? ''),
-				(string)($record['class'] ?? ''),
-				(string)($record['function'] ?? '')
-			);
+			$highlighted=$highlight($code, $options);
+			$highlighted=$linkify($highlighted, $record);
 			return '<div class="fd-datadoc-code">'.$highlighted.'</div>';
 		}catch(\Throwable){
 			return dataphyre_flightdeck_view::code($code);
@@ -1879,11 +1916,13 @@ HTML;
 	 *
 	 * @return string Notice HTML describing the action result, or an empty string for non-POST requests.
 	 */
-	private static function handle_index_action(): string {
+	private static function handle_index_action(?array $allowed_roots=null, ?array $applications=null, ?bool $csrf_valid=null): string {
 		if(($_SERVER['REQUEST_METHOD'] ?? 'GET')!=='POST' || empty($_POST['fd_datadoc_index_action'])){
 			return '';
 		}
-		if(class_exists('dataphyre_flightdeck_auth', false) && dataphyre_flightdeck_auth::verify_csrf($_POST['csrf'] ?? null)!==true){
+		$csrf_valid ??= class_exists('dataphyre_flightdeck_auth', false)!==true
+			|| dataphyre_flightdeck_auth::verify_csrf($_POST['csrf'] ?? null)===true;
+		if($csrf_valid!==true){
 			return '<div class="fd-alert">Invalid Flightdeck form token. Reload this page and try again.</div>';
 		}
 		$action=(string)$_POST['fd_datadoc_index_action'];
@@ -1897,7 +1936,7 @@ HTML;
 		if($action==='refresh_project'){
 			$project=self::normalize_project_key((string)($_POST['project'] ?? ''));
 			$project_row=$project!=='' ? \dataphyre\datadoc::get_project($project) : null;
-			$path=is_array($project_row) ? self::validated_project_path((string)($project_row['path'] ?? '')) : null;
+			$path=is_array($project_row) ? self::validated_project_path((string)($project_row['path'] ?? ''), $allowed_roots) : null;
 			if($project==='' || $path===null){
 				return '<div class="fd-alert">Invalid DataDoc project refresh request.</div>';
 			}
@@ -1906,14 +1945,14 @@ HTML;
 		}
 		if($action==='continue_index'){
 			$project=self::normalize_project_key((string)($_POST['project'] ?? ''));
-			$path=self::validated_project_path((string)($_POST['path'] ?? ''));
+			$path=self::validated_project_path((string)($_POST['path'] ?? ''), $allowed_roots);
 			if($project==='' || $path===null || \dataphyre\datadoc::get_project($project)===null){
 				return '<div class="fd-alert">Invalid DataDoc index continuation request.</div>';
 			}
 			return self::run_index_batch($project, $path, (string)($_POST['cursor'] ?? ''), 'fd_datadoc_index_action');
 		}
 		if($action==='create_app_project' || $action==='create_app_project_index'){
-			$app=self::application_by_key((string)($_POST['app_key'] ?? ''));
+			$app=self::application_by_key((string)($_POST['app_key'] ?? ''), $applications);
 			if($app===null){
 				return '<div class="fd-alert">Invalid application project request.</div>';
 			}
@@ -1921,7 +1960,8 @@ HTML;
 				(string)$app['project'],
 				(string)$app['title'],
 				(string)$app['path'],
-				$action==='create_app_project_index'
+				$action==='create_app_project_index',
+				$allowed_roots
 			);
 		}
 		if($action==='create_project'){
@@ -1929,7 +1969,8 @@ HTML;
 				(string)($_POST['project'] ?? ''),
 				(string)($_POST['title'] ?? ''),
 				(string)($_POST['path'] ?? ''),
-				!empty($_POST['index_now'])
+				!empty($_POST['index_now']),
+				$allowed_roots
 			);
 		}
 		return '<div class="fd-alert">Unsupported DataDoc action.</div>';
@@ -1949,13 +1990,13 @@ HTML;
 	 * @param bool $index_now Whether to start discovery and synchronization immediately.
 	 * @return string Notice HTML describing creation or validation failure.
 	 */
-	private static function create_project_from_input(string $project, string $title, string $path, bool $index_now): string {
+	private static function create_project_from_input(string $project, string $title, string $path, bool $index_now, ?array $allowed_roots=null): string {
 		$project=self::normalize_project_key($project);
 		$title=trim($title);
 		if($project===''){
 			return '<div class="fd-alert">Project key is required and may only contain letters, numbers, dashes, and underscores.</div>';
 		}
-		$validated_path=self::validated_project_path($path);
+		$validated_path=self::validated_project_path($path, $allowed_roots);
 		if($validated_path===null){
 			return '<div class="fd-alert">Project path must be an existing directory inside the current Dataphyre project roots.</div>';
 		}
@@ -2164,9 +2205,11 @@ HTML;
 	 *
 	 * @return list<array{key:string,name:string,title:string,project:string,path:string}> Discovered application descriptors.
 	 */
-	private static function discovered_applications(): array {
+	private static function discovered_applications(array $runtime=[]): array {
 		$applications=[];
-		$dataphyre_root=self::dataphyre_source_root();
+		$dataphyre_root=array_key_exists('dataphyre_root',$runtime)
+			? (is_string($runtime['dataphyre_root']) && $runtime['dataphyre_root']!=='' ? self::normalize_path($runtime['dataphyre_root']) : null)
+			: self::dataphyre_source_root();
 		if($dataphyre_root!==null){
 			$applications[$dataphyre_root]=[
 				'key'=>substr(hash('sha256', $dataphyre_root), 0, 16),
@@ -2176,7 +2219,10 @@ HTML;
 				'path'=>$dataphyre_root,
 			];
 		}
-		foreach(self::application_roots() as $root){
+		$application_roots=array_key_exists('application_roots',$runtime) && is_array($runtime['application_roots'])
+			? self::application_roots($runtime['application_roots'])
+			: self::application_roots();
+		foreach($application_roots as $root){
 			foreach(scandir($root) ?: [] as $entry){
 				if($entry==='.' || $entry==='..' || $entry[0]==='.'){
 					continue;
@@ -2208,11 +2254,11 @@ HTML;
 	 *
 	 * @return ?string Normalized Dataphyre source root when available.
 	 */
-	private static function dataphyre_source_root(): ?string {
-		$candidates=[
+	private static function dataphyre_source_root(?array $candidates=null): ?string {
+		$candidates ??=[
 			defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre']) ? (string)ROOTPATH['common_dataphyre'] : '',
-			defined('DATAPHYRE_PROJECT_ROOT') ? rtrim((string)DATAPHYRE_PROJECT_ROOT, '/\\').'/common/dataphyre' : '',
-			defined('ROOTPATH') && !empty(ROOTPATH['root']) ? rtrim((string)ROOTPATH['root'], '/\\').'/common/dataphyre' : '',
+			defined('DATAPHYRE_PROJECT_ROOT') ? rtrim((string)DATAPHYRE_PROJECT_ROOT, '/\\').'/dataphyre' : '',
+			defined('ROOTPATH') && !empty(ROOTPATH['root']) ? rtrim((string)ROOTPATH['root'], '/\\').'/dataphyre' : '',
 		];
 		foreach($candidates as $candidate){
 			$real=realpath($candidate);
@@ -2233,8 +2279,8 @@ HTML;
 	 * @param string $key Hashed application key from a POST form.
 	 * @return ?array{key:string,name:string,title:string,project:string,path:string} Matching application descriptor.
 	 */
-	private static function application_by_key(string $key): ?array {
-		foreach(self::discovered_applications() as $app){
+	private static function application_by_key(string $key, ?array $applications=null): ?array {
+		foreach($applications ?? self::discovered_applications() as $app){
 			if(hash_equals((string)$app['key'], $key)){
 				return $app;
 			}
@@ -2251,12 +2297,14 @@ HTML;
 	 *
 	 * @return ?string Normalized current application path.
 	 */
-	private static function current_application_path(): ?string {
-		if(!defined('APP')){
+	private static function current_application_path(?string $application=null, ?array $roots=null, ?bool $application_defined=null): ?string {
+		$application_defined ??= $application!==null || defined('APP');
+		if($application_defined!==true){
 			return null;
 		}
-		foreach(self::application_roots() as $root){
-			$path=rtrim($root, '/\\').'/'.(string)APP;
+		$application ??= (string)APP;
+		foreach($roots ?? self::application_roots() as $root){
+			$path=rtrim($root, '/\\').'/'.$application;
 			$real=realpath($path);
 			if(is_string($real) && is_dir($real)){
 				return self::normalize_path($real);
@@ -2274,24 +2322,26 @@ HTML;
 	 *
 	 * @return list<string> Unique normalized application root paths.
 	 */
-	private static function application_roots(): array {
-		$roots=[];
-		if(defined('ROOTPATH') && !empty(ROOTPATH['application_roots']) && is_array(ROOTPATH['application_roots'])){
+	private static function application_roots(?array $candidates=null, ?callable $locator=null, ?bool $locator_available=null): array {
+		$roots=$candidates ?? [];
+		if($candidates===null && defined('ROOTPATH') && !empty(ROOTPATH['application_roots']) && is_array(ROOTPATH['application_roots'])){
 			foreach(ROOTPATH['application_roots'] as $root){
 				$roots[]=(string)$root;
 			}
 		}
-		if(class_exists('\dataphyre\app_locator', false)){
+		$locator_available ??= $locator!==null || class_exists('\dataphyre\app_locator', false);
+		if($candidates===null && $locator_available){
 			$project_root=defined('DATAPHYRE_PROJECT_ROOT') ? (string)DATAPHYRE_PROJECT_ROOT : (defined('ROOTPATH') && !empty(ROOTPATH['root']) ? (string)ROOTPATH['root'] : dirname(__DIR__, 6));
 			$configured_roots=defined('DATAPHYRE_APPLICATION_ROOTS') && is_array(DATAPHYRE_APPLICATION_ROOTS) ? DATAPHYRE_APPLICATION_ROOTS : $roots;
-			foreach(\dataphyre\app_locator::roots($project_root, $configured_roots) as $root){
+			$locator ??= static fn(string $root, array $configured): array => \dataphyre\app_locator::roots($root, $configured);
+			foreach($locator($project_root, $configured_roots) as $root){
 				$roots[]=(string)$root;
 			}
 		}
-		if(defined('DATAPHYRE_PROJECT_ROOT')){
+		if($candidates===null && defined('DATAPHYRE_PROJECT_ROOT')){
 			$roots[]=rtrim((string)DATAPHYRE_PROJECT_ROOT, '/\\').'/applications';
 		}
-		if(defined('ROOTPATH') && !empty(ROOTPATH['root'])){
+		if($candidates===null && defined('ROOTPATH') && !empty(ROOTPATH['root'])){
 			$roots[]=rtrim((string)ROOTPATH['root'], '/\\').'/applications';
 		}
 		$result=[];
@@ -2314,9 +2364,9 @@ HTML;
 	 *
 	 * @return list<string> Unique normalized directories allowed for DataDoc projects.
 	 */
-	private static function allowed_project_roots(): array {
-		$roots=self::application_roots();
-		foreach([
+	private static function allowed_project_roots(?array $candidates=null): array {
+		$roots=$candidates!==null ? [] : self::application_roots();
+		foreach($candidates ?? [
 			defined('DATAPHYRE_PROJECT_ROOT') ? (string)DATAPHYRE_PROJECT_ROOT : '',
 			defined('ROOTPATH') && !empty(ROOTPATH['root']) ? (string)ROOTPATH['root'] : '',
 			defined('ROOTPATH') && !empty(ROOTPATH['common']) ? (string)ROOTPATH['common'] : '',
@@ -2341,7 +2391,7 @@ HTML;
 	 * @param string $path Raw project path from a form or registered project.
 	 * @return ?string Normalized real path accepted for DataDoc indexing.
 	 */
-	private static function validated_project_path(string $path): ?string {
+	private static function validated_project_path(string $path, ?array $allowed_roots=null): ?string {
 		$path=trim($path);
 		if($path===''){
 			return null;
@@ -2351,7 +2401,7 @@ HTML;
 			return null;
 		}
 		$normalized=self::normalize_path($real);
-		foreach(self::allowed_project_roots() as $root){
+		foreach(self::allowed_project_roots($allowed_roots) as $root){
 			$root=rtrim(self::normalize_path($root), '/').'/';
 			if($normalized===rtrim($root, '/') || str_starts_with($normalized.'/', $root)){
 				return $normalized;
@@ -2562,11 +2612,13 @@ HTML;
 	 * @param array<string,mixed> $project DataDoc project record for the current page.
 	 * @return string Notice HTML describing the action result, or an empty string for non-POST requests.
 	 */
-	private static function handle_project_action(array $project): string {
+	private static function handle_project_action(array $project, ?array $allowed_roots=null, ?bool $csrf_valid=null): string {
 		if(($_SERVER['REQUEST_METHOD'] ?? 'GET')!=='POST' || empty($_POST['fd_datadoc_action'])){
 			return '';
 		}
-		if(class_exists('dataphyre_flightdeck_auth', false) && dataphyre_flightdeck_auth::verify_csrf($_POST['csrf'] ?? null)!==true){
+		$csrf_valid ??= class_exists('dataphyre_flightdeck_auth', false)!==true
+			|| dataphyre_flightdeck_auth::verify_csrf($_POST['csrf'] ?? null)===true;
+		if($csrf_valid!==true){
 			return '<div class="fd-alert">Invalid Flightdeck form token. Reload this page and try again.</div>';
 		}
 		$action=(string)$_POST['fd_datadoc_action'];
@@ -2575,7 +2627,7 @@ HTML;
 			return self::run_sync_batch($project_name, 'fd_datadoc_action');
 		}
 		if($action==='refresh_project'){
-			$path=self::validated_project_path((string)($project['path'] ?? ''));
+			$path=self::validated_project_path((string)($project['path'] ?? ''), $allowed_roots);
 			if($path===null){
 				return '<div class="fd-alert">Invalid DataDoc project refresh request.</div>';
 			}
@@ -2583,7 +2635,7 @@ HTML;
 			return self::run_index_batch($project_name, $path, $cursor, 'fd_datadoc_action');
 		}
 		if($action==='continue_index'){
-			$path=self::validated_project_path((string)($_POST['path'] ?? ''));
+			$path=self::validated_project_path((string)($_POST['path'] ?? ''), $allowed_roots);
 			if($path===null){
 				return '<div class="fd-alert">Invalid DataDoc index continuation request.</div>';
 			}
@@ -2765,6 +2817,4 @@ HTML;
 	}
 }
 
-if(defined('DATAPHYRE_FLIGHTDECK_ASSET_REQUEST')!==true){
-	dataphyre_flightdeck_datadoc_surface::dispatch();
-}
+dataphyre_flightdeck_datadoc_surface::dispatch_entrypoint($datadoc_surface_asset_request);

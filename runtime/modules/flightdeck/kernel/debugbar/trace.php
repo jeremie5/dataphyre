@@ -84,10 +84,11 @@ trait dataphyre_flightdeck_debugbar_trace {
 	 * converted into a linear graph so the panel still exposes call flow.
 	 *
 	 * @param array<int,array<string,mixed>> $entries Normalized live, session, and retroactive trace rows.
+	 * @param ?array<int,array<int,array<string,mixed>>> $plot_frames Optional deterministic plotting frames.
 	 * @return array<string,mixed> Graph payload with source, frame counts, nodes, and links.
 	 */
-	private static function trace_plot_state(array $entries): array {
-		$frames=self::trace_plot_frames_from_file();
+	private static function trace_plot_state(array $entries, ?array $plot_frames=null): array {
+		$frames=$plot_frames ?? self::trace_plot_frames_from_file();
 		if($frames!==[]){
 			return self::trace_plot_from_frames($frames, 'plotting_file');
 		}
@@ -101,10 +102,11 @@ trait dataphyre_flightdeck_debugbar_trace {
 	 * JSON arrays. Missing, unreadable, empty, or malformed cache content simply
 	 * yields no frames so debugbar rendering remains best-effort.
 	 *
+	 * @param ?string $explicit_file Optional deterministic cache path for diagnostics and tests.
 	 * @return array<int,array<int,array<string,mixed>>> Decoded stack frames ordered by capture time.
 	 */
-	private static function trace_plot_frames_from_file(): array {
-		$file=self::trace_plot_file();
+	private static function trace_plot_frames_from_file(?string $explicit_file=null): array {
+		$file=$explicit_file ?? self::trace_plot_file();
 		if($file==='' || is_file($file)!==true || is_readable($file)!==true){
 			return [];
 		}
@@ -141,14 +143,16 @@ trait dataphyre_flightdeck_debugbar_trace {
 	 * both map to the same cache filename. An empty string means the current
 	 * bootstrap did not publish a usable runtime root.
 	 *
+	 * @param ?array<string,mixed> $roots Optional deterministic runtime root map.
 	 * @return string Absolute plotting cache path, or an empty string.
 	 */
-	private static function trace_plot_file(): string {
-		if(defined('ROOTPATH') && is_array(ROOTPATH) && !empty(ROOTPATH['dataphyre'])){
-			return rtrim((string)ROOTPATH['dataphyre'], '/\\').'/cache/tracelog_plotting.dat';
+	private static function trace_plot_file(?array $roots=null): string {
+		$roots=$roots ?? (defined('ROOTPATH') && is_array(ROOTPATH) ? ROOTPATH : []);
+		if(!empty($roots['dataphyre'])){
+			return rtrim((string)$roots['dataphyre'], '/\\').'/cache/tracelog_plotting.dat';
 		}
-		if(defined('ROOTPATH') && is_array(ROOTPATH) && !empty(ROOTPATH['common_dataphyre'])){
-			return rtrim((string)ROOTPATH['common_dataphyre'], '/\\').'/cache/tracelog_plotting.dat';
+		if(!empty($roots['common_dataphyre'])){
+			return rtrim((string)$roots['common_dataphyre'], '/\\').'/cache/tracelog_plotting.dat';
 		}
 		return '';
 	}
@@ -238,9 +242,6 @@ trait dataphyre_flightdeck_debugbar_trace {
 				'time'=>(string)($entry['offset_ms'] ?? ''),
 			];
 			$id=self::trace_plot_node_id($frame);
-			if($id===''){
-				continue;
-			}
 			if(!isset($nodes[$id])){
 				$nodes[$id]=self::trace_plot_node($id, $frame, count($node_order));
 				$node_order[]=$id;
@@ -476,9 +477,6 @@ trait dataphyre_flightdeck_debugbar_trace {
 			if(preg_match('/\bFCw?T?:\s*([^(]+)\(/', $message, $match)===1){
 				$call=trim((string)$match[1]);
 			}
-			elseif(preg_match('/\bFC:\s*([^:]+(?:::[^:]+)?)\(\):/', $message, $match)===1){
-				$call=trim((string)$match[1]);
-			}
 			$type=self::trace_level_from_html($row);
 			$entries[]=[
 				'origin'=>$origin,
@@ -699,9 +697,6 @@ trait dataphyre_flightdeck_debugbar_trace {
 		}
 		if(is_object($value)){
 			return 'Object';
-		}
-		if(is_callable($value)){
-			return 'Callable';
 		}
 		return 'N/A';
 	}

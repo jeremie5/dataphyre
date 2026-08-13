@@ -1,0 +1,58 @@
+name: dataphyre-minimal-dev
+
+services:
+  app:
+    build:
+      context: ${DATAPHYRE_DEV_CONTEXT:-../..}
+      dockerfile: dev/container/php/Dockerfile
+    command:
+      - php
+      - -S
+      - 0.0.0.0:8080
+      - -t
+      - /workspace
+      - /workspace/index.php
+    environment:
+      APP_ENV: development
+      DATAPHYRE_PROJECT_ROOT: /workspace
+      DATAPHYRE_RUNTIME_ROOT: /opt/dataphyre/runtime
+    volumes:
+      - type: bind
+        source: ./flight_sheet.example.php
+        target: /workspace/flight_sheet.php
+        read_only: true
+      - type: bind
+        source: ./dev_router.php
+        target: /workspace/index.php
+        read_only: true
+      - type: bind
+        source: ./applications/example_app
+        target: /workspace/applications/example_app
+      - type: volume
+        source: app-cache
+        target: /workspace/applications/example_app/cache
+      - type: volume
+        source: app-config-static
+        target: /workspace/applications/example_app/config/static
+      - type: volume
+        source: app-logs
+        target: /workspace/applications/example_app/logs
+    ports:
+      - "127.0.0.1:${DATAPHYRE_MINIMAL_DEV_PORT:-18080}:8080"
+    healthcheck:
+      test:
+        - CMD
+        - php
+        - -r
+        - "$$body=@file_get_contents('http://127.0.0.1:8080/'); $$json=is_string($$body)?json_decode($$body,true):null; exit(is_array($$json)&&($$json['ok']??false)===true?0:1);"
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    init: true
+    restart: unless-stopped
+
+volumes:
+  app-cache:
+  app-config-static:
+  app-logs:

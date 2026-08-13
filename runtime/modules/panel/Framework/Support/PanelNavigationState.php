@@ -308,11 +308,13 @@ final class PanelNavigationState implements \JsonSerializable {
 				$attached[$key]=true;
 			}
 		}
-		$build=function(string $key, array $seen=[]) use (&$build, &$byName, &$childrenByParent): array {
+		$included=[];
+		$build=function(string $key, array $seen=[]) use (&$build, &$byName, &$childrenByParent, &$included): array {
 			if(isset($seen[$key])){
 				return $byName[$key];
 			}
 			$seen[$key]=true;
+			$included[$key]=true;
 			$entry=$byName[$key];
 			$children=is_array($entry['children'] ?? null) ? array_values($entry['children']) : [];
 			foreach($childrenByParent[$key] ?? [] as $childKey){
@@ -329,6 +331,11 @@ final class PanelNavigationState implements \JsonSerializable {
 		$top=[];
 		foreach($order as $key){
 			if(!isset($attached[$key])){
+				$top[]=$build($key);
+			}
+		}
+		foreach($order as $key){
+			if(!isset($included[$key])){
 				$top[]=$build($key);
 			}
 		}

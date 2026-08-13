@@ -6,7 +6,7 @@
     "static_method": true,
     "args": ["//uploads/./orders//2026/../invoice.pdf"],
     "expected": "uploads/orders/invoice.pdf",
-    "file": "/common/dataphyre/runtime/modules/storage/Framework/Support/Path.php",
+    "file": "/dataphyre/runtime/modules/storage/Framework/Support/Path.php",
     "max_millis": 5
   },
   {
@@ -16,7 +16,7 @@
     "static_method": true,
     "args": ["tenant\\assets\\.\\logo.png"],
     "expected": "tenant/assets/logo.png",
-    "file": "/common/dataphyre/runtime/modules/storage/Framework/Support/Path.php",
+    "file": "/dataphyre/runtime/modules/storage/Framework/Support/Path.php",
     "max_millis": 5
   },
   {
@@ -26,7 +26,7 @@
     "static_method": true,
     "args": ["/var/dataphyre/storage/", "../public//catalog/item.json"],
     "expected": "/var/dataphyre/storage/public/catalog/item.json",
-    "file": "/common/dataphyre/runtime/modules/storage/Framework/Support/Path.php",
+    "file": "/dataphyre/runtime/modules/storage/Framework/Support/Path.php",
     "max_millis": 5
   }
 ]

@@ -4,19 +4,27 @@
         "function": "rolePresets",
         "class": "dataphyre\\permission",
         "static_method": true,
-        "args": [null],
+        "args": [
+            null
+        ],
         "expected": [],
-        "file_dynamic": "return dp_module_present(\"permission\")[0];",
-        "max_millis": 50
+        "max_millis": 50,
+        "file": {
+            "module": "permission"
+        }
     },
     {
         "name": "seed_role_presets_invalid_panel_returns_empty_array",
         "function": "seedRolePresets",
         "class": "dataphyre\\permission",
         "static_method": true,
-        "args": [null],
+        "args": [
+            null
+        ],
         "expected": [],
-        "file_dynamic": "return dp_module_present(\"permission\")[0];",
-        "max_millis": 50
+        "max_millis": 50,
+        "file": {
+            "module": "permission"
+        }
     }
 ]

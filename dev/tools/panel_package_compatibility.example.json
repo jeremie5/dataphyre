@@ -1,0 +1,138 @@
+{
+  "format": "dataphyre.panel.package.compatibility-plan.v1",
+  "runtime_axes": {
+    "php": ["8.3.0", "8.4.0"],
+    "panel": ["2.0.0"],
+    "reactor": ["2.0.0"],
+    "modules": {
+      "reference": {
+        "panel": "2.0.0",
+        "reactor": "2.0.0"
+      }
+    },
+    "themes": {
+      "default": ["default"]
+    },
+    "features": {
+      "signed-packages": ["signed_packages"]
+    }
+  },
+  "packages": [
+    {
+      "manifest": {
+        "id": "package_support",
+        "label": "Package Support",
+        "version": "1.1.0",
+        "type": "plugin",
+        "status": "stable",
+        "requirements": {
+          "php": ">=8.3.0",
+          "panel": "^2.0.0",
+          "reactor": "^2.0.0",
+          "modules": {},
+          "themes": ["default"]
+        },
+        "provides": ["package_support"],
+        "support": {"owner": "shopiro"},
+        "meta": {"publisher": "shopiro"},
+        "signature": {
+          "algorithm": "ed25519",
+          "key_id": "release",
+          "publisher": "shopiro",
+          "digest": "1111111111111111111111111111111111111111111111111111111111111111",
+          "signature": "c2lnbmF0dXJlLXBhY2thZ2Utc3VwcG9ydA=="
+        }
+      },
+      "required_features": ["signed_packages"],
+      "lock": {
+        "type": "panel_package_lock",
+        "packages": {
+          "operator_tools": {"id": "operator_tools", "version": "2.4.0"},
+          "package_support": {"id": "package_support", "version": "1.1.0"}
+        },
+        "checksum": "fc7baf68f88ff54b2f7717897d9c0850682bfbc69d3407ae2959801dc89b954a"
+      },
+      "distribution": {
+        "type": "panel_package_registry_index",
+        "ok": true,
+        "publisher": "shopiro",
+        "packages": [
+          {"id": "operator_tools", "version": "2.4.0", "publisher": "shopiro", "key_id": "release", "dependencies": {"package_support": "^1.1.0"}, "yanked": false},
+          {"id": "package_support", "version": "1.1.0", "publisher": "shopiro", "key_id": "release", "dependencies": {}, "yanked": false}
+        ]
+      },
+      "verification": {"ok": true, "package": "package_support", "algorithm": "ed25519", "key_id": "release", "digest": "1111111111111111111111111111111111111111111111111111111111111111"},
+      "trust": {"trusted": true, "package": "package_support", "publisher": "shopiro"},
+      "install_plan": {"type": "panel_package_install_plan", "ready": true, "blocked": false, "package": {"id": "package_support", "version": "1.1.0"}, "summary": {"conflicts": 0}}
+    },
+    {
+      "manifest": {
+        "id": "operator_tools",
+        "label": "Operator Tools",
+        "version": "2.4.0",
+        "type": "plugin",
+        "status": "stable",
+        "requirements": {
+          "php": ">=8.3.0",
+          "panel": "^2.0.0",
+          "reactor": "^2.0.0",
+          "modules": {"panel": "^2.0.0"},
+          "themes": ["default"]
+        },
+        "provides": ["operator_tools"],
+        "support": {"owner": "shopiro"},
+        "meta": {"publisher": "shopiro"},
+        "signature": {
+          "algorithm": "ed25519",
+          "key_id": "release",
+          "publisher": "shopiro",
+          "digest": "2222222222222222222222222222222222222222222222222222222222222222",
+          "signature": "c2lnbmF0dXJlLW9wZXJhdG9yLXRvb2xz"
+        }
+      },
+      "dependencies": {"package_support": "^1.1.0"},
+      "required_features": ["signed_packages"],
+      "lock": {
+        "type": "panel_package_lock",
+        "packages": {
+          "operator_tools": {"id": "operator_tools", "version": "2.4.0"},
+          "package_support": {"id": "package_support", "version": "1.1.0"}
+        },
+        "checksum": "fc7baf68f88ff54b2f7717897d9c0850682bfbc69d3407ae2959801dc89b954a"
+      },
+      "distribution": {
+        "type": "panel_package_registry_index",
+        "ok": true,
+        "publisher": "shopiro",
+        "packages": [
+          {"id": "operator_tools", "version": "2.4.0", "publisher": "shopiro", "key_id": "release", "dependencies": {"package_support": "^1.1.0"}, "yanked": false},
+          {"id": "package_support", "version": "1.1.0", "publisher": "shopiro", "key_id": "release", "dependencies": {}, "yanked": false}
+        ]
+      },
+      "verification": {"ok": true, "package": "operator_tools", "algorithm": "ed25519", "key_id": "release", "digest": "2222222222222222222222222222222222222222222222222222222222222222"},
+      "trust": {"trusted": true, "package": "operator_tools", "publisher": "shopiro"},
+      "install_plan": {"type": "panel_package_install_plan", "ready": true, "blocked": false, "package": {"id": "operator_tools", "version": "2.4.0"}, "summary": {"conflicts": 0}}
+    }
+  ],
+  "policy": {
+    "require_lock": true,
+    "require_distribution": true,
+    "require_authenticated_distribution": false,
+    "require_publisher": true,
+    "require_signature": true,
+    "require_trust": true,
+    "require_install_ready": true,
+    "fail_on_blocked": true,
+    "fail_on_regression": true,
+    "fail_on_removed": false
+  },
+  "limits": {
+    "max_packages": 32,
+    "max_runtimes": 16,
+    "max_cases": 256,
+    "max_baseline_cases": 256
+  },
+  "meta": {
+    "purpose": "portable package compatibility CI example with caller-reported JSON evidence"
+  }
+}

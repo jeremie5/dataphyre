@@ -1,0 +1,6 @@
+*
+!docker/
+!docker/testing/
+!docker/testing/Dockerfile
+!docker/testing/browser/
+!docker/testing/browser/package.json

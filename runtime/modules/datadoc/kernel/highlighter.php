@@ -355,13 +355,7 @@ class highlighter{
 			}
 			else
 			{
-				if (ctype_punct($token)) {
-					$result.='<span class="php_token_operator">'.htmlspecialchars($token).'</span>';
-				}
-				else
-				{
-					$result.='<span class="php_token_other">'.htmlspecialchars($token).'</span>';
-				}
+				$result.=self::highlight_scalar_token((string)$token);
 			}
 		}
 		if(is_array($containerization)){
@@ -376,6 +370,12 @@ class highlighter{
 			return '<span class="php_token_user_function">' . htmlspecialchars($prefix_text . $class_or_namespace_text . $function_name_text) . '</span>';
 		}, $result);
 		return $style.$container_javascript.nl2br(str_replace('	', '&emsp;', $result));
+	}
+
+	/** Classifies scalar token_get_all() values while remaining safe for defensive direct use. */
+	private static function highlight_scalar_token(string $token): string {
+		$class=ctype_punct($token) ? 'php_token_operator' : 'php_token_other';
+		return '<span class="'.$class.'">'.htmlspecialchars($token).'</span>';
 	}
 
 	/**
@@ -409,10 +409,15 @@ class highlighter{
 	 *
 	 * @return string HTML tag for the highlighter dependency, or an empty string.
 	 */
-	private static function highlighter_asset_tag(string $asset, string $type): string {
-		self::load_asset_support();
-		if(function_exists('\dataphyre_datadoc_ui_asset_content')){
-			$content=\dataphyre_datadoc_ui_asset_content($asset);
+	private static function highlighter_asset_tag(string $asset, string $type, array $runtime=[]): string {
+		if(($runtime['load_support'] ?? true)===true){
+			self::load_asset_support();
+		}
+		$content_loader=array_key_exists('content_loader',$runtime)
+			? $runtime['content_loader']
+			: (function_exists('\dataphyre_datadoc_ui_asset_content') ? '\dataphyre_datadoc_ui_asset_content' : null);
+		if(is_callable($content_loader)){
+			$content=$content_loader($asset);
 			if(is_array($content) && isset($content['content'])){
 				if($type==='script'){
 					return '<script data-datadoc-highlighter="1">'.(string)$content['content'].'</script>';
@@ -420,10 +425,13 @@ class highlighter{
 				return '<style data-datadoc-highlighter="1">'.(string)$content['content'].'</style>';
 			}
 		}
-		if(function_exists('\dataphyre_datadoc_ui_asset_url')!==true){
+		$url_loader=array_key_exists('url_loader',$runtime)
+			? $runtime['url_loader']
+			: (function_exists('\dataphyre_datadoc_ui_asset_url') ? '\dataphyre_datadoc_ui_asset_url' : null);
+		if(!is_callable($url_loader)){
 			return '';
 		}
-		$url=\dataphyre_datadoc_ui_asset_url($asset);
+		$url=(string)$url_loader($asset);
 		if($url===''){
 			return '';
 		}

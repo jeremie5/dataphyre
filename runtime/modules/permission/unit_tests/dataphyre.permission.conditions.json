@@ -6,8 +6,10 @@
         "static_method": true,
         "args": [],
         "expected": [],
-        "file_dynamic": "return dp_module_present(\"permission\")[0];",
-        "max_millis": 50
+        "max_millis": 50,
+        "file": {
+            "module": "permission"
+        }
     },
     {
         "name": "check_when_unknown_condition_denies",
@@ -18,11 +20,15 @@
             "panel.orders.view",
             "unknown_condition",
             {
-                "permissions": ["panel.orders.view"]
+                "permissions": [
+                    "panel.orders.view"
+                ]
             }
         ],
         "expected": false,
-        "file_dynamic": "return dp_module_present(\"permission\")[0];",
-        "max_millis": 50
+        "max_millis": 50,
+        "file": {
+            "module": "permission"
+        }
     }
 ]

@@ -7,22 +7,7 @@
  */
 namespace dataphyre;
 
-tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
-
-$routing_config_loaded=false;
-if(file_exists($filepath=ROOTPATH['common_dataphyre']."config/routing.php")){
-	$routing_config_loaded=true;
-	require_once($filepath);
-}
-if(file_exists($filepath=ROOTPATH['dataphyre']."config/routing.php")){
-	$routing_config_loaded=true;
-	require_once($filepath);
-}
-if($routing_config_loaded!==true){
-	pre_init_error("DataphyreRouting: No routes available.");
-}
-
-routing::not_found();
+require_once dirname(__DIR__, 3).'/http.php';
 
 /**
  * Legacy request router for Dataphyre view-file routing configuration.
@@ -106,6 +91,26 @@ class routing{
 		self::$config=array_replace_recursive(self::$config, $config);
 	}
 
+	/** Restores all observable legacy routing state between requests or tests. */
+	public static function reset(): void {
+		self::$page=null;
+		self::$realpage=null;
+		self::$bindings=[];
+		self::$matched_route=null;
+		self::$matched_file=null;
+		self::$matched_request=null;
+		self::$matched_verbose=[];
+		self::$matched_at=null;
+		self::$route_non_match_count=0;
+		self::$verbose_non_match=true;
+		self::$config=['not_found_errorpage'=>''];
+	}
+
+	/** Controls whether rejected parameter routes retain detailed evidence. */
+	public static function verboseNonMatches(bool $enabled): void {
+		self::$verbose_non_match=$enabled;
+	}
+
 	/**
 	 * Returns the configured legacy 404 redirect target.
 	 *
@@ -126,14 +131,11 @@ class routing{
 	 * @param string $file Optional view file path to expose through `set_page()`.
 	 * @return string|bool View file on file-backed match, `true` on route-only match, or `false` when the route does not match.
 	 */
-	public static function check_route(string $route, string $file=''): string|bool {
+	public static function check_route(string $route, string $file='', ?string $request_uri=null): string|bool {
 		self::$route_non_match_count++;
 		$file=preg_replace('!([^:])(//)!', "$1/", $file);
 		$request="/";
-		$request_uri=(string)($_GET['uri'] ?? '');
-		if($request_uri===''){
-			$request_uri=(string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?: '/');
-		}
+		$request_uri ??= self::currentRequestUri();
 		if($request_uri!=='' && $request_uri!=='/'){
 			$route=preg_replace("/(^\/)|(\/$)/", "", $route);
 			$request=preg_replace("/(^\/)|(\/$)/", "", rawurldecode($request_uri));
@@ -191,21 +193,30 @@ class routing{
 	 *
 	 * @return never
 	 */
-	public static function not_found(): never {
+	public static function not_found(array $runtime=[]): mixed {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$not_found_errorpage=self::not_found_errorpage();
 		self::set_page("/".$not_found_errorpage);
+		$server=is_array($runtime['server'] ?? null) ? $runtime['server'] : $_SERVER;
 		if($not_found_errorpage!==''){
-			$scheme=(string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '');
+			$scheme=(string)($server['HTTP_X_FORWARDED_PROTO'] ?? '');
 			if($scheme!=='https'){
-				$scheme=((!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS'])!=='off') || (($_SERVER['REQUEST_SCHEME'] ?? '')==='https')) ? 'https' : 'http';
+				$scheme=((!empty($server['HTTPS']) && strtolower((string)$server['HTTPS'])!=='off') || (($server['REQUEST_SCHEME'] ?? '')==='https')) ? 'https' : 'http';
 			}
-			$host=(string)($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost');
-			header('Location: '.$scheme.'://'.$host.'/'.ltrim($not_found_errorpage, '/'));
-			exit();
+			$host=(string)($server['HTTP_HOST'] ?? $server['SERVER_NAME'] ?? 'localhost');
+			$response=['status'=>302, 'location'=>$scheme.'://'.$host.'/'.ltrim($not_found_errorpage, '/'), 'body'=>''];
+		}else{
+			$response=[
+				'status'=>404,
+				'location'=>'',
+				'body'=>"<br><br><center><h1>404</h1></center><center><h2>The page you were looking for doesn't exist.</h2></center>",
+			];
 		}
-		http_response_code(404);
-		die("<br><br><center><h1>404</h1></center><center><h2>The page you were looking for doesn't exist.</h2></center>");
+		$emit=$runtime['emit'] ?? 'dataphyre_routing_response_and_terminate';
+		if(!is_callable($emit)){
+			throw new \LogicException('Routing not-found emitter must be callable.');
+		}
+		return $emit($response);
 	}
 
 	/**
@@ -213,12 +224,13 @@ class routing{
 	 *
 	 * @return array{request_path:string, normalized_request:string, method:string, matched_route:?string, matched_file:?string, page:mixed, realpage:mixed, bindings:array<string, mixed>, non_match_count:int, not_found_errorpage:string, verbose:array<int, string>, matched_at:?float} Routing state for Flightdeck and diagnostics.
 	 */
-	public static function debug_snapshot(): array {
-		$request_path=(string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?: '/');
+	public static function debug_snapshot(?array $server=null): array {
+		$server ??=$_SERVER;
+		$request_path=(string)(parse_url((string)($server['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?: '/');
 		return [
 			'request_path'=>$request_path,
 			'normalized_request'=>self::$matched_request ?? $request_path,
-			'method'=>(string)($_SERVER['REQUEST_METHOD'] ?? 'GET'),
+			'method'=>(string)($server['REQUEST_METHOD'] ?? 'GET'),
 			'matched_route'=>self::$matched_route,
 			'matched_file'=>self::$matched_file,
 			'page'=>self::$page,
@@ -239,9 +251,20 @@ class routing{
 	 */
 	private static function set_page(string $file): string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		self::$realpage="/".str_replace(ROOTPATH['views'], '', substr($file, 0, strrpos($file, ".")));
+		$viewsRoot=(string)(self::$config['views_root'] ?? (defined('ROOTPATH') && is_array(ROOTPATH) ? (ROOTPATH['views'] ?? '') : ''));
+		$extensionPosition=strrpos($file, ".");
+		$withoutExtension=$extensionPosition===false ? $file : substr($file, 0, $extensionPosition);
+		self::$realpage="/".ltrim(str_replace($viewsRoot, '', $withoutExtension), '/\\');
 		self::$page=self::$realpage;
 		return $file;
+	}
+
+	/** @param array<string,mixed>|null $query @param array<string,mixed>|null $server */
+	private static function currentRequestUri(?array $query=null, ?array $server=null): string {
+		$query ??=$_GET;
+		$server ??=$_SERVER;
+		$uri=trim((string)($query['uri'] ?? ''));
+		return $uri!=='' ? $uri : (string)(parse_url((string)($server['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?: '/');
 	}
 
 	/**
@@ -286,13 +309,14 @@ class routing{
 				array_splice($request, $index);
 				break;
 			}
-			if(preg_match('/{(.+?)}/', $param_key[$key], $matches)){
-				$parts=explode('|', $matches[1]);
+			if(str_contains($param_key[$key], '|')){
+				$parts=explode('|', $param_key[$key]);
+				$name=(string)array_pop($parts);
 				if(!in_array($request[$index] ?? '', $parts)){
 					$verbose[]="Parameter '{$param_key[$key]}' failed validation against parts: ".implode(", ", $parts);
 					return self::$verbose_non_match ? ['matched'=>false, 'verbose'=>$verbose] : ['matched'=>false];
 				}
-				$temp_params[array_pop($parts)]=$request[$index];
+				$temp_params[$name]=$request[$index];
 				$prevalidated[$key]=true;
 				$verbose[]="Parameter '{$param_key[$key]}' matched successfully.";
 			}
@@ -444,3 +468,49 @@ class routing{
 	}
 
 }
+
+/** Loads configured legacy route files and delegates the terminal 404 boundary. */
+function routing_bootstrap(?bool $dispatch=null, array $runtime=[]): array {
+	$dispatch ??=!defined('DATAPHYRE_ROUTING_NO_DISPATCH');
+	if(!$dispatch){
+		return ['loaded'=>false, 'paths'=>[], 'not_found'=>null];
+	}
+	tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Module initialization');
+	$roots=is_array($runtime['roots'] ?? null)
+		? $runtime['roots']
+		: (defined('ROOTPATH') && is_array(ROOTPATH) ? ROOTPATH : []);
+	$paths=[];
+	foreach(['common_dataphyre','dataphyre'] as $key){
+		$root=trim((string)($roots[$key] ?? ''));
+		if($root!==''){
+			$paths[]=rtrim($root, '/\\').'/config/routing.php';
+		}
+	}
+	$loaded=[];
+	foreach(array_values(array_unique($paths)) as $path){
+		if(is_file($path)){
+			routing_load_config($path);
+			$loaded[]=$path;
+		}
+	}
+	if($loaded===[]){
+		$error=$runtime['error'] ?? 'pre_init_error';
+		if(!is_callable($error)){
+			throw new \LogicException('Routing bootstrap error boundary must be callable.');
+		}
+		$error('DataphyreRouting: No routes available.');
+	}
+	$notFound=$runtime['not_found'] ?? [routing::class, 'not_found'];
+	if(!is_callable($notFound)){
+		throw new \LogicException('Routing bootstrap not-found boundary must be callable.');
+	}
+	$result=$notFound(is_array($runtime['not_found_runtime'] ?? null) ? $runtime['not_found_runtime'] : []);
+	return ['loaded'=>$loaded!==[], 'paths'=>$loaded, 'not_found'=>$result];
+}
+
+/** Executes one route configuration file from the bootstrap boundary. */
+function routing_load_config(string $path): void {
+	require $path;
+}
+
+routing_bootstrap();

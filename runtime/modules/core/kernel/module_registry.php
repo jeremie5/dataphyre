@@ -8,11 +8,11 @@
 namespace dataphyre;
 
 /**
- * Resolves flight-sheet-enabled Dataphyre modules and their entrypoints.
+ * Resolves policy-enabled Dataphyre modules and their entrypoints.
  *
- * The selected application's normalized flight-sheet policy is the sole source
- * of module enablement. Filesystem inspection happens only after a constant-time
- * policy lookup permits a module; directories never opt themselves into boot.
+ * A non-empty flight-sheet allow-list is authoritative. Installs without one
+ * retain legacy module discovery, while explicit disabled names always win.
+ * Filesystem inspection is deferred until catalog or load operations need it.
  */
 final class module_registry {
 
@@ -59,8 +59,8 @@ final class module_registry {
 	/**
 	 * Lists enabled modules that resolve to a usable on-disk definition.
 	 *
-	 * This explicit catalog operation inspects only names already allowed by the
-	 * flight sheet. It never scans module directories for candidates.
+	 * With an explicit allow-list this inspects only allowed names. Compatibility
+	 * installs without an allow-list discover candidate names from module roots.
 	 *
 	 * @return array<int,string> Resolvable module names in flight-sheet order.
 	 */
@@ -89,7 +89,10 @@ final class module_registry {
 	public static function enabled_modules(): array {
 		$config=self::module_config();
 		if(($config['allow_all'] ?? false)===true){
-			return self::filesystem_module_names();
+			return array_values(array_filter(
+				self::filesystem_module_names(),
+				static fn(string $module): bool=>!isset($config['disabled'][$module])
+			));
 		}
 		return array_keys(self::module_config()['enabled']);
 	}
@@ -109,6 +112,8 @@ final class module_registry {
 	 * Checks whether one module is allowed by the normalized flight-sheet policy.
 	 *
 	 * This hot path is an associative lookup and never touches the filesystem.
+	 * In legacy discovery mode any normalized, non-disabled name is permitted;
+	 * later definition resolution still proves that its module files exist.
 	 *
 	 * @param string $module Module name to normalize and inspect.
 	 * @return bool True when the module is known and enabled.
@@ -251,7 +256,7 @@ final class module_registry {
 	 * that load this class directly. Legacy config/modules.php and APP_MODULES
 	 * are intentionally not consulted.
 	 *
-	 * @return array{enabled:array<string,bool>,disabled:array<string,bool>} Module lookup sets.
+	 * @return array{enabled:array<string,bool>,disabled:array<string,bool>,allow_all:bool} Module lookup sets.
 	 */
 	private static function module_config(): array {
 		if(self::$module_config!==null){

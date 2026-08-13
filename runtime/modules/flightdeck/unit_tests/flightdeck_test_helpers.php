@@ -10,29 +10,26 @@ require_once dirname(__DIR__).'/kernel/auth.php';
 require_once dirname(__DIR__).'/kernel/debugbar.php';
 
 function dp_flightdeck_unit_private(string $method, array $args=[]): mixed {
-	$reflection=new ReflectionMethod('dataphyre_flightdeck_debugbar', $method);
-	$reflection->setAccessible(true);
-	return $reflection->invokeArgs(null, $args);
+	return dataphyre_dpanel_worker_fixture_state::invokeNonPublic('dataphyre_flightdeck_debugbar', $method, $args);
 }
 
 function dp_flightdeck_unit_auth_private(string $method, array $args=[]): mixed {
-	$reflection=new ReflectionMethod('dataphyre_flightdeck_auth', $method);
-	$reflection->setAccessible(true);
-	return $reflection->invokeArgs(null, $args);
+	return dataphyre_dpanel_worker_fixture_state::invokeNonPublic('dataphyre_flightdeck_auth', $method, $args);
 }
 
 function dp_flightdeck_unit_csrf_survives_remote_addr_change(): array {
-	$previous_remote_addr=$_SERVER['REMOTE_ADDR'] ?? null;
-	$_SERVER['REMOTE_ADDR']='198.51.100.10';
+	$had_remote_addr=dataphyre_dpanel_worker_application_state::hasServer('REMOTE_ADDR');
+	$previous_remote_addr=dataphyre_dpanel_worker_application_state::serverValue('REMOTE_ADDR');
+	dataphyre_dpanel_worker_application_state::remoteAddress('198.51.100.10');
 	$token=dataphyre_flightdeck_auth::csrf_token();
-	$_SERVER['REMOTE_ADDR']='198.51.100.11';
+	dataphyre_dpanel_worker_application_state::remoteAddress('198.51.100.11');
 	$valid=dataphyre_flightdeck_auth::verify_csrf($token);
-	if($previous_remote_addr===null){
-		unset($_SERVER['REMOTE_ADDR']);
+	if(!$had_remote_addr){
+		dataphyre_dpanel_worker_application_state::forgetServer('REMOTE_ADDR');
 	}
 	else
 	{
-		$_SERVER['REMOTE_ADDR']=$previous_remote_addr;
+		dataphyre_dpanel_worker_application_state::replaceServerValue('REMOTE_ADDR', $previous_remote_addr);
 	}
 	return ['result'=>[
 		'token_length'=>strlen($token),
@@ -44,13 +41,17 @@ function dp_flightdeck_unit_csrf_survives_remote_addr_change(): array {
 function dp_flightdeck_unit_auth_accepts_cross_app_toolbar_cookies(): array {
 	$bootstrap=defined('DATAPHYRE_BOOTSTRAP_CONFIG') && is_array(DATAPHYRE_BOOTSTRAP_CONFIG)
 		? DATAPHYRE_BOOTSTRAP_CONFIG
-		: ($GLOBALS['dataphyre_bootstrap_config'] ?? []);
+		: dataphyre_dpanel_worker_application_state::globalValue('dataphyre_bootstrap_config', []);
 	$default_app=is_array($bootstrap) && is_string($bootstrap['app'] ?? null) && $bootstrap['app']!==''
 		? $bootstrap['app']
 		: (defined('APP') ? (string)APP : 'demo_app');
-	$previous_bootstrap=$GLOBALS['dataphyre_bootstrap_config'] ?? null;
+	$had_bootstrap=dataphyre_dpanel_worker_application_state::hasGlobal('dataphyre_bootstrap_config');
+	$previous_bootstrap=dataphyre_dpanel_worker_application_state::globalValue('dataphyre_bootstrap_config');
 	if(!defined('DATAPHYRE_BOOTSTRAP_CONFIG')){
-		$GLOBALS['dataphyre_bootstrap_config']=array_replace(is_array($previous_bootstrap) ? $previous_bootstrap : [], ['app'=>$default_app]);
+		dataphyre_dpanel_worker_application_state::replaceGlobal(
+			'dataphyre_bootstrap_config',
+			array_replace(is_array($previous_bootstrap) ? $previous_bootstrap : [], ['app'=>$default_app])
+		);
 	}
 	$auth_project=dp_flightdeck_unit_auth_private('cookie_secret');
 	$auth_legacy=dp_flightdeck_unit_auth_private('cookie_secret_for_app', [$default_app]);
@@ -59,12 +60,12 @@ function dp_flightdeck_unit_auth_accepts_cross_app_toolbar_cookies(): array {
 	$debugbar_legacy=dp_flightdeck_unit_private('secret_for_app', [$default_app]);
 	$debugbar_candidates=dp_flightdeck_unit_private('secret_candidates');
 	if(!defined('DATAPHYRE_BOOTSTRAP_CONFIG')){
-		if($previous_bootstrap===null){
-			unset($GLOBALS['dataphyre_bootstrap_config']);
+		if(!$had_bootstrap){
+			dataphyre_dpanel_worker_application_state::forgetGlobal('dataphyre_bootstrap_config');
 		}
 		else
 		{
-			$GLOBALS['dataphyre_bootstrap_config']=$previous_bootstrap;
+			dataphyre_dpanel_worker_application_state::replaceGlobal('dataphyre_bootstrap_config', $previous_bootstrap);
 		}
 	}
 	return ['result'=>[

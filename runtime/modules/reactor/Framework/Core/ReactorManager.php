@@ -25,6 +25,84 @@ final class ReactorManager {
 	private array $components=[];
 	/** @var int Current recursive mount depth used to prevent runaway child rendering. */
 	private int $mountDepth=0;
+	private int $mountTransactionDepth=0;
+	/** @var list<ReactorSnapshot> Uncommitted snapshots created by the current root mount. */
+	private array $mountIssuedSnapshots=[];
+	/** @var list<array{component:ReactorComponent,state:array<string,mixed>}> */
+	private array $mountPendingSessionCommits=[];
+	/** @var list<ReactorSecurityContext> Trusted context stack inherited by nested mounts. */
+	private array $mountSecurityContexts=[];
+	/** @var null|callable(array<string,mixed>,ReactorSecurityContext):(true|false) */
+	private $transportAuthorizer=null;
+	private ?ReactorSecurityContext $defaultSecurityContext=null;
+	private ReactorSnapshotVersionStore $snapshotVersionStore;
+
+	public function __construct(?ReactorSnapshotVersionStore $snapshotVersionStore=null) {
+		$configured=Reactor::config('snapshot_version_store');
+		if($snapshotVersionStore===null && $configured!==null && !$configured instanceof ReactorSnapshotVersionStore){
+			throw new \UnexpectedValueException('Reactor snapshot_version_store must implement ReactorSnapshotVersionStore.');
+		}
+		$this->snapshotVersionStore=$snapshotVersionStore ?? ($configured instanceof ReactorSnapshotVersionStore ? $configured : new ReactorInMemorySnapshotVersionStore());
+	}
+
+	/** Installs the fail-closed host transport/envelope authorizer. */
+	public function authorizeTransport(?callable $authorizer): self {
+		$this->transportAuthorizer=$authorizer;
+		return $this;
+	}
+
+	/** Installs trusted host scope inherited by mounts and explicit internal dispatch. */
+	public function withHostSecurityContext(ReactorSecurityContext|array|null $context): self {
+		$this->defaultSecurityContext=$context===null ? null : ReactorSecurityContext::fromTrusted($context);
+		return $this;
+	}
+
+	/**
+	 * Explicit host decision for server-internal/test transports.
+	 *
+	 * This does not permit unscoped snapshots: the named audience becomes the
+	 * signed scope and the normal CAS ledger still applies.
+	 */
+	public function trustInternalTransport(string $audience='reactor:trusted-internal'): self {
+		$this->defaultSecurityContext=ReactorSecurityContext::forAudience($audience);
+		$this->transportAuthorizer=static fn(array $envelope, ReactorSecurityContext $context): bool=>true;
+		return $this;
+	}
+
+	/** Replaces the atomic snapshot version ledger. */
+	public function useSnapshotVersionStore(ReactorSnapshotVersionStore $store): self {
+		$this->snapshotVersionStore=$store;
+		return $this;
+	}
+
+	/** Secret-free transport/snapshot security capabilities for manifests. */
+	public function securityManifest(): array {
+		$configured=$this->transportAuthorizer!==null || is_callable(Reactor::config('transport_authorizer'));
+		return [
+			'transport_authorization'=>'fail_closed_pre_hydration',
+			'transport_authorizer_configured'=>$configured,
+			'pre_hydration_envelope_exposes_state'=>false,
+			'snapshot_revocation'=>'authenticated_scope_bound_exact_version_revoke',
+			'snapshot_revocation_transport_authorization'=>'fail_closed_immediately_before_revoke',
+			'snapshot_revocation_resolves_or_renders_component'=>false,
+			'snapshot_revocation_response_exposes_snapshot'=>false,
+			'snapshot_revocation_idempotent_replay'=>false,
+			'initial_issuance_authorization'=>'fail_closed_before_component_resolution',
+			'initial_issuance_operations'=>['mount','snapshot_issue'],
+			'domain_authorization_stage'=>'post_hydration',
+			'host_context_from_request_payload'=>false,
+			'upload_only_requests_are_mutations'=>true,
+			'response_serialization_before_snapshot_commit'=>true,
+			'mount_snapshot_commit'=>'deferred_after_complete_root_component_tree_render_with_best_effort_partial_rollback',
+			'mount_snapshot_commit_atomic'=>false,
+			'session_state_commit'=>'post_snapshot_commit_best_effort',
+			'snapshot_and_session_state_atomic'=>false,
+			'action_side_effect_exactly_once'=>false,
+			'action_idempotency_required'=>true,
+			'snapshot'=>ReactorSnapshot::manifest(),
+			'version_store'=>$this->snapshotVersionStore->manifest(),
+		];
+	}
 
 	/**
 	 * Creates a component builder without registering it.
@@ -123,12 +201,22 @@ final class ReactorManager {
 	 *
 	 * @throws \InvalidArgumentException When the component cannot be resolved.
 	 */
-	public function snapshot(string $component, array $state=[]): ReactorSnapshot {
+	public function snapshot(string $component, array $state=[], ReactorSecurityContext|array|null $securityContext=null): ReactorSnapshot {
+		$context=$this->resolveSecurityContext($securityContext);
+		$this->assertSnapshotStorePolicy();
+		$normalized=ReactorName::normalize($component);
+		$this->authorizeInitialOperation('snapshot_issue', $normalized, $state, $context);
 		$component=$this->get($component) ?? $this->loadConfiguredComponent($component);
 		if(!$component instanceof ReactorComponent){
 			throw new \InvalidArgumentException('Unknown Reactor component.');
 		}
-		return ReactorSnapshot::make($component->name(), $component->initialState($state), $component->lockedStateKeys());
+		$initial=$component->initialState($state);
+		$request=ReactorRequest::fromArray(['component'=>$component->name()], $context);
+		$authorization=$component->authorizeRequest($initial, $request, null);
+		if(($authorization['ok'] ?? false)!==true){ throw new \RuntimeException('Reactor component snapshot issuance is not authorized.', (int)($authorization['status'] ?? 403)); }
+		$snapshot=$this->createSnapshot($component->name(), $initial, $component->lockedStateKeys(), $context);
+		$this->registerSnapshot($snapshot);
+		return $snapshot;
 	}
 
 	/**
@@ -146,32 +234,67 @@ final class ReactorManager {
 	 *
 	 * @throws \InvalidArgumentException When the component cannot be resolved.
 	 */
-	public function mount(string $component, array $state=[], array $attributes=[]): string {
+	public function mount(string $component, array $state=[], array $attributes=[], ReactorSecurityContext|array|null $securityContext=null): string {
+		$context=$this->resolveSecurityContext($securityContext);
+		$this->assertSnapshotStorePolicy();
+		$normalized=ReactorName::normalize($component);
+		$this->authorizeInitialOperation('mount', $normalized, $state, $context);
+		$rootTransaction=$this->mountTransactionDepth===0;
+		if($rootTransaction){
+			$this->mountIssuedSnapshots=[];
+			$this->mountPendingSessionCommits=[];
+		}
+		$this->mountTransactionDepth++;
 		$component=$this->get($component) ?? $this->loadConfiguredComponent($component);
 		if(!$component instanceof ReactorComponent){
+			$this->mountTransactionDepth--;
 			throw new \InvalidArgumentException('Unknown Reactor component.');
 		}
-		$effects=ReactorEffects::make();
-		$state=$component->runLifecycle('hydrating', $state, ['stage'=>'mount'], $effects);
-		$state=$component->initialState($state);
-		$state=$component->runLifecycle('hydrated', $state, ['stage'=>'mount'], $effects);
-		$state=$component->runLifecycle('dehydrating', $state, ['stage'=>'mount'], $effects);
-		$dehydratedState=$component->dehydrate($state);
-		$dehydratedState=$component->runLifecycle('dehydrated', $dehydratedState, ['stage'=>'mount'], $effects);
-		$snapshot=ReactorSnapshot::make($component->name(), $dehydratedState, $component->lockedStateKeys());
-		$state=$component->runLifecycle('rendering', $state, ['stage'=>'mount'], $effects);
-		$html=$component->renderHtml($state, null, $this);
-		$component->runLifecycle('rendered', $state, ['stage'=>'mount', 'html_length'=>strlen($html)], $effects);
-		if($component->clientListeners()!==[] && !isset($attributes['data-dp-reactor-listeners'])){
-			$attributes['data-dp-reactor-listeners']=json_encode($component->clientListeners(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}';
+		$this->mountSecurityContexts[]=$context;
+		try{
+			$effects=ReactorEffects::make();
+			$state=$component->runLifecycle('hydrating', $state, ['stage'=>'mount'], $effects);
+			$state=$component->initialState($state);
+			$state=$component->runLifecycle('hydrated', $state, ['stage'=>'mount'], $effects);
+			$request=ReactorRequest::fromArray(['component'=>$component->name()], $context);
+			$authorization=$component->authorizeRequest($state, $request, null);
+			if(($authorization['ok'] ?? false)!==true){ throw new \RuntimeException('Reactor component mount is not authorized.', (int)($authorization['status'] ?? 403)); }
+			$state=$component->runLifecycle('dehydrating', $state, ['stage'=>'mount'], $effects);
+			$dehydratedState=$component->dehydrateState($state);
+			$dehydratedState=$component->runLifecycle('dehydrated', $dehydratedState, ['stage'=>'mount'], $effects);
+			$state=$component->runLifecycle('rendering', $state, ['stage'=>'mount'], $effects);
+			$html=$component->renderHtml($state, null, $this);
+			$component->runLifecycle('rendered', $state, ['stage'=>'mount', 'html_length'=>strlen($html)], $effects);
+			if($component->clientListeners()!==[] && !isset($attributes['data-dp-reactor-listeners'])){
+				$attributes['data-dp-reactor-listeners']=json_encode($component->clientListeners(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}';
+			}
+			foreach($component->clientBindings() as $type=>$bindings){
+				$attribute='data-dp-reactor-'.$type;
+				if(!isset($attributes[$attribute])){
+					$attributes[$attribute]=json_encode($bindings, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}';
+				}
+			}
+			$snapshot=$this->createSnapshot($component->name(), $dehydratedState, $component->lockedStateKeys(), $context);
+			$markup=ReactorView::mount($component->name(), $html, $snapshot, $attributes);
+			$this->mountIssuedSnapshots[]=$snapshot;
+			$this->mountPendingSessionCommits[]=['component'=>$component,'state'=>$dehydratedState];
+			if($rootTransaction){
+				$this->commitMountSnapshots();
+				$this->finishMountSnapshotTransaction();
+			}
+			return $markup;
 		}
-		foreach($component->clientBindings() as $type=>$bindings){
-			$attribute='data-dp-reactor-'.$type;
-			if(!isset($attributes[$attribute])){
-				$attributes[$attribute]=json_encode($bindings, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}';
+		catch(\Throwable $error){
+			if($rootTransaction){ $this->revokeMountSnapshots(); }
+			throw $error;
+		}
+		finally{ array_pop($this->mountSecurityContexts);
+			$this->mountTransactionDepth=max(0, $this->mountTransactionDepth-1);
+			if($rootTransaction){
+				$this->mountIssuedSnapshots=[];
+				$this->mountPendingSessionCommits=[];
 			}
 		}
-		return ReactorView::mount($component->name(), $html, $snapshot, $attributes);
 	}
 
 	/**
@@ -234,11 +357,16 @@ final class ReactorManager {
 		]);
 		$this->mountDepth++;
 		try{
-			return $this->mount($child->name(), $childState, $attributes);
+			$requestContext=$request?->securityContext();
+			$inherited=$requestContext instanceof ReactorSecurityContext && $requestContext->isBound()
+				? $requestContext
+				: ($this->mountSecurityContexts!==[] ? $this->mountSecurityContexts[array_key_last($this->mountSecurityContexts)] : null);
+			$markup=$this->mount($child->name(), $childState, $attributes, $inherited);
 		}
 		finally{
 			$this->mountDepth=max(0, $this->mountDepth-1);
 		}
+		return $markup;
 	}
 
 	/**
@@ -253,31 +381,110 @@ final class ReactorManager {
 	 * @return ReactorResponse Structured response containing HTML, state, metadata, effects, or error information.
 	 */
 	public function dispatch(ReactorRequest|array|null $request=null): ReactorResponse {
-		$request=$request instanceof ReactorRequest ? $request : ReactorRequest::from($request);
+		try{ $request=$this->prepareRequest($request); }
+		catch(\Throwable){
+			return ReactorResponse::error('Reactor host security context is invalid.', 403, [
+				'error'=>['code'=>'security_context_invalid','correlation_id'=>self::fallbackCorrelationId()],
+			]);
+		}
 		$span=ReactorTrace::begin('request.dispatch', [
 			'component'=>$request->component(),
 			'action'=>$request->action(),
-			'state_keys'=>array_keys($request->state()),
-			'param_keys'=>array_keys($request->params()),
+			'state_field_count'=>count($request->state()),
+			'param_field_count'=>count($request->params()),
 			'uploads'=>count($request->uploads()),
+			'host_scope_bound'=>$request->securityContext()->isBound(),
 		]);
+		$issuanceTransactionStarted=false;
+		$rootIssuanceTransaction=false;
+		$issuanceCommitted=false;
+		$issuanceSnapshotOffset=0;
+		$issuanceSessionOffset=0;
 		try{
-			$component=$this->get($request->component()) ?? $this->loadConfiguredComponent($request->component());
-			if(!$component instanceof ReactorComponent){
-				ReactorTrace::record('component.missing', ['component'=>$request->component()]);
-				return ReactorResponse::error('Component not found.', 404);
+			$context=$request->securityContext();
+			$reservationId='';
+			if(!$context->isBound()){
+				return $this->securityDenial($request, $span, 'security_scope_required', 'A trusted Reactor host scope is required.', 403);
 			}
 			$snapshot=$request->snapshot();
-			if($snapshot instanceof ReactorSnapshot && !$snapshot->verify()){
-				ReactorTrace::record('snapshot.invalid_signature', ['component'=>$request->component()]);
-				return ReactorResponse::error('Component state signature is invalid.', 419);
+			if($request->snapshotMalformed()){
+				return $this->securityDenial($request, $span, 'snapshot_invalid', 'Component state could not be verified.', 419);
 			}
-			if($snapshot instanceof ReactorSnapshot && $snapshot->component()!==$component->name()){
-				ReactorTrace::record('snapshot.component_mismatch', [
-					'requested'=>$component->name(),
-					'snapshot'=>$snapshot->component(),
-				]);
-				return ReactorResponse::error('Component state belongs to a different Reactor component.', 419);
+			if($snapshot instanceof ReactorSnapshot && !$snapshot->verify($context)){
+				return $this->securityDenial($request, $span, 'snapshot_invalid', 'Component state could not be verified.', 419);
+			}
+			if($snapshot instanceof ReactorSnapshot && $snapshot->component()!==$request->component()){
+				return $this->securityDenial($request, $span, 'snapshot_component_mismatch', 'Component state could not be verified.', 419);
+			}
+			$mutationRequested=$request->action()!==null || $request->state()!==[] || $request->params()!==[] || $request->uploads()!==[];
+			if(!$snapshot instanceof ReactorSnapshot && $mutationRequested && self::requiresSignedMutationSnapshot()){
+				return $this->securityDenial($request, $span, 'snapshot_required', 'A signed component snapshot is required for this mutation.', 419);
+			}
+			if($this->productionRequiresSharedStore() && ($this->snapshotVersionStore->manifest()['production_safe'] ?? false)!==true){
+				return $this->securityDenial($request, $span, 'snapshot_version_store_required', 'Reactor snapshot concurrency protection is unavailable.', 503);
+			}
+			$envelope=$this->transportEnvelope($request, $snapshot, $mutationRequested);
+			$authorizer=$this->transportAuthorizer;
+			if($authorizer===null){
+				$configured=Reactor::config('transport_authorizer');
+				$authorizer=is_callable($configured) ? $configured : null;
+			}
+			if($authorizer===null){
+				return $this->securityDenial($request, $span, 'transport_security_required', 'Reactor transport authorization is not configured.', 403);
+			}
+			try{ $transportDecision=$authorizer($envelope, $context); }
+			catch(\Throwable){
+				return $this->securityDenial($request, $span, 'transport_authorization_unavailable', 'Reactor transport authorization is unavailable.', 503);
+			}
+			if($transportDecision!==true){
+				return $this->securityDenial($request, $span, 'transport_denied', 'The Reactor transport request is not authorized.', 403);
+			}
+			if($snapshot instanceof ReactorSnapshot && !$snapshot->isLegacy()){
+				$reservationId=bin2hex(random_bytes(16));
+				$claim=$this->snapshotVersionStore->reserve(
+					$snapshot->snapshotId(),
+					$snapshot->scopeHash(),
+					$snapshot->component(),
+					$snapshot->version(),
+					$reservationId,
+					min(time()+self::reservationTtlSeconds(), $snapshot->expiresAt())
+				);
+				if($claim!==ReactorSnapshotVersionStore::CLAIMED){
+					$expired=$claim===ReactorSnapshotVersionStore::EXPIRED;
+					ReactorTrace::record('snapshot.cas_denied', [
+						'component'=>$request->component(),
+						'action'=>$request->action(),
+						'claim_status'=>$claim,
+					]);
+					return $this->securityDenial(
+						$request,
+						$span,
+						$expired ? 'snapshot_expired' : ($claim===ReactorSnapshotVersionStore::UNAVAILABLE ? 'snapshot_version_store_unavailable' : 'snapshot_stale'),
+						$expired ? 'Component state has expired.' : ($claim===ReactorSnapshotVersionStore::UNAVAILABLE ? 'Reactor snapshot concurrency protection is unavailable.' : 'Component state is stale. Refresh and try again.'),
+						$expired ? 419 : ($claim===ReactorSnapshotVersionStore::UNAVAILABLE ? 503 : 409)
+					);
+				}
+			}
+			ReactorTrace::record('transport.authorized', [
+				'component'=>$request->component(),
+				'action'=>$request->action(),
+				'snapshot_version'=>$snapshot?->version(),
+			]);
+			$rootIssuanceTransaction=$this->mountTransactionDepth===0;
+			if($rootIssuanceTransaction){
+				$this->mountIssuedSnapshots=[];
+				$this->mountPendingSessionCommits=[];
+			}
+			$issuanceSnapshotOffset=count($this->mountIssuedSnapshots);
+			$issuanceSessionOffset=count($this->mountPendingSessionCommits);
+			$this->mountTransactionDepth++;
+			$issuanceTransactionStarted=true;
+			$component=$this->get($request->component()) ?? $this->loadConfiguredComponent($request->component());
+			if(!$component instanceof ReactorComponent){
+				$this->abortReservation($snapshot, $reservationId);
+				ReactorTrace::record('component.missing', ['component'=>$request->component()]);
+				ReactorTrace::end($span, ['status'=>404]);
+				return ReactorResponse::error('Component not found.', 404);
 			}
 			$effects=ReactorEffects::make();
 			$previousState=$snapshot instanceof ReactorSnapshot ? $snapshot->state() : [];
@@ -297,11 +504,13 @@ final class ReactorManager {
 			], $effects);
 			$authorization=$component->authorizeRequest($state, $request, $request->action());
 			if(($authorization['ok'] ?? false)!==true){
+				$this->abortReservation($snapshot, $reservationId);
 				ReactorTrace::record('authorization.denied', [
 					'component'=>$component->name(),
 					'action'=>$request->action(),
 					'status'=>(int)$authorization['status'],
 				]);
+				ReactorTrace::end($span, ['status'=>(int)$authorization['status'],'domain_authorization'=>'denied']);
 				return ReactorResponse::error((string)$authorization['message'], (int)$authorization['status']);
 			}
 			$modelChanges=self::modelChanges($previousState, $request->state(), $request->params());
@@ -320,21 +529,25 @@ final class ReactorManager {
 				$params=$request->params();
 				$signedParams=$component->resolveSignedActionParams($params, $request->action());
 				if(($signedParams['ok'] ?? false)!==true){
+					$this->abortReservation($snapshot, $reservationId);
 					ReactorTrace::record('authorization.signed_params_denied', [
 						'component'=>$component->name(),
 						'action'=>$request->action(),
 						'status'=>(int)$signedParams['status'],
 					]);
+					ReactorTrace::end($span, ['status'=>(int)$signedParams['status'],'signed_params'=>'denied']);
 					return ReactorResponse::error((string)$signedParams['message'], (int)$signedParams['status']);
 				}
 				$params=is_array($signedParams['params'] ?? null) ? $signedParams['params'] : $params;
 				$paramAuthorization=$component->authorizeActionParams($state, $params, $request->action());
 				if(($paramAuthorization['ok'] ?? false)!==true){
+					$this->abortReservation($snapshot, $reservationId);
 					ReactorTrace::record('authorization.params_denied', [
 						'component'=>$component->name(),
 						'action'=>$request->action(),
 						'status'=>(int)$paramAuthorization['status'],
 					]);
+					ReactorTrace::end($span, ['status'=>(int)$paramAuthorization['status'],'param_authorization'=>'denied']);
 					return ReactorResponse::error((string)$paramAuthorization['message'], (int)$paramAuthorization['status']);
 				}
 				$state=$component->runLifecycle('action_calling', $state, [
@@ -374,33 +587,365 @@ final class ReactorManager {
 				'action'=>$request->action(),
 				'request'=>$request,
 			], $effects);
-			$dehydratedState=$component->dehydrate($state);
+			$dehydratedState=$component->dehydrateState($state);
 			$dehydratedState=$component->runLifecycle('dehydrated', $dehydratedState, [
 				'stage'=>'request',
 				'action'=>$request->action(),
 				'request'=>$request,
 			], $effects);
 			$effectPayload=$effects->all();
+			if($snapshot instanceof ReactorSnapshot && !$snapshot->isLegacy()){
+				$nextSnapshot=$snapshot->successor($dehydratedState, $component->lockedStateKeys());
+			}
+			else{
+				$nextSnapshot=$this->createSnapshot($component->name(), $dehydratedState, $component->lockedStateKeys(), $context);
+			}
 			$response=ReactorResponse::ok($html, $dehydratedState, [
-				'snapshot'=>ReactorSnapshot::make($component->name(), $dehydratedState, $component->lockedStateKeys())->jsonSerialize(),
+				'snapshot'=>$nextSnapshot->jsonSerialize(),
 				'component'=>$component->name(),
 				'action'=>$request->action(),
 			]+$effectPayload);
-			ReactorTrace::record('response.ready', [
-				'component'=>$component->name(),
-				'action'=>$request->action(),
-				'status'=>$response->status(),
-				'effects'=>array_keys($effectPayload),
-				'state_keys'=>array_keys($response->state()),
-				'skip_render'=>$skipRender,
-			]);
-			ReactorTrace::end($span, ['status'=>$response->status()]);
+			self::validateResponseEnvelope($response);
+			if($rootIssuanceTransaction){ $this->commitMountSnapshots(); }
+			if($snapshot instanceof ReactorSnapshot && !$snapshot->isLegacy()){
+				$finalized=$this->snapshotVersionStore->finalize(
+					$snapshot->snapshotId(),
+					$snapshot->scopeHash(),
+					$snapshot->component(),
+					$snapshot->version(),
+					$nextSnapshot->version(),
+					$nextSnapshot->expiresAt(),
+					$reservationId
+				);
+				if($finalized!==ReactorSnapshotVersionStore::CLAIMED){
+					$this->abortReservation($snapshot, $reservationId);
+					return $this->securityDenial(
+						$request,
+						$span,
+						$finalized===ReactorSnapshotVersionStore::EXPIRED ? 'snapshot_expired' : 'snapshot_finalize_failed',
+						$finalized===ReactorSnapshotVersionStore::EXPIRED ? 'Component state has expired.' : 'Reactor snapshot concurrency protection could not finalize the request.',
+						$finalized===ReactorSnapshotVersionStore::EXPIRED ? 419 : 503
+					);
+				}
+			}
+			else{
+				$this->registerSnapshot($nextSnapshot);
+			}
+			$issuanceCommitted=true;
+			if($rootIssuanceTransaction){ $this->finishMountSnapshotTransaction(); }
+			$component->commitSessionState($dehydratedState);
+			try{
+				ReactorTrace::record('response.ready', [
+					'component'=>$component->name(),
+					'action'=>$request->action(),
+					'status'=>$response->status(),
+					'effects'=>array_keys($effectPayload),
+					'state_keys'=>array_keys($response->state()),
+					'skip_render'=>$skipRender,
+				]);
+				ReactorTrace::end($span, ['status'=>$response->status()]);
+			}
+			catch(\Throwable){}
 			return $response;
 		}
 		catch(\Throwable $exception){
-			ReactorTrace::fail($span, $exception);
-			return ReactorResponse::error($exception->getMessage(), 500);
+			if(isset($snapshot, $reservationId)){ $this->abortReservation($snapshot, $reservationId); }
+			try{ ReactorTrace::fail($span, $exception, ['public_code'=>'reactor_request_failed']); }
+			catch(\Throwable){}
+			return ReactorResponse::error('Reactor request failed.', 500, [
+				'error'=>['code'=>'reactor_request_failed','correlation_id'=>$request->securityContext()->correlationId() ?: self::fallbackCorrelationId()],
+			]);
 		}
+		finally{ if($issuanceTransactionStarted){
+				if(!$issuanceCommitted){
+					if($rootIssuanceTransaction){ $this->revokeMountSnapshots(); }
+					else{
+						$this->mountIssuedSnapshots=array_slice($this->mountIssuedSnapshots, 0, $issuanceSnapshotOffset);
+						$this->mountPendingSessionCommits=array_slice($this->mountPendingSessionCommits, 0, $issuanceSessionOffset);
+					}
+				}
+				$this->mountTransactionDepth=max(0, $this->mountTransactionDepth-1);
+				if($rootIssuanceTransaction){
+					$this->mountIssuedSnapshots=[];
+					$this->mountPendingSessionCommits=[];
+				}
+			}
+		}
+	}
+
+	/**
+	 * Revokes one authentic, scope-bound snapshot version without resolving,
+	 * hydrating, rendering, or invoking its component.
+	 *
+	 * Authenticity and scope are proven before expiry is classified or the
+	 * version store is observed. The host transport policy then receives only a
+	 * value-free verification envelope immediately before the exact ledger
+	 * revoke. A replay is a stable conflict rather than an idempotent success.
+	 */
+	public function revokeSnapshot(ReactorSnapshot $snapshot, ReactorSecurityContext|array|null $securityContext=null): ReactorResponse {
+		try{ $context=$this->resolveSecurityContext($securityContext); }
+		catch(\Throwable){
+			return self::snapshotRevokeError('security_context_invalid', 'Reactor host security context is invalid.', 403, null);
+		}
+		$correlationId=$context->correlationId() ?: self::fallbackCorrelationId();
+		if($snapshot->isLegacy() || !$snapshot->verifyAuthenticity($context)){
+			return self::snapshotRevokeError('snapshot_invalid', 'Component state could not be verified.', 419, $correlationId);
+		}
+		if($snapshot->expiresAt()<=time()){
+			return self::snapshotRevokeError('snapshot_expired', 'Component state has expired.', 419, $correlationId);
+		}
+		try{
+			if($this->productionRequiresSharedStore() && ($this->snapshotVersionStore->manifest()['production_safe'] ?? false)!==true){
+				return self::snapshotRevokeError('snapshot_version_store_required', 'Reactor snapshot concurrency protection is unavailable.', 503, $correlationId);
+			}
+		}
+		catch(\Throwable){
+			return self::snapshotRevokeError('snapshot_version_store_unavailable', 'Reactor snapshot concurrency protection is unavailable.', 503, $correlationId);
+		}
+
+		$authorizer=$this->transportAuthorizer;
+		if($authorizer===null){
+			try{ $configured=Reactor::config('transport_authorizer'); }
+			catch(\Throwable){ return self::snapshotRevokeError('transport_authorization_unavailable', 'Reactor transport authorization is unavailable.', 503, $correlationId); }
+			$authorizer=is_callable($configured) ? $configured : null;
+		}
+		if($authorizer===null){
+			return self::snapshotRevokeError('transport_security_required', 'Reactor transport authorization is not configured.', 403, $correlationId);
+		}
+		$envelope=[
+			'schema_version'=>1,
+			'operation'=>'snapshot_revoke',
+			'component'=>$snapshot->component(),
+			'action'=>null,
+			'mutation_requested'=>true,
+			'is_reactor_transport'=>false,
+			'state_keys'=>[],
+			'param_keys'=>[],
+			'upload_count'=>0,
+			'snapshot'=>$snapshot->verificationMetadata(),
+			'host_scope'=>$context->publicMetadata(),
+		];
+		try{ $transportDecision=$authorizer($envelope, $context); }
+		catch(\Throwable){
+			return self::snapshotRevokeError('transport_authorization_unavailable', 'Reactor transport authorization is unavailable.', 503, $correlationId);
+		}
+		if($transportDecision!==true){
+			return self::snapshotRevokeError('transport_denied', 'The Reactor transport request is not authorized.', 403, $correlationId);
+		}
+		try{
+			$revoked=$this->snapshotVersionStore->revoke($snapshot->snapshotId(), $snapshot->scopeHash(), $snapshot->component(), $snapshot->version());
+		}
+		catch(\Throwable){
+			return self::snapshotRevokeError('snapshot_version_store_unavailable', 'Reactor snapshot concurrency protection is unavailable.', 503, $correlationId);
+		}
+		if(!$revoked){
+			return self::snapshotRevokeError('snapshot_stale', 'Component state is stale. Refresh and try again.', 409, $correlationId);
+		}
+		return ReactorResponse::ok('', [], ['snapshot_revoke'=>['revoked'=>true]]);
+	}
+
+	/** @param ReactorRequest|array<string,mixed>|null $request */
+	private function prepareRequest(ReactorRequest|array|null $request): ReactorRequest {
+		if($request instanceof ReactorRequest && $request->securityContext()->isBound()){ return $request; }
+		$context=$this->defaultSecurityContext ?? $this->configuredHostSecurityContext();
+		return ReactorRequest::from($request, $context);
+	}
+
+	private function resolveSecurityContext(ReactorSecurityContext|array|null $securityContext): ReactorSecurityContext {
+		$context=$securityContext!==null
+			? ReactorSecurityContext::fromTrusted($securityContext)
+			: ($this->defaultSecurityContext ?? $this->configuredHostSecurityContext());
+		if(!$context->isBound()){ throw new \InvalidArgumentException('Reactor snapshot issuance requires explicit trusted host scope.'); }
+		return $context;
+	}
+
+	private function configuredHostSecurityContext(): ReactorSecurityContext {
+		$resolver=Reactor::config('security_context_resolver');
+		if(!is_callable($resolver)){ return ReactorSecurityContext::fromTrusted(); }
+		$resolved=$resolver();
+		if(!$resolved instanceof ReactorSecurityContext && !is_array($resolved)){
+			throw new \UnexpectedValueException('Reactor security_context_resolver must return an array or ReactorSecurityContext.');
+		}
+		return ReactorSecurityContext::fromTrusted($resolved);
+	}
+
+	/** @param list<string> $locked */
+	private function createSnapshot(string $component, array $state, array $locked, ReactorSecurityContext $context): ReactorSnapshot {
+		$this->assertSnapshotStorePolicy();
+		return ReactorSnapshot::make($component, $state, $locked, $context);
+	}
+
+	private function registerSnapshot(ReactorSnapshot $snapshot): void {
+		if(!$this->snapshotVersionStore->register($snapshot->snapshotId(), $snapshot->scopeHash(), $snapshot->component(), $snapshot->version(), $snapshot->expiresAt())){
+			throw new \RuntimeException('Reactor snapshot version registration failed.');
+		}
+	}
+
+	private function authorizeInitialOperation(string $operation, string $component, array $state, ReactorSecurityContext $context): void {
+		$authorizer=$this->transportAuthorizer;
+		if($authorizer===null){
+			$configured=Reactor::config('transport_authorizer');
+			$authorizer=is_callable($configured) ? $configured : null;
+		}
+		if($authorizer===null){ throw new \RuntimeException('Reactor initial transport authorization is not configured.', 403); }
+		$envelope=[
+			'schema_version'=>1,
+			'operation'=>$operation,
+			'component'=>$component,
+			'action'=>null,
+			'mutation_requested'=>false,
+			'is_reactor_transport'=>false,
+			'state_keys'=>self::boundedKeys($state),
+			'param_keys'=>[],
+			'upload_count'=>0,
+			'snapshot'=>['present'=>false,'verified'=>false,'schema_version'=>null,'scope_bound'=>false,'version'=>null,'created_at'=>null,'expires_at'=>null,'legacy'=>false],
+			'host_scope'=>$context->publicMetadata(),
+		];
+		try{ $decision=$authorizer($envelope, $context); }
+		catch(\Throwable){
+			try{ ReactorTrace::record('security.initial_denied', ['operation'=>$operation,'component'=>$component,'code'=>'transport_authorization_unavailable']); } catch(\Throwable){}
+			throw new \RuntimeException('Reactor initial transport authorization is unavailable.', 503);
+		}
+		if($decision!==true){
+			try{ ReactorTrace::record('security.initial_denied', ['operation'=>$operation,'component'=>$component,'code'=>'transport_denied']); } catch(\Throwable){}
+			throw new \RuntimeException('Reactor initial transport request is not authorized.', 403);
+		}
+	}
+
+	private function revokeMountSnapshots(): void {
+		foreach(array_reverse($this->mountIssuedSnapshots) as $snapshot){
+			try{ $this->snapshotVersionStore->revoke($snapshot->snapshotId(), $snapshot->scopeHash(), $snapshot->component(), $snapshot->version()); }
+			catch(\Throwable){}
+		}
+		$this->mountIssuedSnapshots=[];
+		$this->mountPendingSessionCommits=[];
+	}
+
+	/**
+	 * Publishes every snapshot only after its complete root component tree has
+	 * rendered. Stores expose only single-entry registration, so rollback after a
+	 * partial failure is necessarily best effort and is reported honestly by the
+	 * security manifest.
+	 */
+	private function commitMountSnapshots(): void {
+		$registered=[];
+		try{
+			foreach($this->mountIssuedSnapshots as $snapshot){
+				$this->registerSnapshot($snapshot);
+				$registered[]=$snapshot;
+			}
+		}
+		catch(\Throwable $error){
+			foreach(array_reverse($registered) as $snapshot){
+				try{ $this->snapshotVersionStore->revoke($snapshot->snapshotId(), $snapshot->scopeHash(), $snapshot->component(), $snapshot->version()); }
+				catch(\Throwable){}
+			}
+			throw $error;
+		}
+	}
+
+	/** Applies deferred session bindings after the snapshot ledger commit. */
+	private function finishMountSnapshotTransaction(): void {
+		$this->mountIssuedSnapshots=[];
+		foreach($this->mountPendingSessionCommits as $commit){
+			$commit['component']->commitSessionState($commit['state']);
+		}
+		$this->mountPendingSessionCommits=[];
+	}
+
+	private function assertSnapshotStorePolicy(): void {
+		if($this->productionRequiresSharedStore() && ($this->snapshotVersionStore->manifest()['production_safe'] ?? false)!==true){
+			throw new \RuntimeException('Production Reactor snapshots require a production-safe atomic version store.');
+		}
+	}
+
+	private function productionRequiresSharedStore(): bool {
+		return (ReactorSigner::manifest()['production'] ?? false)===true;
+	}
+
+	/** @return array<string,mixed> State values are deliberately absent. */
+	private function transportEnvelope(ReactorRequest $request, ?ReactorSnapshot $snapshot, bool $mutationRequested): array {
+		return [
+			'schema_version'=>1,
+			'component'=>$request->component(),
+			'action'=>$request->action(),
+			'mutation_requested'=>$mutationRequested,
+			'is_reactor_transport'=>$request->isReactorRequest(),
+			'state_keys'=>self::boundedKeys($request->state()),
+			'param_keys'=>self::boundedKeys($request->params()),
+			'upload_count'=>count($request->uploads()),
+			'snapshot'=>$snapshot?->verificationMetadata() ?? [
+				'present'=>false,'verified'=>false,'schema_version'=>null,'scope_bound'=>false,'version'=>null,'created_at'=>null,'expires_at'=>null,'legacy'=>false,
+			],
+			'host_scope'=>$request->securityContext()->publicMetadata(),
+		];
+	}
+
+	/** @return list<string> */
+	private static function boundedKeys(array $values): array {
+		$keys=[];
+		foreach(array_slice(array_keys($values), 0, 100) as $key){
+			$key=(string)$key;
+			if(strlen($key)>128){ $key=substr($key, 0, 128); }
+			$keys[]=$key;
+		}
+		return $keys;
+	}
+
+	private function securityDenial(ReactorRequest $request, string $span, string $code, string $message, int $status): ReactorResponse {
+		$correlationId=$request->securityContext()->correlationId() ?: self::fallbackCorrelationId();
+		try{
+			ReactorTrace::record('security.denied', [
+				'component'=>$request->component(),
+				'action'=>$request->action(),
+				'code'=>$code,
+				'status'=>$status,
+				'correlation_id'=>$correlationId,
+			]);
+			ReactorTrace::end($span, ['status'=>$status,'security_code'=>$code]);
+		}
+		catch(\Throwable){}
+		return ReactorResponse::error($message, $status, [
+			'error'=>['code'=>$code,'correlation_id'=>$correlationId],
+		]);
+	}
+
+	private static function fallbackCorrelationId(): string {
+		try{ return 'rrq_'.bin2hex(random_bytes(8)); }
+		catch(\Throwable){ return 'rrq_'.str_replace('.', '', uniqid('', true)); }
+	}
+
+	private static function snapshotRevokeError(string $code, string $message, int $status, ?string $correlationId): ReactorResponse {
+		return ReactorResponse::error($message, $status, [
+			'error'=>['code'=>$code,'correlation_id'=>$correlationId ?: self::fallbackCorrelationId()],
+		]);
+	}
+
+	private static function validateResponseEnvelope(ReactorResponse $response): void {
+		json_encode($response, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+	}
+
+	private function abortReservation(?ReactorSnapshot $snapshot, string $reservationId): void {
+		if(!$snapshot instanceof ReactorSnapshot || $snapshot->isLegacy() || $reservationId===''){ return; }
+		try{ $this->snapshotVersionStore->abort($snapshot->snapshotId(), $snapshot->scopeHash(), $snapshot->component(), $snapshot->version(), $reservationId); }
+		catch(\Throwable){}
+	}
+
+	private static function reservationTtlSeconds(): int {
+		$configured=Reactor::config('snapshot_reservation_ttl_seconds', 120);
+		if(!is_int($configured) || $configured<5 || $configured>300){
+			throw new \UnexpectedValueException('Reactor snapshot_reservation_ttl_seconds must be an integer from 5 to 300.');
+		}
+		return $configured;
+	}
+
+	/** Production mutations always require a verified state snapshot; local compatibility is explicit. */
+	private static function requiresSignedMutationSnapshot(): bool {
+		$production=(ReactorSigner::manifest()['production'] ?? false)===true;
+		if($production){ return true; }
+		$configured=Reactor::config('require_signed_mutation_snapshots', true);
+		if(!is_bool($configured)){ throw new \UnexpectedValueException('Reactor require_signed_mutation_snapshots must be boolean.'); }
+		return $configured;
 	}
 
 	/**

@@ -31,7 +31,7 @@ final class PanelResponseEmitter {
 		if(!headers_sent()){
 			http_response_code($result->status());
 			foreach($result->headers() as $name=>$value){
-				$name=trim((string)$name);
+				$name=self::headerName($name);
 				if($name===''){
 					continue;
 				}
@@ -59,7 +59,7 @@ final class PanelResponseEmitter {
 			foreach($value as $item){
 				if(is_scalar($item)){
 					$item=trim((string)$item);
-					if($item!==''){
+					if($item!=='' && !str_contains($item, "\r") && !str_contains($item, "\n")){
 						$values[]=$item;
 					}
 				}
@@ -70,6 +70,17 @@ final class PanelResponseEmitter {
 			return [];
 		}
 		$value=trim((string)$value);
-		return $value!=='' ? [$value] : [];
+		return $value!=='' && !str_contains($value, "\r") && !str_contains($value, "\n") ? [$value] : [];
+	}
+
+	/**
+	 * Validates an HTTP header field name against the RFC token character set.
+	 *
+	 * @param mixed $name Candidate header name.
+	 * @return string Valid field name, or an empty string when invalid.
+	 */
+	private static function headerName(mixed $name): string {
+		$name=trim((string)$name);
+		return $name!=='' && preg_match('/\A[!#$%&\'*+.^_`|~0-9A-Za-z-]+\z/', $name)===1 ? $name : '';
 	}
 }

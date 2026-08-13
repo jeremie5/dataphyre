@@ -13,9 +13,14 @@ namespace Dataphyre\Panel;
  * A page owns navigation metadata, authorization, render callbacks, actions,
  * forms, widgets, tables, page manifests, and navigation entries consumed by
  * the Panel manager.
+ *
+ * @template TContent = mixed
+ * @template TRecord = mixed
+ * @template TState of array<string,mixed> = array<string,mixed>
  */
 final class PanelPage {
 	use PanelExtensible;
+	use HasCollectionPresentations;
 
 	private string $name;
 	private string $label;
@@ -27,16 +32,20 @@ final class PanelPage {
 	private bool $hiddenFromNavigation=false;
 	private ?string $navigationDescription=null;
 	private mixed $navigationBadge=null;
+	/** @var (\Closure(?PanelRequest,self<TContent,TRecord,TState>,?PanelManager):mixed)|null */
 	private ?\Closure $navigationBadgeResolver=null;
 	private string $navigationBadgeTone='neutral';
+	/** @var TContent */
 	private mixed $content='';
+	/** @var (\Closure(PanelRequest,self<TContent,TRecord,TState>,?PanelManager):TContent)|null */
 	private ?\Closure $renderer=null;
+	/** @var (\Closure(string,mixed,?PanelRequest,self<TContent,TRecord,TState>):bool)|null */
 	private ?\Closure $authorizer=null;
 	/** @var array<string, Action|ActionGroup> */
 	private array $actions=[];
-	/** @var array<string, Widget> */
+	/** @var array<string, Widget<TRecord,mixed,TState>> */
 	private array $widgets=[];
-	/** @var array<string, PageTable> */
+	/** @var array<string, PageTable<TRecord,TState>> */
 	private array $tables=[];
 	/** @var array<string, array<string, mixed>> */
 	private array $forms=[];
@@ -63,7 +72,7 @@ final class PanelPage {
 	 * extension callbacks can apply shared defaults before the page is returned.
 	 *
 	 * @param string $name Raw page name normalized for routing, manifests, and navigation.
-	 * @return self Page definition after global Panel extension defaults run.
+	 * @return self<TContent,TRecord,TState> Page definition after global Panel extension defaults run.
 	 */
 	public static function make(string $name): self {
 		return self::configured(new self($name));
@@ -77,7 +86,7 @@ final class PanelPage {
 	 * share the same normalization rules.
 	 *
 	 * @param array<string,mixed> $definition Array definition used to hydrate a page/action/widget/table object.
-	 * @return self Page definition hydrated from the recognized array keys.
+	 * @return self<TContent,TRecord,TState> Page definition hydrated from the recognized array keys.
 	 */
 	public static function fromArray(array $definition): self {
 		$page=self::make((string)($definition['name'] ?? ''));
@@ -128,6 +137,9 @@ final class PanelPage {
 		if(isset($definition['meta']) && is_array($definition['meta'])){
 			$page=$page->meta($definition['meta']);
 		}
+		if(isset($definition['presentation']) && is_array($definition['presentation'])){
+			$page=$page->collectionPresentations($definition['presentation']);
+		}
 		return $page;
 	}
 
@@ -168,7 +180,7 @@ final class PanelPage {
 	 * navigation and manifests derive the URL from PanelConfig and the page name.
 	 *
 	 * @param string $url Explicit page URL.
-	 * @return self Cloned page definition with the explicit URL applied.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the explicit URL applied.
 	 */
 	public function url(string $url): self {
 		$clone=clone $this;
@@ -184,7 +196,7 @@ final class PanelPage {
 	 * navigation level.
 	 *
 	 * @param string $group Navigation group name.
-	 * @return self Cloned page definition with the navigation group applied or cleared.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the navigation group applied or cleared.
 	 */
 	public function group(string $group): self {
 		$clone=clone $this;
@@ -199,7 +211,7 @@ final class PanelPage {
 	 * normalized through Resource rules, and blank values clear the parent link.
 	 *
 	 * @param string|NavigationItem|null $parent Navigation parent item or normalized parent key.
-	 * @return self Cloned page definition with the parent navigation key applied or cleared.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the parent navigation key applied or cleared.
 	 */
 	public function navigationParent(string|NavigationItem|null $parent): self {
 		$clone=clone $this;
@@ -214,7 +226,7 @@ final class PanelPage {
 	 * The same normalization and blank-value clearing rules apply.
 	 *
 	 * @param string|NavigationItem|null $parent Navigation parent item or normalized parent key.
-	 * @return self Cloned page definition with the folder-style parent applied.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the folder-style parent applied.
 	 */
 	public function folder(string|NavigationItem|null $parent): self {
 		return $this->navigationParent($parent);
@@ -227,7 +239,7 @@ final class PanelPage {
 	 * icon when no icon is configured.
 	 *
 	 * @param string $icon Navigation icon name.
-	 * @return self Cloned page definition with the navigation icon applied or cleared.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the navigation icon applied or cleared.
 	 */
 	public function icon(string $icon): self {
 		$clone=clone $this;
@@ -242,7 +254,7 @@ final class PanelPage {
 	 * renderers.
 	 *
 	 * @param int $sort Navigation sort order.
-	 * @return self Cloned page definition with the sort order applied.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the sort order applied.
 	 */
 	public function sort(int $sort): self {
 		$clone=clone $this;
@@ -257,7 +269,7 @@ final class PanelPage {
 	 * them.
 	 *
 	 * @param bool $hidden Whether the page is omitted from navigation.
-	 * @return self Cloned page definition with navigation visibility updated.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with navigation visibility updated.
 	 */
 	public function hideFromNavigation(bool $hidden=true): self {
 		$clone=clone $this;
@@ -272,7 +284,7 @@ final class PanelPage {
 	 * inserts this text into HTML.
 	 *
 	 * @param string $description Navigation description text.
-	 * @return self Cloned page definition with the navigation description applied or cleared.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the navigation description applied or cleared.
 	 */
 	public function navigationDescription(string $description): self {
 		$clone=clone $this;
@@ -287,8 +299,8 @@ final class PanelPage {
 	 * with the current request, page, and manager. Static values are serialized as
 	 * configured.
 	 *
-	 * @param mixed $badge Static or computed navigation badge value.
-	 * @return self Cloned page definition with the static badge or badge resolver applied.
+	 * @param scalar|\Stringable|array<array-key,mixed>|null|callable(?PanelRequest,self<TContent,TRecord,TState>,?PanelManager):mixed $badge Static or computed navigation badge value.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the static badge or badge resolver applied.
 	 */
 	public function navigationBadge(mixed $badge): self {
 		$clone=clone $this;
@@ -308,8 +320,8 @@ final class PanelPage {
 	 * Resolver exceptions are caught during navigation entry creation, traced, and
 	 * converted to a null badge so navigation can still render.
 	 *
-	 * @param callable $resolver Callable invoked for lookup, render, authorization, or scoped override execution.
-	 * @return self Cloned page definition with the lazy badge resolver applied.
+	 * @param callable(?PanelRequest,self<TContent,TRecord,TState>,?PanelManager):mixed $resolver Callable invoked for lazy navigation badge resolution.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the lazy badge resolver applied.
 	 */
 	public function navigationBadgeUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -324,7 +336,7 @@ final class PanelPage {
 	 * token.
 	 *
 	 * @param string $tone Badge tone name.
-	 * @return self Cloned page definition with a bounded badge tone.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with a bounded badge tone.
 	 */
 	public function navigationBadgeTone(string $tone): self {
 		$tone=Resource::normalizeName($tone);
@@ -339,8 +351,9 @@ final class PanelPage {
 	 * Callable content becomes the page renderer and clears the static content
 	 * field. Non-callable content is stored as-is and later returned by render().
 	 *
-	 * @param mixed $content Static content, view data, or renderer input for the page.
-	 * @return self Cloned page definition with static content or a renderer callback applied.
+	 * @template TPageContent
+	 * @param TPageContent|callable(PanelRequest,self<TPageContent,TRecord,TState>=,?PanelManager=):TPageContent $content Static content, view data, or renderer input for the page.
+	 * @return self<TPageContent,TRecord,TState>
 	 */
 	public function content(mixed $content): self {
 		$clone=clone $this;
@@ -360,8 +373,9 @@ final class PanelPage {
 	 * The callback is evaluated through PanelUtilityResolver with request, page, and
 	 * manager context at render time.
 	 *
-	 * @param callable $renderer Callable invoked for lookup, render, authorization, or scoped override execution.
-	 * @return self Cloned page definition with the renderer callback applied.
+	 * @template TPageContent
+	 * @param callable(PanelRequest,self<TPageContent,TRecord,TState>=,?PanelManager=):TPageContent $renderer Callable invoked for page rendering.
+	 * @return self<TPageContent,TRecord,TState>
 	 */
 	public function renderUsing(callable $renderer): self {
 		$clone=clone $this;
@@ -375,8 +389,8 @@ final class PanelPage {
 	 * The callback is evaluated after the optional permission bridge. Returning a
 	 * falsy value denies the requested ability for the current user/request context.
 	 *
-	 * @param callable $authorizer Callable invoked for lookup, render, authorization, or scoped override execution.
-	 * @return self Cloned page definition with the authorizer callback applied.
+	 * @param callable(string,mixed,?PanelRequest,self<TContent,TRecord,TState>=):bool $authorizer Callable invoked for page authorization.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the authorizer callback applied.
 	 */
 	public function authorize(callable $authorizer): self {
 		$clone=clone $this;
@@ -391,7 +405,7 @@ final class PanelPage {
 	 * objects, and ActionGroup objects follow the same registration path.
 	 *
 	 * @param list<Action|ActionGroup|array<string,mixed>|string> $actions Definitions appended to the page manifest.
-	 * @return self Cloned page definition with all supplied actions registered.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with all supplied actions registered.
 	 */
 	public function actions(array $actions): self {
 		$clone=clone $this;
@@ -408,7 +422,7 @@ final class PanelPage {
 	 * hydrated as actions or groups, and entries with blank names are ignored.
 	 *
 	 * @param Action|ActionGroup|array|string $action Action definition, name, or object associated with the page.
-	 * @return self Cloned page definition with the supplied action entry registered.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the supplied action entry registered.
 	 */
 	public function action(Action|ActionGroup|array|string $action): self {
 		$clone=clone $this;
@@ -433,7 +447,7 @@ final class PanelPage {
 	 *
 	 * @param ActionGroup|array|string $group Navigation group name.
 	 * @param list<Action|array<string,mixed>|string> $actions Definitions appended to the page manifest.
-	 * @return self Cloned page definition with the action group registered.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the action group registered.
 	 */
 	public function actionGroup(ActionGroup|array|string $group, array $actions=[]): self {
 		$group=$group instanceof ActionGroup ? $group : (is_array($group) ? ActionGroup::fromArray($group) : ActionGroup::make((string)$group)->actions($actions));
@@ -480,7 +494,7 @@ final class PanelPage {
 	 * scaffold is normalized through form(), which also registers the backing action.
 	 *
 	 * @param list<array<string,mixed>> $forms Definitions appended to the page manifest.
-	 * @return self Cloned page definition with all supplied form scaffolds registered.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with all supplied form scaffolds registered.
 	 */
 	public function forms(array $forms): self {
 		$clone=clone $this;
@@ -507,7 +521,7 @@ final class PanelPage {
 	 *
 	 * @param Action|array|string $action Action definition, name, or object associated with the page.
 	 * @param array|string $options Placement, form, table, or render options.
-	 * @return self Cloned page definition with the embedded form scaffold registered.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the embedded form scaffold registered.
 	 */
 	public function form(Action|array|string $action, array|string $options=[]): self {
 		$clone=clone $this;
@@ -527,7 +541,7 @@ final class PanelPage {
 	 *
 	 * @param Action|array|string $action Action definition, name, or object associated with the page.
 	 * @param array|string $options Placement, form, table, or render options.
-	 * @return self Cloned page definition with the embedded form scaffold registered.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the embedded form scaffold registered.
 	 */
 	public function embeddedForm(Action|array|string $action, array|string $options=[]): self {
 		return $this->form($action, $options);
@@ -541,7 +555,7 @@ final class PanelPage {
 	 *
 	 * @param Action|array|string $action Action definition, name, or object associated with the page.
 	 * @param array|string $options Placement, form, table, or render options.
-	 * @return self Cloned page definition with the page-placement form scaffold registered.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the page-placement form scaffold registered.
 	 */
 	public function formPage(Action|array|string $action, array|string $options=[]): self {
 		$options=is_string($options) ? ['title'=>$options] : $options;
@@ -556,7 +570,7 @@ final class PanelPage {
 	 *
 	 * @param Action|array|string $action Action definition, name, or object associated with the page.
 	 * @param array|string $options Placement, form, table, or render options.
-	 * @return self Cloned page definition with the primary form scaffold registered.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the primary form scaffold registered.
 	 */
 	public function primaryForm(Action|array|string $action, array|string $options=[]): self {
 		return $this->formPage($action, $options);
@@ -597,8 +611,8 @@ final class PanelPage {
 	 * Each entry is normalized through widget(), so strings, arrays, and Widget
 	 * objects share the same registration rules.
 	 *
-	 * @param list<Widget|array<string,mixed>|string> $widgets Definitions appended to the page manifest.
-	 * @return self Cloned page definition with all supplied widgets registered.
+	 * @param list<Widget<TRecord,mixed,TState>|array<string,mixed>|string> $widgets Definitions appended to the page manifest.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with all supplied widgets registered.
 	 */
 	public function widgets(array $widgets): self {
 		$clone=clone $this;
@@ -614,9 +628,10 @@ final class PanelPage {
 	 * String widgets use the supplied default type, array definitions are hydrated
 	 * through Widget::fromArray(), and blank widget names are ignored.
 	 *
-	 * @param Widget|array|string $widget Widget.
+	 * @template TWidgetValue
+	 * @param Widget<TRecord,TWidgetValue,TState>|array<string,mixed>|string $widget Widget.
 	 * @param string $type Locale definition type or panel/action type.
-	 * @return self Cloned page definition with the supplied widget registered.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the supplied widget registered.
 	 */
 	public function widget(Widget|array|string $widget, string $type='stat'): self {
 		$clone=clone $this;
@@ -638,7 +653,7 @@ final class PanelPage {
 	 *
 	 * The objects are returned without resolving request-specific state.
 	 *
-	 * @return array<string, Widget> Registered page widgets keyed by normalized widget name.
+	 * @return array<string, Widget<TRecord,mixed,TState>> Registered page widgets keyed by normalized widget name.
 	 */
 	public function widgetsList(): array {
 		return $this->widgets;
@@ -692,8 +707,8 @@ final class PanelPage {
 	 * Each table definition is normalized through table(), preserving consistent
 	 * handling for strings, arrays, and PageTable instances.
 	 *
-	 * @param list<PageTable|array<string,mixed>|string> $tables Definitions appended to the page manifest.
-	 * @return self Cloned page definition with all supplied page tables registered.
+	 * @param list<PageTable<TRecord,TState>|array<string,mixed>|string> $tables Definitions appended to the page manifest.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with all supplied page tables registered.
 	 */
 	public function tables(array $tables): self {
 		$clone=clone $this;
@@ -709,8 +724,8 @@ final class PanelPage {
 	 * String values become PageTable instances, arrays are hydrated through
 	 * PageTable::fromArray(), and blank table names are ignored.
 	 *
-	 * @param PageTable|array|string $table Table.
-	 * @return self Cloned page definition with the supplied page table registered.
+	 * @param PageTable<TRecord,TState>|array<string,mixed>|string $table Table.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with the supplied page table registered.
 	 */
 	public function table(PageTable|array|string $table): self {
 		$clone=clone $this;
@@ -733,7 +748,7 @@ final class PanelPage {
 	 * The table objects are returned without resolving request filters, views,
 	 * records, or summaries.
 	 *
-	 * @return array<string, PageTable> Registered page tables keyed by normalized table name.
+	 * @return array<string, PageTable<TRecord,TState>> Registered page tables keyed by normalized table name.
 	 */
 	public function tablesList(): array {
 		return $this->tables;
@@ -762,7 +777,7 @@ final class PanelPage {
 	 * returns both table metadata and runtime records for rendering.
 	 *
 	 * @param ?PanelRequest $request Panel request used to resolve visibility, widgets, tables, authorization, and rendering.
-	 * @return list<array<string,mixed>> Sorted table render entries with records, summaries, and request state.
+	 * @return list<array{table:PageTable<TRecord,TState>,meta:array<string,mixed>,request:?PanelRequest,records:list<TRecord>,summaries:list<array<string,mixed>>}> Sorted table render entries with records, summaries, and request state.
 	 */
 	public function resolvedTables(?PanelRequest $request=null): array {
 		$tables=array_values($this->tables);
@@ -824,7 +839,7 @@ final class PanelPage {
 	 * metadata and is not interpreted by PanelPage itself.
 	 *
 	 * @param array<string,mixed> $meta Extra page manifest metadata.
-	 * @return self Cloned page definition with merged page metadata.
+	 * @return self<TContent,TRecord,TState> Cloned page definition with merged page metadata.
 	 */
 	public function meta(array $meta): self {
 		$clone=clone $this;
@@ -840,7 +855,7 @@ final class PanelPage {
 	 *
 	 * @param PanelRequest $request Panel request used to resolve visibility, widgets, tables, authorization, and rendering.
 	 * @param ?PanelManager $manager Panel manager supplying runtime policy and registries.
-	 * @return mixed Renderer callback result, or the static page content when no renderer is configured.
+	 * @return TContent Renderer callback result, or the static page content when no renderer is configured.
 	 */
 	public function render(PanelRequest $request, ?PanelManager $manager=null): mixed {
 		if($this->renderer!==null){
@@ -945,6 +960,7 @@ final class PanelPage {
 				array_values($this->tables)
 			),
 			'forms'=>array_values($this->forms),
+			'presentation'=>$this->presentations(),
 			'meta'=>$this->meta,
 		];
 	}

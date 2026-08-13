@@ -56,6 +56,9 @@ final class DB {
 	private static bool $apiCacheBridgeRegistered=false;
 	private static ?bool $guardrailsEnabled=null;
 
+	/** @var array<string,true> Server-version checks completed for transaction advisory locks. */
+	private static array $transactionAdvisoryLockSupport=[];
+
 	/**
 	 * Returns the default read-cache policy used by Framework table/query helpers.
 	 *
@@ -165,7 +168,13 @@ final class DB {
 		if($merged===[]){
 			return static::defaultReadCaching();
 		}
-		return array_values(array_unique($merged, SORT_REGULAR));
+		$unique=[];
+		foreach($merged as $entry){
+			if(!in_array($entry, $unique, true)){
+				$unique[]=$entry;
+			}
+		}
+		return $unique;
 	}
 
 	/**
@@ -357,6 +366,52 @@ final class DB {
 	 */
 	public static function transaction(callable $callback, ?string $cluster=null): mixed {
 		return (new Transaction(static::normalizeCluster($cluster)))->run($callback);
+	}
+
+	/**
+	 * Acquires a PostgreSQL-compatible transaction-level advisory lock.
+	 *
+	 * The lock is released automatically with the outermost transaction. Session-
+	 * level locks are deliberately not exposed because they can leak across pooled
+	 * clients. YugabyteDB is accepted only when its version reports v2025.1 or
+	 * newer, where distributed advisory locks are supported.
+	 *
+	 * @param string $key Stable application-defined lock identity.
+	 * @param ?string $cluster Cluster name, or `null` for the active/default cluster.
+	 * @return bool True after the lock has been acquired.
+	 */
+	public static function transactionAdvisoryLock(string $key, ?string $cluster=null): bool {
+		$key=trim($key);
+		if($key===''){
+			throw new \InvalidArgumentException('Transaction advisory lock key cannot be empty.');
+		}
+		$cluster=static::normalizeCluster($cluster);
+		$dbms=strtolower(trim((string)static::clusterDbms($cluster)));
+		if($dbms!=='postgresql'){
+			throw new \RuntimeException(
+				'Transaction advisory locks require the PostgreSQL DBMS; cluster '.
+				($cluster ?? static::defaultCluster() ?? '[default]').' uses '.($dbms!=='' ? $dbms : '[unknown]').'.'
+			);
+		}
+		if(Transaction::activeDepth($cluster)<1){
+			throw new \RuntimeException('Transaction advisory locks must be acquired inside an active Dataphyre transaction.');
+		}
+		static::assertTransactionAdvisoryLockServerSupport($cluster);
+		$result=static::connection($cluster)->query(
+			'SELECT pg_advisory_xact_lock(hashtextextended(?, 0))',
+			[$key],
+			false,
+			false,
+			false,
+			false
+		);
+		if($result===false){
+			throw new \RuntimeException(
+				'The PostgreSQL-compatible server could not acquire a transaction advisory lock. '.
+				'For YugabyteDB, require v2025.1 or newer and verify advisory locks are enabled.'
+			);
+		}
+		return true;
 	}
 
 	/**
@@ -868,9 +923,11 @@ final class DB {
 	 * fallback when configuration is absent or malformed during partial bootstrap.
 	 */
 	private static function sqlConfig(): array {
-		return is_array(DP_SQL_CFG ?? null)
-			? DP_SQL_CFG
-			: [];
+		if(!defined('DP_SQL_CFG')){
+			return [];
+		}
+		$config=constant('DP_SQL_CFG');
+		return is_array($config) ? $config : [];
 	}
 
 	/**
@@ -881,7 +938,11 @@ final class DB {
 	 * datacenter from a configured datacenter without inventing a default here.
 	 */
 	private static function currentDatacenter(): string {
-		return trim((string)(DP_CORE_CFG['datacenter'] ?? ''));
+		if(!defined('DP_CORE_CFG')){
+			return '';
+		}
+		$config=constant('DP_CORE_CFG');
+		return is_array($config) ? trim((string)($config['datacenter'] ?? '')) : '';
 	}
 
 	/**
@@ -893,9 +954,46 @@ final class DB {
 	 */
 	private static function normalizeCluster(?string $cluster): ?string {
 		if($cluster===null || trim($cluster)===''){
+			$transactionCluster=Transaction::activeCluster();
+			if($transactionCluster!==null && trim($transactionCluster)!==''){
+				return trim($transactionCluster);
+			}
 			return DataEnvironment::clusterOverride();
 		}
-		return trim($cluster);
+		$cluster=trim($cluster);
+		return $cluster;
+	}
+
+	/** Fail closed on PostgreSQL-compatible engines without known lock semantics. */
+	private static function assertTransactionAdvisoryLockServerSupport(?string $cluster): void {
+		$cacheKey=$cluster ?? static::defaultCluster() ?? '[default]';
+		if(isset(self::$transactionAdvisoryLockSupport[$cacheKey])){
+			return;
+		}
+		$version=static::connection($cluster)->value('SELECT version()', null, false, false);
+		if(!is_scalar($version) && !$version instanceof \Stringable){
+			throw new \RuntimeException('Dataphyre could not verify transaction advisory lock server compatibility.');
+		}
+		$version=trim((string)$version);
+		if($version==='' || stripos($version, 'PostgreSQL')===false){
+			throw new \RuntimeException('Transaction advisory locks require a PostgreSQL or supported YugabyteDB server.');
+		}
+		$isYugabyte=stripos($version, 'Yugabyte')!==false || preg_match('/-YB-/i', $version)===1;
+		if($isYugabyte){
+			if(preg_match('/\b(20\d{2})\.(\d+)(?:\.\d+){1,2}\b/', $version, $release)!==1){
+				throw new \RuntimeException(
+					'Dataphyre could not verify the YugabyteDB release; transaction advisory locks require v2025.1 or newer.'
+				);
+			}
+			$year=(int)$release[1];
+			$series=(int)$release[2];
+			if($year<2025 || ($year===2025 && $series<1)){
+				throw new \RuntimeException(
+					'YugabyteDB transaction advisory locks require v2025.1 or newer; server reports v'.$year.'.'.$series.'.'
+				);
+			}
+		}
+		self::$transactionAdvisoryLockSupport[$cacheKey]=true;
 	}
 
 	/**

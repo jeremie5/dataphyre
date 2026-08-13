@@ -676,7 +676,7 @@ trait dataphyre_mcp_client_enterprise_audit_surfaces {
 		while(str_starts_with($file, './')){
 			$file=substr($file, 2);
 		}
-		foreach(['common/dataphyre/', 'dataphyre/'] as $prefix){
+		foreach(['dataphyre/', 'dataphyre/'] as $prefix){
 			if(str_starts_with($file, $prefix)){
 				return substr($file, strlen($prefix));
 			}

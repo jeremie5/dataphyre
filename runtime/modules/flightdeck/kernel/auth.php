@@ -207,14 +207,19 @@ final class dataphyre_flightdeck_auth {
 	}
 
 	/**
-	 * Redirects the current request to the Flightdeck login form and exits.
+	 * Redirects the current request to the Flightdeck login form and terminates.
 	 *
-	 * @return never
+	 * An optional terminator makes response emission directly testable without
+	 * changing production behavior, where the default remains an immediate exit.
+	 *
+	 * @param ?callable $terminator Optional test or host termination strategy.
+	 * @return void
 	 */
-	public static function redirect_to_login(): never {
+	public static function redirect_to_login(?callable $terminator=null): void {
 		http_response_code(302);
 		header('Location: '.self::login_url());
-		exit;
+		if($terminator===null){exit;}
+		$terminator();
 	}
 
 	/**
@@ -497,7 +502,7 @@ final class dataphyre_flightdeck_auth {
 	 */
 	private static function clear_failed_attempts(): void {
 		$file=self::rate_limit_file();
-		if($file!==null && is_file($file)){
+		if(is_file($file)){
 			@unlink($file);
 		}
 	}
@@ -512,7 +517,7 @@ final class dataphyre_flightdeck_auth {
 	 */
 	private static function rate_limit_state(): array {
 		$file=self::rate_limit_file();
-		if($file===null || !is_file($file)){
+		if(!is_file($file)){
 			return ['attempts'=>0, 'until'=>0];
 		}
 		$state=json_decode((string)@file_get_contents($file), true);
@@ -536,9 +541,6 @@ final class dataphyre_flightdeck_auth {
 	 */
 	private static function write_rate_limit_state(array $state): void {
 		$file=self::rate_limit_file();
-		if($file===null){
-			return;
-		}
 		$directory=dirname($file);
 		if(!is_dir($directory)){
 			@mkdir($directory, 0777, true);
@@ -549,13 +551,10 @@ final class dataphyre_flightdeck_auth {
 	/**
 	 * Resolves the per-client rate-limit cache file.
 	 *
-	 * @return ?string Cache file path keyed by client IP hash, or null when no cache root exists.
+	 * @return string Cache file path keyed by client IP hash.
 	 */
-	private static function rate_limit_file(): ?string {
+	private static function rate_limit_file(): string {
 		$directory=self::cache_directory();
-		if($directory===null){
-			return null;
-		}
 		return $directory.'login_'.hash('sha256', self::client_ip()).'.json';
 	}
 
@@ -565,17 +564,18 @@ final class dataphyre_flightdeck_auth {
 	 * ROOTPATH is preferred when available. Standalone bootstrap falls back to
 	 * the install-relative common cache directory.
 	 *
-	 * @return ?string Directory path with trailing separator, or null when it cannot be resolved.
+	 * @return string Directory path with trailing separator.
 	 */
-	private static function cache_directory(): ?string {
+	private static function cache_directory(): string {
+		$configured=trim((string)(getenv('DATAPHYRE_FLIGHTDECK_CACHE_DIR') ?: ''));
+		if($configured!==''){
+			return rtrim($configured, '/\\').'/';
+		}
 		if(defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre'])){
 			return rtrim((string)ROOTPATH['common_dataphyre'], '/\\').'/cache/flightdeck/';
 		}
 		$install_root=dirname(__DIR__, 4);
-		if($install_root!=='' && is_dir($install_root)){
-			return rtrim($install_root, '/\\').'/cache/flightdeck/';
-		}
-		return null;
+		return rtrim($install_root, '/\\').'/cache/flightdeck/';
 	}
 
 	/**

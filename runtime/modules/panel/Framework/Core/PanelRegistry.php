@@ -151,18 +151,26 @@ final class PanelRegistry {
 	 * traces, and health checks that need to see what has been booted
 	 * without serializing entire surface objects.
 	 *
-	 * @return array<string,array{name:string,resources:array<int,string>,pages:array<int,string>,widgets:array<int,string>,plugins:array<int,string>}> Registered surface summary.
+	 * @return array<string,array{name:string,resources:array<int,string>,pages:array<int,string>,widgets:array<int,string>,plugins:array<int,string>,platform:array<string,mixed>}> Registered surface summary.
 	 */
 	public static function describe(): array {
 		$description=[];
 		foreach(self::$surfaces as $name=>$surface){
 			$surfaceDescription=$surface->describe();
+			$platform=is_array($surfaceDescription['platform'] ?? null) ? $surfaceDescription['platform'] : [];
 			$description[$name]=[
 				'name'=>$surface->name(),
 				'resources'=>array_column($surfaceDescription['resources'] ?? [], 'name'),
 				'pages'=>array_column($surfaceDescription['pages'] ?? [], 'name'),
 				'widgets'=>array_column($surfaceDescription['widgets'] ?? [], 'name'),
 				'plugins'=>array_column($surfaceDescription['plugins'] ?? [], 'id'),
+				'platform'=>[
+					'configured'=>($platform['attachment']['configured'] ?? false)===true,
+					'revision'=>(int)($platform['attachment']['revision'] ?? 0),
+					'configured_domains'=>(int)($platform['counts']['configured'] ?? 0),
+					'ready_domains'=>(int)($platform['counts']['ready'] ?? 0),
+					'services'=>(int)($platform['counts']['services'] ?? 0),
+				],
 			];
 		}
 		return $description;

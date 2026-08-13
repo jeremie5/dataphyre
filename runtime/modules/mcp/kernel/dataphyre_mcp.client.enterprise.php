@@ -206,14 +206,7 @@ trait dataphyre_mcp_client_enterprise_surfaces {
 		$app_first_verification_policy=is_array($readiness['app_first_verification_policy'] ?? null) ? $readiness['app_first_verification_policy'] : [];
 		$governance_baseline=is_array($enterprise_readiness['governance_baseline'] ?? null) ? $enterprise_readiness['governance_baseline'] : [];
 		$governance_checks=array_values(array_filter(array_map(static fn(mixed $check): string => (string)$check, $governance_baseline['checks'] ?? [])));
-		$highlights=[];
-		foreach($matrix['families'] ?? [] as $family){
-			if(!is_array($family)){
-				continue;
-			}
-			$highlights[]=(string)($family['release_note'] ?? '');
-		}
-		$highlights=array_values(array_filter($highlights, static fn(string $line): bool => $line!==''));
+		$highlights=$this->mcp_release_highlights(is_array($matrix['families'] ?? null) ? $matrix['families'] : []);
 		$notes=[
 			'# Dataphyre MCP Release Notes',
 			'',
@@ -304,5 +297,16 @@ trait dataphyre_mcp_client_enterprise_surfaces {
 			'safety'=>$status['intentionally_not_exposed'] ?? [],
 			'core_resources'=>$status['core_resources'] ?? [],
 		];
+	}
+
+	/** @return list<string> */
+	private function mcp_release_highlights(array $families): array {
+		$highlights=[];
+		foreach($families as $family){
+			if(!is_array($family)){continue;}
+			$line=(string)($family['release_note'] ?? '');
+			if($line!==''){$highlights[]=$line;}
+		}
+		return $highlights;
 	}
 }

@@ -7,10 +7,11 @@
  */
 
 if(defined('DATAPHYRE_TRACELOG_ASSETS_SUPPORT_LOADED')){
-	return;
+	return 1;
 }
 define('DATAPHYRE_TRACELOG_ASSETS_SUPPORT_LOADED', true);
 
+if(!function_exists('dataphyre_tracelog_asset_name')){
 /**
  * Normalizes a requested tracelog asset name.
  *
@@ -218,4 +219,5 @@ function dataphyre_tracelog_plotter_javascript(): string {
 	}
 })();
 JS;
+}
 }

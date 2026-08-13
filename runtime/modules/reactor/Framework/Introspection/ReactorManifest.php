@@ -15,6 +15,16 @@ namespace Dataphyre\Reactor;
  * a shape that can be JSON-encoded for inspectors and tests.
  */
 final class ReactorManifest {
+	private static ?string $versionFile=null;
+
+	/**
+	 * Overrides the module version file for the current process.
+	 *
+	 * Passing null restores the installed module version path.
+	 */
+	public static function useVersionFile(?string $file): void {
+		self::$versionFile=$file;
+	}
 
 	/**
 	 * Builds a manifest for every component registered with a manager.
@@ -23,19 +33,30 @@ final class ReactorManifest {
 	 * against registration state without scanning the component payloads.
 	 *
 	 * @param ReactorManager $manager Runtime manager holding registered components.
-	 * @return array{module:string,version:string,components:array,component_count:int,trace:array} Reactor manifest payload.
+	 * @return array{module:string,version:string,components:array,component_count:int,signing:array,trace:array} Reactor manifest payload.
 	 */
 	public static function manager(ReactorManager $manager): array {
 		$components=[];
 		foreach($manager->components() as $name=>$component){
 			$components[$name]=self::component($component);
 		}
+		$signing=ReactorSigner::manifest();
+		$trace=ReactorTrace::summary();
+		$traceSetting=Reactor::config('expose_trace_manifest');
+		$exposeTraceDetails=$traceSetting===true || ($traceSetting===null && ($signing['production'] ?? false)!==true);
+		if(!$exposeTraceDetails){
+			$trace['latest']=[];
+			$trace['active_spans']=[];
+		}
+		$trace['detail_exposed']=$exposeTraceDetails;
 		return [
 			'module'=>'reactor',
 			'version'=>self::version(),
 			'components'=>$components,
 			'component_count'=>count($components),
-			'trace'=>ReactorTrace::summary(),
+			'signing'=>$signing,
+			'security'=>$manager->securityManifest(),
+			'trace'=>$trace,
 		];
 	}
 
@@ -78,7 +99,7 @@ final class ReactorManifest {
 	 * @return string Version file contents or the built-in fallback version.
 	 */
 	private static function version(): string {
-		$file=dirname(__DIR__, 2).'/version';
+		$file=self::$versionFile ?? dirname(__DIR__, 2).'/version';
 		if(is_file($file)){
 			$version=trim((string)file_get_contents($file));
 			if($version!==''){

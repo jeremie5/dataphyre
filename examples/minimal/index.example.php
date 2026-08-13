@@ -11,4 +11,9 @@ if(is_file($dataphyre_runtime)){
 	require $dataphyre_runtime;
 	return;
 }
+$dataphyre_runtime=__DIR__.'/dataphyre/runtime/bootstrap.php';
+if(is_file($dataphyre_runtime)){
+	require $dataphyre_runtime;
+	return;
+}
 require __DIR__.'/runtime/bootstrap.php';

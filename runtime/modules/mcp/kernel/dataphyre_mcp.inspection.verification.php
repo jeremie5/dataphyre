@@ -98,10 +98,10 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 	}
 
 	/**
-	 * Lists Dataphyre unit-test JSON manifests with lightweight execution metadata.
+	 * Lists source-declared TestKit contracts and legacy JSON test manifests.
 	 *
-	 * discovers manifest files under runtime modules, applies optional module filters, and summarizes
-	 * case counts and helper/custom-script presence without running test helpers.
+	 * The contract index tokenizes *.test.php files and decodes JSON manifests,
+	 * preserving one static inventory without requiring or executing either format.
 	 *
 	 * @param array{modules?: array<int, string>, limit?: int} $args Manifest listing options.
 	 * @return array{modules: array<int, string>, manifest_count: int, manifests: array<int, array>} Unit-test manifest inventory.
@@ -117,44 +117,50 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 				}
 			}
 		}
+		if($module_filter===[]){
+			throw new InvalidArgumentException('modules must name at least one runtime module for bounded unit-test discovery.');
+		}
 		$limit=max(1, min((int)($args['limit'] ?? 80) ?: 80, 300));
+		$kind=(string)($args['kind']??'all');
+		$contract=trim((string)($args['contract']??''));
+		$matched=$this->contract_catalog_engine($module_filter)->testFiles($module_filter,$kind,$contract);
 		$manifests=[];
-		$modules_root=$this->common_root.'/dataphyre/runtime/modules';
-		foreach($this->all_files($modules_root, 30000) as $path){
-			$relative=$this->relative_path($path);
-			if(!$this->is_unit_test_manifest($relative)){
-				continue;
-			}
-			$module=$this->module_from_unit_test_path($relative);
-			if($module_filter!==[] && !in_array($module, $module_filter, true)){
-				continue;
-			}
-			$summary=$this->unit_test_manifest_summary($path, 3, false);
-			$manifests[]=[
-				'path'=>$relative,
-				'module'=>$module,
-				'case_count'=>$summary['case_count'],
-				'helper_files'=>$summary['helper_files'],
-				'has_custom_script'=>$summary['has_custom_script'],
-				'modified_at'=>$this->file_modified_iso($path),
+		foreach(array_slice($matched,0,$limit) as $file){
+			$relative='dataphyre/'.(string)$file['path'];
+			$entry=[
+				'path'=>$relative,'module'=>$file['module'],'kind'=>$file['kind'],
+				'case_count'=>$file['declared_case_count'],'declared_case_count'=>$file['declared_case_count'],
+				'expanded_case_count'=>$file['expanded_case_count'],'suite_names'=>$file['suite_names'],
+				'contract_count'=>count($file['contracts']),'contracts'=>$file['contracts'],
+				'modified_at'=>$this->file_modified_iso($this->safe_repo_path($relative)),
 			];
-			if(count($manifests)>=$limit){
-				break;
+			if($file['kind']==='json'){
+				$summary=$this->unit_test_manifest_summary($this->safe_repo_path($relative),3,false);
+				$entry['helper_files']=$summary['helper_files'];$entry['has_custom_script']=$summary['has_custom_script'];
+			}else{
+				$entry['helper_files']=[];$entry['has_custom_script']=false;$entry['runtime_metadata_command']=$file['runtime_metadata_command'];
 			}
+			$manifests[]=$entry;
 		}
 		return [
 			'modules'=>$module_filter,
+			'kind'=>$kind,
+			'contract'=>$contract!==''?$contract:null,
+			'matched_manifest_count'=>count($matched),
 			'manifest_count'=>count($manifests),
 			'manifests'=>$manifests,
+			'write_policy'=>'read_only',
+			'execution'=>'not_executed',
+			'contract_model_version'=>\Dataphyre\Mcp\Contracts\ContractCatalog::MODEL_VERSION,
 			'verification_safety'=>$this->verification_safety_contract('unit_tests_list'),
 		];
 	}
 
 	/**
-	 * Reads a bounded Dataphyre unit-test manifest summary.
+	 * Reads a bounded Dataphyre code-test contract or JSON manifest summary.
 	 *
-	 * accepts only repo-local unit_tests JSON manifests, reports module ownership and selected cases,
-	 * and leaves helper scripts unexecuted.
+	 * Code tests are tokenized and JSON manifests are decoded; neither format is
+	 * required, bootstrapped, reflected, or executed.
 	 *
 	 * @param array{path?: string, max_cases?: int, include_expected?: bool} $args Manifest read options.
 	 * @return array<string, mixed> Manifest summary.
@@ -164,10 +170,12 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 	private function read_unit_test_manifest(array $args): array {
 		$path=$this->safe_repo_path((string)($args['path'] ?? ''));
 		$relative=$this->relative_path($path);
-		if(!is_file($path) || !$this->is_unit_test_manifest($relative)){
-			throw new InvalidArgumentException('path must point to a repo-local unit_tests/*.json manifest.');
+		$is_code=str_contains(str_replace('\\','/',$relative),'/unit_tests/')&&str_ends_with(strtolower($relative),'.test.php');
+		if(!is_file($path) || (!$this->is_unit_test_manifest($relative) && !$is_code)){
+			throw new InvalidArgumentException('path must point to a repo-local unit_tests/*.test.php or unit_tests/*.json manifest.');
 		}
 		$max_cases=max(1, min((int)($args['max_cases'] ?? 40) ?: 40, 200));
+		if($is_code){return $this->code_test_manifest_summary($relative,$max_cases);}
 		return array_replace([
 			'path'=>$relative,
 			'module'=>$this->module_from_unit_test_path($relative),
@@ -234,10 +242,10 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 	 */
 	private function browser_regression_manifest_summary(): array {
 		$paths=[
-			'common/dataphyre/runtime/modules/panel/Framework/Testing/PanelBrowserRegressionManifest.php',
-			'common/dataphyre/runtime/modules/panel/Framework/Testing/PanelAccessibilityAudit.php',
-			'common/dataphyre/runtime/modules/panel/Framework/Testing/PanelRegressionSuite.php',
-			'common/dataphyre/runtime/modules/panel/Framework/Testing/PanelRegressionReport.php',
+			'dataphyre/runtime/modules/panel/Framework/Testing/PanelBrowserRegressionManifest.php',
+			'dataphyre/runtime/modules/panel/Framework/Testing/PanelAccessibilityAudit.php',
+			'dataphyre/runtime/modules/panel/Framework/Testing/PanelRegressionSuite.php',
+			'dataphyre/runtime/modules/panel/Framework/Testing/PanelRegressionReport.php',
 		];
 		$classes=[];
 		foreach($paths as $path){
@@ -317,8 +325,6 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 		$include_diagnostics=($args['include_diagnostics'] ?? true)!==false;
 		$limit=max(1, min((int)($args['limit'] ?? 120) ?: 120, 400));
 		$surfaces=[];
-		$module_counts=[];
-		$category_counts=[];
 		$modules_root=$this->common_root.'/dataphyre/runtime/modules';
 		foreach($this->all_files($modules_root, 50000) as $path){
 			$relative=$this->relative_path($path);
@@ -331,18 +337,12 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 				continue;
 			}
 			$surfaces[]=$entry;
-			$module_counts[$module]=($module_counts[$module] ?? 0)+1;
-			$category=(string)$entry['category'];
-			$category_counts[$category]=($category_counts[$category] ?? 0)+1;
-			if(count($surfaces)>=$limit){
-				break;
-			}
 		}
 		if($module_filter===[]){
 			foreach([
-				'common/dataphyre/dev/tools/public/mcp_self_test.php',
-				'common/dataphyre/dev/tools/public/mcp_live_validate.php',
-				'common/dataphyre/dev/tools/public/mcp_config.php',
+				'dataphyre/dev/tools/public/mcp_self_test.php',
+				'dataphyre/dev/tools/public/mcp_live_validate.php',
+				'dataphyre/dev/tools/public/mcp_config.php',
 			] as $tool_path){
 				$absolute=$this->safe_repo_path($tool_path);
 				if(!is_file($absolute)){
@@ -350,17 +350,33 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 				}
 				$entry=$this->verification_tool_surface_entry($absolute, $tool_path);
 				$surfaces[]=$entry;
-				$module_counts['tools']=($module_counts['tools'] ?? 0)+1;
-				$category=(string)$entry['category'];
-				$category_counts[$category]=($category_counts[$category] ?? 0)+1;
-				if(count($surfaces)>=$limit){
-					break;
-				}
 			}
 		}
+		$matched_surface_count=count($surfaces);
 		usort($surfaces, static function(array $a, array $b): int {
-			return strcmp((string)($a['path'] ?? ''), (string)($b['path'] ?? ''));
+			$priority=static function(array $surface): int {
+				if(($surface['known_mcp_wrapper']??null)!==null){return 0;}
+				if(($surface['module']??null)==='tools'){return 1;}
+				return match((string)($surface['category']??'')){
+					'regression_php','check_php'=>2,
+					'json_unit_manifest'=>3,
+					'code_unit_test'=>4,
+					'diagnostic_php'=>5,
+					default=>6,
+				};
+			};
+			return $priority($a)<=>$priority($b)
+				?:strcmp((string)($a['path'] ?? ''), (string)($b['path'] ?? ''));
 		});
+		$surfaces=array_slice($surfaces,0,$limit);
+		$module_counts=[];
+		$category_counts=[];
+		foreach($surfaces as $surface){
+			$module=(string)($surface['module']??'');
+			$category=(string)($surface['category']??'');
+			$module_counts[$module]=($module_counts[$module]??0)+1;
+			$category_counts[$category]=($category_counts[$category]??0)+1;
+		}
 		$focused_surfaces=[];
 		$publication_surfaces=[];
 		foreach($surfaces as $surface){
@@ -382,6 +398,8 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 			'include_diagnostics'=>$include_diagnostics,
 			'limit'=>$limit,
 			'surface_count'=>count($surfaces),
+			'matched_surface_count'=>$matched_surface_count,
+			'truncated'=>$matched_surface_count>count($surfaces),
 			'module_counts'=>$module_counts,
 			'category_counts'=>$category_counts,
 			'verification_safety'=>$this->verification_safety_contract('verification_surface_catalog'),
@@ -393,6 +411,8 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 				'surface_count'=>count($focused_surfaces),
 				'surfaces'=>$focused_surfaces,
 				'recommended_mcp_tools'=>[
+					'dataphyre_contract_catalog',
+					'dataphyre_contract_describe',
 					'dataphyre_unit_tests_list',
 					'dataphyre_unit_test_manifest_read',
 					'dataphyre_browser_regression_manifest_summary',
@@ -424,6 +444,8 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 			],
 			'surfaces'=>$surfaces,
 			'recommended_mcp_tools'=>[
+				'dataphyre_contract_catalog',
+				'dataphyre_contract_describe',
 				'dataphyre_unit_tests_list',
 				'dataphyre_unit_test_manifest_read',
 				'dataphyre_browser_regression_manifest_summary',
@@ -436,7 +458,8 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 			],
 			'publication_validation_boundary'=>'Use publication_validation_tools only for Dataphyre release or MCP/release-surface claims, not ordinary app behavior proof.',
 			'safety_notes'=>[
-				'This catalog reads filenames and lightweight manifest metadata only.',
+				'This catalog reads filenames, tokenized TestKit declarations, and lightweight manifest metadata only.',
+				'Code-defined *.test.php files are tokenized and never required or executed.',
 				'JSON unit-test manifests can reference helper files or custom scripts; inspect them before execution.',
 				'Diagnostic PHP files may bootstrap modules, inspect runtime state, or touch environment-dependent resources if run directly.',
 				'Only use executable MCP wrappers where a route-free and bounded command boundary is already registered.',
@@ -506,7 +529,7 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 			if($wrapped===null && $tool!==''){
 				$wrapped=$surface;
 			}
-			if($manifest===null && (string)($surface['category'] ?? '')==='json_unit_manifest'){
+			if($manifest===null && in_array((string)($surface['category'] ?? ''),['json_unit_manifest','code_unit_test'],true)){
 				$manifest=$surface;
 			}
 			if($diagnostic===null && (string)($surface['category'] ?? '')==='diagnostic_php'){
@@ -565,16 +588,22 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 	private function verification_surface_entry(string $path, string $relative, string $module, bool $include_diagnostics): ?array {
 		$normalized=str_replace('\\', '/', $relative);
 		$basename=basename($normalized);
-		if($this->is_unit_test_manifest($normalized)){
-			$summary=$this->unit_test_manifest_summary($path, 0, false);
+		$is_code_test=str_contains('/'.$normalized,'/unit_tests/')&&str_ends_with(strtolower($normalized),'.test.php');
+		if($this->is_unit_test_manifest($normalized) || $is_code_test){
+			$summary=$is_code_test?[]:$this->unit_test_manifest_summary($path,0,false);
 			return [
-				'category'=>'json_unit_manifest',
+				'category'=>$is_code_test?'code_unit_test':'json_unit_manifest',
 				'module'=>$module,
 				'path'=>$normalized,
 				'execution'=>'not_executed',
-				'case_count'=>$summary['case_count'] ?? 0,
-				'helper_files'=>$summary['helper_files'] ?? [],
-				'has_custom_script'=>$summary['has_custom_script'] ?? false,
+				'case_count'=>$is_code_test?null:($summary['case_count']??0),
+				'contract_count'=>$is_code_test?null:($summary['contract_count']??0),
+				'contracts'=>$summary['contracts']??[],
+				'suite_names'=>$summary['suite_names']??[],
+				'helper_files'=>$summary['helper_files']??[],
+				'has_custom_script'=>$summary['has_custom_script']??false,
+				'runtime_metadata_command'=>$is_code_test?'php bin/dataphyre-test list --owner='.$module.' --cases --json':null,
+				'detail_policy'=>$is_code_test?'Use dataphyre_unit_test_manifest_read for tokenized contract and case details.':'Legacy JSON details are decoded statically.',
 				'recommended_next_tool'=>'dataphyre_unit_test_manifest_read',
 				'modified_at'=>$this->file_modified_iso($path),
 			];
@@ -658,7 +687,7 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 	 * Normalizes Dataphyre package path variants for verification classification.
 	 *
 	 * responses keep repository-relative paths, but ownership, known wrapper, and
-	 * tool classifications use package-relative scope so common/dataphyre/*,
+	 * tool classifications use package-relative scope so dataphyre/*,
 	 * dataphyre/*, and already-package-relative paths behave the same.
 	 */
 	private function verification_package_scope_path(string $path): string {
@@ -669,7 +698,7 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 		while(str_starts_with($normalized, './')){
 			$normalized=substr($normalized, 2);
 		}
-		foreach(['common/dataphyre/', 'dataphyre/'] as $prefix){
+		foreach(['dataphyre/', 'common/dataphyre/'] as $prefix){
 			if(str_starts_with($normalized, $prefix)){
 				return substr($normalized, strlen($prefix));
 			}
@@ -680,7 +709,7 @@ trait dataphyre_mcp_inspection_verification_surfaces {
 	/**
 	 * Extracts the runtime module name from a repo-relative Dataphyre module path.
 	 *
-	 * path parsing is limited to common/dataphyre/runtime/modules/* ownership and returns null for
+	 * path parsing is limited to dataphyre/runtime/modules/* ownership and returns null for
 	 * shared tools, documentation, or unrelated files.
 	 *
 	 * @param string $relative Repo-relative path.

@@ -170,7 +170,7 @@ trait dataphyre_mcp_registry_tool_surfaces {
 			$this->tool('dataphyre_mvc_config_static_summary', 'Statically summarize MVC config keys, route source forms, middleware config surfaces, namespaces, and manifest cache shape.', []),
 			$this->tool('dataphyre_mvc_route_cache_summary', 'Statically summarize MVC route list/cache/clear CLI surfaces and manifest-cache planning without running cache commands.', []),
 			$this->tool('dataphyre_list_config_keys', 'List safe config files and top-level keys without secret values.', [
-				'scope'=>['type'=>'string', 'description'=>'Optional repo-local path fragment such as common/dataphyre/config or an application config directory.'],
+				'scope'=>['type'=>'string', 'description'=>'Optional repo-local path fragment such as dataphyre/config or an application config directory.'],
 			]),
 			$this->tool('dataphyre_config_shape_read', 'Read a redacted key-path shape for one repo-local PHP or JSON config file without returning values.', [
 				'path'=>['type'=>'string', 'description'=>'Repo-relative config PHP or JSON file path.'],
@@ -182,7 +182,7 @@ trait dataphyre_mcp_registry_tool_surfaces {
 				'max_values'=>['type'=>'integer', 'description'=>'Maximum requested values to return, default 20.'],
 			], ['path', 'keys']),
 			$this->tool('dataphyre_storage_config_summary', 'Summarize Dataphyre storage disk config shape and available driver classes without exposing secret values.', [
-				'config_path'=>['type'=>'string', 'description'=>'Optional repo-relative storage config PHP file. Defaults to common/dataphyre/config/storage.example.php.'],
+				'config_path'=>['type'=>'string', 'description'=>'Optional repo-relative storage config PHP file. Defaults to dataphyre/config/storage.example.php.'],
 			]),
 			$this->tool('dataphyre_storage_driver_catalog', 'Statically catalog Dataphyre storage driver classes and contract method coverage without touching storage backends.', []),
 			$this->tool('dataphyre_sql_tables_list', 'List known Dataphyre SQL table names and cluster assignments without credentials.', [
@@ -208,8 +208,78 @@ trait dataphyre_mcp_registry_tool_surfaces {
 				'config_path'=>['type'=>'string', 'description'=>'Optional repo-relative SQL config placeholder to include in the plan.'],
 				'cluster'=>['type'=>'string', 'description'=>'Optional configured cluster alias placeholder to include in the plan.'],
 			]),
+			$this->tool('dataphyre_sql_migration_catalog', 'Discover Dataphyre PostgreSQL migration framework contracts without loading application code or connecting to a database.', [
+				'query'=>['type'=>'string', 'description'=>'Optional case-insensitive contract search.'],
+				'kind'=>['type'=>'string', 'enum'=>['configuration', 'manifest', 'runtime', 'inspection'], 'description'=>'Optional exact contract kind.'],
+				'limit'=>['type'=>'integer', 'minimum'=>1, 'maximum'=>50, 'description'=>'Maximum records, default 20.'],
+			]),
+			$this->tool('dataphyre_sql_migration_describe', 'Describe one stable Dataphyre PostgreSQL migration contract and its safety boundary.', [
+				'id'=>[
+					'type'=>'string',
+					'enum'=>[
+						'postgresql-migration-profile',
+						'postgresql-manifest-v3',
+						'postgresql-migration-runner',
+						'postgresql-schema-inspector',
+					],
+					'description'=>'Stable id returned by dataphyre_sql_migration_catalog.',
+				],
+			], ['id']),
+			$this->tool('dataphyre_sql_migration_manifest_validate', 'Validate a repo-local manifest-v3 and checksummed SQL files without opening a database connection or executing SQL.', [
+				'database_root'=>['type'=>'string', 'description'=>'Repo-local application database directory containing postgresql/manifest.json.'],
+				'profile'=>[
+					'type'=>'object',
+					'additionalProperties'=>false,
+					'required'=>['application_id', 'schema', 'advisory_lock', 'bootstrap_cutoff'],
+					'properties'=>[
+						'application_id'=>['type'=>'string'],
+						'schema'=>['type'=>'string'],
+						'journal_table'=>['type'=>'string'],
+						'event_table'=>['type'=>'string'],
+						'release_digest_column'=>['type'=>'string'],
+						'advisory_lock'=>['type'=>'string'],
+						'bootstrap_ids'=>['type'=>'array', 'items'=>['type'=>'string']],
+						'bootstrap_cutoff'=>['type'=>'string'],
+						'manifest_public_path'=>['type'=>'string'],
+						'lock_timeout'=>['type'=>'string'],
+						'statement_timeout'=>['type'=>'string'],
+					],
+					'description'=>'Application-neutral PostgreSqlMigrationProfile input.',
+				],
+			], ['database_root', 'profile']),
+			$this->tool('dataphyre_sql_migration_scaffold_plan', 'Generate a no-write manifest-v3 migration file and entry plan with shared SQL-safety, immutable-checksum, existing-history-boundary, and rolling-expansion validation.', [
+				'application_id'=>['type'=>'string'],
+				'schema'=>['type'=>'string'],
+				'journal_table'=>['type'=>'string'],
+				'event_table'=>['type'=>'string'],
+				'release_digest_column'=>['type'=>'string'],
+				'advisory_lock'=>['type'=>'string'],
+				'bootstrap_ids'=>['type'=>'array', 'items'=>['type'=>'string']],
+				'bootstrap_cutoff'=>['type'=>'string'],
+				'manifest_public_path'=>['type'=>'string'],
+				'lock_timeout'=>['type'=>'string'],
+				'statement_timeout'=>['type'=>'string'],
+				'database_root'=>['type'=>'string', 'description'=>'Optional repo-local database directory whose valid manifest tail should be checked.'],
+				'migration_id'=>['type'=>'string', 'pattern'=>'^[0-9]{3}_[a-z0-9_]+$'],
+				'phase'=>['type'=>'string', 'enum'=>['bootstrap', 'rolling_expand', 'rolling_contract']],
+				'description'=>['type'=>'string'],
+				'up_sql'=>['type'=>'string'],
+				'down_sql'=>['type'=>'string'],
+				'down_safety'=>['type'=>'string', 'enum'=>['lossless', 'data_loss']],
+				'irreversible_reason'=>['type'=>'string'],
+				'minimum_compatible_release'=>['type'=>'string'],
+			], [
+				'application_id',
+				'schema',
+				'advisory_lock',
+				'bootstrap_cutoff',
+				'migration_id',
+				'phase',
+				'description',
+				'up_sql',
+			]),
 			$this->tool('dataphyre_tracelog_artifacts_list', 'List bounded Tracelog and log artifacts without reading their contents.', [
-				'scope'=>['type'=>'string', 'description'=>'Optional repo-local directory to scan. Defaults to common/dataphyre.'],
+				'scope'=>['type'=>'string', 'description'=>'Optional repo-local directory to scan. Defaults to dataphyre.'],
 				'limit'=>['type'=>'integer', 'description'=>'Maximum artifacts to return, default 30.'],
 			]),
 			$this->tool('dataphyre_tracelog_read', 'Read a redacted preview from a repo-local Tracelog or log artifact.', [
@@ -219,13 +289,13 @@ trait dataphyre_mcp_registry_tool_surfaces {
 			], ['path']),
 			$this->tool('dataphyre_tracelog_search', 'Search repo-local Tracelog/log artifacts with redaction, bounded reads, and short snippets.', [
 				'query'=>['type'=>'string', 'description'=>'Case-insensitive text to search for.'],
-				'scope'=>['type'=>'string', 'description'=>'Optional repo-local directory to scan. Defaults to common/dataphyre.'],
+				'scope'=>['type'=>'string', 'description'=>'Optional repo-local directory to scan. Defaults to dataphyre.'],
 				'limit'=>['type'=>'integer', 'description'=>'Maximum matching snippets to return, default 12.'],
 				'max_bytes_per_file'=>['type'=>'integer', 'description'=>'Maximum bytes to read per artifact, default 50000.'],
 				'strip_html'=>['type'=>'boolean', 'description'=>'Strip HTML tags before searching. Defaults true.'],
 			], ['query']),
 			$this->tool('dataphyre_diagnostics_last_error', 'Extract recent redacted error-looking snippets from repo-local Tracelog/log artifacts without executing diagnostics; use as summary-first app/module triage, not MCP release proof.', [
-				'scope'=>['type'=>'string', 'description'=>'Optional repo-local directory to scan. Defaults to common/dataphyre.'],
+				'scope'=>['type'=>'string', 'description'=>'Optional repo-local directory to scan. Defaults to dataphyre.'],
 				'limit'=>['type'=>'integer', 'description'=>'Maximum error snippets to return, default 5.'],
 				'max_artifacts'=>['type'=>'integer', 'description'=>'Maximum recent artifacts to inspect, default 20.'],
 				'max_bytes_per_file'=>['type'=>'integer', 'description'=>'Maximum bytes to read per artifact, default 80000.'],
@@ -237,15 +307,30 @@ trait dataphyre_mcp_registry_tool_surfaces {
 			$this->tool('dataphyre_flightdeck_surfaces_list', 'List Flightdeck control-plane surface files, route strings, assets, and classes without dispatching surfaces.', [
 				'include_source_summary'=>['type'=>'boolean', 'description'=>'Include tokenized class/method summaries for each surface. Defaults false.'],
 			]),
-			$this->tool('dataphyre_unit_tests_list', 'List Dataphyre JSON unit-test manifests without executing test code.', [
-				'modules'=>['type'=>'array', 'items'=>['type'=>'string'], 'description'=>'Optional runtime modules to scan. Defaults to all modules.'],
-				'limit'=>['type'=>'integer', 'description'=>'Maximum manifests to return, default 80.'],
-			]),
-			$this->tool('dataphyre_unit_test_manifest_read', 'Read and summarize a Dataphyre JSON unit-test manifest without executing test code.', [
-				'path'=>['type'=>'string', 'description'=>'Repo-relative unit_tests/*.json manifest path.'],
-				'max_cases'=>['type'=>'integer', 'description'=>'Maximum test cases to summarize, default 40.'],
-				'include_expected'=>['type'=>'boolean', 'description'=>'Include raw expected values. Defaults false.'],
+			$this->tool('dataphyre_unit_tests_list', 'List source-declared TestKit *.test.php contracts and legacy JSON unit-test manifests without executing test code.', [
+				'modules'=>['type'=>'array', 'items'=>['type'=>'string'], 'description'=>'One or more owning runtime modules. Required so source discovery stays a smart partial.'],
+				'kind'=>['type'=>'string', 'enum'=>['all','code','json'], 'description'=>'Manifest kind: all, code, or json. Defaults all.'],
+				'contract'=>['type'=>'string', 'description'=>'Optional exact semantic contract id or name filter.'],
+				'limit'=>['type'=>'integer', 'description'=>'Maximum manifests to return, default 80, maximum 300.'],
+			], ['modules']),
+			$this->tool('dataphyre_unit_test_manifest_read', 'Read a source-declared TestKit *.test.php contract file or legacy JSON unit-test manifest without executing test code.', [
+				'path'=>['type'=>'string', 'description'=>'Repo-relative unit_tests/*.test.php or unit_tests/*.json path.'],
+				'max_cases'=>['type'=>'integer', 'description'=>'Maximum declared test cases to summarize, default 40.'],
+				'include_expected'=>['type'=>'boolean', 'description'=>'Include raw expected values for legacy JSON manifests only. Defaults false.'],
 			], ['path']),
+			$this->tool('dataphyre_contract_catalog', 'Discover executable TestKit contracts, PHP interfaces/abstract contracts, serialized payload contracts, and legacy test manifests directly from Dataphyre source.', [
+				'modules'=>['type'=>'array', 'items'=>['type'=>'string'], 'description'=>'One or more owning runtime modules. Required so token indexing stays a deterministic smart partial; enumerate dataphyre://contracts available_modules for a framework-wide graph.'],
+				'kinds'=>['type'=>'array', 'items'=>['type'=>'string', 'enum'=>['test_contract','php_type_contract','serialized_contract','legacy_test_manifest']], 'description'=>'Optional kinds: test_contract, php_type_contract, serialized_contract, or legacy_test_manifest.'],
+				'query'=>['type'=>'string', 'description'=>'Optional case-insensitive contract id, name, role, producer, or module query.'],
+				'offset'=>['type'=>'integer', 'description'=>'Zero-based result offset. Defaults 0.'],
+				'limit'=>['type'=>'integer', 'description'=>'Maximum records to return, default 50, maximum 200.'],
+				'include_evidence'=>['type'=>'boolean', 'description'=>'Include bounded source evidence in catalog rows. Defaults true.'],
+			], ['modules']),
+			$this->tool('dataphyre_contract_describe', 'Describe one stable Dataphyre contract with methods, implementations, executable evidence, producers, and source locations without loading runtime code.', [
+				'id'=>['type'=>'string', 'description'=>'Stable contract id or exact contract name from dataphyre_contract_catalog.'],
+				'modules'=>['type'=>'array', 'items'=>['type'=>'string'], 'description'=>'Optional owning module hint; catalog records expose modules and supplying it keeps source indexing partial.'],
+				'max_evidence'=>['type'=>'integer', 'description'=>'Maximum source evidence rows to return, default 40, maximum 200.'],
+			], ['id']),
 			$this->tool('dataphyre_app_builder_plan_generate', 'Generate the first app-building plan: entities, files/schema, prewrite checklist, next action, and verification handoff. Uses compact by default.', array_merge([
 				'task'=>['type'=>'string', 'description'=>'Application feature to build, such as a ticket tracker with Projects and Tickets.'],
 				'scaffold_type'=>['type'=>'string', 'description'=>'Optional scaffold type, default inferred from task. Usually panel_resource for admin CRUD; use api_endpoint for API/OpenAPI endpoint work.'],
@@ -291,6 +376,41 @@ trait dataphyre_mcp_registry_tool_surfaces {
 			$this->tool('dataphyre_openapi_runtime_readiness_plan', 'Generate a read-only readiness plan for any future unsafe-gated runtime OpenAPI document reader without bootstrapping an application.', [
 				'application_id'=>['type'=>'string', 'description'=>'Optional application identifier placeholder to include in the plan. Defaults to <app>.'],
 			]),
+			$this->tool('dataphyre_panel_capability_catalog', 'Catalog every source-derived Panel platform domain and framework area with bounded semantic evidence.', [
+				'kinds'=>['type'=>'array','items'=>['type'=>'string','enum'=>['platform_domain','framework_area']],'description'=>'Optional capability kinds. Defaults to both platform domains and framework source areas.'],
+				'categories'=>['type'=>'array','items'=>['type'=>'string'],'description'=>'Optional semantic categories such as orchestration, data, trust, experience, ecosystem, foundation, or framework.'],
+				'query'=>['type'=>'string','description'=>'Optional capability, class, workflow, or integration term.'],
+				'offset'=>['type'=>'integer','description'=>'Zero-based pagination offset. Defaults 0.'],
+				'limit'=>['type'=>'integer','description'=>'Maximum records, 1-200. Defaults 50.'],
+			]),
+			$this->tool('dataphyre_panel_capability_describe', 'Describe one Panel platform domain or framework area through an explicit smart-partial view.', [
+				'id'=>['type'=>'string','description'=>'Stable panel:domain:<name> or panel:area:<name> id, or an unambiguous domain/area name.'],
+				'view'=>['type'=>'string','enum'=>['overview','contracts','integration','verification','security','all'],'description'=>'Bounded detail view. Defaults overview.'],
+				'max_items'=>['type'=>'integer','description'=>'Maximum items per evidence family, 1-200. Defaults 40.'],
+			],['id']),
+			$this->tool('dataphyre_panel_surface_graph', 'Build a bounded dependency graph from one or more Panel platform domains without loading Panel.', [
+				'roots'=>['type'=>'array','items'=>['type'=>'string'],'description'=>'One or more Panel platform domain names such as studio, realtime, media, or operations_os.'],
+				'depth'=>['type'=>'integer','description'=>'Dependency traversal depth, 0-4. Defaults 2.'],
+				'direction'=>['type'=>'string','enum'=>['dependencies','dependents','both'],'description'=>'Graph direction. Defaults dependencies.'],
+			],['roots']),
+			$this->tool('dataphyre_panel_recipe_plan', 'Generate a domain-aware Panel construction recipe without writing or bootstrapping runtime code.', [
+				'task'=>['type'=>'string','description'=>'Concrete Panel task, including desired surface, behavior, providers, and constraints.'],
+				'domains'=>['type'=>'array','items'=>['type'=>'string'],'description'=>'Optional explicit Panel platform domains; otherwise inferred from task.'],
+				'mode'=>['type'=>'string','enum'=>['auto','application','adapter','platform','operations','studio','realtime','migration'],'description'=>'Recipe lane. Defaults auto.'],
+			],['task']),
+			$this->tool('dataphyre_panel_integration_plan', 'Plan typed Panel provider bindings, persistence topology, activation, rollback, secret boundaries, and conformance.', [
+				'domains'=>['type'=>'array','items'=>['type'=>'string'],'description'=>'One or more Panel platform domains.'],
+				'provider'=>['type'=>'string','enum'=>['auto','callback','pdo','redis','dataphyre_storage','filesystem','memory','custom'],'description'=>'Provider family. Defaults auto.'],
+				'topology'=>['type'=>'string','enum'=>['auto','local','shared_sql','distributed','host_managed'],'description'=>'Deployment/persistence topology. Defaults auto.'],
+				'max_items'=>['type'=>'integer','description'=>'Maximum contracts, candidates, and tests per domain. Defaults 40.'],
+			],['domains']),
+			$this->tool('dataphyre_panel_verification_plan', 'Select focused Panel tests, exact coverage sources, browser evidence, and claim boundaries from domains or changed paths.', [
+				'domains'=>['type'=>'array','items'=>['type'=>'string'],'description'=>'Optional explicit Panel platform domains.'],
+				'task'=>['type'=>'string','description'=>'Optional task text used to infer domains.'],
+				'changed_paths'=>['type'=>'array','items'=>['type'=>'string'],'description'=>'Optional changed Panel paths used to infer domains and evidence.'],
+				'claim'=>['type'=>'string','enum'=>['focused','exact','browser','release'],'description'=>'Proof scope. Defaults focused.'],
+				'max_items'=>['type'=>'integer','description'=>'Maximum selected evidence items per family. Defaults 40.'],
+			]),
 			$this->tool('dataphyre_panel_scaffold_catalog', 'Statically inventory Panel scaffolding, package template, and generator-related surfaces without executing them.', []),
 			$this->tool('dataphyre_panel_package_manifest_summary', 'Statically summarize Panel package manifest, template, repository, install, rollback, trust, and compatibility contracts.', []),
 			$this->tool('dataphyre_panel_theme_manifest_summary', 'Statically summarize Panel theme manifest, preset, asset, library, and preview contracts without rendering previews.', []),
@@ -327,7 +447,7 @@ trait dataphyre_mcp_registry_tool_surfaces {
 			]),
 			$this->tool('dataphyre_run_panel_field_catalog_check', 'Run the Panel field catalog route-free check.', []),
 			$this->tool('dataphyre_browser_regression_manifest_summary', 'Statically summarize Panel browser regression and accessibility manifest contracts without launching a browser.', []),
-			$this->tool('dataphyre_verification_surface_catalog', 'Statically catalog focused app/module verification surfaces, JSON unit-test manifests, diagnostics, and route-free harnesses without executing them; discovery only, not a release gate.', [
+			$this->tool('dataphyre_verification_surface_catalog', 'Statically catalog focused app/module verification surfaces, TestKit code contracts, legacy JSON manifests, diagnostics, and route-free harnesses without executing them; discovery only, not a release gate.', [
 				'modules'=>['type'=>'array', 'items'=>['type'=>'string'], 'description'=>'Optional runtime modules to scan. Defaults to all modules.'],
 				'include_diagnostics'=>['type'=>'boolean', 'description'=>'Include diagnostic PHP files. Defaults true.'],
 				'limit'=>['type'=>'integer', 'description'=>'Maximum surfaces to return, default 120.'],
@@ -335,10 +455,18 @@ trait dataphyre_mcp_registry_tool_surfaces {
 			$this->tool('dataphyre_php_lint', 'Run php -l for explicitly provided repo-local PHP files when local verification is requested.', [
 				'paths'=>['type'=>'array', 'items'=>['type'=>'string'], 'description'=>'Repo-relative PHP files.'],
 			], ['paths']),
-			$this->tool('dataphyre_release_check', 'Report the Dataphyre release-check boundary for public MCP clients; not app behavior proof.', []),
-			$this->tool('dataphyre_release_triage_summary', 'Summarize release-check boundary metadata and group available failure output by actionable category for release work, not ordinary application-agent verification.', []),
+			$this->tool('dataphyre_release_check', 'Execute the fixed Dataphyre application release preflight and return a deterministic boolean deployment prediction with actionable configuration, dependency, or verification failures.', [
+				'project_root'=>['type'=>'string', 'description'=>'Optional repository-local application project root. Defaults to the MCP workspace root.'],
+				'application'=>['type'=>'string', 'description'=>'Dataphyre application id. Missing or invalid configuration returns likely_to_deploy=false.'],
+				'environment'=>['type'=>'string', 'description'=>'Dataphyre runtime environment. Missing or invalid configuration returns likely_to_deploy=false.'],
+			]),
+			$this->tool('dataphyre_release_triage_summary', 'Execute the same fixed application preflight and group its actionable failures by configuration, dependency, or verification.', [
+				'project_root'=>['type'=>'string', 'description'=>'Optional repository-local application project root. Defaults to the MCP workspace root.'],
+				'application'=>['type'=>'string', 'description'=>'Dataphyre application id.'],
+				'environment'=>['type'=>'string', 'description'=>'Dataphyre runtime environment.'],
+			]),
 			$this->tool('dataphyre_release_fix_plan', 'Create an ordered, read-only Dataphyre maintainer release repair plan from Dataphyre release-check failures.', [
-				'release_output'=>['type'=>'string', 'description'=>'Optional release-check output to plan from instead of running the check. Useful for deterministic tests.'],
+				'release_output'=>['type'=>'string', 'description'=>'Optional maintainer release-check output. MCP does not run a Cloud or package release check when this is omitted.'],
 				'max_examples_per_batch'=>['type'=>'integer', 'description'=>'Maximum examples per repair batch, default 8.'],
 			]),
 			$this->tool('dataphyre_mcp_manifest_export', 'Export a client-visible manifest of MCP tools, resources, prompts, safety posture, and protocol metadata.', [

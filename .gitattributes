@@ -20,6 +20,14 @@ runtime/modules/sql/third_party/adminer/** linguist-vendored
 /tools/** export-ignore
 /cache export-ignore
 /cache/** export-ignore
+/.codex-tmp export-ignore
+/.codex-tmp/** export-ignore
+/.tmp export-ignore
+/.tmp/** export-ignore
+/hosttmp export-ignore
+/hosttmp/** export-ignore
+/tmp export-ignore
+/tmp/** export-ignore
 /logs export-ignore
 /logs/** export-ignore
 /runtime/cache export-ignore

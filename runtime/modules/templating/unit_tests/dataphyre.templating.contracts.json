@@ -1,7 +1,7 @@
 [
   {
     "name": "template_contract_from_array_normalizes_fields",
-    "file": "/common/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
     "function": "DataphyreUnitTests\\templating_template_contract_json",
     "args": [
       {
@@ -26,7 +26,7 @@
   },
   {
     "name": "template_contract_fluent_builders_preserve_expected_payload",
-    "file": "/common/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
     "function": "DataphyreUnitTests\\templating_template_contract_chain_json",
     "args": [],
     "expected": "{\"required\":[\"title\",\"count\"],\"optional\":[\"subtitle\",\"cta\"],\"required_slots\":[\"main\"],\"optional_slots\":[\"aside\"],\"defaults\":{\"count\":0,\"cta\":\"Buy\"},\"prop_types\":{\"count\":\"integer\",\"cta\":\"string\"},\"allow_additional_data\":false,\"allow_additional_slots\":true}",
@@ -34,7 +34,7 @@
   },
   {
     "name": "binding_resolution_reports_skipped_result",
-    "file": "/common/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
     "function": "DataphyreUnitTests\\templating_binding_resolution_marker",
     "args": [true, "fallback"],
     "expected": "skipped:\"fallback\"",
@@ -42,7 +42,7 @@
   },
   {
     "name": "binding_resolution_reports_value_result",
-    "file": "/common/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
     "function": "DataphyreUnitTests\\templating_binding_resolution_marker",
     "args": [false, 42],
     "expected": "value:42",

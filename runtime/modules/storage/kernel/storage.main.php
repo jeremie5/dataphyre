@@ -9,12 +9,8 @@ namespace dataphyre;
 
 tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Module initialization');
 
-$default_storage_root=defined('ROOTPATH') && isset(ROOTPATH['dataphyre'])
-	? rtrim((string)ROOTPATH['dataphyre'], '/\\').'/storage'
-	: sys_get_temp_dir().'/dataphyre-storage';
-$default_vestra_manifest=defined('ROOTPATH') && isset(ROOTPATH['dataphyre'])
-	? rtrim((string)ROOTPATH['dataphyre'], '/\\').'/cache/storage-vestra-manifest.json'
-	: sys_get_temp_dir().'/dataphyre-storage-vestra-manifest.json';
+$default_storage_root=defined('ROOTPATH') && isset(ROOTPATH['dataphyre']) ? rtrim((string)ROOTPATH['dataphyre'], '/\\').'/storage' : sys_get_temp_dir().'/dataphyre-storage';
+$default_vestra_manifest=defined('ROOTPATH') && isset(ROOTPATH['dataphyre']) ? rtrim((string)ROOTPATH['dataphyre'], '/\\').'/cache/storage-vestra-manifest.json' : sys_get_temp_dir().'/dataphyre-storage-vestra-manifest.json';
 
 dp_define_module_config('storage', 'DP_STORAGE_CFG', [
 	'default_disk'=>'local',

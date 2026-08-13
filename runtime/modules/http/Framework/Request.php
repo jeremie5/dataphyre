@@ -81,14 +81,17 @@ final class Request {
 	 * @return self Request snapshot for the active PHP request.
 	 */
 	public static function capture(array $routeParameters=[]): self {
+		$query=$_GET;
+		$cookies=$_COOKIE;
+		$server=$_SERVER;
 		return new self(
 			strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET')),
 			self::detectPath(),
-			$_GET,
+			$query,
 			self::captureBody(),
-			$_COOKIE,
+			$cookies,
 			self::normalizeFiles($_FILES),
-			$_SERVER,
+			$server,
 			self::captureHeaders(),
 			$routeParameters
 		);
@@ -982,9 +985,10 @@ final class Request {
 			return $_POST;
 		}
 		$raw=@file_get_contents('php://input');
-		if(!is_string($raw) || trim($raw)===''){
-			return [];
-		}
+		return self::decodeBody(is_string($raw) ? $raw : '');
+	}
+
+	private static function decodeBody(string $raw): array {
 		$decoded=json_decode($raw, true);
 		return is_array($decoded) ? $decoded : [];
 	}

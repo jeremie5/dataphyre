@@ -13,7 +13,7 @@
       }
     ],
     "expected": "Dataphyre\\Mvc\\Validator",
-    "file": "/common/dataphyre/runtime/modules/mvc/Framework/Validator.php",
+    "file": "/dataphyre/runtime/modules/mvc/Framework/Validator.php",
     "max_millis": 5
   },
   {
@@ -34,7 +34,7 @@
       }
     ],
     "expected": "array",
-    "file": "/common/dataphyre/runtime/modules/mvc/Framework/Validator.php",
+    "file": "/dataphyre/runtime/modules/mvc/Framework/Validator.php",
     "max_millis": 5
   }
 ]

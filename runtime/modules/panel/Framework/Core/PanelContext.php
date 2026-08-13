@@ -32,11 +32,12 @@ final class PanelContext {
 	public static function run(array $config, callable $callback): mixed {
 		self::$stack[]=self::normalize($config);
 		try{
-			return $callback();
+			$result=$callback();
 		}
 		finally{
 			array_pop(self::$stack);
 		}
+		return $result;
 	}
 
 	/**

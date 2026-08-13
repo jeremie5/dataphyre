@@ -70,15 +70,18 @@ class web_socket_server{
 	 * and removes clients when reads fail. Socket errors are not promoted to
 	 * exceptions; the process is expected to be supervised externally.
 	 *
-	 * @return void The process remains in the server loop until externally stopped.
+	 * @param int|null $max_iterations Optional process-local loop bound for supervised or deterministic runs.
+	 * @return void The process remains in the server loop until externally stopped or the optional iteration bound is reached.
 	 */
-	public function start(){
+	public function start(?int $max_iterations=null){
 		$socket=socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
 		socket_set_option($socket, SOL_SOCKET, SO_REUSEADDR, 1);
 		socket_bind($socket, $this->address, $this->port);
 		socket_listen($socket);
 		$this->sockets[]=$socket;
-		while(true){
+		$iterations=0;
+		while($max_iterations===null || $iterations<$max_iterations){
+			$iterations++;
 			$changed=$this->sockets;
 			socket_select($changed, $null, $null, 0, 10);
 			foreach($changed as $sock){
@@ -213,7 +216,7 @@ class web_socket_server{
 		} elseif($length > 125 && $length < 65536){
 			$header=pack('CCn', $b1, 126, $length);
 		} elseif($length >= 65536){
-			$header=pack('CCNN', $b1, 127, $length);
+			$header=pack('CCNN', $b1, 127, 0, $length);
 		}
 		return $header.$text;
 	}

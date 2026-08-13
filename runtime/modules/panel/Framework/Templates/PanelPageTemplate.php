@@ -485,11 +485,54 @@ final class PanelPageTemplate implements \Stringable {
 		foreach(self::list($section['actions'] ?? []) as $action){
 			$actions.='<a class="dp-panel-template-button" href="'.self::e(self::href($action['url'] ?? $action['href'] ?? '#')).'">'.self::e((string)($action['label'] ?? self::text('common.open', 'Open'))).'</a>';
 		}
+		$pagination=is_array($section['pagination'] ?? null)
+			? self::pagination($section['pagination'])
+			: '';
 		return '<section class="dp-panel-template-section dp-panel-template-table">'
 			.'<header>'.self::eyebrow($section).'<strong>'.self::e((string)($section['title'] ?? '')).'</strong>'.self::body($section, 'span').'</header>'
 			.($actions!=='' ? '<div class="dp-panel-template-actions">'.$actions.'</div>' : '')
 			.'<div class="dp-panel-template-table-scroll"><table><thead><tr>'.$head.'</tr></thead><tbody>'.$body.'</tbody></table></div>'
+			.$pagination
 			.'</section>';
+	}
+
+	/**
+	 * Renders bounded previous/next navigation for custom data-table sections.
+	 *
+	 * The template only accepts already-authorized URLs. Unsafe schemes are
+	 * normalized by href(), and unavailable directions remain visible as
+	 * disabled controls so the table does not shift between pages.
+	 *
+	 * @param array<string,mixed> $pagination Pagination descriptor.
+	 * @return string Accessible pagination navigation.
+	 */
+	private static function pagination(array $pagination): string {
+		$previousUrl=trim((string)($pagination['previous_url'] ?? ''));
+		$nextUrl=trim((string)($pagination['next_url'] ?? ''));
+		$previousLabel=(string)($pagination['previous_label'] ?? self::text('common.previous', 'Previous'));
+		$nextLabel=(string)($pagination['next_label'] ?? self::text('common.next', 'Next'));
+		$summary=trim((string)($pagination['summary'] ?? ''));
+		if($summary===''){
+			$itemCount=max(0,(int)($pagination['item_count'] ?? 0));
+			$page=max(0,(int)($pagination['current_page'] ?? 0));
+			$summary=$page>0
+				? self::text('template.pagination_page_items', 'Page {page} · {count} item(s)', ['page'=>(string)$page,'count'=>(string)$itemCount])
+				: self::text('template.pagination_items', '{count} item(s) on this page', ['count'=>(string)$itemCount]);
+		}
+		$control=static function(string $url,string $label,string $rel): string {
+			if($url===''){
+				return '<span class="dp-panel-page-disabled" aria-disabled="true">'.self::e($label).'</span>';
+			}
+			$href=self::href($url);
+			if($href==='#'){
+				return '<span class="dp-panel-page-disabled" aria-disabled="true">'.self::e($label).'</span>';
+			}
+			return '<a class="dp-panel-button dp-panel-button-secondary" rel="'.$rel.'" href="'.self::e($href).'">'.self::e($label).'</a>';
+		};
+		return '<nav class="dp-panel-pagination" aria-label="'.self::e((string)($pagination['aria_label'] ?? self::text('common.pagination', 'Pagination'))).'">'
+			.'<span>'.self::e($summary).'</span>'
+			.'<div>'.$control($previousUrl,$previousLabel,'prev').$control($nextUrl,$nextLabel,'next').'</div>'
+			.'</nav>';
 	}
 
 	/**
@@ -584,7 +627,7 @@ final class PanelPageTemplate implements \Stringable {
 	private static function hiddenFields(array $section): string {
 		$fields=[];
 		if(!empty($section['csrf'])){
-			$token=class_exists(\Dataphyre\Mvc\Session::class) ? \Dataphyre\Mvc\Session::token() : '';
+			$token=PanelCsrfTokenBridge::formToken();
 			if($token!==''){
 				$fields[]=['name'=>'_token', 'value'=>$token];
 			}
@@ -735,8 +778,8 @@ final class PanelPageTemplate implements \Stringable {
 	 */
 	private static function realtimeClient(array $section): string {
 		$client=Resource::normalizeName((string)($section['client'] ?? ''));
-		$script=self::href($section['script'] ?? '');
-		if($client==='' || $script==='#'){
+		$script=self::scriptUrl($section['script'] ?? '');
+		if($client==='' || $script===''){
 			return '';
 		}
 		if(!empty($section['script_only'])){
@@ -880,17 +923,56 @@ final class PanelPageTemplate implements \Stringable {
 	/**
 	 * Normalizes href values for generated links and forms.
 	 *
-	 * Empty or multiline values are replaced with # to avoid broken attributes.
+	 * Empty, multiline, protocol-relative, and unsafe-scheme values are replaced
+	 * with #. Relative URLs and explicit http(s), mailto, and tel destinations
+	 * remain available to trusted page definitions.
 	 *
 	 * @param mixed $href Candidate href value.
 	 * @return string Safe single-line href string.
 	 */
 	private static function href(mixed $href): string {
 		$href=trim((string)$href);
-		if($href==='' || str_contains($href, "\n") || str_contains($href, "\r")){
+		if(
+			$href===''
+			|| preg_match('/[\x00-\x1F\x7F]/', $href)===1
+			|| str_starts_with($href, '//')
+			|| str_starts_with($href, '\\')
+		){
 			return '#';
 		}
+		if(preg_match('/\A([A-Za-z][A-Za-z0-9+.-]*):/', $href, $match)===1){
+			$scheme=strtolower($match[1]);
+			if(!in_array($scheme, ['http', 'https', 'mailto', 'tel'], true)){
+				return '#';
+			}
+		}
 		return $href;
+	}
+
+	/**
+	 * Normalizes script URLs for realtime-client bootstrap markup.
+	 *
+	 * Scripts may be loaded only from a root-relative path, a dot-relative path,
+	 * or an explicit http(s) URL. Script-capable and non-network schemes are
+	 * rejected rather than being emitted into a src attribute.
+	 *
+	 * @param mixed $url Candidate script URL.
+	 * @return string Safe script URL, or an empty string when invalid.
+	 */
+	private static function scriptUrl(mixed $url): string {
+		$url=trim((string)$url);
+		if(
+			$url===''
+			|| preg_match('/[\x00-\x1F\x7F]/', $url)===1
+			|| str_starts_with($url, '//')
+			|| str_starts_with($url, '\\')
+		){
+			return '';
+		}
+		if(str_starts_with($url, '/') || str_starts_with($url, './') || str_starts_with($url, '../')){
+			return $url;
+		}
+		return preg_match('/\Ahttps?:\/\//i', $url)===1 ? $url : '';
 	}
 
 	/**

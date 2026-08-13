@@ -11,9 +11,14 @@ namespace Dataphyre\Panel;
  * Fluent definition for a Panel form field.
  *
  * A field captures input type, labels, options, validation rules, visibility conditions, nested children, upload constraints, state callbacks, and renderer metadata for the Panel form manifest.
+ *
+ * @template TRecord = mixed
+ * @template TValue = mixed
+ * @template TState of array<string, mixed> = array<string, mixed>
  */
 final class Field {
 	use PanelExtensible;
+	use HasCollectionItemPresentation;
 
 	private string $name;
 	private string $type;
@@ -34,6 +39,7 @@ final class Field {
 	private ?\Closure $displayCallback=null;
 	private ?\Closure $visibilityCallback=null;
 	private ?\Closure $stateCallback=null;
+	private ?PanelEditorProfile $editorProfile=null;
 	private array $visibleOn=[];
 	private array $hiddenOn=[];
 	private array $dependsOn=[];
@@ -65,7 +71,7 @@ final class Field {
 	 *
 	 * @param string $name Normalized field, resource, surface, or helper name.
 	 * @param string $type Raw field type token normalized before renderer defaults are applied.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public static function make(string $name, string $type='text'): self {
 		return self::configured(new self($name, $type));
@@ -77,7 +83,7 @@ final class Field {
 	 * Field definitions normalize labels, validation rules, visibility conditions, options, upload constraints, nested field groups, and renderer metadata before they are exported to a form manifest.
 	 *
 	 * @param array<string, mixed> $definition Array definition imported from configuration or a manifest.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public static function fromArray(array $definition): self {
 		$field=self::make((string)($definition['name'] ?? ''), (string)($definition['type'] ?? 'text'));
@@ -228,6 +234,16 @@ final class Field {
 		}
 		if(isset($definition['inline_choices']) || isset($definition['inline'])){
 			$field=$field->inlineChoices((bool)($definition['inline_choices'] ?? $definition['inline']));
+		}
+		if(isset($definition['options_presentation']) && (is_array($definition['options_presentation']) || is_string($definition['options_presentation']))){
+			$field=$field->optionsPresentation($definition['options_presentation']);
+		}
+		if(isset($definition['presentation']) && is_array($definition['presentation'])){
+			foreach($definition['presentation'] as $collection=>$presentation){
+				if(is_array($presentation) || is_string($presentation)){
+					$field=$field->collectionPresentation((string)$collection, $presentation);
+				}
+			}
 		}
 		if(isset($definition['repeater_fields']) && is_array($definition['repeater_fields']) && ($definition['repeater_fields']!==[] || self::normalizeName((string)($definition['type'] ?? ''))==='repeater')){
 			$field=$field->repeaterFields($definition['repeater_fields']);
@@ -522,6 +538,10 @@ final class Field {
 		if(isset($definition['meta']) && is_array($definition['meta'])){
 			$field=$field->meta($definition['meta']);
 		}
+		$editorProfile=$definition['editor_profile'] ?? $definition['meta']['editor_profile'] ?? null;
+		if(is_array($editorProfile)){
+			$field=$field->editorProfile(PanelEditorProfile::fromArray($editorProfile));
+		}
 		if(isset($definition['state_using']) && is_callable($definition['state_using'])){
 			$field=$field->stateUsing($definition['state_using']);
 		}
@@ -534,7 +554,7 @@ final class Field {
 	/**
 	 * Returns the normalized field name used as the form-state key.
 	 *
-	 * @return string.
+	 * @return string
 	 */
 	public function name(): string {
 		return $this->name;
@@ -544,7 +564,7 @@ final class Field {
 	 * Replaces the human-readable label shown by Panel renderers.
 	 *
 	 * @param string $label Label text stored without surrounding whitespace.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function label(string $label): self {
 		$clone=clone $this;
@@ -558,7 +578,7 @@ final class Field {
 	 * Type names are normalized through the same field-name rules used during construction. Unknown or blank types fall back to text, while known type defaults are merged without discarding explicit metadata already set on the field.
 	 *
 	 * @param string $type Raw field type token.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function type(string $type): self {
 		$clone=clone $this;
@@ -566,6 +586,10 @@ final class Field {
 		$defaults=self::typeDefaults($clone->type);
 		if($defaults!==[]){
 			$clone->meta=array_replace($defaults, $clone->meta);
+		}
+		if($clone->editorProfile!==null && in_array($clone->type, ['markdown','html','code','rich_editor','rich_text'], true)){
+			$clone->editorProfile=$clone->editorProfile->forMode($clone->type);
+			$clone->meta['editor_profile']=$clone->editorProfile->manifest();
 		}
 		return $clone;
 	}
@@ -575,8 +599,9 @@ final class Field {
 	 *
 	 * Defaults are stored verbatim in the field definition and may be scalar, structured, or nullable depending on the renderer and field type.
 	 *
-	 * @param mixed $value Default field value emitted in the form manifest.
-	 * @return self.
+	 * @template TDefault
+	 * @param TDefault $value Default field value emitted in the form manifest.
+	 * @return self<TRecord,TDefault,TState>
 	 */
 	public function default(mixed $value): self {
 		$clone=clone $this;
@@ -590,7 +615,7 @@ final class Field {
 	 * Enabling the flag appends a required rule when one is not already present. Disabling it removes required rules by case-insensitive name while leaving other validation rules untouched.
 	 *
 	 * @param bool $required Whether submitted form state must include a value for this field.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function required(bool $required=true): self {
 		$clone=clone $this;
@@ -598,9 +623,7 @@ final class Field {
 		if($required && !in_array('required', $clone->rules, true)){
 			$clone->rules[]='required';
 		}
-		elseif(!$required){
-			$clone->rules=array_values(array_filter($clone->rules, static fn(string $rule): bool => strtolower(trim($rule))!=='required'));
-		}
+		if(!$required){ $clone->rules=array_values(array_filter($clone->rules, static fn(string $rule): bool => strtolower(trim($rule))!=='required')); }
 		return $clone;
 	}
 
@@ -608,7 +631,7 @@ final class Field {
 	 * Toggles read-only behavior for renderer and persistence workflows.
 	 *
 	 * @param bool $readonly Whether the field should be presented as non-editable.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function readonly(bool $readonly=true): self {
 		$clone=clone $this;
@@ -620,7 +643,7 @@ final class Field {
 	 * Marks the field disabled while also treating it as read-only.
 	 *
 	 * @param bool $disabled Whether renderer metadata should disable user interaction.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function disabled(bool $disabled=true): self {
 		return $this->readonly($disabled)->meta(['disabled'=>$disabled]);
@@ -630,7 +653,7 @@ final class Field {
 	 * Alias for disabled() used by fluent field definitions.
 	 *
 	 * @param bool $disabled Whether renderer metadata should disable user interaction.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function disable(bool $disabled=true): self {
 		return $this->disabled($disabled);
@@ -642,7 +665,7 @@ final class Field {
 	 * The flag is persisted as renderer metadata so form save pipelines can omit display-only or derived fields without removing them from the visible form.
 	 *
 	 * @param bool $dehydrated Whether this field should be included in dehydrated form data.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function dehydrated(bool $dehydrated=true): self {
 		return $this->meta(['dehydrated'=>$dehydrated]);
@@ -652,7 +675,7 @@ final class Field {
 	 * Alias for dehydrated() used by fluent field definitions.
 	 *
 	 * @param bool $dehydrated Whether this field should be included in dehydrated form data.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function dehydrate(bool $dehydrated=true): self {
 		return $this->dehydrated($dehydrated);
@@ -664,7 +687,7 @@ final class Field {
 	 * Dynamic visibility helpers can still add conditional metadata; this flag controls the baseline visibility emitted in the manifest.
 	 *
 	 * @param bool $hidden Whether the field should be hidden by default.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function hidden(bool $hidden=true): self {
 		$clone=clone $this;
@@ -678,7 +701,7 @@ final class Field {
 	 * The value is only applied when the caller passes an argument, preserving a nullable default as an intentional value.
 	 *
 	 * @param mixed $default Optional default value for the hidden field.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function hiddenField(mixed $default=null): self {
 		$field=$this->type('hidden');
@@ -689,7 +712,7 @@ final class Field {
 	 * Alias for hiddenField() used by input-oriented field definitions.
 	 *
 	 * @param mixed $default Optional default value for the hidden input.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function hiddenInput(mixed $default=null): self {
 		return func_num_args()>0 ? $this->hiddenField($default) : $this->hiddenField();
@@ -699,7 +722,7 @@ final class Field {
 	 * Converts the field to a hidden input with a required default value.
 	 *
 	 * @param mixed $value Default value stored for the hidden field.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function hiddenValue(mixed $value): self {
 		return $this->hiddenField($value);
@@ -709,7 +732,7 @@ final class Field {
 	 * Sets placeholder text for empty input controls.
 	 *
 	 * @param string $placeholder Placeholder text; blank strings clear the placeholder.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function placeholder(string $placeholder): self {
 		$clone=clone $this;
@@ -721,7 +744,7 @@ final class Field {
 	 * Sets persistent helper text shown with the field.
 	 *
 	 * @param string $help Helper text; blank strings clear the help message.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function help(string $help): self {
 		$clone=clone $this;
@@ -733,7 +756,7 @@ final class Field {
 	 * Alias for help() used by renderer-facing field definitions.
 	 *
 	 * @param string $help Helper text; blank strings clear the help message.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function helperText(string $help): self {
 		return $this->help($help);
@@ -746,7 +769,7 @@ final class Field {
 	 *
 	 * @param string $hint Hint text stored in renderer metadata.
 	 * @param ?string $icon Optional icon name stored beside the hint.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function hint(string $hint, ?string $icon=null): self {
 		$hint=trim($hint);
@@ -758,7 +781,7 @@ final class Field {
 	 * Sets the icon associated with renderer hint metadata.
 	 *
 	 * @param string $icon Icon name stored without surrounding whitespace.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function hintIcon(string $icon): self {
 		return $this->meta(['hint_icon'=>trim($icon)]);
@@ -770,7 +793,7 @@ final class Field {
 	 * The metadata gives Panel renderers concrete constraints for contrast, touch targets, adornment ratios, and usable input width.
 	 *
 	 * @param array<string, mixed> $policy Accessibility or contrast policy declaration.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function accessibilityPolicy(array $policy): self {
 		$normalized=[];
@@ -812,7 +835,7 @@ final class Field {
 	 *
 	 * @param int $width Minimum width value clamped during accessibility policy normalization.
 	 * @param string $unit Supported unit token, either px or ch.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function minUsableWidth(int $width, string $unit='px'): self {
 		return $this->accessibilityPolicy([
@@ -825,7 +848,7 @@ final class Field {
 	 * Sets the minimum number of visible characters expected for text entry.
 	 *
 	 * @param int $characters Minimum usable character count clamped at zero.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function minUsableCharacters(int $characters): self {
 		return $this->accessibilityPolicy(['min_usable_chars'=>$characters]);
@@ -835,7 +858,7 @@ final class Field {
 	 * Sets the minimum touch target size expected by renderers.
 	 *
 	 * @param int $pixels Minimum target size in pixels, clamped at zero.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function minTouchTarget(int $pixels=44): self {
 		return $this->accessibilityPolicy(['min_touch_target'=>$pixels]);
@@ -845,7 +868,7 @@ final class Field {
 	 * Sets the maximum share of the field width that adornments may consume.
 	 *
 	 * @param float $ratio Ratio clamped between zero and one.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function maxAdornmentRatio(float $ratio=0.45): self {
 		return $this->accessibilityPolicy(['max_adornment_ratio'=>$ratio]);
@@ -855,7 +878,7 @@ final class Field {
 	 * Sets the maximum share of the field row that labels may consume.
 	 *
 	 * @param float $ratio Ratio clamped between zero and one.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function maxLabelRatio(float $ratio=0.55): self {
 		return $this->accessibilityPolicy(['max_label_ratio'=>$ratio]);
@@ -868,7 +891,7 @@ final class Field {
 	 *
 	 * @param array|float $policy Contrast policy array or minimum contrast ratio.
 	 * @param ?string $scope Optional renderer scope for the contrast rule.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function contrastPolicy(array|float $policy=4.5, ?string $scope=null): self {
 		if(is_float($policy) || is_int($policy)){
@@ -884,7 +907,7 @@ final class Field {
 	 * Controls whether this field inherits parent accessibility policy metadata.
 	 *
 	 * @param bool $inherit Whether parent policy defaults should apply to this field.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function inheritAccessibilityPolicy(bool $inherit=true): self {
 		return $this->meta(['accessibility_inherit'=>$inherit]);
@@ -893,7 +916,7 @@ final class Field {
 	/**
 	 * Disables inheritance of parent accessibility policy metadata.
 	 *
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function withoutAccessibilityPolicy(): self {
 		return $this->inheritAccessibilityPolicy(false);
@@ -902,7 +925,7 @@ final class Field {
 	/**
 	 * Alias for withoutAccessibilityPolicy().
 	 *
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function noAccessibilityPolicy(): self {
 		return $this->withoutAccessibilityPolicy();
@@ -912,7 +935,7 @@ final class Field {
 	 * Assigns this field to a named form section.
 	 *
 	 * @param string $section Section identifier stored in renderer metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function section(string $section): self {
 		return $this->meta(['section'=>trim($section)]);
@@ -924,7 +947,7 @@ final class Field {
 	 * Numeric, string, and breakpoint-map inputs are normalized before being stored in metadata.
 	 *
 	 * @param int|string|array $span Grid span value or responsive span map.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function columnSpan(int|string|array $span): self {
 		return $this->meta(['column_span'=>self::normalizeGridSpan($span)]);
@@ -936,7 +959,7 @@ final class Field {
 	 * Numeric, string, and breakpoint-map inputs are normalized before being stored in metadata.
 	 *
 	 * @param int|string|array $start Grid start value or responsive start map.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function columnStart(int|string|array $start): self {
 		return $this->meta(['column_start'=>self::normalizeGridStart($start)]);
@@ -948,7 +971,7 @@ final class Field {
 	 * Numeric, string, and breakpoint-map inputs are normalized before being stored in metadata.
 	 *
 	 * @param int|string|array $span Grid row span value or responsive span map.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function rowSpan(int|string|array $span): self {
 		return $this->meta(['row_span'=>self::normalizeGridStart($span)]);
@@ -957,7 +980,7 @@ final class Field {
 	/**
 	 * Expands the field across the full available grid width.
 	 *
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function fullWidth(): self {
 		return $this->columnSpan('full');
@@ -969,7 +992,7 @@ final class Field {
 	 * Array input is preserved as tone metadata, while a non-empty string sets the primary tone.
 	 *
 	 * @param array|string $tones Tone map or primary tone token for the badge.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function badge(array|string $tones=[]): self {
 		$meta=['badge'=>true];
@@ -989,7 +1012,7 @@ final class Field {
 	 *
 	 * @param bool $copyable Whether the renderer should expose copy behavior.
 	 * @param bool $normalized Whether copy output should prefer normalized field state.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function copyable(bool $copyable=true, bool $normalized=false): self {
 		return $this->meta(['copyable'=>$copyable, 'copy_normalized'=>$normalized]);
@@ -999,7 +1022,7 @@ final class Field {
 	 * Enables copy controls that prefer normalized field state.
 	 *
 	 * @param bool $copyable Whether the renderer should expose normalized copy behavior.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function copyableNormalized(bool $copyable=true): self {
 		return $this->copyable($copyable, true);
@@ -1009,7 +1032,7 @@ final class Field {
 	 * Sets the primary icon shown with this field.
 	 *
 	 * @param string $icon Icon name stored without surrounding whitespace.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function icon(string $icon): self {
 		return $this->meta(['icon'=>trim($icon)]);
@@ -1019,7 +1042,7 @@ final class Field {
 	 * Adds a textual prefix before the input value.
 	 *
 	 * @param string $prefix Prefix text used as both prepend label and metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function prefix(string $prefix): self {
 		return $this->prependLabel($prefix)->meta(['prefix'=>$prefix]);
@@ -1029,7 +1052,7 @@ final class Field {
 	 * Adds a textual suffix after the input value.
 	 *
 	 * @param string $suffix Suffix text used as both append label and metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function suffix(string $suffix): self {
 		return $this->appendLabel($suffix)->meta(['suffix'=>$suffix]);
@@ -1039,7 +1062,7 @@ final class Field {
 	 * Adds a textual adornment before the input control.
 	 *
 	 * @param string $label Prepend label shown before the input.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function prepend(string $label): self {
 		return $this->prependLabel($label);
@@ -1049,7 +1072,7 @@ final class Field {
 	 * Adds a textual adornment after the input control.
 	 *
 	 * @param string $label Append label shown after the input.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function append(string $label): self {
 		return $this->appendLabel($label);
@@ -1059,7 +1082,7 @@ final class Field {
 	 * Stores the label shown before the input control.
 	 *
 	 * @param string $label Prepend label stored without surrounding whitespace.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function prependLabel(string $label): self {
 		return $this->meta(['prepend_label'=>trim($label)]);
@@ -1069,7 +1092,7 @@ final class Field {
 	 * Stores the label shown after the input control.
 	 *
 	 * @param string $label Append label stored without surrounding whitespace.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function appendLabel(string $label): self {
 		return $this->meta(['append_label'=>trim($label)]);
@@ -1082,7 +1105,7 @@ final class Field {
 	 *
 	 * @param string $icon Icon name shown before the input.
 	 * @param ?string $label Optional accessible label for the icon.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function prependIcon(string $icon, ?string $label=null): self {
 		return $this->inputIcon('prepend', $icon, $label);
@@ -1095,7 +1118,7 @@ final class Field {
 	 *
 	 * @param string $icon Icon name shown after the input.
 	 * @param ?string $label Optional accessible label for the icon.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function appendIcon(string $icon, ?string $label=null): self {
 		return $this->inputIcon('append', $icon, $label);
@@ -1106,7 +1129,7 @@ final class Field {
 	 *
 	 * @param string $icon Icon name shown before the input.
 	 * @param ?string $label Optional accessible label for the icon.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function prefixIcon(string $icon, ?string $label=null): self {
 		return $this->prependIcon($icon, $label);
@@ -1117,7 +1140,7 @@ final class Field {
 	 *
 	 * @param string $icon Icon name shown after the input.
 	 * @param ?string $label Optional accessible label for the icon.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function suffixIcon(string $icon, ?string $label=null): self {
 		return $this->appendIcon($icon, $label);
@@ -1131,7 +1154,7 @@ final class Field {
 	 * @param string $label Button label shown before the input.
 	 * @param string $action Action identifier dispatched by the renderer.
 	 * @param array<string, mixed> $options Field configuration options for the operation.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function prependButton(string $label, string $action='', array $options=[]): self {
 		$buttons=is_array($this->meta['prepend_buttons'] ?? null) ? $this->meta['prepend_buttons'] : [];
@@ -1147,7 +1170,7 @@ final class Field {
 	 * @param string $label Button label shown after the input.
 	 * @param string $action Action identifier dispatched by the renderer.
 	 * @param array<string, mixed> $options Field configuration options for the operation.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function appendButton(string $label, string $action='', array $options=[]): self {
 		$buttons=is_array($this->meta['append_buttons'] ?? null) ? $this->meta['append_buttons'] : [];
@@ -1161,7 +1184,7 @@ final class Field {
 	 * Each entry is normalized into the same shape produced by prependButton().
 	 *
 	 * @param array<int|string, array<string, mixed>|string> $buttons Button declarations.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function prependButtons(array $buttons): self {
 		return $this->meta(['prepend_buttons'=>self::normalizeFieldButtons($buttons)]);
@@ -1173,7 +1196,7 @@ final class Field {
 	 * Each entry is normalized into the same shape produced by appendButton().
 	 *
 	 * @param array<int|string, array<string, mixed>|string> $buttons Button declarations.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function appendButtons(array $buttons): self {
 		return $this->meta(['append_buttons'=>self::normalizeFieldButtons($buttons)]);
@@ -1188,7 +1211,7 @@ final class Field {
 	 * @param string $position Requested icon position.
 	 * @param string $icon Icon token or label.
 	 * @param string|null $label Optional accessible label.
-	 * @return self Mutated field definition.
+	 * @return self<TRecord,TValue,TState> Mutated field definition.
 	 */
 	private function inputIcon(string $position, string $icon, ?string $label=null): self {
 		$position=self::normalizeName($position)==='append' ? 'append' : 'prepend';
@@ -1209,7 +1232,7 @@ final class Field {
 	 * Sets the option label shown for an empty selection.
 	 *
 	 * @param string $label Empty-option label emitted to select-like renderers.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function emptyLabel(string $label): self {
 		return $this->meta(['empty'=>$label]);
@@ -1219,20 +1242,22 @@ final class Field {
 	 * Sets supplemental description text for display-oriented fields.
 	 *
 	 * @param string $description Description text stored without surrounding whitespace.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function description(string $description): self {
 		return $this->meta(['description'=>trim($description)]);
 	}
 
 	/**
-	 * Marks display content as pre-rendered HTML.
+	 * Enables sanitized rich-HTML presentation for ordinary string values.
 	 *
-	 * Renderers can use this flag to skip plain-text escaping for content supplied
-	 * through the display helpers. Callers must only enable it for trusted markup.
+	 * This compatibility flag is presentation intent, not a trust assertion.
+	 * Renderers sanitize ordinary strings even when it is enabled. Framework code
+	 * that must preserve pre-rendered markup can pass a PanelSafeHtml value or use
+	 * trustedHtmlContent() at an explicit trust boundary.
 	 *
-	 * @param bool $html Whether display content should be treated as trusted HTML.
-	 * @return self.
+	 * @param bool $html Whether ordinary display content may use sanitized HTML.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function html(bool $html=true): self {
 		return $this->meta(['html'=>$html]);
@@ -1242,13 +1267,20 @@ final class Field {
 	 * Stores display-only content for renderers.
 	 *
 	 * Array and object content is JSON encoded for a stable scalar manifest value.
-	 * The HTML flag controls renderer escaping and is not a sanitizer.
+	 * PanelSafeHtml is preserved as an in-process trust value and serializes to a
+	 * plain string, intentionally dropping trust across transport boundaries.
 	 *
 	 * @param mixed $content Scalar, array, or object content shown by display fields.
-	 * @param bool $html Whether the stored content is trusted HTML.
-	 * @return self.
+	 * @param bool $html Whether ordinary string content may use sanitized HTML.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function content(mixed $content, bool $html=false): self {
+		if($content instanceof PanelSafeHtml){
+			return $this->meta([
+				'display_content'=>$content,
+				'html'=>true,
+			]);
+		}
 		if(is_array($content) || is_object($content)){
 			$content=json_encode($content, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '';
 		}
@@ -1259,15 +1291,33 @@ final class Field {
 	}
 
 	/**
-	 * Stores trusted HTML display content.
+	 * Stores rich HTML display content through the compatibility sanitizer path.
 	 *
-	 * This is a convenience wrapper around content() with HTML rendering enabled.
+	 * String input remains untrusted and is sanitized at render time. Pass an
+	 * existing PanelSafeHtml value, or use trustedHtmlContent(), only for markup
+	 * generated entirely by trusted application or framework code.
 	 *
-	 * @param string $content Trusted markup shown by display renderers.
-	 * @return self.
+	 * @param string|PanelSafeHtml $content Rich text or an explicit safe-markup value.
+	 * @return self<TRecord,TValue,TState>
 	 */
-	public function htmlContent(string $content): self {
+	public function htmlContent(string|PanelSafeHtml $content): self {
 		return $this->content($content, true);
+	}
+
+	/**
+	 * Stores framework-generated markup through an explicit trust boundary.
+	 *
+	 * Values originating in requests, records, translations, or remote services
+	 * must use htmlContent() or PanelSafeHtml::sanitize() instead.
+	 *
+	 * @param string|PanelSafeHtml $content Trusted framework-generated markup.
+	 * @return self<TRecord,TValue,TState>
+	 */
+	public function trustedHtmlContent(string|PanelSafeHtml $content): self {
+		return $this->content(
+			$content instanceof PanelSafeHtml ? $content : PanelSafeHtml::trusted($content),
+			true,
+		);
 	}
 
 	/**
@@ -1277,8 +1327,8 @@ final class Field {
 	 * otherwise only the type changes.
 	 *
 	 * @param mixed $content Optional placeholder content shown by the renderer.
-	 * @param bool $html Whether the supplied content is trusted HTML.
-	 * @return self.
+	 * @param bool $html Whether ordinary string content may use sanitized HTML.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function placeholderField(mixed $content=null, bool $html=false): self {
 		$field=$this->type('placeholder');
@@ -1292,8 +1342,8 @@ final class Field {
 	 * from submitted input.
 	 *
 	 * @param mixed $content Optional display content stored on the field.
-	 * @param bool $html Whether the supplied content is trusted HTML.
-	 * @return self.
+	 * @param bool $html Whether ordinary string content may use sanitized HTML.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function displayOnly(mixed $content=null, bool $html=false): self {
 		$field=$this->type('display_only');
@@ -1307,8 +1357,8 @@ final class Field {
 	 * input.
 	 *
 	 * @param mixed $content Optional view content stored on the field.
-	 * @param bool $html Whether the supplied content is trusted HTML.
-	 * @return self.
+	 * @param bool $html Whether ordinary string content may use sanitized HTML.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function viewField(mixed $content=null, bool $html=false): self {
 		$field=$this->type('view_field');
@@ -1321,7 +1371,7 @@ final class Field {
 	 * Option metadata supports scalar values, grouped options, disabled states, descriptions, relationships, and display columns.
 	 *
 	 * @param array<string, mixed> $options Field configuration options for the operation.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function options(array $options): self {
 		$clone=clone $this;
@@ -1338,7 +1388,7 @@ final class Field {
 	 * @param string $label Human label shown in choice renderers.
 	 * @param ?string $description Optional helper text shown beside the option.
 	 * @param bool $disabled Whether the option is visible but not selectable.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function option(string|int|float $value, string $label, ?string $description=null, bool $disabled=false): self {
 		$options=$this->options;
@@ -1354,7 +1404,7 @@ final class Field {
 	 * @param string|int|float $value Submitted value represented by the option.
 	 * @param string $label Human label shown in choice renderers.
 	 * @param ?string $description Optional helper text shown beside the option.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function disabledOption(string|int|float $value, string $label, ?string $description=null): self {
 		return $this->option($value, $label, $description, true);
@@ -1369,7 +1419,7 @@ final class Field {
 	 * @param array<string, mixed> $options Option definitions nested under the group.
 	 * @param ?string $key Explicit group key, or null to derive one from the label.
 	 * @param bool $disabled Whether every option in the group starts disabled.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function optionGroup(string $label, array $options, ?string $key=null, bool $disabled=false): self {
 		$allOptions=$this->options;
@@ -1387,8 +1437,8 @@ final class Field {
 	 *
 	 * Option metadata supports scalar values, grouped options, disabled states, descriptions, relationships, and display columns.
 	 *
-	 * @param callable $callback Callback invoked by Panel during rendering, validation, or persistence.
-	 * @return self.
+	 * @param callable(TRecord|null=, PanelRequest|null=, string=, self<TRecord, TValue, TState>=): array<array-key, mixed> $callback Callback invoked by Panel during option resolution.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function optionsUsing(callable $callback): self {
 		$clone=clone $this;
@@ -1400,7 +1450,7 @@ final class Field {
 	 * Converts the field into a single-value select control.
 	 *
 	 * @param array<string, mixed> $options Initial option definitions keyed by submitted value.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function select(array $options=[]): self {
 		$field=$this->type('select');
@@ -1411,7 +1461,7 @@ final class Field {
 	 * Converts the field into an enum-backed select control.
 	 *
 	 * @param array<string, mixed> $options Initial enum option definitions.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function enum(array $options=[]): self {
 		$field=$this->type('enum');
@@ -1422,7 +1472,7 @@ final class Field {
 	 * Converts the field into a multi-value select control.
 	 *
 	 * @param array<string, mixed> $options Initial option definitions keyed by submitted value.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function multiSelect(array $options=[]): self {
 		$field=$this->type('multi_select')->multiple();
@@ -1436,7 +1486,7 @@ final class Field {
 	 * country set and stores normalized ISO-style country codes.
 	 *
 	 * @param ?array $countries Country codes to expose, or null for the default set.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function countrySelect(?array $countries=null): self {
 		$options=self::countryOptions($countries ?? ['CA', 'US', 'GB', 'AU', 'NZ', 'FR', 'DE', 'NL', 'IE']);
@@ -1450,7 +1500,7 @@ final class Field {
 	 * generated.
 	 *
 	 * @param string $country Country code used to choose subdivision options.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function subdivisionSelect(string $country='CA'): self {
 		$country=self::normalizeCountryCode($country);
@@ -1467,7 +1517,7 @@ final class Field {
 	 * @param array<string, mixed> $options Preloaded options for the relationship control.
 	 * @param string $titleAttribute Related record attribute used as the label.
 	 * @param string $keyAttribute Related record attribute used as the submitted key.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function relationship(string $relatedResource, array $options=[], string $titleAttribute='name', string $keyAttribute='id'): self {
 		$field=$this->type('relationship')->relatedResource($relatedResource)->titleAttribute($titleAttribute)->keyAttribute($keyAttribute)->searchable();
@@ -1484,7 +1534,7 @@ final class Field {
 	 * @param array<string, mixed> $options Preloaded options for the relationship control.
 	 * @param string $titleAttribute Related record attribute used as the label.
 	 * @param string $keyAttribute Related record attribute used as the submitted key.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function belongsTo(string $relatedResource, array $options=[], string $titleAttribute='name', string $keyAttribute='id'): self {
 		return $this->relationship($relatedResource, $options, $titleAttribute, $keyAttribute)->type('belongs_to');
@@ -1500,7 +1550,7 @@ final class Field {
 	 * @param array<string, mixed> $options Preloaded options for the relationship control.
 	 * @param string $titleAttribute Related record attribute used as the label.
 	 * @param string $keyAttribute Related record attribute used as the submitted key.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function multiRelationship(string $relatedResource, array $options=[], string $titleAttribute='name', string $keyAttribute='id'): self {
 		$field=$this->type('multi_relationship')->multiple()->relatedResource($relatedResource)->titleAttribute($titleAttribute)->keyAttribute($keyAttribute)->searchable();
@@ -1517,7 +1567,7 @@ final class Field {
 	 * @param array<string, mixed> $options Preloaded options for the relationship control.
 	 * @param string $titleAttribute Related record attribute used as the label.
 	 * @param string $keyAttribute Related record attribute used as the submitted key.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function belongsToMany(string $relatedResource, array $options=[], string $titleAttribute='name', string $keyAttribute='id'): self {
 		return $this->multiRelationship($relatedResource, $options, $titleAttribute, $keyAttribute)->type('belongs_to_many');
@@ -1529,7 +1579,7 @@ final class Field {
 	 * Resource names are normalized before being written to field metadata.
 	 *
 	 * @param string $resource Related Panel resource name.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function relatedResource(string $resource): self {
 		return $this->meta(['related_resource'=>self::normalizeName($resource)]);
@@ -1541,7 +1591,7 @@ final class Field {
 	 * Empty normalized values fall back to `name`.
 	 *
 	 * @param string $attribute Related record attribute name.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function titleAttribute(string $attribute): self {
 		return $this->meta(['title_attribute'=>self::normalizeName($attribute) ?: 'name']);
@@ -1553,7 +1603,7 @@ final class Field {
 	 * Empty normalized values fall back to `id`.
 	 *
 	 * @param string $attribute Related record key attribute name.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function keyAttribute(string $attribute): self {
 		return $this->meta(['key_attribute'=>self::normalizeName($attribute) ?: 'id']);
@@ -1563,7 +1613,7 @@ final class Field {
 	 * Converts the field into a radio-choice control.
 	 *
 	 * @param array<string, mixed> $options Initial option definitions keyed by submitted value.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function radio(array $options=[]): self {
 		$field=$this->type('radio');
@@ -1574,7 +1624,7 @@ final class Field {
 	 * Converts the field into a checkbox-list choice control.
 	 *
 	 * @param array<string, mixed> $options Initial option definitions keyed by submitted value.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function checkboxList(array $options=[]): self {
 		$field=$this->type('checkbox_list');
@@ -1586,7 +1636,7 @@ final class Field {
 	 *
 	 * @param array<string, mixed> $options Initial option definitions keyed by submitted value.
 	 * @param bool $multiple Whether the renderer may submit more than one value.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function toggleButtons(array $options=[], bool $multiple=false): self {
 		$field=$this->type('toggle_buttons')->meta(['multiple'=>$multiple, 'choice_style'=>'buttons']);
@@ -1598,7 +1648,7 @@ final class Field {
 	 *
 	 * @param array<string, mixed> $options Initial option definitions keyed by submitted value.
 	 * @param bool $multiple Whether the renderer may submit more than one value.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function segmentedControl(array $options=[], bool $multiple=false): self {
 		return $this->toggleButtons($options, $multiple)->type('segmented_control');
@@ -1609,7 +1659,7 @@ final class Field {
 	 *
 	 * @param array<string, mixed> $options Initial option definitions keyed by submitted value.
 	 * @param bool $multiple Whether the renderer may submit more than one value.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function buttonGroup(array $options=[], bool $multiple=false): self {
 		return $this->toggleButtons($options, $multiple)->type('button_group');
@@ -1620,7 +1670,7 @@ final class Field {
 	 *
 	 * @param string $onLabel Label displayed for the true/on state.
 	 * @param string $offLabel Label displayed for the false/off state.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function boolean(string $onLabel='Enabled', string $offLabel='Disabled'): self {
 		return $this->type('boolean')->booleanLabels($onLabel, $offLabel);
@@ -1631,7 +1681,7 @@ final class Field {
 	 *
 	 * @param string $onLabel Label displayed for the true/on state.
 	 * @param string $offLabel Label displayed for the false/off state.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function toggle(string $onLabel='Enabled', string $offLabel='Disabled'): self {
 		return $this->type('toggle')->booleanLabels($onLabel, $offLabel);
@@ -1642,7 +1692,7 @@ final class Field {
 	 *
 	 * @param string $onLabel Label displayed for the checked state.
 	 * @param string $offLabel Label displayed for the unchecked state.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function checkbox(string $onLabel='Enabled', string $offLabel='Disabled'): self {
 		return $this->type('checkbox')->booleanLabels($onLabel, $offLabel);
@@ -1656,7 +1706,7 @@ final class Field {
 	 *
 	 * @param string $onLabel Label displayed for the true/on state.
 	 * @param string $offLabel Label displayed for the false/off state.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function booleanLabels(string $onLabel='Enabled', string $offLabel='Disabled'): self {
 		return $this->meta([
@@ -1671,7 +1721,7 @@ final class Field {
 	 * Blank labels fall back to `Enabled`.
 	 *
 	 * @param string $label Label displayed for the true/on state.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function onLabel(string $label): self {
 		return $this->meta(['on_label'=>trim($label) ?: 'Enabled']);
@@ -1683,7 +1733,7 @@ final class Field {
 	 * Blank labels fall back to `Disabled`.
 	 *
 	 * @param string $label Label displayed for the false/off state.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function offLabel(string $label): self {
 		return $this->meta(['off_label'=>trim($label) ?: 'Disabled']);
@@ -1695,7 +1745,7 @@ final class Field {
 	 * The stored value is clamped between one and six columns.
 	 *
 	 * @param int $columns Requested choice column count.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function choiceColumns(int $columns): self {
 		return $this->meta(['choice_columns'=>max(1, min(6, $columns))]);
@@ -1706,7 +1756,7 @@ final class Field {
 	 *
 	 *
 	 * @param bool $inline Whether choices should be rendered inline.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function inlineChoices(bool $inline=true): self {
 		return $this->meta(['inline_choices'=>$inline]);
@@ -1715,10 +1765,151 @@ final class Field {
 	/**
 	 * Forces choice renderers into a one-column stacked layout.
 	 *
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function stackedChoices(): self {
 		return $this->inlineChoices(false)->choiceColumns(1);
+	}
+
+	/**
+	 * Configures the presentation of this field's option collection.
+	 *
+	 * Supported displays are inline, segmented, brick, stack, grid, and masonry.
+	 * Responsive columns, density, gap, fit, and minimum width use the same
+	 * contract as table views, tabs, steps, filters, and other collections.
+	 *
+	 * @param array<string,mixed>|string $presentation Presentation definition or display name.
+	 * @return self<TRecord,TValue,TState>
+	 */
+	public function optionsPresentation(array|string $presentation): self {
+		return $this->meta(['options_presentation'=>PanelCollectionPresentation::normalize($presentation, 'stack')]);
+	}
+
+	/** @param array<string,mixed>|PanelCollectionItemPresentation $presentation */
+	public function optionItemPresentation(string|int $option, array|PanelCollectionItemPresentation $presentation): self {
+		$key=PanelCollectionPresentation::itemKey($option);
+		$item=PanelCollectionItemPresentation::normalize($presentation);
+		if($key==='' || $item===[]){
+			return $this;
+		}
+		$definition=PanelCollectionPresentation::normalize($this->meta['options_presentation'] ?? null, 'stack');
+		$definition['items'] ??=[];
+		$definition['items'][$key]=$item;
+		return $this->optionsPresentation($definition);
+	}
+
+	/** @param array<string|int,array<string,mixed>|PanelCollectionItemPresentation> $presentations */
+	public function optionItemPresentations(array $presentations): self {
+		$clone=$this;
+		foreach($presentations as $option=>$presentation){
+			if(is_array($presentation) || $presentation instanceof PanelCollectionItemPresentation){
+				$clone=$clone->optionItemPresentation(is_int($option) ? $option : (string)$option, $presentation);
+			}
+		}
+		return $clone;
+	}
+
+	public function optionsFinalRow(string $policy='fill'): self {
+		$definition=PanelCollectionPresentation::normalize($this->meta['options_presentation'] ?? null, 'stack');
+		$definition['final_row']=$policy;
+		return $this->optionsPresentation($definition);
+	}
+
+	/** @return self<TRecord,TValue,TState> */
+	public function optionsDisplay(string $display): self {
+		return $this->optionsPresentation($display);
+	}
+
+	/** @return self<TRecord,TValue,TState> */
+	public function brickOptions(bool $enabled=true): self {
+		return $this->optionsDisplay($enabled ? 'brick' : 'stack');
+	}
+
+	/** @param array<string,mixed> $options */
+	public function masonryOptions(bool $enabled=true, array $options=[]): self {
+		return $enabled
+			? $this->optionsPresentation(array_replace(['display'=>'masonry', 'masonry'=>'rows', 'fit'=>'fill'], $options))
+			: $this->optionsDisplay('stack');
+	}
+
+	/** @param array<string,mixed>|string $presentation */
+	public function collectionPresentation(string $collection, array|string $presentation): self {
+		$collection=Resource::normalizeName($collection);
+		return $collection==='' ? $this : $this->meta([$collection.'_presentation'=>PanelCollectionPresentation::normalize($presentation, self::fieldCollectionDefaultDisplay($collection))]);
+	}
+
+	/** @param array<string,mixed>|PanelCollectionItemPresentation $presentation */
+	public function collectionItemPresentation(string $collection, string|int $item, array|PanelCollectionItemPresentation $presentation): self {
+		$collection=Resource::normalizeName($collection);
+		$key=PanelCollectionPresentation::itemKey($item);
+		$itemDefinition=PanelCollectionItemPresentation::normalize($presentation);
+		if($collection==='' || $key==='' || $itemDefinition===[]){
+			return $this;
+		}
+		$definition=PanelCollectionPresentation::normalize($this->meta[$collection.'_presentation'] ?? null, self::fieldCollectionDefaultDisplay($collection));
+		$definition['items'] ??=[];
+		$definition['items'][$key]=$itemDefinition;
+		return $this->collectionPresentation($collection, $definition);
+	}
+
+	/** @param array<string|int,array<string,mixed>|PanelCollectionItemPresentation> $presentations */
+	public function collectionItemPresentations(string $collection, array $presentations): self {
+		$clone=$this;
+		foreach($presentations as $item=>$presentation){
+			if(is_array($presentation) || $presentation instanceof PanelCollectionItemPresentation){
+				$clone=$clone->collectionItemPresentation($collection, is_int($item) ? $item : (string)$item, $presentation);
+			}
+		}
+		return $clone;
+	}
+
+	public function collectionFinalRow(string $collection, string $policy='fill'): self {
+		$collection=Resource::normalizeName($collection);
+		if($collection===''){
+			return $this;
+		}
+		$definition=PanelCollectionPresentation::normalize($this->meta[$collection.'_presentation'] ?? null, self::fieldCollectionDefaultDisplay($collection));
+		$definition['final_row']=$policy;
+		return $this->collectionPresentation($collection, $definition);
+	}
+
+	/** @param array<string,mixed> $options */
+	public function rowMasonry(string $collection, array $options=[]): self {
+		return $this->collectionPresentation($collection, array_replace(['display'=>'masonry', 'masonry'=>'rows', 'fit'=>'fill'], $options));
+	}
+
+	public function rowsPresentation(array|string $presentation): self { return $this->collectionPresentation('rows', $presentation); }
+	public function fieldsPresentation(array|string $presentation): self { return $this->collectionPresentation('fields', $presentation); }
+	public function actionsPresentation(array|string $presentation): self { return $this->collectionPresentation('actions', $presentation); }
+	public function itemsPresentation(array|string $presentation): self { return $this->collectionPresentation('items', $presentation); }
+	public function toolsPresentation(array|string $presentation): self { return $this->collectionPresentation('tools', $presentation); }
+	public function rowsDisplay(string $display): self { return $this->rowsPresentation($display); }
+	public function fieldsDisplay(string $display): self { return $this->fieldsPresentation($display); }
+	public function actionsDisplay(string $display): self { return $this->actionsPresentation($display); }
+	public function itemsDisplay(string $display): self { return $this->itemsPresentation($display); }
+	public function toolsDisplay(string $display): self { return $this->toolsPresentation($display); }
+	public function brickRows(bool $enabled=true): self { return $this->rowsDisplay($enabled ? 'brick' : 'stack'); }
+	public function brickFields(bool $enabled=true): self { return $this->fieldsDisplay($enabled ? 'brick' : 'grid'); }
+	public function brickActions(bool $enabled=true): self { return $this->actionsDisplay($enabled ? 'brick' : 'inline'); }
+	public function brickItems(bool $enabled=true): self { return $this->itemsDisplay($enabled ? 'brick' : 'grid'); }
+	public function brickTools(bool $enabled=true): self { return $this->toolsDisplay($enabled ? 'brick' : 'inline'); }
+	public function masonryRows(bool $enabled=true, array $options=[]): self { return $enabled ? $this->rowMasonry('rows', $options) : $this->rowsDisplay('stack'); }
+	public function masonryFields(bool $enabled=true, array $options=[]): self { return $enabled ? $this->rowMasonry('fields', $options) : $this->fieldsDisplay('grid'); }
+	public function masonryActions(bool $enabled=true, array $options=[]): self { return $enabled ? $this->rowMasonry('actions', $options) : $this->actionsDisplay('inline'); }
+	public function masonryItems(bool $enabled=true, array $options=[]): self { return $enabled ? $this->rowMasonry('items', $options) : $this->itemsDisplay('grid'); }
+	public function masonryTools(bool $enabled=true, array $options=[]): self { return $enabled ? $this->rowMasonry('tools', $options) : $this->toolsDisplay('inline'); }
+	public function rowItemPresentation(string|int $item, array|PanelCollectionItemPresentation $presentation): self { return $this->collectionItemPresentation('rows', $item, $presentation); }
+	public function fieldItemPresentation(string|int $item, array|PanelCollectionItemPresentation $presentation): self { return $this->collectionItemPresentation('fields', $item, $presentation); }
+	public function actionItemPresentation(string|int $item, array|PanelCollectionItemPresentation $presentation): self { return $this->collectionItemPresentation('actions', $item, $presentation); }
+	public function nestedItemPresentation(string|int $item, array|PanelCollectionItemPresentation $presentation): self { return $this->collectionItemPresentation('items', $item, $presentation); }
+	public function toolItemPresentation(string|int $item, array|PanelCollectionItemPresentation $presentation): self { return $this->collectionItemPresentation('tools', $item, $presentation); }
+
+	private static function fieldCollectionDefaultDisplay(string $collection): string {
+		return match(Resource::normalizeName($collection)){
+			'rows'=>'stack',
+			'fields', 'items'=>'grid',
+			default=>'inline',
+		};
 	}
 
 	/**
@@ -1727,7 +1918,7 @@ final class Field {
 	 * Nested definitions are normalized into child manifests for repeaters, builders, field groups, and address-style compound inputs.
 	 *
 	 * @param array<int|string, Field|array<string, mixed>|string> $fields Child field definitions.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function repeaterFields(array $fields): self {
 		$normalized=self::normalizeChildFieldDefinitions($fields);
@@ -1742,7 +1933,7 @@ final class Field {
 	 * @param array<int|string, Field|array<string, mixed>|string> $fields Child field definitions.
 	 * @param int $minItems Minimum number of child item rows.
 	 * @param ?int $maxItems Maximum number of child item rows, or null for no cap.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function repeater(array $fields=[], int $minItems=0, ?int $maxItems=null): self {
 		$field=$this->repeaterFields($fields)->minItems($minItems);
@@ -1756,7 +1947,7 @@ final class Field {
 	 *
 	 * @param Field|array|string $field Field.
 	 * @param ?string $type Type.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function repeaterField(Field|array|string $field, ?string $type=null): self {
 		$fields=is_array($this->meta['repeater_fields'] ?? null) ? $this->meta['repeater_fields'] : [];
@@ -1773,7 +1964,7 @@ final class Field {
 	 * Nested definitions are normalized into child manifests for repeaters, builders, field groups, and address-style compound inputs.
 	 *
 	 * @param array<int|string, Field|array<string, mixed>|string> $fields Child field definitions.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function childFields(array $fields): self {
 		return $this->meta(['child_fields'=>self::normalizeChildFieldDefinitions($fields)]);
@@ -1783,7 +1974,7 @@ final class Field {
 	 * Converts the field into a fieldset of child controls.
 	 *
 	 * @param array<int|string, Field|array<string, mixed>|string> $fields Child field definitions.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function fieldset(array $fields=[]): self {
 		$field=$this->type('fieldset');
@@ -1794,7 +1985,7 @@ final class Field {
 	 * Converts the field into a grouped set of child controls.
 	 *
 	 * @param array<int|string, Field|array<string, mixed>|string> $fields Child field definitions.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function fieldGroup(array $fields=[]): self {
 		$field=$this->type('field_group');
@@ -1805,7 +1996,7 @@ final class Field {
 	 * Converts the field into a generic child-field group.
 	 *
 	 * @param array<int|string, Field|array<string, mixed>|string> $fields Child field definitions.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function group(array $fields=[]): self {
 		$field=$this->type('group');
@@ -1820,7 +2011,7 @@ final class Field {
 	 *
 	 * @param string $country Country code used for subdivision and postal validation.
 	 * @param bool $includeLine2 Whether to include an optional second address line.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function address(string $country='CA', bool $includeLine2=true): self {
 		$country=strtoupper(trim($country)) ?: 'CA';
@@ -1852,7 +2043,7 @@ final class Field {
 	 *
 	 * @param Field|array|string $field Child field instance, array manifest, or name.
 	 * @param ?string $type Field type used when $field is a scalar name.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function groupField(Field|array|string $field, ?string $type=null): self {
 		$fields=is_array($this->meta['child_fields'] ?? null) ? $this->meta['child_fields'] : [];
@@ -1872,7 +2063,7 @@ final class Field {
 	 * @param array<string, array<string, mixed>|Field|array<int, mixed>|string> $blocks Builder block definitions keyed by block name.
 	 * @param int $minItems Minimum number of builder items.
 	 * @param ?int $maxItems Maximum number of builder items, or null for no cap.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function builder(array $blocks=[], int $minItems=0, ?int $maxItems=null): self {
 		$field=$this->type('builder')->builderBlocks($blocks)->minItems($minItems);
@@ -1885,7 +2076,7 @@ final class Field {
 	 * Nested definitions are normalized into child manifests for repeaters, builders, field groups, and address-style compound inputs.
 	 *
 	 * @param array<string, array<string, mixed>|Field|array<int, mixed>|string> $blocks Builder block definitions keyed by block name.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function builderBlocks(array $blocks): self {
 		return $this->type('builder')->meta(['builder_blocks'=>self::normalizeBuilderBlocks($blocks)]);
@@ -1899,7 +2090,7 @@ final class Field {
 	 * @param string $name Normalized field, resource, surface, or helper name.
 	 * @param array<int|string, Field|array<string, mixed>|string> $fields Child field definitions.
 	 * @param ?string $label Display label for the block, or null to humanize the name.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function builderBlock(string $name, array $fields, ?string $label=null): self {
 		$blocks=is_array($this->meta['builder_blocks'] ?? null) ? $this->meta['builder_blocks'] : [];
@@ -1927,6 +2118,7 @@ final class Field {
 	private static function normalizeBuilderBlocks(array $blocks): array {
 		$normalized=[];
 		foreach($blocks as $name=>$definition){
+			$source=is_array($definition) ? $definition : [];
 			if(is_array($definition) && isset($definition['fields']) && is_array($definition['fields'])){
 				$blockName=self::normalizeName((string)($definition['name'] ?? $name));
 				$label=trim((string)($definition['label'] ?? self::humanize($blockName)));
@@ -1940,11 +2132,20 @@ final class Field {
 			if($blockName===''){
 				continue;
 			}
-			$normalized[$blockName]=[
+			$block=[
 				'name'=>$blockName,
 				'label'=>$label,
 				'fields'=>self::normalizeChildFieldDefinitions($fields),
 			];
+			$nested=is_array($source['meta'] ?? null) ? $source['meta'] : [];
+			$itemPresentation=PanelCollectionItemPresentation::merge(
+				PanelCollectionItemPresentation::fromMeta($nested),
+				PanelCollectionItemPresentation::fromMeta($source),
+			);
+			if($itemPresentation!==[]){
+				$block['meta']=['item_presentation'=>$itemPresentation];
+			}
+			$normalized[$blockName]=$block;
 		}
 		return $normalized;
 	}
@@ -1975,7 +2176,7 @@ final class Field {
 	 * Negative values are stored as zero.
 	 *
 	 * @param int $count Requested minimum item count.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function minItems(int $count): self {
 		return $this->meta(['min_items'=>max(0, $count)]);
@@ -1987,7 +2188,7 @@ final class Field {
 	 * Values below one are stored as one.
 	 *
 	 * @param int $count Requested maximum item count.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function maxItems(int $count): self {
 		return $this->meta(['max_items'=>max(1, $count)]);
@@ -1999,7 +2200,7 @@ final class Field {
 	 * Blank labels fall back to `Add item`.
 	 *
 	 * @param string $label Button text shown when adding an item.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function addItemLabel(string $label): self {
 		return $this->meta(['add_item_label'=>trim($label) ?: 'Add item']);
@@ -2013,7 +2214,7 @@ final class Field {
 	 * @param array|string $acceptedTypes Accepted MIME types or extensions.
 	 * @param ?int $maxSize Maximum accepted file size in bytes.
 	 * @param bool $multiple Whether the control may accept multiple files.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function file(array|string $acceptedTypes=[], ?int $maxSize=null, bool $multiple=false): self {
 		$field=$this->type('file')->multiple($multiple);
@@ -2034,7 +2235,7 @@ final class Field {
 	 * @param array|string $acceptedTypes Accepted MIME types or extensions.
 	 * @param ?int $maxSize Maximum accepted file size in bytes.
 	 * @param bool $multiple Whether the control may accept multiple files.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function fileUpload(array|string $acceptedTypes=[], ?int $maxSize=null, bool $multiple=false): self {
 		return $this->file($acceptedTypes, $maxSize, $multiple)->type('file_upload');
@@ -2048,7 +2249,7 @@ final class Field {
 	 * @param array|string $acceptedTypes Accepted MIME types or extensions.
 	 * @param ?int $maxSize Maximum accepted file size in bytes.
 	 * @param bool $multiple Whether the control may accept multiple files.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function upload(array|string $acceptedTypes=[], ?int $maxSize=null, bool $multiple=false): self {
 		return $this->fileUpload($acceptedTypes, $maxSize, $multiple);
@@ -2062,7 +2263,7 @@ final class Field {
 	 * @param array|string $acceptedTypes Accepted MIME types or extensions.
 	 * @param ?int $maxSize Maximum accepted file size in bytes.
 	 * @param bool $multiple Whether the control may accept multiple files.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function dragDropUpload(array|string $acceptedTypes=[], ?int $maxSize=null, bool $multiple=false): self {
 		return $this->fileUpload($acceptedTypes, $maxSize, $multiple)->customUploader(true)->type('drag_drop_upload');
@@ -2075,7 +2276,7 @@ final class Field {
 	 *
 	 * @param ?int $maxSize Maximum accepted image size in bytes.
 	 * @param bool $multiple Whether the control may accept multiple images.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function imageUpload(?int $maxSize=null, bool $multiple=false): self {
 		return $this->fileUpload(['image/*'], $maxSize, $multiple)->type('image');
@@ -2087,7 +2288,7 @@ final class Field {
 	 * Empty entries are trimmed out before the manifest is written.
 	 *
 	 * @param array|string $types Accepted MIME type, extension, or list of entries.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function acceptedTypes(array|string $types): self {
 		$types=is_array($types) ? $types : [$types];
@@ -2104,7 +2305,7 @@ final class Field {
 	 * Upload metadata describes accepted files, size limits, chunking, delete endpoints, concurrency, and validation expectations for Panel upload controls.
 	 *
 	 * @param int $bytes Maximum accepted file size in bytes.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function maxFileSize(int $bytes): self {
 		return $this->meta(['max_file_size'=>max(0, $bytes)]);
@@ -2116,7 +2317,7 @@ final class Field {
 	 * Upload metadata describes accepted files, size limits, chunking, delete endpoints, concurrency, and validation expectations for Panel upload controls.
 	 *
 	 * @param int $count Minimum number of files required.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function uploadMinFiles(int $count): self {
 		return $this->meta(['upload_min_files'=>max(0, $count)]);
@@ -2128,7 +2329,7 @@ final class Field {
 	 * Upload metadata describes accepted files, size limits, chunking, delete endpoints, concurrency, and validation expectations for Panel upload controls.
 	 *
 	 * @param int $count Maximum number of files accepted.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function uploadMaxFiles(int $count): self {
 		return $this->meta(['upload_max_files'=>max(1, $count)]);
@@ -2140,7 +2341,7 @@ final class Field {
 	 * Upload metadata describes accepted files, size limits, chunking, delete endpoints, concurrency, and validation expectations for Panel upload controls.
 	 *
 	 * @param int $count Minimum number of files required.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function minFiles(int $count): self {
 		return $this->uploadMinFiles($count);
@@ -2152,7 +2353,7 @@ final class Field {
 	 * Upload metadata describes accepted files, size limits, chunking, delete endpoints, concurrency, and validation expectations for Panel upload controls.
 	 *
 	 * @param int $count Maximum number of files accepted.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function maxFiles(int $count): self {
 		return $this->uploadMaxFiles($count);
@@ -2165,7 +2366,7 @@ final class Field {
 	 *
 	 * @param bool $enabled Whether uploads use the custom/chunked uploader path.
 	 * @param ?string $endpoint Upload endpoint URL or route path.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function customUploader(bool $enabled=true, ?string $endpoint=null): self {
 		$meta=[
@@ -2184,7 +2385,7 @@ final class Field {
 	 * Upload metadata describes accepted files, size limits, chunking, delete endpoints, concurrency, and validation expectations for Panel upload controls.
 	 *
 	 * @param string $endpoint Upload endpoint URL or route path.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function uploadEndpoint(string $endpoint): self {
 		$endpoint=trim($endpoint);
@@ -2197,7 +2398,7 @@ final class Field {
 	 * Upload metadata describes accepted files, size limits, chunking, delete endpoints, concurrency, and validation expectations for Panel upload controls.
 	 *
 	 * @param string $endpoint Delete endpoint URL or route path.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function uploadDeleteEndpoint(string $endpoint): self {
 		$endpoint=trim($endpoint);
@@ -2210,7 +2411,7 @@ final class Field {
 	 * This aliases uploadDeleteEndpoint() for fluent upload configuration.
 	 *
 	 * @param string $endpoint Delete endpoint URL or route path.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function deleteEndpoint(string $endpoint): self {
 		return $this->uploadDeleteEndpoint($endpoint);
@@ -2222,7 +2423,7 @@ final class Field {
 	 * Upload metadata describes accepted files, size limits, chunking, delete endpoints, concurrency, and validation expectations for Panel upload controls.
 	 *
 	 * @param int $bytes Requested chunk size in bytes.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function uploadChunkSize(int $bytes): self {
 		return $this->meta(['upload_chunk_size'=>max(65536, min(52428800, $bytes))]);
@@ -2234,7 +2435,7 @@ final class Field {
 	 * Upload metadata describes accepted files, size limits, chunking, delete endpoints, concurrency, and validation expectations for Panel upload controls.
 	 *
 	 * @param int $retries Retry count for failed upload chunks.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function uploadRetries(int $retries): self {
 		return $this->meta(['upload_retries'=>max(0, min(10, $retries))]);
@@ -2246,7 +2447,7 @@ final class Field {
 	 * Upload metadata describes accepted files, size limits, chunking, delete endpoints, concurrency, and validation expectations for Panel upload controls.
 	 *
 	 * @param int $concurrency Parallel upload request count.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function uploadConcurrency(int $concurrency): self {
 		return $this->meta(['upload_concurrency'=>max(1, min(6, $concurrency))]);
@@ -2258,7 +2459,7 @@ final class Field {
 	 * Upload metadata describes accepted files, size limits, chunking, delete endpoints, concurrency, and validation expectations for Panel upload controls.
 	 *
 	 * @param array<string, string> $headers Upload request headers.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function uploadHeaders(array $headers): self {
 		$normalized=[];
@@ -2278,7 +2479,7 @@ final class Field {
 	 *
 	 * @param string $name Normalized field, resource, surface, or helper name.
 	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function uploadHeader(string $name, mixed $value): self {
 		if(!is_scalar($value)){
@@ -2295,7 +2496,7 @@ final class Field {
 	 * Upload metadata describes accepted files, size limits, chunking, delete endpoints, concurrency, and validation expectations for Panel upload controls.
 	 *
 	 * @param array<int|string, Field|array<string, mixed>|string> $fields Child field definitions.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function uploadFields(array $fields): self {
 		$normalized=[];
@@ -2315,7 +2516,7 @@ final class Field {
 	 *
 	 * @param string $name Upload metadata field name.
 	 * @param mixed $value Scalar value sent with upload requests.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function uploadField(string $name, mixed $value): self {
 		if(!is_scalar($value)){
@@ -2332,7 +2533,7 @@ final class Field {
 	 * Upload metadata describes accepted files, size limits, chunking, delete endpoints, concurrency, and validation expectations for Panel upload controls.
 	 *
 	 * @param array<string, string> $labels Upload UI labels.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function uploadLabels(array $labels): self {
 		$normalized=[];
@@ -2352,7 +2553,7 @@ final class Field {
 	 *
 	 * @param string $name Upload label key.
 	 * @param string $label Human text shown by the upload UI.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function uploadLabel(string $name, string $label): self {
 		$labels=is_array($this->meta['upload_labels'] ?? null) ? $this->meta['upload_labels'] : [];
@@ -2368,7 +2569,7 @@ final class Field {
 	 * @param string $formName Form name used to resolve the CSRF token.
 	 * @param string $fieldName Request field that carries the CSRF token.
 	 * @param string $header Header name used for upload CSRF validation.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function uploadCsrf(string $formName, string $fieldName='csrf', string $header='X-CSRF-Token'): self {
 		$formName=trim($formName);
@@ -2390,7 +2591,7 @@ final class Field {
 	 * @param string $disk Storage disk used for uploaded files.
 	 * @param string $path Storage path template for uploaded files.
 	 * @param ?string $endpoint Optional upload/delete endpoint URL or route path.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function storageUploader(string $disk='local', string $path='panel_uploads/{date}/{filename}', ?string $endpoint=null): self {
 		$meta=[
@@ -2414,7 +2615,7 @@ final class Field {
 	 * @param string $disk Storage disk used for uploaded files.
 	 * @param string $path Storage path template for uploaded files.
 	 * @param ?string $endpoint Optional upload/delete endpoint URL or route path.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function dataphyreStorageUpload(string $disk='local', string $path='panel_uploads/{date}/{filename}', ?string $endpoint=null): self {
 		return $this->storageUploader($disk, $path, $endpoint);
@@ -2427,7 +2628,7 @@ final class Field {
 	 * converted into full collection manifests for the renderer.
 	 *
 	 * @param PanelMediaCollection|array|string $collection Media collection definition.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function mediaCollection(PanelMediaCollection|array|string $collection): self {
 		$manifest=$collection instanceof PanelMediaCollection
@@ -2443,7 +2644,7 @@ final class Field {
 	 * Stores media variant definitions for upload/image renderers.
 	 *
 	 * @param array<string, array<string, mixed>|string> $variants Media variant definitions keyed by variant name.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function mediaVariants(array $variants): self {
 		return $this->meta(['media_variants'=>$variants]);
@@ -2455,7 +2656,7 @@ final class Field {
 	 * The stored value is clamped between one and sixty rows.
 	 *
 	 * @param int $rows Requested visible row count.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function rows(int $rows): self {
 		return $this->meta(['rows'=>max(1, min(60, $rows))]);
@@ -2465,7 +2666,7 @@ final class Field {
 	 * Enables or disables automatic height growth for multiline controls.
 	 *
 	 * @param bool $enabled Whether the renderer may resize the input height.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function autoResize(bool $enabled=true): self {
 		return $this->meta(['auto_resize'=>$enabled]);
@@ -2475,7 +2676,7 @@ final class Field {
 	 * Alias for autoResize().
 	 *
 	 * @param bool $enabled Whether the renderer may resize the input height.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function autosize(bool $enabled=true): self {
 		return $this->autoResize($enabled);
@@ -2486,7 +2687,7 @@ final class Field {
 	 *
 	 *
 	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function min(mixed $value): self {
 		return $this->meta(['min'=>$value]);
@@ -2497,7 +2698,7 @@ final class Field {
 	 *
 	 *
 	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function max(mixed $value): self {
 		return $this->meta(['max'=>$value]);
@@ -2508,7 +2709,7 @@ final class Field {
 	 *
 	 *
 	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function step(mixed $value): self {
 		return $this->meta(['step'=>$value]);
@@ -2520,7 +2721,7 @@ final class Field {
 	 *
 	 * @param ?string $min Min.
 	 * @param ?string $max Max.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function date(?string $min=null, ?string $max=null): self {
 		$field=$this->type('date');
@@ -2539,7 +2740,7 @@ final class Field {
 	 *
 	 * @param ?string $min Min.
 	 * @param ?string $max Max.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function dateTime(?string $min=null, ?string $max=null): self {
 		$field=$this->type('datetime');
@@ -2558,7 +2759,7 @@ final class Field {
 	 *
 	 * @param ?string $min Min.
 	 * @param ?string $max Max.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function dateTimeLocal(?string $min=null, ?string $max=null): self {
 		return $this->dateTime($min, $max)->type('datetime_local');
@@ -2571,7 +2772,7 @@ final class Field {
 	 * @param ?string $min Min.
 	 * @param ?string $max Max.
 	 * @param ?string $step Step.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function time(?string $min=null, ?string $max=null, ?string $step=null): self {
 		$field=$this->type('time');
@@ -2593,7 +2794,7 @@ final class Field {
 	 *
 	 * @param ?string $min Min.
 	 * @param ?string $max Max.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function dateRange(?string $min=null, ?string $max=null): self {
 		$field=$this->type('date_range');
@@ -2614,7 +2815,7 @@ final class Field {
 	 *
 	 * @param ?string $min Earliest accepted date-time value.
 	 * @param ?string $max Latest accepted date-time value.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function dateTimeRange(?string $min=null, ?string $max=null): self {
 		$field=$this->type('datetime_range');
@@ -2636,7 +2837,7 @@ final class Field {
 	 * @param ?string $min Earliest accepted time value.
 	 * @param ?string $max Latest accepted time value.
 	 * @param ?string $step Time step accepted by the renderer/browser.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function timeRange(?string $min=null, ?string $max=null, ?string $step=null): self {
 		$field=$this->type('time_range');
@@ -2661,7 +2862,7 @@ final class Field {
 	 * @param mixed $min Optional lower bound metadata.
 	 * @param mixed $max Optional upper bound metadata.
 	 * @param mixed $step Optional increment metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function number(mixed $min=null, mixed $max=null, mixed $step=null): self {
 		return $this->numeric('number', $min, $max, $step);
@@ -2676,7 +2877,7 @@ final class Field {
 	 * @param mixed $min Optional lower bound metadata.
 	 * @param mixed $max Optional upper bound metadata.
 	 * @param mixed $step Optional increment metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function integer(mixed $min=null, mixed $max=null, mixed $step=1): self {
 		return $this->numeric('integer', $min, $max, $step)->inputMode('numeric');
@@ -2691,7 +2892,7 @@ final class Field {
 	 * @param mixed $min Optional lower bound metadata.
 	 * @param mixed $max Optional upper bound metadata.
 	 * @param mixed $step Optional increment metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function float(mixed $min=null, mixed $max=null, mixed $step='any'): self {
 		return $this->numeric('float', $min, $max, $step)->inputMode('decimal');
@@ -2706,7 +2907,7 @@ final class Field {
 	 * @param int $scale Number of decimal places to preserve.
 	 * @param mixed $min Optional lower bound metadata.
 	 * @param mixed $max Optional upper bound metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function decimal(int $scale=2, mixed $min=null, mixed $max=null): self {
 		$scale=max(0, min(10, $scale));
@@ -2726,7 +2927,7 @@ final class Field {
 	 * @param mixed $min Optional lower bound metadata.
 	 * @param mixed $max Optional upper bound metadata.
 	 * @param mixed $step Optional increment metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function numeric(string $type='number', mixed $min=null, mixed $max=null, mixed $step=null): self {
 		$type=self::normalizeName($type);
@@ -2751,7 +2952,7 @@ final class Field {
 	 *
 	 *
 	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function minValue(mixed $value): self {
 		return $this->min($value);
@@ -2762,7 +2963,7 @@ final class Field {
 	 *
 	 *
 	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function maxValue(mixed $value): self {
 		return $this->max($value);
@@ -2773,7 +2974,7 @@ final class Field {
 	 *
 	 *
 	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function stepValue(mixed $value): self {
 		return $this->step($value);
@@ -2786,7 +2987,7 @@ final class Field {
 	 * validation metadata.
 	 *
 	 * @param ?int $maxLength Maximum text length, or null for no field-level limit.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function text(?int $maxLength=null): self {
 		$field=$this->type('text');
@@ -2797,7 +2998,7 @@ final class Field {
 	 * Alias for text().
 	 *
 	 * @param ?int $maxLength Maximum text length, or null for no field-level limit.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function textInput(?int $maxLength=null): self {
 		return $this->text($maxLength);
@@ -2809,7 +3010,7 @@ final class Field {
 	 * Search controls disable browser autocomplete and use search input mode.
 	 *
 	 * @param ?int $maxLength Maximum query length, or null for no field-level limit.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function search(?int $maxLength=null): self {
 		$field=$this->type('search')->inputMode('search')->autocomplete('off');
@@ -2824,7 +3025,7 @@ final class Field {
 	 *
 	 * @param int $rows Requested visible row count.
 	 * @param bool $autoResize Whether the renderer may grow the textarea height.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function textarea(int $rows=5, bool $autoResize=true): self {
 		$field=$this->type('textarea')->rows($rows);
@@ -2836,7 +3037,7 @@ final class Field {
 	 *
 	 * @param int $rows Requested visible row count.
 	 * @param bool $autoResize Whether the renderer may grow the textarea height.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function longText(int $rows=8, bool $autoResize=true): self {
 		return $this->textarea($rows, $autoResize);
@@ -2850,7 +3051,7 @@ final class Field {
 	 *
 	 * @param bool $revealable Whether the UI may expose a reveal toggle.
 	 * @param string $autocomplete Browser autocomplete token.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function password(bool $revealable=true, string $autocomplete='current-password'): self {
 		$field=$this
@@ -2865,7 +3066,7 @@ final class Field {
 	 * Configures a password input for the current password credential.
 	 *
 	 * @param bool $revealable Whether the UI may expose a reveal toggle.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function currentPassword(bool $revealable=true): self {
 		return $this->password($revealable, 'current-password');
@@ -2875,7 +3076,7 @@ final class Field {
 	 * Configures a password input for a new password credential.
 	 *
 	 * @param bool $revealable Whether the UI may expose a reveal toggle.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function newPassword(bool $revealable=true): self {
 		return $this->password($revealable, 'new-password');
@@ -2885,7 +3086,7 @@ final class Field {
 	 * Configures a password confirmation input.
 	 *
 	 * @param bool $revealable Whether the UI may expose a reveal toggle.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function passwordConfirmation(bool $revealable=true): self {
 		return $this->newPassword($revealable)->autocomplete('new-password');
@@ -2895,7 +3096,7 @@ final class Field {
 	 * Stores the minimum accepted date value.
 	 *
 	 * @param string $date Date string written to min metadata after trimming.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function minDate(string $date): self {
 		return $this->min(trim($date));
@@ -2905,7 +3106,7 @@ final class Field {
 	 * Stores the maximum accepted date value.
 	 *
 	 * @param string $date Date string written to max metadata after trimming.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function maxDate(string $date): self {
 		return $this->max(trim($date));
@@ -2915,7 +3116,7 @@ final class Field {
 	 * Stores the minimum accepted date-time value.
 	 *
 	 * @param string $dateTime Date-time string written to min metadata after trimming.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function minDateTime(string $dateTime): self {
 		return $this->min(trim($dateTime));
@@ -2925,7 +3126,7 @@ final class Field {
 	 * Stores the maximum accepted date-time value.
 	 *
 	 * @param string $dateTime Date-time string written to max metadata after trimming.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function maxDateTime(string $dateTime): self {
 		return $this->max(trim($dateTime));
@@ -2935,7 +3136,7 @@ final class Field {
 	 * Stores the minimum accepted time value.
 	 *
 	 * @param string $time Time string written to min metadata after trimming.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function minTime(string $time): self {
 		return $this->min(trim($time));
@@ -2945,7 +3146,7 @@ final class Field {
 	 * Stores the maximum accepted time value.
 	 *
 	 * @param string $time Time string written to max metadata after trimming.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function maxTime(string $time): self {
 		return $this->max(trim($time));
@@ -2959,7 +3160,7 @@ final class Field {
 	 *
 	 * @param ?string $min Earliest accepted month value.
 	 * @param ?string $max Latest accepted month value.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function month(?string $min=null, ?string $max=null): self {
 		$field=$this->type('month');
@@ -2980,7 +3181,7 @@ final class Field {
 	 *
 	 * @param ?string $min Earliest accepted week value.
 	 * @param ?string $max Latest accepted week value.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function week(?string $min=null, ?string $max=null): self {
 		$field=$this->type('week');
@@ -3003,7 +3204,7 @@ final class Field {
 	 * @param mixed $max Upper slider bound metadata.
 	 * @param mixed $step Slider increment metadata.
 	 * @param bool $showValue Whether the renderer should show the current value.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function slider(mixed $min=0, mixed $max=100, mixed $step=1, bool $showValue=true): self {
 		return $this
@@ -3020,7 +3221,7 @@ final class Field {
 	 * @param mixed $min Lower range bound metadata.
 	 * @param mixed $max Upper range bound metadata.
 	 * @param mixed $step Range increment metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function range(mixed $min=0, mixed $max=100, mixed $step=1): self {
 		return $this
@@ -3036,7 +3237,7 @@ final class Field {
 	 * @param mixed $min Lower range bound metadata.
 	 * @param mixed $max Upper range bound metadata.
 	 * @param mixed $step Range increment metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function rangeInput(mixed $min=0, mixed $max=100, mixed $step=1): self {
 		return $this->range($min, $max, $step);
@@ -3049,7 +3250,7 @@ final class Field {
 	 * @param mixed $max Upper slider bound metadata.
 	 * @param mixed $step Slider increment metadata.
 	 * @param bool $showValue Whether the renderer should show the current value.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function rangeSlider(mixed $min=0, mixed $max=100, mixed $step=1, bool $showValue=true): self {
 		return $this->slider($min, $max, $step, $showValue);
@@ -3064,7 +3265,7 @@ final class Field {
 	 * @param int $max Requested highest rating value.
 	 * @param int $min Requested lowest rating value.
 	 * @param int $step Requested rating increment.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function rating(int $max=5, int $min=1, int $step=1): self {
 		return $this
@@ -3078,7 +3279,7 @@ final class Field {
 	 * Controls whether slider renderers show the current value.
 	 *
 	 * @param bool $show Whether to show the current value beside the slider.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function sliderValueDisplay(bool $show=true): self {
 		return $this->meta(['value_display'=>$show]);
@@ -3088,7 +3289,7 @@ final class Field {
 	 * Alias for sliderValueDisplay().
 	 *
 	 * @param bool $show Whether to show the current value beside the slider.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function showSliderValue(bool $show=true): self {
 		return $this->sliderValueDisplay($show);
@@ -3098,7 +3299,7 @@ final class Field {
 	 * Hides or restores the visible slider value.
 	 *
 	 * @param bool $hidden Whether the current value should be hidden.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function hideSliderValue(bool $hidden=true): self {
 		return $this->sliderValueDisplay(!$hidden);
@@ -3112,7 +3313,7 @@ final class Field {
 	 *
 	 * @param array<int|string, array<string, mixed>|string> $suggestions Suggestion option definitions.
 	 * @param string $separator Character or token used to split submitted tags.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function tags(array $suggestions=[], string $separator=','): self {
 		$field=$this->type('tags')->tagSeparator($separator)->autoResize(false);
@@ -3124,7 +3325,7 @@ final class Field {
 	 *
 	 * @param array<int|string, array<string, mixed>|string> $suggestions Suggestion option definitions.
 	 * @param string $separator Character or token used to split submitted tags.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function tagsInput(array $suggestions=[], string $separator=','): self {
 		return $this->tags($suggestions, $separator)->type('tags_input');
@@ -3136,7 +3337,7 @@ final class Field {
 	 * Negative values are stored as zero.
 	 *
 	 * @param int $count Requested minimum tag count.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function minTags(int $count): self {
 		return $this->meta(['min_tags'=>max(0, $count)]);
@@ -3148,7 +3349,7 @@ final class Field {
 	 * Values below one are stored as one.
 	 *
 	 * @param int $count Requested maximum tag count.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function maxTags(int $count): self {
 		return $this->meta(['max_tags'=>max(1, $count)]);
@@ -3158,7 +3359,7 @@ final class Field {
 	 * Marks the field as accepting one or many values.
 	 *
 	 * @param bool $multiple Whether the renderer may submit multiple values.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function multiple(bool $multiple=true): self {
 		return $this->meta(['multiple'=>$multiple]);
@@ -3168,7 +3369,7 @@ final class Field {
 	 * Marks choice and relationship renderers as searchable.
 	 *
 	 * @param bool $searchable Whether the renderer should expose search UI.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function searchable(bool $searchable=true): self {
 		return $this->meta(['searchable'=>$searchable]);
@@ -3178,7 +3379,7 @@ final class Field {
 	 * Sets placeholder text for searchable choice controls.
 	 *
 	 * @param string $placeholder Placeholder text shown inside the search input.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function searchPlaceholder(string $placeholder): self {
 		return $this->meta(['search_placeholder'=>trim($placeholder)]);
@@ -3188,7 +3389,7 @@ final class Field {
 	 * Sets empty-state text for searchable choice controls.
 	 *
 	 * @param string $text Text shown when search returns no options.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function noResultsText(string $text): self {
 		return $this->meta(['no_results_text'=>trim($text)]);
@@ -3198,7 +3399,7 @@ final class Field {
 	 * Controls whether the renderer may use native browser widgets.
 	 *
 	 * @param bool $native Whether native browser UI is allowed.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function native(bool $native=true): self {
 		return $this->meta(['native'=>$native]);
@@ -3211,7 +3412,7 @@ final class Field {
 	 * browser autocomplete disabled.
 	 *
 	 * @param string|array $autocomplete Browser token or suggestion definitions.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function autocomplete(string|array $autocomplete): self {
 		if(is_array($autocomplete)){
@@ -3224,7 +3425,7 @@ final class Field {
 	 * Converts the field into a combobox with optional suggestions.
 	 *
 	 * @param array<int|string, array<string, mixed>|string> $suggestions Suggestion option definitions.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function comboBox(array $suggestions=[]): self {
 		$field=$this->type('combobox')->meta(['autocomplete'=>'off']);
@@ -3238,7 +3439,7 @@ final class Field {
 	 * the key as the value. Array entries may provide explicit `value` and `label`.
 	 *
 	 * @param array<int|string, array<string, mixed>|string> $suggestions Suggestion option definitions.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function suggestions(array $suggestions): self {
 		$normalized=[];
@@ -3262,7 +3463,7 @@ final class Field {
 	 * Alias for suggestions().
 	 *
 	 * @param array<int|string, array<string, mixed>|string> $suggestions Suggestion option definitions.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function datalist(array $suggestions): self {
 		return $this->suggestions($suggestions);
@@ -3276,7 +3477,7 @@ final class Field {
 	 *
 	 * @param string $mask Renderer mask pattern.
 	 * @param bool $submitUnmasked Whether submitted values should remove mask literals.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function mask(string $mask, bool $submitUnmasked=false): self {
 		return $this->meta([
@@ -3290,7 +3491,7 @@ final class Field {
 	 *
 	 *
 	 * @param ?string $placeholder Placeholder.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function maskPlaceholder(?string $placeholder=null): self {
 		return $this->meta(['mask_placeholder'=>$placeholder===null ? true : trim($placeholder)]);
@@ -3300,7 +3501,7 @@ final class Field {
 	 * Hides or restores the mask placeholder.
 	 *
 	 * @param bool $hidden Whether placeholder characters should be hidden.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function hideMaskPlaceholder(bool $hidden=true): self {
 		return $this->meta(['mask_placeholder'=>$hidden ? false : true]);
@@ -3310,7 +3511,7 @@ final class Field {
 	 * Requests normalized values from masked inputs.
 	 *
 	 * @param bool $unmasked Whether submitted values should remove mask literals.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function submitUnmasked(bool $unmasked=true): self {
 		return $this->meta(['mask_submit_normalized'=>$unmasked]);
@@ -3320,7 +3521,7 @@ final class Field {
 	 * Requests visible masked values from masked inputs.
 	 *
 	 * @param bool $masked Whether submitted values should retain mask literals.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function submitMasked(bool $masked=true): self {
 		return $this->submitUnmasked(!$masked);
@@ -3334,7 +3535,7 @@ final class Field {
 	 *
 	 * @param string $rule Formatter rule name.
 	 * @param array<string, mixed> $options Formatter options, including optional `on` event.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function format(string $rule, array $options=[]): self {
 		$rule=self::normalizeName($rule);
@@ -3352,7 +3553,7 @@ final class Field {
 	 *
 	 * @param string $rule Formatter or validation rule name.
 	 * @param array<string, mixed> $options Rule-specific options.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function formatRule(string $rule, array $options=[]): self {
 		return $this->format($rule, $options);
@@ -3363,7 +3564,7 @@ final class Field {
 	 *
 	 * @param string $rule Formatter rule name.
 	 * @param array<string, mixed> $options Formatter options, including optional `on` event.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function autoFormat(string $rule, array $options=[]): self {
 		return $this->format($rule, $options);
@@ -3374,7 +3575,7 @@ final class Field {
 	 *
 	 *
 	 * @param ?string $placeholder Placeholder.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function formatPlaceholder(?string $placeholder=null): self {
 		return $this->meta(['format_placeholder'=>$placeholder===null ? true : trim($placeholder)]);
@@ -3384,7 +3585,7 @@ final class Field {
 	 * Hides or restores the format placeholder.
 	 *
 	 * @param bool $hidden Whether format placeholder text should be hidden.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function hideFormatPlaceholder(bool $hidden=true): self {
 		return $this->meta(['format_placeholder'=>$hidden ? false : true]);
@@ -3394,7 +3595,7 @@ final class Field {
 	 * Sets the event that triggers automatic formatting.
 	 *
 	 * @param string $event Formatting trigger event name.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function formatOn(string $event): self {
 		return $this->meta(['format_event'=>self::normalizeFormatEvent($event)]);
@@ -3410,7 +3611,7 @@ final class Field {
 	 * @param string $rule Formatter rule triggered by the button.
 	 * @param string $position Side-button position, usually append or prepend.
 	 * @param array<string, mixed> $options Button metadata overrides.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function formatButton(string $label, string $rule, string $position='append', array $options=[]): self {
 		$rule=self::normalizeName($rule);
@@ -3426,7 +3627,7 @@ final class Field {
 	 *
 	 * @param string $label Button label.
 	 * @param string $position Side-button position, usually append or prepend.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function uppercaseButton(string $label='Upper', string $position='append'): self {
 		return $this->formatButton($label, 'uppercase', $position, ['icon'=>'upper']);
@@ -3437,7 +3638,7 @@ final class Field {
 	 *
 	 * @param string $label Button label.
 	 * @param string $position Side-button position, usually append or prepend.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function lowercaseButton(string $label='Lower', string $position='append'): self {
 		return $this->formatButton($label, 'lowercase', $position, ['icon'=>'lower']);
@@ -3448,7 +3649,7 @@ final class Field {
 	 *
 	 * @param string $label Button label.
 	 * @param string $position Side-button position, usually append or prepend.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function titleCaseButton(string $label='Title', string $position='append'): self {
 		return $this->formatButton($label, 'title_case', $position, ['icon'=>'title']);
@@ -3459,7 +3660,7 @@ final class Field {
 	 *
 	 * @param string $label Button label.
 	 * @param string $position Side-button position, usually append or prepend.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function trimButton(string $label='Trim', string $position='append'): self {
 		return $this->formatButton($label, 'trim', $position, ['icon'=>'trim']);
@@ -3469,7 +3670,7 @@ final class Field {
 	 * Adds a fixed country code to formatter options.
 	 *
 	 * @param string $country Country code consumed by locale-aware formatters.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function formatCountry(string $country): self {
 		$country=strtoupper(trim($country));
@@ -3482,7 +3683,7 @@ final class Field {
 	 * Empty normalized field names leave the field unchanged.
 	 *
 	 * @param string $field Field name that contains the country code.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function formatCountryField(string $field='country'): self {
 		$field=self::normalizeName($field);
@@ -3496,7 +3697,7 @@ final class Field {
 	 * Adds a fixed subdivision code to formatter options.
 	 *
 	 * @param string $subdivision Subdivision code consumed by locale-aware formatters.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function formatSubdivision(string $subdivision): self {
 		$subdivision=strtoupper(trim($subdivision));
@@ -3509,7 +3710,7 @@ final class Field {
 	 * Empty normalized field names leave the field unchanged.
 	 *
 	 * @param string $field Field name that contains the subdivision code.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function formatSubdivisionField(string $field='subdivision'): self {
 		$field=self::normalizeName($field);
@@ -3524,7 +3725,7 @@ final class Field {
 	 *
 	 * @param string $countryField Field name that contains the country code.
 	 * @param ?string $subdivisionField Field name that contains the subdivision code.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function formatLocaleFields(string $countryField='country', ?string $subdivisionField=null): self {
 		$field=$this->formatCountryField($countryField);
@@ -3537,7 +3738,7 @@ final class Field {
 	 * Empty normalized field names leave the field unchanged.
 	 *
 	 * @param string $field Field name used as the formatter source.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function sourceField(string $field): self {
 		$field=self::normalizeName($field);
@@ -3551,7 +3752,7 @@ final class Field {
 	 * Alias for sourceField().
 	 *
 	 * @param string $field Field name used as the formatter source.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function fromField(string $field): self {
 		return $this->sourceField($field);
@@ -3561,7 +3762,7 @@ final class Field {
 	 * Alias for formatOn() used by masked inputs.
 	 *
 	 * @param string $event Formatting trigger event name.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function maskOn(string $event): self {
 		return $this->formatOn($event);
@@ -3577,7 +3778,7 @@ final class Field {
 	 * @param string $currency ISO currency code shown as the prepended label.
 	 * @param int $decimals Decimal precision used for step and formatting metadata.
 	 * @param string $event Event that triggers currency formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function currency(string $currency='CAD', int $decimals=2, string $event='blur'): self {
 		$decimals=max(0, min(8, $decimals));
@@ -3595,7 +3796,7 @@ final class Field {
 	 * @param string $currency ISO currency code shown as the prepended label.
 	 * @param int $decimals Decimal precision used for step and formatting metadata.
 	 * @param string $event Event that triggers currency formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function money(string $currency='CAD', int $decimals=2, string $event='blur'): self {
 		return $this->currency($currency, $decimals, $event);
@@ -3609,7 +3810,7 @@ final class Field {
 	 *
 	 * @param int $decimals Decimal precision used for step and formatting metadata.
 	 * @param string $event Event that triggers percent formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function percent(int $decimals=1, string $event='blur'): self {
 		$decimals=max(0, min(8, $decimals));
@@ -3626,7 +3827,7 @@ final class Field {
 	 *
 	 * @param int $decimals Decimal precision used for step and formatting metadata.
 	 * @param string $event Event that triggers percent formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function percentage(int $decimals=1, string $event='blur'): self {
 		return $this->percent($decimals, $event);
@@ -3636,7 +3837,7 @@ final class Field {
 	 * Converts the field into an international phone input.
 	 *
 	 * @param string $event Event that triggers phone formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function phone(string $event='input'): self {
 		return $this->type('tel')->inputMode('tel')->autocomplete('tel')->format('phone_international', ['on'=>$event]);
@@ -3646,7 +3847,7 @@ final class Field {
 	 * Alias for phone().
 	 *
 	 * @param string $event Event that triggers phone formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function phoneNumber(string $event='input'): self {
 		return $this->phone($event);
@@ -3656,7 +3857,7 @@ final class Field {
 	 * Alias for phone().
 	 *
 	 * @param string $event Event that triggers phone formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function internationalPhone(string $event='input'): self {
 		return $this->phone($event);
@@ -3666,7 +3867,7 @@ final class Field {
 	 * Converts the field into a US phone input.
 	 *
 	 * @param string $event Event that triggers phone formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function phoneUs(string $event='input'): self {
 		return $this->type('tel')->inputMode('tel')->autocomplete('tel')->format('phone_us', ['on'=>$event, 'country'=>'US']);
@@ -3676,7 +3877,7 @@ final class Field {
 	 * Converts the field into a Canadian phone input.
 	 *
 	 * @param string $event Event that triggers phone formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function phoneCa(string $event='input'): self {
 		return $this->type('tel')->inputMode('tel')->autocomplete('tel')->format('phone_ca', ['on'=>$event, 'country'=>'CA']);
@@ -3687,7 +3888,7 @@ final class Field {
 	 *
 	 * @param string $country Country code passed to phone formatting options.
 	 * @param string $event Event that triggers phone formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function phoneForCountry(string $country, string $event='input'): self {
 		return $this->phone($event)->formatCountry($country);
@@ -3698,7 +3899,7 @@ final class Field {
 	 *
 	 * @param string $field Field name that contains the country code.
 	 * @param string $event Event that triggers phone formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function phoneCountryField(string $field='country', string $event='input'): self {
 		return $this->phone($event)->formatCountryField($field);
@@ -3708,7 +3909,7 @@ final class Field {
 	 * Converts the field into an email input with email formatting.
 	 *
 	 * @param string $event Event that triggers email formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function email(string $event='blur'): self {
 		return $this->type('email')->inputMode('email')->autocomplete('email')->format('email', ['on'=>$event]);
@@ -3718,7 +3919,7 @@ final class Field {
 	 * Alias for email().
 	 *
 	 * @param string $event Event that triggers email formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function emailAddress(string $event='blur'): self {
 		return $this->email($event);
@@ -3728,7 +3929,7 @@ final class Field {
 	 * Converts the field into a URL input with URL formatting.
 	 *
 	 * @param string $event Event that triggers URL formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function url(string $event='blur'): self {
 		return $this->type('url')->inputMode('url')->format('url', ['on'=>$event]);
@@ -3738,7 +3939,7 @@ final class Field {
 	 * Alias for url().
 	 *
 	 * @param string $event Event that triggers URL formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function urlAddress(string $event='blur'): self {
 		return $this->url($event);
@@ -3748,7 +3949,7 @@ final class Field {
 	 * Applies map URL formatting to a URL-mode input.
 	 *
 	 * @param string $event Event that triggers map URL formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function mapUrl(string $event='blur'): self {
 		return $this->inputMode('url')->format('map_url', ['on'=>$event]);
@@ -3758,7 +3959,7 @@ final class Field {
 	 * Alias for mapUrl().
 	 *
 	 * @param string $event Event that triggers map URL formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function mapsUrl(string $event='blur'): self {
 		return $this->mapUrl($event);
@@ -3768,7 +3969,7 @@ final class Field {
 	 * Applies domain formatting to a URL-mode input.
 	 *
 	 * @param string $event Event that triggers domain formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function domain(string $event='blur'): self {
 		return $this->inputMode('url')->autocomplete('url')->format('domain', ['on'=>$event]);
@@ -3778,7 +3979,7 @@ final class Field {
 	 * Alias for domain().
 	 *
 	 * @param string $event Event that triggers domain formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function hostname(string $event='blur'): self {
 		return $this->domain($event);
@@ -3788,7 +3989,7 @@ final class Field {
 	 * Applies timezone formatting to a text-mode input.
 	 *
 	 * @param string $event Event that triggers timezone formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function timezone(string $event='blur'): self {
 		return $this->inputMode('text')->format('timezone', ['on'=>$event]);
@@ -3798,7 +3999,7 @@ final class Field {
 	 * Applies locale formatting to a text-mode input.
 	 *
 	 * @param string $event Event that triggers locale formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function locale(string $event='blur'): self {
 		return $this->inputMode('text')->format('locale', ['on'=>$event]);
@@ -3812,7 +4013,7 @@ final class Field {
 	 *
 	 * @param string $event Event that triggers JSON formatting.
 	 * @param bool $pretty Whether formatter output should use indentation.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function json(string $event='blur', bool $pretty=true): self {
 		return $this
@@ -3827,7 +4028,7 @@ final class Field {
 	 *
 	 * @param string $event Event that triggers JSON formatting.
 	 * @param bool $pretty Whether formatter output should use indentation.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function jsonText(string $event='blur', bool $pretty=true): self {
 		return $this->json($event, $pretty);
@@ -3840,7 +4041,7 @@ final class Field {
 	 * that support them.
 	 *
 	 * @param bool $preview Whether markdown preview UI should be enabled.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function markdown(bool $preview=true): self {
 		return $this
@@ -3854,11 +4055,12 @@ final class Field {
 	/**
 	 * Converts the field into an HTML editor.
 	 *
-	 * Preview metadata records whether HTML previews are enabled; it does not
-	 * sanitize submitted markup.
+	 * Preview metadata records whether HTML previews are enabled. Submitted markup
+	 * is also enforced by the effective server-side editor profile during validation
+	 * and again after dehydration.
 	 *
 	 * @param bool $preview Whether HTML preview UI should be enabled.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function htmlEditor(bool $preview=true): self {
 		return $this
@@ -3873,7 +4075,7 @@ final class Field {
 	 * Converts the field into a rich text editor.
 	 *
 	 * @param bool $preview Whether rendered HTML preview UI should be enabled.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function richText(bool $preview=true): self {
 		return $this
@@ -3887,7 +4089,7 @@ final class Field {
 	 * Converts the field into the rich-editor renderer variant.
 	 *
 	 * @param bool $preview Whether rendered HTML preview UI should be enabled.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function richEditor(bool $preview=true): self {
 		return $this->richText($preview)->type('rich_editor')->editor('rich_editor');
@@ -3901,7 +4103,7 @@ final class Field {
 	 *
 	 * @param string $language Syntax language requested by the editor.
 	 * @param bool $preview Whether code preview UI should be enabled.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function codeEditor(string $language='plain', bool $preview=true): self {
 		return $this
@@ -3918,7 +4120,7 @@ final class Field {
 	 *
 	 * @param string $language Syntax language requested by the editor.
 	 * @param bool $preview Whether code preview UI should be enabled.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function code(string $language='plain', bool $preview=true): self {
 		return $this->codeEditor($language, $preview);
@@ -3931,7 +4133,7 @@ final class Field {
 	 * back to `plain`.
 	 *
 	 * @param string $language Syntax language requested by the editor.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function codeLanguage(string $language): self {
 		$language=strtolower(trim($language));
@@ -3944,7 +4146,7 @@ final class Field {
 	 * Applies MIME type formatting to a text-mode input.
 	 *
 	 * @param string $event Event that triggers MIME type formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function mimeType(string $event='blur'): self {
 		return $this->inputMode('text')->format('mime_type', ['on'=>$event]);
@@ -3954,7 +4156,7 @@ final class Field {
 	 * Alias for mimeType().
 	 *
 	 * @param string $event Event that triggers MIME type formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function contentType(string $event='blur'): self {
 		return $this->mimeType($event);
@@ -3964,7 +4166,7 @@ final class Field {
 	 * Applies semantic-version formatting to a text-mode input.
 	 *
 	 * @param string $event Event that triggers semantic-version formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function semver(string $event='blur'): self {
 		return $this->inputMode('text')->format('semver', ['on'=>$event]);
@@ -3974,7 +4176,7 @@ final class Field {
 	 * Alias for semver().
 	 *
 	 * @param string $event Event that triggers semantic-version formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function semanticVersion(string $event='blur'): self {
 		return $this->semver($event);
@@ -3984,7 +4186,7 @@ final class Field {
 	 * Applies cron-expression formatting to a text-mode input.
 	 *
 	 * @param string $event Event that triggers cron-expression formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function cronExpression(string $event='blur'): self {
 		return $this->inputMode('text')->format('cron_expression', ['on'=>$event]);
@@ -3994,7 +4196,7 @@ final class Field {
 	 * Alias for cronExpression().
 	 *
 	 * @param string $event Event that triggers cron-expression formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function cron(string $event='blur'): self {
 		return $this->cronExpression($event);
@@ -4004,7 +4206,7 @@ final class Field {
 	 * Applies language-code formatting to a text-mode input.
 	 *
 	 * @param string $event Event that triggers language-code formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function languageCode(string $event='blur'): self {
 		return $this->inputMode('text')->format('language_code', ['on'=>$event]);
@@ -4014,7 +4216,7 @@ final class Field {
 	 * Alias for languageCode().
 	 *
 	 * @param string $event Event that triggers language-code formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function isoLanguage(string $event='blur'): self {
 		return $this->languageCode($event);
@@ -4024,7 +4226,7 @@ final class Field {
 	 * Applies country-code formatting to a text-mode input.
 	 *
 	 * @param string $event Event that triggers country-code formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function countryCode(string $event='blur'): self {
 		return $this->inputMode('text')->format('country_code', ['on'=>$event]);
@@ -4034,7 +4236,7 @@ final class Field {
 	 * Alias for countryCode().
 	 *
 	 * @param string $event Event that triggers country-code formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function isoCountry(string $event='blur'): self {
 		return $this->countryCode($event);
@@ -4044,7 +4246,7 @@ final class Field {
 	 * Applies subdivision-code formatting to a text-mode input.
 	 *
 	 * @param string $event Event that triggers subdivision-code formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function subdivisionCode(string $event='blur'): self {
 		return $this->inputMode('text')->format('subdivision_code', ['on'=>$event]);
@@ -4054,7 +4256,7 @@ final class Field {
 	 * Alias for subdivisionCode().
 	 *
 	 * @param string $event Event that triggers subdivision-code formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function regionCode(string $event='blur'): self {
 		return $this->subdivisionCode($event);
@@ -4065,7 +4267,7 @@ final class Field {
 	 *
 	 * @param string $country Country code used by subdivision formatting.
 	 * @param string $event Event that triggers subdivision-code formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function subdivisionCodeForCountry(string $country, string $event='blur'): self {
 		return $this->subdivisionCode($event)->formatCountry($country);
@@ -4076,7 +4278,7 @@ final class Field {
 	 *
 	 * @param string $field Field name that contains the country code.
 	 * @param string $event Event that triggers subdivision-code formatting.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function subdivisionCodeCountryField(string $field='country', string $event='blur'): self {
 		return $this->subdivisionCode($event)->formatCountryField($field);
@@ -4087,7 +4289,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function currencyCode(string $event='blur'): self {
 		return $this->inputMode('text')->format('currency_code', ['on'=>$event]);
@@ -4098,7 +4300,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function isoCurrency(string $event='blur'): self {
 		return $this->currencyCode($event);
@@ -4109,7 +4311,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function ipAddress(string $event='blur'): self {
 		return $this->inputMode('text')->format('ip_address', ['on'=>$event]);
@@ -4120,7 +4322,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function ip(string $event='blur'): self {
 		return $this->ipAddress($event);
@@ -4131,7 +4333,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function ipv4(string $event='blur'): self {
 		return $this->inputMode('decimal')->format('ipv4', ['on'=>$event]);
@@ -4142,7 +4344,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function ipv6(string $event='blur'): self {
 		return $this->inputMode('text')->format('ipv6', ['on'=>$event]);
@@ -4153,7 +4355,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function macAddress(string $event='input'): self {
 		return $this->inputMode('text')->format('mac_address', ['on'=>$event]);
@@ -4164,7 +4366,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function mac(string $event='input'): self {
 		return $this->macAddress($event);
@@ -4175,7 +4377,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function uuid(string $event='blur'): self {
 		return $this->inputMode('text')->format('uuid', ['on'=>$event]);
@@ -4186,7 +4388,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function ulid(string $event='blur'): self {
 		return $this->inputMode('text')->format('ulid', ['on'=>$event]);
@@ -4197,7 +4399,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function hexColor(string $event='input'): self {
 		return $this->inputMode('text')->format('hex_color', ['on'=>$event]);
@@ -4208,7 +4410,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function colorHex(string $event='input'): self {
 		return $this->hexColor($event);
@@ -4219,7 +4421,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $default Default value stored on the field manifest.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function color(string $default='#000000'): self {
 		$default=self::normalizeHexColorText($default);
@@ -4234,7 +4436,7 @@ final class Field {
 	 *
 	 *
 	 * @param bool $enabled Whether the manifest flag should be enabled.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function colorSwatch(bool $enabled=true): self {
 		return $this->meta(['color_swatch'=>$enabled]);
@@ -4245,7 +4447,7 @@ final class Field {
 	 *
 	 *
 	 * @param bool $hidden Whether the renderer feature should be hidden.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function hideColorSwatch(bool $hidden=true): self {
 		return $this->colorSwatch(!$hidden);
@@ -4257,7 +4459,7 @@ final class Field {
 	 *
 	 * @param int $decimals Decimal precision stored for formatter metadata.
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function latitude(int $decimals=6, string $event='blur'): self {
 		$decimals=max(0, min(10, $decimals));
@@ -4276,7 +4478,7 @@ final class Field {
 	 *
 	 * @param int $decimals Decimal precision stored for formatter metadata.
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function longitude(int $decimals=6, string $event='blur'): self {
 		$decimals=max(0, min(10, $decimals));
@@ -4295,7 +4497,7 @@ final class Field {
 	 *
 	 * @param int $decimals Decimal precision stored for formatter metadata.
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function coordinates(int $decimals=6, string $event='blur'): self {
 		$decimals=max(0, min(10, $decimals));
@@ -4310,7 +4512,7 @@ final class Field {
 	 *
 	 * @param int $decimals Decimal precision stored for formatter metadata.
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function latLng(int $decimals=6, string $event='blur'): self {
 		return $this->coordinates($decimals, $event);
@@ -4322,7 +4524,7 @@ final class Field {
 	 *
 	 * @param int $decimals Decimal precision stored for formatter metadata.
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function lngLat(int $decimals=6, string $event='blur'): self {
 		$decimals=max(0, min(10, $decimals));
@@ -4337,7 +4539,7 @@ final class Field {
 	 *
 	 * @param string $country Country code used by locale-aware formatting.
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function postalCode(string $country='CA', string $event='input'): self {
 		$country=strtoupper(trim($country));
@@ -4362,7 +4564,7 @@ final class Field {
 	 *
 	 * @param string $country Country code used by locale-aware formatting.
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function postalCodeForCountry(string $country, string $event='input'): self {
 		return $this->postalCode($country, $event);
@@ -4374,7 +4576,7 @@ final class Field {
 	 *
 	 * @param string $field Related field name used by validation or formatting metadata.
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function postalCodeCountryField(string $field='country', string $event='input'): self {
 		return $this->inputMode('text')->autocomplete('postal-code')->format('postal_code', ['on'=>$event, 'country_field'=>self::normalizeName($field)]);
@@ -4386,7 +4588,7 @@ final class Field {
 	 *
 	 * @param string $field Related field name used by validation or formatting metadata.
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function postalCodeSubdivisionField(string $field='subdivision', string $event='input'): self {
 		return $this->inputMode('text')->autocomplete('postal-code')->format('postal_code', ['on'=>$event, 'subdivision_field'=>self::normalizeName($field)]);
@@ -4399,7 +4601,7 @@ final class Field {
 	 * @param string $countryField Field name that contains the country code.
 	 * @param ?string $subdivisionField SubdivisionField.
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function postalCodeLocaleFields(string $countryField='country', ?string $subdivisionField='subdivision', string $event='input'): self {
 		$options=['on'=>$event, 'country_field'=>self::normalizeName($countryField)];
@@ -4414,7 +4616,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function zipCode(string $event='input'): self {
 		return $this->postalCode('US', $event);
@@ -4426,7 +4628,7 @@ final class Field {
 	 *
 	 * @param string $field Related field name used by validation or formatting metadata.
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function zipCodeCountryField(string $field='country', string $event='input'): self {
 		return $this->postalCodeCountryField($field, $event);
@@ -4437,7 +4639,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function ssn(string $event='input'): self {
 		return $this->inputMode('numeric')->mask('999-99-9999', true)->formatOn($event);
@@ -4448,7 +4650,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function ein(string $event='input'): self {
 		return $this->inputMode('numeric')->mask('99-9999999', true)->formatOn($event);
@@ -4460,7 +4662,7 @@ final class Field {
 	 *
 	 * @param int $length Character length used for validation and renderer metadata.
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function oneTimeCode(int $length=6, string $event='input'): self {
 		$length=max(1, min(12, $length));
@@ -4478,7 +4680,7 @@ final class Field {
 	 *
 	 * @param int $length Character length used for validation and renderer metadata.
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function verificationCode(int $length=6, string $event='input'): self {
 		return $this->oneTimeCode($length, $event);
@@ -4490,7 +4692,7 @@ final class Field {
 	 *
 	 * @param int $length Character length used for validation and renderer metadata.
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function otp(int $length=6, string $event='input'): self {
 		return $this->oneTimeCode($length, $event);
@@ -4502,7 +4704,7 @@ final class Field {
 	 *
 	 * @param int $length Character length used for validation and renderer metadata.
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function pinCode(int $length=4, string $event='input'): self {
 		return $this->oneTimeCode($length, $event);
@@ -4513,7 +4715,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function creditCard(string $event='input'): self {
 		return $this->inputMode('numeric')->format('credit_card', ['on'=>$event])->appendButton('Copy', 'copy', ['icon'=>'copy']);
@@ -4524,7 +4726,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function creditCardExpiry(string $event='input'): self {
 		return $this->inputMode('numeric')->format('credit_card_expiry', ['on'=>$event]);
@@ -4535,7 +4737,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function cardExpiry(string $event='input'): self {
 		return $this->creditCardExpiry($event);
@@ -4546,7 +4748,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function cardCvc(string $event='input'): self {
 		return $this->inputMode('numeric')->format('card_cvc', ['on'=>$event]);
@@ -4557,7 +4759,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function cvc(string $event='input'): self {
 		return $this->cardCvc($event);
@@ -4568,7 +4770,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function cvv(string $event='input'): self {
 		return $this->cardCvc($event);
@@ -4579,7 +4781,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function iban(string $event='input'): self {
 		return $this->format('iban', ['on'=>$event]);
@@ -4590,7 +4792,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function slug(string $event='blur'): self {
 		return $this->inputMode('text')->format('slug', ['on'=>$event])->appendButton('Slug', 'slug', ['icon'=>'slug']);
@@ -4602,7 +4804,7 @@ final class Field {
 	 *
 	 * @param string $field Related field name used by validation or formatting metadata.
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function slugFrom(string $field, string $event='input'): self {
 		$field=self::normalizeName($field);
@@ -4617,7 +4819,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function uppercase(string $event='blur'): self {
 		return $this->format('uppercase', ['on'=>$event]);
@@ -4628,7 +4830,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function lowercase(string $event='blur'): self {
 		return $this->format('lowercase', ['on'=>$event]);
@@ -4639,7 +4841,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function titleCase(string $event='blur'): self {
 		return $this->format('title_case', ['on'=>$event]);
@@ -4650,7 +4852,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function sentenceCase(string $event='blur'): self {
 		return $this->format('sentence_case', ['on'=>$event]);
@@ -4661,7 +4863,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function snakeCase(string $event='blur'): self {
 		return $this->format('snake_case', ['on'=>$event]);
@@ -4672,7 +4874,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function kebabCase(string $event='blur'): self {
 		return $this->format('kebab_case', ['on'=>$event]);
@@ -4683,7 +4885,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function camelCase(string $event='blur'): self {
 		return $this->format('camel_case', ['on'=>$event]);
@@ -4694,7 +4896,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function trimmed(string $event='blur'): self {
 		return $this->format('trim', ['on'=>$event]);
@@ -4705,7 +4907,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function digits(string $event='input'): self {
 		return $this->inputMode('numeric')->format('digits', ['on'=>$event]);
@@ -4716,7 +4918,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function alpha(string $event='input'): self {
 		return $this->format('alpha', ['on'=>$event]);
@@ -4727,7 +4929,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $event Renderer event that triggers formatting or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function alphanumeric(string $event='input'): self {
 		return $this->format('alphanumeric', ['on'=>$event]);
@@ -4739,7 +4941,7 @@ final class Field {
 	 *
 	 * @param string $label Human-facing control label.
 	 * @param bool $normalized Whether submitted/copied values should use normalized text.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function copyButton(string $label='Copy', bool $normalized=false): self {
 		return $this->appendButton($label, 'copy', ['icon'=>'copy', 'copy_normalized'=>$normalized]);
@@ -4750,7 +4952,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $label Human-facing control label.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function copyNormalizedButton(string $label='Copy'): self {
 		return $this->copyButton($label, true);
@@ -4761,7 +4963,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $label Human-facing control label.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function clearButton(string $label='Clear'): self {
 		return $this->appendButton($label, 'clear', ['icon'=>'x']);
@@ -4772,7 +4974,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $label Human-facing control label.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function revealButton(string $label='Show'): self {
 		return $this->appendButton($label, 'toggle_password', ['icon'=>'eye']);
@@ -4784,7 +4986,7 @@ final class Field {
 	 *
 	 * @param string $label Human-facing control label.
 	 * @param string $position Button or counter position, usually append or prepend.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function todayButton(string $label='Today', string $position='append'): self {
 		return $this->sideButton($position, $label, 'today', ['icon'=>'today']);
@@ -4796,7 +4998,7 @@ final class Field {
 	 *
 	 * @param string $label Human-facing control label.
 	 * @param string $position Button or counter position, usually append or prepend.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function nowButton(string $label='Now', string $position='append'): self {
 		return $this->sideButton($position, $label, 'now', ['icon'=>'now']);
@@ -4810,7 +5012,7 @@ final class Field {
 	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
 	 * @param string $position Button or counter position, usually append or prepend.
 	 * @param array<string, mixed> $options Field configuration options for the operation.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function setButton(string $label, mixed $value, string $position='append', array $options=[]): self {
 		if(is_scalar($value) || $value===null){
@@ -4825,7 +5027,7 @@ final class Field {
 	 *
 	 * @param string $label Human-facing control label.
 	 * @param string $position Button or counter position, usually append or prepend.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function incrementButton(string $label='+', string $position='append'): self {
 		return $this->sideButton($position, $label, 'increment', ['icon'=>'plus']);
@@ -4837,7 +5039,7 @@ final class Field {
 	 *
 	 * @param string $label Human-facing control label.
 	 * @param string $position Button or counter position, usually append or prepend.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function decrementButton(string $label='-', string $position='prepend'): self {
 		return $this->sideButton($position, $label, 'decrement', ['icon'=>'minus']);
@@ -4849,7 +5051,7 @@ final class Field {
 	 *
 	 * @param string $decrementLabel Label shown on the decrement stepper button.
 	 * @param string $incrementLabel Label shown on the increment stepper button.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function stepperButtons(string $decrementLabel='-', string $incrementLabel='+'): self {
 		return $this->decrementButton($decrementLabel)->incrementButton($incrementLabel);
@@ -4860,7 +5062,7 @@ final class Field {
 	 *
 	 *
 	 * @param bool $revealable Whether the password value may be revealed by the UI.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function revealable(bool $revealable=true): self {
 		return $this->meta(['password_reveal'=>$revealable]);
@@ -4871,7 +5073,7 @@ final class Field {
 	 *
 	 *
 	 * @param bool $revealable Whether the password value may be revealed by the UI.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function passwordReveal(bool $revealable=true): self {
 		return $this->revealable($revealable);
@@ -4882,7 +5084,7 @@ final class Field {
 	 *
 	 *
 	 * @param bool $normalized Whether submitted/copied values should use normalized text.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function submitNormalized(bool $normalized=true): self {
 		return $this->meta(['submit_normalized'=>$normalized]);
@@ -4893,7 +5095,7 @@ final class Field {
 	 *
 	 *
 	 * @param bool $formatted Whether submitted values should retain formatted text.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function submitFormatted(bool $formatted=true): self {
 		return $this->meta(['submit_normalized'=>!$formatted]);
@@ -4910,7 +5112,7 @@ final class Field {
 	 * @param string $label Human-facing button label.
 	 * @param string $action Normalized action name dispatched by the Panel field renderer.
 	 * @param array<string, mixed> $options Optional tone, icon, URL, target, attributes, or value metadata.
-	 * @return self Mutated field definition.
+	 * @return self<TRecord,TValue,TState> Mutated field definition.
 	 */
 	private function sideButton(string $position, string $label, string $action, array $options=[]): self {
 		return self::normalizeName($position)==='prepend'
@@ -4923,7 +5125,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $mode Browser inputmode token requested by the field.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function inputMode(string $mode): self {
 		$mode=strtolower(trim($mode));
@@ -4936,7 +5138,7 @@ final class Field {
 	 *
 	 *
 	 * @param int $length Character length used for validation and renderer metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function minLength(int $length): self {
 		return $this->meta(['min_length'=>max(0, $length)]);
@@ -4947,7 +5149,7 @@ final class Field {
 	 *
 	 *
 	 * @param int $length Character length used for validation and renderer metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function maxLength(int $length): self {
 		return $this->meta(['max_length'=>max(1, $length)]);
@@ -4958,7 +5160,7 @@ final class Field {
 	 *
 	 *
 	 * @param int $length Character length used for validation and renderer metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function length(int $length): self {
 		$length=max(1, $length);
@@ -4974,7 +5176,7 @@ final class Field {
 	 *
 	 *
 	 * @param int $length Character length used for validation and renderer metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function exactLength(int $length): self {
 		return $this->length($length);
@@ -4986,7 +5188,7 @@ final class Field {
 	 *
 	 * @param int $min Lower bound used by validation or renderer metadata.
 	 * @param int $max Upper bound used by validation or renderer metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function lengthBetween(int $min, int $max): self {
 		$min=max(0, $min);
@@ -5006,7 +5208,7 @@ final class Field {
 	 *
 	 * @param int $min Lower bound used by validation or renderer metadata.
 	 * @param int $max Upper bound used by validation or renderer metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function betweenLength(int $min, int $max): self {
 		return $this->lengthBetween($min, $max);
@@ -5018,7 +5220,7 @@ final class Field {
 	 *
 	 * @param ?int $max Max.
 	 * @param string $position Button or counter position, usually append or prepend.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function characterCounter(?int $max=null, string $position='append'): self {
 		$meta=[
@@ -5038,7 +5240,7 @@ final class Field {
 	 *
 	 * @param ?int $max Max.
 	 * @param string $position Button or counter position, usually append or prepend.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function charCounter(?int $max=null, string $position='append'): self {
 		return $this->characterCounter($max, $position);
@@ -5050,7 +5252,7 @@ final class Field {
 	 *
 	 * @param ?int $max Max.
 	 * @param string $position Button or counter position, usually append or prepend.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function counter(?int $max=null, string $position='append'): self {
 		return $this->characterCounter($max, $position);
@@ -5061,7 +5263,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $pattern Pattern string stored for browser or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function pattern(string $pattern): self {
 		return $this->meta(['pattern'=>$pattern]);
@@ -5072,7 +5274,7 @@ final class Field {
 	 *
 	 *
 	 * @param bool $nullable Whether null/empty values should be allowed.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function nullable(bool $nullable=true): self {
 		$clone=$nullable ? $this->required(false)->rules('nullable') : clone $this;
@@ -5087,7 +5289,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $pattern Pattern string stored for browser or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function regex(string $pattern): self {
 		$pattern=trim($pattern);
@@ -5099,7 +5301,7 @@ final class Field {
 	 *
 	 *
 	 * @param bool $confirmed Whether the confirmation validation rule should be present.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function confirmed(bool $confirmed=true): self {
 		$clone=clone $this;
@@ -5112,7 +5314,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $field Related field name used by validation or formatting metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function same(string $field): self {
 		$field=self::normalizeName($field);
@@ -5124,7 +5326,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $field Related field name used by validation or formatting metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function different(string $field): self {
 		$field=self::normalizeName($field);
@@ -5136,7 +5338,7 @@ final class Field {
 	 *
 	 *
 	 * @param array|string $values Values.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function startsWith(array|string $values): self {
 		$values=self::normalizeRuleValues($values);
@@ -5148,7 +5350,7 @@ final class Field {
 	 *
 	 *
 	 * @param array|string $values Values.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function endsWith(array|string $values): self {
 		$values=self::normalizeRuleValues($values);
@@ -5161,7 +5363,7 @@ final class Field {
 	 *
 	 * @param bool $enabled Whether the manifest flag should be enabled.
 	 * @param ?string $mode Mode.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function preview(bool $enabled=true, ?string $mode=null): self {
 		$meta=['preview'=>$enabled];
@@ -5177,14 +5379,142 @@ final class Field {
 	 *
 	 * @param string $editor Editor mode stored for the renderer.
 	 * @param array<string, mixed> $options Field configuration options for the operation.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function editor(string $editor, array $options=[]): self {
 		$editor=self::normalizeName($editor);
-		return $this->meta([
-			'editor'=>$editor !== '' ? $editor : self::normalizeName($this->type),
+		$editor=$editor !== '' ? $editor : self::normalizeName($this->type);
+		$field=$this->meta([
+			'editor'=>$editor,
 			'editor_options'=>$options,
 		]);
+		return $field->editorProfile!==null ? $field->editorProfile($field->editorProfile->forMode($editor)) : $field;
+	}
+
+	/** Attaches a reusable editor package and its safe renderer manifest. */
+	public function editorProfile(?PanelEditorProfile $profile=null): self {
+		$profile ??=$this->resolvedEditorProfile();
+		$declared=$this->declaredEditorMode();
+		if($declared!==null){ $profile=$profile->forMode($declared); }
+		$clone=clone $this;
+		$clone->editorProfile=$profile;
+		$clone->meta['editor_profile']=$profile->manifest();
+		return $clone;
+	}
+
+	/** Configures a declarative toolbar without coupling Panel to a JS editor. */
+	public function editorToolbar(PanelEditorToolbar|array $toolbar): self {
+		$toolbar=is_array($toolbar) ? PanelEditorToolbar::fromArray($toolbar) : $toolbar;
+		return $this->editorProfile($this->resolvedEditorProfile()->toolbar($toolbar));
+	}
+
+	/** Adds a named editor plugin whose commands are dispatched as DOM events. */
+	public function editorPlugin(PanelEditorPlugin|string $plugin, array $options=[], array|string $commands=[]): self {
+		if(is_string($plugin)){ $plugin=PanelEditorPlugin::make($plugin)->options($options)->commands($commands); }
+		return $this->editorProfile($this->resolvedEditorProfile()->plugin($plugin));
+	}
+
+	/** Replaces the server-side rich-content allow-list policy. */
+	public function editorSanitizationPolicy(PanelEditorSanitizationPolicy|array $policy): self {
+		$policy=is_array($policy) ? PanelEditorSanitizationPolicy::fromArray($policy) : $policy;
+		return $this->editorProfile($this->resolvedEditorProfile()->sanitizationPolicy($policy));
+	}
+
+	public function editorSanitizer(?PanelEditorSanitizer $sanitizer=null): self { return $this->editorProfile($this->resolvedEditorProfile()->sanitizer($sanitizer ?? new PanelEditorHtmlSanitizer())); }
+	public function editorUploadAdapter(?PanelEditorUploadAdapter $adapter): self { return $this->editorProfile($this->resolvedEditorProfile()->uploadAdapter($adapter)); }
+	public function editorMediaAdapter(?PanelEditorMediaAdapter $adapter): self { return $this->editorProfile($this->resolvedEditorProfile()->mediaAdapter($adapter)); }
+	public function editorAssetProvider(?PanelEditorAssetProvider $provider, bool $allowImages=true): self { return $this->editorProfile($this->resolvedEditorProfile()->assetProvider($provider, $allowImages)); }
+	public function editorSyntaxAdapter(?PanelEditorSyntaxAdapter $adapter): self { return $this->editorProfile($this->resolvedEditorProfile()->syntaxAdapter($adapter)); }
+	public function editorBrowserAdapter(PanelEditorBrowserAdapter|array|null $adapter): self {
+		if(is_array($adapter)){ $adapter=PanelEditorBrowserAdapter::fromArray($adapter); }
+		return $this->editorProfile($this->resolvedEditorProfile()->browserAdapter($adapter));
+	}
+	public function editorBrowserSyntaxAdapter(PanelEditorBrowserAdapter|array|null $adapter): self {
+		if(is_array($adapter)){
+			if(!array_key_exists('kind', $adapter)){ $adapter['kind']=PanelEditorBrowserAdapter::KIND_SYNTAX; }
+			$adapter=PanelEditorBrowserAdapter::fromArray($adapter);
+		}
+		return $this->editorProfile($this->resolvedEditorProfile()->browserSyntaxAdapter($adapter));
+	}
+
+	/**
+	 * @param PanelEditorNormalizer|callable(string,PanelEditorContext=):PanelEditorContentResult|string|\Stringable $normalizer Normalizer implementation or callback receiving editor content and context.
+	 * @param array<string,mixed> $metadata Serializable adapter metadata.
+	 */
+	public function editorNormalizer(PanelEditorNormalizer|callable $normalizer, string $name='normalizer', array $metadata=[]): self {
+		if(is_callable($normalizer) && !$normalizer instanceof PanelEditorNormalizer){ $normalizer=new PanelEditorCallbackNormalizer($name, $normalizer, $metadata); }
+		return $this->editorProfile($this->resolvedEditorProfile()->normalizer($normalizer));
+	}
+
+	/**
+	 * @param PanelEditorValidator|callable(string,PanelEditorContext=):bool|string|\Stringable|list<string>|null $validator Validator implementation or callback receiving editor content and context.
+	 * @param array<string,mixed> $metadata Serializable adapter metadata.
+	 */
+	public function editorValidator(PanelEditorValidator|callable $validator, string $name='validator', array $metadata=[]): self {
+		if(is_callable($validator) && !$validator instanceof PanelEditorValidator){ $validator=new PanelEditorCallbackValidator($name, $validator, $metadata); }
+		return $this->editorProfile($this->resolvedEditorProfile()->validator($validator));
+	}
+
+	/** Returns the effective package, including secure defaults for legacy editors. */
+	public function effectiveEditorProfile(): PanelEditorProfile { return $this->resolvedEditorProfile(); }
+	public function editorProfileManifest(): array { return $this->resolvedEditorProfile()->manifest(); }
+
+	/** Applies normalization, URL validation, sanitization, and custom validators. */
+	public function normalizeEditorContent(string $content, mixed $record=null, ?PanelRequest $request=null, array $values=[], string $stage='validate'): PanelEditorContentResult {
+		$profile=$this->resolvedEditorProfile();
+		$context=PanelEditorContext::make($this->name, $profile->mode(), (string)($this->meta['code_language'] ?? 'plain'), $stage, $record, $request, $values);
+		return $profile->process($content, $context);
+	}
+
+	/** Validates an editor upload against the configured storage-neutral adapter. */
+	public function validateEditorUpload(array $upload, mixed $record=null, ?PanelRequest $request=null, array $values=[]): PanelEditorContentResult {
+		$profile=$this->resolvedEditorProfile();
+		$adapter=$profile->upload();
+		if($adapter===null || !$adapter->ready()){ return PanelEditorContentResult::reject('', 'The editor upload adapter is not ready.'); }
+		return $adapter->validateUpload($upload, PanelEditorContext::make($this->name, $profile->mode(), (string)($this->meta['code_language'] ?? 'plain'), 'upload', $record, $request, $values));
+	}
+
+	/** Applies the explicit media adapter to a candidate embedded reference. */
+	public function normalizeEditorMediaReference(string $url, mixed $record=null, ?PanelRequest $request=null, array $values=[]): ?string {
+		$profile=$this->resolvedEditorProfile();
+		$adapter=$profile->media();
+		return $adapter?->ready()===true ? $adapter->normalizeReference($url, PanelEditorContext::make($this->name, $profile->mode(), (string)($this->meta['code_language'] ?? 'plain'), 'media', $record, $request, $values)) : null;
+	}
+
+	/** Browses the configured editor asset provider with a trusted field context. */
+	public function browseEditorAssets(array $query=[], mixed $record=null, ?PanelRequest $request=null, array $values=[]): PanelEditorAssetPage {
+		$profile=$this->resolvedEditorProfile(); $provider=$profile->assets();
+		return $provider?->ready()===true ? $provider->browse($query, $this->editorAssetContext($profile, 'browse', $record, $request, $values)) : new PanelEditorAssetPage();
+	}
+
+	/** Resolves one scoped editor asset without exposing unauthorized existence. */
+	public function findEditorAsset(string $id, mixed $record=null, ?PanelRequest $request=null, array $values=[]): ?PanelEditorAsset {
+		$profile=$this->resolvedEditorProfile(); $provider=$profile->assets();
+		return $provider?->ready()===true ? $provider->findAsset($id, $this->editorAssetContext($profile, 'asset', $record, $request, $values)) : null;
+	}
+
+	/** Stores one validated editor asset through the configured provider. */
+	public function storeEditorAsset(array $upload, mixed $record=null, ?PanelRequest $request=null, array $values=[]): PanelEditorAssetResult {
+		$profile=$this->resolvedEditorProfile(); $provider=$profile->assets();
+		return $provider?->ready()===true ? $provider->storeAsset($upload, $this->editorAssetContext($profile, 'upload', $record, $request, $values)) : PanelEditorAssetResult::failure('provider_unavailable', 'The editor asset provider is unavailable.', 503);
+	}
+
+	/** Deletes one scoped editor asset when the provider and host policy allow it. */
+	public function deleteEditorAsset(string $id, mixed $record=null, ?PanelRequest $request=null, array $values=[]): PanelEditorAssetResult {
+		$profile=$this->resolvedEditorProfile(); $provider=$profile->assets();
+		return $provider?->ready()===true ? $provider->deleteAsset($id, $this->editorAssetContext($profile, 'delete', $record, $request, $values)) : PanelEditorAssetResult::failure('provider_unavailable', 'The editor asset provider is unavailable.', 503);
+	}
+
+	/** Mints a fresh delivery result without persisting expiring URLs in editor content. */
+	public function editorAssetDelivery(string $id, mixed $record=null, ?PanelRequest $request=null, array $values=[]): PanelEditorAssetResult {
+		$profile=$this->resolvedEditorProfile(); $provider=$profile->assets();
+		return $provider?->ready()===true ? $provider->delivery($id, $this->editorAssetContext($profile, 'delivery', $record, $request, $values)) : PanelEditorAssetResult::failure('provider_unavailable', 'The editor asset provider is unavailable.', 503);
+	}
+
+	/** Renders an escaped syntax-token stream or escaped plain code fallback. */
+	public function highlightEditorCode(string $code, string $language='plain', mixed $record=null, ?PanelRequest $request=null, array $values=[]): string {
+		$profile=$this->resolvedEditorProfile();
+		return $profile->highlightHtml($code, $language, PanelEditorContext::make($this->name, $profile->mode(), $language, 'highlight', $record, $request, $values));
 	}
 
 	/**
@@ -5192,7 +5522,7 @@ final class Field {
 	 *
 	 *
 	 * @param bool $clearable Whether the renderer may clear the current value.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function clearable(bool $clearable=true): self {
 		return $this->meta(['clearable'=>$clearable]);
@@ -5203,7 +5533,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $separator Separator used when parsing or joining repeated values.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function tagSeparator(string $separator): self {
 		return $this->meta(['tag_separator'=>$separator]);
@@ -5215,7 +5545,7 @@ final class Field {
 	 *
 	 * @param string $pairSeparator Separator between serialized key/value pairs.
 	 * @param string $keySeparator Separator between serialized keys and values.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function keyValueSeparators(string $pairSeparator="\n", string $keySeparator='='): self {
 		return $this->meta([
@@ -5230,7 +5560,7 @@ final class Field {
 	 *
 	 * @param string $keySeparator Separator between serialized keys and values.
 	 * @param string $pairSeparator Separator between serialized key/value pairs.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function keyValue(string $keySeparator='=', string $pairSeparator="\n"): self {
 		return $this
@@ -5246,7 +5576,7 @@ final class Field {
 	 *
 	 * @param string $keySeparator Separator between serialized keys and values.
 	 * @param string $pairSeparator Separator between serialized key/value pairs.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function keyValuePairs(string $keySeparator='=', string $pairSeparator="\n"): self {
 		return $this->keyValue($keySeparator, $pairSeparator);
@@ -5257,7 +5587,7 @@ final class Field {
 	 *
 	 *
 	 * @param int $count Count stored for renderer or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function minPairs(int $count): self {
 		return $this->meta(['min_pairs'=>max(0, $count)]);
@@ -5268,7 +5598,7 @@ final class Field {
 	 *
 	 *
 	 * @param int $count Count stored for renderer or validation metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function maxPairs(int $count): self {
 		return $this->meta(['max_pairs'=>max(1, $count)]);
@@ -5279,7 +5609,7 @@ final class Field {
 	 *
 	 *
 	 * @param bool $image Whether the renderer should treat the value as an image.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function image(bool $image=true): self {
 		return $image ? $this->type('image')->acceptedTypes(['image/*']) : $this;
@@ -5290,7 +5620,7 @@ final class Field {
 	 *
 	 *
 	 * @param array|string $rules Rules.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function rules(array|string $rules): self {
 		$clone=clone $this;
@@ -5308,7 +5638,7 @@ final class Field {
 	 *
 	 *
 	 * @param array<string, mixed> $meta Metadata merged into the manifest payload.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function meta(array $meta): self {
 		$clone=clone $this;
@@ -5321,8 +5651,9 @@ final class Field {
 	 *
 	 * State callbacks and defaults control how record values enter the form, how submitted values leave it, and how reactive field state is recalculated.
 	 *
-	 * @param callable $callback Callback invoked by Panel during rendering, validation, or persistence.
-	 * @return self.
+	 * @template THydrated
+	 * @param callable(THydrated, TRecord|null=, PanelRequest|null=, self<TRecord, THydrated, TState>=): THydrated $callback Callback invoked by Panel during hydration.
+	 * @return self<TRecord,THydrated,TState>
 	 */
 	public function hydrateUsing(callable $callback): self {
 		$clone=clone $this;
@@ -5335,8 +5666,8 @@ final class Field {
 	 *
 	 * State callbacks and defaults control how record values enter the form, how submitted values leave it, and how reactive field state is recalculated.
 	 *
-	 * @param callable $callback Callback invoked by Panel during rendering, validation, or persistence.
-	 * @return self.
+	 * @param callable(TValue, TRecord|null=, PanelRequest|null=, self<TRecord, TValue, TState>=): TValue $callback Callback invoked by Panel during dehydration.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function dehydrateUsing(callable $callback): self {
 		$clone=clone $this;
@@ -5349,8 +5680,8 @@ final class Field {
 	 *
 	 * Validation metadata is stored on the field manifest so Panel forms can evaluate submitted values, conditional requirements, and custom validators consistently.
 	 *
-	 * @param callable $callback Callback invoked by Panel during rendering, validation, or persistence.
-	 * @return self.
+	 * @param callable(TValue, TState=, TRecord|null=, PanelRequest|null=, self<TRecord, TValue, TState>=):(bool|string|list<string>|null) $callback Callback invoked by Panel during validation.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function validateUsing(callable $callback): self {
 		$clone=clone $this;
@@ -5362,8 +5693,8 @@ final class Field {
 	 * Registers a display-value resolver callback.
 	 *
 	 *
-	 * @param callable $callback Callback invoked by Panel during rendering, validation, or persistence.
-	 * @return self.
+	 * @param callable(TValue, TRecord|null=, PanelRequest|null=, self<TRecord, TValue, TState>=): mixed $callback Callback invoked by Panel during display-value resolution.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function displayUsing(callable $callback): self {
 		$clone=clone $this;
@@ -5376,8 +5707,8 @@ final class Field {
 	 *
 	 * Visibility rules are preserved as manifest metadata so server rendering and reactive client updates can agree on when the field appears.
 	 *
-	 * @param callable $callback Callback invoked by Panel during rendering, validation, or persistence.
-	 * @return self.
+	 * @param callable(string, TRecord|null=, PanelRequest|null=, self<TRecord, TValue, TState>=): bool $callback Callback invoked by Panel during visibility resolution.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function visibleUsing(callable $callback): self {
 		$clone=clone $this;
@@ -5390,9 +5721,9 @@ final class Field {
 	 *
 	 * State callbacks and defaults control how record values enter the form, how submitted values leave it, and how reactive field state is recalculated.
 	 *
-	 * @param callable $callback Callback invoked by Panel during rendering, validation, or persistence.
+	 * @param callable(TValue, TState=, TRecord|null=, PanelRequest|null=, self<TRecord, TValue, TState>=, string=): TValue|array<string, mixed> $callback Callback invoked by Panel during reactive state resolution.
 	 * @param array|string ... $dependencies Dependencies.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function stateUsing(callable $callback, array|string ...$dependencies): self {
 		$clone=clone $this;
@@ -5409,9 +5740,9 @@ final class Field {
 	 *
 	 * State callbacks and defaults control how record values enter the form, how submitted values leave it, and how reactive field state is recalculated.
 	 *
-	 * @param callable $callback Callback invoked by Panel during rendering, validation, or persistence.
+	 * @param callable(TValue, TState=, TRecord|null=, PanelRequest|null=, self<TRecord, TValue, TState>=, string=): TValue|array<string, mixed> $callback Callback invoked by Panel during reactive state resolution.
 	 * @param array|string ... $dependencies Dependencies.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function updateStateUsing(callable $callback, array|string ...$dependencies): self {
 		return $this->stateUsing($callback, ...$dependencies);
@@ -5423,7 +5754,7 @@ final class Field {
 	 * Visibility rules are preserved as manifest metadata so server rendering and reactive client updates can agree on when the field appears.
 	 *
 	 * @param array|string ... $operations Operations.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function visibleOn(array|string ...$operations): self {
 		$clone=clone $this;
@@ -5436,7 +5767,7 @@ final class Field {
 	 *
 	 *
 	 * @param array|string ... $operations Operations.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function onlyOn(array|string ...$operations): self {
 		return $this->visibleOn(...$operations);
@@ -5448,7 +5779,7 @@ final class Field {
 	 * Visibility rules are preserved as manifest metadata so server rendering and reactive client updates can agree on when the field appears.
 	 *
 	 * @param array|string ... $operations Operations.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function hiddenOn(array|string ...$operations): self {
 		$clone=clone $this;
@@ -5461,7 +5792,7 @@ final class Field {
 	 *
 	 *
 	 * @param array|string ... $operations Operations.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function exceptOn(array|string ...$operations): self {
 		return $this->hiddenOn(...$operations);
@@ -5473,7 +5804,7 @@ final class Field {
 	 * Visibility rules are preserved as manifest metadata so server rendering and reactive client updates can agree on when the field appears.
 	 *
 	 * @param array|string ... $fields Fields.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function dependsOn(array|string ...$fields): self {
 		$clone=clone $this;
@@ -5490,7 +5821,7 @@ final class Field {
 	 * Option metadata supports scalar values, grouped options, disabled states, descriptions, relationships, and display columns.
 	 *
 	 * @param array|string ... $fields Fields.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function optionsDependOn(array|string ...$fields): self {
 		return $this->dependsOn(...$fields)->reactive();
@@ -5502,7 +5833,7 @@ final class Field {
 	 *
 	 * @param bool $live Whether the field should send live updates.
 	 * @param int $debounceMs Debounce delay in milliseconds for live updates.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function live(bool $live=true, int $debounceMs=250): self {
 		return $this->meta([
@@ -5516,7 +5847,7 @@ final class Field {
 	 *
 	 *
 	 * @param bool $reactive Whether dependent field state should react to changes.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function reactive(bool $reactive=true): self {
 		return $this->meta([
@@ -5530,7 +5861,7 @@ final class Field {
 	 *
 	 *
 	 * @param int $milliseconds Delay or debounce duration in milliseconds.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function debounce(int $milliseconds): self {
 		return $this->meta(['debounce_ms'=>max(0, min(5000, $milliseconds))]);
@@ -5543,7 +5874,7 @@ final class Field {
 	 *
 	 * @param string $field Related field name used by validation or formatting metadata.
 	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function visibleWhen(string $field, mixed $value=true): self {
 		$field=self::normalizeName($field);
@@ -5562,7 +5893,7 @@ final class Field {
 	 *
 	 * @param string $field Related field name used by validation or formatting metadata.
 	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function hiddenWhen(string $field, mixed $value=true): self {
 		$field=self::normalizeName($field);
@@ -5581,7 +5912,7 @@ final class Field {
 	 *
 	 * @param string $field Related field name used by validation or formatting metadata.
 	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function requiredWhen(string $field, mixed $value=true): self {
 		$field=self::normalizeName($field);
@@ -5600,7 +5931,7 @@ final class Field {
 	 *
 	 * @param string $field Related field name used by validation or formatting metadata.
 	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function requiredIf(string $field, mixed $value=true): self {
 		return $this->requiredWhen($field, $value);
@@ -5613,7 +5944,7 @@ final class Field {
 	 *
 	 * @param string $field Related field name used by validation or formatting metadata.
 	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
-	 * @return self.
+	 * @return self<TRecord,TValue,TState>
 	 */
 	public function requiredUnless(string $field, mixed $value=true): self {
 		$field=self::normalizeName($field);
@@ -5630,10 +5961,10 @@ final class Field {
 	 *
 	 * State callbacks and defaults control how record values enter the form, how submitted values leave it, and how reactive field state is recalculated.
 	 *
-	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
-	 * @param mixed $record Panel record or row payload used for resolver evaluation.
+	 * @param TValue $value Value stored in the field, resource, or manifest metadata.
+	 * @param TRecord|null $record Panel record or row payload used for resolver evaluation.
 	 * @param ?PanelRequest $request Request.
-	 * @return mixed.
+	 * @return TValue Hydrated field value.
 	 */
 	public function hydrateValue(mixed $value, mixed $record=null, ?PanelRequest $request=null): mixed {
 		if($this->hydrateCallback===null){
@@ -5652,23 +5983,23 @@ final class Field {
 	 *
 	 * State callbacks and defaults control how record values enter the form, how submitted values leave it, and how reactive field state is recalculated.
 	 *
-	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
-	 * @param mixed $record Panel record or row payload used for resolver evaluation.
+	 * @param TValue $value Value stored in the field, resource, or manifest metadata.
+	 * @param TRecord|null $record Panel record or row payload used for resolver evaluation.
 	 * @param ?PanelRequest $request Request.
-	 * @param array<string, mixed> $values Field values keyed by normalized field name.
-	 * @return mixed.
+	 * @param TState $values Field values keyed by normalized field name.
+	 * @return TValue Dehydrated field value.
 	 */
 	public function dehydrateValue(mixed $value, mixed $record=null, ?PanelRequest $request=null, array $values=[]): mixed {
 		$value=$this->normalizeFormattedValue($value, $record, $request, $values);
-		if($this->dehydrateCallback===null){
-			return $this->castValue($value, $record, $request);
-		}
-		return PanelUtilityResolver::evaluate($this->dehydrateCallback, [
+		$value=$this->dehydrateCallback===null ? $this->castValue($value, $record, $request) : PanelUtilityResolver::evaluate($this->dehydrateCallback, [
 			'value'=>$value,
 			'record'=>$record,
 			'request'=>$request,
 			'field'=>$this,
 		], ['value', 'record', 'request', 'field']);
+		if(!$this->usesEditorPolicy() || $value===null){ return $value; }
+		if(!is_string($value) && !$value instanceof \Stringable){ throw new \DomainException('Editor content must dehydrate to a string.'); }
+		return $this->normalizeEditorContent((string)$value, $record, $request, $values, 'dehydrate')->requireValid();
 	}
 
 	/**
@@ -5676,15 +6007,19 @@ final class Field {
 	 *
 	 * Validation metadata is stored on the field manifest so Panel forms can evaluate submitted values, conditional requirements, and custom validators consistently.
 	 *
-	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
-	 * @param array<string, mixed> $values Field values keyed by normalized field name.
-	 * @param mixed $record Panel record or row payload used for resolver evaluation.
+	 * @param TValue $value Value stored in the field, resource, or manifest metadata.
+	 * @param TState $values Field values keyed by normalized field name.
+	 * @param TRecord|null $record Panel record or row payload used for resolver evaluation.
 	 * @param ?PanelRequest $request Request.
 	 * @param ?string $operation Operation.
-	 * @return array.
+	 * @return list<string> Validation messages.
 	 */
 	public function validateValue(mixed $value, array $values=[], mixed $record=null, ?PanelRequest $request=null, ?string $operation=null): array {
 		$errors=$this->validateRules($value, $values, $record, $request, $operation ?? $request?->operation() ?? 'form');
+		if($this->usesEditorPolicy() && $value!==null){
+			if(!is_string($value) && !$value instanceof \Stringable){ $errors[]=$this->label.' must contain text.'; }
+			else{ $errors=array_merge($errors, $this->normalizeEditorContent((string)$value, $record, $request, $values, 'validate')->errors()); }
+		}
 		if($this->validateCallback!==null){
 			$result=PanelUtilityResolver::evaluate($this->validateCallback, [
 				'value'=>$value,
@@ -5718,10 +6053,10 @@ final class Field {
 	 * Resolves the renderer-facing display value.
 	 *
 	 *
-	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
-	 * @param mixed $record Panel record or row payload used for resolver evaluation.
+	 * @param TValue $value Value stored in the field, resource, or manifest metadata.
+	 * @param TRecord|null $record Panel record or row payload used for resolver evaluation.
 	 * @param ?PanelRequest $request Request.
-	 * @return mixed.
+	 * @return mixed
 	 */
 	public function displayValue(mixed $value, mixed $record=null, ?PanelRequest $request=null): mixed {
 		if($this->displayCallback!==null){
@@ -5740,10 +6075,10 @@ final class Field {
 	 *
 	 * Option metadata supports scalar values, grouped options, disabled states, descriptions, relationships, and display columns.
 	 *
-	 * @param mixed $record Panel record or row payload used for resolver evaluation.
+	 * @param TRecord|null $record Panel record or row payload used for resolver evaluation.
 	 * @param ?PanelRequest $request Request.
 	 * @param string $operation Panel operation name such as create, edit, or view.
-	 * @return array.
+	 * @return array<array-key, mixed> Resolved options.
 	 */
 	public function optionsFor(mixed $record=null, ?PanelRequest $request=null, string $operation='form'): array {
 		if($this->optionsCallback===null){
@@ -5764,12 +6099,12 @@ final class Field {
 	 *
 	 * State callbacks and defaults control how record values enter the form, how submitted values leave it, and how reactive field state is recalculated.
 	 *
-	 * @param array<string, mixed> $values Field values keyed by normalized field name.
-	 * @param mixed $value Value stored in the field, resource, or manifest metadata.
-	 * @param mixed $record Panel record or row payload used for resolver evaluation.
+	 * @param TState $values Field values keyed by normalized field name.
+	 * @param TValue|null $value Value stored in the field, resource, or manifest metadata.
+	 * @param TRecord|null $record Panel record or row payload used for resolver evaluation.
 	 * @param ?PanelRequest $request Request.
 	 * @param string $operation Panel operation name such as create, edit, or view.
-	 * @return array.
+	 * @return array<string, mixed> Resolved state patch.
 	 */
 	public function stateFor(array $values=[], mixed $value=null, mixed $record=null, ?PanelRequest $request=null, string $operation='form'): array {
 		if($this->stateCallback===null){
@@ -5814,7 +6149,7 @@ final class Field {
 	 * @param string $operation Panel operation name such as create, edit, or view.
 	 * @param mixed $record Panel record or row payload used for resolver evaluation.
 	 * @param ?PanelRequest $request Request.
-	 * @return bool.
+	 * @return bool
 	 */
 	public function isVisible(string $operation='form', mixed $record=null, ?PanelRequest $request=null): bool {
 		$operation=self::normalizeOperation($operation);
@@ -5843,7 +6178,7 @@ final class Field {
 	 * Configures upload handling for this field.
 	 *
 	 * Upload metadata describes accepted files, size limits, chunking, delete endpoints, concurrency, and validation expectations for Panel upload controls.
-	 * @return bool.
+	 * @return bool
 	 */
 	public function isFileUpload(): bool {
 		return self::isFileUploadType($this->type);
@@ -5853,7 +6188,7 @@ final class Field {
 	 * Exports this field as a Panel manifest payload.
 	 *
 	 * The payload is the renderer-facing contract containing field identity, labels, rules, options, callbacks, conditions, and UI metadata.
-	 * @return array.
+	 * @return array
 	 */
 	public function toArray(): array {
 		return [
@@ -5878,7 +6213,7 @@ final class Field {
 			'reactive'=>(bool)($this->meta['reactive'] ?? false),
 			'debounce_ms'=>(int)($this->meta['debounce_ms'] ?? 250),
 			'rules'=>$this->rules,
-			'meta'=>$this->meta,
+			'meta'=>$this->editorProfile!==null ? array_replace($this->meta, ['editor_profile'=>$this->editorProfile->manifest()]) : $this->meta,
 			'hydrates'=>$this->hydrateCallback!==null,
 			'dehydrates'=>$this->dehydrateCallback!==null,
 			'validates'=>$this->validateCallback!==null,
@@ -5951,6 +6286,8 @@ final class Field {
 			array_key_exists('dehydrated', $this->meta) ? (($this->meta['dehydrated'] ?? true)===true ? 'dehydrated' : 'not_dehydrated') : null,
 			in_array($type, ['placeholder', 'display', 'display_only', 'view_field'], true) ? 'display_only' : null,
 			in_array($type, ['placeholder', 'display', 'display_only', 'view_field'], true) && ($this->meta['html'] ?? false)===true ? 'safe_html' : null,
+			in_array($type, ['placeholder', 'display', 'display_only', 'view_field'], true) && ($this->meta['html'] ?? false)===true && !(($this->meta['display_content'] ?? null) instanceof PanelSafeHtml) ? 'sanitized_html' : null,
+			in_array($type, ['placeholder', 'display', 'display_only', 'view_field'], true) && ($this->meta['display_content'] ?? null) instanceof PanelSafeHtml ? 'trusted_html' : null,
 			in_array($type, ['placeholder', 'display', 'display_only', 'view_field'], true) && array_key_exists('display_content', $this->meta) ? 'static_content' : null,
 			$this->rules!==[] ? 'validation_rules' : null,
 			in_array('nullable', array_map(static fn(string $rule): string => strtolower(trim(explode(':', $rule, 2)[0])), $this->rules), true) ? 'nullable' : null,
@@ -6044,6 +6381,17 @@ final class Field {
 			$this->dehydrateCallback!==null ? 'dehydrate_hook' : null,
 			$this->validateCallback!==null ? 'validate_hook' : null,
 			$editor!=='' ? 'editor' : null,
+			$editor!=='' ? 'content_validation' : null,
+			in_array(PanelEditorContext::normalizeMode($editor), ['html','rich_text'], true) ? 'server_sanitization' : null,
+			PanelEditorContext::normalizeMode($editor)==='markdown' ? 'safe_markdown_destinations' : null,
+			$this->editorProfile!==null ? 'editor_profile' : null,
+			$this->editorProfile?->toolbarDefinition()!==null ? 'editor_toolbar' : null,
+			$this->editorProfile?->upload()?->ready()===true ? 'editor_upload_adapter' : null,
+				$this->editorProfile?->media()?->ready()===true ? 'editor_media_adapter' : null,
+				$this->editorProfile?->assets()?->ready()===true ? 'editor_asset_provider' : null,
+			$this->editorProfile?->syntax()?->ready()===true ? 'editor_syntax_tokens' : null,
+			$this->editorProfile?->browser()?->isConfigured()===true ? 'editor_browser_adapter' : null,
+			$this->editorProfile?->browserSyntax()?->isConfigured()===true ? 'editor_browser_syntax_adapter' : null,
 		], static fn(?string $capability): bool => $capability!==null));
 		return [
 			'type'=>$type,
@@ -6053,10 +6401,30 @@ final class Field {
 			'editor'=>$editor !== '' ? $editor : null,
 			'native'=>($this->meta['native'] ?? true)!==false,
 			'preview'=>($this->meta['preview'] ?? false)===true,
+			'editor_profile'=>$this->editorProfile?->manifest(),
 			'media_collection'=>$this->meta['media_collection'] ?? null,
 			'suggestions'=>is_array($this->meta['suggestions'] ?? null) ? count($this->meta['suggestions']) : 0,
 			'capabilities'=>$capabilities,
 		];
+	}
+
+	private function resolvedEditorProfile(): PanelEditorProfile {
+		if($this->editorProfile!==null){ return $this->editorProfile; }
+		$editor=(string)($this->meta['editor'] ?? (in_array($this->type, ['markdown','html','code','rich_editor','rich_text'], true) ? $this->type : 'plain'));
+		return PanelEditorProfile::defaultFor($editor);
+	}
+
+	private function editorAssetContext(PanelEditorProfile $profile, string $stage, mixed $record, ?PanelRequest $request, array $values): PanelEditorContext {
+		return PanelEditorContext::make($this->name, $profile->mode(), (string)($this->meta['code_language'] ?? 'plain'), $stage, $record, $request, $values);
+	}
+
+	private function usesEditorPolicy(): bool {
+		return $this->editorProfile!==null || in_array($this->type, ['markdown','html','code','rich_editor','rich_text'], true) || isset($this->meta['editor']);
+	}
+
+	private function declaredEditorMode(): ?string {
+		if(isset($this->meta['editor']) && trim((string)$this->meta['editor'])!==''){ return PanelEditorContext::normalizeMode((string)$this->meta['editor']); }
+		return in_array($this->type, ['markdown','html','code','rich_editor','rich_text'], true) ? PanelEditorContext::normalizeMode($this->type) : null;
 	}
 
 	/**
@@ -6746,7 +7114,7 @@ final class Field {
 	/**
 	 * Returns canonical timezone aliases used by formatters.
 	 *
-	 * @return array.
+	 * @return array
 	 */
 	private static function timezoneCanonicalMap(): array {
 		static $map=null;
@@ -6775,13 +7143,9 @@ final class Field {
 			return '';
 		}
 		if(class_exists('\\Locale', false)){
-			try{
-				$canonical=\Locale::canonicalize($value);
-				if(is_string($canonical) && $canonical!==''){
-					$value=str_replace('_', '-', $canonical);
-				}
-			}
-			catch(\Throwable){
+			$canonical=\Locale::canonicalize($value);
+			if(is_string($canonical) && $canonical!==''){
+				$value=str_replace('_', '-', $canonical);
 			}
 		}
 		$parts=explode('-', $value);
@@ -7000,10 +7364,13 @@ final class Field {
 	 * @return string Normalized coordinate text.
 	 */
 	private static function normalizeCoordinateText(string $value, int $decimals=6): string {
-		$value=self::normalizeDecimalText($value);
-		if($value==='' || !is_numeric($value)){
-			return $value;
+		if(trim($value)===''){
+			return '';
 		}
+		if(preg_match('/\d/', $value)!==1){
+			return trim($value);
+		}
+		$value=self::normalizeDecimalText($value);
 		$decimals=max(0, min(10, $decimals));
 		$rounded=number_format((float)$value, $decimals, '.', '');
 		return $decimals>0 ? rtrim(rtrim($rounded, '0'), '.') : $rounded;
@@ -7294,7 +7661,7 @@ final class Field {
 				}
 				$maxSize=(int)($this->meta['max_file_size'] ?? 0);
 				if($maxSize>0 && (int)($file['size'] ?? 0)>$maxSize){
-					$errors[]=$this->label.' must be no larger than '.self::format_bytes($maxSize).'.';
+					$errors[]=$this->label.' must be no larger than '.self::formatBytes($maxSize).'.';
 				}
 				$accepted=is_array($this->meta['accepted_types'] ?? null) ? $this->meta['accepted_types'] : [];
 				if($accepted!==[] && !self::fileAccepted($file, $accepted)){
@@ -7391,7 +7758,7 @@ final class Field {
 			}
 		}
 		if(!self::blank($value) && self::isLengthValidatedType($this->type) && !is_array($value) && !is_object($value)){
-			$length=mb_strlen((string)$value);
+			$length=function_exists('mb_strlen') ? \mb_strlen((string)$value) : strlen((string)$value);
 			$exact=(int)($this->meta['exact_length'] ?? 0);
 			if($exact>0 && $length!==$exact){
 				$errors[]=$this->label.' must be exactly '.$exact.' character'.($exact===1 ? '' : 's').'.';
@@ -7712,7 +8079,7 @@ final class Field {
 	 * @param int $min Lower bound used by validation or renderer metadata.
 	 * @param int $max Upper bound used by validation or renderer metadata.
 	 * @param array<int, string> $names Normalized field or operation names.
-	 * @return bool.
+	 * @return bool
 	 */
 	private static function validCronField(string $field, int $min, int $max, array $names=[]): bool {
 		if($field===''){
@@ -7734,7 +8101,7 @@ final class Field {
 	 * @param int $min Lower bound used by validation or renderer metadata.
 	 * @param int $max Upper bound used by validation or renderer metadata.
 	 * @param array<int, string> $names Normalized field or operation names.
-	 * @return bool.
+	 * @return bool
 	 */
 	private static function validCronFieldItem(string $item, int $min, int $max, array $names=[]): bool {
 		if($item===''){
@@ -7763,7 +8130,7 @@ final class Field {
 	 *
 	 * @param string $value Value stored in the field, resource, or manifest metadata.
 	 * @param array<int, string> $names Normalized field or operation names.
-	 * @return ?int.
+	 * @return ?int
 	 */
 	private static function cronFieldValue(string $value, array $names): ?int {
 		$value=strtolower($value);
@@ -7951,13 +8318,9 @@ final class Field {
 				$mod=($mod*10+(int)$char)%97;
 				continue;
 			}
-			if($char>='A' && $char<='Z'){
-				foreach(str_split((string)(ord($char)-55)) as $digit){
-					$mod=($mod*10+(int)$digit)%97;
-				}
-				continue;
+			foreach(str_split((string)(ord($char)-55)) as $digit){
+				$mod=($mod*10+(int)$digit)%97;
 			}
-			return false;
 		}
 		return $mod===1;
 	}
@@ -8032,11 +8395,7 @@ final class Field {
 	 * @return bool Whether the rule is postal-code related.
 	 */
 	private static function postalRule(string $rule): bool {
-		return in_array($rule, [
-			'zip_code_us', 'postal_code_us', 'zip', 'postal_code_ca', 'canadian_postal_code', 'postal_code_gb', 'uk_postcode',
-			'postal_code_au', 'australian_postcode', 'postal_code_nz', 'new_zealand_postcode', 'postal_code_fr', 'french_postcode',
-			'postal_code_de', 'german_postcode', 'postal_code_nl', 'dutch_postcode', 'postal_code_ie', 'eircode', 'postal_code_international',
-		], true);
+		return in_array($rule, ['zip_code_us', 'postal_code_us', 'zip', 'postal_code_ca', 'canadian_postal_code', 'postal_code_gb', 'uk_postcode', 'postal_code_au', 'australian_postcode', 'postal_code_nz', 'new_zealand_postcode', 'postal_code_fr', 'french_postcode', 'postal_code_de', 'german_postcode', 'postal_code_nl', 'dutch_postcode', 'postal_code_ie', 'eircode', 'postal_code_international'], true);
 	}
 
 	/**
@@ -8308,7 +8667,7 @@ final class Field {
 	/**
 	 * Returns the built-in country-code allowlist.
 	 *
-	 * @return array.
+	 * @return array
 	 */
 	private static function knownCountryCodes(): array {
 		return [
@@ -8367,7 +8726,7 @@ final class Field {
 	 *
 	 *
 	 * @param string $country Country code used by locale-aware formatting.
-	 * @return array.
+	 * @return array
 	 */
 	private static function knownSubdivisionCodes(string $country=''): array {
 		$country=self::normalizeCountryCode($country);
@@ -8430,7 +8789,7 @@ final class Field {
 	/**
 	 * Returns the built-in currency-code allowlist.
 	 *
-	 * @return array.
+	 * @return array
 	 */
 	private static function knownCurrencyCodes(): array {
 		return [
@@ -8446,7 +8805,7 @@ final class Field {
 	/**
 	 * Returns the built-in language-code allowlist.
 	 *
-	 * @return array.
+	 * @return array
 	 */
 	private static function knownLanguageCodes(): array {
 		return [
@@ -9259,7 +9618,7 @@ final class Field {
 		if(is_array($value)){
 			return (float)count($value);
 		}
-		return (float)mb_strlen((string)$value);
+		return (float)(function_exists('mb_strlen') ? \mb_strlen((string)$value) : strlen((string)$value));
 	}
 
 	/**

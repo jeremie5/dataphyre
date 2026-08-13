@@ -69,6 +69,11 @@ final class PluginManifest {
 				'values'=>self::safeConfig($config),
 			],
 			'capabilities'=>self::capabilities($definition, $configKeys),
+			'extensions'=>[
+				'permissions'=>self::stringList($this->meta['extension_permissions'] ?? $definition['extension_permissions'] ?? []),
+				'provenance'=>is_array($this->meta['extension_provenance'] ?? null) ? array_values($this->meta['extension_provenance']) : [],
+				'revision'=>(int)($this->meta['extension_revision'] ?? 0),
+			],
 			'meta'=>array_replace(is_array($definition['meta'] ?? null) ? $definition['meta'] : [], $this->meta),
 		];
 		PanelTrace::record('plugin.manifest.described', [
@@ -77,7 +82,7 @@ final class PluginManifest {
 			'config_keys'=>count($configKeys),
 			'version'=>(string)($manifest['version'] ?? ''),
 		]);
-		return $manifest;
+		return PanelManifestContract::stamp($manifest);
 	}
 
 	/**
@@ -136,12 +141,27 @@ final class PluginManifest {
 			'lifecycle'=>[
 				'register'=>$class!=='' && method_exists($class, 'register'),
 				'boot'=>$class!=='' && method_exists($class, 'boot'),
+				'unregister'=>$class!=='' && method_exists($class, 'unregister'),
+				'hot_reload'=>$class!=='' && is_subclass_of($class, PanelPlugin::class),
 			],
 			'package'=>[
 				'class_available'=>$class!=='' && class_exists($class),
 				'interface'=>$class!=='' && is_subclass_of($class, PanelPlugin::class),
 			],
 		];
+	}
+
+	/** @return list<string> */
+	private static function stringList(mixed $value): array {
+		if(is_string($value)){ $value=preg_split('/[\s,|]+/', $value, -1, PREG_SPLIT_NO_EMPTY) ?: []; }
+		if($value instanceof \Traversable){ $value=iterator_to_array($value); }
+		if(!is_array($value)){ return []; }
+		$result=[];
+		foreach($value as $key=>$item){
+			$item=is_string($key) && is_bool($item) ? ($item ? $key : '') : (is_scalar($item) ? trim((string)$item) : '');
+			if($item!==''){ $result[$item]=true; }
+		}
+		return array_values(array_keys($result));
 	}
 
 	/**

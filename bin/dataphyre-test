@@ -1,0 +1,13 @@
+#!/usr/bin/env php
+<?php
+declare(strict_types=1);
+
+$root=str_replace('\\', '/', dirname(__DIR__));
+require_once $root.'/runtime/modules/testing/tooling/Runner.php';
+
+exit(dataphyre_unit_test_main($_SERVER['argv'], $root, [
+	'display_name'=>'Dataphyre',
+	'entrypoint'=>'php bin/dataphyre-test',
+	'framework_root'=>$root,
+	'cache_path'=>$root.'/cache/unit-tests/code-case-index.json',
+]));

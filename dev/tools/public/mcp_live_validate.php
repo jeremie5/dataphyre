@@ -23,7 +23,7 @@ Options:
   -h, --help  Show this help text.
 
 Runs a bounded stdio validation against the Dataphyre MCP server. The tool can
-run from an embedded common/dataphyre tree or a standalone Git worktree.
+run from an embedded dataphyre tree or a standalone Git worktree.
 
 HELP;
 	exit(0);
@@ -31,11 +31,11 @@ HELP;
 
 $root=dataphyre_mcp_live_validate_workspace_root(__DIR__);
 if(!is_string($root)){
-	fwrite(STDERR, "Unable to resolve embedded Dataphyre Git worktree root. Expected common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php below the workspace root.\n");
+	fwrite(STDERR, "Unable to resolve embedded Dataphyre Git worktree root. Expected dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php below the workspace root.\n");
 	exit(2);
 }
 
-$server=$root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php';
+$server=$root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php';
 if(!is_file($server)){
 	fwrite(STDERR, "MCP server not found at {$server}.\n");
 	exit(2);
@@ -67,11 +67,16 @@ $checks=[
 		'assert'=>static function(array $response): void {
 			$tools=is_array($response['result']['tools'] ?? null) ? $response['result']['tools'] : [];
 			$names=array_map(static fn(array $tool): string => (string)($tool['name'] ?? ''), $tools);
-			foreach(['dataphyre_mcp_doctor', 'dataphyre_mcp_manifest_export', 'dataphyre_mcp_prompt_catalog', 'dataphyre_docs_index_plan', 'dataphyre_embeddings_readiness_plan', 'dataphyre_remote_docs_readiness_plan', 'dataphyre_datadoc_runtime_readiness_plan', 'dataphyre_openapi_runtime_readiness_plan', 'dataphyre_route_runtime_provenance_plan', 'dataphyre_sql_runtime_readiness_plan', 'dataphyre_browser_diagnostics_readiness_plan', 'dataphyre_verification_surface_catalog', 'dataphyre_apply_runtime_readiness_plan', 'dataphyre_mcp_skill_catalog', 'dataphyre_mcp_skill_manifest_export', 'dataphyre_mcp_skill_registration_audit', 'dataphyre_mcp_skill_pack_export', 'dataphyre_mcp_skill_install_plan', 'dataphyre_mcp_skill_file_install_plan', 'dataphyre_mcp_client_config_summary', 'dataphyre_mcp_client_install_checklist', 'dataphyre_mcp_client_config_install_plan', 'dataphyre_mcp_smoke_test_export', 'dataphyre_mcp_client_onboarding_pack', 'dataphyre_mcp_client_troubleshoot', 'dataphyre_mcp_client_compatibility_matrix', 'dataphyre_mcp_client_config_audit', 'dataphyre_mcp_safety_boundary_report', 'dataphyre_mcp_surface_changelog', 'dataphyre_mcp_tool_call_examples_export', 'dataphyre_mcp_workflow_playbook_export', 'dataphyre_mcp_workflow_readiness_audit', 'dataphyre_mcp_workflow_session_export', 'dataphyre_mcp_workflow_transcript_schema_export', 'dataphyre_mcp_workflow_state_schema_export', 'dataphyre_mcp_workflow_state_audit', 'dataphyre_mcp_workflow_state_summary_export', 'dataphyre_mcp_workflow_state_transition_export', 'dataphyre_mcp_workflow_state_sync_pack_export', 'dataphyre_mcp_workflow_state_timeline_export', 'dataphyre_mcp_workflow_state_resume_brief_export', 'dataphyre_mcp_workflow_transcript_audit', 'dataphyre_mcp_workflow_transcript_summary_export', 'dataphyre_mcp_workflow_checkpoint_export', 'dataphyre_mcp_workflow_handoff_pack_export', 'dataphyre_mcp_workflow_catalog', 'dataphyre_mcp_workflow_lifecycle_export', 'dataphyre_mcp_workflow_next_action_export', 'dataphyre_mcp_workflow_recommend', 'dataphyre_mcp_workflow_recommendation_handoff_export', 'dataphyre_mcp_task_start_pack_export', 'dataphyre_mcp_agent_brief_export', 'dataphyre_mcp_status_board', 'dataphyre_mcp_live_validate', 'dataphyre_mcp_verify_all'] as $required){
-				if(!in_array($required, $names, true)){
-					throw new RuntimeException("tools/list is missing {$required}.");
+				foreach(['dataphyre_mcp_doctor', 'dataphyre_mcp_manifest_export', 'dataphyre_mcp_prompt_catalog', 'dataphyre_docs_index_plan', 'dataphyre_embeddings_readiness_plan', 'dataphyre_remote_docs_readiness_plan', 'dataphyre_datadoc_runtime_readiness_plan', 'dataphyre_openapi_runtime_readiness_plan', 'dataphyre_route_runtime_provenance_plan', 'dataphyre_sql_runtime_readiness_plan', 'dataphyre_browser_diagnostics_readiness_plan', 'dataphyre_verification_surface_catalog', 'dataphyre_contract_catalog', 'dataphyre_contract_describe', 'dataphyre_panel_capability_catalog', 'dataphyre_panel_capability_describe', 'dataphyre_panel_surface_graph', 'dataphyre_panel_recipe_plan', 'dataphyre_panel_integration_plan', 'dataphyre_panel_verification_plan', 'dataphyre_apply_runtime_readiness_plan', 'dataphyre_mcp_skill_catalog', 'dataphyre_mcp_skill_manifest_export', 'dataphyre_mcp_skill_registration_audit', 'dataphyre_mcp_skill_pack_export', 'dataphyre_mcp_skill_install_plan', 'dataphyre_mcp_skill_file_install_plan', 'dataphyre_mcp_client_config_summary', 'dataphyre_mcp_client_install_checklist', 'dataphyre_mcp_client_config_install_plan', 'dataphyre_mcp_smoke_test_export', 'dataphyre_mcp_client_onboarding_pack', 'dataphyre_mcp_client_troubleshoot', 'dataphyre_mcp_client_compatibility_matrix', 'dataphyre_mcp_client_config_audit', 'dataphyre_mcp_safety_boundary_report', 'dataphyre_mcp_surface_changelog', 'dataphyre_mcp_tool_call_examples_export', 'dataphyre_mcp_workflow_playbook_export', 'dataphyre_mcp_workflow_readiness_audit', 'dataphyre_mcp_workflow_session_export', 'dataphyre_mcp_workflow_transcript_schema_export', 'dataphyre_mcp_workflow_state_schema_export', 'dataphyre_mcp_workflow_state_audit', 'dataphyre_mcp_workflow_state_summary_export', 'dataphyre_mcp_workflow_state_transition_export', 'dataphyre_mcp_workflow_state_sync_pack_export', 'dataphyre_mcp_workflow_state_timeline_export', 'dataphyre_mcp_workflow_state_resume_brief_export', 'dataphyre_mcp_workflow_transcript_audit', 'dataphyre_mcp_workflow_transcript_summary_export', 'dataphyre_mcp_workflow_checkpoint_export', 'dataphyre_mcp_workflow_handoff_pack_export', 'dataphyre_mcp_workflow_catalog', 'dataphyre_mcp_workflow_lifecycle_export', 'dataphyre_mcp_workflow_next_action_export', 'dataphyre_mcp_workflow_recommend', 'dataphyre_mcp_workflow_recommendation_handoff_export', 'dataphyre_mcp_task_start_pack_export', 'dataphyre_mcp_agent_brief_export', 'dataphyre_mcp_status_board', 'dataphyre_mcp_live_validate', 'dataphyre_mcp_verify_all'] as $required){
+					if(!in_array($required, $names, true)){
+						throw new RuntimeException("tools/list is missing {$required}.");
+					}
 				}
-			}
+				foreach(['dataphyre_sql_migration_catalog', 'dataphyre_sql_migration_describe', 'dataphyre_sql_migration_manifest_validate', 'dataphyre_sql_migration_scaffold_plan'] as $required){
+					if(!in_array($required, $names, true)){
+						throw new RuntimeException("tools/list is missing {$required}.");
+					}
+				}
 			if(count($names)<60){
 				throw new RuntimeException('tools/list returned too few tools for the current MCP surface.');
 			}
@@ -124,7 +129,7 @@ $checks=[
 		'request'=>['jsonrpc'=>'2.0', 'id'=>3, 'method'=>'prompts/list', 'params'=>[]],
 		'assert'=>static function(array $response): void {
 			$names=array_map(static fn(array $prompt): string => (string)($prompt['name'] ?? ''), $response['result']['prompts'] ?? []);
-			foreach(['dataphyre_runtime_guidelines', 'dataphyre_sql_schema_workflow', 'dataphyre_route_manifest_workflow'] as $required){
+			foreach(['dataphyre_runtime_guidelines', 'dataphyre_sql_schema_workflow', 'dataphyre_route_manifest_workflow', 'dataphyre_contract_workflow', 'dataphyre_panel_workflow', 'dataphyre_panel_platform_workflow', 'dataphyre_panel_operations_workflow', 'dataphyre_panel_studio_workflow', 'dataphyre_panel_realtime_workflow', 'dataphyre_panel_adapter_workflow'] as $required){
 				if(!in_array($required, $names, true)){
 					throw new RuntimeException("prompts/list is missing {$required}.");
 				}
@@ -136,10 +141,131 @@ $checks=[
 		'request'=>['jsonrpc'=>'2.0', 'id'=>4, 'method'=>'resources/list', 'params'=>[]],
 		'assert'=>static function(array $response): void {
 			$uris=array_map(static fn(array $resource): string => (string)($resource['uri'] ?? ''), $response['result']['resources'] ?? []);
-			foreach(['dataphyre://ai-guidelines', 'dataphyre://mcp-capabilities', 'dataphyre://mcp-plan'] as $required){
+			foreach(['dataphyre://ai-guidelines', 'dataphyre://mcp-capabilities', 'dataphyre://mcp-plan', 'dataphyre://contracts', 'dataphyre://panel'] as $required){
 				if(!in_array($required, $uris, true)){
 					throw new RuntimeException("resources/list is missing {$required}.");
 				}
+			}
+		},
+	],
+	[
+		'name'=>'contract resource reads over stdio',
+		'request'=>[
+			'jsonrpc'=>'2.0',
+			'id'=>41,
+			'method'=>'resources/read',
+			'params'=>['uri'=>'dataphyre://contracts'],
+		],
+		'assert'=>static function(array $response): void {
+			$data=json_decode((string)($response['result']['contents'][0]['text']??''),true);
+			if(
+				!is_array($data)
+				|| ($data['resource_type']??null)!=='dataphyre_contract_index'
+				|| ($data['execution']??null)!=='not_executed'
+				|| (($data['counts']['total']??0)<1)
+				|| (($data['resource_mode']??null)!=='bounded_bootstrap_partial')
+				|| (($data['scope_modules']??null)!==['mcp'])
+				|| (($data['enumeration_contract']['strategy']??null)!=='module_federation')
+				|| (($data['contract_safety']['source_required']??null)!==false)
+			){
+				throw new RuntimeException('contract resource did not return the static contract snapshot.');
+			}
+		},
+	],
+	[
+		'name'=>'contract catalog works through tools/call',
+		'request'=>[
+			'jsonrpc'=>'2.0',
+			'id'=>42,
+			'method'=>'tools/call',
+			'params'=>[
+				'name'=>'dataphyre_contract_catalog',
+				'arguments'=>['modules'=>['mcp'],'kinds'=>['test_contract'],'query'=>'mcp.protocol.discovery','limit'=>5],
+			],
+		],
+		'assert'=>static function(array $response): void {
+			$data=dataphyre_mcp_live_validate_tool_json($response);
+			if(
+				($data['catalog_type']??null)!=='dataphyre_contract_catalog'
+				|| ($data['counts']['matched']??null)!==1
+				|| ($data['records'][0]['id']??null)!=='test:mcp.protocol.discovery@1'
+				|| ($data['execution']??null)!=='not_executed'
+			){
+				throw new RuntimeException('contract catalog did not return the focused TestKit contract.');
+			}
+		},
+	],
+	[
+		'name'=>'Panel capability resource reads over stdio',
+		'request'=>[
+			'jsonrpc'=>'2.0',
+			'id'=>431,
+			'method'=>'resources/read',
+			'params'=>['uri'=>'dataphyre://panel'],
+		],
+		'assert'=>static function(array $response): void {
+			$data=json_decode((string)($response['result']['contents'][0]['text']??''),true);
+			if(
+				!is_array($data)
+				|| ($data['resource_type']??null)!=='dataphyre_panel_capability_index'
+				|| ($data['execution']??null)!=='not_executed'
+				|| ($data['resource_mode']??null)!=='bounded_domain_federation'
+				|| (($data['counts']['domains']??0)<25)
+				|| (($data['counts']['framework_files']??0)<883)
+				|| (($data['counts']['contracts']??0)<650)
+			){
+				throw new RuntimeException('Panel resource did not return the source-derived bounded capability index: '.json_encode([
+					'resource_type'=>$data['resource_type']??null,
+					'execution'=>$data['execution']??null,
+					'resource_mode'=>$data['resource_mode']??null,
+					'counts'=>$data['counts']??null,
+				],JSON_UNESCAPED_SLASHES));
+			}
+		},
+	],
+	[
+		'name'=>'Panel capability catalog works through tools/call',
+		'request'=>[
+			'jsonrpc'=>'2.0',
+			'id'=>432,
+			'method'=>'tools/call',
+			'params'=>[
+				'name'=>'dataphyre_panel_capability_catalog',
+				'arguments'=>['kinds'=>['platform_domain'],'query'=>'realtime','limit'=>3],
+			],
+		],
+		'assert'=>static function(array $response): void {
+			$data=dataphyre_mcp_live_validate_tool_json($response);
+			if(
+				($data['catalog_type']??null)!=='dataphyre_panel_capability_catalog'
+				|| ($data['execution']??null)!=='not_executed'
+				|| (($data['records'][0]['id']??null)!=='panel:domain:realtime')
+				|| (($data['records'][0]['describe_with']??null)!=='dataphyre_panel_capability_describe')
+			){
+				throw new RuntimeException('Panel capability catalog did not return the ranked realtime contract.');
+			}
+		},
+	],
+	[
+		'name'=>'contract descriptor works through tools/call',
+		'request'=>[
+			'jsonrpc'=>'2.0',
+			'id'=>43,
+			'method'=>'tools/call',
+			'params'=>[
+				'name'=>'dataphyre_contract_describe',
+				'arguments'=>['id'=>'test:mcp.protocol.discovery@1'],
+			],
+		],
+		'assert'=>static function(array $response): void {
+			$data=dataphyre_mcp_live_validate_tool_json($response);
+			if(
+				($data['status']??null)!=='found'
+				|| ($data['contract']['name']??null)!=='mcp.protocol.discovery'
+				|| ($data['contract']['kind']??null)!=='test_contract'
+				|| (($data['contract_safety']['eval_used']??null)!==false)
+			){
+				throw new RuntimeException('contract descriptor did not return the stable source contract.');
 			}
 		},
 	],
@@ -1288,7 +1414,7 @@ function dataphyre_mcp_live_validate_workspace_root(string $tool_dir): ?string {
 		return null;
 	}
 	$candidates=[
-		realpath($real_tool_dir.'/../../../../..'),
+		realpath($real_tool_dir.'/../../../..'),
 		getcwd() ?: null,
 	];
 	foreach($candidates as $candidate){
@@ -1296,8 +1422,15 @@ function dataphyre_mcp_live_validate_workspace_root(string $tool_dir): ?string {
 			continue;
 		}
 		$root=rtrim(str_replace('\\', '/', $candidate), '/');
-		if(is_file($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')){
+		if(is_file($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')){
 			return $root;
+		}
+		if(is_file($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')){
+			$common_source=$root.'/common/dataphyre';
+			$isolated=dataphyre_mcp_live_validate_source_embedded_workspace($common_source);
+			if(is_string($isolated)){
+				return $isolated;
+			}
 		}
 	}
 	$source_candidates=[
@@ -1318,9 +1451,8 @@ function dataphyre_mcp_live_validate_workspace_root(string $tool_dir): ?string {
 
 function dataphyre_mcp_live_validate_source_embedded_workspace(string $source_root): ?string {
 	$workspace=rtrim(str_replace('\\', '/', sys_get_temp_dir()), '/').'/dataphyre-mcp-live-validate-'.substr(sha1($source_root), 0, 12).'-'.getmypid();
-	$common=$workspace.'/common';
-	$link=$common.'/dataphyre';
-	if(!is_dir($common) && !@mkdir($common, 0777, true) && !is_dir($common)){
+	$link=$workspace.'/dataphyre';
+	if(!is_dir($workspace) && !@mkdir($workspace, 0777, true) && !is_dir($workspace)){
 		return null;
 	}
 	if(is_file($link.'/runtime/modules/mcp/kernel/dataphyre_mcp.php')){
@@ -1353,7 +1485,6 @@ function dataphyre_mcp_live_validate_cleanup_embedded_workspace(string $workspac
 	elseif(is_dir($link)){
 		@rmdir($link);
 	}
-	@rmdir(dirname($link));
 	@rmdir($workspace);
 }
 

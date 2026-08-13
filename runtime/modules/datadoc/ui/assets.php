@@ -17,7 +17,7 @@ if($content===null){
 	header('Content-Type: text/plain; charset=utf-8');
 	header('Cache-Control: no-store');
 	echo 'Not found';
-	exit();
+	return;
 }
 
 $body=$content['content'];
@@ -37,12 +37,12 @@ $if_none_match=trim((string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? ''));
 $if_modified_since=strtotime((string)($_SERVER['HTTP_IF_MODIFIED_SINCE'] ?? '')) ?: 0;
 if(($if_none_match!=='' && $if_none_match===$etag) || ($if_none_match==='' && $if_modified_since>=$last_modified_epoch)){
 	http_response_code(304);
-	exit();
+	return;
 }
 
 header('Content-Length: '.strlen($body));
 if(strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'))==='HEAD'){
-	exit();
+	return;
 }
 echo $body;
-exit();
+return;

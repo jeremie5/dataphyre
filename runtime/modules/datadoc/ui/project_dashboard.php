@@ -7,14 +7,18 @@
  */
 if(dataphyre\datadoc::logged_in()!==true){
 	require_once(__DIR__."/login.php");
-	exit();
+	return;
 }
 
-require_once(__DIR__."/header.php");
+$datadoc_header_ready=require __DIR__."/header.php";
+if($datadoc_header_ready===false){
+	return;
+}
 
 $project=\dataphyre\datadoc::get_project(\dataphyre\routing::$bindings['project'] ?? '');
 if($project===null){
-	exit('Project not found.');
+	echo 'Project not found.';
+	return;
 }
 
 $indexed_files=sql_count('dataphyre.datadoc_files', 'WHERE project=?', [$project['name']]);

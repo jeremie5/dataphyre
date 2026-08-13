@@ -429,12 +429,7 @@ final class LocalizationManager {
 	 * @return LocaleDefinitionCatalog Definition rows with read filters and pagination metadata.
 	 */
 	public function definitions(array $filters=[], int $limit=250, int $offset=0): LocaleDefinitionCatalog {
-		return LocaleDefinitionCatalog::fromArray(
-			\dataphyre\localization::locale_definitions($filters, $limit, $offset),
-			$filters,
-			$limit,
-			$offset
-		);
+		return LocaleDefinitionCatalog::fromArray(\dataphyre\localization::locale_definitions($filters, $limit, $offset), $filters, $limit, $offset);
 	}
 
 	/**

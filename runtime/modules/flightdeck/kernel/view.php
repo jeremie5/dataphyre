@@ -273,11 +273,11 @@ final class dataphyre_flightdeck_view {
 	 *
 	 * @throws \RuntimeException When the Dataphyre templating module cannot be loaded.
 	 */
-	private static function ensure_ready(): void {
+	private static function ensure_ready(?array $templating_candidates=null): void {
 		if(self::$ready===true && class_exists('\dataphyre\templating', false)){
 			return;
 		}
-		self::load_templating_module();
+		self::load_templating_module($templating_candidates);
 		if(class_exists('\dataphyre\templating', false)!==true){
 			throw new \RuntimeException('Flightdeck requires the Dataphyre templating module.');
 		}
@@ -295,27 +295,29 @@ final class dataphyre_flightdeck_view {
 	 *
 	 * @return void
 	 */
-	private static function load_templating_module(): void {
+	private static function load_templating_module(?array $explicit_candidates=null): void {
 		if(class_exists('\dataphyre\templating', false)===true){
 			return;
 		}
 		self::load_core_helpers();
-		$candidates=[];
-		if(function_exists('dp_module_present')){
-			$module=dp_module_present('templating');
-			if(is_array($module) && isset($module[0]) && is_string($module[0])){
-				$candidates[]=$module[0];
+		$candidates=$explicit_candidates ?? [];
+		if($explicit_candidates===null){
+			if(function_exists('dp_module_present')){
+				$module=dp_module_present('templating');
+				if(is_array($module) && isset($module[0]) && is_string($module[0])){
+					$candidates[]=$module[0];
+				}
 			}
+			if(defined('ROOTPATH')){
+				if(!empty(ROOTPATH['common_dataphyre_runtime'])){
+					$candidates[]=rtrim((string)ROOTPATH['common_dataphyre_runtime'], '/\\').'/modules/templating/kernel/templating.main.php';
+				}
+				if(!empty(ROOTPATH['dataphyre'])){
+					$candidates[]=rtrim((string)ROOTPATH['dataphyre'], '/\\').'/modules/templating/kernel/templating.main.php';
+				}
+			}
+			$candidates[]=rtrim(dirname(__DIR__, 2), '/\\').'/templating/kernel/templating.main.php';
 		}
-		if(defined('ROOTPATH')){
-			if(!empty(ROOTPATH['common_dataphyre_runtime'])){
-				$candidates[]=rtrim((string)ROOTPATH['common_dataphyre_runtime'], '/\\').'/modules/templating/kernel/templating.main.php';
-			}
-			if(!empty(ROOTPATH['dataphyre'])){
-				$candidates[]=rtrim((string)ROOTPATH['dataphyre'], '/\\').'/modules/templating/kernel/templating.main.php';
-			}
-		}
-		$candidates[]=rtrim(dirname(__DIR__, 2), '/\\').'/templating/kernel/templating.main.php';
 		foreach(array_unique($candidates) as $candidate){
 			if(is_file($candidate)){
 				require_once($candidate);

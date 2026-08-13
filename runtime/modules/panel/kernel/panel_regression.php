@@ -81,56 +81,52 @@ use Dataphyre\Panel\PanelPageResult;
 use Dataphyre\Panel\PanelTableState;
 use Dataphyre\Panel\PanelTestHarness;
 
-if(PHP_SAPI!=='cli'){
-	http_response_code(404);
-	echo "Panel regression runner is only available from CLI.\n";
-	exit(2);
-}
-
-try{
-	$options=dp_panel_regression_options($argv ?? []);
-	if(isset($options['help'])){
-		dp_panel_regression_usage();
-		exit(0);
+/** Executes the regression CLI without forcing embedded test callers to exit. */
+function dp_panel_regression_main(array $argv, ?string $sapi=null): int {
+	$sapi ??=PHP_SAPI;
+	if($sapi!=='cli'){
+		http_response_code(404);
+		echo "Panel regression runner is only available from CLI.\n";
+		return 2;
 	}
-	dp_panel_regression_bootstrap();
-	$suite=dp_panel_regression_load_suite($options);
-	if(!$suite instanceof PanelRegressionSuite){
-		throw new RuntimeException('Suite loader did not return a PanelRegressionSuite instance.');
-	}
-	if(isset($options['manifest'])){
-		dp_panel_regression_write_manifest((string)$options['manifest'], $suite, [
-			'runner'=>'panel_regression.php',
-			'generated_at'=>date('c'),
-		]);
-		if(!empty($options['manifest_only'])){
-			exit(0);
+	try{
+		$options=dp_panel_regression_options($argv);
+		if(isset($options['help'])){
+			dp_panel_regression_usage();
+			return 0;
+		}
+		dp_panel_regression_bootstrap();
+		$suite=dp_panel_regression_load_suite($options);
+		if(isset($options['manifest'])){
+			dp_panel_regression_write_manifest((string)$options['manifest'], $suite, [
+				'runner'=>'panel_regression.php',
+				'generated_at'=>date('c'),
+			]);
+			if(!empty($options['manifest_only'])){
+				return 0;
+			}
 		}
 	}
-}
-catch(Throwable $exception){
-	fwrite(STDERR, '[ERROR] '.$exception->getMessage().PHP_EOL);
-	exit(2);
-}
-
-$report=$suite->run([
-	'runner'=>'panel_regression.php',
-	'generated_at'=>date('c'),
-]);
-
-dp_panel_regression_print_report($report);
-
-if(isset($options['json'])){
-	try{
-		dp_panel_regression_write_json((string)$options['json'], $report);
-	}
 	catch(Throwable $exception){
-		fwrite(STDERR, '[ERROR] Unable to write JSON report: '.$exception->getMessage().PHP_EOL);
-		exit(2);
+		fwrite(STDERR, '[ERROR] '.$exception->getMessage().PHP_EOL);
+		return 2;
 	}
+	$report=$suite->run([
+		'runner'=>'panel_regression.php',
+		'generated_at'=>date('c'),
+	]);
+	dp_panel_regression_print_report($report);
+	if(isset($options['json'])){
+		try{
+			dp_panel_regression_write_json((string)$options['json'], $report);
+		}
+		catch(Throwable $exception){
+			fwrite(STDERR, '[ERROR] Unable to write JSON report: '.$exception->getMessage().PHP_EOL);
+			return 2;
+		}
+	}
+	return dp_panel_regression_exit_code($report, !empty($options['fail_on_skip']));
 }
-
-exit(dp_panel_regression_exit_code($report, !empty($options['fail_on_skip'])));
 
 /**
  * Parses panel regression CLI flags into a normalized option map.
@@ -239,14 +235,20 @@ function dp_panel_regression_usage(): void {
  *
  * @throws RuntimeException When the Dataphyre autoloader cannot be found.
  */
-function dp_panel_regression_bootstrap(): void {
-	$modules_root=dirname(__DIR__, 2);
+function dp_panel_regression_bootstrap(?string $modules_root=null): void {
+	$modules_root ??=dirname(__DIR__, 2);
 	$autoload=$modules_root.'/core/kernel/autoloader.php';
 	if(!is_file($autoload)){
 		throw new RuntimeException('Unable to locate Dataphyre autoloader at '.$autoload.'.');
 	}
 	require_once $autoload;
 	\dataphyre\autoloader::register($modules_root);
+	// The CLI runner is intentionally application-independent. Register its own
+	// Framework namespace explicitly so a selected flight sheet cannot prevent
+	// the bundled regression classes from autoloading.
+	\dataphyre\autoloader::register_prefixes([
+		'Dataphyre\\Panel\\'=>$modules_root.'/panel/Framework',
+	]);
 	$frameworks=['panel'];
 	if(is_file($modules_root.'/reactor/Framework/Bootstrap.php')){
 		$frameworks[]='reactor';
@@ -348,7 +350,7 @@ function dp_panel_regression_load_example_suite(): PanelRegressionSuite {
  * @param string $path User-supplied path.
  * @return string Absolute or unchanged path suitable for file operations.
  */
-function dp_panel_regression_resolve_path(string $path): string {
+function dp_panel_regression_resolve_path(string $path, string|false|null $cwd=null): string {
 	$path=trim($path);
 	if($path===''){
 		return '';
@@ -357,7 +359,7 @@ function dp_panel_regression_resolve_path(string $path): string {
 	if(preg_match('/^[A-Za-z]:\//', $normalized)===1 || str_starts_with($normalized, '/')){
 		return $path;
 	}
-	$cwd=getcwd();
+	$cwd ??=getcwd();
 	return (is_string($cwd) && $cwd!=='') ? $cwd.'/'.$path : $path;
 }
 
@@ -471,4 +473,5 @@ function dp_panel_regression_exit_code(PanelRegressionReport $report, bool $fail
 	}
 	return 0;
 }
+if(!defined('DATAPHYRE_PANEL_REGRESSION_EMBEDDED')){ exit(dp_panel_regression_main($argv ?? [])); }
 }

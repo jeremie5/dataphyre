@@ -31,7 +31,7 @@ adding a custom driver or replacing a bundled driver.
 
 ## Configuration
 
-Configuration is read from `common/dataphyre/config/storage.php` and
+Configuration is read from `dataphyre/config/storage.php` and
 `applications/<app>/backend/dataphyre/config/storage.php`.
 
 Example:

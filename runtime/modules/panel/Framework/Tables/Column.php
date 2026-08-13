@@ -11,6 +11,9 @@ namespace Dataphyre\Panel;
  * Fluent definition for a Panel table column.
  *
  * Columns capture table identity, display formatting, sorting, searching, visibility, cell metadata, links, icons, colors, and inline editing behavior.
+ *
+ * @template TRecord = mixed
+ * @template TValue = mixed
  */
 final class Column {
 	use PanelExtensible;
@@ -72,7 +75,7 @@ final class Column {
 	 *
 	 * @param string $name Normalized manifest object name.
 	 * @param string $type Column display type before normalization.
-	 * @return self Configured column definition with normalized name, type, and label.
+	 * @return self<TRecord, TValue> Configured column definition with normalized name, type, and label.
 	 */
 	public static function make(string $name, string $type='text'): self {
 		return self::configured(new self($name, $type));
@@ -84,7 +87,7 @@ final class Column {
 	 * The builder normalizes names, labels, callbacks, renderer metadata, and manifest options before export.
 	 *
 	 * @param array<string,mixed> $definition Array manifest/configuration definition.
-	 * @return self Column definition hydrated from manifest/configuration data.
+	 * @return self<TRecord,TValue> Column definition hydrated from manifest/configuration data.
 	 */
 	public static function fromArray(array $definition): self {
 		$column=self::make((string)($definition['name'] ?? ''), (string)($definition['type'] ?? 'text'));
@@ -227,7 +230,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param string $label User-facing column or footer label.
-	 * @return self Cloned column definition with updated label metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated label metadata.
 	 */
 	public function label(string $label): self {
 		$clone=clone $this;
@@ -241,7 +244,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param string $type Column display type before normalization.
-	 * @return self Cloned column definition with updated type metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated type metadata.
 	 */
 	public function type(string $type): self {
 		$clone=clone $this;
@@ -255,7 +258,7 @@ final class Column {
 	 * Column query metadata lets resource tables expose sortable/searchable behavior without hard-coding SQL in renderers.
 	 *
 	 * @param bool $sortable Whether table sorting may use this column.
-	 * @return self Cloned column definition with updated sortable metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated sortable metadata.
 	 */
 	public function sortable(bool $sortable=true): self {
 		$clone=clone $this;
@@ -268,8 +271,8 @@ final class Column {
 	 *
 	 * Column query metadata lets resource tables expose sortable/searchable behavior without hard-coding SQL in renderers.
 	 *
-	 * @param callable $resolver Row-aware resolver callback.
-	 * @return self Cloned column definition with updated sort using metadata.
+	 * @param callable(TRecord, TValue=, PanelRequest|null=, self<TRecord, TValue>=, Resource<TRecord>|null=, ResourceTable<TRecord>|PageTable<TRecord>|null=): mixed $resolver Row-aware sort resolver callback.
+	 * @return self<TRecord,TValue> Cloned column definition with updated sort using metadata.
 	 */
 	public function sortUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -284,7 +287,7 @@ final class Column {
 	 * Column query metadata lets resource tables expose sortable/searchable behavior without hard-coding SQL in renderers.
 	 *
 	 * @param bool $searchable Whether table search may include this column.
-	 * @return self Cloned column definition with updated searchable metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated searchable metadata.
 	 */
 	public function searchable(bool $searchable=true): self {
 		$clone=clone $this;
@@ -297,8 +300,8 @@ final class Column {
 	 *
 	 * Column query metadata lets resource tables expose sortable/searchable behavior without hard-coding SQL in renderers.
 	 *
-	 * @param callable $resolver Row-aware resolver callback.
-	 * @return self Cloned column definition with updated search using metadata.
+	 * @param callable(TRecord, TValue=, PanelRequest|null=, self<TRecord, TValue>=, Resource<TRecord>|null=, ResourceTable<TRecord>|PageTable<TRecord>|null=): mixed $resolver Row-aware search resolver callback.
+	 * @return self<TRecord,TValue> Cloned column definition with updated search using metadata.
 	 */
 	public function searchUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -313,7 +316,7 @@ final class Column {
 	 * Visibility metadata controls default table columns, operation-specific display, and user-toggle availability.
 	 *
 	 * @param bool $toggleable Whether users may toggle this column from table controls.
-	 * @return self Cloned column definition with updated toggleable metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated toggleable metadata.
 	 */
 	public function toggleable(bool $toggleable=true): self {
 		$clone=clone $this;
@@ -327,7 +330,7 @@ final class Column {
 	 * Visibility metadata controls default table columns, operation-specific display, and user-toggle availability.
 	 *
 	 * @param bool $visible Whether the column is included before user toggles or operation rules apply.
-	 * @return self Cloned column definition with updated visible by default metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated visible by default metadata.
 	 */
 	public function visibleByDefault(bool $visible=true): self {
 		$clone=clone $this;
@@ -341,7 +344,7 @@ final class Column {
 	 * Visibility metadata controls default table columns, operation-specific display, and user-toggle availability.
 	 *
 	 * @param bool $hidden Whether the column should be omitted from the default visible set.
-	 * @return self Cloned column definition with updated hidden by default metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated hidden by default metadata.
 	 */
 	public function hiddenByDefault(bool $hidden=true): self {
 		return $this->visibleByDefault(!$hidden);
@@ -352,8 +355,8 @@ final class Column {
 	 *
 	 * Visibility metadata controls default table columns, operation-specific display, and user-toggle availability.
 	 *
-	 * @param bool|callable $visible Static visibility flag or request/record-aware visibility resolver.
-	 * @return self Cloned column definition with updated visible metadata.
+	 * @param bool|callable(string,TRecord|null=,PanelRequest|null=,self<TRecord,TValue>=):bool $visible Static visibility flag or request/record-aware visibility resolver.
+	 * @return self<TRecord,TValue> Cloned column definition with updated visible metadata.
 	 */
 	public function visible(bool|callable $visible=true): self {
 		if(is_callable($visible) && !is_bool($visible)){
@@ -369,8 +372,8 @@ final class Column {
 	 *
 	 * Visibility metadata controls default table columns, operation-specific display, and user-toggle availability.
 	 *
-	 * @param bool|callable $hidden Static hidden flag or request/record-aware hidden resolver.
-	 * @return self Cloned column definition with updated hidden metadata.
+	 * @param bool|callable(string,TRecord|null=,PanelRequest|null=,self<TRecord,TValue>=):bool $hidden Static hidden flag or request/record-aware hidden resolver.
+	 * @return self<TRecord,TValue> Cloned column definition with updated hidden metadata.
 	 */
 	public function hidden(bool|callable $hidden=true): self {
 		if(is_callable($hidden) && !is_bool($hidden)){
@@ -386,8 +389,8 @@ final class Column {
 	 *
 	 * Visibility metadata controls default table columns, operation-specific display, and user-toggle availability.
 	 *
-	 * @param callable $callback Resolver or lifecycle callback.
-	 * @return self Cloned column definition with updated visible using metadata.
+	 * @param callable(string, TRecord|null=, PanelRequest|null=, self<TRecord, TValue>=): bool $callback Resolver or lifecycle callback.
+	 * @return self<TRecord,TValue> Cloned column definition with updated visible using metadata.
 	 */
 	public function visibleUsing(callable $callback): self {
 		$clone=clone $this;
@@ -400,8 +403,8 @@ final class Column {
 	 *
 	 * Visibility metadata controls default table columns, operation-specific display, and user-toggle availability.
 	 *
-	 * @param callable $callback Resolver or lifecycle callback.
-	 * @return self Cloned column definition with updated hidden using metadata.
+	 * @param callable(string, TRecord|null=, PanelRequest|null=, self<TRecord, TValue>=): bool $callback Resolver or lifecycle callback.
+	 * @return self<TRecord,TValue> Cloned column definition with updated hidden using metadata.
 	 */
 	public function hiddenUsing(callable $callback): self {
 		$clone=clone $this;
@@ -415,7 +418,7 @@ final class Column {
 	 * Visibility metadata controls default table columns, operation-specific display, and user-toggle availability.
 	 *
 	 * @param array|string ... $operations Operations.
-	 * @return self Cloned column definition with updated visible on metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated visible on metadata.
 	 */
 	public function visibleOn(array|string ...$operations): self {
 		$clone=clone $this;
@@ -429,7 +432,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param array|string ... $operations Operations.
-	 * @return self Cloned column definition with updated only on metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated only on metadata.
 	 */
 	public function onlyOn(array|string ...$operations): self {
 		return $this->visibleOn(...$operations);
@@ -441,7 +444,7 @@ final class Column {
 	 * Visibility metadata controls default table columns, operation-specific display, and user-toggle availability.
 	 *
 	 * @param array|string ... $operations Operations.
-	 * @return self Cloned column definition with updated hidden on metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated hidden on metadata.
 	 */
 	public function hiddenOn(array|string ...$operations): self {
 		$clone=clone $this;
@@ -455,7 +458,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param array|string ... $operations Operations.
-	 * @return self Cloned column definition with updated except on metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated except on metadata.
 	 */
 	public function exceptOn(array|string ...$operations): self {
 		return $this->hiddenOn(...$operations);
@@ -467,7 +470,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param string $align Cell alignment token consumed by renderers.
-	 * @return self Cloned column definition with updated align metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated align metadata.
 	 */
 	public function align(string $align): self {
 		$align=strtolower(trim($align));
@@ -483,7 +486,7 @@ final class Column {
 	 *
 	 * @param string $label User-facing column or footer label.
 	 * @param ?string $description Description.
-	 * @return self Cloned column definition with updated group metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated group metadata.
 	 */
 	public function group(string $label, ?string $description=null): self {
 		$label=trim($label);
@@ -501,7 +504,7 @@ final class Column {
 	 *
 	 * @param string $label User-facing column or footer label.
 	 * @param ?string $description Description.
-	 * @return self Cloned column definition with updated column group metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated column group metadata.
 	 */
 	public function columnGroup(string $label, ?string $description=null): self {
 		return $this->group($label, $description);
@@ -512,8 +515,8 @@ final class Column {
 	 *
 	 * Resolvers produce display values, descriptions, tooltips, icons, colors, links, copy state, and formatting metadata for each row.
 	 *
-	 * @param callable $formatter Row-aware callback that converts the resolved cell value into display content.
-	 * @return self Cloned column definition with updated format metadata.
+	 * @param callable(TValue, TRecord|null=, self<TRecord, TValue>=): mixed $formatter Row-aware callback that converts the resolved cell value into display content.
+	 * @return self<TRecord,TValue> Cloned column definition with updated format metadata.
 	 */
 	public function format(callable $formatter): self {
 		$clone=clone $this;
@@ -526,8 +529,9 @@ final class Column {
 	 *
 	 * Resolvers produce display values, descriptions, tooltips, icons, colors, links, copy state, and formatting metadata for each row.
 	 *
-	 * @param callable $resolver Row-aware resolver callback.
-	 * @return self Cloned column definition with updated value using metadata.
+	 * @template TResolvedValue
+	 * @param callable(TRecord, self<TRecord, TResolvedValue>=): TResolvedValue $resolver Row-aware resolver callback.
+	 * @return self<TRecord,TResolvedValue> Cloned column definition with updated value using metadata.
 	 */
 	public function valueUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -540,8 +544,9 @@ final class Column {
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
-	 * @param callable $resolver Row-aware resolver callback.
-	 * @return self Cloned column definition with updated state using metadata.
+	 * @template TResolvedValue
+	 * @param callable(TRecord, self<TRecord, TResolvedValue>=): TResolvedValue $resolver Row-aware resolver callback.
+	 * @return self<TRecord,TResolvedValue> Cloned column definition with updated state using metadata.
 	 */
 	public function stateUsing(callable $resolver): self {
 		return $this->valueUsing($resolver);
@@ -552,9 +557,9 @@ final class Column {
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
-	 * @param mixed $record Current table row record or model.
-	 * @param mixed $default Fallback value when the record has no column value.
-	 * @return mixed Column hook, resolver result, record value, or supplied default.
+	 * @param TRecord|null $record Current table row record or model.
+	 * @param TValue $default Fallback value when the record has no column value.
+	 * @return TValue Column hook, resolver result, record value, or supplied default.
 	 */
 	public function resolveValue(mixed $record=null, mixed $default=''): mixed {
 		if(PanelComponentRegistry::columnTypeHasHook($this->type, 'value')){
@@ -575,8 +580,8 @@ final class Column {
 	 *
 	 * Resolvers produce display values, descriptions, tooltips, icons, colors, links, copy state, and formatting metadata for each row.
 	 *
-	 * @param mixed $value Manifest value or resolver input.
-	 * @param mixed $record Current table row record or model.
+	 * @param TValue $value Manifest value or resolver input.
+	 * @param TRecord|null $record Current table row record or model.
 	 * @return mixed Formatted display value after type hook, formatter callback, or built-in formatting.
 	 */
 	public function formatValue(mixed $value, mixed $record=null): mixed {
@@ -615,7 +620,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param string $currency Currency code stored in column metadata.
-	 * @return self Cloned column definition with updated money metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated money metadata.
 	 */
 	public function money(string $currency=''): self {
 		return $this->type('money')->meta(['currency'=>trim($currency)]);
@@ -627,7 +632,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param string $format Date/time format string used by built-in formatting.
-	 * @return self Cloned column definition with updated date metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated date metadata.
 	 */
 	public function date(string $format='Y-m-d'): self {
 		return $this->type('date')->meta(['format'=>$format]);
@@ -639,7 +644,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param string $format Date/time format string used by built-in formatting.
-	 * @return self Cloned column definition with updated datetime metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated datetime metadata.
 	 */
 	public function datetime(string $format='Y-m-d H:i'): self {
 		return $this->type('datetime')->meta(['format'=>$format]);
@@ -652,7 +657,7 @@ final class Column {
 	 *
 	 * @param string $true Label displayed for truthy boolean values.
 	 * @param string $false Label displayed for falsey boolean values.
-	 * @return self Cloned column definition with updated boolean labels metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated boolean labels metadata.
 	 */
 	public function booleanLabels(string $true='Yes', string $false='No'): self {
 		return $this->type('boolean')->meta([
@@ -667,7 +672,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param array|string $tones Tones.
-	 * @return self Cloned column definition with updated badge metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated badge metadata.
 	 */
 	public function badge(array|string $tones=[]): self {
 		$meta=[];
@@ -686,7 +691,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param ?string $labelColumn LabelColumn.
-	 * @return self Cloned column definition with updated url metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated url metadata.
 	 */
 	public function url(?string $labelColumn=null): self {
 		$meta=[];
@@ -700,7 +705,7 @@ final class Column {
 	 * Updates the email metadata for this column.
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
-	 * @return self Cloned column definition with updated email metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated email metadata.
 	 */
 	public function email(): self {
 		return $this->type('email');
@@ -712,7 +717,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param int $characters Maximum number of characters before truncation.
-	 * @return self Cloned column definition with updated truncate metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated truncate metadata.
 	 */
 	public function truncate(int $characters=80): self {
 		return $this->meta(['truncate'=>max(1, $characters)]);
@@ -724,7 +729,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param int $characters Maximum number of characters before truncation.
-	 * @return self Cloned column definition with updated limit metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated limit metadata.
 	 */
 	public function limit(int $characters=80): self {
 		return $this->truncate($characters);
@@ -736,7 +741,7 @@ final class Column {
 	 * Resolvers produce display values, descriptions, tooltips, icons, colors, links, copy state, and formatting metadata for each row.
 	 *
 	 * @param string $description Static row description text.
-	 * @return self Cloned column definition with updated description metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated description metadata.
 	 */
 	public function description(string $description): self {
 		return $this->meta(['description'=>trim($description)]);
@@ -747,8 +752,8 @@ final class Column {
 	 *
 	 * Resolvers produce display values, descriptions, tooltips, icons, colors, links, copy state, and formatting metadata for each row.
 	 *
-	 * @param callable $resolver Row-aware resolver callback.
-	 * @return self Cloned column definition with updated description using metadata.
+	 * @param callable(TRecord, TValue=, mixed=, self<TRecord, TValue>=): string|\Stringable|null $resolver Row-aware resolver callback.
+	 * @return self<TRecord,TValue> Cloned column definition with updated description using metadata.
 	 */
 	public function descriptionUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -762,7 +767,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param bool $copyable Whether the rendered value can be copied.
-	 * @return self Cloned column definition with updated copyable metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated copyable metadata.
 	 */
 	public function copyable(bool $copyable=true): self {
 		return $this->meta(['copyable'=>$copyable]);
@@ -773,8 +778,8 @@ final class Column {
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
-	 * @param callable $resolver Row-aware resolver callback.
-	 * @return self Cloned column definition with updated copy value using metadata.
+	 * @param callable(TRecord, TValue=, mixed=, self<TRecord, TValue>=): scalar|\Stringable|null $resolver Row-aware resolver callback.
+	 * @return self<TRecord,TValue> Cloned column definition with updated copy value using metadata.
 	 */
 	public function copyValueUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -789,7 +794,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param string $message Copy confirmation message shown by the renderer.
-	 * @return self Cloned column definition with updated copy message metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated copy message metadata.
 	 */
 	public function copyMessage(string $message): self {
 		return $this->meta(['copy_message'=>trim($message)]);
@@ -800,8 +805,8 @@ final class Column {
 	 *
 	 * Resolvers produce display values, descriptions, tooltips, icons, colors, links, copy state, and formatting metadata for each row.
 	 *
-	 * @param string|callable $tooltip Static tooltip text or row-aware resolver.
-	 * @return self Cloned column definition with updated tooltip metadata.
+	 * @param string|callable(TRecord,TValue=,mixed=,self<TRecord,TValue>=):string|\Stringable|null $tooltip Static tooltip text or row-aware resolver.
+	 * @return self<TRecord,TValue> Cloned column definition with updated tooltip metadata.
 	 */
 	public function tooltip(string|callable $tooltip): self {
 		if(is_callable($tooltip) && !is_string($tooltip)){
@@ -815,8 +820,8 @@ final class Column {
 	 *
 	 * Resolvers produce display values, descriptions, tooltips, icons, colors, links, copy state, and formatting metadata for each row.
 	 *
-	 * @param callable $resolver Row-aware resolver callback.
-	 * @return self Cloned column definition with updated tooltip using metadata.
+	 * @param callable(TRecord, TValue=, mixed=, self<TRecord, TValue>=): string|\Stringable|null $resolver Row-aware resolver callback.
+	 * @return self<TRecord,TValue> Cloned column definition with updated tooltip using metadata.
 	 */
 	public function tooltipUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -830,7 +835,7 @@ final class Column {
 	 * Resolvers produce display values, descriptions, tooltips, icons, colors, links, copy state, and formatting metadata for each row.
 	 *
 	 * @param string $icon Static icon name rendered with the cell.
-	 * @return self Cloned column definition with updated icon metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated icon metadata.
 	 */
 	public function icon(string $icon): self {
 		return $this->meta(['icon'=>trim($icon)]);
@@ -841,8 +846,8 @@ final class Column {
 	 *
 	 * Resolvers produce display values, descriptions, tooltips, icons, colors, links, copy state, and formatting metadata for each row.
 	 *
-	 * @param callable $resolver Row-aware resolver callback.
-	 * @return self Cloned column definition with updated icon using metadata.
+	 * @param callable(TRecord, TValue=, mixed=, self<TRecord, TValue>=): string|\Stringable|null $resolver Row-aware resolver callback.
+	 * @return self<TRecord,TValue> Cloned column definition with updated icon using metadata.
 	 */
 	public function iconUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -856,7 +861,7 @@ final class Column {
 	 * Resolvers produce display values, descriptions, tooltips, icons, colors, links, copy state, and formatting metadata for each row.
 	 *
 	 * @param string $color Static color token rendered with the cell.
-	 * @return self Cloned column definition with updated color metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated color metadata.
 	 */
 	public function color(string $color): self {
 		return $this->meta(['color'=>trim($color)]);
@@ -867,8 +872,8 @@ final class Column {
 	 *
 	 * Resolvers produce display values, descriptions, tooltips, icons, colors, links, copy state, and formatting metadata for each row.
 	 *
-	 * @param callable $resolver Row-aware resolver callback.
-	 * @return self Cloned column definition with updated color using metadata.
+	 * @param callable(TRecord, TValue=, mixed=, self<TRecord, TValue>=): string|\Stringable|null $resolver Row-aware resolver callback.
+	 * @return self<TRecord,TValue> Cloned column definition with updated color using metadata.
 	 */
 	public function colorUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -883,7 +888,7 @@ final class Column {
 	 *
 	 * @param mixed $url Static URL, URL-like value, or callback resolved per row.
 	 * @param mixed $newTab Boolean flag or callback deciding link target behavior.
-	 * @return self Cloned column definition with updated link to metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated link to metadata.
 	 */
 	public function linkTo(mixed $url, mixed $newTab=false): self {
 		$clone=clone $this;
@@ -905,7 +910,7 @@ final class Column {
 	 *
 	 * @param mixed $url Static URL, URL-like value, or callback resolved per row.
 	 * @param mixed $newTab Boolean flag or callback deciding link target behavior.
-	 * @return self Cloned column definition with updated href metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated href metadata.
 	 */
 	public function href(mixed $url, mixed $newTab=false): self {
 		return $this->linkTo($url, $newTab);
@@ -917,7 +922,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param mixed $newTab Boolean flag or callback deciding link target behavior.
-	 * @return self Cloned column definition with updated open in new tab metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated open in new tab metadata.
 	 */
 	public function openInNewTab(mixed $newTab=true): self {
 		$clone=clone $this;
@@ -938,8 +943,8 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param bool|string $editable Inline-edit flag or edit input type.
-	 * @param array|callable|null $options Additional manifest options.
-	 * @return self Cloned column definition with updated editable metadata.
+	 * @param array<array-key,mixed>|callable(TRecord,PanelRequest|null=,Resource<TRecord>|null=,ResourceTable<TRecord>|PageTable<TRecord>|null=):array<array-key,mixed>|null $options Additional manifest options.
+	 * @return self<TRecord,TValue> Cloned column definition with updated editable metadata.
 	 */
 	public function editable(bool|string $editable=true, array|callable|null $options=null): self {
 		$clone=clone $this;
@@ -963,8 +968,8 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param bool|string $editable Inline-edit flag or edit input type.
-	 * @param array|callable|null $options Additional manifest options.
-	 * @return self Cloned column definition with updated inline editable metadata.
+	 * @param array<array-key,mixed>|callable(TRecord,PanelRequest|null=,Resource<TRecord>|null=,ResourceTable<TRecord>|PageTable<TRecord>|null=):array<array-key,mixed>|null $options Additional manifest options.
+	 * @return self<TRecord,TValue> Cloned column definition with updated inline editable metadata.
 	 */
 	public function inlineEditable(bool|string $editable=true, array|callable|null $options=null): self {
 		return $this->editable($editable, $options);
@@ -976,7 +981,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param string $type Column display type before normalization.
-	 * @return self Cloned column definition with updated editable type metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated editable type metadata.
 	 */
 	public function editableType(string $type): self {
 		$clone=clone $this;
@@ -990,8 +995,8 @@ final class Column {
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
-	 * @param array|callable $options Additional manifest options.
-	 * @return self Cloned column definition with updated editable options metadata.
+	 * @param array<array-key, mixed>|callable(TRecord, PanelRequest|null=, Resource<TRecord>|null=, ResourceTable<TRecord>|PageTable<TRecord>|null=): array<array-key, mixed> $options Additional manifest options.
+	 * @return self<TRecord,TValue> Cloned column definition with updated editable options metadata.
 	 */
 	public function editableOptions(array|callable $options): self {
 		$clone=clone $this;
@@ -1015,8 +1020,8 @@ final class Column {
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
-	 * @param string|callable|null $footer Footer.
-	 * @return self Cloned column definition with updated footer metadata.
+	 * @param string|callable(list<TRecord>,PanelRequest|null=,self<TRecord,TValue>=,Resource<TRecord>|null=,ResourceTable<TRecord>|PageTable<TRecord>|null=):scalar|\Stringable|array<string,mixed>|null $footer Footer.
+	 * @return self<TRecord,TValue> Cloned column definition with updated footer metadata.
 	 */
 	public function footer(string|callable|null $footer): self {
 		$clone=clone $this;
@@ -1034,8 +1039,8 @@ final class Column {
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
-	 * @param callable $resolver Row-aware resolver callback.
-	 * @return self Cloned column definition with updated footer using metadata.
+	 * @param callable(list<TRecord>, PanelRequest|null=, self<TRecord, TValue>=, Resource<TRecord>|null=, ResourceTable<TRecord>|PageTable<TRecord>|null=): scalar|\Stringable|array<string, mixed>|null $resolver Row-aware resolver callback.
+	 * @return self<TRecord,TValue> Cloned column definition with updated footer using metadata.
 	 */
 	public function footerUsing(callable $resolver): self {
 		return $this->footer($resolver);
@@ -1048,7 +1053,7 @@ final class Column {
 	 *
 	 * @param string $type Column display type before normalization.
 	 * @param ?string $label Label.
-	 * @return self Cloned column definition with updated summarize metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated summarize metadata.
 	 */
 	public function summarize(string $type='sum', ?string $label=null): self {
 		$type=self::normalizeName($type) ?: 'sum';
@@ -1068,7 +1073,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param ?string $label Label.
-	 * @return self Cloned column definition with updated sum metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated sum metadata.
 	 */
 	public function sum(?string $label=null): self {
 		return $this->summarize('sum', $label);
@@ -1080,7 +1085,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param ?string $label Label.
-	 * @return self Cloned column definition with updated avg metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated avg metadata.
 	 */
 	public function avg(?string $label=null): self {
 		return $this->summarize('avg', $label);
@@ -1092,7 +1097,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param ?string $label Label.
-	 * @return self Cloned column definition with updated average metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated average metadata.
 	 */
 	public function average(?string $label=null): self {
 		return $this->summarize('average', $label);
@@ -1104,7 +1109,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param ?string $label Label.
-	 * @return self Cloned column definition with updated min metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated min metadata.
 	 */
 	public function min(?string $label=null): self {
 		return $this->summarize('min', $label);
@@ -1116,7 +1121,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param ?string $label Label.
-	 * @return self Cloned column definition with updated max metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated max metadata.
 	 */
 	public function max(?string $label=null): self {
 		return $this->summarize('max', $label);
@@ -1128,7 +1133,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param ?string $label Label.
-	 * @return self Cloned column definition with updated count metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated count metadata.
 	 */
 	public function count(?string $label=null): self {
 		return $this->summarize('count', $label);
@@ -1139,9 +1144,9 @@ final class Column {
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
-	 * @param array|callable $attributes Static header attributes or resolver returning header attributes.
+	 * @param array<string,mixed>|callable(PanelRequest|null=,self<TRecord,TValue>=,Resource<TRecord>|null=,ResourceTable<TRecord>|PageTable<TRecord>|null=):array<string,mixed> $attributes Static header attributes or resolver returning header attributes.
 	 * @param bool $merge Whether to append to existing header attribute layers.
-	 * @return self Cloned column definition with updated header attributes metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated header attributes metadata.
 	 */
 	public function headerAttributes(array|callable $attributes, bool $merge=true): self {
 		$clone=clone $this;
@@ -1157,9 +1162,9 @@ final class Column {
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
-	 * @param array|callable $attributes Static cell attributes or resolver returning row-aware cell attributes.
+	 * @param array<string, mixed>|callable(TRecord, TValue=, mixed=, PanelRequest|null=, Resource<TRecord>|null=, ResourceTable<TRecord>|PageTable<TRecord>|null=, self<TRecord, TValue>=): array<string, mixed> $attributes Static cell attributes or resolver returning row-aware cell attributes.
 	 * @param bool $merge Whether to append to existing cell attribute layers.
-	 * @return self Cloned column definition with updated cell attributes metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated cell attributes metadata.
 	 */
 	public function cellAttributes(array|callable $attributes, bool $merge=true): self {
 		$clone=clone $this;
@@ -1175,9 +1180,9 @@ final class Column {
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
-	 * @param array|callable $attributes Static cell attributes or resolver returning row-aware cell attributes.
+	 * @param array<string,mixed>|callable(TRecord,TValue=,mixed=,PanelRequest|null=,Resource<TRecord>|null=,ResourceTable<TRecord>|PageTable<TRecord>|null=,self<TRecord,TValue>=):array<string,mixed> $attributes Static cell attributes or resolver returning row-aware cell attributes.
 	 * @param bool $merge Whether to append to existing cell attribute layers.
-	 * @return self Cloned column definition with updated extra attributes metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated extra attributes metadata.
 	 */
 	public function extraAttributes(array|callable $attributes, bool $merge=true): self {
 		return $this->cellAttributes($attributes, $merge);
@@ -1188,9 +1193,9 @@ final class Column {
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
-	 * @param array|callable $attributes Static cell attributes or resolver returning row-aware cell attributes.
+	 * @param array<string,mixed>|callable(TRecord,TValue=,mixed=,PanelRequest|null=,Resource<TRecord>|null=,ResourceTable<TRecord>|PageTable<TRecord>|null=,self<TRecord,TValue>=):array<string,mixed> $attributes Static cell attributes or resolver returning row-aware cell attributes.
 	 * @param bool $merge Whether to append to existing cell attribute layers.
-	 * @return self Cloned column definition with updated attributes metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated attributes metadata.
 	 */
 	public function attributes(array|callable $attributes, bool $merge=true): self {
 		return $this->cellAttributes($attributes, $merge);
@@ -1203,7 +1208,7 @@ final class Column {
 	 *
 	 * @param string $name Normalized manifest object name.
 	 * @param mixed $value Manifest value or resolver input.
-	 * @return self Cloned column definition with updated header attribute metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated header attribute metadata.
 	 */
 	public function headerAttribute(string $name, mixed $value=true): self {
 		return $this->headerAttributes([$name=>$value]);
@@ -1216,7 +1221,7 @@ final class Column {
 	 *
 	 * @param string $name Normalized manifest object name.
 	 * @param mixed $value Manifest value or resolver input.
-	 * @return self Cloned column definition with updated cell attribute metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated cell attribute metadata.
 	 */
 	public function cellAttribute(string $name, mixed $value=true): self {
 		return $this->cellAttributes([$name=>$value]);
@@ -1229,7 +1234,7 @@ final class Column {
 	 *
 	 * @param string $name Normalized manifest object name.
 	 * @param mixed $value Manifest value or resolver input.
-	 * @return self Cloned column definition with updated header data metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated header data metadata.
 	 */
 	public function headerData(string $name, mixed $value=true): self {
 		return $this->headerAttribute('data-'.self::normalizeAttributeSegment($name), $value);
@@ -1242,7 +1247,7 @@ final class Column {
 	 *
 	 * @param string $name Normalized manifest object name.
 	 * @param mixed $value Manifest value or resolver input.
-	 * @return self Cloned column definition with updated cell data metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated cell data metadata.
 	 */
 	public function cellData(string $name, mixed $value=true): self {
 		return $this->cellAttribute('data-'.self::normalizeAttributeSegment($name), $value);
@@ -1255,7 +1260,7 @@ final class Column {
 	 *
 	 * @param string $name Normalized manifest object name.
 	 * @param mixed $value Manifest value or resolver input.
-	 * @return self Cloned column definition with updated header aria metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated header aria metadata.
 	 */
 	public function headerAria(string $name, mixed $value=true): self {
 		return $this->headerAttribute('aria-'.self::normalizeAttributeSegment($name), $value);
@@ -1268,7 +1273,7 @@ final class Column {
 	 *
 	 * @param string $name Normalized manifest object name.
 	 * @param mixed $value Manifest value or resolver input.
-	 * @return self Cloned column definition with updated cell aria metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated cell aria metadata.
 	 */
 	public function cellAria(string $name, mixed $value=true): self {
 		return $this->cellAttribute('aria-'.self::normalizeAttributeSegment($name), $value);
@@ -1280,7 +1285,7 @@ final class Column {
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
 	 * @param array<string,mixed> $meta Metadata merged into the column manifest.
-	 * @return self Cloned column definition with updated meta metadata.
+	 * @return self<TRecord,TValue> Cloned column definition with updated meta metadata.
 	 */
 	public function meta(array $meta): self {
 		$clone=clone $this;
@@ -1362,8 +1367,8 @@ final class Column {
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
-	 * @param mixed $record Current table row record or model.
-	 * @param mixed $value Manifest value or resolver input.
+	 * @param TRecord|null $record Current table row record or model.
+	 * @param TValue|null $value Manifest value or resolver input.
 	 * @param mixed $formatted Formatted cell value already prepared for display.
 	 * @param ?PanelRequest $request Panel request supplying operation, user, and table context.
 	 * @param mixed $resource Owning resource passed to table callbacks.
@@ -1468,8 +1473,8 @@ final class Column {
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
-	 * @param mixed $record Current table row record or model.
-	 * @param mixed $value Manifest value or resolver input.
+	 * @param TRecord|null $record Current table row record or model.
+	 * @param TValue|null $value Manifest value or resolver input.
 	 * @param mixed $formatted Formatted cell value already prepared for display.
 	 * @return string Resolved row description text, or an empty string.
 	 */
@@ -1492,8 +1497,8 @@ final class Column {
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
-	 * @param mixed $record Current table row record or model.
-	 * @param mixed $value Manifest value or resolver input.
+	 * @param TRecord|null $record Current table row record or model.
+	 * @param TValue|null $value Manifest value or resolver input.
 	 * @param mixed $formatted Formatted cell value already prepared for display.
 	 * @return string Resolved row tooltip text, or an empty string.
 	 */
@@ -1516,8 +1521,8 @@ final class Column {
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
-	 * @param mixed $record Current table row record or model.
-	 * @param mixed $value Manifest value or resolver input.
+	 * @param TRecord|null $record Current table row record or model.
+	 * @param TValue|null $value Manifest value or resolver input.
 	 * @param mixed $formatted Formatted cell value already prepared for display.
 	 * @return string Resolved copy payload, formatted value, or an empty string.
 	 */
@@ -1543,8 +1548,8 @@ final class Column {
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
-	 * @param mixed $record Current table row record or model.
-	 * @param mixed $value Manifest value or resolver input.
+	 * @param TRecord|null $record Current table row record or model.
+	 * @param TValue|null $value Manifest value or resolver input.
 	 * @param mixed $formatted Formatted cell value already prepared for display.
 	 * @return string Resolved icon name, or an empty string.
 	 */
@@ -1567,7 +1572,7 @@ final class Column {
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
-	 * @param mixed $record Current table row record or model.
+	 * @param TRecord|null $record Current table row record or model.
 	 * @param mixed $value Manifest value or resolver input.
 	 * @param mixed $formatted Formatted cell value already prepared for display.
 	 * @return string Resolved color token, or an empty string.
@@ -1591,7 +1596,7 @@ final class Column {
 	 *
 	 * Column metadata feeds table manifests, renderers, filters, summaries, and inline editing.
 	 *
-	 * @param mixed $record Current table row record or model.
+	 * @param TRecord|null $record Current table row record or model.
 	 * @param mixed $value Manifest value or resolver input.
 	 * @param mixed $formatted Formatted cell value already prepared for display.
 	 * @return string Resolved link URL, or an empty string.
@@ -1686,24 +1691,17 @@ final class Column {
 			}
 		}
 		$value=null;
-		switch($type){
-			case 'count':
-				$value=count($records);
-				break;
-			case 'avg':
-			case 'average':
-				$value=$numbers===[] ? null : array_sum($numbers)/count($numbers);
-				break;
-			case 'min':
-				$value=$numbers===[] ? null : min($numbers);
-				break;
-			case 'max':
-				$value=$numbers===[] ? null : max($numbers);
-				break;
-			default:
-				$type='sum';
-				$value=$numbers===[] ? null : array_sum($numbers);
-				break;
+		if($type==='count'){
+			$value=count($records);
+		}elseif($type==='avg' || $type==='average'){
+			$value=$numbers===[] ? null : array_sum($numbers)/count($numbers);
+		}elseif($type==='min'){
+			$value=$numbers===[] ? null : min($numbers);
+		}elseif($type==='max'){
+			$value=$numbers===[] ? null : max($numbers);
+		}else{
+			$type='sum';
+			$value=$numbers===[] ? null : array_sum($numbers);
 		}
 		if($value===null){
 			return ['label'=>trim((string)($this->meta['summary_label'] ?? '')), 'value'=>'', 'type'=>$type];

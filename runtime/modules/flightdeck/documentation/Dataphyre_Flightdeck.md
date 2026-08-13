@@ -106,7 +106,7 @@ Current Flightdeck-backed surfaces:
 
 - DataDoc uses Flightdeck for project and application management, project summaries, settings, dynamic code records, manual documents, and synchronization actions. DataDoc indexing runs as bounded lazy batches with visible progress and continuation controls, not as one blocking browser request. DataDoc has no standalone login page; accidental direct login includes redirect to Flightdeck auth.
 - Tracelog uses Flightdeck for session trace inspection and the D3 call-graph plotter.
-- Dpanel uses Flightdeck for scoped diagnostic execution, summary metrics, and expandable diagnostic details.
+- Dpanel uses Flightdeck for scoped diagnostic execution, summary metrics, expandable diagnostic details, and a searchable catalog of every code-defined test by suite, case, owner, file, tag, and group. Active worker labels use suite and case names instead of opaque file indexes.
 - Panel uses Flightdeck for resource manifests and retained lifecycle trace
   inspection across generated forms, saves, actions, relations, notifications,
   and redirects.

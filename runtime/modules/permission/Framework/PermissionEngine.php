@@ -16,7 +16,7 @@ namespace Dataphyre\Permission;
  *
  * The engine separates strict "all permissions must pass" checks from permissive "any permission may pass" checks, and can
  * return per-permission decisions or full explanations for diagnostics and audit views. Subject caches are keyed by resolved
- * subject id plus tenant context when available; anonymous subjects are keyed from their serialized value and tenant.
+ * subject identity, direct rules, and complete authorization context so a cached set can never cross a scope boundary.
  */
 final class PermissionEngine {
 
@@ -336,7 +336,7 @@ final class PermissionEngine {
 	}
 
 	/**
-	 * Builds a cache key for a subject and tenant context.
+	 * Builds a cache key for the subject rules and complete authorization context.
 	 *
 	 * @param mixed $subject Subject value.
 	 * @param array<string, mixed> $context Runtime context.
@@ -344,11 +344,34 @@ final class PermissionEngine {
 	 */
 	private function subjectCacheKey(mixed $subject, array $context): string {
 		$id=SubjectResolver::id($subject);
-		$tenant=$context['tenant'] ?? $context['tenant_id'] ?? null;
-		if($id!==null && $id!==false && $id!==''){
-			return 'id:'.(string)$id.'|tenant:'.(string)$tenant;
+		$identity=[
+			'id'=>$id,
+			'permissions'=>SubjectResolver::permissions($subject, $context),
+			'roles'=>SubjectResolver::roles($subject, $context),
+			'context'=>$this->cacheIdentityValue($context),
+		];
+		$prefix=$id!==null && $id!==false && $id!=='' ? 'id:'.(string)$id : 'anon';
+		return $prefix.'|identity:'.hash('sha256', serialize($identity));
+	}
+
+	/**
+	 * Normalizes authorization context values without collapsing objects or resources into a shared cache identity.
+	 */
+	private function cacheIdentityValue(mixed $value): mixed {
+		if(is_array($value)){
+			$normalized=[];
+			foreach($value as $key=>$entry){
+				$normalized[$key]=$this->cacheIdentityValue($entry);
+			}
+			return $normalized;
 		}
-		return 'anon:'.sha1(serialize([$subject, $tenant]));
+		if(is_object($value)){
+			return ['object'=>get_class($value), 'identity'=>spl_object_id($value)];
+		}
+		if(is_resource($value)){
+			return ['resource'=>get_resource_type($value), 'identity'=>get_resource_id($value)];
+		}
+		return $value;
 	}
 
 	/**

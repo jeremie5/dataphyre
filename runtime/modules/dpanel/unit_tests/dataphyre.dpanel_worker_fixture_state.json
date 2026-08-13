@@ -1,0 +1,9 @@
+[
+  {
+    "name": "Dpanel worker fixture state owns SQL calls, application globals, request state and non-public invocation",
+    "file": "/dataphyre/runtime/modules/dpanel/unit_tests/dpanel_worker_fixture_state_helpers.php",
+    "function": "dp_dpanel_worker_fixture_state_contract_json",
+    "args": [],
+    "expected": "{\"selected\":{\"id\":7},\"inserted\":{\"id\":9},\"select_calls\":2,\"first_select_table\":\"items\",\"missing_select_call\":[],\"fallback\":false,\"private\":\"hidden-ok\",\"query\":{\"page\":2},\"session\":\"yes\",\"session_put\":\"ok\",\"session_forgotten\":true,\"server_before\":true,\"server_value\":\"server\",\"server_after\":false,\"server_replaced\":\"whole\",\"cookie_keep\":\"yes\",\"cookie_added\":\"ok\",\"cookie_forgotten\":true,\"global_before\":true,\"global_value\":\"fixture\",\"global_after\":false,\"global_default\":\"default\",\"invalid_sql\":\"Unsupported Dpanel worker SQL fixture operation `drop`.\",\"invalid_global\":\"Dpanel worker application globals require a PHP identifier.\",\"invalid_state_key\":\"Dpanel worker session keys cannot be empty.\"}"
+  }
+]

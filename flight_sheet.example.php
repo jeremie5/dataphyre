@@ -5,7 +5,17 @@
  * Copyright (c) 2025 Shopiro Ltd.
  * SPDX-License-Identifier: MIT
  */
-$example_applications=is_dir(__DIR__.'/applications/example_app') ? __DIR__.'/applications' : __DIR__.'/examples/minimal/applications';
+$example_applications=__DIR__.'/applications';
+foreach([
+	__DIR__.'/applications',
+	__DIR__.'/dataphyre/examples/minimal/applications',
+	__DIR__.'/examples/minimal/applications',
+] as $applications_root){
+	if(is_dir($applications_root.'/example_app')){
+		$example_applications=$applications_root;
+		break;
+	}
+}
 return [
 	'bootstrap'=>[
 		'app'=>'example_app',
@@ -18,6 +28,16 @@ return [
 		'max_execution_time'=>30,
 		'application_roots'=>[
 			$example_applications,
+		],
+		'modules'=>[
+			'enabled'=>[
+				'http',
+				'mvc',
+				'routing',
+			],
+			'disabled'=>[
+				'flightdeck',
+			],
 		],
 		'flightdeck'=>[
 			'enabled'=>false,
@@ -39,6 +59,8 @@ return [
 			'directories'=>[
 				'cache',
 				'cache/flightdeck',
+				'config',
+				'config/static',
 				'logs',
 				'plugins',
 				'plugins/pre_init',

@@ -6,61 +6,51 @@
  * SPDX-License-Identifier: MIT
  */
 
-$debugbar_file=__DIR__.'/debugbar.php';
-if(is_file($debugbar_file)!==true){
-	http_response_code(404);
-	header('Content-Type: text/plain; charset=utf-8');
-	header('Cache-Control: no-store');
-	echo 'Not found';
+if(defined('DATAPHYRE_FLIGHTDECK_DEBUGBAR_ASSET_ENDPOINT_LOADED')){
 	return;
 }
+define('DATAPHYRE_FLIGHTDECK_DEBUGBAR_ASSET_ENDPOINT_LOADED',true);
 
-require_once($debugbar_file);
+require_once __DIR__.'/asset_response.php';
 
-if(class_exists('dataphyre_flightdeck_auth', false) && dataphyre_flightdeck_auth::production_disabled()===true){
-	http_response_code(404);
-	header('Content-Type: text/plain; charset=utf-8');
-	header('Cache-Control: no-store');
-	echo 'Not found';
-	return;
+/** Serves immutable Debugbar CSS and JavaScript assets. */
+final class dataphyre_flightdeck_debugbar_assets_endpoint {
+
+	/**
+	 * Dispatches one Debugbar asset request.
+	 *
+	 * @param ?string $debugbar_file Optional deterministic Debugbar dependency path.
+	 * @param ?bool $production_disabled Optional deterministic production policy decision.
+	 * @param ?array<string,mixed> $route_bindings Optional deterministic route bindings.
+	 * @param ?array<string,mixed> $query Optional deterministic query values.
+	 * @param ?array<string,mixed> $server Optional deterministic server values.
+	 */
+	public static function dispatch(?string $debugbar_file=null, ?bool $production_disabled=null, ?array $route_bindings=null, ?array $query=null, ?array $server=null): void {
+		$debugbar_file ??= __DIR__.'/debugbar.php';
+		if(is_file($debugbar_file)!==true){
+			dataphyre_flightdeck_asset_response::emit(dataphyre_flightdeck_asset_response::missing());
+			return;
+		}
+		require_once($debugbar_file);
+		$production_disabled ??= class_exists('dataphyre_flightdeck_auth',false)
+			&& dataphyre_flightdeck_auth::production_disabled()===true;
+		if($production_disabled===true){
+			dataphyre_flightdeck_asset_response::emit(dataphyre_flightdeck_asset_response::missing());
+			return;
+		}
+		$route_bindings ??= class_exists('dataphyre\\routing',false) ? (\dataphyre\routing::$bindings ?? []) : [];
+		$query ??= $_GET;
+		$server ??= $_SERVER;
+		$asset=dataphyre_flightdeck_asset_response::request_asset($route_bindings,$query,$server);
+		$content=class_exists('dataphyre_flightdeck_debugbar',false)
+			? dataphyre_flightdeck_debugbar::asset_content($asset)
+			: null;
+		dataphyre_flightdeck_asset_response::emit(
+			dataphyre_flightdeck_asset_response::build($asset,$content,__FILE__,$server),
+		);
+	}
 }
 
-$route_bindings=class_exists('dataphyre\\routing', false) ? (\dataphyre\routing::$bindings ?? []) : [];
-$asset=(string)($route_bindings['asset'] ?? $_GET['asset'] ?? basename((string)parse_url((string)($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH)));
-$content=class_exists('dataphyre_flightdeck_debugbar', false) ? dataphyre_flightdeck_debugbar::asset_content($asset) : null;
-if(!is_array($content)){
-	http_response_code(404);
-	header('Content-Type: text/plain; charset=utf-8');
-	header('Cache-Control: no-store');
-	echo 'Not found';
-	return;
+if(defined('DATAPHYRE_FLIGHTDECK_ASSET_ENDPOINT_NO_DISPATCH')!==true){
+	dataphyre_flightdeck_debugbar_assets_endpoint::dispatch();
 }
-
-$body=(string)($content['body'] ?? '');
-$content_type=(string)($content['content_type'] ?? 'application/octet-stream');
-$etag='"'.sha1($asset.'|'.$body).'"';
-$last_modified=gmdate('D, d M Y H:i:s', filemtime(__FILE__) ?: time()).' GMT';
-$method=strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
-
-header_remove('Pragma');
-header_remove('Expires');
-header('Content-Type: '.$content_type);
-header('Cache-Control: public, max-age=31536000, immutable');
-header('ETag: '.$etag);
-header('Last-Modified: '.$last_modified);
-header('Vary: Accept-Encoding');
-header('X-Content-Type-Options: nosniff');
-
-$if_none_match=trim((string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? ''));
-$if_modified_since=strtotime((string)($_SERVER['HTTP_IF_MODIFIED_SINCE'] ?? '')) ?: 0;
-$mtime=strtotime($last_modified) ?: time();
-if(($if_none_match!=='' && $if_none_match===$etag) || ($if_none_match==='' && $if_modified_since>0 && $if_modified_since>=$mtime)){
-	http_response_code(304);
-	return;
-}
-
-header('Content-Length: '.strlen($body));
-if($method==='HEAD'){
-	return;
-}
-echo $body;

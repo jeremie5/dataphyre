@@ -25,13 +25,15 @@ class diagnostic{
 	 *
 	 * @internal Diagnostic-only; mutates Datadoc SQL tables.
 	 */
-	public static function tests(): void {
+	public static function tests(?string $php_version=null, ?callable $extension_checker=null): void {
 		$verbose=[];
+		$php_version ??= PHP_VERSION;
+		$extension_checker ??= static fn(string $extension): bool=>extension_loaded($extension);
 		// Runtime information
 		\dp_module_required('datadoc', 'flightdeck');
 		\dp_module_required('datadoc', 'sql');
 		// Check for PHP version
-		if(version_compare(PHP_VERSION, $ver='8.1.0') < 0){
+		if(version_compare($php_version, $ver='8.1.0') < 0){
 			$verbose[]=['module'=>'datadoc', 'error'=>'PHP version '.$ver.' or higher is required.', 'time'=>time()];
 		}
 		// Check each required extension for module
@@ -44,7 +46,7 @@ class diagnostic{
 			'standard',
 		];
 		foreach($required_extensions as $extension){
-			if(!extension_loaded($extension)){
+			if(!$extension_checker($extension)){
 				$verbose[]=['module'=>'datadoc', 'error'=>"PHP extension '{$extension}' is not loaded.", 'time'=>time()];
 			}
 		}

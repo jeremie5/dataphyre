@@ -13,6 +13,10 @@ dp_define_module_config('sql', 'DP_SQL_CFG', [
 	'default_cluster'=>'',
 	'default_database_location'=>'',
 	'safe_delete'=>true,
+	'seeds'=>[
+		'paths'=>[],
+		'ledger_table'=>'dataphyre_seed_ledger',
+	],
 	'data_environments'=>[],
 	'caching'=>[
 		'rolling_db_cache_size'=>256,
@@ -32,9 +36,7 @@ require(__DIR__."/postgresql_query.php");
 require(__DIR__."/sqlite_query.php");
 require(__DIR__."/migration.php");
 
-if(RUN_MODE==='diagnostic'){
-	require_once(__DIR__.'/sql.diagnostic.php');
-}
+if(RUN_MODE==='diagnostic'){ require_once(__DIR__.'/sql.diagnostic.php'); }
 
 /**
  * Kernel SQL bridge for queries, schema hydration, caching, queues, and traces.
@@ -52,8 +54,10 @@ class sql {
 	private static array $structure_hydration_retrying=[];
 
 	/**
-	 * Resolves an implicit SQL cluster through the active data environment.
-	 * Explicit query overrides are applied by the caller after this resolution.
+	 * Resolves the cluster for the active execution-local data environment.
+	 *
+	 * Explicit cluster-bound Framework contexts apply their override after this
+	 * helper. Ordinary table and raw helpers inherit the ambient environment.
 	 */
 	public static function resolve_cluster(?string $configured=null): string {
 		$configured=trim((string)($configured ?? (DP_SQL_CFG['default_cluster'] ?? '')));
@@ -65,6 +69,23 @@ class sql {
 		}
 		return $configured;
 	}
+	/**
+	 * Resolves a query cluster while honoring the current Framework transaction.
+	 *
+	 * Transaction control statements keep using resolve_cluster() directly so an
+	 * explicitly opened inner transaction can select its own cluster. Ordinary raw
+	 * and table operations use this helper, ensuring ORM calls cannot escape the
+	 * connection that owns their active unit of work.
+	 */
+	private static function resolve_query_cluster(?string $configured=null): string {
+		if(class_exists('\Dataphyre\Database\Transaction')){
+			$cluster=\Dataphyre\Database\Transaction::activeCluster();
+			if(is_string($cluster) && trim($cluster)!==''){
+				return trim($cluster);
+			}
+		}
+		return self::resolve_cluster($configured);
+	}
 
 	/** Namespaces non-filesystem SQL cache keys for the active data environment. */
 	private static function environment_cache_key(string $key): string {
@@ -72,8 +93,7 @@ class sql {
 			? \Dataphyre\Database\DataEnvironment::cacheKey($key)
 			: $key;
 	}
-
-	/** Namespaces filesystem SQL cache locations for the active data environment. */
+	/** Namespaces filesystem SQL cache locations with traversal-safe segments. */
 	private static function environment_cache_path(string $location): string {
 		return class_exists('\Dataphyre\Database\DataEnvironment')
 			? \Dataphyre\Database\DataEnvironment::cachePath($location)
@@ -81,7 +101,12 @@ class sql {
 	}
 
 	/**
-	 * Captures the execution-local SQL and cache context for deferred work.
+	 * Captures the execution-local data environment for deferred SQL work.
+	 *
+	 * A queue can outlive the request scope that registered it. Persisting the
+	 * effective cluster together with the logical environment and cache namespace
+	 * prevents shutdown workers from replaying sandbox work against the live
+	 * cluster or writing its result into the live cache namespace.
 	 *
 	 * @return array{name:string,cluster:string,cache_namespace:?string,active:bool}
 	 */
@@ -115,13 +140,16 @@ class sql {
 	public function __construct(string $dbms_cluster="sql"){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		core::dialback("CALL_SQL_CONSTRUCT",...func_get_args());
-		register_shutdown_function(function(){
-			try{
-				self::session_cache_gc();
-			}catch(\Throwable $exception){
-				\dataphyre_shutdown_log('Fatal error on Dataphyre SQL session cache garbage collection shutdown callback', $exception);
-			}
-		});
+		register_shutdown_function([self::class,'session_cache_shutdown']);
+	}
+
+	/** Runs bounded SQL session-cache garbage collection during process shutdown. */
+	private static function session_cache_shutdown(): void {
+		try{
+			self::session_cache_gc();
+		}catch(\Throwable $exception){
+			\dataphyre_shutdown_log('Fatal error on Dataphyre SQL session cache garbage collection shutdown callback', $exception);
+		}
 	}
 	
 	/**
@@ -603,12 +631,13 @@ class sql {
 		$formatted_cluster=htmlspecialchars($cluster, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 		$formatted_query=htmlspecialchars($query);
 		$formatted_vars=!empty($vars) ? json_encode($vars, JSON_PRETTY_PRINT) : "None";
+		$formatted_vars=is_string($formatted_vars) ? $formatted_vars : 'Unable to encode bound variables';
 		/* SQL can be loaded independently of the optional core helper module.
 		 * Keep diagnostics bounded without making that module an implicit
 		 * dependency of the public SQL runtime. */
 		$formatted_vars=function_exists('\\ellipsis')
 			? \ellipsis($formatted_vars, 512)
-			: (mb_strlen($formatted_vars)<=512 ? $formatted_vars : mb_substr($formatted_vars, 0, 512).'...');
+			: (strlen($formatted_vars)<=512 ? $formatted_vars : substr($formatted_vars, 0, 512).'...');
 		$formatted_vars=htmlspecialchars($formatted_vars, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 		$error='
 		<div class="alert alert-danger" role="alert">
@@ -981,11 +1010,7 @@ class sql {
 		foreach(self::last_query_table_candidates() as $candidate){
 			self::register_runtime_table_definition($candidate);
 		}
-		$haystack=strtolower(str_replace(
-			['`', '"', "'", '[', ']'],
-			'',
-			(string)(self::$last_query_error['message'] ?? '').' '.(string)(self::$last_query_error['query'] ?? '')
-		));
+		$haystack=strtolower(str_replace(['`', '"', "'", '[', ']'], '', (string)(self::$last_query_error['message'] ?? '').' '.(string)(self::$last_query_error['query'] ?? '')));
 		foreach(array_keys(self::$table_definition_registry) as $location){
 			$location=strtolower($location);
 			$parts=explode('.', $location);
@@ -1039,12 +1064,12 @@ class sql {
 	 * @param string $location Logical or physical table location.
 	 * @return bool Whether a runtime definition was registered or already existed.
 	 */
-	private static function register_runtime_table_definition(string $location): bool {
+	private static function register_runtime_table_definition(string $location, ?array $manifest=null): bool {
 		$location=self::table($location);
 		if(isset(self::$table_definition_registry[$location])){
 			return true;
 		}
-		$manifest=self::runtime_table_definition_manifest();
+		$manifest??=self::runtime_table_definition_manifest();
 		$entry=$manifest[$location] ?? null;
 		if($entry===null){
 			return false;
@@ -1085,6 +1110,10 @@ class sql {
 			'dataphyre.postal_codes'=>['file'=>'geoposition/kernel/geoposition.tables.php', 'definition_id'=>'postal_codes'],
 			'issues'=>['file'=>'issue/kernel/issue.tables.php', 'definition_id'=>'issues'],
 			'locales'=>['file'=>'localization/kernel/localization.tables.php', 'definition_id'=>'locales'],
+			'dataphyre.permission_assignments'=>['file'=>'permission/kernel/permission.tables.php', 'definition_id'=>'assignments'],
+			'dataphyre.permission_roles'=>['file'=>'permission/kernel/permission.tables.php', 'definition_id'=>'roles'],
+			'dataphyre.permission_role_permissions'=>['file'=>'permission/kernel/permission.tables.php', 'definition_id'=>'role_permissions'],
+			'dataphyre.sentinel_events'=>['file'=>'sentinel/kernel/sentinel.tables.php', 'definition_id'=>'events'],
 			'stripe_payment_methods'=>['file'=>'stripe/kernel/stripe.tables.php', 'definition_id'=>'payment_methods'],
 			'dataphyre.user_changes'=>['file'=>'time_machine/kernel/time_machine.tables.php', 'definition_id'=>'user_changes'],
 			'dataphyre.tracelogs'=>['file'=>'tracelog/kernel/tracelog.tables.php', 'definition_id'=>'tracelogs'],
@@ -1223,12 +1252,103 @@ class sql {
 		$trimmed=strtoupper(ltrim($query));
 		$first_word=strtok($trimmed, " \t\n\r(");
 		if($first_word==='WITH'){
-			$pattern='/\b(SELECT|INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|VACUUM|PRAGMA|TRUNCATE|GRANT|REVOKE|SET|ANALYZE|EXECUTE|MERGE)\b/i';
+			$pattern='/\b(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|VACUUM|PRAGMA|TRUNCATE|GRANT|REVOKE|SET|ANALYZE|EXECUTE|MERGE)\b/i';
 			if(preg_match($pattern, $trimmed, $matches)){
-				$first_word=strtoupper($matches[1]);
+				$first_word=strtoupper((string)$matches[1]);
 			}
 		}
 		return isset($write_ops[$first_word]);
+	}
+
+	/**
+	 * Extracts mutation targets from a raw SQL statement.
+	 *
+	 * This deliberately recognizes only table-owning clauses. It is conservative:
+	 * false positives merely invalidate an extra registered table, while callers
+	 * can pass an explicit invalidation list when vendor-specific SQL cannot be
+	 * inferred. Single-quoted literals and comments are removed before scanning.
+	 *
+	 * @param string $query Raw SQL text, including optional CTEs or multiple statements.
+	 * @param bool $registered_only Return only locations present in DP_SQL_CFG tables.
+	 * @return list<string> Normalized table locations in first-seen order.
+	 */
+	public static function query_write_targets(string $query, bool $registered_only=false): array {
+		$query=preg_replace(
+			['@--[^\r\n]*@', '@/\*.*?\*/@s', "/'(?:''|\\\\.|[^'])*'/s"],
+			' ',
+			$query
+		);
+		if(!is_string($query) || trim($query)===''){
+			return [];
+		}
+		$part='(?:[A-Za-z_][A-Za-z0-9_$]*|"(?:[^"]|"")*"|`(?:[^`]|``)*`|\[[^\]]+\])';
+		$identifier=$part.'(?:\s*\.\s*'.$part.')*';
+		$pattern='/\b(?:'
+			.'INSERT\s+(?:OR\s+(?:REPLACE|ROLLBACK|ABORT|FAIL|IGNORE)\s+)?INTO\s+(?:ONLY\s+)?'
+			.'|REPLACE\s+INTO\s+'
+			.'|MERGE\s+INTO\s+'
+			.'|DELETE\s+FROM\s+(?:ONLY\s+)?'
+			.'|(?<!DO\s)(?<!KEY\s)UPDATE\s+(?:ONLY\s+)?'
+			.'|TRUNCATE\s+(?:TABLE\s+)?'
+			.'|(?:CREATE|ALTER|DROP)\s+TABLE\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?'
+			.')('.$identifier.')/i';
+		$match_count=preg_match_all($pattern, $query, $matches);
+		if(!is_int($match_count) || $match_count<1){
+			return [];
+		}
+		$configured=[];
+		if(defined('DP_SQL_CFG')){
+			$config=constant('DP_SQL_CFG');
+			if(is_array($config) && is_array($config['tables'] ?? null)){
+				foreach(array_keys($config['tables']) as $table){
+					$table=trim((string)$table);
+					if($table!==''){
+						$configured[strtolower($table)]=$table;
+					}
+				}
+			}
+		}
+		$targets=[];
+		foreach($matches[1] ?? [] as $raw){
+			$raw=trim((string)$raw);
+			if(strtolower($raw)==='set'){
+				continue;
+			}
+			$segments=preg_split('/\s*\.\s*/', $raw);
+			if(!is_array($segments) || $segments===[]){
+				continue;
+			}
+			$normalized=[];
+			foreach($segments as $segment){
+				$segment=trim($segment);
+				$first=$segment[0] ?? '';
+				$last=$segment!=='' ? $segment[strlen($segment)-1] : '';
+				if(($first==='"' && $last==='"') || ($first==='`' && $last==='`')){
+					$segment=substr($segment, 1, -1);
+					$segment=str_replace($first.$first, $first, $segment);
+				}elseif($first==='[' && $last===']'){
+					$segment=substr($segment, 1, -1);
+				}
+				if(preg_match('/^[A-Za-z_][A-Za-z0-9_$]*$/D', $segment)!==1){
+					$normalized=[];
+					break;
+				}
+				$normalized[]=$segment;
+			}
+			if($normalized===[]){
+				continue;
+			}
+			$target=self::table(implode('.', $normalized));
+			$key=strtolower($target);
+			if($registered_only){
+				if(!isset($configured[$key])){
+					continue;
+				}
+				$target=$configured[$key];
+			}
+			$targets[$key]=$target;
+		}
+		return array_values($targets);
 	}
 	
 	/**
@@ -1372,6 +1492,67 @@ class sql {
 		}
 		return true;
 	}
+
+	/**
+	 * Resolves filesystem query-cache state through an optional writable root.
+	 *
+	 * ROOTPATH['sql_cache'] lets immutable framework packages keep generated
+	 * cache entries outside their module source. Existing installations retain
+	 * the historical module-cache location when the key is absent.
+	 */
+	private static function filesystem_cache_path(string $location='', ?string $hash=null, ?string $runtime_root=null): string {
+		$configured_root=$runtime_root ?? (
+			defined('ROOTPATH')
+			&& is_array(ROOTPATH)
+			&& is_string(ROOTPATH['sql_cache'] ?? null)
+				? (string)ROOTPATH['sql_cache']
+				: ''
+		);
+		$root=trim($configured_root)!==''
+				? rtrim($configured_root, '/\\')
+				: __DIR__.'/../../../cache/sql';
+		$path=$root;
+		if($location!==''){
+			$path.='/'.trim($location, '/\\');
+		}
+		if($hash!==null && $hash!==''){
+			$path.='/'.trim($hash, '/\\');
+		}
+		return $path;
+	}
+
+	/**
+	 * Reports whether the optional cache module currently has a real shared backend.
+	 *
+	 * The cache facade deliberately fails open to request-local memory when
+	 * Memcached is unavailable. SQL must not treat that fallback as shared state:
+	 * doing so would let one worker publish or invalidate cache entries that no
+	 * other worker can observe.
+	 */
+	private static function shared_cache_available(): bool {
+		if(!dp_module_present('cache') || !class_exists(cache::class, false)){
+			return false;
+		}
+		if(!method_exists(cache::class, 'isShared')){
+			// Older facades may silently fail open to request-local memory. Without
+			// an explicit capability signal, shared SQL caching must fail closed.
+			return false;
+		}
+		try{
+			return cache::isShared()===true;
+		}catch(\Throwable){
+			return false;
+		}
+	}
+
+	/** Returns a registered table policy, or null for a named cache index. */
+	private static function registered_table_cache_policy(string $name): array|bool|null {
+		$name=self::table($name);
+		if(!isset(DP_SQL_CFG['tables'][$name]) || $name==='raw'){
+			return null;
+		}
+		return self::get_table_cache_policy($name);
+	}
 	
 	/**
 	 * Reads, writes, prunes, or invalidates query cache entries according to table cache policy.
@@ -1392,11 +1573,43 @@ class sql {
 		$cache_path_location=self::environment_cache_path($location);
 		if($cache_policy!==false){
 			if($cache_policy['type']==="shared_cache"){
-				if(dp_module_present('cache')){
-					$table_cache_version=(int)cache::get('table_version_'.$cache_location) ?? 0;
+				if(self::shared_cache_available()){
+					$table_cache_version=(int)cache::get('table_version_'.$cache_location);
+					if(!self::shared_cache_available()){
+						self::emit_observer_event([
+							'event'=>'cache_miss', 'operation'=>'read', 'location'=>$location,
+							'cache_status'=>'miss', 'cache_type'=>'shared_cache',
+							'reason'=>'shared_backend_unavailable',
+						]);
+						return null;
+					}
 					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Shared cache table version for $location: $table_cache_version)");
-					if(is_array($shared_cache_result=cache::get($key=$cache_location.'_'.$hash))){
-						if($shared_cache_result[0]===$table_cache_version){
+					$shared_cache_result=cache::get($key=$cache_location.'_'.$hash);
+					if(!self::shared_cache_available()){
+						self::emit_observer_event([
+							'event'=>'cache_miss', 'operation'=>'read', 'location'=>$location,
+							'cache_status'=>'miss', 'cache_type'=>'shared_cache',
+							'reason'=>'shared_backend_unavailable',
+						]);
+						return null;
+					}
+					if(is_array($shared_cache_result)){
+						// Re-read the generation after fetching the payload. An invalidation
+						// may race the two Memcached operations; accepting the first version
+						// alone would let one stale payload escape after a committed write.
+						$verified_table_cache_version=(int)cache::get('table_version_'.$cache_location);
+						if(!self::shared_cache_available()){
+							self::emit_observer_event([
+								'event'=>'cache_miss', 'operation'=>'read', 'location'=>$location,
+								'cache_status'=>'miss', 'cache_type'=>'shared_cache',
+								'reason'=>'shared_backend_unavailable',
+							]);
+							return null;
+						}
+						if(
+							$shared_cache_result[0]===$table_cache_version
+							&& $verified_table_cache_version===$table_cache_version
+						){
 							tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Read from shared cache (".$key.")");
 							$_SESSION['queries_retrieved_from_cache']??=0;
 							$_SESSION['queries_retrieved_from_cache']++;
@@ -1433,7 +1646,11 @@ class sql {
 					]);
 					return null;
 				}
-				\dataphyre\core::unavailable(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D="Shared cache requires dataphyre's cache module", $S="safemode");
+				self::emit_observer_event([
+					'event'=>'cache_miss', 'operation'=>'read', 'location'=>$location,
+					'cache_status'=>'miss', 'cache_type'=>'shared_cache',
+					'reason'=>'shared_backend_unavailable',
+				]);
 				return null;
 			}
 			elseif($cache_policy['type']==="session"){
@@ -1467,7 +1684,7 @@ class sql {
 				return null;
 			}
 			elseif($cache_policy['type']==="fs"){
-				$cache_file=__DIR__."/../../cache/sql/".$cache_path_location."/".$hash;
+				$cache_file=self::filesystem_cache_path($cache_path_location, $hash);
 				if(file_exists($cache_file)){
 					if(false!==$fs_cache=file_get_contents($cache_file)){
 						$fs_cache=json_decode($fs_cache, true);
@@ -1549,10 +1766,28 @@ class sql {
 				return false;
 			}
 			if($cache_policy['type']==='shared_cache'){
+				if(!self::shared_cache_available()){
+					self::emit_observer_event([
+						'event'=>'cache_store_skipped', 'operation'=>'read', 'location'=>$location,
+						'cache_status'=>'not_stored', 'cache_type'=>'shared_cache',
+						'reason'=>'shared_backend_unavailable',
+					]);
+					return false;
+				}
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Caching in shared cache");
 				if($query_result===false)$query_result='false';
-				$table_cache_version=(int)cache::get('table_version_'.$cache_location) ?? 0;
-				cache::set($cache_location.'_'.$hash, array($table_cache_version, $query_result), strtotime($cache_policy['max_lifespan']));
+				$table_cache_version=(int)cache::get('table_version_'.$cache_location);
+				$stored=self::shared_cache_available()
+					&& cache::set($cache_location.'_'.$hash, array($table_cache_version, $query_result), strtotime($cache_policy['max_lifespan']))===true
+					&& self::shared_cache_available();
+				if(!$stored){
+					self::emit_observer_event([
+						'event'=>'cache_store_skipped', 'operation'=>'read', 'location'=>$location,
+						'cache_status'=>'not_stored', 'cache_type'=>'shared_cache',
+						'reason'=>'shared_backend_unavailable',
+					]);
+					return false;
+				}
 			}
 			elseif($cache_policy['type']==='session'){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Caching in session");
@@ -1568,7 +1803,7 @@ class sql {
 			}
 			elseif($cache_policy['type']==="fs"){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Caching in filesystem");
-				$cache_file=__DIR__."/../../cache/sql/".$cache_path_location."/".$hash;
+				$cache_file=self::filesystem_cache_path($cache_path_location, $hash);
 				core::file_put_contents_forced($cache_file, json_encode(array($query_result, time()), JSON_UNESCAPED_UNICODE));
 				$_SESSION['db_cache_count']++;
 			}
@@ -1615,6 +1850,20 @@ class sql {
 			]);
 			return true;
 		}
+		if(
+			class_exists(\Dataphyre\Database\Transaction::class, false)
+			&& \Dataphyre\Database\Transaction::deferCacheInvalidation($clear_cache_for, $cache_policy)
+		){
+			self::emit_observer_event([
+				'event'=>'cache_invalidate_deferred',
+				'operation'=>'write',
+				'location'=>is_string($clear_cache_for) ? $clear_cache_for : null,
+				'cache_status'=>'deferred_until_commit',
+				'invalidation_names'=>is_array($clear_cache_for) ? self::trace_invalidation_names($clear_cache_for) : [$clear_cache_for],
+				'scope'=>is_string($clear_cache_for) ? 'table' : 'named_index',
+			]);
+			return true;
+		}
 		if($cache_policy===null){
 			if(is_string($clear_cache_for)){
 				$cache_policy=self::get_table_cache_policy($clear_cache_for);
@@ -1627,7 +1876,19 @@ class sql {
 				$cache_location=self::environment_cache_key($clear_cache_for);
 				$cache_path_location=self::environment_cache_path($clear_cache_for);
 				if($cache_policy['type']==="shared_cache"){
-					cache::increment('table_version_'.$cache_location);
+					if(
+						!self::shared_cache_available()
+						|| cache::increment('table_version_'.$cache_location)===false
+						|| !self::shared_cache_available()
+					){
+						self::emit_observer_event([
+							'event'=>'cache_invalidate_failed', 'operation'=>'write', 'location'=>$clear_cache_for,
+							'cache_status'=>'not_invalidated', 'cache_type'=>'shared_cache',
+							'invalidation_names'=>[$clear_cache_for], 'scope'=>'table',
+							'reason'=>'shared_backend_unavailable',
+						]);
+						return false;
+					}
 					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Cleared shared cache for table $clear_cache_for");
 				}
 				elseif($cache_policy['type']==="session"){
@@ -1637,7 +1898,7 @@ class sql {
 					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Cleared session cache for table $clear_cache_for");
 				}
 				elseif($cache_policy['type']==="fs"){
-					core::force_rmdir(__DIR__."/../../cache/sql/".$cache_path_location."/");
+					core::force_rmdir(self::filesystem_cache_path($cache_path_location));
 					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Cleared filesystem cache for table $clear_cache_for");
 				}
 				else
@@ -1663,18 +1924,30 @@ class sql {
 		}
 		else
 		{
+			$all_invalidated=true;
 			foreach($clear_cache_for as $logical_cache_index){
+				$logical_cache_index=(string)$logical_cache_index;
+				$registered_policy=self::registered_table_cache_policy($logical_cache_index);
+				if($registered_policy!==null && !self::invalidate_cache($logical_cache_index, $registered_policy)){
+					$all_invalidated=false;
+				}
 				$clear_cache_index=self::environment_cache_key((string)$logical_cache_index);
 				$invalidated_count=0;
 				foreach($_SESSION['db_cache_invalidation_index'][$clear_cache_index] ?? [] as $invalidation_cache){
 					if($invalidation_cache[0]==='shared_cache'){
-						cache::delete($invalidation_cache[1].'_'.$invalidation_cache[2]);
+						if(
+							!self::shared_cache_available()
+							|| cache::delete($invalidation_cache[1].'_'.$invalidation_cache[2])!==true
+							|| !self::shared_cache_available()
+						){
+							$all_invalidated=false;
+						}
 					}
 					elseif($invalidation_cache[0]==='session'){
 						unset($_SESSION['db_cache'][$invalidation_cache[1]][$invalidation_cache[2]]);
 					}
 					elseif($invalidation_cache[0]==='fs'){
-						$cache_file=__DIR__."/../../cache/sql/".$invalidation_cache[1]."/".$invalidation_cache[2];
+						$cache_file=self::filesystem_cache_path((string)$invalidation_cache[1], (string)$invalidation_cache[2]);
 						if(is_file($cache_file)){
 							unlink($cache_file);
 						}
@@ -1695,6 +1968,7 @@ class sql {
 				]);
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Cleared cache for invalidation index $clear_cache_index ($invalidated_count entr".($invalidated_count===1 ? 'y' : 'ies').")");
 			}
+			if(!$all_invalidated) return false;
 		}
 		return true;
 	}
@@ -1741,10 +2015,18 @@ class sql {
 	 * @return bool True when the SQL metadata, transaction, cache, or write operation succeeds.
 	 */
 	public static function transaction(callable $fn, ?string $cluster=null): bool {
-		self::begin($cluster);
+		if(self::begin($cluster)!==true){
+			return false;
+		}
 		try{
-			$fn();
-			self::commit($cluster);
+			if($fn()===false){
+				self::rollback($cluster);
+				return false;
+			}
+			if(self::commit($cluster)!==true){
+				self::rollback($cluster);
+				return false;
+			}
 			return true;
 		}catch(\Throwable $e){
 			self::rollback($cluster);
@@ -1766,7 +2048,7 @@ class sql {
 			'postgresql'=>'BEGIN',
 			'sqlite'=>'BEGIN TRANSACTION',
 			'dbms_cluster_override'=>$cluster
-		], null, false, false, false);
+		], null, false, false, false, false);
 	}
 
 	/**
@@ -1783,7 +2065,7 @@ class sql {
 			'postgresql'=>'COMMIT',
 			'sqlite'=>'COMMIT',
 			'dbms_cluster_override'=>$cluster
-		], null, false, false, false);
+		], null, false, false, false, false);
 	}
 
 	/**
@@ -1800,7 +2082,30 @@ class sql {
 			'postgresql'=>'ROLLBACK',
 			'sqlite'=>'ROLLBACK',
 			'dbms_cluster_override'=>$cluster
-		], null, false, false, false);
+		], null, false, false, false, false);
+	}
+
+	/**
+	 * Disables read caching while a Framework transaction is active.
+	 *
+	 * Transactional reads must reach the database connection to observe prior writes
+	 * in the same unit of work. They must also never publish rows that remain
+	 * uncommitted and could later be rolled back. Kernel-only callers keep their
+	 * original cache policy because no Framework transaction lifecycle is available
+	 * to coordinate with them.
+	 *
+	 * @param null|bool|array|string $caching Requested read-cache policy.
+	 * @return null|bool|array|string False during an active Framework transaction, otherwise the original policy.
+	 */
+	private static function transaction_read_caching(null|bool|array|string $caching): null|bool|array|string {
+		if(
+			$caching!==false
+			&& class_exists(\Dataphyre\Database\Transaction::class, false)
+			&& \Dataphyre\Database\Transaction::hasActiveTransaction()
+		){
+			return false;
+		}
+		return $caching;
 	}
 	
 	/**
@@ -1820,11 +2125,13 @@ class sql {
 	 */
 	public static function query(string|array $query, ?array $vars=null, ?bool $associative=false, ?bool $multipoint=false, null|bool|array|string $caching=[false], bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : mixed {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		if(null!==$early_return=core::dialback("CALL_SQL_DB_SELECT",...func_get_args())) return $early_return;
-		$trace_started_at=microtime(true);
-		$location='raw';
-		$hash=null;
-		if($caching!==false){
+		$caching=self::transaction_read_caching($caching);
+		if(null!==$early_return=core::dialback("CALL_SQL_DB_SELECT", $query, $vars, $associative, $multipoint, $caching, $clear_cache, $queue, $callback)) return $early_return;
+			$trace_started_at=microtime(true);
+			$location='raw';
+			$hash=null;
+			$cache_policy=null;
+			if($caching!==false){
 			if(is_array($caching)===false)$caching=[$caching];
 			if(false!==$cache_policy=self::get_table_cache_policy($location)){
 				if($cache_policy['hash_type']==='sha256'){
@@ -1841,10 +2148,10 @@ class sql {
 			}
 		}
 		if($clear_cache===null)$clear_cache=false;
-		if($clear_cache!==false){
+		if($clear_cache!==false && $clear_cache!==true){
 			if(is_array($clear_cache)===false)$clear_cache=[$clear_cache];
 		}
-		$dbms_cluster=self::resolve_cluster(DP_SQL_CFG['tables'][$location]['cluster']??DP_SQL_CFG['default_cluster']);
+		$dbms_cluster=self::resolve_query_cluster(DP_SQL_CFG['tables'][$location]['cluster']??DP_SQL_CFG['default_cluster']);
 		if(isset($query['dbms_cluster_override']))$dbms_cluster=$query['dbms_cluster_override'];
 		$dbms=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($query)){
@@ -1878,7 +2185,7 @@ class sql {
 					'callback'=>$callback,
 					'hash'=>$hash,
 					'dbms_cluster'=>$dbms_cluster,
-					'data_environment'=>self::queued_environment_context($dbms_cluster)
+					'data_environment'=>self::queued_environment_context($dbms_cluster),
 				];
 			};
 		}
@@ -1961,7 +2268,7 @@ class sql {
 		if($caching!==false && $caching!=='lazy' && $cache_policy!==false){
 			self::cache_query_result($location, $hash, $query_result, $caching, $cache_policy);
 		}
-		if($query_result!==false){
+		if($query_result!==false && $clear_cache!==false){
 			if($clear_cache===true){
 				self::invalidate_cache($location, $cache_policy);
 			}
@@ -2010,7 +2317,8 @@ class sql {
 	 */
 	public static function select(string|array $select, string $location, array|string|null $params=null, ?array $vars=null, ?bool $associative=false, null|bool|array|string $caching=[true], ?string $queue='end', ?callable $callback=null) : mixed { //bool|array|null
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		if(null!==$early_return=core::dialback("CALL_SQL_DB_SELECT",...func_get_args())) return $early_return;
+		$caching=self::transaction_read_caching($caching);
+		if(null!==$early_return=core::dialback("CALL_SQL_DB_SELECT", $select, $location, $params, $vars, $associative, $caching, $queue, $callback)) return $early_return;
 		$original_select=$select;
 		$original_location=$location;
 		$original_params=$params;
@@ -2036,13 +2344,13 @@ class sql {
 					}
 					if(null!==$cache=self::get_query_cached_result($location, $hash, $cache_policy)){
 						if(is_integer($cache)){
-							self::log_query_error($dbms, 'N/A', 'select cached result shape for '.$location, [], new \Exception("Unexpected cached query result, possible hash collision. Returning false."));
+							self::log_query_error('unknown', 'N/A', 'select cached result shape for '.$location, [], new \Exception("Unexpected cached query result, possible hash collision. Returning false."));
 							return false;
 						}
 						if($associative===true && is_array($cache)){
 							foreach($cache as $item){
 								if(!is_array($item)){
-									self::log_query_error($dbms, 'N/A', 'select cached row shape for '.$location, [], new \Exception("Cached query result is not a multidimensional array as expected, possible hash collision. Returning false."));
+									self::log_query_error('unknown', 'N/A', 'select cached row shape for '.$location, [], new \Exception("Cached query result is not a multidimensional array as expected, possible hash collision. Returning false."));
 									return false;
 								}
 							}
@@ -2053,7 +2361,7 @@ class sql {
 				}
 			}
 		}
-		$dbms_cluster=self::resolve_cluster(DP_SQL_CFG['tables'][$location]['cluster']??DP_SQL_CFG['default_cluster']);
+		$dbms_cluster=self::resolve_query_cluster(DP_SQL_CFG['tables'][$location]['cluster']??DP_SQL_CFG['default_cluster']);
 		$dbms=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($select)){
 			if(!isset($select[$dbms])){
@@ -2069,8 +2377,9 @@ class sql {
 			}
 			$params=$params[$dbms];
 		}
+		$params??='';
 		if(is_array($vars) && isset($vars[$dbms]))$vars=$vars[$dbms];
-		if($associative!==true && stripos($params, 'limit')===false && !is_null($params))$params.=' LIMIT 1'; 
+		if($associative!==true && !is_null($params) && stripos($params, 'limit')===false)$params.=' LIMIT 1';
 		if($callback){
 			$query_queue=function($vars)use($select, $location, $params, $associative, $caching, $callback, $hash, $dbms_cluster){
 				return [
@@ -2083,7 +2392,7 @@ class sql {
 					'callback'=>$callback,
 					'hash'=>$hash,
 					'dbms_cluster'=>$dbms_cluster,
-					'data_environment'=>self::queued_environment_context($dbms_cluster)
+					'data_environment'=>self::queued_environment_context($dbms_cluster),
 				];
 			};
 		}
@@ -2207,7 +2516,8 @@ class sql {
 	 */
 	public static function count(string $location, array|string|null $params=null, ?array $vars=null, null|bool|array|string $caching=[true], ?string $queue='end', ?callable $callback=null) : int|bool|null {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		if(null!==$early_return=core::dialback("CALL_SQL_DB_COUNT",...func_get_args())) return $early_return;
+		$caching=self::transaction_read_caching($caching);
+		if(null!==$early_return=core::dialback("CALL_SQL_DB_COUNT", $location, $params, $vars, $caching, $queue, $callback)) return $early_return;
 		$original_location=$location;
 		$original_params=$params;
 		$original_vars=$vars;
@@ -2227,7 +2537,7 @@ class sql {
 				}
 				if(null!==$cache=self::get_query_cached_result($location, $hash, $cache_policy)){
 					if(is_integer($cache)===false){
-						self::log_query_error($dbms, 'N/A', 'count cached result shape for '.$location, [], new \Exception("Unexpected cached query result, possible hash collision. Returning false."));
+						self::log_query_error('unknown', 'N/A', 'count cached result shape for '.$location, [], new \Exception("Unexpected cached query result, possible hash collision. Returning false."));
 						return false;
 					}
 					if(null!==$callback)$callback($cache);
@@ -2235,7 +2545,7 @@ class sql {
 				}
 			}
 		}
-		$dbms_cluster=self::resolve_cluster(DP_SQL_CFG['tables'][$location]['cluster']??DP_SQL_CFG['default_cluster']);
+		$dbms_cluster=self::resolve_query_cluster(DP_SQL_CFG['tables'][$location]['cluster']??DP_SQL_CFG['default_cluster']);
 		$dbms=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if($query_dbms && $dbms!==$query_dbms){
 			self::log_query_error($dbms, 'N/A', 'count dbms compatibility check for '.$location, [], new \Exception("Query has explicit DBMS compatibility flag $query_dbms that is not compatible with DBMS ($dbms) for location $location."));
@@ -2248,6 +2558,7 @@ class sql {
 			}
 			$params=$params[$dbms];
 		}
+		$params??='';
 		if(is_array($vars) && isset($vars[$dbms]))$vars=$vars[$dbms];
 		if($callback){
 			$query_queue=function($vars)use($location, $params, $caching, $callback, $hash, $dbms_cluster){
@@ -2259,7 +2570,7 @@ class sql {
 					'callback'=>$callback,
 					'hash'=>$hash,
 					'dbms_cluster'=>$dbms_cluster,
-					'data_environment'=>self::queued_environment_context($dbms_cluster)
+					'data_environment'=>self::queued_environment_context($dbms_cluster),
 				];
 			};
 		}
@@ -2383,7 +2694,7 @@ class sql {
 		$trace_started_at=microtime(true);
 		if(is_array($fields)){
 			if(!empty($vars)){
-				self::log_query_error($dbms, 'N/A', 'insert field array argument check for '.$location, [], new \Exception("Variables has to be empty when fields is of type array."));
+				self::log_query_error('unknown', 'N/A', 'insert field array argument check for '.$location, [], new \Exception("Variables has to be empty when fields is of type array."));
 				return false;
 			}
 			$vars=array_values($fields);
@@ -2391,7 +2702,7 @@ class sql {
 		}
 		if($clear_cache===null)$clear_cache=false;
 		$location=self::table($location, $query_dbms);
-		$dbms_cluster=self::resolve_cluster(DP_SQL_CFG['tables'][$location]['cluster']??DP_SQL_CFG['default_cluster']);
+		$dbms_cluster=self::resolve_query_cluster(DP_SQL_CFG['tables'][$location]['cluster']??DP_SQL_CFG['default_cluster']);
 		$dbms=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($vars)){
 			if(isset($vars[$dbms])){
@@ -2422,7 +2733,7 @@ class sql {
 					'associative'=>false,
 					'returning'=>$returning,
 					'dbms_cluster'=>$dbms_cluster,
-					'data_environment'=>self::queued_environment_context($dbms_cluster)
+					'data_environment'=>self::queued_environment_context($dbms_cluster),
 				];
 			};
 		}
@@ -2549,7 +2860,7 @@ class sql {
 		$vars??=[];
 		if($clear_cache===null)$clear_cache=false;
 		$location=self::table($location, $query_dbms);
-		$dbms_cluster=self::resolve_cluster(DP_SQL_CFG['tables'][$location]['cluster']??DP_SQL_CFG['default_cluster']);
+		$dbms_cluster=self::resolve_query_cluster(DP_SQL_CFG['tables'][$location]['cluster']??DP_SQL_CFG['default_cluster']);
 		$dbms=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($fields) && isset($fields[$dbms]))$fields=$fields[$dbms];
 		if(is_array($vars) && isset($vars[$dbms]))$vars=$vars[$dbms];
@@ -2582,7 +2893,7 @@ class sql {
 					'callback'=>$callback,
 					'multipoint'=>true,
 					'dbms_cluster'=>$dbms_cluster,
-					'data_environment'=>self::queued_environment_context($dbms_cluster)
+					'data_environment'=>self::queued_environment_context($dbms_cluster),
 				];
 			};
 		}
@@ -2725,7 +3036,7 @@ class sql {
 		$original_clear_cache=$clear_cache;
 		$trace_started_at=microtime(true);
 		$location=self::table($location, $query_dbms);
-		$dbms_cluster=self::resolve_cluster(DP_SQL_CFG['tables'][$location]['cluster']??DP_SQL_CFG['default_cluster']);
+		$dbms_cluster=self::resolve_query_cluster(DP_SQL_CFG['tables'][$location]['cluster']??DP_SQL_CFG['default_cluster']);
 		$dbms=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($params)){
 			if(!isset($params[$dbms])){
@@ -2756,15 +3067,13 @@ class sql {
 					'callback'=>$callback,
 					'multipoint'=>true,
 					'dbms_cluster'=>$dbms_cluster,
-					'data_environment'=>self::queued_environment_context($dbms_cluster)
+					'data_environment'=>self::queued_environment_context($dbms_cluster),
 				];
 			};
 		}
-		if(stripos($params, 'WHERE')!==false){
-			if(DP_SQL_CFG['safe_delete']===false){
-				self::log_query_error($dbms, 'N/A', 'delete safety check for '.$location, [], new \Exception("Query attempted to delete all rows of a table but safe_delete is not false."));
-				return false;
-			}
+		if(DP_SQL_CFG['safe_delete']===true && (!is_string($params) || stripos($params, 'WHERE')===false)){
+			self::log_query_error($dbms, 'N/A', 'delete safety check for '.$location, [], new \Exception("Query attempted to delete all rows of a table while safe_delete is enabled."));
+			return false;
 		}
 		switch($dbms){
 			case"mysql":
@@ -2889,7 +3198,7 @@ class sql {
 		$update_vars ??=[];
 		if($clear_cache===null) $clear_cache=false;
 		$location=self::table($location, $query_dbms);
-		$dbms_cluster=self::resolve_cluster(DP_SQL_CFG['tables'][$location]['cluster'] ?? DP_SQL_CFG['default_cluster']);
+		$dbms_cluster=self::resolve_query_cluster(DP_SQL_CFG['tables'][$location]['cluster'] ?? DP_SQL_CFG['default_cluster']);
 		$dbms=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['dbms'];
 		if(is_array($fields[$dbms] ?? null)){
 			if($dbms==='postgresql'){
@@ -2952,7 +3261,7 @@ class sql {
 								'clear_cache'=>$clear_cache,
 								'callback'=>$callback,
 								'dbms_cluster'=>$dbms_cluster,
-								'data_environment'=>self::queued_environment_context($dbms_cluster)
+								'data_environment'=>self::queued_environment_context($dbms_cluster),
 							];
 						};
 						mysql_query_builder::$queued_queries[$queue]['raw'][]=$query_queue($vars);
@@ -2991,7 +3300,7 @@ class sql {
 								'clear_cache'=>$clear_cache,
 								'callback'=>$callback,
 								'dbms_cluster'=>$dbms_cluster,
-								'data_environment'=>self::queued_environment_context($dbms_cluster)
+								'data_environment'=>self::queued_environment_context($dbms_cluster),
 							];
 						};
 						postgresql_query_builder::$queued_queries[$queue]['raw'][]=$query_queue($vars);
@@ -3029,7 +3338,7 @@ class sql {
 								'clear_cache'=>$clear_cache,
 								'callback'=>$callback,
 								'dbms_cluster'=>$dbms_cluster,
-								'data_environment'=>self::queued_environment_context($dbms_cluster)
+								'data_environment'=>self::queued_environment_context($dbms_cluster),
 							];
 						};
 						sqlite_query_builder::$queued_queries[$queue]['raw'][]=$query_queue($vars);

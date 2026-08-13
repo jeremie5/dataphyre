@@ -13,7 +13,9 @@ namespace Dataphyre\Panel;
  * Plugins participate in two phases: `register()` declares capabilities on a `PanelInstance`,
  * and `boot()` performs work that depends on all plugins/resources already being registered.
  * Implementations should keep `id()` stable because diagnostics and package tooling use it as
- * the plugin identity.
+ * the plugin identity. Existing plugins remain source-compatible; plugins that need boot ordering
+ * may additionally expose a public zero-argument `dependencies()`, `requiredPlugins()`, or
+ * `requires()` method returning a plugin id, list of ids, or id-to-version map.
  */
 interface PanelPlugin {
 

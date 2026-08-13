@@ -400,7 +400,7 @@ class event_emitter {
 		// Example implementation using a promise-based approach
 		new \dataphyre\async\promise(function($resolve)use($listener, $args){
 			$listener(...$args);
-			$resolve();
+			$resolve(null);
 		});
 	}
 

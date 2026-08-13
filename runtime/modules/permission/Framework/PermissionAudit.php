@@ -53,9 +53,6 @@ final class PermissionAudit {
 			$findings=array_merge($findings, self::ruleFindings($rules, $known, ['role'=>$role], $options));
 		}
 		foreach($assignments as $assignment){
-			if(!is_array($assignment)){
-				continue;
-			}
 			$value=PermissionRule::normalize((string)($assignment['value'] ?? ''));
 			if($value===''){
 				$findings[]=self::finding('empty_assignment_value', 'warning', 'An assignment has an empty permission or role value.', ['assignment'=>$assignment]);

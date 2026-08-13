@@ -22,6 +22,7 @@ final class NavigationCluster {
 	private ?string $description=null;
 	private int $sort=100;
 	private mixed $badge=null;
+	/** @var (\Closure(?PanelRequest,self,?PanelManager):mixed)|null */
 	private ?\Closure $badgeResolver=null;
 	private string $badgeTone='neutral';
 	private bool $collapsed=false;
@@ -147,7 +148,7 @@ final class NavigationCluster {
 	 * Resolver callbacks receive the current request, cluster, and panel manager
 	 * during serialization. Static badges are stored directly.
 	 *
-	 * @param mixed $badge Static badge value or callable resolver.
+	 * @param scalar|\Stringable|array<array-key,mixed>|null|callable(?PanelRequest,self,?PanelManager):mixed $badge Static badge value or callable resolver.
 	 * @return self New cluster with updated badge configuration.
 	 */
 	public function badge(mixed $badge): self {

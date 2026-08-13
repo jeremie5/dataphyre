@@ -1843,7 +1843,7 @@ final class Mvc {
 	 */
 	private static function reactorResponse(mixed $response): Response {
 		$payload=$response instanceof \JsonSerializable ? $response->jsonSerialize() : (is_array($response) ? $response : []);
-		$status=method_exists($response, 'status') ? (int)$response->status() : (int)($payload['status'] ?? 200);
+		$status=is_object($response) && method_exists($response, 'status') ? (int)$response->status() : (int)($payload['status'] ?? 200);
 		$status=max(100, min(599, $status));
 		return Response::json($payload, $status, ['X-Dataphyre-Reactor'=>'1']);
 	}

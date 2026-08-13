@@ -111,7 +111,7 @@ final class TableManifest {
 			'views'=>count($views),
 			'actions'=>count($actions),
 		]);
-		return $manifest;
+		return PanelManifestContract::stamp($manifest);
 	}
 
 	/**

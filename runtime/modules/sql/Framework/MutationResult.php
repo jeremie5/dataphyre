@@ -46,16 +46,17 @@ final class MutationResult implements \JsonSerializable {
 		private readonly array $context=[],
 		private readonly ?string $errorMessage=null
 	){
-		$this->insertedId=$operation==='insert' && (is_string($rawResult) || is_int($rawResult)) ? $rawResult : null;
+		$this->insertedId=self::resolveInsertedId($operation, $rawResult, $context);
 	}
 
 	/**
 	 * Normalizes a raw SQL mutation return into a MutationResult.
 	 *
 	 * False and null raw results are treated as failures. Integer raw results
-	 * become non-negative affected-row counts, while string insert ids and other
-	 * driver data are preserved only as rawResult. When a failure has no message,
-	 * SqlError builds one from the operation and context.
+	 * become non-negative affected-row counts. Insert identities may come from a
+	 * scalar result or the context-named primary key in a RETURNING row, while the
+	 * complete driver result remains available through rawResult(). When a failure
+	 * has no message, SqlError builds one from the operation and context.
 	 *
 	 * @param string $operation Mutation operation label.
 	 * @param mixed $rawResult Raw SQL kernel or driver return value.
@@ -227,9 +228,10 @@ final class MutationResult implements \JsonSerializable {
 	/**
 	 * Extracts an insert id from successful insert-style raw results.
 	 *
-	 * Only operation=insert can expose an inserted id here, and only string or
-	 * integer raw results are treated as ids. Other mutation operations and
-	 * non-scalar insert data return null.
+	 * Only operation=insert can expose an inserted id here. Scalar string/integer
+	 * results remain supported, while associative RETURNING rows use the
+	 * `primary_key` column named by mutation context. Other mutation operations
+	 * and ambiguous insert data return null.
 	 *
 	 * @return string|int|null Insert id, or null when no insert id is available.
 	 */
@@ -258,6 +260,36 @@ final class MutationResult implements \JsonSerializable {
 			'error_message'=>$this->errorMessage,
 			'raw_result'=>$this->rawResult,
 		];
+	}
+
+	/**
+	 * Resolves an insert identity from scalar or RETURNING-row kernel results.
+	 *
+	 * PostgreSQL and compatible drivers return the inserted row as an associative
+	 * array. The mutation context supplies the repository/table primary-key column,
+	 * avoiding unsafe first-column guesses when the row contains several fields.
+	 *
+	 * @param string $operation Mutation operation label.
+	 * @param mixed $rawResult Original SQL kernel or driver result.
+	 * @param array<string,mixed> $context Mutation diagnostic context.
+	 * @return string|int|null Insert identity when it is unambiguous.
+	 */
+	private static function resolveInsertedId(string $operation, mixed $rawResult, array $context): string|int|null {
+		if($operation!=='insert'){
+			return null;
+		}
+		if(is_string($rawResult) || is_int($rawResult)){
+			return $rawResult;
+		}
+		if(!is_array($rawResult)){
+			return null;
+		}
+		$primaryKey=is_string($context['primary_key'] ?? null) ? trim($context['primary_key']) : '';
+		if($primaryKey==='' || !array_key_exists($primaryKey, $rawResult)){
+			return null;
+		}
+		$value=$rawResult[$primaryKey];
+		return is_string($value) || is_int($value) ? $value : null;
 	}
 
 	/**

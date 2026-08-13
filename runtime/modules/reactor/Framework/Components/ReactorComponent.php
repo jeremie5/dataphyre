@@ -812,14 +812,45 @@ final class ReactorComponent implements \JsonSerializable {
 	 * @return array<string,mixed> Dehydrated state after optional callback and session persistence.
 	 */
 	public function dehydrate(array $state): array {
+		$state=$this->dehydrateState($state);
+		$this->commitSessionState($state);
+		return $state;
+	}
+
+	/**
+	 * Applies the component dehydration callback without mutating session state.
+	 *
+	 * The manager uses this pure phase while a snapshot reservation is still
+	 * pending, then commits session bindings only after the snapshot ledger has
+	 * accepted the response version.
+	 *
+	 * @param array<string,mixed> $state Component state after rendering/actions.
+	 * @return array<string,mixed> Dehydrated state before persistence side effects.
+	 */
+	public function dehydrateState(array $state): array {
 		if($this->dehydrate instanceof \Closure){
 			$result=($this->dehydrate)($state, $this);
 			if(is_array($result)){
 				$state=$result;
 			}
 		}
-		$this->persistSessionState($state);
 		return $state;
+	}
+
+	/**
+	 * Commits session-bound state after the snapshot ledger commit.
+	 *
+	 * Session persistence is deliberately best effort: the signed/CAS snapshot is
+	 * authoritative, and a session backend failure must not strand a client after
+	 * the monotonic version has already advanced.
+	 */
+	public function commitSessionState(array $state): bool {
+		try{ return $this->persistSessionState($state); }
+		catch(\Throwable){
+			try{ ReactorTrace::record('session.persistence_failed', ['component'=>$this->name]); }
+			catch(\Throwable){}
+			return false;
+		}
 	}
 
 	/**
@@ -1300,9 +1331,9 @@ final class ReactorComponent implements \JsonSerializable {
 	 * @param array<string,mixed> $state Component state after actions, hooks, and computed values.
 	 * @return void
 	 */
-	private function persistSessionState(array $state): void {
+	private function persistSessionState(array $state): bool {
 		if($this->sessionBindings===[] || self::ensureSession()!==true){
-			return;
+			return $this->sessionBindings===[];
 		}
 		if(!isset($_SESSION['dataphyre_reactor']) || !is_array($_SESSION['dataphyre_reactor'])){
 			$_SESSION['dataphyre_reactor']=[];
@@ -1315,6 +1346,7 @@ final class ReactorComponent implements \JsonSerializable {
 			$_SESSION['dataphyre_reactor'][$key]=self::pathValue($state, $field);
 			ReactorTrace::record('session.persisted', ['component'=>$this->name, 'field'=>$field]);
 		}
+		return true;
 	}
 
 	/**

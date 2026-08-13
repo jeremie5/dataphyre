@@ -135,10 +135,9 @@ final class bootstrap_config {
 	/**
 	 * Normalizes the selected flight sheet's module policy into lookup sets.
 	 *
-	 * The enabled list is authoritative, disabled entries remove matching enabled
-	 * entries, and names are normalized once during bootstrap. Core is a reserved
-	 * bootstrap dependency and remains implicitly enabled outside application
-	 * module selection.
+	 * A non-empty enabled list is authoritative. When it is absent or empty,
+	 * legacy filesystem discovery remains available; disabled entries still win.
+	 * Names are normalized once during bootstrap, and core remains implicit.
 	 *
 	 * @param mixed $modules Raw `bootstrap.modules` payload.
 	 * @return array{enabled:array<string,bool>,disabled:array<string,bool>,core_implicit:bool,allow_all:bool} Normalized module policy.

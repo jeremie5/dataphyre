@@ -14,9 +14,9 @@ With `Dpanel`, developers can:
 
 3. **Dependency and Configuration Verification**: With dynamic dependency checks for classes, functions, constants, and global variables, `Dpanel` ensures that all required resources are present and configured correctly, flagging any missing dependencies with descriptive error messages. This verification is invaluable for managing dependencies across complex applications with modular structures.
 
-4. **Dynamic and Conditional File Handling**: `Dpanel` supports condition-based path resolution, enabling it to adaptively select file paths depending on environment-specific configurations. This feature allows for smooth transitions across different setups, ensuring consistent testing and diagnostics without manual intervention.
+4. **Portable File Resolution**: `Dpanel` resolves explicit paths, module entrypoints, and Dataphyre-runtime-relative paths through declarative JSON objects, keeping manifests portable without embedding environment-specific PHP.
 
-5. **Advanced Assertion and Validation Capabilities**: `Dpanel` offers flexible, condition-based assertions, allowing for regex patterns, custom scripts, and even conditional logic within validation routines. This is ideal for testing structured outputs, hierarchical data, and large nested arrays, where simple assertions fall short.
+5. **Advanced Assertion and Validation Capabilities**: `Dpanel` offers strict declarative assertions for regex patterns, nested paths, containment, counts, existence, comparisons, and list predicates. This is ideal for structured outputs and hierarchical data where simple equality falls short.
 
 6. **Performance and Resource Monitoring**: With support for performance constraints (`max_millis`), `Dpanel` can track function execution times, helping identify potential bottlenecks. This ensures that any intensive operations or resource-heavy functions remain efficient and optimized.
 
@@ -41,11 +41,10 @@ hosts where the web SAPI exposes a CGI/FPM binary through `PHP_BINARY`, set
 `DATAPHYRE_DPANEL_PHP_BINARY` or `DATAPHYRE_PHP` to the PHP CLI binary used for
 worker execution.
 
-Legacy JSON fields that evaluate PHP, such as `custom_script` and `file_dynamic`,
-are disabled by default. They are only for trusted local diagnostic suites. To
-enable them, set `\dataphyre\dpanel::$allow_eval_unit_tests=true`, define
-`DPANEL_ALLOW_EVAL_UNIT_TESTS` as `true`, or set
-`DATAPHYRE_DPANEL_ALLOW_EVAL_TESTS=1` in the local environment.
+Dpanel JSON is data-only. Test manifests cannot embed PHP source. Dynamic input
+comes from named fixture callables in committed PHP files, file locations use
+static, module, or runtime-relative resolvers, and result predicates use the
+closed declarative `assert` vocabulary documented below.
 
 Operating in `RUN_MODE` set to `dpanel`, the module dynamically adjusts its behavior based on the chosen parameters, offering precise, tailored diagnostics for each scenario. Whether used for a quick sanity check on individual modules or for a full-scale diagnostic sweep across an entire framework, `Dpanel` provides unmatched insights and control for Dataphyre-powered PHP projects, establishing it as a critical tool for ensuring project integrity and performance. 
 
@@ -90,14 +89,13 @@ With `RUN_MODE` set to `dpanel`, Dpanel loads diagnostic tools, unit testing fun
 ### Unit Testing
 
 ```php
-public static function unit_test(string $json_file_path, array &$verbose=[]): bool
+public static function unit_test(string $json_file_path): bool
 ```
 
-The `unit_test` function is designed to run structured tests on individual functions based on predefined JSON test cases. This function supports advanced validation, including type checking, custom comparisons, and dynamic file path evaluations.
+The `unit_test` function runs structured tests on individual functions from data-only JSON definitions. It supports type checks, ranges, regexes, nested declarative assertions, committed fixture factories, and bounded execution times without evaluating manifest text as PHP.
 
 #### Parameters
 - **`json_file_path`** *(string)*: The path to the JSON file containing test case definitions.
-- **`verbose`** *(array, reference)*: An optional array to store detailed diagnostic outputs from each test case, such as errors and execution details.
 
 #### Returns
 - **`bool`**: Returns `true` if all tests pass; returns `false` if any test fails.
@@ -110,15 +108,26 @@ Each test case in the JSON file should be structured with the following properti
 
 - **`name`** *(string)*: Descriptive name of the test case for identification.
 - **`function`** *(string)*: The function to test. This function should be defined within the specified file.
-- **`file`** *(string, optional)*: Path to the file containing the function.
-- **`file_dynamic`** *(string, optional, legacy opt-in)*: Evaluates this string dynamically to generate the file path only when eval-based unit-test fields have been explicitly enabled for a trusted local diagnostic suite.
-- **`args`** *(array)*: Arguments to pass to the function during the test.
+- **`file`** *(string|object, optional)*: A static path, `{ "module": "permission" }` for a module entrypoint, or `{ "runtime": "modules/mailer/Framework/Message.php" }` for a Dataphyre-runtime-relative file.
+- **`args`** *(array)*: Arguments to pass to the function. A dynamic argument may use `{ "fixture": { "call": "dp_example_fixture", "args": [] } }`; the case's committed `file` is included before the callable runs.
+- **`worker_workspace`** *(string, optional)*: Activates a case-owned temporary application root and points `ROOTPATH['dataphyre']` at it. Fixture helpers use `dataphyre_dpanel_worker_workspace::active()` to create files and directories without writing into the repository or hand-rolling cleanup.
 - **`expected`** *(mixed)*: Defines expected results, which can take several forms for flexible validation:
   - **Direct Value**: Exact match required (e.g., `12`).
   - **Range**: Specifies a `min` and `max` value (e.g., `{ "min": 10, "max": 15 }`).
   - **Regex**: Specifies a pattern using `regex:` (e.g., `"regex:^\\S+@\\S+\\.\\S+$"`).
   - **Type**: Ensures that the return type matches (e.g., `"int"`, `"string"`).
-  - **Custom Script** *(legacy opt-in)*: `custom_script` enables evaluation using PHP code with `$result` as the return value only when eval-based unit-test fields have been explicitly enabled.
+  - **Declarative Assertion**: `{ "assert": { ... } }` composes the closed operators below.
+
+Declarative assertion operators are conjunctive:
+
+- `type`, `same`, `not_same`, `not_empty`, and `matches` validate scalar contracts.
+- `contains` and `not_contains` work on strings and lists.
+- `count` accepts an exact integer or `min`, `max`, and `same` bounds.
+- `keys` requires an array's exact ordered keys.
+- `paths` recursively applies assertion maps using slash-separated segments; dots remain literal key characters.
+- `exists` distinguishes a missing path from a present `null` value.
+- `some` requires at least one list item to satisfy a nested assertion.
+- `compare` compares named paths with `greater_than`, `greater_than_or_equal`, `less_than`, `less_than_or_equal`, `same`, or `not_same`.
 
 ---
 
@@ -130,7 +139,7 @@ To handle diverse validation needs, `unit_test` includes various helper function
    This recursive function checks nested array structures against a defined template, ensuring the actual data structure aligns with expected types.
 
 2. **Expected Outcome Matching (`matches_expected`)**:
-   This function checks the test result against the `expected` value using a series of checks, including type verification, regex matching, and custom script evaluation when legacy eval-based fields are explicitly enabled.
+   This function checks the test result against direct values, types, regexes, ranges, array shapes, or the closed declarative assertion operators. Unknown operators fail explicitly.
 
 ---
 
@@ -142,8 +151,8 @@ To handle diverse validation needs, `unit_test` includes various helper function
 2. **Loop Through Each Test Case**:
    For each test case:
    - **Locate Function File**:
-     - If `file` is specified, the function attempts to include the file.
-     - If `file_dynamic` is specified and legacy eval-based fields are enabled, it dynamically evaluates the file path.
+     - If `file` is specified, Dpanel resolves its static, module, or runtime-relative declaration and includes it.
+     - Fixture arguments call named builders from committed PHP rather than evaluating JSON text.
    - **Execute Function**:
      - Calls the function using `call_user_func_array`, passing in the arguments from `args`.
    - **Validate Output**:
@@ -186,16 +195,10 @@ To handle diverse validation needs, `unit_test` includes various helper function
     "file": "path/to/dependencies.php"
   },
   {
-    "name": "Performance Test with Custom Script",
+    "name": "Performance Test with Declared Range",
     "function": "calculateIntensiveOperation",
     "args": [10000],
-    "expected": [
-      {
-        "min": 5000,
-        "max": 10000,
-        "custom_script": "return $result % 2 === 0;"
-      }
-    ],
+    "expected": {"min": 5000, "max": 10000},
     "max_millis": 200,
     "dependencies": {
       "function": [
@@ -230,14 +233,18 @@ To handle diverse validation needs, `unit_test` includes various helper function
     "file": "path/to/processor.php"
   },
   {
-    "name": "Conditional Dependency with Dynamic File",
+    "name": "Nested Contract with Runtime File Resolver",
     "function": "conditionalProcess",
     "args": [42],
-    "expected": [
-      {
-        "custom_script": "$result > 40 && $result < 50;"
+    "expected": {
+      "assert": {
+        "type": "array",
+        "paths": {
+          "status": {"same": "ready"},
+          "items": {"count": {"min": 1}}
+        }
       }
-    ],
+    },
     "dependencies": {
       "function": [
         {"alternativeFunction": "alternativeFunction must be defined for fallback processing."}
@@ -246,7 +253,7 @@ To handle diverse validation needs, `unit_test` includes various helper function
         {"FALLBACK_MODE": "Constant FALLBACK_MODE must be set to choose the correct file."}
       ]
     },
-    "file_dynamic": "'path/to/' . (defined('FALLBACK_MODE') ? 'fallback.php' : 'default.php')"
+    "file": {"runtime": "modules/example/Framework/ConditionalProcess.php"}
   },
   {
     "name": "Recursive Array Validation with Dependency Errors",

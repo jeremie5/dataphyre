@@ -13,12 +13,16 @@ namespace Dataphyre\Panel;
  * ResourceForm collects fields, sections, responsive column layout, metadata, and UI accessibility constraints, then bridges
  * that structure into Schema, SchemaLifecycle, SchemaManifest, and PanelFormState. Every mutator returns a clone so resource
  * definitions can be shared safely across request hydration, validation, and rendering.
+ *
+ * @template TRecord = mixed
+ * @template TState of array<string, mixed> = array<string, mixed>
  */
 final class ResourceForm {
+	use HasCollectionPresentations;
 
-	/** @var array<string, Field> */
+	/** @var array<string, Field<TRecord, mixed, TState>> */
 	private array $fields=[];
-	/** @var array<string, FormSection> */
+	/** @var array<string, FormSection<TRecord, TState>> */
 	private array $sections=[];
 	private int $columns=1;
 	private array $meta=[];
@@ -26,7 +30,7 @@ final class ResourceForm {
 	/**
 	 * Creates an empty form builder.
 	 *
-	 * @return self New resource form builder.
+	 * @return self<TRecord, TState> New resource form builder.
 	 */
 	public static function make(): self {
 		return new self();
@@ -35,8 +39,8 @@ final class ResourceForm {
 	/**
 	 * Replaces the form's field registry with a normalized field list.
 	 *
-	 * @param array<int|string, Field|array<string, mixed>|string> $fields Field objects, array definitions, or field names.
-	 * @return self Cloned form with the replacement field registry.
+	 * @param array<int|string, Field<TRecord, mixed, TState>|array<string, mixed>|string> $fields Field objects, array definitions, or field names.
+	 * @return self<TRecord,TState> Cloned form with the replacement field registry.
 	 */
 	public function fields(array $fields): self {
 		$clone=clone $this;
@@ -53,9 +57,10 @@ final class ResourceForm {
 	 * String input creates a Field with the supplied type, array input is delegated to Field::fromArray(), and Field objects
 	 * are stored as-is.
 	 *
-	 * @param Field|array<string, mixed>|string $field Field object, definition array, or field name.
+	 * @template TFieldValue
+	 * @param Field<TRecord,TFieldValue,TState>|array<string,mixed>|string $field Field object, definition array, or field name.
 	 * @param ?string $type Field type used when the field is supplied as a string.
-	 * @return self Cloned form with the field registered.
+	 * @return self<TRecord,TState> Cloned form with the field registered.
 	 */
 	public function field(Field|array|string $field, ?string $type=null): self {
 		$field=$field instanceof Field ? $field : (is_array($field) ? Field::fromArray($field) : Field::make((string)$field, $type ?? 'text'));
@@ -67,8 +72,8 @@ final class ResourceForm {
 	/**
 	 * Replaces the form's section registry with normalized sections.
 	 *
-	 * @param array<int|string, FormSection|array<string, mixed>|string> $sections Section objects, definitions, or names.
-	 * @return self Cloned form with the replacement section registry.
+	 * @param array<int|string, FormSection<TRecord, TState>|array<string, mixed>|string> $sections Section objects, definitions, or names.
+	 * @return self<TRecord,TState> Cloned form with the replacement section registry.
 	 */
 	public function sections(array $sections): self {
 		$clone=clone $this;
@@ -85,9 +90,10 @@ final class ResourceForm {
 	 * Field assignments use the section label when available so renderers can display human-friendly section grouping while
 	 * the section registry remains keyed by the normalized section name.
 	 *
-	 * @param FormSection|array<string, mixed>|string $section Section object, definition array, or section name.
-	 * @param ?array<int|string, Field|array<string, mixed>|string> $fields Optional fields to add under the section.
-	 * @return self Cloned form with the section and optional fields registered.
+	 * @template TFieldValue
+	 * @param FormSection<TRecord,TState>|array<string,mixed>|string $section Section object, definition array, or section name.
+	 * @param array<int|string,Field<TRecord,TFieldValue,TState>|array<string,mixed>|string>|null $fields Optional fields to add under the section.
+	 * @return self<TRecord,TState> Cloned form with the section and optional fields registered.
 	 */
 	public function section(FormSection|array|string $section, ?array $fields=null): self {
 		$section=$section instanceof FormSection
@@ -111,7 +117,7 @@ final class ResourceForm {
 	 * form's column count becomes the largest configured breakpoint value.
 	 *
 	 * @param int|array<string, int> $columns Fixed column count or responsive breakpoint map.
-	 * @return self Cloned form with updated grid layout metadata.
+	 * @return self<TRecord,TState> Cloned form with updated grid layout metadata.
 	 */
 	public function columns(int|array $columns): self {
 		$clone=clone $this;
@@ -129,7 +135,7 @@ final class ResourceForm {
 	 * Merges metadata into the form definition.
 	 *
 	 * @param array<string, mixed> $meta Metadata used by schema, lifecycle, renderers, or accessibility checks.
-	 * @return self Cloned form with merged metadata.
+	 * @return self<TRecord,TState> Cloned form with merged metadata.
 	 */
 	public function meta(array $meta): self {
 		$clone=clone $this;
@@ -144,7 +150,7 @@ final class ResourceForm {
 	 * accessibility contract regardless of which shorthand a resource definition used.
 	 *
 	 * @param array<string, mixed> $policy Accessibility policy fragment.
-	 * @return self Cloned form with merged accessibility metadata.
+	 * @return self<TRecord,TState> Cloned form with merged accessibility metadata.
 	 */
 	public function accessibilityPolicy(array $policy): self {
 		return $this->meta(['accessibility'=>self::mergeAccessibilityPolicy(is_array($this->meta['accessibility'] ?? null) ? $this->meta['accessibility'] : [], $policy)]);
@@ -155,7 +161,7 @@ final class ResourceForm {
 	 *
 	 * @param int $width Minimum width value.
 	 * @param string $unit Width unit, normalized to px or ch.
-	 * @return self Cloned form with updated accessibility metadata.
+	 * @return self<TRecord,TState> Cloned form with updated accessibility metadata.
 	 */
 	public function minUsableWidth(int $width, string $unit='px'): self {
 		return $this->accessibilityPolicy([
@@ -168,7 +174,7 @@ final class ResourceForm {
 	 * Sets the minimum useful character capacity for compact controls.
 	 *
 	 * @param int $characters Minimum character count.
-	 * @return self Cloned form with updated accessibility metadata.
+	 * @return self<TRecord,TState> Cloned form with updated accessibility metadata.
 	 */
 	public function minUsableCharacters(int $characters): self {
 		return $this->accessibilityPolicy(['min_usable_chars'=>$characters]);
@@ -178,7 +184,7 @@ final class ResourceForm {
 	 * Sets the minimum touch target size expected by form diagnostics.
 	 *
 	 * @param int $pixels Minimum target size in pixels.
-	 * @return self Cloned form with updated accessibility metadata.
+	 * @return self<TRecord,TState> Cloned form with updated accessibility metadata.
 	 */
 	public function minTouchTarget(int $pixels=44): self {
 		return $this->accessibilityPolicy(['min_touch_target'=>$pixels]);
@@ -188,7 +194,7 @@ final class ResourceForm {
 	 * Sets the maximum portion of a control that may be consumed by adornments.
 	 *
 	 * @param float $ratio Ratio clamped between zero and one.
-	 * @return self Cloned form with updated accessibility metadata.
+	 * @return self<TRecord,TState> Cloned form with updated accessibility metadata.
 	 */
 	public function maxAdornmentRatio(float $ratio=0.45): self {
 		return $this->accessibilityPolicy(['max_adornment_ratio'=>$ratio]);
@@ -198,7 +204,7 @@ final class ResourceForm {
 	 * Sets the maximum portion of a control row that may be consumed by labels.
 	 *
 	 * @param float $ratio Ratio clamped between zero and one.
-	 * @return self Cloned form with updated accessibility metadata.
+	 * @return self<TRecord,TState> Cloned form with updated accessibility metadata.
 	 */
 	public function maxLabelRatio(float $ratio=0.55): self {
 		return $this->accessibilityPolicy(['max_label_ratio'=>$ratio]);
@@ -211,7 +217,7 @@ final class ResourceForm {
 	 *
 	 * @param array<string, mixed>|float $policy Contrast policy or minimum contrast ratio.
 	 * @param ?string $scope Optional contrast scope override.
-	 * @return self Cloned form with updated contrast metadata.
+	 * @return self<TRecord,TState> Cloned form with updated contrast metadata.
 	 */
 	public function contrastPolicy(array|float $policy=4.5, ?string $scope=null): self {
 		if(is_float($policy) || is_int($policy)){
@@ -229,8 +235,8 @@ final class ResourceForm {
 	 * With no argument, the current form is projected into a Schema. When a Schema is supplied, its fields, sections,
 	 * columns, and metadata replace the corresponding form pieces on a clone.
 	 *
-	 * @param ?Schema $schema Optional schema to import into the form.
-	 * @return Schema|self Schema view of the current form, or cloned form imported from the supplied schema.
+	 * @param Schema<TRecord, TState>|null $schema Optional schema to import into the form.
+	 * @return ($schema is not null ? self<TRecord,TState> : Schema<TRecord,TState>) Schema view of the current form, or cloned form imported from the supplied schema.
 	 */
 	public function schema(?Schema $schema=null): Schema|self {
 		if($schema===null){
@@ -247,7 +253,7 @@ final class ResourceForm {
 	/**
 	 * Builds the lifecycle engine used to hydrate, dehydrate, validate, and submit this form.
 	 *
-	 * @return SchemaLifecycle Lifecycle configured with form fields and metadata.
+	 * @return SchemaLifecycle<TRecord, TState> Lifecycle configured with form fields and metadata.
 	 */
 	public function lifecycle(): SchemaLifecycle {
 		return SchemaLifecycle::make($this->fields, array_replace($this->meta, [
@@ -296,7 +302,7 @@ final class ResourceForm {
 	/**
 	 * Returns field objects keyed by field name.
 	 *
-	 * @return array<string, Field> Field registry.
+	 * @return array<string, Field<TRecord, mixed, TState>> Field registry.
 	 */
 	public function fieldsList(): array {
 		return $this->fields;
@@ -305,8 +311,8 @@ final class ResourceForm {
 	/**
 	 * Resolves server-driven live field state from current values and request context.
 	 *
-	 * @param array<string, mixed> $values Current form values.
-	 * @param mixed $record Optional record being edited.
+	 * @param TState $values Current form values.
+	 * @param TRecord|null $record Optional record being edited.
 	 * @param ?PanelRequest $request Optional Panel request.
 	 * @param ?string $operation Optional operation name.
 	 * @return array<string, mixed> Live state payload produced by SchemaLifecycle.
@@ -318,7 +324,7 @@ final class ResourceForm {
 	/**
 	 * Returns section objects keyed by section name.
 	 *
-	 * @return array<string, FormSection> Section registry.
+	 * @return array<string, FormSection<TRecord, TState>> Section registry.
 	 */
 	public function sectionsList(): array {
 		return $this->sections;
@@ -327,7 +333,7 @@ final class ResourceForm {
 	/**
 	 * Hydrates form state from a record and optional request context.
 	 *
-	 * @param mixed $record Record supplying default field values.
+	 * @param TRecord|null $record Record supplying default field values.
 	 * @param ?PanelRequest $request Optional request carrying prefill data.
 	 * @return PanelFormState Hydrated form state.
 	 */
@@ -339,7 +345,7 @@ final class ResourceForm {
 	 * Dehydrates submitted request input into form state.
 	 *
 	 * @param PanelRequest $request Request containing submitted values and files.
-	 * @param mixed $record Optional record being edited.
+	 * @param TRecord|null $record Optional record being edited.
 	 * @param ?string $operation Optional operation name.
 	 * @return PanelFormState Dehydrated form state.
 	 */
@@ -350,8 +356,8 @@ final class ResourceForm {
 	/**
 	 * Validates an explicit value map against the form lifecycle.
 	 *
-	 * @param array<string, mixed> $values Values to validate.
-	 * @param mixed $record Optional record being edited.
+	 * @param TState $values Values to validate.
+	 * @param TRecord|null $record Optional record being edited.
 	 * @param ?PanelRequest $request Optional request context.
 	 * @param ?string $operation Optional operation name.
 	 * @return PanelFormState Validated form state with errors and normalized values.
@@ -375,10 +381,10 @@ final class ResourceForm {
 	/**
 	 * Builds form state through the lifecycle engine with optional validation.
 	 *
-	 * @param mixed $record Optional record supplying defaults.
+	 * @param TRecord|null $record Optional record supplying defaults.
 	 * @param ?PanelRequest $request Optional Panel request.
 	 * @param ?string $operation Optional operation name.
-	 * @param array<string, mixed> $input Explicit input values.
+	 * @param TState $input Explicit input values.
 	 * @param bool $validate Whether to run validation.
 	 * @return PanelFormState Form state for rendering or submission handling.
 	 */
@@ -403,6 +409,7 @@ final class ResourceForm {
 			'schema'=>$this->schema()->toArray(),
 			'fields'=>array_map(static fn(Field $field): array => $field->toArray(), array_values($this->fields)),
 			'sections'=>array_map(static fn(FormSection $section): array => $section->toArray(), array_values($this->sections)),
+			'presentation'=>$this->presentations(),
 			'meta'=>$this->meta,
 		];
 	}

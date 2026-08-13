@@ -16,11 +16,14 @@ namespace Dataphyre\Panel;
  *
  * Mutator methods clone the infolist and return the modified copy. Existing instances are safe to reuse as base layouts for
  * multiple resources or operations.
+ *
+ * @template TRecord = mixed
+ * @template TState of array<string, mixed> = array<string, mixed>
  */
 final class Infolist {
 	use PanelExtensible;
 
-	/** @var Schema Underlying schema that stores infolist components and layout metadata. */
+	/** @var Schema<TRecord, TState> Underlying schema that stores infolist components and layout metadata. */
 	private Schema $schema;
 
 	/**
@@ -38,8 +41,8 @@ final class Infolist {
 	 * PanelExtensible configuration hooks run before components are applied so application defaults can influence the base
 	 * infolist.
 	 *
-	 * @param array<int, SchemaComponent|Field|FormSection|InfolistEntry|array|string> $components Initial entries or layout components.
-	 * @return self Configured infolist.
+	 * @param array<int, SchemaComponent<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|FormSection<TRecord, TState>|InfolistEntry<TRecord, mixed, TState>|array<string, mixed>|string> $components Initial entries or layout components.
+	 * @return self<TRecord, TState> Configured infolist.
 	 */
 	public static function make(array $components=[]): self {
 		return self::configured(new self(Schema::make()))->components($components);
@@ -52,7 +55,7 @@ final class Infolist {
 	 * usage metadata when conversion succeeds.
 	 *
 	 * @param mixed $definition Infolist, schema, schema array, or schema-compatible definition.
-	 * @return ?self Infolist instance, or null when the definition cannot be converted.
+	 * @return self<TRecord, TState>|null Infolist instance, or null when the definition cannot be converted.
 	 */
 	public static function from(mixed $definition): ?self {
 		if($definition instanceof self){
@@ -65,8 +68,8 @@ final class Infolist {
 	/**
 	 * Wraps an existing schema as an infolist.
 	 *
-	 * @param Schema $schema Schema to mark as an infolist.
-	 * @return self Infolist backed by the supplied schema.
+	 * @param Schema<TRecord, TState> $schema Schema to mark as an infolist.
+	 * @return self<TRecord, TState> Infolist backed by the supplied schema.
 	 */
 	public static function fromSchema(Schema $schema): self {
 		return new self($schema->meta(['usage'=>'infolist']));
@@ -78,7 +81,7 @@ final class Infolist {
 	 * Existing responsive column metadata is preserved while entries and containers are rebuilt from the supplied list.
 	 *
 	 * @param array<int, SchemaComponent|Field|FormSection|InfolistEntry|array|string> $components Replacement components.
-	 * @return self Cloned infolist with the replacement component tree.
+	 * @return self<TRecord,TState> Cloned infolist with the replacement component tree.
 	 */
 	public function components(array $components): self {
 		$clone=clone $this;
@@ -96,7 +99,7 @@ final class Infolist {
 	 * follow the same conversion path.
 	 *
 	 * @param SchemaComponent|Field|FormSection|InfolistEntry|array|string $component Entry or schema component definition.
-	 * @return self Cloned infolist with the component appended.
+	 * @return self<TRecord,TState> Cloned infolist with the component appended.
 	 */
 	public function component(SchemaComponent|Field|FormSection|InfolistEntry|array|string $component): self {
 		$clone=clone $this;
@@ -107,9 +110,10 @@ final class Infolist {
 	/**
 	 * Appends an infolist entry.
 	 *
-	 * @param Field|InfolistEntry|array|string $entry Entry definition accepted by InfolistEntry::from().
+	 * @template TEntryValue
+	 * @param Field<TRecord,TEntryValue,TState>|InfolistEntry<TRecord,TEntryValue,TState>|array<string,mixed>|string $entry Entry definition accepted by InfolistEntry::from().
 	 * @param ?string $type Entry display type when creating from a name.
-	 * @return self Cloned infolist with the entry appended.
+	 * @return self<TRecord,TState> Cloned infolist with the entry appended.
 	 */
 	public function entry(Field|InfolistEntry|array|string $entry, ?string $type=null): self {
 		return $this->component(InfolistEntry::from($entry, $type));
@@ -149,9 +153,9 @@ final class Infolist {
 	/**
 	 * Appends a section container with optional entries.
 	 *
-	 * @param FormSection|array|string $section Section definition accepted by Schema::section().
-	 * @param array<int, SchemaComponent|Field|FormSection|InfolistEntry|array|string> $entries Entries nested inside the section.
-	 * @return self Cloned infolist with the section appended.
+	 * @param FormSection<TRecord, TState>|array<string, mixed>|string $section Section definition accepted by Schema::section().
+	 * @param array<int, SchemaComponent<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|FormSection<TRecord, TState>|InfolistEntry<TRecord, mixed, TState>|array<string, mixed>|string> $entries Entries nested inside the section.
+	 * @return self<TRecord,TState> Cloned infolist with the section appended.
 	 */
 	public function section(FormSection|array|string $section, array $entries=[]): self {
 		$entries=array_map(fn(mixed $entry): SchemaComponent => $this->normalizeComponent($entry), $entries);
@@ -165,7 +169,7 @@ final class Infolist {
 	 *
 	 * @param string $name Group name.
 	 * @param array<int, SchemaComponent|Field|FormSection|InfolistEntry|array|string> $entries Entries nested inside the group.
-	 * @return self Cloned infolist with the group appended.
+	 * @return self<TRecord,TState> Cloned infolist with the group appended.
 	 */
 	public function group(string $name, array $entries=[]): self {
 		$entries=array_map(fn(mixed $entry): SchemaComponent => $this->normalizeComponent($entry), $entries);
@@ -179,7 +183,7 @@ final class Infolist {
 	 *
 	 * @param string $name Tab name.
 	 * @param array<int, SchemaComponent|Field|FormSection|InfolistEntry|array|string> $entries Entries nested inside the tab.
-	 * @return self Cloned infolist with the tab appended.
+	 * @return self<TRecord,TState> Cloned infolist with the tab appended.
 	 */
 	public function tab(string $name, array $entries=[]): self {
 		$entries=array_map(fn(mixed $entry): SchemaComponent => $this->normalizeComponent($entry), $entries);
@@ -193,7 +197,7 @@ final class Infolist {
 	 *
 	 * @param string $name Step name.
 	 * @param array<int, SchemaComponent|Field|FormSection|InfolistEntry|array|string> $entries Entries nested inside the step.
-	 * @return self Cloned infolist with the step appended.
+	 * @return self<TRecord,TState> Cloned infolist with the step appended.
 	 */
 	public function step(string $name, array $entries=[]): self {
 		$entries=array_map(fn(mixed $entry): SchemaComponent => $this->normalizeComponent($entry), $entries);
@@ -206,7 +210,7 @@ final class Infolist {
 	 * Sets responsive column metadata for the infolist layout.
 	 *
 	 * @param int|array<string, int> $columns Column count or breakpoint map accepted by Schema::columns().
-	 * @return self Cloned infolist with updated column metadata.
+	 * @return self<TRecord,TState> Cloned infolist with updated column metadata.
 	 */
 	public function columns(int|array $columns): self {
 		$clone=clone $this;
@@ -218,7 +222,7 @@ final class Infolist {
 	 * Merges schema metadata while preserving infolist usage.
 	 *
 	 * @param array<string, mixed> $meta Metadata merged into the underlying schema.
-	 * @return self Cloned infolist with updated metadata.
+	 * @return self<TRecord,TState> Cloned infolist with updated metadata.
 	 */
 	public function meta(array $meta): self {
 		$clone=clone $this;
@@ -226,10 +230,76 @@ final class Infolist {
 		return $clone;
 	}
 
+	public function collectionPresentation(string $collection, array|string $presentation): self {
+		$clone=clone $this;
+		$clone->schema=$clone->schema->collectionPresentation($collection, $presentation);
+		return $clone;
+	}
+
+	/** @param array<string,mixed>|PanelCollectionItemPresentation $presentation */
+	public function collectionItemPresentation(string $collection, string|int $item, array|PanelCollectionItemPresentation $presentation): self {
+		$clone=clone $this;
+		$clone->schema=$clone->schema->collectionItemPresentation($collection, $item, $presentation);
+		return $clone;
+	}
+
+	/** @param array<string|int,array<string,mixed>|PanelCollectionItemPresentation> $presentations */
+	public function collectionItemPresentations(string $collection, array $presentations): self {
+		$clone=clone $this;
+		$clone->schema=$clone->schema->collectionItemPresentations($collection, $presentations);
+		return $clone;
+	}
+
+	public function collectionFinalRow(string $collection, string $policy='fill'): self {
+		$clone=clone $this;
+		$clone->schema=$clone->schema->collectionFinalRow($collection, $policy);
+		return $clone;
+	}
+
+	public function entriesPresentation(array|string $presentation): self { return $this->collectionPresentation('entries', $presentation); }
+	public function sectionsPresentation(array|string $presentation): self { return $this->collectionPresentation('sections', $presentation); }
+	public function tabsPresentation(array|string $presentation): self { return $this->collectionPresentation('tabs', $presentation); }
+	public function stepsPresentation(array|string $presentation): self { return $this->collectionPresentation('steps', $presentation); }
+	public function entriesDisplay(string $display): self { return $this->entriesPresentation($display); }
+	public function sectionsDisplay(string $display): self { return $this->sectionsPresentation($display); }
+	public function tabsDisplay(string $display): self { return $this->tabsPresentation($display); }
+	public function stepsDisplay(string $display): self { return $this->stepsPresentation($display); }
+	public function brickEntries(bool $enabled=true): self { return $this->entriesDisplay($enabled ? 'brick' : 'grid'); }
+	public function brickSections(bool $enabled=true): self { return $this->sectionsDisplay($enabled ? 'brick' : 'stack'); }
+	public function brickTabs(bool $enabled=true): self { return $this->tabsDisplay($enabled ? 'brick' : 'segmented'); }
+	public function brickSteps(bool $enabled=true): self { return $this->stepsDisplay($enabled ? 'brick' : 'segmented'); }
+	public function entryItemPresentation(string|int $item, array|PanelCollectionItemPresentation $presentation): self { return $this->collectionItemPresentation('entries', $item, $presentation); }
+	public function sectionItemPresentation(string|int $item, array|PanelCollectionItemPresentation $presentation): self { return $this->collectionItemPresentation('sections', $item, $presentation); }
+	public function tabItemPresentation(string|int $item, array|PanelCollectionItemPresentation $presentation): self { return $this->collectionItemPresentation('tabs', $item, $presentation); }
+	public function stepItemPresentation(string|int $item, array|PanelCollectionItemPresentation $presentation): self { return $this->collectionItemPresentation('steps', $item, $presentation); }
+
+	/** @param array<string,mixed> $options */
+	public function masonryEntries(bool $enabled=true, array $options=[]): self {
+		return $this->entriesPresentation($enabled ? array_replace(['display'=>'masonry', 'masonry'=>'rows', 'fit'=>'fill'], $options) : 'grid');
+	}
+
+	/** @param array<string,mixed> $options */
+	public function masonrySections(bool $enabled=true, array $options=[]): self {
+		return $this->sectionsPresentation($enabled ? array_replace(['display'=>'masonry', 'masonry'=>'rows', 'fit'=>'fill'], $options) : 'stack');
+	}
+
+	/** @param array<string,mixed> $options */
+	public function masonryTabs(bool $enabled=true, array $options=[]): self {
+		return $this->tabsPresentation($enabled ? array_replace(['display'=>'masonry', 'masonry'=>'rows', 'fit'=>'fill'], $options) : 'segmented');
+	}
+
+	/** @param array<string,mixed> $options */
+	public function masonrySteps(bool $enabled=true, array $options=[]): self {
+		return $this->stepsPresentation($enabled ? array_replace(['display'=>'masonry', 'masonry'=>'rows', 'fit'=>'fill'], $options) : 'segmented');
+	}
+
+	/** @return array<string,array<string,mixed>> */
+	public function presentations(): array { return $this->schema->presentations(); }
+
 	/**
 	 * Returns the underlying schema.
 	 *
-	 * @return Schema Schema carrying infolist components and metadata.
+	 * @return Schema<TRecord, TState> Schema carrying infolist components and metadata.
 	 */
 	public function schema(): Schema {
 		return $this->schema;

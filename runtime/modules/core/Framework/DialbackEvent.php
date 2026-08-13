@@ -240,20 +240,13 @@ final class DialbackEvent implements \JsonSerializable {
 			];
 		}
 		if($callback instanceof \Closure){
-			try{
-				$reflection=new \ReflectionFunction($callback);
-				return [
-					'type'=>'closure',
-					'label'=>'closure@'.basename((string)$reflection->getFileName()).':'.$reflection->getStartLine(),
-					'file'=>$reflection->getFileName() ?: null,
-					'line'=>$reflection->getStartLine(),
-				];
-			}catch(\ReflectionException){
-				return [
-					'type'=>'closure',
-					'label'=>'closure',
-				];
-			}
+			$reflection=new \ReflectionFunction($callback);
+			return [
+				'type'=>'closure',
+				'label'=>'closure@'.basename((string)$reflection->getFileName()).':'.$reflection->getStartLine(),
+				'file'=>$reflection->getFileName() ?: null,
+				'line'=>$reflection->getStartLine(),
+			];
 		}
 		if(is_array($callback) && count($callback)===2){
 			[$target, $method]=$callback;
@@ -265,16 +258,10 @@ final class DialbackEvent implements \JsonSerializable {
 				'method'=>(string)$method,
 			];
 		}
-		if(is_object($callback) && method_exists($callback, '__invoke')){
-			return [
-				'type'=>'invokable',
-				'label'=>$callback::class,
-				'class'=>$callback::class,
-			];
-		}
 		return [
-			'type'=>'callable',
-			'label'=>'callable',
+			'type'=>'invokable',
+			'label'=>$callback::class,
+			'class'=>$callback::class,
 		];
 	}
 }

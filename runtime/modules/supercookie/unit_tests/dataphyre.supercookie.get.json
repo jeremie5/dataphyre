@@ -12,7 +12,7 @@
 		"expected": [
 			"demo_tenant"
 		],
-		"file": "/common/dataphyre/runtime/modules/supercookie/unit_tests/supercookie_test_helpers.php",
+		"file": "/dataphyre/runtime/modules/supercookie/unit_tests/supercookie_test_helpers.php",
 		"dependencies": {
 			"class": [
 				"dataphyre\\supercookie"
@@ -32,7 +32,7 @@
 		"expected": [
 			true
 		],
-		"file": "/common/dataphyre/runtime/modules/supercookie/unit_tests/supercookie_test_helpers.php",
+		"file": "/dataphyre/runtime/modules/supercookie/unit_tests/supercookie_test_helpers.php",
 		"dependencies": {
 			"class": [
 				"dataphyre\\supercookie"

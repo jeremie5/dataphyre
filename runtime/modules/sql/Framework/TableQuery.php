@@ -26,6 +26,7 @@ final class TableQuery extends QuerySpec {
 
 	private array|string $columns='*';
 	private bool|array|string|null $caching=[true];
+	private bool $failOnReadError=false;
 	private mixed $hydrator=null;
 	private string $table;
 	private ?TableSchema $schema;
@@ -246,6 +247,19 @@ final class TableQuery extends QuerySpec {
 	}
 
 	/**
+	 * Preserves SQL failures instead of treating them as empty table reads.
+	 *
+	 * Successful no-match reads retain their normal [] or null result.
+	 *
+	 * @param bool $enabled Whether read failures should raise an exception.
+	 * @return self Current table query instance.
+	 */
+	public function failOnReadError(bool $enabled=true): self {
+		$this->failOnReadError=$enabled;
+		return $this;
+	}
+
+	/**
 	 * Replaces the cache invalidation policy used by write operations.
 	 *
 	 * The policy is retained until create, update, delete, upsert, increment, decrement, and queued write helpers dispatch to the SQL kernel.
@@ -304,7 +318,7 @@ final class TableQuery extends QuerySpec {
 	 * @return self Current table query instance.
 	 */
 	public function requireWhereForWrite(bool $required=true): self {
-		$this->requireWhereForWrite($required);
+		parent::requireWhereForWrite($required);
 		return $this;
 	}
 
@@ -316,7 +330,7 @@ final class TableQuery extends QuerySpec {
 	 * @return self Current table query instance.
 	 */
 	public function allowUnscopedWrite(): self {
-		$this->allowUnscopedWrite();
+		parent::allowUnscopedWrite();
 		return $this;
 	}
 
@@ -328,7 +342,7 @@ final class TableQuery extends QuerySpec {
 	 * @return self Current table query instance.
 	 */
 	public function forUpdate(): self {
-		$this->forUpdate();
+		parent::forUpdate();
 		return $this;
 	}
 
@@ -340,7 +354,7 @@ final class TableQuery extends QuerySpec {
 	 * @return self Current table query instance.
 	 */
 	public function sharedLock(): self {
-		$this->sharedLock();
+		parent::sharedLock();
 		return $this;
 	}
 
@@ -353,7 +367,7 @@ final class TableQuery extends QuerySpec {
 	 * @return self Current table query instance.
 	 */
 	public function lockRaw(string|array $fragment): self {
-		$this->lockRaw($fragment);
+		parent::lockRaw($fragment);
 		return $this;
 	}
 
@@ -416,13 +430,7 @@ final class TableQuery extends QuerySpec {
 	 * @return self Current table query instance.
 	 */
 	public function asMoney(string $amountColumn, string $currencyColumn='currency', ?string $targetColumn=null): self {
-		$mapping=CurrencyBridge::normalizeMoneyMapping(
-			$amountColumn,
-			$currencyColumn,
-			null,
-			$targetColumn,
-			"table {$this->table}"
-		);
+		$mapping=CurrencyBridge::normalizeMoneyMapping($amountColumn, $currencyColumn, null, $targetColumn, "table {$this->table}");
 		$this->addRowTransformer(
 			fn(array $row): array => CurrencyBridge::applyMoneyMapping($row, $mapping, "table {$this->table}")
 		);
@@ -441,13 +449,7 @@ final class TableQuery extends QuerySpec {
 	 * @return self Current table query instance.
 	 */
 	public function asMoneyIn(string $amountColumn, string $currency, ?string $targetColumn=null): self {
-		$mapping=CurrencyBridge::normalizeMoneyMapping(
-			$amountColumn,
-			null,
-			$currency,
-			$targetColumn,
-			"table {$this->table}"
-		);
+		$mapping=CurrencyBridge::normalizeMoneyMapping($amountColumn, null, $currency, $targetColumn, "table {$this->table}");
 		$this->addRowTransformer(
 			fn(array $row): array => CurrencyBridge::applyMoneyMapping($row, $mapping, "table {$this->table}")
 		);
@@ -469,11 +471,7 @@ final class TableQuery extends QuerySpec {
 			$definition=$targetColumn;
 			$targetColumn='stored_money';
 		}
-		$mapping=CurrencyBridge::normalizeStoredMoneyMapping(
-			$definition,
-			$targetColumn,
-			"table {$this->table}"
-		);
+		$mapping=CurrencyBridge::normalizeStoredMoneyMapping($definition, $targetColumn, "table {$this->table}");
 		$this->addRowTransformer(
 			fn(array $row): array => CurrencyBridge::applyStoredMoneyMapping($row, $mapping, "table {$this->table}")
 		);
@@ -506,6 +504,7 @@ final class TableQuery extends QuerySpec {
 			'primary_key'=>$this->primaryKey,
 			'columns'=>$this->columns,
 			'caching'=>$this->caching,
+			'fail_on_read_error'=>$this->failOnReadError,
 			'hydrator'=>$this->hydratorDescriptor($this->hydrator),
 			'query'=>[
 				'params'=>$compiled['params'],
@@ -560,6 +559,7 @@ final class TableQuery extends QuerySpec {
 		$query=new self($table, $primaryKey);
 		$query->columns=self::columns($state['columns'] ?? '*');
 		$query->caching=$state['caching'] ?? [true];
+		$query->failOnReadError=(bool)($state['fail_on_read_error'] ?? false);
 		$query->hydrator=$state['hydrator'] ?? null;
 		$query->applyBuilderState(is_array($state['builder_state'] ?? null) ? $state['builder_state'] : []);
 		$query->restoreCompiledTransforms(
@@ -728,6 +728,12 @@ final class TableQuery extends QuerySpec {
 				$caching ?? $this->caching
 			)
 		);
+		if($this->failOnReadError && !is_array($result) && !$this->isSuccessfulFalseReadAbsence($result)){
+			throw SqlError::readFailure("table {$this->table}",'get',[
+				'table'=>$this->table,
+				'result_type'=>get_debug_type($result),
+			]);
+		}
 		return is_array($result) ? $this->transformQueryRows($result) : [];
 	}
 
@@ -766,7 +772,20 @@ final class TableQuery extends QuerySpec {
 				$caching ?? $this->caching
 			)
 		);
+		if($this->failOnReadError && $result!==null && !is_array($result) && !$this->isSuccessfulFalseReadAbsence($result)){
+			throw SqlError::readFailure("table {$this->table}",'first',[
+				'table'=>$this->table,
+				'result_type'=>get_debug_type($result),
+			]);
+		}
 		return is_array($result) ? $this->transformQueryRow($result) : null;
+	}
+
+	/** See TableRepository's strict-read no-row compatibility contract. */
+	private function isSuccessfulFalseReadAbsence(mixed $result): bool {
+		return $result===false
+			&& method_exists(\dataphyre\sql::class, 'last_query_error')
+			&& \dataphyre\sql::last_query_error()===null;
 	}
 
 	/**
@@ -788,11 +807,7 @@ final class TableQuery extends QuerySpec {
 		if($result!==null){
 			return $result;
 		}
-		throw SqlError::recordNotFound(
-			"table {$this->table}",
-			$this->notFoundContext($columns),
-			$message
-		);
+		throw SqlError::recordNotFound("table {$this->table}", $this->notFoundContext($columns), $message);
 	}
 
 	/**
@@ -888,20 +903,10 @@ final class TableQuery extends QuerySpec {
 	): array {
 		$rows=$this->singleResultRows($columns, $caching);
 		if($rows===[]){
-			throw SqlError::recordNotFound(
-				"table {$this->table}",
-				$this->notFoundContext($columns),
-				$message,
-				'Use first() when zero matches are acceptable, or tighten the query before calling sole().'
-			);
+			throw SqlError::recordNotFound("table {$this->table}", $this->notFoundContext($columns), $message, 'Use first() when zero matches are acceptable, or tighten the query before calling sole().');
 		}
 		if(count($rows)>1){
-			throw SqlError::multipleRecordsFound(
-				"table {$this->table}",
-				$this->notFoundContext($columns, ['matched_rows_sample'=>count($rows)]),
-				$message,
-				'Use get()/all() when multiple matches are expected, or tighten the query until it uniquely identifies a single row.'
-			);
+			throw SqlError::multipleRecordsFound("table {$this->table}", $this->notFoundContext($columns, ['matched_rows_sample'=>count($rows)]), $message, 'Use get()/all() when multiple matches are expected, or tighten the query until it uniquely identifies a single row.');
 		}
 		return $rows[0];
 	}
@@ -1315,11 +1320,7 @@ final class TableQuery extends QuerySpec {
 		if($result!==null){
 			return $result;
 		}
-		throw SqlError::recordNotFound(
-			"table {$this->table}",
-			$this->notFoundContext($columns),
-			$message
-		);
+		throw SqlError::recordNotFound("table {$this->table}", $this->notFoundContext($columns), $message);
 	}
 
 	/**
@@ -1788,12 +1789,7 @@ final class TableQuery extends QuerySpec {
 		if($result!==null){
 			return $result;
 		}
-		return throw SqlError::recordNotFound(
-			"table {$this->table}",
-			$this->notFoundContext($columns, ['id'=>$id]),
-			$message,
-			'Use find() when a missing row is acceptable, or verify the primary key and active filters before calling findOrFail().'
-		);
+		return throw SqlError::recordNotFound("table {$this->table}", $this->notFoundContext($columns, ['id'=>$id]), $message, 'Use find() when a missing row is acceptable, or verify the primary key and active filters before calling findOrFail().');
 	}
 
 	/**
@@ -1837,12 +1833,7 @@ final class TableQuery extends QuerySpec {
 		if($result!==null){
 			return $result;
 		}
-		return throw SqlError::recordNotFound(
-			"table {$this->table}",
-			$this->notFoundContext($columns, ['id'=>$id]),
-			$message,
-			'Use findHydrated() when a missing row is acceptable, or verify the primary key and active filters before calling findHydratedOrFail().'
-		);
+		return throw SqlError::recordNotFound("table {$this->table}", $this->notFoundContext($columns, ['id'=>$id]), $message, 'Use findHydrated() when a missing row is acceptable, or verify the primary key and active filters before calling findHydratedOrFail().');
 	}
 
 	/**
@@ -1888,12 +1879,7 @@ final class TableQuery extends QuerySpec {
 		if($result!==null){
 			return $result;
 		}
-		return throw SqlError::recordNotFound(
-			"table {$this->table}",
-			$this->notFoundContext($columns, ['id'=>$id]),
-			$message,
-			'Use findRecord() when a missing row is acceptable, or verify the primary key and active filters before calling findRecordOrFail().'
-		);
+		return throw SqlError::recordNotFound("table {$this->table}", $this->notFoundContext($columns, ['id'=>$id]), $message, 'Use findRecord() when a missing row is acceptable, or verify the primary key and active filters before calling findRecordOrFail().');
 	}
 
 	/**
@@ -1918,17 +1904,49 @@ final class TableQuery extends QuerySpec {
 	 *
 	 * @param array<int,array<string,mixed>> $rows Write rows before money and schema normalization.
 	 * @param bool|array|null $clearCache Dataphyre write invalidation policy.
+	 * @param ?BulkMutationOptions $options Optional bounded-statement and PostgreSQL insert-correlation configuration.
 	 * @return MutationBatchResult Batched table mutation result.
 	 */
-	public function createMany(array $rows, bool|array|null $clearCache=null): MutationBatchResult {
+	public function createMany(
+		array $rows,
+		bool|array|null $clearCache=null,
+		?BulkMutationOptions $options=null
+	): MutationBatchResult {
 		$resolvedClearCache=$clearCache===null ? $this->clearCacheOnWrite : $clearCache;
 		$this->warnIfWriteInvalidationMissing('create_many', $resolvedClearCache);
-		$results=[];
-		foreach($rows as $row){
+		$normalized=[];
+		foreach($rows as $index=>$row){
 			if(!is_array($row)){
 				continue;
 			}
-			$results[]=$this->insertMutationResult($row, $resolvedClearCache);
+			$normalized[(int)$index]=$this->resolvedFields($row);
+		}
+		$context=$this->mutationContext();
+		$results=BulkMutationExecutor::inserts(
+			$this->table,
+			$normalized,
+			$this->primaryKey,
+			$resolvedClearCache,
+			$options,
+			fn(array $query, array $vars, bool|array|null $invalidation): mixed => $this->withSchemaHydration(
+				static fn(): mixed=>sql_query($query, $vars, true, false, false, $invalidation)
+			),
+			fn(array $row): MutationResult => MutationResult::fromRaw(
+				'insert',
+				$this->withSchemaHydration(fn(): mixed=>sql_insert($this->table, $row, null, $resolvedClearCache)),
+				$context
+			),
+			$context
+		);
+		if($results===null){
+			$results=[];
+			foreach($normalized as $row){
+				$results[]=MutationResult::fromRaw(
+					'insert',
+					$this->withSchemaHydration(fn(): mixed=>sql_insert($this->table, $row, null, $resolvedClearCache)),
+					$context
+				);
+			}
 		}
 		return new MutationBatchResult('insert', $results, count($rows));
 	}
@@ -2220,20 +2238,62 @@ final class TableQuery extends QuerySpec {
 	 * @param string|array|null $updateParams UpdateParams.
 	 * @param ?array<string,mixed> $updateVars Bound variables for custom upsert update expressions.
 	 * @param bool|array|null $clearCache Dataphyre write invalidation policy.
+	 * @param ?BulkMutationOptions $options Optional upsert conflict and bounded-statement configuration.
 	 * @return MutationBatchResult Batched table mutation result.
 	 */
 	public function upsertMany(
 		array $rows,
 		string|array|null $updateParams=null,
 		?array $updateVars=null,
-		bool|array|null $clearCache=null
+		bool|array|null $clearCache=null,
+		?BulkMutationOptions $options=null
 	): MutationBatchResult {
-		$results=[];
-		foreach($rows as $row){
+		$normalized=[];
+		foreach($rows as $index=>$row){
 			if(!is_array($row)){
 				continue;
 			}
-			$results[]=$this->upsert($row, $updateParams, $updateVars, $clearCache);
+			$normalized[(int)$index]=$this->resolvedFields($row);
+		}
+		$resolvedClearCache=$clearCache===null ? $this->clearCacheOnWrite : $clearCache;
+		$context=$this->mutationContext();
+		$conflictColumns=$options?->conflictColumns();
+		if($conflictColumns===null){
+			$conflictColumns=$this->primaryKey!==null ? [$this->primaryKey] : [];
+		}
+		$results=null;
+		if($updateParams===null && ($updateVars===null || $updateVars===[]) && $conflictColumns!==[]){
+			$results=BulkMutationExecutor::upserts(
+				$this->table,
+				$normalized,
+				$conflictColumns,
+				$options?->updateColumns(),
+				$resolvedClearCache,
+				$options,
+				fn(array $query, array $vars, bool|array|null $invalidation): mixed => $this->withSchemaHydration(
+					static fn(): mixed=>sql_query($query, $vars, false, false, false, $invalidation)
+				),
+				$context
+			);
+		}
+		if($results===null){
+			if($options?->conflictColumns()!==null){
+				throw new \LogicException('The explicit BulkMutationOptions conflict target cannot be preserved by the active upsert path.');
+			}
+			$results=[];
+			foreach($normalized as $row){
+				$results[]=MutationResult::fromRaw(
+					'upsert',
+					$this->withSchemaHydration(fn(): mixed=>sql_upsert(
+						$this->table,
+						$row,
+						$updateParams,
+						$updateVars,
+						$resolvedClearCache
+					)),
+					$context
+				);
+			}
 		}
 		return new MutationBatchResult('upsert', $results, count($rows));
 	}
@@ -2415,11 +2475,7 @@ final class TableQuery extends QuerySpec {
 				if($result!==null){
 					return $callback($result);
 				}
-				throw SqlError::recordNotFound(
-					"table {$this->table}",
-					$this->notFoundContext($columns),
-					$message
-				);
+				throw SqlError::recordNotFound("table {$this->table}", $this->notFoundContext($columns), $message);
 			},
 			$queue,
 			$columns,
@@ -2506,12 +2562,7 @@ final class TableQuery extends QuerySpec {
 				if($result!==null){
 					return $callback($result);
 				}
-				throw SqlError::recordNotFound(
-					"table {$this->table}",
-					$this->notFoundContext($columns, ['id'=>$id]),
-					$message,
-					'Use queueFind() when a missing row is acceptable, or verify the primary key and active filters before calling queueFindOrFail().'
-				);
+				throw SqlError::recordNotFound("table {$this->table}", $this->notFoundContext($columns, ['id'=>$id]), $message, 'Use queueFind() when a missing row is acceptable, or verify the primary key and active filters before calling queueFindOrFail().');
 			},
 			$columns,
 			$queue,
@@ -2699,20 +2750,10 @@ final class TableQuery extends QuerySpec {
 		return (clone $this)->limit(2)->queueGet(
 			function(array $rows)use($callback, $columns, $message): mixed{
 				if($rows===[]){
-					throw SqlError::recordNotFound(
-						"table {$this->table}",
-						$this->notFoundContext($columns),
-						$message,
-						'Use queueFirst() when zero matches are acceptable, or tighten the query before calling queueSole().'
-					);
+					throw SqlError::recordNotFound("table {$this->table}", $this->notFoundContext($columns), $message, 'Use queueFirst() when zero matches are acceptable, or tighten the query before calling queueSole().');
 				}
 				if(count($rows)>1){
-					throw SqlError::multipleRecordsFound(
-						"table {$this->table}",
-						$this->notFoundContext($columns, ['matched_rows_sample'=>count($rows)]),
-						$message,
-						'Use queueGet()/queueAll() when multiple matches are expected, or tighten the query until it uniquely identifies a single row.'
-					);
+					throw SqlError::multipleRecordsFound("table {$this->table}", $this->notFoundContext($columns, ['matched_rows_sample'=>count($rows)]), $message, 'Use queueGet()/queueAll() when multiple matches are expected, or tighten the query until it uniquely identifies a single row.');
 				}
 				return $callback($rows[0]);
 			},
@@ -3694,16 +3735,15 @@ final class TableQuery extends QuerySpec {
 	 *
 	 * Schema-backed queries may expand projections, aliases, or validated column
 	 * sets; schema-less queries fall back to the base `QuerySpec` column
-	 * normalizer. The returned value is passed directly to SQL read helpers.
+	 * normalizer. List selectors are joined before they reach sql_select(), whose
+	 * array selector form is reserved for DBMS-specific SQL maps.
 	 *
 	 * @param array|string $columns Requested column selector.
-	 * @return array|string SQL-ready column selector.
+	 * @return string SQL-ready column selector.
 	 */
-	private function resolvedColumns(array|string $columns): array|string {
-		if($this->schema!==null){
-			return $this->schema->columns($columns);
-		}
-		return QuerySpec::columns($columns);
+	private function resolvedColumns(array|string $columns): string {
+		$resolved=$this->schema!==null ? $this->schema->columns($columns) : QuerySpec::columns($columns);
+		return is_array($resolved) ? implode(', ', $resolved) : $resolved;
 	}
 
 	/**
@@ -4425,13 +4465,7 @@ final class TableQuery extends QuerySpec {
 		?string $currencyColumn,
 		?string $currency
 	): self {
-		$mapping=CurrencyBridge::normalizeMoneyMapping(
-			$amountColumn,
-			$currencyColumn,
-			$currency,
-			null,
-			"table {$this->table}"
-		);
+		$mapping=CurrencyBridge::normalizeMoneyMapping($amountColumn, $currencyColumn, $currency, null, "table {$this->table}");
 		$comparison=CurrencyBridge::normalizeComparableValue(
 			$value,
 			$mapping['currency'],

@@ -1,7 +1,7 @@
 [
   {
     "name": "CompilableRoute interface is available for Route",
-    "file": "/common/dataphyre/runtime/modules/routing/Framework/CompilableRoute.php",
+    "file": "/dataphyre/runtime/modules/routing/Framework/CompilableRoute.php",
     "function": "interface_exists",
     "args": [
       "Dataphyre\\Routing\\CompilableRoute"
@@ -10,7 +10,7 @@
   },
   {
     "name": "Route get factory returns route instance",
-    "file": "/common/dataphyre/runtime/modules/routing/Framework/Route.php",
+    "file": "/dataphyre/runtime/modules/routing/Framework/Route.php",
     "class": "Dataphyre\\Routing\\Route",
     "static_method": true,
     "function": "get",
@@ -22,7 +22,7 @@
   },
   {
     "name": "Route normalizes missing leading and trailing slashes",
-    "file": "/common/dataphyre/runtime/modules/routing/Framework/Route.php",
+    "file": "/dataphyre/runtime/modules/routing/Framework/Route.php",
     "class": "Dataphyre\\Routing\\Route",
     "static_method": true,
     "function": "normalizePath",
@@ -33,7 +33,7 @@
   },
   {
     "name": "Route normalizes root path",
-    "file": "/common/dataphyre/runtime/modules/routing/Framework/Route.php",
+    "file": "/dataphyre/runtime/modules/routing/Framework/Route.php",
     "class": "Dataphyre\\Routing\\Route",
     "static_method": true,
     "function": "normalizePath",
@@ -44,7 +44,7 @@
   },
   {
     "name": "Route url fills named parameters and query",
-    "file": "/common/dataphyre/runtime/modules/routing/Framework/Route.php",
+    "file": "/dataphyre/runtime/modules/routing/Framework/Route.php",
     "class": "Dataphyre\\Routing\\Route",
     "static_method": true,
     "function": "url",
@@ -62,7 +62,7 @@
   },
   {
     "name": "Route url expands splat array segments",
-    "file": "/common/dataphyre/runtime/modules/routing/Framework/Route.php",
+    "file": "/dataphyre/runtime/modules/routing/Framework/Route.php",
     "class": "Dataphyre\\Routing\\Route",
     "static_method": true,
     "function": "url",
@@ -82,7 +82,7 @@
   },
   {
     "name": "Route normalize methods uppercases and de-duplicates values",
-    "file": "/common/dataphyre/runtime/modules/routing/Framework/Route.php",
+    "file": "/dataphyre/runtime/modules/routing/Framework/Route.php",
     "class": "Dataphyre\\Routing\\Route",
     "static_method": true,
     "function": "normalizeMethods",
@@ -105,7 +105,7 @@
   },
   {
     "name": "Route normalize methods uses default when all methods are empty",
-    "file": "/common/dataphyre/runtime/modules/routing/Framework/Route.php",
+    "file": "/dataphyre/runtime/modules/routing/Framework/Route.php",
     "class": "Dataphyre\\Routing\\Route",
     "static_method": true,
     "function": "normalizeMethods",

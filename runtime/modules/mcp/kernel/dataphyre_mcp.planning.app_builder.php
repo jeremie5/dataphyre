@@ -1195,7 +1195,7 @@ trait dataphyre_mcp_planning_app_builder_surfaces {
 				'follow_up_tools'=>$lane['follow_up_tools'] ?? [],
 				'docs'=>$this->app_builder_focused_docs($lane),
 				'optional_guidance_docs'=>[
-					'common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
+					'dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
 				],
 			],
 			'entity_input_contract'=>$this->app_builder_entity_input_contract($lane, $args),
@@ -1942,8 +1942,7 @@ trait dataphyre_mcp_planning_app_builder_surfaces {
 				$payload['builder_response']['title'],
 				$payload['builder_response']['active'],
 				$payload['builder_response']['first_read_ref'],
-				$payload['builder_response']['files_summary'],
-				$payload['builder_response']['app_path_context'],
+					$payload['builder_response']['app_path_context'],
 				$payload['builder_response']['schema_summary'],
 				$payload['builder_response']['semantic_contract'],
 				$payload['builder_response']['files_pagination'],
@@ -2066,11 +2065,7 @@ trait dataphyre_mcp_planning_app_builder_surfaces {
 						'profile'=>'compact',
 						'budget_enforced'=>true,
 						'collapsed_sections_count'=>$collapsed_count,
-						'detail_counts_summary'=>is_array($compact_policy['detail_counts'] ?? null) ? [
-							'available'=>true,
-							'count'=>count($compact_policy['detail_counts']),
-							'open_with'=>'dataphyre_app_builder_plan_generate payload_profile=full -> builder_response.compact_detail_policy.detail_counts',
-						] : null,
+						'detail_counts_summary'=>$this->mcp_app_builder_compact_detail_counts_summary($compact_policy),
 						'open_details_with'=>'dataphyre_app_builder_plan_generate payload_profile=compact detail_page=<planning|implementation|verification|controls|governance>',
 						'final_payload_collapsed_sections'=>array_values(array_unique(array_merge(
 							array_map('strval', is_array($compact_policy['final_payload_collapsed_sections'] ?? null) ? $compact_policy['final_payload_collapsed_sections'] : []),
@@ -2117,11 +2112,7 @@ trait dataphyre_mcp_planning_app_builder_surfaces {
 						'profile'=>'compact',
 						'budget_enforced'=>true,
 						'collapsed_sections_count'=>$collapsed_count,
-						'detail_counts_summary'=>is_array($compact_policy['detail_counts'] ?? null) ? [
-							'available'=>true,
-							'count'=>count($compact_policy['detail_counts']),
-							'open_with'=>'dataphyre_app_builder_plan_generate payload_profile=full -> builder_response.compact_detail_policy.detail_counts',
-						] : null,
+						'detail_counts_summary'=>$this->mcp_app_builder_compact_detail_counts_summary($compact_policy),
 						'open_details_with'=>'dataphyre_app_builder_plan_generate payload_profile=compact detail_page=<planning|implementation|verification|controls|governance>',
 					], static fn(mixed $value): bool => $value!==null && $value!==[]),
 					'budget_enforcement'=>[
@@ -2281,6 +2272,22 @@ trait dataphyre_mcp_planning_app_builder_surfaces {
 			}
 		}
 		$payload['compact_payload_budget_enforced']=true;
+		return $this->mcp_app_builder_finalize_compact_payload_budget($payload,$max);
+	}
+
+	/**
+	 * Rechecks the actual pretty-printed wire size after required first-page
+	 * fields have been restored. The compact navigation contract is immutable:
+	 * callers must always be able to discover what was omitted and open the
+	 * complete plan. Only duplicated context and internal collapse bookkeeping
+	 * may be discarded at this final boundary.
+	 */
+	private function mcp_app_builder_finalize_compact_payload_budget(array $payload,int $max): array {
+		foreach(['focused_context','compact_payload_collapsed_sections'] as $field){
+			$encoded=$this->mcp_app_builder_compact_budget_json($payload);
+			if(!is_string($encoded) || strlen($encoded)<=$max){break;}
+			unset($payload[$field]);
+		}
 		return $payload;
 	}
 
@@ -2577,6 +2584,20 @@ trait dataphyre_mcp_planning_app_builder_surfaces {
 		return $counts;
 	}
 
+	/** Returns one stable detail-count pointer across pre- and post-budget shapes. */
+	private function mcp_app_builder_compact_detail_counts_summary(array $compact_policy): ?array {
+		if(is_array($compact_policy['detail_counts'] ?? null)){
+			return [
+				'available'=>true,
+				'count'=>count($compact_policy['detail_counts']),
+				'open_with'=>'dataphyre_app_builder_plan_generate payload_profile=full -> builder_response.compact_detail_policy.detail_counts',
+			];
+		}
+		return is_array($compact_policy['detail_counts_summary'] ?? null)
+			? $compact_policy['detail_counts_summary']
+			: null;
+	}
+
 	private function mcp_app_builder_collapsed_section_count(string $section, array $value): int {
 		return match($section){
 			'implementation_recipe'=>count(is_array($value['items'] ?? null) ? $value['items'] : []),
@@ -2617,11 +2638,10 @@ trait dataphyre_mcp_planning_app_builder_surfaces {
 			return $root;
 		}
 		$cursor=array_slice($cursor, 0, $limit);
+		// The first traversal proved every parent segment exists and truncating the
+		// leaf cannot invalidate that path, so a second defensive branch is dead.
 		$parent=&$root;
 		foreach(array_slice($path, 0, -1) as $segment){
-			if(!is_array($parent) || !array_key_exists($segment, $parent)){
-				return $root;
-			}
 			$parent=&$parent[$segment];
 		}
 		$meta_key=(string)end($path).'_pagination';
@@ -2704,8 +2724,8 @@ trait dataphyre_mcp_planning_app_builder_surfaces {
 	 */
 	private function app_builder_focused_docs(array $lane): array {
 		$docs=[
-			'common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md',
-			'common/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md',
+			'dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md',
+			'dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md',
 		];
 		$scaffold_type=(string)($lane['scaffold_type'] ?? '');
 		if(
@@ -2714,8 +2734,8 @@ trait dataphyre_mcp_planning_app_builder_surfaces {
 			|| $scaffold_type==='mvc_controller'
 			|| (is_array($lane['companion_surface_handoff'] ?? null) && $lane['companion_surface_handoff']!==[])
 		){
-			$docs[]='common/dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md';
-			$docs[]='common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md';
+			$docs[]='dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md';
+			$docs[]='dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md';
 		}
 		return array_values(array_unique($docs));
 	}
@@ -3078,9 +3098,7 @@ trait dataphyre_mcp_planning_app_builder_surfaces {
 				$schema_fields=[];
 				foreach($this->app_builder_schema_fields($this->field_hints($fields)) as $field){
 					$name=(string)($field['name'] ?? '');
-					if($name===''){
-						continue;
-					}
+					// app_builder_schema_fields() guarantees a non-blank name.
 					$key=$this->app_builder_entity_key($entity).':'.$name;
 					if(isset($seen[$key])){
 						continue;

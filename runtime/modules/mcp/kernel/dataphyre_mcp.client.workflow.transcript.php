@@ -19,10 +19,7 @@ trait dataphyre_mcp_client_workflow_transcript_surfaces {
 	 * @return array Transcript schema payload.
 	 */
 	private function mcp_workflow_transcript_schema_export(array $args): array {
-		$workflow=strtolower(trim((string)($args['workflow'] ?? 'generic')));
-		if(!in_array($workflow, ['feature', 'routes', 'sql', 'diagnostics', 'client', 'release', 'generic'], true)){
-			$workflow='generic';
-		}
+		$workflow=$this->mcp_workflow_name($args['workflow'] ?? 'generic',['feature','routes','sql','diagnostics','client','release','generic'],'generic');
 		return [
 			'export_type'=>'dataphyre_mcp_workflow_transcript_schema_export',
 			'write_policy'=>'read_only',
@@ -136,6 +133,12 @@ trait dataphyre_mcp_client_workflow_transcript_surfaces {
 		return array_values(array_unique(array_filter(array_map(static fn(mixed $tool): string => (string)$tool, $tools), static fn(string $tool): bool => $tool!=='' && $tool!=='dataphyre_mcp_verify_all')));
 	}
 
+	/** Resolves a workflow label against the surface-specific finite vocabulary. */
+	private function mcp_workflow_name(mixed $workflow,array $allowed,string $fallback): string {
+		$name=strtolower(trim((string)$workflow));
+		return in_array($name,$allowed,true) ? $name : $fallback;
+	}
+
 	/**
 	 * Describes workflow helper tool proof boundaries for compact handoff lists.
 	 *
@@ -203,6 +206,25 @@ trait dataphyre_mcp_client_workflow_transcript_surfaces {
 	}
 
 	/**
+	 * Resolves the canonical transcript input once for audit, summary, and checkpoint surfaces.
+	 *
+	 * @return array{transcript:array<string,mixed>,source:string,parse_error:string}
+	 */
+	private function mcp_workflow_transcript_input(array $args): array {
+		if(isset($args['transcript']) && is_array($args['transcript'])){
+			return ['transcript'=>$args['transcript'],'source'=>'array','parse_error'=>''];
+		}
+		$json=trim((string)($args['transcript_json'] ?? ''));
+		if($json===''){
+			return ['transcript'=>[],'source'=>'missing','parse_error'=>''];
+		}
+		$decoded=json_decode($json,true);
+		return is_array($decoded)
+			? ['transcript'=>$decoded,'source'=>'json','parse_error'=>'']
+			: ['transcript'=>[],'source'=>'invalid_json','parse_error'=>'transcript_json could not be decoded as an object.'];
+	}
+
+	/**
 
 	 * Audits transcript entries for workflow completeness and risk signals.
 	 *
@@ -210,24 +232,10 @@ trait dataphyre_mcp_client_workflow_transcript_surfaces {
 	 * @return array Transcript audit payload.
 	 */
 	private function mcp_workflow_transcript_audit(array $args): array {
-		$expected_workflow=strtolower(trim((string)($args['workflow'] ?? 'generic')));
-		if(!in_array($expected_workflow, ['feature', 'routes', 'sql', 'diagnostics', 'client', 'release', 'generic'], true)){
-			$expected_workflow='generic';
-		}
-		$transcript=[];
-		$parse_error='';
-		if(isset($args['transcript']) && is_array($args['transcript'])){
-			$transcript=$args['transcript'];
-		}
-		elseif(trim((string)($args['transcript_json'] ?? ''))!==''){
-			$decoded=json_decode((string)$args['transcript_json'], true);
-			if(is_array($decoded)){
-				$transcript=$decoded;
-			}
-			else{
-				$parse_error='transcript_json could not be decoded as an object.';
-			}
-		}
+		$expected_workflow=$this->mcp_workflow_name($args['workflow'] ?? 'generic',['feature','routes','sql','diagnostics','client','release','generic'],'generic');
+		$input=$this->mcp_workflow_transcript_input($args);
+		$transcript=$input['transcript'];
+		$parse_error=$input['parse_error'];
 		$findings=[];
 		$warnings=[];
 		if($transcript===[]){
@@ -286,9 +294,8 @@ trait dataphyre_mcp_client_workflow_transcript_surfaces {
 		if($missing_result_keys>0){
 			$findings[]=['severity'=>'info', 'code'=>'missing_result_keys', 'message'=>$missing_result_keys.' transcript step(s) are missing response.result_keys.'];
 		}
-		$sensitive_key=$this->mcp_sensitive_assignment_key_pattern();
 		$secret_patterns=[
-			'secret_assignment'=>'/\b(?:'.$sensitive_key.')\b\s*(?:=>|:|=)\s*["\']?[^"\'\s\[\{]+/i',
+			'secret_assignment'=>$this->mcp_sensitive_assignment_pattern(),
 			'bearer_token'=>'/Bearer\s+[A-Za-z0-9._~+\/=-]{12,}/i',
 			'connection_string'=>'/\b(?:mysql|pgsql|postgres|redis|mongodb):\/\/[^"\s]+/i',
 			'absolute_windows_path'=>'/[A-Za-z]:(?:\\\\|\/)[^"\n\r]+/',
@@ -358,20 +365,8 @@ trait dataphyre_mcp_client_workflow_transcript_surfaces {
 	 * @return array Transcript summary payload.
 	 */
 	private function mcp_workflow_transcript_summary_export(array $args): array {
-		$workflow=strtolower(trim((string)($args['workflow'] ?? 'generic')));
-		if(!in_array($workflow, ['feature', 'routes', 'sql', 'diagnostics', 'client', 'release', 'generic'], true)){
-			$workflow='generic';
-		}
-		$transcript=[];
-		if(isset($args['transcript']) && is_array($args['transcript'])){
-			$transcript=$args['transcript'];
-		}
-		elseif(trim((string)($args['transcript_json'] ?? ''))!==''){
-			$decoded=json_decode((string)$args['transcript_json'], true);
-			if(is_array($decoded)){
-				$transcript=$decoded;
-			}
-		}
+		$workflow=$this->mcp_workflow_name($args['workflow'] ?? 'generic',['feature','routes','sql','diagnostics','client','release','generic'],'generic');
+		$transcript=$this->mcp_workflow_transcript_input($args)['transcript'];
 		$audit=$this->mcp_workflow_transcript_audit([
 			'workflow'=>$workflow,
 			'transcript'=>$transcript,
@@ -414,6 +409,9 @@ trait dataphyre_mcp_client_workflow_transcript_surfaces {
 		$unknown_step_count=max(0, $total_step_count-$completed_step_count-$failed_step_count);
 		$omitted_step_count=max(0, $total_step_count-count($step_summaries));
 		$step_window=$this->mcp_workflow_step_window($total_step_count, count($step_summaries), $step_summary_limit);
+		$next_tools=($audit['passed'] ?? false)===true
+			? $this->mcp_workflow_app_tools(array_merge(is_array($transcript['follow_up_tools'] ?? null) ? $transcript['follow_up_tools'] : [], ['dataphyre_mcp_workflow_readiness_audit']))
+			: ['dataphyre_mcp_workflow_transcript_schema_export', 'dataphyre_mcp_safety_boundary_report'];
 		return [
 			'export_type'=>'dataphyre_mcp_workflow_transcript_summary_export',
 			'write_policy'=>'read_only',
@@ -438,12 +436,8 @@ trait dataphyre_mcp_client_workflow_transcript_surfaces {
 			'agent_handoff'=>[
 				'status_line'=>'Workflow '.((string)($audit['workflow'] ?? $workflow)).' transcript '.(((bool)($audit['passed'] ?? false)) ? 'passed audit' : 'needs review').'.',
 				'safe_to_share'=>($audit['passed'] ?? false)===true,
-				'next_tools'=>($audit['passed'] ?? false)===true
-					? $this->mcp_workflow_app_tools(array_merge(is_array($transcript['follow_up_tools'] ?? null) ? $transcript['follow_up_tools'] : [], ['dataphyre_mcp_workflow_readiness_audit']))
-					: ['dataphyre_mcp_workflow_transcript_schema_export', 'dataphyre_mcp_safety_boundary_report'],
-				'next_tool_boundaries'=>$this->mcp_workflow_tool_boundaries(($audit['passed'] ?? false)===true
-					? $this->mcp_workflow_app_tools(array_merge(is_array($transcript['follow_up_tools'] ?? null) ? $transcript['follow_up_tools'] : [], ['dataphyre_mcp_workflow_readiness_audit']))
-					: ['dataphyre_mcp_workflow_transcript_schema_export', 'dataphyre_mcp_safety_boundary_report']),
+				'next_tools'=>$next_tools,
+				'next_tool_boundaries'=>$this->mcp_workflow_tool_boundaries($next_tools),
 			],
 			'application_agent_operating_contract'=>$this->mcp_application_agent_operating_contract('workflow_transcript_summary'),
 			'ordinary_app_work'=>$this->mcp_ordinary_app_work_contract('workflow_transcript_summary'),
@@ -464,20 +458,8 @@ trait dataphyre_mcp_client_workflow_transcript_surfaces {
 	 * @return array Workflow checkpoint payload.
 	 */
 	private function mcp_workflow_checkpoint_export(array $args): array {
-		$workflow=strtolower(trim((string)($args['workflow'] ?? 'generic')));
-		if(!in_array($workflow, ['feature', 'routes', 'sql', 'diagnostics', 'client', 'release', 'generic'], true)){
-			$workflow='generic';
-		}
-		$transcript=[];
-		if(isset($args['transcript']) && is_array($args['transcript'])){
-			$transcript=$args['transcript'];
-		}
-		elseif(trim((string)($args['transcript_json'] ?? ''))!==''){
-			$decoded=json_decode((string)$args['transcript_json'], true);
-			if(is_array($decoded)){
-				$transcript=$decoded;
-			}
-		}
+		$workflow=$this->mcp_workflow_name($args['workflow'] ?? 'generic',['feature','routes','sql','diagnostics','client','release','generic'],'generic');
+		$transcript=$this->mcp_workflow_transcript_input($args)['transcript'];
 		$summary=$this->mcp_workflow_transcript_summary_export([
 			'workflow'=>$workflow,
 			'transcript'=>$transcript,
@@ -592,10 +574,7 @@ trait dataphyre_mcp_client_workflow_transcript_surfaces {
 	 * @return array Workflow handoff pack payload.
 	 */
 	private function mcp_workflow_handoff_pack_export(array $args): array {
-		$workflow=strtolower(trim((string)($args['workflow'] ?? 'client')));
-		if(!in_array($workflow, ['feature', 'routes', 'sql', 'diagnostics', 'client', 'release'], true)){
-			$workflow='client';
-		}
+		$workflow=$this->mcp_workflow_name($args['workflow'] ?? 'client',['feature','routes','sql','diagnostics','client','release'],'client');
 		$include_frames=($args['include_frames'] ?? true)!==false;
 		$playbook=$this->mcp_workflow_playbook_export(['workflow'=>$workflow]);
 		$readiness=$this->mcp_workflow_readiness_audit(['workflow'=>$workflow]);

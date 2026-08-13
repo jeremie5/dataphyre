@@ -107,9 +107,7 @@ final class CachedDriver implements StorageDriver {
 			return false;
 		}
 		$body=Stream::contents($stream);
-		if($body===false){
-			return false;
-		}
+		if($body===false){ return false; }
 		$this->storeCache($path, $body, $options);
 		return Stream::fromString($body);
 	}
@@ -129,9 +127,7 @@ final class CachedDriver implements StorageDriver {
 	public function write(string $path, mixed $contents, array $options=[]): bool {
 		$path=Path::normalize($path);
 		$body=is_resource($contents) ? Stream::contents($contents) : (string)$contents;
-		if($body===false){
-			return false;
-		}
+		if($body===false){ return false; }
 		if($this->manager->put($path, $body, $this->disk, $options)!==true){
 			return false;
 		}

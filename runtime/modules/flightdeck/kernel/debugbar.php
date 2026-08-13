@@ -86,10 +86,11 @@ final class dataphyre_flightdeck_debugbar {
 	 * The Flightdeck auth class must be loaded, the console/debugbar auth policy
 	 * must allow rendering, and the signed debugbar toggle cookie must verify.
 	 *
+	 * @param ?bool $auth_available Optional deterministic authentication dependency state.
 	 * @return bool True when toolbar capture and injection may proceed.
 	 */
-	public static function enabled(): bool {
-		if(class_exists('dataphyre_flightdeck_auth', false)!==true){
+	public static function enabled(?bool $auth_available=null): bool {
+		if(self::auth_available($auth_available)!==true){
 			return false;
 		}
 		return dataphyre_flightdeck_auth::debugbar_allowed()===true
@@ -124,10 +125,11 @@ final class dataphyre_flightdeck_debugbar {
 	 * class necessarily exists; when the class is already loaded its runtime
 	 * flags are updated directly.
 	 *
+	 * @param ?bool $auth_available Optional deterministic authentication dependency state.
 	 * @return void
 	 */
-	private static function enable_tracelog_capture_when_configured(): void {
-		if(class_exists('dataphyre_flightdeck_auth', false)!==true){
+	private static function enable_tracelog_capture_when_configured(?bool $auth_available=null): void {
+		if(self::auth_available($auth_available)!==true){
 			return;
 		}
 		$config=dataphyre_flightdeck_auth::config();
@@ -191,17 +193,32 @@ final class dataphyre_flightdeck_debugbar {
 			register_shutdown_function([self::class, 'finalize_response_status_guard']);
 			return;
 		}
-		$injection_status=self::$injection_response_status;
+		self::finalize_response_status_guard_state(
+			self::$injection_response_status,
+			(int)(http_response_code() ?: 200),
+			error_get_last(),
+			headers_sent(),
+		);
+	}
+
+	/**
+	 * Applies one deterministic response-status repair decision.
+	 *
+	 * @param int $injection_status Status captured before toolbar injection.
+	 * @param int $final_status Status observed during shutdown.
+	 * @param ?array $last_error Last PHP error, when one exists.
+	 * @param bool $headers_already_sent Whether PHP has committed response headers.
+	 * @return void
+	 */
+	private static function finalize_response_status_guard_state(int $injection_status, int $final_status, ?array $last_error, bool $headers_already_sent): void {
 		if($injection_status<=0 || $injection_status>=400){
 			return;
 		}
-		$final_status=(int)(http_response_code() ?: 200);
 		if($final_status<500){
 			return;
 		}
-		$error=error_get_last();
-		$had_fatal=is_array($error) && self::is_fatal_error((int)($error['type'] ?? 0))===true;
-		if($had_fatal===true || headers_sent()){
+		$had_fatal=is_array($last_error) && self::is_fatal_error((int)($last_error['type'] ?? 0))===true;
+		if($had_fatal===true || $headers_already_sent){
 			return;
 		}
 		http_response_code($injection_status);
@@ -219,10 +236,11 @@ final class dataphyre_flightdeck_debugbar {
 	 * decisions are recorded in globals so the toolbar can explain effective
 	 * memory behavior.
 	 *
+	 * @param ?bool $auth_available Optional deterministic authentication dependency state.
 	 * @return void
 	 */
-	public static function apply_configured_memory_limit(): void {
-		if(class_exists('dataphyre_flightdeck_auth', false)!==true){
+	public static function apply_configured_memory_limit(?bool $auth_available=null): void {
+		if(self::auth_available($auth_available)!==true){
 			return;
 		}
 		$config=dataphyre_flightdeck_auth::config();
@@ -408,9 +426,24 @@ final class dataphyre_flightdeck_debugbar {
 	 * @return void
 	 */
 	public static function observe_shutdown(): void {
-		$error=error_get_last();
+		self::observe_shutdown_state(
+			error_get_last(),
+			(int)(http_response_code() ?: 200),
+			session_status()===PHP_SESSION_ACTIVE,
+		);
+	}
+
+	/**
+	 * Records one deterministic shutdown observation.
+	 *
+	 * @param ?array $error Last PHP error, when one exists.
+	 * @param int $final_status Final response status.
+	 * @param bool $session_active Whether snapshot history can be updated.
+	 * @param ?callable $status_recorder Optional deterministic shutdown-history sink.
+	 * @return void
+	 */
+	private static function observe_shutdown_state(?array $error, int $final_status, bool $session_active, ?callable $status_recorder=null): void {
 		$had_fatal=is_array($error) && self::is_fatal_error((int)($error['type'] ?? 0))===true;
-		$final_status=(int)(http_response_code() ?: 200);
 		if($had_fatal){
 			self::record_php_error(
 				(int)($error['type'] ?? E_ERROR),
@@ -422,14 +455,18 @@ final class dataphyre_flightdeck_debugbar {
 				$final_status=500;
 			}
 		}
-		if(session_status()!==PHP_SESSION_ACTIVE){
+		if($session_active!==true){
 			return;
 		}
 		if($had_fatal!==true && $final_status<400){
 			return;
 		}
 		try{
-			self::record_shutdown_status($final_status, $had_fatal);
+			if($status_recorder===null){
+				self::record_shutdown_status($final_status, $had_fatal);
+			}else{
+				$status_recorder($final_status, $had_fatal);
+			}
 		}catch(\Throwable){
 		}
 	}
@@ -456,9 +493,6 @@ final class dataphyre_flightdeck_debugbar {
 		$path=(string)(parse_url($uri, PHP_URL_PATH) ?: '/');
 		$history=self::history();
 		foreach($history as $index=>$snapshot){
-			if(!is_array($snapshot)){
-				continue;
-			}
 			$snapshot_request=is_array($snapshot['request'] ?? null) ? $snapshot['request'] : [];
 			$snapshot_uri=(string)($snapshot['uri'] ?? '');
 			$snapshot_path=(string)($snapshot_request['path'] ?? (parse_url($snapshot_uri, PHP_URL_PATH) ?: ''));
@@ -571,10 +605,11 @@ final class dataphyre_flightdeck_debugbar {
 	 * The toggle cookie is separate from the console auth cookie and expires
 	 * after twelve hours.
 	 *
+	 * @param ?bool $auth_available Optional deterministic authentication dependency state.
 	 * @return void
 	 */
-	public static function enable(): void {
-		if(class_exists('dataphyre_flightdeck_auth', false)!==true){
+	public static function enable(?bool $auth_available=null): void {
+		if(self::auth_available($auth_available)!==true){
 			return;
 		}
 		if(dataphyre_flightdeck_auth::debugbar_allowed()!==true){
@@ -614,14 +649,15 @@ final class dataphyre_flightdeck_debugbar {
 	 * an HTML document.
 	 *
 	 * @param string $buffer Response body buffer.
+	 * @param ?array<int,string> $response_headers Optional deterministic response headers.
 	 * @return bool True when markup injection is plausible.
 	 */
-	private static function quick_response_allows_toolbar_markup(string $buffer): bool {
+	private static function quick_response_allows_toolbar_markup(string $buffer, ?array $response_headers=null): bool {
 		if($buffer===''){
 			return false;
 		}
 		$content_type='';
-		foreach(headers_list() as $header){
+		foreach($response_headers ?? headers_list() as $header){
 			if(stripos((string)$header, 'Content-Type:')===0){
 				$content_type=strtolower(trim(substr((string)$header, strlen('Content-Type:'))));
 				break;
@@ -650,19 +686,27 @@ final class dataphyre_flightdeck_debugbar {
 	 * Explains why full toolbar injection should switch to compact mode.
 	 *
 	 * @param string $buffer Response body buffer.
+	 * @param array<string,int|bool> $memory Optional deterministic memory-decision snapshot.
 	 * @return string Human-readable low-memory reason, or an empty string when full injection is safe.
 	 */
-	private static function low_memory_reason(string $buffer): string {
-		$limit=self::memory_limit_bytes();
-		$remaining=self::memory_remaining_bytes();
+	private static function low_memory_reason(string $buffer, array $memory=[]): string {
+		$limit=array_key_exists('limit', $memory) ? (int)$memory['limit'] : self::memory_limit_bytes();
+		$remaining=array_key_exists('remaining', $memory) ? (int)$memory['remaining'] : self::memory_remaining_bytes();
 		$body_bytes=strlen($buffer);
 		if($limit>0 && $limit<=16777216){
 			return 'PHP memory_limit is '.self::format_bytes($limit).'; full Flightdeck was skipped to protect the response.';
 		}
-		if(self::memory_limit_is_tight()===true && self::has_memory_headroom($body_bytes + 6291456)===false){
+		$tight=array_key_exists('tight', $memory) ? (bool)$memory['tight'] : self::memory_limit_is_tight();
+		$tight_headroom=array_key_exists('tight_headroom', $memory)
+			? (bool)$memory['tight_headroom']
+			: self::has_memory_headroom($body_bytes + 6291456);
+		if($tight===true && $tight_headroom===false){
 			return 'Only '.self::format_bytes($remaining).' remained under the '.self::format_bytes($limit).' PHP memory limit.';
 		}
-		if(self::has_memory_headroom($body_bytes + 4194304)===false){
+		$full_headroom=array_key_exists('full_headroom', $memory)
+			? (bool)$memory['full_headroom']
+			: self::has_memory_headroom($body_bytes + 4194304);
+		if($full_headroom===false){
 			return 'Not enough memory remained to collect and inject the full Flightdeck toolbar.';
 		}
 		return '';
@@ -700,11 +744,13 @@ final class dataphyre_flightdeck_debugbar {
 	 *
 	 * @param string $buffer Original response body.
 	 * @param string $markup Toolbar markup to inject.
+	 * @param ?bool $has_headroom Optional deterministic memory-headroom decision.
 	 * @return string Response body with toolbar markup when memory allows.
 	 */
-	private static function splice_toolbar_markup(string $buffer, string $markup): string {
+	private static function splice_toolbar_markup(string $buffer, string $markup, ?bool $has_headroom=null): string {
 		$needed=strlen($buffer) + strlen($markup);
-		if(self::has_memory_headroom($needed, 3145728)===false){
+		$has_headroom ??= self::has_memory_headroom($needed, 3145728);
+		if($has_headroom===false){
 			return $buffer;
 		}
 		$body_position=stripos($buffer, '</body>');
@@ -726,10 +772,22 @@ final class dataphyre_flightdeck_debugbar {
 	 * @return string Original or toolbar-augmented response body.
 	 */
 	public static function inject(string $buffer): string {
-		if(class_exists('dataphyre_flightdeck_auth', false)!==true){
+		return self::inject_response($buffer);
+	}
+
+	/**
+	 * Executes toolbar injection with optional deterministic memory decisions.
+	 *
+	 * @param string $buffer Response body buffer.
+	 * @param array<string,int|bool> $memory Optional memory-decision snapshot used by deterministic diagnostics.
+	 * @return string Original or toolbar-augmented response body.
+	 */
+	private static function inject_response(string $buffer, array $memory=[]): string {
+		$auth_available=array_key_exists('auth_available', $memory) ? (bool)$memory['auth_available'] : null;
+		if(self::auth_available($auth_available)!==true){
 			return $buffer;
 		}
-		if(self::enabled()!==true){
+		if(self::enabled($auth_available)!==true){
 			return $buffer;
 		}
 		self::apply_configured_memory_limit();
@@ -743,23 +801,51 @@ final class dataphyre_flightdeck_debugbar {
 			return $buffer;
 		}
 		self::$injection_response_status=(int)(http_response_code() ?: 200);
-		$low_memory_reason=self::low_memory_reason($buffer);
+		$low_memory_reason=self::low_memory_reason($buffer, $memory);
 		if($low_memory_reason!==''){
-			return self::splice_toolbar_markup($buffer, self::low_memory_markup($low_memory_reason));
+			return self::splice_toolbar_markup(
+				$buffer,
+				self::low_memory_markup($low_memory_reason),
+				array_key_exists('splice_headroom', $memory) ? (bool)$memory['splice_headroom'] : null,
+			);
 		}
 		$state=self::state($buffer);
 		$response=is_array($state['response'] ?? null) ? $state['response'] : [];
 		if(self::response_allows_toolbar_markup($response, $buffer)!==true){
-			if(self::has_memory_headroom(1048576)){
+			$record_headroom=array_key_exists('record_headroom', $memory)
+				? (bool)$memory['record_headroom']
+				: self::has_memory_headroom(1048576);
+			if($record_headroom){
 				self::record_snapshot($state);
 			}
 			return $buffer;
 		}
-		if(self::has_memory_headroom(strlen($buffer) + 4194304)===false){
-			return self::splice_toolbar_markup($buffer, self::low_memory_markup('Flightdeck captured request state, then switched to compact mode before injection to avoid exhausting PHP memory.'));
+		$post_capture_headroom=array_key_exists('post_capture_headroom', $memory)
+			? (bool)$memory['post_capture_headroom']
+			: self::has_memory_headroom(strlen($buffer) + 4194304);
+		if($post_capture_headroom===false){
+			return self::splice_toolbar_markup(
+				$buffer,
+				self::low_memory_markup('Flightdeck captured request state, then switched to compact mode before injection to avoid exhausting PHP memory.'),
+				array_key_exists('splice_headroom', $memory) ? (bool)$memory['splice_headroom'] : null,
+			);
 		}
 		$markup=self::markup($buffer, $state);
-		return self::splice_toolbar_markup($buffer, $markup);
+		return self::splice_toolbar_markup(
+			$buffer,
+			$markup,
+			array_key_exists('splice_headroom', $memory) ? (bool)$memory['splice_headroom'] : null,
+		);
+	}
+
+	/**
+	 * Resolves the authentication dependency with an optional deterministic override.
+	 *
+	 * @param ?bool $available Optional dependency availability used by lifecycle diagnostics.
+	 * @return bool True when the bootstrap-safe authenticator can be called.
+	 */
+	private static function auth_available(?bool $available=null): bool {
+		return $available ?? class_exists('dataphyre_flightdeck_auth', false);
 	}
 
 }

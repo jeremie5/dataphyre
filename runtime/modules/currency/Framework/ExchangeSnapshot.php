@@ -111,12 +111,7 @@ final class ExchangeSnapshot implements \Countable, \JsonSerializable {
 	 */
 	public function assertFresh(int $maxAgeSeconds): self {
 		if($this->isStale($maxAgeSeconds)){
-			throw StaleExchangeRatesException::forSnapshot(
-				$this->source(),
-				$this->time(),
-				$this->ageSeconds(),
-				$maxAgeSeconds
-			);
+			throw StaleExchangeRatesException::forSnapshot($this->source(), $this->time(), $this->ageSeconds(), $maxAgeSeconds);
 		}
 		return $this;
 	}

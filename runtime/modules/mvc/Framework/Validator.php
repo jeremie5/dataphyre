@@ -19,6 +19,27 @@ use Dataphyre\Http\UploadedFile;
  */
 final class Validator {
 
+	/** String rules handled by the field lifecycle before value-specific checks. */
+	private const CONTROL_RULES=[
+		'required',
+		'required_if',
+		'required_unless',
+		'required_with',
+		'required_without',
+		'present',
+		'exclude',
+		'exclude_if',
+		'exclude_unless',
+		'exclude_with',
+		'exclude_without',
+		'prohibited',
+		'prohibited_if',
+		'prohibited_unless',
+		'bail',
+		'sometimes',
+		'nullable',
+	];
+
 	/** @var array<string, mixed> Source data under validation. */
 	private array $data;
 	/** @var array<string, mixed> Rule declarations keyed by field or wildcard field pattern. */
@@ -311,25 +332,7 @@ final class Validator {
 	 */
 	private function applyRule(string $ruleField, string $field, mixed $value, string $rule): void {
 		[$name, $parameters]=$this->parseRule($rule);
-		if(in_array($name, [
-			'required',
-			'required_if',
-			'required_unless',
-			'required_with',
-			'required_without',
-			'present',
-			'exclude',
-			'exclude_if',
-			'exclude_unless',
-			'exclude_with',
-			'exclude_without',
-			'prohibited',
-			'prohibited_if',
-			'prohibited_unless',
-			'bail',
-			'sometimes',
-			'nullable',
-		], true)){
+		if(in_array($name, self::CONTROL_RULES, true)){
 			return;
 		}
 		if($name==='boolean' || $name==='bool'){

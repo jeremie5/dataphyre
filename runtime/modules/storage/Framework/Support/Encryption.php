@@ -20,6 +20,17 @@ final class Encryption {
 	private const MAGIC="DPSTOR1\n";
 	private const CIPHER='aes-256-gcm';
 	private const CHUNK_SIZE=1048576;
+	private static $encryptor=null;
+
+	/**
+	 * Installs a process-local chunk encryptor.
+	 *
+	 * Passing null restores OpenSSL. Alternate runtimes and tests may provide a
+	 * callable receiving plaintext, key, IV, and the authentication tag by reference.
+	 */
+	public static function useEncryptor(?callable $encryptor): void {
+		self::$encryptor=$encryptor;
+	}
 
 	/**
 	 * Determines whether encryption should be applied for one storage operation.
@@ -91,7 +102,9 @@ final class Encryption {
 			}
 			$iv=random_bytes(12);
 			$tag='';
-			$ciphertext=openssl_encrypt($plain, self::CIPHER, $key, OPENSSL_RAW_DATA, $iv, $tag);
+			$ciphertext=self::$encryptor!==null
+				? (self::$encryptor)($plain, $key, $iv, $tag)
+				: openssl_encrypt($plain, self::CIPHER, $key, OPENSSL_RAW_DATA, $iv, $tag);
 			if($ciphertext===false){
 				throw new \RuntimeException('Unable to encrypt storage chunk.');
 			}

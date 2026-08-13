@@ -17,7 +17,8 @@ if(!function_exists('dataphyre\\tracelog')){
 	\Dataphyre\Test\define_test_symbols(<<<'PHP'
 namespace dataphyre;
 function tracelog(mixed ...$arguments): void {}
-if(!class_exists('routing', false)){
+if(!defined('DATAPHYRE_RUNTIME_CAPABILITY_ROUTING_TEST_STUB_LOADED')){
+	define('DATAPHYRE_RUNTIME_CAPABILITY_ROUTING_TEST_STUB_LOADED', true);
 	final class routing {
 		public static array $bindings=[];
 		public static function valid_scheduler_name(string $name): bool { return $name!==''; }

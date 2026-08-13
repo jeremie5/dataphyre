@@ -12,10 +12,22 @@
             }
         ],
         "expected": {
-            "custom_script": "return is_array($result) && ($result['module'] ?? null) === 'dataphyre.permission' && ($result['version'] ?? null) === 1;"
+            "assert": {
+                "type": "array",
+                "paths": {
+                    "module": {
+                        "same": "dataphyre.permission"
+                    },
+                    "version": {
+                        "same": 1
+                    }
+                }
+            }
         },
-        "file_dynamic": "return dp_module_present(\"permission\")[0];",
-        "max_millis": 50
+        "max_millis": 50,
+        "file": {
+            "module": "permission"
+        }
     },
     {
         "name": "diff_manifests_reports_added_role",
@@ -28,14 +40,27 @@
             },
             {
                 "roles": {
-                    "viewer": ["panel.orders.view"]
+                    "viewer": [
+                        "panel.orders.view"
+                    ]
                 }
             }
         ],
         "expected": {
-            "custom_script": "return is_array($result) && ($result['roles']['added'] ?? null) === ['viewer'];"
+            "assert": {
+                "type": "array",
+                "paths": {
+                    "roles/added": {
+                        "same": [
+                            "viewer"
+                        ]
+                    }
+                }
+            }
         },
-        "file_dynamic": "return dp_module_present(\"permission\")[0];",
-        "max_millis": 50
+        "max_millis": 50,
+        "file": {
+            "module": "permission"
+        }
     }
 ]

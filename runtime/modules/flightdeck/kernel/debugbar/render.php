@@ -636,6 +636,8 @@ JS;
 		$diagnostics=is_array($snapshot['diagnostics'] ?? null) ? $snapshot['diagnostics'] : [];
 		$errors=is_array($snapshot['errors'] ?? null) ? $snapshot['errors'] : [];
 		$comparison=is_array($snapshot['comparison'] ?? null) ? $snapshot['comparison'] : [];
+		$timeline=is_array($snapshot['timeline'] ?? null) ? $snapshot['timeline'] : [];
+		$duration_ms=(float)($snapshot['duration_ms'] ?? $timeline['duration_ms'] ?? 0);
 		$items=[];
 		$seen=[];
 		$add=static function(string $level, string $title, string $detail, string $source, string $next, int $priority=50)use(&$items, &$seen): void{

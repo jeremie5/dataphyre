@@ -1,0 +1,310 @@
+{
+  "type": "dataphyre_panel_release_contract",
+  "schema_version": 2,
+  "php_tested": [
+    "8.2",
+    "8.4"
+  ],
+  "assets": {
+    "required_assets": [
+      "panel.css",
+      "panel.js",
+      "panel-head.js",
+      "panel-editor.js",
+      "panel-editor-assets.js",
+      "panel-extensions.js",
+      "panel-platform.css",
+      "panel-quality.js"
+    ],
+    "capabilities": [
+      {
+        "name": "shell",
+        "capabilities": ["shell"],
+        "bundle_capabilities": ["shell"],
+        "delivery": "aggregate",
+        "separate_assets": [],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "collection-layout",
+        "capabilities": ["shell", "collection-layout"],
+        "bundle_capabilities": ["shell", "collection-layout"],
+        "delivery": "aggregate",
+        "separate_assets": [],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "navigation",
+        "capabilities": ["shell", "navigation"],
+        "bundle_capabilities": ["shell", "navigation"],
+        "delivery": "aggregate",
+        "separate_assets": [],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "form",
+        "capabilities": ["shell", "form"],
+        "bundle_capabilities": ["shell", "form"],
+        "delivery": "aggregate",
+        "separate_assets": [],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "upload",
+        "capabilities": ["shell", "form", "upload"],
+        "bundle_capabilities": ["shell", "form"],
+        "delivery": "dependency_alias",
+        "separate_assets": [],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "editor",
+        "capabilities": ["shell", "form", "editor"],
+        "bundle_capabilities": ["shell", "form", "editor"],
+        "delivery": "aggregate_and_separate",
+        "separate_assets": ["panel-editor.js"],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "editor-assets",
+        "capabilities": ["shell", "form", "editor", "editor-assets"],
+        "bundle_capabilities": ["shell", "form", "editor", "editor-assets"],
+        "delivery": "aggregate_and_separate",
+        "separate_assets": ["panel-editor.js", "panel-editor-assets.js"],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "studio-editor",
+        "capabilities": ["shell", "form", "studio-editor"],
+        "bundle_capabilities": ["shell", "form", "studio-editor"],
+        "delivery": "aggregate",
+        "separate_assets": [],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "modal",
+        "capabilities": ["shell", "form", "upload", "editor", "editor-assets", "modal"],
+        "bundle_capabilities": ["shell", "form", "editor", "editor-assets", "modal"],
+        "delivery": "aggregate",
+        "separate_assets": ["panel-editor.js", "panel-editor-assets.js"],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "record",
+        "capabilities": ["shell", "record"],
+        "bundle_capabilities": ["shell", "record"],
+        "delivery": "aggregate",
+        "separate_assets": [],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "table",
+        "capabilities": ["shell", "table"],
+        "bundle_capabilities": ["shell", "table"],
+        "delivery": "aggregate",
+        "separate_assets": [],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "data-surface",
+        "capabilities": ["shell", "data-surface"],
+        "bundle_capabilities": ["shell", "data-surface"],
+        "delivery": "aggregate",
+        "separate_assets": [],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "board",
+        "capabilities": ["shell", "table", "board"],
+        "bundle_capabilities": ["shell", "table", "board"],
+        "delivery": "aggregate",
+        "separate_assets": [],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "chart",
+        "capabilities": ["shell", "chart"],
+        "bundle_capabilities": ["shell", "chart"],
+        "delivery": "aggregate",
+        "separate_assets": [],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "widget-runtime",
+        "capabilities": ["shell", "widget-runtime"],
+        "bundle_capabilities": ["shell", "widget-runtime"],
+        "delivery": "aggregate",
+        "separate_assets": [],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "auth",
+        "capabilities": ["shell", "form", "auth"],
+        "bundle_capabilities": ["shell", "form", "auth"],
+        "delivery": "aggregate",
+        "separate_assets": [],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "reactor",
+        "capabilities": ["shell", "reactor"],
+        "bundle_capabilities": ["shell", "reactor"],
+        "delivery": "aggregate_and_external",
+        "separate_assets": ["reactor.js"],
+        "host_asset": "required"
+      },
+      {
+        "name": "collaboration",
+        "capabilities": ["shell", "reactor", "collaboration"],
+        "bundle_capabilities": ["shell", "reactor"],
+        "delivery": "dependency_alias",
+        "separate_assets": ["reactor.js"],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "media",
+        "capabilities": ["shell", "media"],
+        "bundle_capabilities": ["shell"],
+        "delivery": "base_runtime",
+        "separate_assets": [],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "extensions",
+        "capabilities": ["shell", "extensions"],
+        "bundle_capabilities": ["shell"],
+        "delivery": "separate",
+        "separate_assets": ["panel-extensions.js"],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "platform",
+        "capabilities": ["shell", "platform"],
+        "bundle_capabilities": ["shell"],
+        "delivery": "separate",
+        "separate_assets": ["panel-platform.css"],
+        "host_asset": "forbidden"
+      },
+      {
+        "name": "quality-client",
+        "capabilities": ["shell", "quality-client"],
+        "bundle_capabilities": ["shell"],
+        "delivery": "separate",
+        "separate_assets": ["panel-quality.js"],
+        "host_asset": "forbidden"
+      }
+    ],
+    "external_probe": {
+      "name": "vendor-map",
+      "asset": "vendor-map.js"
+    }
+  },
+  "browser": {
+    "reports": [
+      {
+        "id": "interaction",
+        "path": "default/interaction.json",
+        "total": 52
+      },
+      {
+        "id": "default_visual",
+        "path": "default/visual/report.json",
+        "total": 52
+      },
+      {
+        "id": "theme_direction",
+        "path": "theme-direction/report.json",
+        "total": 60
+      },
+      {
+        "id": "reflow_media",
+        "path": "reflow-media/report.json",
+        "total": 8
+      },
+      {
+        "id": "container",
+        "path": "container/report.json",
+        "total": 24
+      }
+    ],
+    "required_media_capabilities": [
+      "reducedMotion",
+      "forcedColors"
+    ],
+    "inclusive": {
+      "browser_report": "inclusive/browser.json",
+      "release_report": "inclusive/release/inclusive-quality.json",
+      "automated_total": 78,
+      "declared_manual_total": 48
+    },
+    "committed_visual": {
+      "total": 52
+    }
+  },
+  "packaging": {
+    "release_manifest": "RELEASE_MANIFEST.json",
+    "required_paths": [
+      "runtime/modules/panel/version",
+      "runtime/modules/panel/kernel/panel.main.php",
+      "runtime/modules/panel/Framework/Assets/PanelAssetCapabilityManifest.php",
+      "runtime/modules/panel/Framework/Rendering/PanelRendererAssets.php",
+      "runtime/modules/panel/Framework/Studio/Rendering/PanelStudioEditorAssets.php",
+      "runtime/modules/panel/Framework/Studio/Rendering/Assets/panel-studio-editor.css",
+      "runtime/modules/panel/Framework/Studio/Rendering/Assets/panel-studio-editor.js",
+      "runtime/modules/panel/Framework/Testing/PanelReleaseEvidenceArtifact.php",
+      "runtime/modules/panel/Framework/Testing/PanelReleaseEvidenceBundle.php",
+      "runtime/modules/panel/Framework/Testing/PanelReleaseEvidenceCli.php",
+      "runtime/modules/panel/Framework/Testing/PanelReleaseEvidenceVerification.php",
+      "runtime/modules/panel/documentation/Dataphyre_Panel_Release_Evidence.md",
+      "runtime/modules/panel/testing/panel_release_contract.json",
+      "runtime/modules/panel/testing/panel_release_contract.js",
+      "runtime/modules/panel/testing/panel_asset_snapshot.php",
+      "runtime/modules/panel/testing/panel_asset_architecture_audit.js",
+      "runtime/modules/panel/testing/panel_release_gate.js",
+      "runtime/modules/panel/testing/panel_interaction_regression.js",
+      "runtime/modules/panel/testing/panel_visual_regression.js",
+      "runtime/modules/panel/testing/panel_inclusive_quality_regression.js",
+      "runtime/modules/panel/testing/panel_documentation_portal_test_runner.php",
+      "runtime/modules/panel/testing/panel_documentation_portal_browser_regression.js",
+      "runtime/modules/panel/testing/fixtures/panel_browser_showroom.php",
+      "runtime/modules/panel/testing/baselines/command_center__desktop.png",
+      "runtime/modules/panel/testing/baselines/mobile_drawer__mobile.png"
+    ],
+    "forbidden_paths": [
+      ".git",
+      ".github",
+      ".codex-tmp",
+      ".tmp",
+      "cache",
+      "dev",
+      "logs",
+      "runtime/cache",
+      "runtime/logs",
+      "tools",
+      "vendor",
+      "composer.lock"
+    ]
+  },
+  "ci": {
+    "workflow": ".github/workflows/ci.yml",
+    "contract_job": "panel-release-contract",
+    "unit_job": "panel-unit",
+    "exact_coverage_job": "panel-exact-coverage",
+    "asset_job": "panel-assets",
+    "browser_job": "panel-browser",
+    "visual_job": "panel-visual-regression",
+    "documentation_job": "datadoc-documentation",
+    "documentation_browser_job": "datadoc-documentation-browser",
+    "aggregate_job": "panel-release",
+    "aggregate_required_jobs": [
+      "panel-release-contract",
+      "panel-unit",
+      "panel-exact-coverage",
+      "panel-assets",
+      "panel-browser",
+      "panel-visual-regression",
+      "datadoc-documentation",
+      "datadoc-documentation-browser"
+    ]
+  }
+}

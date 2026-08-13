@@ -1,0 +1,22 @@
+<?php
+/*************************************************************************
+ * Dataphyre
+ *
+ * Copyright (c) 2026 Shopiro Ltd.
+ * SPDX-License-Identifier: MIT
+ */
+declare(strict_types=1);
+
+namespace Dataphyre\Panel;
+
+/** Signed replay-protected local-first synchronization batch. */
+final class PanelSyncEnvelope implements \JsonSerializable {
+	private readonly string $digest;
+	/** @param list<PanelSyncDocument> $documents */private function __construct(private readonly string $sourceActor,private readonly int $sequence,private readonly string $issuedAt,private readonly array $documents,private readonly string $keyId,private readonly string $signature){PanelOperationsGuard::identifier($sourceActor,'sync source actor');if($sequence<1||PanelOperationsGuard::instant($issuedAt)!==$issuedAt||$documents===[]||count($documents)>512){throw new \InvalidArgumentException('Sync envelope sequence, instant, or document count is invalid.');}$ids=[];foreach($documents as$document){if(!$document instanceof PanelSyncDocument||isset($ids[$document->id()])){throw new \InvalidArgumentException('Sync envelope documents must be unique typed documents.');}$ids[$document->id()]=true;}PanelOperationsGuard::name($keyId,'sync key id');if(preg_match('/^[a-f0-9]{64}$/D',$signature)!==1){throw new \InvalidArgumentException('Sync envelope signature is invalid.');}$this->digest=PanelOperationsGuard::digest($this->unsigned());}
+	/** @param list<PanelSyncDocument> $documents */public static function sign(string|int $sourceActor,int $sequence,string|int|\DateTimeInterface $issuedAt,array $documents,string $keyId,string $key):self {if(strlen($key)<32){throw new \InvalidArgumentException('Sync signing keys require at least 32 bytes.');}$sourceActor=PanelOperationsGuard::identifier($sourceActor,'sync source actor');$issuedAt=PanelOperationsGuard::instant($issuedAt);$keyId=PanelOperationsGuard::name($keyId,'sync key id');$unsigned=['source_actor'=>$sourceActor,'sequence'=>$sequence,'issued_at'=>$issuedAt,'documents'=>array_map(static fn(PanelSyncDocument $document):array=>$document->jsonSerialize(),$documents),'key_id'=>$keyId];return new self($sourceActor,$sequence,$issuedAt,$documents,$keyId,hash_hmac('sha256',PanelOperationsGuard::digest($unsigned),$key));}
+	/** @param array<string,mixed> $payload */public static function hydrate(array $payload):self {$expected=['type','schema_version','api_version','version','source_actor','sequence','issued_at','documents','key_id','digest','signature'];$keys=array_keys($payload);sort($keys,SORT_STRING);sort($expected,SORT_STRING);if($keys!==$expected||$payload['type']!=='panel_sync_envelope'||$payload['version']!==1||!is_string($payload['source_actor'])||!is_int($payload['sequence'])||!is_string($payload['issued_at'])||!is_array($payload['documents'])||!is_string($payload['key_id'])||!is_string($payload['digest'])||!is_string($payload['signature'])){throw new \UnexpectedValueException('Stored sync envelope shape is invalid.');}$documents=array_map(static function(mixed $item):PanelSyncDocument{if(!is_array($item)){throw new \UnexpectedValueException('Stored sync document is invalid.');}return PanelSyncDocument::restore($item);},$payload['documents']);$envelope=new self($payload['source_actor'],$payload['sequence'],$payload['issued_at'],$documents,$payload['key_id'],$payload['signature']);if(!hash_equals($envelope->digest(),$payload['digest'])){throw new \UnexpectedValueException('Stored sync envelope digest is invalid.');}return$envelope;}
+	public function sourceActor():string{return$this->sourceActor;}public function sequence():int{return$this->sequence;}public function digest():string{return$this->digest;}/** @return list<PanelSyncDocument> */public function documents():array{return$this->documents;}
+	/** @param array<string,string> $keys */public function verify(array $keys):bool {$key=$keys[$this->keyId]??null;return is_string($key)&&strlen($key)>=32&&hash_equals($this->signature,hash_hmac('sha256',$this->digest,$key));}
+	public function jsonSerialize():array{return PanelManifestContract::stamp(['type'=>'panel_sync_envelope','version'=>1]+$this->unsigned()+['digest'=>$this->digest,'signature'=>$this->signature]);}
+	/** @return array<string,mixed> */private function unsigned():array{return['source_actor'=>$this->sourceActor,'sequence'=>$this->sequence,'issued_at'=>$this->issuedAt,'documents'=>array_map(static fn(PanelSyncDocument $document):array=>$document->jsonSerialize(),$this->documents),'key_id'=>$this->keyId];}
+}

@@ -11,8 +11,8 @@ $return_url=class_exists('\dataphyre\datadoc', false)
 
 if(class_exists('dataphyre_flightdeck_auth', false)){
 	header('Location: '.dataphyre_flightdeck_auth::login_url($return_url));
-	exit;
+	return;
 }
 
 header('Location: /dataphyre/login?'.http_build_query(['return'=>$return_url]));
-exit;
+return;

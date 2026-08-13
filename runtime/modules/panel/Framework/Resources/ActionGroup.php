@@ -16,6 +16,7 @@ namespace Dataphyre\Panel;
  */
 final class ActionGroup {
 	use PanelExtensible;
+	use HasCollectionItemPresentation;
 
 	private string $name;
 	private string $label;
@@ -24,6 +25,7 @@ final class ActionGroup {
 	private string $style='solid';
 	private string $size='md';
 	private bool $iconOnly=false;
+	private string $recordPlacement='auto';
 	private string $dropdownWidth='md';
 	private string $dropdownAlignment='end';
 	/** @var array<string, Action> */
@@ -59,7 +61,7 @@ final class ActionGroup {
 	 * Hydrates an action group from a manifest-style array definition.
 	 *
 	 * Recognized keys include `name`, `label`, `icon`, `tone`, `style`, `variant`, `size`,
-	 * `icon_only`, `dropdown_width`, `dropdown_alignment`, `alignment`, `placement`, `actions`,
+	 * `icon_only`, `record_placement`, `dropdown_width`, `dropdown_alignment`, `alignment`, `placement`, `actions`,
 	 * `items`, and `meta`. Unknown keys are ignored.
 	 *
 	 * @param array<string,mixed> $definition Serialized action group definition.
@@ -87,6 +89,9 @@ final class ActionGroup {
 		}
 		if(!empty($definition['icon_only'])){
 			$group=$group->iconOnly();
+		}
+		if(isset($definition['record_placement']) && is_string($definition['record_placement'])){
+			$group=$group->recordPlacement($definition['record_placement']);
 		}
 		if(isset($definition['dropdown_width']) && is_string($definition['dropdown_width'])){
 			$group=$group->dropdownWidth($definition['dropdown_width']);
@@ -311,6 +316,37 @@ final class ActionGroup {
 	 */
 	public function iconButton(bool $enabled=true): self {
 		return $this->iconOnly($enabled);
+	}
+
+	/**
+	 * Chooses whether this group stays visible in a record heading or moves into its overflow menu.
+	 */
+	public function recordPlacement(string $placement): self {
+		$placement=Resource::normalizeName($placement);
+		$placement=match($placement){
+			'primary', 'inline', 'visible' => 'primary',
+			'overflow', 'menu', 'secondary' => 'overflow',
+			default => 'auto',
+		};
+		$clone=clone $this;
+		$clone->recordPlacement=$placement;
+		return $clone;
+	}
+
+	/** Keeps this action group visible in resource record headings. */
+	public function recordPrimary(bool $enabled=true): self {
+		return $this->recordPlacement($enabled ? 'primary' : 'auto');
+	}
+
+	/** Places this action group in the resource record overflow menu. */
+	public function recordOverflow(bool $enabled=true): self {
+		return $this->recordPlacement($enabled ? 'overflow' : 'auto');
+	}
+
+	/** Returns the normalized record-heading placement policy. */
+	public function recordPlacementMode(): string {
+		$placement=$this->recordPlacement;
+		return in_array($placement, ['auto', 'primary', 'overflow'], true) ? $placement : 'auto';
 	}
 
 	/**
@@ -567,7 +603,7 @@ final class ActionGroup {
 	/**
 	 * Serializes the action group definition.
 	 *
-	 * @return array{name:string,label:string,icon:?string,tone:string,style:string,size:string,icon_only:bool,dropdown_width:string,dropdown_alignment:string,actions:list<array>,items:list<array<string,mixed>>,meta:array} Manifest-ready group payload.
+	 * @return array{name:string,label:string,icon:?string,tone:string,style:string,size:string,icon_only:bool,record_placement:string,dropdown_width:string,dropdown_alignment:string,actions:list<array>,items:list<array<string,mixed>>,meta:array} Manifest-ready group payload.
 	 */
 	public function toArray(): array {
 		return [
@@ -579,6 +615,7 @@ final class ActionGroup {
 			'style'=>$this->style,
 			'size'=>$this->size,
 			'icon_only'=>$this->iconOnly,
+			'record_placement'=>$this->recordPlacementMode(),
 			'dropdown_width'=>$this->dropdownWidth,
 			'dropdown_alignment'=>$this->dropdownAlignment,
 			'actions'=>array_map(static fn(Action $action): array => $action->toArray(), array_values($this->actions)),

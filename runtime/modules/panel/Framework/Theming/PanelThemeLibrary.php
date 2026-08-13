@@ -406,10 +406,7 @@ final class PanelThemeLibrary {
 	 * @param string $directory Directory containing theme payload files.
 	 */
 	private function loadDirectory(string $directory): void {
-		$files=glob(rtrim($directory, "\\/").DIRECTORY_SEPARATOR.'*.{php,json}', GLOB_BRACE);
-		if(!is_array($files)){
-			return;
-		}
+		$files=glob(rtrim($directory, "\\/").DIRECTORY_SEPARATOR.'*.{php,json}', GLOB_BRACE) ?: [];
 		sort($files, SORT_NATURAL | SORT_FLAG_CASE);
 		foreach($files as $file){
 			if(is_string($file) && is_file($file) && is_readable($file)){

@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 use Dataphyre\Test\Context;
+use Dataphyre\Test\NonPublicAccess;
 use function Dataphyre\Test\test;
 
 require_once dirname(__DIR__).'/kernel/cache.main.php';
@@ -22,8 +23,8 @@ if(!defined('ROOTPATH')){
 		'dataphyre'=>$dataphyreCacheTestRoot.'/cache/unit-test-application/dataphyre/',
 	]);
 }
-if(!defined('APP_MODULES')){
-	define('APP_MODULES', ['enabled'=>['cache']]);
+if(!defined('DATAPHYRE_MODULE_POLICY')){
+	define('DATAPHYRE_MODULE_POLICY', ['enabled'=>['cache'=>true], 'disabled'=>[]]);
 }
 require_once dirname(__DIR__, 2).'/core/kernel/module_registry.php';
 
@@ -47,6 +48,8 @@ final class DpCacheThrowingBackend extends DpCacheUnavailableBackend {
 final class DpCacheHealthyBackend {
 	/** @var array<string,mixed> */
 	private array $values=[];
+	/** @var array<string,int> */
+	public array $expirations=[];
 	private int $resultCode=0;
 
 	public function get(string $key): mixed {
@@ -60,6 +63,7 @@ final class DpCacheHealthyBackend {
 
 	public function set(string $key, mixed $value, int $expiration=0): bool {
 		$this->values[$key]=$value;
+		$this->expirations[$key]=$expiration;
 		$this->resultCode=0;
 		return true;
 	}
@@ -69,13 +73,14 @@ final class DpCacheHealthyBackend {
 			$this->resultCode=16;
 			return false;
 		}
-		unset($this->values[$key]);
+		unset($this->values[$key], $this->expirations[$key]);
 		$this->resultCode=0;
 		return true;
 	}
 
 	public function flush(): bool {
 		$this->values=[];
+		$this->expirations=[];
 		$this->resultCode=0;
 		return true;
 	}
@@ -114,19 +119,22 @@ final class DpCacheHealthyBackend {
 }
 
 /** @param object|null $backend */
-function dp_cache_test_reset(?object $backend=null, bool $memoryFallback=true, bool $started=true): ReflectionClass {
-	$reflection=new ReflectionClass(\dataphyre\cache::class);
+function dp_cache_test_reset(Context $t, ?object $backend=null, bool $memoryFallback=true, bool $started=true): NonPublicAccess {
+	$access=$t->nonPublic(\dataphyre\cache::class);
 	foreach([
 		'memcached'=>$backend,
 		'memory_cache'=>[],
 		'memory_fallback'=>$memoryFallback,
 		'started'=>$started,
 	] as $property=>$value){
-		$reflected=$reflection->getProperty($property);
-		$reflected->setAccessible(true);
-		$reflected->setValue(null, $value);
+		$access->writeProperty($property, $value);
 	}
-	return $reflection;
+	return $access;
+}
+
+/** @return array{0:string,1:int} */
+function dp_cache_test_server_address(Context $t): array {
+	return $t->nonPublic(\dataphyre\cache::class)->invoke('server_address');
 }
 
 test('cache resolves through the configured module registry', static function(Context $t): void {
@@ -140,21 +148,55 @@ test('cache resolves through the configured module registry', static function(Co
 	);
 })->tag('cache', 'module-registry', 'compatibility')->group('framework-coverage');
 
-test('cache keeps a healthy shared backend selected', static function(Context $t): void {
-	$reflection=dp_cache_test_reset(new DpCacheHealthyBackend(), false, true);
-	$t->isTrue(\dataphyre\cache::set('cache:test:shared', ['backend'=>'memcached']));
+test('cache identifies a healthy shared backend and preserves SQL expiration semantics', static function(Context $t): void {
+	$backend=new DpCacheHealthyBackend();
+	$access=dp_cache_test_reset($t, $backend, false, true);
+	$absoluteExpiration=time()+120;
+	$t->isTrue(\dataphyre\cache::isShared());
+	$t->isTrue(\dataphyre\cache::set('cache:test:shared', ['backend'=>'memcached'], $absoluteExpiration));
 	$t->same(['backend'=>'memcached'], \dataphyre\cache::get('cache:test:shared'));
+	$t->same($absoluteExpiration, $backend->expirations['cache:test:shared'] ?? null);
 	$t->same(3, \dataphyre\cache::increment('cache:test:new-counter', 3));
 	$t->same(1, \dataphyre\cache::decrement('cache:test:new-counter', 2));
 	$t->isTrue(\dataphyre\cache::delete('cache:test:shared'));
 	$t->isNull(\dataphyre\cache::get('cache:test:shared'));
-	$fallback=$reflection->getProperty('memory_fallback');
-	$fallback->setAccessible(true);
-	$t->isFalse($fallback->getValue());
-})->tag('cache', 'memcached', 'compatibility')->group('framework-coverage');
+	$t->isFalse($access->readProperty('memory_fallback'));
+})->tag('cache', 'memcached', 'sql', 'compatibility')->group('framework-coverage');
 
-test('cache memory fallback supports the complete facade contract', static function(Context $t): void {
-	dp_cache_test_reset();
+test('cache resolves bounded container endpoints without exposing credentials', static function(Context $t): void {
+	$names=[
+		'DATAPHYRE_CACHE_MEMCACHED_HOST',
+		'DATAPHYRE_CACHE_MEMCACHED_PORT',
+		'MEMCACHED_HOST',
+		'MEMCACHED_PORT',
+	];
+	$original=[];
+	foreach($names as $name){
+		$original[$name]=getenv($name);
+		putenv($name);
+	}
+	try{
+		putenv('MEMCACHED_HOST=platform-cache');
+		putenv('MEMCACHED_PORT=11212');
+		$t->same(['platform-cache',11212], dp_cache_test_server_address($t));
+
+		putenv('DATAPHYRE_CACHE_MEMCACHED_HOST=dataphyre-cache.internal');
+		putenv('DATAPHYRE_CACHE_MEMCACHED_PORT=22122');
+		$t->same(['dataphyre-cache.internal',22122], dp_cache_test_server_address($t));
+
+		putenv('DATAPHYRE_CACHE_MEMCACHED_HOST=invalid cache host');
+		putenv('DATAPHYRE_CACHE_MEMCACHED_PORT=70000');
+		$t->same(['127.0.0.1',11211], dp_cache_test_server_address($t));
+	}finally{
+		foreach($original as $name=>$value){
+			putenv($value===false ? $name : $name.'='.$value);
+		}
+	}
+})->tag('cache', 'memcached', 'configuration', 'containers')->group('framework-coverage');
+
+test('cache memory fallback supports the complete facade contract without claiming shared state', static function(Context $t): void {
+	dp_cache_test_reset($t);
+	$t->isFalse(\dataphyre\cache::isShared());
 	$t->isTrue(\dataphyre\cache::set('cache:test:payload', ['id'=>42]));
 	$t->same(['id'=>42], \dataphyre\cache::get('cache:test:payload'));
 	$t->isTrue(\dataphyre\cache::set('cache:test:false', false));
@@ -163,38 +205,41 @@ test('cache memory fallback supports the complete facade contract', static funct
 	$t->isNull(\dataphyre\cache::get('cache:test:payload'));
 	$t->isTrue(\dataphyre\cache::flush());
 	$t->isNull(\dataphyre\cache::get('cache:test:false'));
+	$oversizedKey=str_repeat('cache-key-', 40);
+	$t->isTrue(\dataphyre\cache::set($oversizedKey, 'bounded'));
+	$t->same('bounded', \dataphyre\cache::get($oversizedKey));
 })->tag('cache', 'fallback')->group('framework-coverage');
 
 test('cache memory fallback preserves counter and expiration semantics', static function(Context $t): void {
-	$reflection=dp_cache_test_reset();
+	$access=dp_cache_test_reset($t);
 	$t->same(3, \dataphyre\cache::increment('cache:test:counter', 3));
 	$t->same(1, \dataphyre\cache::decrement('cache:test:counter', 2));
 	$t->same(0, \dataphyre\cache::decrement('cache:test:counter', 5));
 	\dataphyre\cache::set('cache:test:expired', 'stale', 10);
-	$memory=$reflection->getProperty('memory_cache');
-	$memory->setAccessible(true);
-	$entries=$memory->getValue();
+	$entries=$access->readProperty('memory_cache');
 	$entries['cache:test:expired']['expires']=time()-1;
-	$memory->setValue(null, $entries);
+	$access->writeProperty('memory_cache', $entries);
 	$t->isNull(\dataphyre\cache::get('cache:test:expired'));
-	$t->isFalse(array_key_exists('cache:test:expired', $memory->getValue()));
+	$t->isFalse(array_key_exists('cache:test:expired', $access->readProperty('memory_cache')));
 })->tag('cache', 'fallback', 'expiration')->group('framework-coverage');
 
-test('cache backend failures degrade to memory without surfacing availability errors', static function(Context $t): void {
-	$reflection=dp_cache_test_reset(new DpCacheUnavailableBackend(), false, true);
+test('cache backend failures degrade to memory and stop claiming shared state', static function(Context $t): void {
+	$access=dp_cache_test_reset($t, new DpCacheUnavailableBackend(), false, true);
+	$t->isTrue(\dataphyre\cache::isShared());
 	$t->isTrue(\dataphyre\cache::set('cache:test:degraded', 'available'));
 	$t->same('available', \dataphyre\cache::get('cache:test:degraded'));
-	$fallback=$reflection->getProperty('memory_fallback');
-	$fallback->setAccessible(true);
-	$t->isTrue($fallback->getValue());
+	$t->isFalse(\dataphyre\cache::isShared());
+	$t->isTrue($access->readProperty('memory_fallback'));
 	$t->isTrue(\dataphyre\cache::$started);
 
-	dp_cache_test_reset(new DpCacheThrowingBackend(), false, true);
+	dp_cache_test_reset($t, new DpCacheThrowingBackend(), false, true);
 	$t->isNull(\dataphyre\cache::get('cache:test:throws'));
+	$t->isFalse(\dataphyre\cache::isShared());
 })->tag('cache', 'fallback', 'availability')->group('framework-coverage');
 
 test('cache cold start fails open when the Memcached extension is absent', static function(Context $t): void {
-	dp_cache_test_reset(null, false, false);
+	dp_cache_test_reset($t, null, false, false);
+	$t->isFalse(\dataphyre\cache::isShared());
 	$t->isTrue(\dataphyre\cache::set('cache:test:cold-start', 'available'));
 	$t->same('available', \dataphyre\cache::get('cache:test:cold-start'));
 	$t->isTrue(\dataphyre\cache::$started);

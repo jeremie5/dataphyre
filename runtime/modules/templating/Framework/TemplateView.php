@@ -637,17 +637,14 @@ final class TemplateView {
 		if($segments===[]){
 			return;
 		}
+		$leaf=array_pop($segments);
 		$current=&$target;
-		foreach($segments as $index=>$segment){
-			$isLast=$index===count($segments)-1;
-			if($isLast){
-				$current[$segment]=$value;
-				return;
-			}
+		foreach($segments as $segment){
 			if(!isset($current[$segment]) || !is_array($current[$segment])){
 				$current[$segment]=[];
 			}
 			$current=&$current[$segment];
 		}
+		$current[$leaf]=$value;
 	}
 }

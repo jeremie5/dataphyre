@@ -149,20 +149,29 @@ final class dataphyre_flightdeck {
 	 * headers/body output directly because Flightdeck is loaded by legacy routes
 	 * rather than the Framework response layer.
 	 *
+	 * @param ?callable $terminator Optional deterministic redirect termination strategy.
+	 * @param array<string,bool> $runtime Optional deterministic auth policy observations.
 	 * @return void
 	 */
-	public static function dispatch(): void {
-		if(class_exists('dataphyre_flightdeck_auth', false)!==true){
+	public static function dispatch(?callable $terminator=null, array $runtime=[]): void {
+		$auth_available=array_key_exists('auth_available',$runtime)
+			? $runtime['auth_available']
+			: class_exists('dataphyre_flightdeck_auth',false);
+		if($auth_available!==true){
 			http_response_code(503);
 			echo 'Flightdeck installation is incomplete.';
 			return;
 		}
-		if(dataphyre_flightdeck_auth::production_disabled()===true){
+		$production_disabled=array_key_exists('production_disabled',$runtime)
+			? $runtime['production_disabled']
+			: dataphyre_flightdeck_auth::production_disabled();
+		if($production_disabled===true){
 			http_response_code(404);
 			echo 'Not found';
 			return;
 		}
-		if(dataphyre_flightdeck_auth::enabled()!==true){
+		$enabled=array_key_exists('enabled',$runtime) ? $runtime['enabled'] : dataphyre_flightdeck_auth::enabled();
+		if($enabled!==true){
 			http_response_code(404);
 			echo 'Flightdeck is disabled.';
 			return;
@@ -178,8 +187,12 @@ final class dataphyre_flightdeck {
 			header('Location: /dataphyre/login');
 			return;
 		}
-		if(dataphyre_flightdeck_auth::authenticated()!==true){
-			dataphyre_flightdeck_auth::redirect_to_login();
+		$authenticated=array_key_exists('authenticated',$runtime)
+			? $runtime['authenticated']
+			: dataphyre_flightdeck_auth::authenticated();
+		if($authenticated!==true){
+			dataphyre_flightdeck_auth::redirect_to_login($terminator);
+			return;
 		}
 		if($route==='logs' && self::is_log_ajax_request()){
 			self::render_log_poll_response();
@@ -190,6 +203,13 @@ final class dataphyre_flightdeck {
 			return;
 		}
 		self::render($route);
+	}
+
+	/** Dispatches only when this file is mounted as a request entrypoint. */
+	public static function dispatch_entrypoint(bool $no_dispatch): void {
+		if($no_dispatch!==true){
+			self::dispatch();
+		}
 	}
 
 	/**
@@ -212,9 +232,10 @@ final class dataphyre_flightdeck {
 	 * delegated smart-snippet action. Missing log files return a successful empty
 	 * response so the browser can keep polling without surfacing server errors.
 	 *
+	 * @param ?callable $latest_log_resolver Optional deterministic latest-log resolver.
 	 * @return void
 	 */
-	private static function render_log_poll_response(): void {
+	private static function render_log_poll_response(?callable $latest_log_resolver=null): void {
 		header('Content-Type: application/json; charset=utf-8');
 		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 		if((string)($_POST['action'] ?? '')==='render_snippets'){
@@ -222,7 +243,7 @@ final class dataphyre_flightdeck {
 			return;
 		}
 		$render_stacks=false;
-		$info=self::latest_log_file_info();
+		$info=$latest_log_resolver!==null ? $latest_log_resolver() : self::latest_log_file_info();
 		if($info===null){
 			echo self::json_payload([
 				'ok'=>true,
@@ -335,20 +356,31 @@ final class dataphyre_flightdeck {
 	 * on POST, delegates password checks to Flightdeck auth, and redirects only to a
 	 * safe local return URL after successful authentication.
 	 *
+	 * @param array<string,bool> $runtime Optional deterministic auth policy observations.
 	 * @return void
 	 */
-	private static function handle_login(): void {
-		if(dataphyre_flightdeck_auth::production_disabled()===true){
+	private static function handle_login(array $runtime=[]): void {
+		$production_disabled=array_key_exists('production_disabled',$runtime)
+			? $runtime['production_disabled']
+			: dataphyre_flightdeck_auth::production_disabled();
+		if($production_disabled===true){
 			http_response_code(404);
 			echo 'Not found';
 			return;
 		}
-		if(dataphyre_flightdeck_auth::enabled()!==true){
+		$enabled=array_key_exists('enabled',$runtime) ? $runtime['enabled'] : dataphyre_flightdeck_auth::enabled();
+		if($enabled!==true){
 			http_response_code(404);
 			echo 'Flightdeck is disabled.';
 			return;
 		}
-		if(dataphyre_flightdeck_auth::authenticated()===true && dataphyre_flightdeck_auth::auth_required()===true){
+		$authenticated=array_key_exists('authenticated',$runtime)
+			? $runtime['authenticated']
+			: dataphyre_flightdeck_auth::authenticated();
+		$auth_required=array_key_exists('auth_required',$runtime)
+			? $runtime['auth_required']
+			: dataphyre_flightdeck_auth::auth_required();
+		if($authenticated===true && $auth_required===true){
 			http_response_code(302);
 			header('Location: '.self::safe_return_url());
 			return;
@@ -379,10 +411,12 @@ final class dataphyre_flightdeck {
 	 * uses a JSON subroute, while missing Debugbar support falls back to the
 	 * management page.
 	 *
+	 * @param ?bool $debugbar_available Optional deterministic Debugbar dependency state.
 	 * @return void
 	 */
-	private static function handle_debugbar(): void {
-		if(class_exists('dataphyre_flightdeck_debugbar', false)!==true){
+	private static function handle_debugbar(?bool $debugbar_available=null): void {
+		$debugbar_available ??= class_exists('dataphyre_flightdeck_debugbar',false);
+		if($debugbar_available!==true){
 			self::render('debugbar');
 			return;
 		}
@@ -419,12 +453,13 @@ final class dataphyre_flightdeck {
 	 * payload is an object/array, normalizes the event list, and delegates token and
 	 * snapshot validation to the Debugbar recorder before emitting JSON.
 	 *
+	 * @param ?string $raw Optional deterministic request body.
 	 * @return void
 	 */
-	private static function render_debugbar_client_event_response(): void {
+	private static function render_debugbar_client_event_response(?string $raw=null): void {
 		header('Content-Type: application/json; charset=utf-8');
 		header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-		$raw=(string)file_get_contents('php://input');
+		$raw ??= (string)file_get_contents('php://input');
 		$payload=json_decode($raw, true);
 		if(!is_array($payload)){
 			echo self::json_payload(['ok'=>false, 'message'=>'Invalid client event payload.']);
@@ -473,10 +508,12 @@ final class dataphyre_flightdeck {
 	 * unknown segments fall back to the dashboard. This keeps the control plane's
 	 * route surface closed even when the legacy router forwards wider paths.
 	 *
+	 * @param ?string $request_uri Optional deterministic request URI.
 	 * @return string Route key used by dispatch and render().
 	 */
-	private static function route(): string {
-		$path=(string)parse_url((string)($_SERVER['REQUEST_URI'] ?? '/dataphyre'), PHP_URL_PATH);
+	private static function route(?string $request_uri=null): string {
+		$request_uri ??= (string)($_SERVER['REQUEST_URI'] ?? '/dataphyre');
+		$path=(string)parse_url($request_uri,PHP_URL_PATH);
 		$path=trim($path, '/');
 		if($path==='dataphyre'){
 			return 'dashboard';
@@ -529,10 +566,11 @@ final class dataphyre_flightdeck {
 	 * browser script performs bounded polling after load. The shell embeds a CSRF
 	 * token for snippet rendering and escapes file paths before display.
 	 *
+	 * @param ?callable $latest_log_resolver Optional deterministic latest-log resolver.
 	 * @return string Logs page HTML.
 	 */
-	private static function logs_page(): string {
-		$info=self::latest_log_file_info();
+	private static function logs_page(?callable $latest_log_resolver=null): string {
+		$info=$latest_log_resolver!==null ? $latest_log_resolver() : self::latest_log_file_info();
 		if($info===null){
 			$file_label='No log files were found in the app or shared Dataphyre log directories.';
 			$size_label='0 B';
@@ -562,10 +600,11 @@ final class dataphyre_flightdeck {
 	/**
 	 * Renders the flight sheet inspection page with sensitive values redacted.
 	 *
+	 * @param ?string $path Optional deterministic flight-sheet path.
 	 * @return string HTML for the flight-sheet page.
 	 */
-	private static function flight_sheet_page(): string {
-		$path=self::install_root().'flight_sheet.php';
+	private static function flight_sheet_page(?string $path=null): string {
+		$path ??= self::install_root().'flight_sheet.php';
 		if(!is_file($path)){
 			return '<section class="fd-card"><h1>Flight Sheet</h1><p class="fd-muted">No flight sheet found at '.self::e($path).'.</p></section>';
 		}
@@ -580,18 +619,26 @@ final class dataphyre_flightdeck {
 	/**
 	 * Renders runtime toolbar controls, history, and selected request details.
 	 *
+	 * @param array<string,mixed> $runtime Optional deterministic Debugbar page state.
 	 * @return string HTML for the debugbar management page.
 	 */
-	private static function debugbar_page(): string {
-		$enabled=self::debugbar_enabled();
+	private static function debugbar_page(array $runtime=[]): string {
+		$available=array_key_exists('available',$runtime)
+			? (bool)$runtime['available']
+			: class_exists('dataphyre_flightdeck_debugbar',false);
+		$enabled=array_key_exists('enabled',$runtime)
+			? (bool)$runtime['enabled']
+			: self::debugbar_enabled($available);
 		$action=$enabled
 			? '<a class="fd-danger" href="/dataphyre/debugbar?action=disable">Disable Toolbar</a>'
 			: '<a class="fd-primary" href="/dataphyre/debugbar?action=enable">Enable Toolbar</a>';
-		$history=class_exists('dataphyre_flightdeck_debugbar', false) ? dataphyre_flightdeck_debugbar::history() : [];
+		$history=array_key_exists('history',$runtime)
+			? (is_array($runtime['history']) ? $runtime['history'] : [])
+			: ($available ? dataphyre_flightdeck_debugbar::history() : []);
 		$selected_id=(string)($_GET['request'] ?? '');
-		$selected=$selected_id!=='' && class_exists('dataphyre_flightdeck_debugbar', false)
-			? dataphyre_flightdeck_debugbar::history_snapshot($selected_id)
-			: null;
+		$selected=array_key_exists('selected',$runtime)
+			? (is_array($runtime['selected']) ? $runtime['selected'] : null)
+			: (($selected_id!=='' && $available) ? dataphyre_flightdeck_debugbar::history_snapshot($selected_id) : null);
 		if($selected===null && $history!==[]){
 			$selected=$history[0];
 		}
@@ -636,7 +683,7 @@ final class dataphyre_flightdeck {
 			$content.=dataphyre_flightdeck_view::table(['Time', 'Status', 'Request', 'Duration', 'Delta', 'Findings', 'Browser', 'SQL', 'Events'], $rows);
 		}
 		$content.='</section>';
-		if($selected!==null && class_exists('dataphyre_flightdeck_debugbar', false)){
+		if($selected!==null && $available){
 			$content.='<section class="fd-card fd-debugbar-card"><div class="fd-section-title"><div><h2>Captured Request</h2><p class="fd-muted">'.self::e((string)($selected['request_id'] ?? '')).'</p></div></div>'.dataphyre_flightdeck_debugbar::render_snapshot_html($selected).'</section>';
 		}
 		return $content;
@@ -664,10 +711,12 @@ final class dataphyre_flightdeck {
 	 * @param string $content Already-rendered page body.
 	 * @param string $active Active navigation route.
 	 * @param array{head?: string, logout?: bool, actions?: string} $options Optional layout fragments and switches.
+	 * @param ?bool $view_available Optional deterministic view dependency state.
 	 * @return string Complete HTML response body or service-unavailable text.
 	 */
-	private static function layout(string $title, string $content, string $active, array $options=[]): string {
-		if(class_exists('dataphyre_flightdeck_view', false)){
+	private static function layout(string $title, string $content, string $active, array $options=[], ?bool $view_available=null): string {
+		$view_available ??= class_exists('dataphyre_flightdeck_view',false);
+		if($view_available){
 			return dataphyre_flightdeck_view::layout($title, $content, $active, $options);
 		}
 		http_response_code(503);
@@ -689,9 +738,10 @@ final class dataphyre_flightdeck {
 	/**
 	 * Lists Flightdeck control links for installed module interfaces.
 	 *
+	 * @param ?array<string,?string> $roots Optional deterministic module roots.
 	 * @return array<int, array{module:string,title:string,href:string,description:string}>
 	 */
-	private static function module_interface_links(): array {
+	private static function module_interface_links(?array $roots=null): array {
 		$links=[
 			['module'=>'flightdeck', 'title'=>'Flightdeck Logs', 'href'=>'/dataphyre/logs', 'description'=>'Runtime log review in the Flightdeck visual system.'],
 			['module'=>'flightdeck', 'title'=>'Flight Sheet', 'href'=>'/dataphyre/flight-sheet', 'description'=>'Inspect bootstrap and install directives with sensitive values redacted.'],
@@ -704,7 +754,7 @@ final class dataphyre_flightdeck {
 			'dpanel'=>['Dpanel', '/dataphyre/dpanel', 'Dynamic diagnostics panel.'],
 			'health_report'=>['Health Report', '/dataphyre/health_report', 'Runtime health report.'],
 		] as $module=>$data){
-			if(self::module_exists($module)){
+			if(self::module_exists($module,$roots)){
 				$links[]=['module'=>$module, 'title'=>$data[0], 'href'=>$data[1], 'description'=>$data[2]];
 			}
 		}
@@ -714,13 +764,18 @@ final class dataphyre_flightdeck {
 	/**
 	 * Discovers installed runtime modules for the module table.
 	 *
+	 * @param ?array<string,?string> $roots Optional deterministic module roots.
 	 * @return array<int, array{name:string,source:string,version:string,link:?string}>
 	 */
-	private static function module_rows(): array {
+	private static function module_rows(?array $roots=null): array {
 		$modules=[];
-		foreach([
+		$roots ??=[
 			'common'=>self::runtime_root().'modules/',
-			'app'=>defined('ROOTPATH') && !empty(ROOTPATH['dataphyre']) ? rtrim((string)ROOTPATH['dataphyre'], '/\\').'/modules/' : null,
+			'app'=>defined('ROOTPATH') && !empty(ROOTPATH['dataphyre']) ? rtrim((string)ROOTPATH['dataphyre'],'/\\').'/modules/' : null,
+		];
+		foreach([
+			'common'=>$roots['common'] ?? null,
+			'app'=>$roots['app'] ?? null,
 		] as $source=>$root){
 			if(!is_string($root) || !is_dir($root)){
 				continue;
@@ -737,7 +792,7 @@ final class dataphyre_flightdeck {
 					'name'=>$entry,
 					'source'=>isset($modules[$entry]) ? $modules[$entry]['source'].', '.$source : $source,
 					'version'=>is_file($directory.'version') ? trim((string)file_get_contents($directory.'version')) : '1.0',
-					'link'=>self::module_link($entry),
+					'link'=>self::module_link($entry,$roots),
 				];
 			}
 		}
@@ -749,10 +804,11 @@ final class dataphyre_flightdeck {
 	 * Returns the Flightdeck interface link for a module when one is known.
 	 *
 	 * @param string $module Module name.
+	 * @param ?array<string,?string> $roots Optional deterministic module roots.
 	 * @return ?string Module interface URL, or null when no interface exists.
 	 */
-	private static function module_link(string $module): ?string {
-		foreach(self::module_interface_links() as $link){
+	private static function module_link(string $module, ?array $roots=null): ?string {
+		foreach(self::module_interface_links($roots) as $link){
 			if($link['module']===$module){
 				return $link['href'];
 			}
@@ -764,30 +820,39 @@ final class dataphyre_flightdeck {
 	 * Reports whether a module directory exists in common or app roots.
 	 *
 	 * @param string $module Module name.
+	 * @param ?array<string,?string> $roots Optional deterministic module roots.
 	 * @return bool True when the module directory is installed.
 	 */
-	private static function module_exists(string $module): bool {
-		return is_dir(self::runtime_root().'modules/'.$module.'/')
-			|| (defined('ROOTPATH') && !empty(ROOTPATH['dataphyre']) && is_dir(ROOTPATH['dataphyre'].'modules/'.$module.'/'));
+	private static function module_exists(string $module, ?array $roots=null): bool {
+		$roots ??=[
+			'common'=>self::runtime_root().'modules/',
+			'app'=>defined('ROOTPATH') && !empty(ROOTPATH['dataphyre']) ? rtrim((string)ROOTPATH['dataphyre'],'/\\').'/modules/' : null,
+		];
+		return is_dir(rtrim((string)($roots['common'] ?? ''),'/\\').'/'.$module.'/')
+			|| (is_string($roots['app'] ?? null) && is_dir(rtrim((string)$roots['app'],'/\\').'/'.$module.'/'));
 	}
 
 	/**
 	 * Reports whether the runtime toolbar is available and enabled.
 	 *
+	 * @param ?bool $debugbar_available Optional deterministic Debugbar dependency state.
 	 * @return bool True when the debugbar class is loaded and enabled.
 	 */
-	private static function debugbar_enabled(): bool {
-		return class_exists('dataphyre_flightdeck_debugbar', false)
+	private static function debugbar_enabled(?bool $debugbar_available=null): bool {
+		$debugbar_available ??= class_exists('dataphyre_flightdeck_debugbar',false);
+		return $debugbar_available
 			&& dataphyre_flightdeck_debugbar::enabled()===true;
 	}
 
 	/**
 	 * Returns runtime toolbar state for dashboard diagnostics.
 	 *
+	 * @param ?bool $debugbar_available Optional deterministic Debugbar dependency state.
 	 * @return array<string, mixed> Debugbar state or unavailable fallback.
 	 */
-	private static function debugbar_state(): array {
-		if(class_exists('dataphyre_flightdeck_debugbar', false)){
+	private static function debugbar_state(?bool $debugbar_available=null): array {
+		$debugbar_available ??= class_exists('dataphyre_flightdeck_debugbar',false);
+		if($debugbar_available){
 			return dataphyre_flightdeck_debugbar::state();
 		}
 		return [
@@ -799,11 +864,12 @@ final class dataphyre_flightdeck {
 	/**
 	 * Locates the newest Flightdeck-readable log file.
 	 *
+	 * @param ?array<int,string> $directories Optional deterministic log directories.
 	 * @return ?array{name:string,path:string,size:int,mtime:int,key:string} Latest log info, or null when none exist.
 	 */
-	private static function latest_log_file_info(): ?array {
+	private static function latest_log_file_info(?array $directories=null): ?array {
 		$latest=null;
-		foreach(self::log_directories() as $directory){
+		foreach($directories ?? self::log_directories() as $directory){
 			foreach(glob(rtrim($directory, '/\\').'/*.{html,log,txt}', GLOB_BRACE) ?: [] as $file){
 				if(!is_file($file) || !is_readable($file)){
 					continue;
@@ -1355,11 +1421,12 @@ final class dataphyre_flightdeck {
 	 * @param string $entry Log entry HTML.
 	 * @return bool True when at least one readable frame can produce diagnostics.
 	 */
-	private static function log_entry_has_smart_snippets(string $entry): bool {
-		if(class_exists('dataphyre_flightdeck_stack_snippets', false) && dataphyre_flightdeck_stack_snippets::frames_from_log_entry($entry)!==[]){
+	private static function log_entry_has_smart_snippets(string $entry, ?bool $stack_snippets_available=null): bool {
+		$stack_snippets_available ??= class_exists('dataphyre_flightdeck_stack_snippets',false);
+		if($stack_snippets_available && dataphyre_flightdeck_stack_snippets::frames_from_log_entry($entry)!==[]){
 			return true;
 		}
-		if(class_exists('dataphyre_flightdeck_stack_snippets', false)!==true && self::stack_frames_from_log_entry($entry)!==[]){
+		if($stack_snippets_available!==true && self::stack_frames_from_log_entry($entry)!==[]){
 			return true;
 		}
 		$text=html_entity_decode(strip_tags($entry), ENT_QUOTES | ENT_HTML5, 'UTF-8');
@@ -1372,8 +1439,9 @@ final class dataphyre_flightdeck {
 	 * @param string $entry Log entry HTML submitted by the browser.
 	 * @return string HTML panel containing frame snippets and diagnostics.
 	 */
-	private static function render_log_stack_panel(string $entry): string {
-		if(class_exists('dataphyre_flightdeck_stack_snippets', false)){
+	private static function render_log_stack_panel(string $entry, ?bool $stack_snippets_available=null): string {
+		$stack_snippets_available ??= class_exists('dataphyre_flightdeck_stack_snippets',false);
+		if($stack_snippets_available){
 			$frames=dataphyre_flightdeck_stack_snippets::frames_from_log_entry($entry);
 			if($frames===[]){
 				$diagnostics=dataphyre_flightdeck_stack_snippets::render_diagnostics($entry, [], [
@@ -1440,9 +1508,10 @@ final class dataphyre_flightdeck {
 	 * Renders one source-frame diagnostic block.
 	 *
 	 * @param array{file:string,line:int} $frame Source frame descriptor.
+	 * @param ?callable $source_reader Optional deterministic source-file reader.
 	 * @return string HTML for source diagnostics and highlighted snippet.
 	 */
-	private static function render_log_stack_frame(array $frame): string {
+	private static function render_log_stack_frame(array $frame, ?callable $source_reader=null): string {
 		$file=(string)($frame['file'] ?? '');
 		$line=(int)($frame['line'] ?? 0);
 		$label='<div class="fd-log-frame-head"><b>#'.self::e((string)($frame['index'] ?? 0)).' '.self::e($file).':'.self::e((string)$line).'</b><span>'.self::e((string)($frame['call'] ?? '')).'</span></div>';
@@ -1450,7 +1519,7 @@ final class dataphyre_flightdeck {
 			return '<article class="fd-log-frame">'.$label.'<p class="fd-muted">Source unavailable on this runtime.</p></article>';
 		}
 		$start=max(1, $line - 6);
-		$lines=@file($file, FILE_IGNORE_NEW_LINES);
+		$lines=$source_reader!==null ? $source_reader($file) : @file($file, FILE_IGNORE_NEW_LINES);
 		if(!is_array($lines)){
 			return '<article class="fd-log-frame">'.$label.'<p class="fd-muted">Source unreadable.</p></article>';
 		}
@@ -1904,12 +1973,14 @@ HTML;
 	/**
 	 * Returns existing Dataphyre log directories visible to Flightdeck.
 	 *
+	 * @param ?array<string,mixed> $roots Optional deterministic root map.
 	 * @return array<int, string> Absolute log directory paths.
 	 */
-	private static function log_directories(): array {
+	private static function log_directories(?array $roots=null): array {
+		$roots ??= defined('ROOTPATH') && is_array(ROOTPATH) ? ROOTPATH : [];
 		return array_values(array_filter(array_unique([
-			defined('ROOTPATH') && !empty(ROOTPATH['dataphyre']) ? rtrim((string)ROOTPATH['dataphyre'], '/\\').'/logs/' : null,
-			defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre']) ? rtrim((string)ROOTPATH['common_dataphyre'], '/\\').'/logs/' : null,
+			!empty($roots['dataphyre']) ? rtrim((string)$roots['dataphyre'],'/\\').'/logs/' : null,
+			!empty($roots['common_dataphyre']) ? rtrim((string)$roots['common_dataphyre'],'/\\').'/logs/' : null,
 		]), static fn($path)=>is_string($path) && is_dir($path)));
 	}
 
@@ -1935,10 +2006,11 @@ HTML;
 	/**
 	 * Resolves a safe local return URL after login.
 	 *
+	 * @param ?string $return Optional deterministic return target.
 	 * @return string Local URL path that cannot redirect to another origin.
 	 */
-	private static function safe_return_url(): string {
-		$return=(string)($_GET['return'] ?? '/dataphyre');
+	private static function safe_return_url(?string $return=null): string {
+		$return ??= (string)($_GET['return'] ?? '/dataphyre');
 		if($return==='' || str_starts_with($return, '//') || preg_match('/^[a-z][a-z0-9+.-]*:/i', $return)){
 			return '/dataphyre';
 		}
@@ -1948,11 +2020,13 @@ HTML;
 	/**
 	 * Returns the Dataphyre runtime root directory.
 	 *
+	 * @param ?array<string,mixed> $roots Optional deterministic root map.
 	 * @return string Runtime root path with trailing slash.
 	 */
-	private static function runtime_root(): string {
-		if(defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre_runtime'])){
-			return rtrim((string)ROOTPATH['common_dataphyre_runtime'], '/\\').'/';
+	private static function runtime_root(?array $roots=null): string {
+		$roots ??= defined('ROOTPATH') && is_array(ROOTPATH) ? ROOTPATH : [];
+		if(!empty($roots['common_dataphyre_runtime'])){
+			return rtrim((string)$roots['common_dataphyre_runtime'],'/\\').'/';
 		}
 		return rtrim(dirname(__DIR__, 3), '/\\').'/';
 	}
@@ -1960,11 +2034,13 @@ HTML;
 	/**
 	 * Returns the Dataphyre install root directory.
 	 *
+	 * @param ?array<string,mixed> $roots Optional deterministic root map.
 	 * @return string Install root path with trailing slash.
 	 */
-	private static function install_root(): string {
-		if(defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre'])){
-			return rtrim((string)ROOTPATH['common_dataphyre'], '/\\').'/';
+	private static function install_root(?array $roots=null): string {
+		$roots ??= defined('ROOTPATH') && is_array(ROOTPATH) ? ROOTPATH : [];
+		if(!empty($roots['common_dataphyre'])){
+			return rtrim((string)$roots['common_dataphyre'],'/\\').'/';
 		}
 		return rtrim(dirname(__DIR__, 4), '/\\').'/';
 	}
@@ -2035,6 +2111,6 @@ HTML;
 	}
 }
 
-if(defined('DATAPHYRE_FLIGHTDECK_NO_DISPATCH')!==true){
-	dataphyre_flightdeck::dispatch();
-}
+dataphyre_flightdeck::dispatch_entrypoint(
+	defined('DATAPHYRE_FLIGHTDECK_NO_DISPATCH')===true,
+);

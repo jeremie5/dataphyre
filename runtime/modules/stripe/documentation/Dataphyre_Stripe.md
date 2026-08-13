@@ -14,6 +14,29 @@ The **Stripe** module in Dataphyre provides a set of functionalities to integrat
 
 #### Core Methods
 
+##### Account-isolated client
+
+Applications that own several independent billing domains should use
+`dataphyre\stripe_account_client` instead of changing Stripe's process-global
+API key. Each instance receives one `sk_test_…`, `sk_live_…`, `rk_test_…`, or
+`rk_live_…` credential and lazily creates its own `StripeClient`.
+
+```php
+$stripe=new \dataphyre\stripe_account_client($accountSecret);
+$customer=$stripe->create_customer($customerData, $idempotencyKey);
+$setup=$stripe->create_setup_intent([
+    'customer'=>$customer->id,
+    'payment_method_types'=>['card'],
+], $idempotencyKey);
+```
+
+The account client exposes customer create/update/retrieve/delete, SetupIntent
+create/retrieve/cancel, payment-method retrieve/detach, off-session
+PaymentIntent create/retrieve, and local webhook construction. Mutating cleanup
+operations require an idempotency key and validate the returned resource before
+projecting non-secret evidence. It never writes the credential into Stripe's
+static global configuration.
+
 1. **Platform Account Management**
 
    - **`get_platform_account_for_country($country)`**: Determines the appropriate platform account based on a country code.

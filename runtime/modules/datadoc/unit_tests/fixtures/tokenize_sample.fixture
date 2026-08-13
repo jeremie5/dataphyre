@@ -1,0 +1,15 @@
+<?php
+namespace Example\Docs;
+
+/**
+ * Greets a person.
+ * @param string $name
+ */
+final class Greeter {
+	private $message;
+
+	public static function hello(string $name): string {
+		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='hello');
+		return "Hello ".$name;
+	}
+}

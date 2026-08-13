@@ -86,11 +86,11 @@ final class PermissionRepository {
 		[$subjectType, $subjectId]=$this->subjectKey($subject, $context);
 		$value=PermissionRule::normalize($value);
 		$kind=$this->kind($kind);
-		if($table===null || $subjectId===null || $value==='' || function_exists('sql_delete')===false){
+		if($table===null || $subjectId===null || $value==='' || !$this->sqlAvailable('sql_delete')){
 			return false;
 		}
 		$scope=$this->scope($context);
-		return sql_delete($table, 'WHERE subject_type=? AND subject_id=? AND scope=? AND kind=? AND value=?', [$subjectType, (string)$subjectId, $scope, $kind, $value], true)!==false;
+		return $this->sql('sql_delete', [$table, 'WHERE subject_type=? AND subject_id=? AND scope=? AND kind=? AND value=?', [$subjectType, (string)$subjectId, $scope, $kind, $value], true])!==false;
 	}
 
 	/**
@@ -107,7 +107,7 @@ final class PermissionRepository {
 	 */
 	public function defineRole(string $role, array|string $permissions, array $metadata=[]): bool {
 		$role=PermissionRule::normalize($role);
-		if($role==='' || function_exists('sql_insert')===false){
+		if($role==='' || !$this->sqlAvailable('sql_insert')){
 			return false;
 		}
 		$rolesTable=$this->table('roles_table', 'dataphyre.permission_roles');
@@ -126,30 +126,27 @@ final class PermissionRepository {
 			'system'=>$system,
 			'updated_at'=>date('Y-m-d H:i:s'),
 		];
-		$roleSaved=sql_insert($rolesTable, $roleFields, null, true);
-		if($roleSaved===false && function_exists('sql_update')){
+		$roleSaved=$this->sql('sql_insert', [$rolesTable, $roleFields, null, true]);
+		if($roleSaved===false && $this->sqlAvailable('sql_update')){
 			$updateFields=$roleFields;
 			unset($updateFields['name']);
-			$roleSaved=sql_update($rolesTable, $updateFields, 'WHERE name=?', [$role], true);
+			$roleSaved=$this->sql('sql_update', [$rolesTable, $updateFields, 'WHERE name=?', [$role], true]);
 		}
 		if($roleSaved===false){
 			return false;
 		}
-		if(function_exists('sql_delete')){
-			sql_delete($rolePermissionsTable, 'WHERE role=?', [$role], true);
+		if($this->sqlAvailable('sql_delete')){
+			$this->sql('sql_delete', [$rolePermissionsTable, 'WHERE role=?', [$role], true]);
 		}
 		foreach(PermissionRule::many($permissions) as $permission){
 			$rule=PermissionRule::unwrap($permission);
 			$value=$rule['permission'];
-			if($value===''){
-				continue;
-			}
-			sql_insert($rolePermissionsTable, [
+			$this->sql('sql_insert', [$rolePermissionsTable, [
 				'id'=>$this->id('dprp'),
 				'role'=>$role,
 				'permission'=>$value,
 				'negative'=>(bool)$rule['negative'],
-			], null, true);
+			], null, true]);
 		}
 		$this->roleCache=null;
 		return true;
@@ -211,10 +208,10 @@ final class PermissionRepository {
 			return $this->roleCache;
 		}
 		$table=$this->table('role_permissions_table', 'dataphyre.permission_role_permissions');
-		if($table===null || function_exists('sql_select')===false){
+		if($table===null || !$this->sqlAvailable('sql_select')){
 			return $this->roleCache=[];
 		}
-		$rows=sql_select('*', $table, null, null, true, false);
+		$rows=$this->sql('sql_select', ['*', $table, null, null, true, false]);
 		if(!is_array($rows)){
 			return $this->roleCache=[];
 		}
@@ -240,10 +237,10 @@ final class PermissionRepository {
 	 */
 	public function rolesWithPermissions(): array {
 		$rolesTable=$this->table('roles_table', 'dataphyre.permission_roles');
-		if($rolesTable===null || function_exists('sql_select')===false){
+		if($rolesTable===null || !$this->sqlAvailable('sql_select')){
 			return [];
 		}
-		$rows=sql_select('*', $rolesTable, null, null, true, false);
+		$rows=$this->sql('sql_select', ['*', $rolesTable, null, null, true, false]);
 		if(!is_array($rows)){
 			return [];
 		}
@@ -271,15 +268,15 @@ final class PermissionRepository {
 	 */
 	public function assignments(array $context=[]): array {
 		$table=$this->table('assignments_table', 'dataphyre.permission_assignments');
-		if($table===null || function_exists('sql_select')===false){
+		if($table===null || !$this->sqlAvailable('sql_select')){
 			return [];
 		}
 		$scope=$context['scope'] ?? $context['tenant'] ?? $context['tenant_id'] ?? null;
 		if($scope!==null && trim((string)$scope)!==''){
-			$rows=sql_select('*', $table, 'WHERE scope=?', [$this->scope($context)], true, false);
+			$rows=$this->sql('sql_select', ['*', $table, 'WHERE scope=?', [$this->scope($context)], true, false]);
 		}
 		else{
-			$rows=sql_select('*', $table, null, null, true, false);
+			$rows=$this->sql('sql_select', ['*', $table, null, null, true, false]);
 		}
 		return is_array($rows) ? array_values(array_filter($rows, 'is_array')) : [];
 	}
@@ -328,7 +325,7 @@ final class PermissionRepository {
 	 */
 	public function saveAssignmentFromPanel(array $data, mixed $record=null): array {
 		$table=$this->table('assignments_table', 'dataphyre.permission_assignments');
-		if($table===null || function_exists('sql_insert')===false){
+		if($table===null || !$this->sqlAvailable('sql_insert')){
 			return ['saved'=>false, 'message'=>'Permission storage is unavailable.'];
 		}
 		$id=is_array($record) ? (string)($record['id'] ?? '') : '';
@@ -347,13 +344,13 @@ final class PermissionRepository {
 			return ['saved'=>false, 'message'=>'Subject and value are required.'];
 		}
 		$saved=false;
-		if(is_array($record) && ($record['id'] ?? '')!=='' && function_exists('sql_update')){
+		if(is_array($record) && ($record['id'] ?? '')!=='' && $this->sqlAvailable('sql_update')){
 			$update=$fields;
 			unset($update['id']);
-			$saved=sql_update($table, $update, 'WHERE id=?', [$fields['id']], true)!==false;
+			$saved=$this->sql('sql_update', [$table, $update, 'WHERE id=?', [$fields['id']], true])!==false;
 		}
 		else{
-			$saved=sql_insert($table, $fields, null, true)!==false;
+			$saved=$this->sql('sql_insert', [$table, $fields, null, true])!==false;
 		}
 		Permission::flush();
 		return [
@@ -373,11 +370,11 @@ final class PermissionRepository {
 		$role=PermissionRule::normalize($role);
 		$rolesTable=$this->table('roles_table', 'dataphyre.permission_roles');
 		$rolePermissionsTable=$this->table('role_permissions_table', 'dataphyre.permission_role_permissions');
-		if($role==='' || $rolesTable===null || $rolePermissionsTable===null || function_exists('sql_delete')===false){
+		if($role==='' || $rolesTable===null || $rolePermissionsTable===null || !$this->sqlAvailable('sql_delete')){
 			return false;
 		}
-		sql_delete($rolePermissionsTable, 'WHERE role=?', [$role], true);
-		$deleted=sql_delete($rolesTable, 'WHERE name=?', [$role], true)!==false;
+		$this->sql('sql_delete', [$rolePermissionsTable, 'WHERE role=?', [$role], true]);
+		$deleted=$this->sql('sql_delete', [$rolesTable, 'WHERE name=?', [$role], true])!==false;
 		Permission::flush();
 		return $deleted;
 	}
@@ -391,10 +388,10 @@ final class PermissionRepository {
 	public function deleteAssignment(string|array $assignment): bool {
 		$id=is_array($assignment) ? (string)($assignment['id'] ?? '') : $assignment;
 		$table=$this->table('assignments_table', 'dataphyre.permission_assignments');
-		if($id==='' || $table===null || function_exists('sql_delete')===false){
+		if($id==='' || $table===null || !$this->sqlAvailable('sql_delete')){
 			return false;
 		}
-		$deleted=sql_delete($table, 'WHERE id=?', [$id], true)!==false;
+		$deleted=$this->sql('sql_delete', [$table, 'WHERE id=?', [$id], true])!==false;
 		Permission::flush();
 		return $deleted;
 	}
@@ -414,10 +411,10 @@ final class PermissionRepository {
 		[$subjectType, $subjectId]=$this->subjectKey($subject, $context);
 		$value=PermissionRule::normalize($value);
 		$kind=$this->kind($kind);
-		if($table===null || $subjectId===null || $value==='' || function_exists('sql_insert')===false){
+		if($table===null || $subjectId===null || $value==='' || !$this->sqlAvailable('sql_insert')){
 			return false;
 		}
-		$result=sql_insert($table, [
+		$result=$this->sql('sql_insert', [$table, [
 			'id'=>$this->id('dppa'),
 			'subject_type'=>$subjectType,
 			'subject_id'=>(string)$subjectId,
@@ -426,7 +423,7 @@ final class PermissionRepository {
 			'value'=>$value,
 			'negative'=>$negative,
 			'created_by'=>isset($context['created_by']) ? (string)$context['created_by'] : null,
-		], null, true);
+		], null, true]);
 		if($result!==false){
 			Permission::flush();
 			return true;
@@ -444,11 +441,11 @@ final class PermissionRepository {
 	private function assignmentsFor(mixed $subject, array $context): array {
 		$table=$this->table('assignments_table', 'dataphyre.permission_assignments');
 		[$subjectType, $subjectId]=$this->subjectKey($subject, $context);
-		if($table===null || $subjectId===null || function_exists('sql_select')===false){
+		if($table===null || $subjectId===null || !$this->sqlAvailable('sql_select')){
 			return [];
 		}
 		$scope=$this->scope($context);
-		$rows=sql_select('*', $table, 'WHERE subject_type=? AND subject_id=? AND scope IN (?, ?)', [$subjectType, (string)$subjectId, 'global', $scope], true, false);
+		$rows=$this->sql('sql_select', ['*', $table, 'WHERE subject_type=? AND subject_id=? AND scope IN (?, ?)', [$subjectType, (string)$subjectId, 'global', $scope], true, false]);
 		return is_array($rows) ? array_values(array_filter($rows, 'is_array')) : [];
 	}
 
@@ -528,5 +525,16 @@ final class PermissionRepository {
 	 */
 	private function truthy(mixed $value): bool {
 		return in_array($value, [true, 1, '1', 'true', 't', 'yes'], true);
+	}
+
+	/** Executes a SQL facade call, preferring a namespace-local test adapter when present. */
+	private function sql(string $name, array $arguments): mixed {
+		$local=__NAMESPACE__.'\\'.$name;
+		$callable=function_exists($local) ? $local : $name;
+		return $callable(...$arguments);
+	}
+
+	private function sqlAvailable(string $name): bool {
+		return function_exists(__NAMESPACE__.'\\'.$name) || function_exists($name);
 	}
 }

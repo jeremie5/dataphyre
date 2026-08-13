@@ -42,7 +42,8 @@ final class DataphyreInstaller {
 	public function __construct(private array $options) {
 		$this->dataphyre_root=dirname(__DIR__);
 		$this->project_root=$this->resolveProjectRoot($options['root'] ?? null);
-		$this->project=$this->readJson($this->project_root.'/dataphyre.project.json');
+		$project_path=$this->project_root.'/dataphyre.project.json';
+		$this->project=is_file($project_path) ? $this->readJson($project_path) : $this->defaultProject();
 		$manifest_path=$this->project_root.'/'.$this->project['framework']['manifest_path'];
 		$this->manifest=is_file($manifest_path)
 			? $this->readJson($manifest_path)
@@ -66,15 +67,20 @@ final class DataphyreInstaller {
 		if(is_file($project_path) && empty($this->options['force'])){
 			throw new RuntimeException('dataphyre.project.json already exists. Use --force to replace it.');
 		}
-		$this->writeJson($project_path, [
+		$this->writeJson($project_path, $this->defaultProject());
+		echo "Initialized dataphyre.project.json\n";
+	}
+
+	private function defaultProject(): array {
+		return [
 			'schema_version'=>1,
-			'layout'=>'standalone',
+			'layout'=>'embedded',
 			'framework'=>[
-				'install_path'=>'common/dataphyre',
-				'manifest_path'=>'common/dataphyre/dataphyre.manifest.json',
+				'install_path'=>'dataphyre',
+				'manifest_path'=>'dataphyre/dataphyre.manifest.json',
 				'lock_path'=>'dataphyre.lock',
 				'source'=>['type'=>'git', 'repo'=>'git@github.com:dataphyre/dataphyre.git', 'ref'=>'main'],
-				'managed_paths'=>['common/dataphyre'],
+				'managed_paths'=>['dataphyre'],
 				'protected_paths'=>['applications'],
 			],
 			'applications'=>[
@@ -83,8 +89,7 @@ final class DataphyreInstaller {
 				'dependency_model'=>'applications_include_dependencies_from_other_applications',
 			],
 			'checks'=>['mode'=>'explicit_cli', 'runtime_request_checks'=>false],
-		]);
-		echo "Initialized dataphyre.project.json\n";
+		];
 	}
 
 	private function install(bool $is_update): void {
@@ -187,12 +192,12 @@ final class DataphyreInstaller {
 	private function assertProjectPolicy(): void {
 		$framework=$this->project['framework'] ?? [];
 		$install_path=$this->cleanRelativePath((string)($framework['install_path'] ?? ''));
-		if($install_path!=='common/dataphyre'){
-			throw new RuntimeException('Dataphyre framework install_path must be common/dataphyre for this layout.');
+		if($install_path!=='dataphyre'){
+			throw new RuntimeException('Dataphyre framework install_path must be dataphyre for this layout.');
 		}
 		foreach(($framework['managed_paths'] ?? []) as $managed_path){
 			$managed_path=$this->cleanRelativePath((string)$managed_path);
-			if($managed_path!=='common/dataphyre'){
+			if($managed_path!=='dataphyre'){
 				throw new RuntimeException("Managed path '{$managed_path}' is not framework-owned.");
 			}
 		}
@@ -206,8 +211,8 @@ final class DataphyreInstaller {
 
 	private function assertExportAllowed(string $target): void {
 		$target=$this->cleanRelativePath($target);
-		if($target!=='common/dataphyre'){
-			throw new RuntimeException("Dataphyre export target '{$target}' is outside the framework common path.");
+		if($target!=='dataphyre'){
+			throw new RuntimeException("Dataphyre export target '{$target}' is outside the framework path.");
 		}
 		foreach(($this->project['framework']['protected_paths'] ?? []) as $protected){
 			$protected=$this->cleanRelativePath((string)$protected);
@@ -344,7 +349,7 @@ final class DataphyreInstaller {
 		}
 		$source=$this->normalizePath($source);
 		$target=$this->normalizePath($target);
-		if(!str_starts_with($target.'/', $this->project_root.'/common/dataphyre/')){
+		if(!str_starts_with($target.'/', $this->project_root.'/dataphyre/')){
 			throw new RuntimeException("Refusing to prune outside managed Dataphyre path: {$target}");
 		}
 		$expected_files=[];
@@ -451,7 +456,7 @@ final class DataphyreInstaller {
 			}
 			$current=$parent;
 		}
-		return $this->normalizePath(dirname(__DIR__, 3));
+		return $this->normalizePath(dirname($this->dataphyre_root));
 	}
 
 	private function readJson(string $path): array {
@@ -540,17 +545,17 @@ function dataphyre_installer_help(): void {
 Dataphyre installer
 
 Usage:
-  php common/dataphyre/installer/install.php init [--root=PATH] [--force]
-  php common/dataphyre/installer/install.php lock [--root=PATH]
-  php common/dataphyre/installer/install.php verify|check [--root=PATH]
-  php common/dataphyre/installer/install.php install [--root=PATH] [--source=PATH]
-  php common/dataphyre/installer/install.php update [--root=PATH] [--source=PATH]
-  php common/dataphyre/installer/install.php doctor [--root=PATH]
+  php dataphyre/installer/install.php init [--root=PATH] [--force]
+  php dataphyre/installer/install.php lock [--root=PATH]
+  php dataphyre/installer/install.php verify|check [--root=PATH]
+  php dataphyre/installer/install.php install [--root=PATH] [--source=PATH]
+  php dataphyre/installer/install.php update [--root=PATH] [--source=PATH]
+  php dataphyre/installer/install.php doctor [--root=PATH]
 
 Notes:
   - Installer checks are explicit CLI checks, not runtime request checks.
   - install/update clone the configured Git source unless --source=PATH or --local is passed.
-  - This installer manages common/dataphyre only.
+  - This installer manages dataphyre only.
   - Application roots and non-framework common folders are protected.
 
 TXT;

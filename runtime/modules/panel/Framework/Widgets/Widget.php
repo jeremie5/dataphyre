@@ -14,9 +14,14 @@ namespace Dataphyre\Panel;
  * Mutator methods clone the definition and return the modified copy, allowing
  * widget definitions to be reused safely. Values and chart metadata may be
  * static or lazy callables evaluated against the current `PanelRequest`.
+ *
+ * @template TRecord = mixed
+ * @template TValue = mixed
+ * @template TState of array<string, mixed> = array<string, mixed>
  */
 final class Widget {
 	use PanelExtensible;
+	use HasCollectionItemPresentation;
 
 	private string $name;
 	private string $type='stat';
@@ -30,6 +35,7 @@ final class Widget {
 	private ?string $group=null;
 	private int $sort=100;
 	private array $meta=[];
+	private ?PanelWidgetInteractionDefinition $interaction=null;
 
 	/**
 	 * Creates a normalized widget definition.
@@ -50,7 +56,7 @@ final class Widget {
 	 *
 	 * @param string $name Widget identifier before panel-name normalization.
 	 * @param string $type Widget type before normalization; blank input falls back to `stat`.
-	 * @return self Widget definition after extension hooks have been applied.
+	 * @return self<TRecord, TValue, TState> Widget definition after extension hooks have been applied.
 	 */
 	public static function make(string $name, string $type='stat'): self {
 		return self::configured(new self($name, $type));
@@ -63,7 +69,7 @@ final class Widget {
 	 * description, tone, icon, url, group, sort, and meta.
 	 *
 	 * @param array<string,mixed> $definition Widget definition data.
-	 * @return self Widget definition described by the array.
+	 * @return self<TRecord,TValue,TState> Widget definition described by the array.
 	 */
 	public static function fromArray(array $definition): self {
 		$widget=self::make((string)($definition['name'] ?? ''), (string)($definition['type'] ?? 'stat'));
@@ -84,6 +90,12 @@ final class Widget {
 		if(isset($definition['meta']) && is_array($definition['meta'])){
 			$widget=$widget->meta($definition['meta']);
 		}
+		if(array_key_exists('interaction', $definition) && $definition['interaction']!==null){
+			if(!is_array($definition['interaction'])){
+				throw new \InvalidArgumentException('Widget interaction definitions must be arrays.');
+			}
+			$widget=$widget->interactive($definition['interaction']);
+		}
 		return $widget;
 	}
 
@@ -103,7 +115,7 @@ final class Widget {
 	 * Blank labels are preserved as an explicit empty display label rather than falling back to the humanized name.
 	 *
 	 * @param string $label Display label shown by dashboard renderers.
-	 * @return self Cloned widget with the requested label.
+	 * @return self<TRecord,TValue,TState> Cloned widget with the requested label.
 	 */
 	public function label(string $label): self {
 		$clone=clone $this;
@@ -115,7 +127,7 @@ final class Widget {
 	 * Returns a copy with a normalized widget type.
 	 *
 	 *
-	 * @return self Cloned widget with the requested type, or `stat` for blank input.
+	 * @return self<TRecord,TValue,TState> Cloned widget with the requested type, or `stat` for blank input.
 	 */
 	public function type(string $type): self {
 		$clone=clone $this;
@@ -130,8 +142,9 @@ final class Widget {
 	 * `resolve()`. Non-callable values are stored directly and serialized by
 	 * `toArray()`.
 	 *
-	 * @param mixed $value Static value or callable value resolver.
-	 * @return self Cloned widget with updated value behavior.
+	 * @template TWidgetValue
+	 * @param TWidgetValue|callable(PanelRequest|null=, self<TRecord, TWidgetValue, TState>=): TWidgetValue $value Static value or callable value resolver.
+	 * @return self<TRecord,TWidgetValue,TState>
 	 */
 	public function value(mixed $value): self {
 		$clone=clone $this;
@@ -151,7 +164,7 @@ final class Widget {
 	 * Blank descriptions are normalized to null so the renderer can omit the secondary text region.
 	 *
 	 * @param string $description Supporting description text.
-	 * @return self Cloned widget with description text or null for blank input.
+	 * @return self<TRecord,TValue,TState> Cloned widget with description text or null for blank input.
 	 */
 	public function description(string $description): self {
 		$clone=clone $this;
@@ -165,7 +178,7 @@ final class Widget {
 	 * Unsupported tones fall back to `neutral`.
 	 *
 	 * @param string $tone Requested tone name.
-	 * @return self Cloned widget with normalized tone.
+	 * @return self<TRecord,TValue,TState> Cloned widget with normalized tone.
 	 */
 	public function tone(string $tone): self {
 		$tone=Resource::normalizeName($tone);
@@ -180,7 +193,7 @@ final class Widget {
 	 * Blank identifiers are normalized to null so no icon is emitted.
 	 *
 	 * @param string $icon Icon identifier consumed by the renderer.
-	 * @return self Cloned widget with icon identifier or null for blank input.
+	 * @return self<TRecord,TValue,TState> Cloned widget with icon identifier or null for blank input.
 	 */
 	public function icon(string $icon): self {
 		$clone=clone $this;
@@ -195,7 +208,7 @@ final class Widget {
 	 * with the renderer or caller that emits the link.
 	 *
 	 * @param string $url Target URL shown by the renderer.
-	 * @return self Cloned widget with URL or null for blank input.
+	 * @return self<TRecord,TValue,TState> Cloned widget with URL or null for blank input.
 	 */
 	public function url(string $url): self {
 		$clone=clone $this;
@@ -209,7 +222,7 @@ final class Widget {
 	 * Blank groups are normalized to null, leaving grouping to the dashboard layout.
 	 *
 	 * @param string $group Dashboard group label or key.
-	 * @return self Cloned widget with group label or null for blank input.
+	 * @return self<TRecord,TValue,TState> Cloned widget with group label or null for blank input.
 	 */
 	public function group(string $group): self {
 		$clone=clone $this;
@@ -223,7 +236,7 @@ final class Widget {
 	 * Lower values sort earlier when dashboard renderers order widgets.
 	 *
 	 * @param int $sort Dashboard ordering weight.
-	 * @return self Cloned widget with sort weight.
+	 * @return self<TRecord,TValue,TState> Cloned widget with sort weight.
 	 */
 	public function sort(int $sort): self {
 		$clone=clone $this;
@@ -238,7 +251,7 @@ final class Widget {
 	 * metadata is evaluated during `resolve()`.
 	 *
 	 * @param array<string,mixed> $meta Metadata to merge.
-	 * @return self Cloned widget with merged metadata.
+	 * @return self<TRecord,TValue,TState> Cloned widget with merged metadata.
 	 */
 	public function meta(array $meta): self {
 		$clone=clone $this;
@@ -252,7 +265,7 @@ final class Widget {
 	 * Chart type is normalized and stored in metadata while the widget type is set to `chart`.
 	 *
 	 * @param string $chartType Requested chart renderer type.
-	 * @return self Cloned chart widget with chart type metadata.
+	 * @return self<TRecord,TValue,TState> Cloned chart widget with chart type metadata.
 	 */
 	public function chart(string $chartType='line'): self {
 		return $this->type('chart')->meta(['chart_type'=>Resource::normalizeName($chartType) ?: 'line']);
@@ -263,8 +276,8 @@ final class Widget {
 	 *
 	 * Callable data is stored in metadata and resolved later with the current panel request and widget.
 	 *
-	 * @param array|callable $data Static chart data or lazy data resolver.
-	 * @return self Cloned widget with chart data metadata.
+	 * @param array<array-key, mixed>|callable(PanelRequest|null=, self<TRecord, TValue, TState>=): array<array-key, mixed> $data Static chart data or lazy data resolver.
+	 * @return self<TRecord,TValue,TState> Cloned widget with chart data metadata.
 	 */
 	public function data(array|callable $data): self {
 		return $this->meta(['data'=>$data]);
@@ -275,8 +288,8 @@ final class Widget {
 	 *
 	 * Callable labels are stored in metadata and resolved later with the current panel request and widget.
 	 *
-	 * @param array|callable $labels Static labels or lazy label resolver.
-	 * @return self Cloned widget with chart labels metadata.
+	 * @param array<array-key, scalar|\Stringable|null>|callable(PanelRequest|null=, self<TRecord, TValue, TState>=): array<array-key, scalar|\Stringable|null> $labels Static labels or lazy label resolver.
+	 * @return self<TRecord,TValue,TState> Cloned widget with chart labels metadata.
 	 */
 	public function labels(array|callable $labels): self {
 		return $this->meta(['labels'=>$labels]);
@@ -289,9 +302,9 @@ final class Widget {
 	 * `primary` for unsupported values.
 	 *
 	 * @param string $label Dataset label shown in chart legends.
-	 * @param array|callable $values Static values or lazy values resolver.
+	 * @param array<array-key, mixed>|callable(PanelRequest|null=, self<TRecord, TValue, TState>=): array<array-key, mixed> $values Static values or lazy values resolver.
 	 * @param string $tone Dataset tone before normalization.
-	 * @return self Cloned widget with the dataset appended.
+	 * @return self<TRecord,TValue,TState> Cloned widget with the dataset appended.
 	 */
 	public function dataset(string $label, array|callable $values, string $tone='primary'): self {
 		$datasets=$this->meta['datasets'] ?? [];
@@ -314,7 +327,7 @@ final class Widget {
 	 * within the expected panel layout range.
 	 *
 	 * @param int $height Requested chart height in pixels.
-	 * @return self Cloned widget with clamped height metadata.
+	 * @return self<TRecord,TValue,TState> Cloned widget with clamped height metadata.
 	 */
 	public function height(int $height): self {
 		return $this->meta(['height'=>max(120, min(420, $height))]);
@@ -326,11 +339,73 @@ final class Widget {
 	 * The unit string is trimmed and stored as renderer metadata.
 	 *
 	 * @param string $unit Display unit suffix or label.
-	 * @return self Cloned widget with unit metadata.
+	 * @return self<TRecord,TValue,TState> Cloned widget with unit metadata.
 	 */
 	public function unit(string $unit): self {
 		return $this->meta(['unit'=>trim($unit)]);
 	}
+
+	/**
+	 * Returns a copy configured for adapter-neutral interactive enhancement.
+	 *
+	 * Strings are server-registered adapter aliases, not implementation classes.
+	 * The optional component defaults to the widget name. Array definitions are
+	 * parsed by the strict immutable interaction contract.
+	 *
+	 * @param string|array<string,mixed>|PanelWidgetInteractionDefinition $adapter
+	 * @param ?string $component Public component key owned by the adapter.
+	 * @return self<TRecord,TValue,TState>
+	 */
+	public function interactive(string|array|PanelWidgetInteractionDefinition $adapter, ?string $component=null): self {
+		if($adapter instanceof PanelWidgetInteractionDefinition){ $definition=$adapter; }
+		elseif(is_array($adapter)){ $definition=PanelWidgetInteractionDefinition::fromArray($adapter); }
+		else{ $definition=PanelWidgetInteractionDefinition::make($adapter, $component ?? $this->name); }
+		$clone=clone $this;
+		$clone->interaction=$definition;
+		return $clone;
+	}
+
+	/** @param array<string,string> $actions @return self<TRecord,TValue,TState> */
+	public function interactionActions(array $actions): self {
+		if(!$this->interaction instanceof PanelWidgetInteractionDefinition){ throw new \LogicException('Configure interactive() before adding widget actions.'); }
+		$clone=clone $this;
+		$clone->interaction=$this->interaction->actions($actions);
+		return $clone;
+	}
+
+	/** @return self<TRecord,TValue,TState> */
+	public function interactionAction(string $name, ?string $label=null): self {
+		if(!$this->interaction instanceof PanelWidgetInteractionDefinition){ throw new \LogicException('Configure interactive() before adding a widget action.'); }
+		$clone=clone $this;
+		$clone->interaction=$this->interaction->action($name, $label);
+		return $clone;
+	}
+
+	/** @return self<TRecord,TValue,TState> */
+	public function interactionRefresh(string $mode='manual', int $intervalMs=0): self {
+		if(!$this->interaction instanceof PanelWidgetInteractionDefinition){ throw new \LogicException('Configure interactive() before selecting a refresh policy.'); }
+		$clone=clone $this;
+		$clone->interaction=$this->interaction->refresh($mode, $intervalMs);
+		return $clone;
+	}
+
+	/** @return self<TRecord,TValue,TState> */
+	public function interactionRetryLimit(int $limit): self {
+		if(!$this->interaction instanceof PanelWidgetInteractionDefinition){ throw new \LogicException('Configure interactive() before selecting a retry policy.'); }
+		$clone=clone $this;
+		$clone->interaction=$this->interaction->retryLimit($limit);
+		return $clone;
+	}
+
+	/** @return self<TRecord,TValue,TState> */
+	public function withoutInteraction(): self {
+		$clone=clone $this;
+		$clone->interaction=null;
+		return $clone;
+	}
+
+	public function interactionDefinition(): ?PanelWidgetInteractionDefinition { return $this->interaction; }
+	public function isInteractive(): bool { return $this->interaction instanceof PanelWidgetInteractionDefinition; }
 
 	/**
 	 * Resolves lazy widget value and metadata for a request.
@@ -340,7 +415,7 @@ final class Widget {
 	 * recursively by `resolveMeta()`.
 	 *
 	 * @param ?PanelRequest $request Request used to resolve lazy value and metadata callbacks.
-	 * @return array<string,mixed> Resolved widget data.
+	 * @return TState Resolved widget data.
 	 */
 	public function resolve(?PanelRequest $request=null): array {
 		$data=$this->toArray();
@@ -438,7 +513,7 @@ final class Widget {
 	 * @return array<string,mixed> Static widget definition data.
 	 */
 	public function toArray(): array {
-		return [
+		$definition=[
 			'name'=>$this->name,
 			'type'=>$this->type,
 			'label'=>$this->label,
@@ -452,6 +527,10 @@ final class Widget {
 			'sort'=>$this->sort,
 			'meta'=>$this->meta,
 		];
+		if($this->interaction instanceof PanelWidgetInteractionDefinition){
+			$definition['interaction']=$this->interaction->toArray();
+		}
+		return $definition;
 	}
 
 	/**

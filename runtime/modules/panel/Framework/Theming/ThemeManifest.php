@@ -104,7 +104,7 @@ final class ThemeManifest {
 			'dark_mode'=>($manifest['modes']['dark_mode'] ?? false)===true,
 			'presets'=>(int)($manifest['library']['counts']['presets'] ?? 0),
 		]);
-		return $manifest;
+		return PanelManifestContract::stamp($manifest);
 	}
 
 	/**

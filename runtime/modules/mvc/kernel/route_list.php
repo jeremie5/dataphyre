@@ -9,11 +9,23 @@ declare(strict_types=1);
 
 use Dataphyre\Mvc\MvcApplication;
 
-if(realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? ''))===__FILE__){
-	if(PHP_SAPI!=='cli'){
+/**
+ * Runs the standalone MVC route-list command without forcing process exit.
+ *
+ * @param array<int,string> $argv CLI argument vector.
+ * @param bool|null $cli Optional SAPI override used by isolated command tests.
+ * @param callable|null $writeOut Optional stdout writer receiving one string.
+ * @param callable|null $writeErr Optional stderr writer receiving one string.
+ * @return int Process exit status.
+ */
+function dp_mvc_route_list_main(array $argv, ?bool $cli=null, ?callable $writeOut=null, ?callable $writeErr=null): int {
+	$cli ??= PHP_SAPI==='cli';
+	$writeOut ??= static function(string $message): void { echo $message; };
+	$writeErr ??= static function(string $message): void { fwrite(STDERR, $message); };
+	if(!$cli){
 		http_response_code(404);
-		echo "MVC route list is only available from CLI.\n";
-		exit(2);
+		$writeOut("MVC route list is only available from CLI.\n");
+		return 2;
 	}
 
 	$module_root=dirname(__DIR__);
@@ -22,8 +34,8 @@ if(realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? ''))===__FILE__){
 
 	$options=dp_mvc_route_list_options($argv);
 	if(isset($options['help'])){
-		dp_mvc_route_list_usage();
-		exit(0);
+		dp_mvc_route_list_usage($writeOut);
+		return 0;
 	}
 	$app_name=$options['app'] ?? 'default';
 	$config_file=$options['config'] ?? null;
@@ -33,16 +45,18 @@ if(realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? ''))===__FILE__){
 		$app=dp_mvc_route_list_app($app_name, $config_file, $runtime_modules);
 		$routes=$app->routes()->list();
 		if($format==='json'){
-			echo json_encode($routes, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL;
-			exit(0);
+			$writeOut(json_encode($routes, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL);
+			return 0;
 		}
-		echo dp_mvc_route_list_table($routes);
-		exit(0);
+		$writeOut(dp_mvc_route_list_table($routes));
+		return 0;
 	}catch(\Throwable $throwable){
-		fwrite(STDERR, $throwable->getMessage().PHP_EOL);
-		exit(1);
+		$writeErr($throwable->getMessage().PHP_EOL);
+		return 1;
 	}
 }
+
+(realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? ''))===__FILE__) && exit(dp_mvc_route_list_main($argv));
 
 /**
  * Loads the minimal MVC, HTTP, and Routing Framework files needed by the standalone route-list CLI.
@@ -150,8 +164,9 @@ function dp_mvc_route_list_options(array $argv): array {
  *
  * @return void
  */
-function dp_mvc_route_list_usage(): void {
-	echo "Usage: php runtime/modules/mvc/kernel/route_list.php [app] [--app=<name>] [--config=<path>] [--format=table|json] [--json]\n";
+function dp_mvc_route_list_usage(?callable $write=null): void {
+	$write ??= static function(string $message): void { echo $message; };
+	$write("Usage: php runtime/modules/mvc/kernel/route_list.php [app] [--app=<name>] [--config=<path>] [--format=table|json] [--json]\n");
 }
 
 /**

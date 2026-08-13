@@ -25,11 +25,18 @@ class diagnostic{
 	 *
 	 * @return void Findings are appended to dpanel verbose output.
 	 */
-	public static function tests(): void {
+	public static function tests(
+		?string $php_version=null,
+		?callable $extension_checker=null,
+		?int $observed_at=null
+	): void {
 		$verbose=[];
+		$php_version??=PHP_VERSION;
+		$extension_checker??=static fn(string $extension): bool=>extension_loaded($extension);
+		$observed_at??=time();
 		\dp_module_required('localization', 'sql');
-		if(version_compare(PHP_VERSION, $ver='8.1.0') < 0){
-			$verbose[]=['module'=>'localization', 'error'=>'PHP version '.$ver.' or higher is required.', 'time'=>time()];
+		if(version_compare($php_version, $ver='8.1.0') < 0){
+			$verbose[]=['module'=>'localization', 'error'=>'PHP version '.$ver.' or higher is required.', 'time'=>$observed_at];
 		}
 		$required_extensions=[
 			'json',
@@ -40,8 +47,8 @@ class diagnostic{
 			'pcre',
 		];
 		foreach($required_extensions as $extension){
-			if(!extension_loaded($extension)){
-				$verbose[]=['module'=>'localization', 'error'=>"PHP extension '{$extension}' is not loaded.", 'time'=>time()];
+			if(!$extension_checker($extension)){
+				$verbose[]=['module'=>'localization', 'error'=>"PHP extension '{$extension}' is not loaded.", 'time'=>$observed_at];
 			}
 		}
 		if(!\function_exists('sql_query')){
@@ -49,7 +56,7 @@ class diagnostic{
 				'module'=>'localization',
 				'level'=>'warning',
 				'message'=>'SQL-backed Localization table checks were skipped because SQL helper functions are unavailable when module entrypoint execution is disabled.',
-				'time'=>time(),
+				'time'=>$observed_at,
 			];
 		}
 		else

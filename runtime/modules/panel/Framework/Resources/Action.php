@@ -14,6 +14,7 @@ namespace Dataphyre\Panel;
  */
 final class Action {
 	use PanelExtensible;
+	use HasCollectionItemPresentation;
 
 	private string $name;
 	private string|\Closure $label;
@@ -22,6 +23,7 @@ final class Action {
 	private string $style='solid';
 	private string $size='md';
 	private bool $iconOnly=false;
+	private string $recordPlacement='auto';
 	private string|\Closure|null $description=null;
 	private string|int|float|\Closure|null $badge=null;
 	private string|\Closure $badgeTone='neutral';
@@ -119,6 +121,9 @@ final class Action {
 		if(!empty($definition['icon_only'])){
 			$action=$action->iconOnly();
 		}
+		if(isset($definition['record_placement']) && is_string($definition['record_placement'])){
+			$action=$action->recordPlacement($definition['record_placement']);
+		}
 		if(array_key_exists('description', $definition) && (is_string($definition['description']) || is_callable($definition['description']) || $definition['description']===null)){
 			$action=$action->description($definition['description']);
 		}
@@ -172,6 +177,18 @@ final class Action {
 		}
 		if(isset($definition['modal_stack']) && is_string($definition['modal_stack'])){
 			$action=$action->modalStack($definition['modal_stack']);
+			if(array_key_exists('modal_stack_explicit', $definition) && $definition['modal_stack_explicit']!==true){
+				$action=$action->meta(['modal_stack_explicit'=>false]);
+			}
+		}
+		if(isset($definition['modal_exit']) && is_string($definition['modal_exit'])){
+			$action=$action->modalExit($definition['modal_exit']);
+		}
+		if(isset($definition['navigation_intent']) && is_array($definition['navigation_intent'])){
+			$intent=$definition['navigation_intent'];
+			$action=$action->navigationIntent(($intent['enabled'] ?? true)===true, (string)($intent['operation'] ?? 'return'), (string)($intent['outcome'] ?? 'complete'));
+			if(isset($intent['audience']) && is_string($intent['audience'])){ $action=$action->navigationAudience($intent['audience']); }
+			if(isset($intent['return_target']) && is_string($intent['return_target'])){ $action=$action->navigationReturnTarget($intent['return_target']); }
 		}
 		if(array_key_exists('modal_content', $definition) && (is_string($definition['modal_content']) || is_callable($definition['modal_content']) || is_array($definition['modal_content']))){
 			$action=$action->modalContent($definition['modal_content']);
@@ -463,6 +480,40 @@ final class Action {
 	 */
 	public function iconButton(bool $enabled=true): self {
 		return $this->iconOnly($enabled);
+	}
+
+	/**
+	 * Chooses where this action appears in a resource record heading.
+	 *
+	 * `primary` keeps the action visible, `overflow` places it in the record action menu,
+	 * and `auto` lets the resource's bounded action policy decide.
+	 */
+	public function recordPlacement(string $placement): self {
+		$placement=self::normalizeName($placement);
+		$placement=match($placement){
+			'primary', 'inline', 'visible' => 'primary',
+			'overflow', 'menu', 'secondary' => 'overflow',
+			default => 'auto',
+		};
+		$clone=clone $this;
+		$clone->recordPlacement=$placement;
+		return $clone;
+	}
+
+	/** Keeps this action visible in resource record headings. */
+	public function recordPrimary(bool $enabled=true): self {
+		return $this->recordPlacement($enabled ? 'primary' : 'auto');
+	}
+
+	/** Places this action in the resource record overflow menu. */
+	public function recordOverflow(bool $enabled=true): self {
+		return $this->recordPlacement($enabled ? 'overflow' : 'auto');
+	}
+
+	/** Returns the normalized record-heading placement policy. */
+	public function recordPlacementMode(): string {
+		$placement=$this->recordPlacement;
+		return in_array($placement, ['auto', 'primary', 'overflow'], true) ? $placement : 'auto';
 	}
 
 	/**
@@ -885,6 +936,7 @@ final class Action {
 		return $this->meta([
 			'modal_stack'=>$strategy,
 			'modal_back'=>$strategy==='push',
+			'modal_stack_explicit'=>true,
 		]);
 	}
 
@@ -918,6 +970,78 @@ final class Action {
 	 */
 	public function clearModalStack(): self {
 		return $this->modalStack('clear');
+	}
+
+	/**
+	 * Chooses how dismissing this modal affects its parent modal flow.
+	 *
+	 * `auto` returns to a parent modal when one exists and otherwise closes the
+	 * flow. `back` requests the parent, `close` exits the complete flow, and
+	 * `stay` prevents the current surface from being dismissed.
+	 */
+	public function modalExit(string $strategy='auto'): self {
+		$strategy=self::normalizeName($strategy);
+		if(!in_array($strategy, ['auto', 'back', 'close', 'stay'], true)){
+			$strategy='auto';
+		}
+		return $this->meta(['modal_exit'=>$strategy]);
+	}
+
+	/** Returns to the parent modal when this modal is dismissed. */
+	public function backOnModalExit(): self {
+		return $this->modalExit('back');
+	}
+
+	/** Exits the complete modal flow when this modal is dismissed. */
+	public function closeOnModalExit(): self {
+		return $this->modalExit('close');
+	}
+
+	/** Keeps the current modal visible when an exit is requested. */
+	public function stayOnModalExit(): self {
+		return $this->modalExit('stay');
+	}
+
+	/** Alias for stayOnModalExit(). */
+	public function preventModalExit(): self {
+		return $this->stayOnModalExit();
+	}
+
+	/**
+	 * Declares the signed navigation semantics attached to this action.
+	 *
+	 * The renderer still enforces surface policy for privileged operations; this
+	 * metadata lets applications name the operation and expected outcome carried
+	 * by generated intent claims and manifests.
+	 */
+	public function navigationIntent(bool $enabled=true, string $operation='return', string $outcome='complete'): self {
+		$operation=self::normalizeName($operation) ?: 'return';
+		$outcome=self::normalizeName($outcome) ?: 'complete';
+		$current=is_array($this->meta['navigation_intent'] ?? null) ? $this->meta['navigation_intent'] : [];
+		return $this->meta(['navigation_intent'=>array_replace($current, [
+			'enabled'=>$enabled,
+			'operation'=>$operation,
+			'outcome'=>$outcome,
+		])]);
+	}
+
+	/** Sets the audience claim for intents generated around this action. */
+	public function navigationAudience(string $audience): self {
+		$audience=trim($audience);
+		if($audience==='' || strlen($audience)>96 || preg_match('/^[A-Za-z0-9][A-Za-z0-9._:-]*$/D', $audience)!==1){
+			throw new \InvalidArgumentException('Action navigation intent audience is invalid.');
+		}
+		$current=is_array($this->meta['navigation_intent'] ?? null) ? $this->meta['navigation_intent'] : [];
+		return $this->meta(['navigation_intent'=>array_replace($current, ['audience'=>$audience])]);
+	}
+
+	/** Sets an explicit safe internal return target for this action's intent. */
+	public function navigationReturnTarget(?string $target): self {
+		$current=is_array($this->meta['navigation_intent'] ?? null) ? $this->meta['navigation_intent'] : [];
+		if($target===null){ unset($current['return_target']); return $this->meta(['navigation_intent'=>$current]); }
+		$target=PanelNavigationTarget::normalize($target);
+		if($target===null){ throw new \InvalidArgumentException('Action navigation intent return targets must be internal Panel paths.'); }
+		return $this->meta(['navigation_intent'=>array_replace($current, ['return_target'=>$target])]);
 	}
 
 	/**
@@ -999,7 +1123,7 @@ final class Action {
 	 *
 	 * Action metadata drives buttons, menu items, bulk operations, confirmation flows, and command execution.
 	 *
-	 * @param array{close_modal?:bool,refresh?:string|array<int,mixed>,event?:string|array<string,mixed>|array<int,mixed>,events?:string|array<string,mixed>|array<int,mixed>,dispatch?:string|array<string,mixed>|array<int,mixed>,browser_event?:string|array<string,mixed>|array<int,mixed>,browser_events?:string|array<string,mixed>|array<int,mixed>} $effects Renderer/runtime side effects to merge into action metadata.
+	 * @param array{close_modal?:bool,modal_navigation?:string,refresh?:string|array<int,mixed>,event?:string|array<string,mixed>|array<int,mixed>,events?:string|array<string,mixed>|array<int,mixed>,dispatch?:string|array<string,mixed>|array<int,mixed>,browser_event?:string|array<string,mixed>|array<int,mixed>,browser_events?:string|array<string,mixed>|array<int,mixed>} $effects Renderer/runtime side effects to merge into action metadata.
 	 * @param bool $merge Whether to merge with existing effects instead of replacing them.
 	 * @return self Cloned action definition with updated effects metadata.
 	 */
@@ -1087,9 +1211,7 @@ final class Action {
 	 * @return self Cloned action definition with updated close modal metadata.
 	 */
 	public function closeModal(bool $close=true): self {
-		return $this->effects([
-			'close_modal'=>$close,
-		]);
+		return $this->modalNavigation($close ? 'close' : 'stay');
 	}
 
 	/**
@@ -1099,7 +1221,32 @@ final class Action {
 	 * @return self Cloned action definition with updated keep modal open metadata.
 	 */
 	public function keepModalOpen(): self {
-		return $this->closeModal(false);
+		return $this->modalNavigation('stay');
+	}
+
+	/**
+	 * Chooses what happens to modal history after a successful action.
+	 *
+	 * `back` restores the parent modal, `close` exits the complete modal flow,
+	 * and `stay` keeps the current modal open after background refreshes.
+	 */
+	public function modalNavigation(string $strategy='close'): self {
+		$strategy=self::normalizeName($strategy);
+		if(!in_array($strategy, ['back', 'close', 'stay'], true)){ $strategy='close'; }
+		return $this->effects([
+			'modal_navigation'=>$strategy,
+			'close_modal'=>$strategy==='close',
+		]);
+	}
+
+	/** Restores the parent modal after a successful daughter action. */
+	public function backToParentModal(): self {
+		return $this->modalNavigation('back');
+	}
+
+	/** Keeps the active modal visible after a successful action. */
+	public function stayInModal(): self {
+		return $this->modalNavigation('stay');
 	}
 
 	/**
@@ -2178,7 +2325,7 @@ final class Action {
 	 * Updates the to array metadata for this action.
 	 *
 	 * Action metadata drives buttons, menu items, bulk operations, confirmation flows, and command execution.
-	 * @return array{name:string,label:string,label_dynamic:bool,icon:?string,icon_dynamic:bool,tone:string,tone_dynamic:bool,style:string,size:string,icon_only:bool,description:?string,description_dynamic:bool,badge:?string,badge_dynamic:bool,badge_tone:string,badge_tone_dynamic:bool,tooltip:?string,tooltip_dynamic:bool,key_bindings:array<int,string>,extra_attributes:array<string,mixed>,extra_attributes_dynamic:bool,requires_confirmation:bool,modal:bool,modal_heading:?string,modal_description:?string,modal_submit_label:?string,modal_cancel_label:?string,modal_width:string,has_modal_content:bool,modal_stack:string,bulk:bool,allow_empty_selection:bool,success_message:?string,redirect_to:?string,effects:array<string,mixed>,fields:array<string,mixed>,has_handler:bool,authorizes:bool,has_visibility:bool,disables:bool,disabled_reason:?string,disabled_reason_dynamic:bool,mutates_data:bool,mutates_form_data:bool,lifecycle:array{before_validate:bool,after_validate:bool,before_action:int,after_action:int},before_hooks:int,after_hooks:int,failure_hooks:int,meta:array<string,mixed>} Serialized action definition.
+	 * @return array{name:string,label:string,label_dynamic:bool,icon:?string,icon_dynamic:bool,tone:string,tone_dynamic:bool,style:string,size:string,icon_only:bool,record_placement:string,description:?string,description_dynamic:bool,badge:?string,badge_dynamic:bool,badge_tone:string,badge_tone_dynamic:bool,tooltip:?string,tooltip_dynamic:bool,key_bindings:array<int,string>,extra_attributes:array<string,mixed>,extra_attributes_dynamic:bool,requires_confirmation:bool,modal:bool,modal_heading:?string,modal_description:?string,modal_submit_label:?string,modal_cancel_label:?string,modal_width:string,has_modal_content:bool,modal_stack:string,modal_stack_explicit:bool,modal_exit:string,bulk:bool,allow_empty_selection:bool,success_message:?string,redirect_to:?string,effects:array<string,mixed>,fields:array<string,mixed>,has_handler:bool,authorizes:bool,has_visibility:bool,disables:bool,disabled_reason:?string,disabled_reason_dynamic:bool,mutates_data:bool,mutates_form_data:bool,lifecycle:array{before_validate:bool,after_validate:bool,before_action:int,after_action:int},before_hooks:int,after_hooks:int,failure_hooks:int,meta:array<string,mixed>} Serialized action definition.
 	 */
 	public function toArray(): array {
 		return [
@@ -2192,6 +2339,7 @@ final class Action {
 			'style'=>$this->style,
 			'size'=>$this->size,
 			'icon_only'=>$this->iconOnly,
+			'record_placement'=>$this->recordPlacementMode(),
 			'description'=>is_string($this->description) ? $this->description : null,
 			'description_dynamic'=>$this->description instanceof \Closure,
 			'badge'=>is_scalar($this->badge) ? (string)$this->badge : null,
@@ -2212,6 +2360,9 @@ final class Action {
 			'modal_width'=>$this->modalWidth,
 			'has_modal_content'=>$this->modalContent!==null,
 			'modal_stack'=>is_string($this->meta['modal_stack'] ?? null) ? $this->meta['modal_stack'] : (($this->meta['modal_back'] ?? false)===true ? 'push' : 'replace'),
+			'modal_stack_explicit'=>($this->meta['modal_stack_explicit'] ?? false)===true,
+			'modal_exit'=>in_array($this->meta['modal_exit'] ?? null, ['auto', 'back', 'close', 'stay'], true) ? $this->meta['modal_exit'] : 'auto',
+			'navigation_intent'=>self::navigationIntentDefinition($this->meta['navigation_intent'] ?? null),
 			'bulk'=>$this->bulk,
 			'allow_empty_selection'=>$this->allowEmptySelection,
 			'success_message'=>$this->successMessage,
@@ -2236,6 +2387,18 @@ final class Action {
 			'after_hooks'=>count($this->afterHooks),
 			'failure_hooks'=>count($this->failureHooks),
 			'meta'=>$this->meta,
+		];
+	}
+
+	/** @return array{enabled:bool,operation:string,outcome:string,audience:?string,return_target:?string} */
+	private static function navigationIntentDefinition(mixed $definition): array {
+		$definition=is_array($definition) ? $definition : [];
+		return [
+			'enabled'=>($definition['enabled'] ?? true)===true,
+			'operation'=>self::normalizeName((string)($definition['operation'] ?? 'return')) ?: 'return',
+			'outcome'=>self::normalizeName((string)($definition['outcome'] ?? 'complete')) ?: 'complete',
+			'audience'=>is_string($definition['audience'] ?? null) ? $definition['audience'] : null,
+			'return_target'=>is_string($definition['return_target'] ?? null) ? PanelNavigationTarget::normalize($definition['return_target']) : null,
 		];
 	}
 
@@ -2303,7 +2466,7 @@ final class Action {
 	/**
 	 * Merges action effect declarations without losing existing refresh/events.
 	 *
-	 * close_modal is overwritten by the newest value, refresh targets are unioned,
+	 * modal_navigation is authoritative over its legacy close_modal mirror, refresh targets are unioned,
 	 * and browser events are appended in declaration order.
 	 *
 	 * @param array<string,mixed> $current Existing normalized or raw effects.
@@ -2315,6 +2478,9 @@ final class Action {
 		$next=self::normalizeEffects($next);
 		if(array_key_exists('close_modal', $next)){
 			$current['close_modal']=$next['close_modal'];
+		}
+		if(array_key_exists('modal_navigation', $next)){
+			$current['modal_navigation']=$next['modal_navigation'];
 		}
 		if(array_key_exists('refresh', $next)){
 			$current['refresh']=array_values(array_unique(array_merge($current['refresh'] ?? [], $next['refresh'])));
@@ -2337,8 +2503,14 @@ final class Action {
 	 */
 	private static function normalizeEffects(array $effects): array {
 		$normalized=[];
-		if(array_key_exists('close_modal', $effects)){
+		$modalNavigation=self::normalizeName((string)($effects['modal_navigation'] ?? $effects['modal_after_submit'] ?? ''));
+		if(in_array($modalNavigation, ['back', 'close', 'stay'], true)){
+			$normalized['modal_navigation']=$modalNavigation;
+			$normalized['close_modal']=$modalNavigation==='close';
+		}
+		elseif(array_key_exists('close_modal', $effects)){
 			$normalized['close_modal']=(bool)$effects['close_modal'];
+			$normalized['modal_navigation']=$normalized['close_modal'] ? 'close' : 'stay';
 		}
 		if(array_key_exists('refresh', $effects)){
 			$normalized['refresh']=self::normalizeEffectTargets($effects['refresh']);

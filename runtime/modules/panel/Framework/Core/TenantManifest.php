@@ -63,8 +63,31 @@ final class TenantManifest {
 				'queryable'=>($resource['data']['queryable'] ?? false)===true,
 			];
 		}
-		$current=$this->currentTenant();
-		$searchManifest=SearchManifest::from(['resources'=>$resources], $this->request, null, 12, [
+		$manager=$this->manager();
+		$request=$this->request ?? PanelRequest::fromArray([]);
+		$registry=$manager?->hasTenantRegistry()===true ? $manager->tenantRegistry() : null;
+		$context=$registry instanceof PanelTenantRegistry ? $registry->context($request) : null;
+		$current=$registry instanceof PanelTenantRegistry ? $context?->tenantKey() : $this->currentTenant();
+		$switcher=$registry instanceof PanelTenantRegistry ? $registry->switcher($request) : [];
+		$registryDescription=$registry?->describe() ?? [
+			'tenant_count'=>0,
+			'tenants'=>[],
+			'visible_tenants'=>[],
+			'membership_resolver'=>false,
+			'authorization_resolver'=>false,
+			'active_resolver'=>false,
+			'persistence_callback'=>false,
+			'entitlement_hook'=>false,
+			'onboarding_steps'=>[],
+			'implicit_io'=>false,
+		];
+		if($registry instanceof PanelTenantRegistry){
+			$registryDescription['tenant_count']=count($switcher);
+			$registryDescription['tenants']=$switcher;
+			$registryDescription['visible_tenants']=$switcher;
+		}
+		$searchSource=$this->source instanceof PanelInstance || $this->source instanceof PanelManager ? $this->source : ['resources'=>$resources];
+		$searchManifest=SearchManifest::from($searchSource, $this->request, null, 12, [
 			'surface'=>'tenant_manifest',
 		])->toArray();
 		$tenantSearch=count(array_filter((array)($searchManifest['providers'] ?? []), static fn(array $provider): bool => ($provider['tenant_scoped'] ?? false)===true));
@@ -72,12 +95,20 @@ final class TenantManifest {
 			'type'=>'tenant_manifest',
 			'parameter'=>PanelConfig::tenantParameter(),
 			'current'=>$current,
-			'active'=>$current!==null && $current!=='',
-			'source'=>[
-				'request'=>$this->request?->tenantKey(),
-				'configured'=>PanelConfig::currentTenantKey(),
-				'resolver'=>self::hasTenantResolver(),
+			'active'=>$context instanceof PanelTenantContext ? $context->isAuthorized() : ($current!==null && $current!==''),
+			'context'=>[
+				'code'=>$context?->code() ?? ($current!==null ? 'legacy' : 'tenant_unresolved'),
+				'source'=>$context?->source() ?? ($current!==null ? 'legacy' : 'none'),
+				'authorized'=>$context?->isAuthorized() ?? false,
 			],
+			'source'=>[
+				'request_present'=>$this->request?->tenantKey()!==null,
+				'configured_present'=>PanelConfig::currentTenantKey()!==null,
+				'resolver'=>self::hasTenantResolver(),
+				'registry'=>$registry instanceof PanelTenantRegistry,
+			],
+			'tenants'=>$switcher,
+			'registry'=>$registryDescription,
 			'resources'=>$tenantResources,
 			'search'=>[
 				'providers'=>$tenantSearch,
@@ -95,6 +126,31 @@ final class TenantManifest {
 				'partial_requests'=>true,
 			],
 			'capabilities'=>[
+				'lifecycle'=>[
+					'manager_owned'=>$registry instanceof PanelTenantRegistry,
+					'registered'=>(int)($registryDescription['tenant_count'] ?? 0),
+					'visible'=>count($switcher),
+					'explicit_membership'=>($registryDescription['membership_resolver'] ?? false)===true,
+					'explicit_authorization'=>($registryDescription['authorization_resolver'] ?? false)===true,
+					'active_resolution'=>($registryDescription['active_resolver'] ?? false)===true,
+					'host_persistence'=>($registryDescription['persistence_callback'] ?? false)===true,
+					'implicit_io'=>false,
+				],
+				'onboarding'=>[
+					'steps'=>count((array)($registryDescription['onboarding_steps'] ?? [])),
+					'idempotent'=>true,
+					'compensating_rollback'=>true,
+				],
+				'storage'=>[
+					'namespaced'=>true,
+					'traversal_rejected'=>true,
+					'link_aware_realpath'=>true,
+				],
+				'billing'=>[
+					'entitlement_hook'=>($registryDescription['entitlement_hook'] ?? false)===true,
+					'network_calls'=>false,
+					'payment_operations'=>false,
+				],
 				'resources'=>[
 					'total'=>count($tenantResources),
 					'required'=>count(array_filter($tenantResources, static fn(array $resource): bool => ($resource['required'] ?? false)===true)),
@@ -110,7 +166,7 @@ final class TenantManifest {
 					'parameter'=>PanelConfig::tenantParameter(),
 				],
 			],
-			'meta'=>$this->meta,
+			'meta'=>PanelTenantSanitizer::map($this->meta),
 		];
 		PanelTrace::record('tenant.manifest.described', [
 			'parameter'=>$manifest['parameter'],
@@ -118,7 +174,7 @@ final class TenantManifest {
 			'resources'=>count($tenantResources),
 			'search_providers'=>$tenantSearch,
 		]);
-		return $manifest;
+		return PanelManifestContract::stamp($manifest);
 	}
 
 	/**
@@ -154,10 +210,16 @@ final class TenantManifest {
 	private function currentTenant(): ?string {
 		$requestTenant=$this->request?->tenantKey();
 		if($requestTenant!==null && trim($requestTenant)!==''){
-			return $requestTenant;
+			return PanelTenantSanitizer::tenantKey($requestTenant);
 		}
 		$configured=PanelConfig::currentTenantKey();
-		return $configured!==null && trim($configured)!=='' ? $configured : null;
+		return $configured!==null ? PanelTenantSanitizer::tenantKey($configured) : null;
+	}
+
+	private function manager(): ?PanelManager {
+		if($this->source instanceof PanelManager){ return $this->source; }
+		if($this->source instanceof PanelInstance){ return $this->source->manager(); }
+		return null;
 	}
 
 	/**

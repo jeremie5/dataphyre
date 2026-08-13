@@ -50,14 +50,24 @@ trait dataphyre_mcp_client_workflow_surfaces {
 				],
 			],
 			'sql'=>[
-				'title'=>'Inspect SQL schema and query plans safely',
+				'title'=>'Inspect SQL schemas, query plans, and PostgreSQL migrations safely',
 				'prompt'=>'dataphyre_sql_schema_workflow',
-				'goal'=>'Review table metadata and classify read SQL without credentials or database execution.',
+				'companion_prompt'=>'dataphyre_sql_migration_workflow',
+				'goal'=>'Review table metadata, classify read SQL, and validate or plan immutable migrations—including maintenance expand/contract and exact SemVer floor semantics—without credentials, writes, or database execution.',
+				'maintenance_contract'=>[
+					'scope'=>'The pending post-cutoff rolling_expand and rolling_contract suffix is applied in one Dataphyre-owned transaction.',
+					'contract_gate'=>'Application release code supplies a caller-verified minimum active release meeting every pending contract manifest floor under exact SemVer precedence; +build metadata is ignored.',
+					'application_authority'=>'The application owns fleet-floor derivation, drain/barrier completion, release coordination, and apply/rollback authorization.',
+					'mcp_boundary'=>'This playbook only discovers, validates, and plans; it opens no PDO connection and executes no SQL.',
+				],
 				'steps'=>[
 					['order'=>1, 'tool'=>'dataphyre_sql_tables_list', 'arguments'=>['include_runtime_manifest'=>true], 'purpose'=>'Discover known Dataphyre table definitions and cluster assignments.'],
 					['order'=>2, 'tool'=>'dataphyre_sql_schema_read', 'arguments'=>['table'=>'dataphyre.mailer_outbox'], 'purpose'=>'Inspect schema metadata from first-party definitions.'],
 					['order'=>3, 'tool'=>'dataphyre_sql_query_plan', 'arguments'=>['sql'=>'SELECT id FROM dataphyre.mailer_outbox', 'max_rows'=>25], 'purpose'=>'Classify a proposed read query without execution.'],
 					['order'=>4, 'tool'=>'dataphyre_sql_query_runner_contract', 'arguments'=>[], 'purpose'=>'Review the unsafe-gated contract required before any future query runner executes SQL.'],
+					['order'=>5, 'tool'=>'dataphyre_sql_migration_catalog', 'arguments'=>['limit'=>20], 'purpose'=>'Discover the neutral PostgreSQL manifest, runtime state-machine, maintenance transaction, and exact SemVer compatibility-floor contracts.'],
+					['order'=>6, 'tool'=>'dataphyre_sql_migration_scaffold_plan', 'arguments'=>['application_id'=>'example_app', 'schema'=>'example_app', 'advisory_lock'=>'example_app.postgresql_migrations', 'bootstrap_cutoff'=>'001_schema_baseline', 'migration_id'=>'002_add_status', 'phase'=>'rolling_expand', 'description'=>'Add a nullable status column.', 'up_sql'=>'ALTER TABLE example_app.jobs ADD COLUMN status TEXT;', 'irreversible_reason'=>'Removing the column could discard values written after deployment.'], 'purpose'=>'Preview filenames, checksums, manifest entry, and rolling-expansion safety without writing files.'],
+					['order'=>7, 'tool'=>'dataphyre_sql_migration_manifest_validate', 'arguments'=>['database_root'=>'applications/example/database', 'profile'=>['application_id'=>'example_app', 'schema'=>'example_app', 'advisory_lock'=>'example_app.postgresql_migrations', 'bootstrap_cutoff'=>'001_schema_baseline']], 'purpose'=>'Validate completed repo-local manifest and SQL bytes without opening PostgreSQL or executing SQL.'],
 				],
 			],
 			'diagnostics'=>[
@@ -65,9 +75,9 @@ trait dataphyre_mcp_client_workflow_surfaces {
 				'prompt'=>'dataphyre_diagnostics_workflow',
 				'goal'=>'Find recent local errors and traces through bounded, redacted artifact reads.',
 				'steps'=>[
-					['order'=>1, 'tool'=>'dataphyre_tracelog_artifacts_list', 'arguments'=>['scope'=>'common/dataphyre', 'limit'=>20], 'purpose'=>'List candidate logs and trace artifacts without reading them.'],
-					['order'=>2, 'tool'=>'dataphyre_diagnostics_last_error', 'arguments'=>['scope'=>'common/dataphyre', 'limit'=>5], 'purpose'=>'Extract recent error-looking snippets with secret redaction.'],
-					['order'=>3, 'tool'=>'dataphyre_tracelog_search', 'arguments'=>['query'=>'error', 'scope'=>'common/dataphyre', 'limit'=>8], 'purpose'=>'Search bounded trace previews for a specific symptom.'],
+					['order'=>1, 'tool'=>'dataphyre_tracelog_artifacts_list', 'arguments'=>['scope'=>'dataphyre', 'limit'=>20], 'purpose'=>'List candidate logs and trace artifacts without reading them.'],
+					['order'=>2, 'tool'=>'dataphyre_diagnostics_last_error', 'arguments'=>['scope'=>'dataphyre', 'limit'=>5], 'purpose'=>'Extract recent error-looking snippets with secret redaction.'],
+					['order'=>3, 'tool'=>'dataphyre_tracelog_search', 'arguments'=>['query'=>'error', 'scope'=>'dataphyre', 'limit'=>8], 'purpose'=>'Search bounded trace previews for a specific symptom.'],
 					['order'=>4, 'tool'=>'dataphyre_mcp_safety_boundary_report', 'arguments'=>[], 'purpose'=>'Confirm redaction and intentionally unexposed diagnostic boundaries.'],
 				],
 			],
@@ -77,7 +87,7 @@ trait dataphyre_mcp_client_workflow_surfaces {
 				'goal'=>'Generate portable client setup, smoke tests, prompt packs, and config audits without product-local paths.',
 				'steps'=>[
 					['order'=>1, 'tool'=>'dataphyre_mcp_client_onboarding_pack', 'arguments'=>['target'=>'generic', 'smoke_format'=>'all'], 'purpose'=>'Export config, checklist, smoke tests, prompt catalog, and validation plan.'],
-					['order'=>2, 'tool'=>'dataphyre_mcp_client_config_audit', 'arguments'=>['config'=>['mcpServers'=>['dataphyre'=>['command'=>'php', 'args'=>['common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php']]]]], 'purpose'=>'Audit proposed client config for portability and unsafe-mode issues.'],
+					['order'=>2, 'tool'=>'dataphyre_mcp_client_config_audit', 'arguments'=>['config'=>['mcpServers'=>['dataphyre'=>['command'=>'php', 'args'=>['dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php']]]]], 'purpose'=>'Audit proposed client config for portability and unsafe-mode issues.'],
 					['order'=>3, 'tool'=>'dataphyre_mcp_tool_call_examples_export', 'arguments'=>['workflow'=>'client'], 'purpose'=>'Give client authors concrete tools/call examples for setup workflows.'],
 					['order'=>4, 'tool'=>'dataphyre_mcp_live_validate', 'arguments'=>[], 'purpose'=>'Validate local MCP client wiring, stdio framing, tools, prompts, resources, and doctor output after setup changes.', 'audience_scope'=>'local_client_setup_not_app_behavior', 'not_app_behavior_proof'=>true, 'not_required_for'=>['ordinary application behavior proof', 'focused app/module verification']],
 				],
@@ -102,20 +112,7 @@ trait dataphyre_mcp_client_workflow_surfaces {
 		}
 		$tool_names=array_map(static fn(array $tool): string => (string)($tool['name'] ?? ''), $this->list_tools()['tools']);
 		$prompt_names=array_map(static fn(array $prompt): string => (string)($prompt['name'] ?? ''), $this->list_prompts()['prompts']);
-		$missing_tools=[];
-		$missing_prompts=[];
-		foreach($selected as $playbook){
-			$prompt=(string)($playbook['prompt'] ?? '');
-			if($prompt!=='' && !in_array($prompt, $prompt_names, true)){
-				$missing_prompts[]=$prompt;
-			}
-			foreach($playbook['steps'] ?? [] as $step){
-				$tool=(string)($step['tool'] ?? '');
-				if($tool!=='' && !in_array($tool, $tool_names, true)){
-					$missing_tools[]=$tool;
-				}
-			}
-		}
+		$catalog_gaps=$this->mcp_workflow_catalog_gaps($selected,$tool_names,$prompt_names);
 		$includes_release=array_key_exists('release', $selected);
 		$not_ordinary_app_requirements=$includes_release ? [
 			'dataphyre_mcp_verify_all',
@@ -136,8 +133,8 @@ trait dataphyre_mcp_client_workflow_surfaces {
 			'playbooks'=>$selected,
 			'playbook_count'=>count($selected),
 			'step_count'=>array_sum(array_map(static fn(array $playbook): int => count($playbook['steps'] ?? []), $selected)),
-			'missing_registered_tools'=>array_values(array_unique($missing_tools)),
-			'missing_registered_prompts'=>array_values(array_unique($missing_prompts)),
+			'missing_registered_tools'=>$catalog_gaps['tools'],
+			'missing_registered_prompts'=>$catalog_gaps['prompts'],
 			'playbook_policy'=>[
 				'application_default_workflows'=>array_values(array_intersect(array_keys($selected), ['feature', 'routes', 'sql', 'diagnostics', 'client'])),
 				'publication_validation_workflows'=>array_values(array_intersect(array_keys($selected), ['release'])),
@@ -202,11 +199,49 @@ trait dataphyre_mcp_client_workflow_surfaces {
 				'default_lane'=>'application_workflow_playbook',
 				'ordinary_app_work'=>'follow ordered read-only metadata steps before app-owned edits',
 			];
-			$payload['context_links']=array_replace($this->mcp_lightweight_discovery_context_links(), [
+			$payload['context_links']=array_replace($this->mcp_lightweight_discovery_context_links(),[
 				'release_playbook'=>'dataphyre_mcp_workflow_playbook_export workflow=release',
 			]);
 		}
 		return $payload;
+	}
+
+	/**
+	 * Validates playbook references independently from the live registries.
+	 *
+	 * @param array<string,array<string,mixed>> $playbooks
+	 * @param list<string> $tool_names
+	 * @param list<string> $prompt_names
+	 * @return array{tools:list<string>,prompts:list<string>}
+	 */
+	private function mcp_workflow_catalog_gaps(array $playbooks,array $tool_names,array $prompt_names): array {
+		$missing_tools=[];
+		$missing_prompts=[];
+		foreach($playbooks as $playbook){
+			$prompt=(string)($playbook['prompt'] ?? '');
+			if($prompt!=='' && !in_array($prompt,$prompt_names,true)){$missing_prompts[]=$prompt;}
+			foreach(is_array($playbook['steps'] ?? null) ? $playbook['steps'] : [] as $step){
+				if(!is_array($step)){continue;}
+				$tool=(string)($step['tool'] ?? '');
+				if($tool!=='' && !in_array($tool,$tool_names,true)){$missing_tools[]=$tool;}
+			}
+		}
+		return [
+			'tools'=>array_values(array_unique($missing_tools)),
+			'prompts'=>array_values(array_unique($missing_prompts)),
+		];
+	}
+
+	/** @return list<string> */
+	private function mcp_prompt_catalog_names(array $catalog): array {
+		$names=array_values(array_filter(array_map('strval',is_array($catalog['available_prompts'] ?? null) ? $catalog['available_prompts'] : []),static fn(string $name): bool=>$name!==''));
+		if($names!==[]){return $names;}
+		foreach(is_array($catalog['prompts'] ?? null) ? $catalog['prompts'] : [] as $prompt){
+			if(!is_array($prompt)){continue;}
+			$name=(string)($prompt['name'] ?? '');
+			if($name!==''){$names[]=$name;}
+		}
+		return array_values(array_unique($names));
 	}
 
 	/**
@@ -231,15 +266,7 @@ trait dataphyre_mcp_client_workflow_surfaces {
 			'client'=>'client',
 			'release'=>'validation',
 		];
-		$prompt_names=array_values(array_filter(array_map('strval', is_array($prompt_catalog['available_prompts'] ?? null) ? $prompt_catalog['available_prompts'] : []), static fn(string $name): bool => $name!==''));
-		if($prompt_names===[]){
-			foreach($prompt_catalog['prompts'] ?? [] as $prompt){
-				$name=(string)($prompt['name'] ?? '');
-				if($name!==''){
-					$prompt_names[]=$name;
-				}
-			}
-		}
+		$prompt_names=$this->mcp_prompt_catalog_names($prompt_catalog);
 		$audits=[];
 		foreach($playbook_export['playbooks'] ?? [] as $key=>$playbook){
 			$steps=is_array($playbook['steps'] ?? null) ? $playbook['steps'] : [];
@@ -247,12 +274,7 @@ trait dataphyre_mcp_client_workflow_surfaces {
 			$example_workflow=$example_workflow_map[$key] ?? 'all';
 			$examples=$this->mcp_tool_call_examples_export(['workflow'=>$example_workflow]);
 			$prompt=(string)($playbook['prompt'] ?? '');
-			$missing_tools=[];
-			foreach($tools as $tool){
-				if(in_array($tool, $playbook_export['missing_registered_tools'] ?? [], true)){
-					$missing_tools[]=$tool;
-				}
-			}
+			$missing_tools=array_values(array_intersect($tools,is_array($playbook_export['missing_registered_tools'] ?? null) ? $playbook_export['missing_registered_tools'] : []));
 			$checks=[
 				'has_registered_prompt'=>$prompt!=='' && in_array($prompt, $prompt_names, true),
 				'has_steps'=>count($steps)>0,
@@ -810,10 +832,6 @@ trait dataphyre_mcp_client_workflow_surfaces {
 					$score+=3;
 					$matched[]=$keyword;
 				}
-				elseif($task!=='' && str_contains($haystack, $keyword) && preg_match('/\b'.preg_quote($keyword, '/').'\b/i', $task)===1){
-					$score+=1;
-					$matched[]=$keyword;
-				}
 			}
 			foreach(preg_split('/[^a-z0-9_]+/', $task) ?: [] as $token){
 				$token=trim($token);
@@ -1018,11 +1036,8 @@ trait dataphyre_mcp_client_workflow_surfaces {
 		$app_builder_task=$this->mcp_task_implies_app_builder($task);
 		$release_claim=$this->mcp_task_implies_release_claim($task);
 		$recommendation=$this->mcp_workflow_recommend(['task'=>$task, 'limit'=>$limit]);
-		$top=$recommendation['recommendations'][0] ?? [];
-		$workflow=(string)($top['workflow'] ?? 'client');
-		if(!in_array($workflow, ['feature', 'routes', 'sql', 'diagnostics', 'client', 'release'], true)){
-			$workflow='client';
-		}
+		$top=is_array($recommendation['recommendations'][0] ?? null) ? $recommendation['recommendations'][0] : [];
+		$workflow=$this->mcp_workflow_recommendation_name($recommendation);
 		$inline_handoff=!($app_builder_task && !$release_claim);
 		$handoff=$inline_handoff ? $this->mcp_workflow_handoff_pack_export(['workflow'=>$workflow, 'include_frames'=>$include_frames]) : [];
 		$payload=[
@@ -1066,6 +1081,12 @@ trait dataphyre_mcp_client_workflow_surfaces {
 			$payload['tool_audience_boundaries']=$handoff['tool_audience_boundaries'] ?? $this->mcp_current_tool_audience_boundaries();
 		}
 		return $payload;
+	}
+
+	private function mcp_workflow_recommendation_name(array $recommendation): string {
+		$top=is_array($recommendation['recommendations'][0] ?? null) ? $recommendation['recommendations'][0] : [];
+		$workflow=(string)($top['workflow'] ?? 'client');
+		return in_array($workflow,['feature','routes','sql','diagnostics','client','release'],true) ? $workflow : 'client';
 	}
 
 }

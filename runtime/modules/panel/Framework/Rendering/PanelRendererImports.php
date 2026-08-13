@@ -30,9 +30,10 @@ trait PanelRendererImports {
 	 * @param array<int, mixed> $records Records to export; empty means the caller intentionally exports no rows.
 	 * @param ?int $totalRecords Optional total count for callers that already paginated records.
 	 * @param bool $alreadyPaginated True when records have already been filtered and sorted by the caller.
+	 * @param array<string,mixed> $dataSource Structured upstream result metadata.
 	 * @return PanelPageResult CSV download, JSON download, forbidden response, or export failure response.
 	 */
-	public static function exportCsv(Resource $resource, PanelRequest $request, array $records=[], ?int $totalRecords=null, bool $alreadyPaginated=false): PanelPageResult {
+	public static function exportCsv(Resource $resource, PanelRequest $request, array $records=[], ?int $totalRecords=null, bool $alreadyPaginated=false, array $dataSource=[]): PanelPageResult {
 		if(!PanelConfig::resourceExportsEnabled()){
 			return self::forbidden($resource, $request);
 		}
@@ -52,7 +53,7 @@ trait PanelRendererImports {
 			'column_count'=>count($columns),
 		]);
 		if($format==='json'){
-			return self::exportJsonResult($resource, $request, $records, $columns, $resource->name().'-'.date('Ymd-His').'.json', 'export');
+			return self::exportJsonResult($resource, $request, $records, $columns, $resource->name().'-'.date('Ymd-His').'.json', 'export', $dataSource);
 		}
 		$handle=fopen('php://temp', 'r+');
 		if($handle===false){
@@ -61,11 +62,11 @@ trait PanelRendererImports {
 				'resource'=>$resource->toArray(),
 			]);
 		}
-		fputcsv($handle, array_map(static fn(Column $column): string => (string)($column->toArray()['label'] ?? $column->name()), array_values($columns)), ',', '"', '');
+		fputcsv($handle, array_map(static fn(Column $column): string => self::spreadsheetSafeCsvValue((string)($column->toArray()['label'] ?? $column->name())), array_values($columns)), ',', '"', '');
 		foreach($records as $record){
 			$row=[];
 			foreach($columns as $column){
-				$row[]=self::stringValue($column->exportValue($record));
+				$row[]=self::spreadsheetSafeCsvValue(self::stringValue($column->exportValue($record)));
 			}
 			fputcsv($handle, $row, ',', '"', '');
 		}
@@ -78,6 +79,7 @@ trait PanelRendererImports {
 			'request'=>$request->toArray(),
 			'record_count'=>count($records),
 			'visible_columns'=>array_keys($columns),
+			'data_source'=>$dataSource,
 		]);
 	}
 
@@ -178,7 +180,7 @@ trait PanelRendererImports {
 			.'<label class="dp-panel-field"><span>'.self::e(self::panelText('import.delimiter')).'</span><select name="delimiter"><option value="auto">'.self::e(self::panelText('import.delimiter_auto')).'</option><option value=",">'.self::e(self::panelText('import.delimiter_comma')).'</option><option value=";">'.self::e(self::panelText('import.delimiter_semicolon')).'</option><option value="tab">'.self::e(self::panelText('import.delimiter_tab')).'</option><option value="|">'.self::e(self::panelText('import.delimiter_pipe')).'</option></select></label>'
 			.'<label class="dp-panel-field"><span>'.self::e(self::panelText('import.has_header')).'</span><input type="hidden" name="has_header" value="0"><input type="checkbox" name="has_header" value="1" checked></label>'
 			.'</div>'.$expected.'</section>'
-			.'<div class="dp-panel-toolbar"><div class="dp-panel-toolbar-actions"><button class="dp-panel-button" type="submit">'.self::e(self::panelText('import.csv_submit')).'</button><a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(PanelConfig::resourceUrl($resource, 'import_template')).'">'.self::e(self::panelText('import.download_template')).'</a></div><a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(PanelConfig::resourceUrl($resource)).'">'.self::e(self::panelText('common.cancel')).'</a></div>'
+			.'<div class="dp-panel-toolbar"><div class="dp-panel-toolbar-actions"><button class="dp-panel-button" type="submit">'.self::e(self::panelText('import.csv_submit')).'</button><a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(PanelConfig::resourceUrl($resource, 'import_template')).'" data-dp-panel-no-ajax="1">'.self::e(self::panelText('import.download_template')).'</a></div><a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(PanelConfig::resourceUrl($resource)).'" data-dp-panel-modal-cancel="1">'.self::e(self::panelText('common.cancel')).'</a></div>'
 			.'</form>';
 		return self::page(self::panelText('import.page_title', ['resource'=>(string)$resource->label()]), $content, [
 			'kind'=>'import',
@@ -216,8 +218,8 @@ trait PanelRendererImports {
 			return self::forbidden($resource, $request);
 		}
 		$columns=self::importableColumns($resource);
-		$headers=array_map(static fn(array $column): string => (string)($column['label'] ?? $column['name'] ?? ''), $columns);
-		$sample=array_map(static fn(array $column): string => (string)($column['sample'] ?? ''), $columns);
+		$headers=array_map(static fn(array $column): string => self::spreadsheetSafeCsvValue((string)($column['label'] ?? $column['name'] ?? '')), $columns);
+		$sample=array_map(static fn(array $column): string => self::spreadsheetSafeCsvValue((string)($column['sample'] ?? '')), $columns);
 		$handle=fopen('php://temp', 'r+');
 		if($handle===false){
 			return PanelPageResult::html(self::panelText('import.unable_template'), 500, [
@@ -510,9 +512,6 @@ trait PanelRendererImports {
 		if($denied!==[]){
 			$notifications[]=PanelNotification::warning(self::panelText('transition.bulk_denied', ['count'=>count($denied), 'record'=>self::panelText(count($denied)===1 ? 'common.record' : 'common.records')]));
 		}
-		if($notifications===[]){
-			$notifications[]=PanelNotification::info(self::panelText('transition.bulk_none'));
-		}
 		$redirect=self::actionReturnUrl($resource, $request);
 		PanelTrace::record('bulk_transition.completed', [
 			'resource'=>$resource,
@@ -534,8 +533,32 @@ trait PanelRendererImports {
 			'unavailable'=>$unavailable,
 			'failed'=>$failed,
 			'denied'=>$denied,
-			'results'=>$results,
-		], $notifications);
+			'results'=>$results], $notifications);
+	}
+
+	/**
+	 * Neutralizes spreadsheet formulas while preserving ordinary typed literals.
+	 *
+	 * Spreadsheet engines may ignore leading whitespace and control characters
+	 * before interpreting `=`, `+`, `-`, or `@` as a formula. A leading apostrophe
+	 * forces text interpretation. Strict numeric, currency, percentage, and date
+	 * literals are left untouched, as are JSON values whose first token is not a
+	 * formula marker.
+	 */
+	private static function spreadsheetSafeCsvValue(string $value):string{
+		if($value===''){return$value;}
+		$invalidUtf8=preg_match('//u',$value)!==1;
+		$value=PanelSensitiveDataSanitizer::normalizeUtf8($value);
+		if($invalidUtf8){return "'".$value;}
+		$candidate=preg_replace('/\A[\p{Z}\p{C}\s]*/u','',$value);
+		if($candidate===null){return "'".$value;}
+		if($candidate===''||!in_array($candidate[0],['=','+','-','@'],true)){return$value;}
+		if($candidate[0]==='+'||$candidate[0]==='-'){
+			$number='/^[+-]?(?:[$€£¥]\s*)?(?:(?:\d{1,3}(?:[ ,]\d{3})+)|\d+|\d*[.]\d+)(?:[.,]\d+)?(?:[eE][+-]?\d+)?%?$/u';
+			$date='/^[+-]?\d{1,4}[-\/.]\d{1,2}[-\/.]\d{1,4}(?:[ T]\d{1,2}:\d{2}(?::\d{2}(?:[.]\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/';
+			if(preg_match($number,$candidate)===1||preg_match($date,$candidate)===1){return$value;}
+		}
+		return "'".$value;
 	}
 
 	/**

@@ -8,24 +8,43 @@
 namespace dataphyre;
 
 /**
- * Scheduler runner for the mailer outbox.
- *
- * The scheduling module executes this file out of band. It clamps the configured
- * batch size to the same 1..250 range as the manager, flushes due outbox rows,
- * and optionally runs retention pruning. Prune diagnostics are written only when
- * tracelog is available; flush results otherwise remain in-process runner state.
+ * Composable scheduler runner for the mailer outbox.
  */
-$limit=(int)(DP_MAILER_CFG['scheduler']['batch_size'] ?? 25);
-$flush_result=mailer::flush(max(1, min(250, $limit)));
-
-$prune=DP_MAILER_CFG['scheduler']['prune'] ?? [];
-if(is_array($prune) && ($prune['enabled'] ?? false)===true){
-	$options=is_array($prune['options'] ?? null) ? $prune['options'] : [];
-	$prune_result=mailer::prune($options);
-	if(function_exists('tracelog')){
-		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Mailer scheduler prune completed', [
-			'flush'=>$flush_result,
-			'prune'=>$prune_result,
-		]);
+final class mailer_scheduler {
+	/**
+	 * Flushes a bounded outbox batch and optionally prunes retained records.
+	 *
+	 * @param ?array<string,mixed> $scheduler Scheduler configuration override.
+	 * @return array{flush:array<string,mixed>,prune:?array<string,mixed>}
+	 */
+	public static function run(
+		?array $scheduler=null,
+		?callable $flush=null,
+		?callable $prune=null,
+		?callable $log=null
+	): array {
+		$scheduler??=(array)(DP_MAILER_CFG['scheduler'] ?? []);
+		$limit=max(1, min(250, (int)($scheduler['batch_size'] ?? 25)));
+		$flush??=[mailer::class, 'flush'];
+		$flushResult=(array)$flush($limit);
+		$pruneConfig=$scheduler['prune'] ?? [];
+		$pruneResult=null;
+		if(is_array($pruneConfig) && ($pruneConfig['enabled'] ?? false)===true){
+			$options=is_array($pruneConfig['options'] ?? null) ? $pruneConfig['options'] : [];
+			$prune??=[mailer::class, 'prune'];
+			$pruneResult=(array)$prune($options);
+			$log??=function_exists('tracelog') ? 'tracelog' : null;
+			if(is_callable($log)){
+				$log(__FILE__, __LINE__, __CLASS__, __FUNCTION__, 'Mailer scheduler prune completed', [
+					'flush'=>$flushResult,
+					'prune'=>$pruneResult,
+				]);
+			}
+		}
+		return ['flush'=>$flushResult, 'prune'=>$pruneResult];
 	}
+}
+
+if(!defined('DATAPHYRE_MAILER_SCHEDULER_NO_DISPATCH')){
+	mailer_scheduler::run();
 }

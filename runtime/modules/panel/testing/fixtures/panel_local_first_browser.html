@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<title>Panel local-first browser contract</title>
+	<style>
+		:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#08101f;color:#edf4ff}body{margin:0;min-height:100vh;display:grid;place-items:center}.surface{width:min(720px,calc(100vw - 32px));padding:28px;border:1px solid #31405b;border-radius:18px;background:#111b2d}.status{display:inline-flex;min-height:32px;align-items:center;padding:0 12px;border-radius:999px;background:#1d3151;color:#bcd5ff;font-weight:700}pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#a9bddb}button{min-height:44px;padding:0 16px;border:1px solid #4b6ca5;border-radius:10px;background:#215ed8;color:white;font:inherit;font-weight:700}
+	</style>
+	<script src="/runtime/modules/panel/Framework/Sync/PanelLocalFirstClient.js"></script>
+</head>
+<body>
+	<main class="surface">
+		<h1>Local-first contract</h1>
+		<p class="status" data-dp-local-first-status>Starting</p>
+		<section id="conflicts" aria-label="Offline conflicts"></section>
+		<pre id="result">Running…</pre>
+	</main>
+	<script>
+	(async function(){
+		"use strict";
+		var api=window.DataphyrePanelLocalFirst,dbName="dp_panel_local_first_browser_contract",result=document.getElementById("result"),responseBytes=new Uint8Array(32);responseBytes.fill(0x72);
+		function b64(bytes){var binary="";for(var i=0;i<bytes.length;i++){binary+=String.fromCharCode(bytes[i]);}return btoa(binary).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");}
+		function hex(bytes){return Array.from(new Uint8Array(bytes),function(byte){return byte.toString(16).padStart(2,"0");}).join("");}
+		function exactInstant(value){return new Date(value).toISOString().replace(/\.(\d{3})Z$/,function(unused,milliseconds){return"."+milliseconds+"000Z";});}
+		async function ordinaryDigest(value){return hex(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(api.canonicalJson(value))));}
+		function removeDatabase(){return new Promise(function(resolve){var request=indexedDB.deleteDatabase(dbName);request.onsuccess=request.onerror=request.onblocked=function(){resolve();};});}
+		async function registerDevice(registration){var now=Date.now(),credential={type:"panel_local_first_device_credential",schema_version:1,api_version:1,version:1,credential_id:"",actor_id:"Browser:1",tenant_id:"north",device_id:registration.device_id,public_key:registration.public_key,public_key_fingerprint:registration.public_key_fingerprint,sources:["orders"],abilities:["mutate","sync"],issued_at:exactInstant(now-60000),expires_at:exactInstant(now+86400000),key_id:"credential",signature:"0".repeat(64)},unsigned={actor_id:"Browser:1",tenant_id:"north",device_id:registration.device_id,public_key:registration.public_key,public_key_fingerprint:registration.public_key_fingerprint,sources:["orders"],abilities:["mutate","sync"],issued_at:credential.issued_at,expires_at:credential.expires_at,key_id:"credential"};credential.credential_id="lfc_"+(await ordinaryDigest(unsigned)).slice(0,48);return credential;}
+		async function fakeGateway(url,options){var request=JSON.parse(options.body),body={result:{accepted:true}};if(request.kind==="document_sync"){var actor=request.credential.actor_id+"@"+request.credential.device_id,documents=request.payload.changes.map(function(change){var clock=Object.assign({},change.base_clock),fields={};change.operations.forEach(function(operation){clock[actor]=(clock[actor]||0)+1;fields[operation.path]={value:operation.op==="delete"?null:operation.value,clock:Object.assign({},clock),actor:actor,tombstone:operation.op==="delete"};});return{type:"panel_sync_document",version:1,id:change.document_id,clock:clock,fields:fields,conflicts:[],revision:1,fingerprint:"0".repeat(64)};});body={merge:{source_actor:actor,sequence:request.sequence,documents:documents.map(function(documentValue){return documentValue.id;}),new_conflicts:0,envelope_digest:"0".repeat(64),replayed:false},documents:documents,conflict_count:0};}var issued=exactInstant(Date.now()),unsigned={request_digest:request.digest,sequence:request.sequence,status:"ok",body:body,issued_at:issued,key_id:"response"},digest=await api.canonicalDigest(unsigned),key=await crypto.subtle.importKey("raw",responseBytes,{name:"HMAC",hash:"SHA-256"},false,["sign"]),signature=hex(await crypto.subtle.sign("HMAC",key,new TextEncoder().encode(digest))),response={type:"panel_local_first_response",schema_version:1,api_version:1,version:1,request_digest:request.digest,sequence:request.sequence,status:"ok",body:body,issued_at:issued,key_id:"response",digest:digest,signature:signature};return new Response(JSON.stringify(response),{status:200,headers:{"Content-Type":"application/json"}});}
+		try{
+			await removeDatabase();
+			var client=await api.open({dbName:dbName,endpoint:location.origin+"/local-first-sync",actorId:"Browser:1",tenantId:"north",registerDevice:registerDevice,responseKeys:{response:b64(responseBytes)},fetcher:fakeGateway,autoSync:false});
+			client.bindStatus(document);client.bindConflictCenter(document.getElementById("conflicts"));
+			await client.queueMutation("orders",{operation:"create",key:"order-browser-1",values:{title:"encrypted-browser-order",ratio:1e-7},metadata:{surface:"browser-contract"},reason:"Queued while offline."});
+			await client.change("Order:browser-1",[{op:"set",path:"status",value:"review"},{op:"set",path:"total",value:100.25}]);
+			var progressed=await client.sync(),status=await client.status(),documentValue=await client.document("Order:browser-1"),database=await new Promise(function(resolve,reject){var request=indexedDB.open(dbName);request.onsuccess=function(){resolve(request.result);};request.onerror=function(){reject(request.error);};}),queueRecords=await new Promise(function(resolve,reject){var tx=database.transaction(["queue","documents"],"readonly"),records={};tx.objectStore("queue").getAll().onsuccess=function(event){records.queue=event.target.result;};tx.objectStore("documents").getAll().onsuccess=function(event){records.documents=event.target.result;};tx.oncomplete=function(){resolve(records);};tx.onerror=function(){reject(tx.error);};});database.close();var persisted=JSON.stringify(queueRecords),first={progressed:progressed,status:status,document:documentValue,plaintext_at_rest:persisted.includes("encrypted-browser-order")||persisted.includes("Order:browser-1")};await client.stop();
+			var reopened=await api.open({dbName:dbName,endpoint:location.origin+"/local-first-sync",fetcher:fakeGateway,autoSync:false,headless:true}),afterRestart=await reopened.document("Order:browser-1");await reopened.stop();
+			window.__dpLocalFirstResult={ok:progressed===true&&status.queued===0&&status.dirty_documents===0&&documentValue.value.status==="review"&&documentValue.value.total===100.25&&!first.plaintext_at_rest&&afterRestart.value.status==="review",first:first,after_restart:afterRestart,manifest:api.manifest()};result.textContent=JSON.stringify(window.__dpLocalFirstResult,null,2);
+		}catch(error){window.__dpLocalFirstResult={ok:false,error:{name:error.name,code:error.code||null,message:error.message,stack:error.stack}};result.textContent=JSON.stringify(window.__dpLocalFirstResult,null,2);}
+	})();
+	</script>
+</body>
+</html>

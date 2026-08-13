@@ -13,15 +13,15 @@ if(class_exists('\dataphyre\autoloader', false)){
 	\dataphyre\autoloader::register_framework_modules(['http', 'panel']);
 }
 
-if(!class_exists('\Dataphyre\Http\Request')){
-	foreach([
-		dirname(__DIR__, 2).'/http/Framework/UploadedFile.php',
-		dirname(__DIR__, 2).'/http/Framework/Request.php',
-		dirname(__DIR__, 2).'/http/Framework/Response.php',
-	] as $path){
-		if(is_file($path)){
-			require_once $path;
-		}
+if(!class_exists('\Dataphyre\Http\Request')){ foreach([dirname(__DIR__, 2).'/http/Framework/UploadedFile.php', dirname(__DIR__, 2).'/http/Framework/Request.php', dirname(__DIR__, 2).'/http/Framework/Response.php'] as $path){ if(is_file($path)){ require_once $path; } } }
+
+foreach([
+	dirname(__DIR__).'/Framework/Support/PanelExtensible.php',
+	dirname(__DIR__).'/Framework/Resources/Resource.php',
+	dirname(__DIR__).'/Framework/Support/PanelTrace.php',
+] as $path){
+	if(is_file($path)){
+		require_once $path;
 	}
 }
 if(!class_exists('\Dataphyre\Panel\PanelRenderer', false)){
@@ -60,26 +60,21 @@ $request_path=(string)(parse_url($request_uri, PHP_URL_PATH) ?: '');
 $asset=(string)(\dataphyre\routing::$bindings['asset'] ?? $_GET['asset'] ?? basename($request_path));
 $asset=basename(str_replace('\\', '/', $asset));
 
-if(!class_exists('\Dataphyre\Panel\PanelAssetController') || !class_exists('\Dataphyre\Http\Request')){
-	http_response_code(503);
-	header('Content-Type: text/plain; charset=UTF-8');
-	header('Cache-Control: no-store');
-	header('X-Content-Type-Options: nosniff');
-	echo 'Dataphyre Panel asset endpoint is unavailable.';
-	return;
-}
+if(!class_exists('\Dataphyre\Panel\PanelAssetController') || !class_exists('\Dataphyre\Http\Request')){ http_response_code(503); header('Content-Type: text/plain; charset=UTF-8'); header('Cache-Control: no-store'); header('X-Content-Type-Options: nosniff'); echo 'Dataphyre Panel asset endpoint is unavailable.'; return; }
 
 $request=\Dataphyre\Http\Request::capture(['asset'=>$asset]);
 $response=\Dataphyre\Panel\PanelAssetController::response($asset, $request);
 
 http_response_code((int)($response->status ?? 200));
 foreach((array)($response->headers ?? []) as $name=>$value){
-	if(!is_string($name) || trim($name)===''){
-		continue;
-	}
+	$name=trim((string)$name);
+	if($name==='' || preg_match('/\A[!#$%&\'*+.^_`|~0-9A-Za-z-]+\z/', $name)!==1){ continue; }
 	foreach((array)$value as $line){
 		if(is_scalar($line)){
-			header($name.': '.(string)$line);
+			$line=trim((string)$line);
+			if($line!=='' && !str_contains($line, "\r") && !str_contains($line, "\n")){
+				header($name.': '.$line, strtolower($name)!=='set-cookie');
+			}
 		}
 	}
 }

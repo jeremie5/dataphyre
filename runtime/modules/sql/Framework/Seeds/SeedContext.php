@@ -31,16 +31,31 @@ final class SeedContext {
 		$this->cluster=$cluster!==null && trim($cluster)!=='' ? trim($cluster) : null;
 	}
 
-	/** Executes SQL immediately and throws when Dataphyre reports a query failure. */
-	public function query(string|array $query, ?array $vars=null, bool $associative=false): mixed {
+	/**
+	 * Executes SQL immediately and throws when Dataphyre reports a query failure.
+	 *
+	 * Raw mutation targets are inferred from registered table locations by default,
+	 * so the surrounding framework transaction defers their cache invalidation until
+	 * commit. Pass an explicit list for vendor-specific SQL, or false only when the
+	 * caller has proved that no cached table can be affected.
+	 *
+	 * @param array|bool|null $clear_cache Null/true infers targets, an array is explicit, and false opts out.
+	 */
+	public function query(
+		string|array $query,
+		?array $vars=null,
+		bool $associative=false,
+		array|bool|null $clear_cache=null,
+	): mixed {
 		$query=$this->clusterAwareQuery($query);
+		$clear_cache=$this->resolveWriteInvalidation($query, $clear_cache);
 		if($this->query_executor!==null){
 			$result=($this->query_executor)($query, $vars, $associative);
 		}else{
 			if(!class_exists('\dataphyre\sql') || !method_exists('\dataphyre\sql', 'query')){
 				throw new RuntimeException('Dataphyre SQL must be booted before a seed can execute queries.');
 			}
-			$result=\dataphyre\sql::query($query, $vars, $associative, false, false, false, null);
+			$result=\dataphyre\sql::query($query, $vars, $associative, false, false, $clear_cache, null);
 		}
 		if($result===false){
 			$message='Dataphyre SQL rejected a seed query.';
@@ -51,6 +66,14 @@ final class SeedContext {
 				}
 			}
 			throw new RuntimeException($message);
+		}
+		if(
+			$this->query_executor!==null
+			&& $clear_cache!==false
+			&& class_exists('\dataphyre\sql')
+			&& method_exists('\dataphyre\sql', 'invalidate_cache')
+		){
+			\dataphyre\sql::invalidate_cache($clear_cache);
 		}
 		return $result;
 	}
@@ -79,6 +102,45 @@ final class SeedContext {
 
 	/** @return array<string,mixed> */
 	public function attributes(): array { return $this->attributes; }
+
+	/** @return array|false */
+	private function resolveWriteInvalidation(string|array $query, array|bool|null $clear_cache): array|false {
+		if(is_array($clear_cache)){
+			$targets=[];
+			foreach($clear_cache as $target){
+				$target=trim((string)$target);
+				if($target!=='') $targets[$target]=$target;
+			}
+			return $targets!==[] ? array_values($targets) : false;
+		}
+		if($clear_cache===false){
+			return false;
+		}
+		if(!class_exists('\dataphyre\sql') || !method_exists('\dataphyre\sql', 'query_write_targets')){
+			return false;
+		}
+		$statements=[];
+		if(is_string($query)){
+			$statements[]=$query;
+		}else{
+			$dbms=$this->dbms();
+			if(is_string($query[$dbms] ?? null)){
+				$statements[]=$query[$dbms];
+			}else{
+				foreach(['postgresql','mysql','sqlite'] as $candidate){
+					if(is_string($query[$candidate] ?? null)) $statements[]=$query[$candidate];
+				}
+			}
+		}
+		$targets=[];
+		foreach($statements as $statement){
+			foreach(\dataphyre\sql::query_write_targets($statement, true) as $target){
+				$target=trim((string)$target);
+				if($target!=='') $targets[$target]=$target;
+			}
+		}
+		return $targets!==[] ? array_values($targets) : false;
+	}
 
 	private function clusterAwareQuery(string|array $query): string|array {
 		if($this->cluster===null){

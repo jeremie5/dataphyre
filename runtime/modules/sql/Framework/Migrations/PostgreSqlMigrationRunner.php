@@ -24,6 +24,9 @@ use Throwable;
  * connection, and (when applicable) externally verified release identity.
  */
 final class PostgreSqlMigrationRunner {
+	public const MAX_ROLLING_SQL_BYTES=8*1024*1024;
+	public const MAX_ROLLING_STATEMENTS=2048;
+
 	private PostgreSqlSchemaInspector $inspector;
 
 	public function __construct(
@@ -704,6 +707,9 @@ final class PostgreSqlMigrationRunner {
 	 * @return list<array{code:string,statement:int}>
 	 */
 	public static function rollingSqlIssues(string $sql): array {
+		if(strlen($sql)>self::MAX_ROLLING_SQL_BYTES){
+			throw new InvalidArgumentException('Rolling migration SQL exceeds the fixed 8 MiB safety boundary.');
+		}
 		$issues=[];
 		foreach(self::sqlStatements($sql) as $index=>$statement){
 			$normalized=trim((string)preg_replace('/\s+/', ' ', $statement));
@@ -745,7 +751,9 @@ final class PostgreSqlMigrationRunner {
 			}elseif(preg_match('/^(?:INSERT|UPDATE|MERGE)\b/i', $normalized)===1){
 				$code='data_mutation_not_allowlisted';
 			}elseif(preg_match('/^GRANT\b/i', $normalized)===1){
-				$code='privilege_change_not_allowlisted';
+				if(!self::isSafeReadGrant($normalized)){
+					$code='privilege_change_not_allowlisted';
+				}
 			}else{
 				$code='unapproved_statement';
 			}
@@ -1219,11 +1227,38 @@ final class PostgreSqlMigrationRunner {
 		if(preg_match('/^CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?'.$qualified.'\s*\(.+\)$/i', $statement)!==1){
 			return false;
 		}
-		return preg_match('/\b(?:AS|LIKE|PARTITION|INHERITS|OF|REFERENCES|FOREIGN\s+KEY|EXCLUDE|DEFAULT|GENERATED|IDENTITY|SMALLSERIAL|SERIAL|BIGSERIAL|WITH|ON\s+COMMIT|SERVER)\b/i', $statement)!==1;
+		/* A standalone new table is invisible to old application processes. Local
+		 * defaults, identities, checks, primary keys, and unique constraints affect
+		 * only that empty relation. References are excluded because PostgreSQL takes
+		 * SHARE ROW EXCLUSIVE on each referenced live table; derived/partitioned and
+		 * external-storage forms likewise need a separate operational protocol. */
+		return preg_match(
+			'/\b(?:LIKE|REFERENCES|FOREIGN\s+KEY|EXCLUDE)\b|'.
+			'\)\s+(?:AS\b|PARTITION\s+BY\b|'.
+			'INHERITS\s*\(|WITH\s*\(|ON\s+COMMIT\b|SERVER\b)/i',
+			$statement
+		)!==1;
 	}
 
 	private static function isSafeComment(string $statement): bool {
 		return preg_match('/^COMMENT\s+ON\s+.+\s+IS(?:\s+(?:NULL|E|U&))?$/i', $statement)===1;
+	}
+
+	private static function isSafeReadGrant(string $statement): bool {
+		$identifier='(?:"[x]+"|[A-Za-z_][A-Za-z0-9_$]*)';
+		$qualified=$identifier.'\s*\.\s*'.$identifier;
+		if(preg_match(
+			'/^GRANT\s+SELECT\s+ON\s+(?:TABLE\s+)?'.$qualified.'\s+TO\s+('.$identifier.')$/i',
+			$statement,
+			$matches
+		)!==1){
+			return false;
+		}
+		return !in_array(
+			strtoupper((string)$matches[1]),
+			['PUBLIC', 'CURRENT_ROLE', 'CURRENT_USER', 'SESSION_USER'],
+			true
+		);
 	}
 
 	private static function isNullableColumnAddition(string $statement): bool {
@@ -1273,6 +1308,9 @@ final class PostgreSqlMigrationRunner {
 			$statement=trim($statement);
 			if($statement!==''){
 				$statements[]=$statement;
+				if(count($statements)>self::MAX_ROLLING_STATEMENTS){
+					throw new InvalidArgumentException('Rolling migration SQL exceeds the fixed statement-count safety boundary.');
+				}
 			}
 		}
 		return $statements;

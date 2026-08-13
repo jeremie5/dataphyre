@@ -6,7 +6,7 @@
     "static_method": true,
     "args": ["default_disk"],
     "expected": "local",
-    "file": "/common/dataphyre/runtime/modules/storage/kernel/storage.main.php",
+    "file": "/dataphyre/runtime/modules/storage/kernel/storage.main.php",
     "max_millis": 5
   },
   {
@@ -16,7 +16,7 @@
     "static_method": true,
     "args": ["disks.local.driver"],
     "expected": "local",
-    "file": "/common/dataphyre/runtime/modules/storage/kernel/storage.main.php",
+    "file": "/dataphyre/runtime/modules/storage/kernel/storage.main.php",
     "max_millis": 5
   },
   {
@@ -26,7 +26,7 @@
     "static_method": true,
     "args": ["disks.archive.driver", "fallback-driver"],
     "expected": "fallback-driver",
-    "file": "/common/dataphyre/runtime/modules/storage/kernel/storage.main.php",
+    "file": "/dataphyre/runtime/modules/storage/kernel/storage.main.php",
     "max_millis": 5
   }
 ]

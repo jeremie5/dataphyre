@@ -142,19 +142,6 @@ final class ApiCallableBinding implements BindingMetadataProvider, BindingCacheI
 	}
 
 	/**
-	 * Builds the resolver argument list from the binding context.
-	 *
-	 * @param BindingContext $context Binding context.
-	 * @return array{0: ?ApiContext, 1: mixed, 2: array<string, mixed>, 3: BindingContext}
-	 */
-	private function invokeArgs(BindingContext $context): array {
-		$apiContext=$context->overrides()['api_context'] ?? null;
-		$request=$apiContext instanceof ApiContext ? $apiContext->request() : null;
-		$route=$apiContext instanceof ApiContext ? $apiContext->route() : [];
-		return [$apiContext, $request, $route, $context];
-	}
-
-	/**
 	 * Describes the configured cache identity source.
 	 *
 	 * @return string Callable, array, or debug type of the identity source.
@@ -191,9 +178,7 @@ final class ApiCallableBinding implements BindingMetadataProvider, BindingCacheI
 			return new \ReflectionMethod($callable[0], $callable[1]);
 		}
 		if(is_string($callable) && str_contains($callable, '::')){
-			return method_exists(\ReflectionMethod::class, 'createFromMethodName')
-				? \ReflectionMethod::createFromMethodName($callable)
-				: new \ReflectionMethod($callable);
+			return new \ReflectionMethod($callable);
 		}
 		if(is_object($callable) && !$callable instanceof \Closure){
 			return new \ReflectionMethod($callable, '__invoke');

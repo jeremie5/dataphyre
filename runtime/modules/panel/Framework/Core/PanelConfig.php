@@ -70,6 +70,18 @@ final class PanelConfig {
 	}
 
 	/**
+	 * Returns the custom page mounted at the Panel root, when configured.
+	 *
+	 * The page must still be registered with the active manager and pass normal
+	 * page authorization. Blank or malformed values deliberately fall back to
+	 * the generated dashboard instead of creating an implicit route.
+	 */
+	public static function homePage(): ?string {
+		$name=Resource::normalizeName((string)self::config('home_page', ''));
+		return $name!=='' ? $name : null;
+	}
+
+	/**
 	 * Resolves the active Panel theme object.
 	 *
 	 * Configuration may provide a `PanelTheme`, a `PanelThemePreset`, an array
@@ -107,6 +119,82 @@ final class PanelConfig {
 	public static function manager(): PanelManager {
 		$manager=PanelContext::config('__panel_manager');
 		return $manager instanceof PanelManager ? $manager : PanelManager::instance();
+	}
+
+	/** Returns true when the active surface context owns a production platform. */
+	public static function hasPlatform(): bool {
+		return PanelContext::config('__panel_platform') instanceof PanelPlatform;
+	}
+
+	/**
+	 * Returns the platform attached to the active surface context.
+	 *
+	 * Unlike manager(), this accessor has no global fallback: domain services can
+	 * carry durable state and security policy, so resolving the wrong surface
+	 * would cross an isolation boundary.
+	 *
+	 * @throws \LogicException when no platform is active.
+	 */
+	public static function platform(): PanelPlatform {
+		$platform=PanelContext::config('__panel_platform');
+		if(!$platform instanceof PanelPlatform){
+			throw new \LogicException('No Panel platform is active in the current surface context.');
+		}
+		return $platform;
+	}
+
+	/** Returns true when the active surface has a resolved data-source registry. */
+	public static function hasDataSources(): bool {
+		if(!self::hasPlatform()){return false;}
+		return (self::platform()->serviceStatus('data.registry',PanelDataSourceRegistry::class)['state']??null)==='ready';
+	}
+
+	/** Returns the active platform data registry with no process-global fallback. */
+	public static function dataSources(): PanelDataSourceRegistry {
+		if(!self::hasDataSources()){throw new \LogicException('No Panel data-source registry is active in the current surface context.');}
+		return self::platform()->dataSources();
+	}
+
+	/** Returns true when the active surface owns a complete resolved realtime graph. */
+	public static function hasRealtime(): bool {
+		if(!self::hasPlatform()){return false;}
+		foreach(['realtime.broker'=>PanelRealtimeBroker::class,'realtime.signer'=>PanelRealtimeIntentSigner::class,'realtime.endpoint'=>PanelRealtimeEndpoint::class]as$name=>$type){
+			if((self::platform()->serviceStatus($name,$type)['state']??null)!=='ready'){return false;}
+		}
+		return true;
+	}
+
+	/** Returns the active host-authorized realtime endpoint with no global fallback. */
+	public static function realtime(): PanelRealtimeEndpoint {
+		if(!self::hasRealtime()){throw new \LogicException('No Panel realtime endpoint is active in the current surface context.');}
+		return self::platform()->realtime();
+	}
+
+	/** Returns true when the active surface owns a complete resolved agent workflow graph. */
+	public static function hasAgentWorkflows(): bool {
+		if(!self::hasPlatform()){return false;}
+		foreach(['agents.catalog'=>PanelAgentToolCatalog::class,'agents.policy'=>PanelAgentPolicyEngine::class,'agents.signer'=>PanelAgentIntentSigner::class,'agents.store'=>PanelAgentWorkflowStore::class,'agents.runtime'=>PanelAgentRuntime::class]as$name=>$type){
+			if((self::platform()->serviceStatus($name,$type)['state']??null)!=='ready'){return false;}
+		}
+		return true;
+	}
+
+	/** Returns the active agent-safe workflow runtime with no global fallback. */
+	public static function agentRuntime(): PanelAgentRuntime {
+		if(!self::hasAgentWorkflows()){throw new \LogicException('No Panel agent workflow runtime is active in the current surface context.');}
+		return self::platform()->agents();
+	}
+
+	/** Returns true when the active surface context owns a secured DataSurface registry. */
+	public static function hasDataSurfaces(): bool {
+		return PanelContext::config('__panel_data_surfaces') instanceof PanelDataSurfaceRegistry;
+	}
+
+	/** Returns the active instance-owned DataSurface registry with no global fallback. */
+	public static function dataSurfaces(): PanelDataSurfaceRegistry {
+		$registry=PanelContext::config('__panel_data_surfaces');
+		if(!$registry instanceof PanelDataSurfaceRegistry){throw new \LogicException('No Panel DataSurface registry is active in the current surface context.');}
+		return$registry;
 	}
 
 	/**
@@ -245,17 +333,20 @@ final class PanelConfig {
 	 * folded into the current renderer vocabulary, giving templates one stable
 	 * set of modes to branch on.
 	 *
+	 * @param string $default Layout-aware fallback used when the host does not configure a mode.
 	 * @return string One of `chips`, `drawer`, or `none`.
 	 */
-	public static function mobileNavigationMode(): string {
-		$mode=Resource::normalizeName((string)self::config('mobile_navigation_mode', 'chips'));
+	public static function mobileNavigationMode(string $default='chips'): string {
+		$default=Resource::normalizeName($default);
+		$default=in_array($default, ['chips', 'drawer', 'none'], true) ? $default : 'chips';
+		$mode=Resource::normalizeName((string)self::config('mobile_navigation_mode', $default));
 		if(in_array($mode, ['offcanvas', 'off_canvas', 'hamburger', 'menu'], true)){
 			$mode='drawer';
 		}
 		if(in_array($mode, ['hidden', 'disabled', 'off'], true)){
 			$mode='none';
 		}
-		return in_array($mode, ['chips', 'drawer', 'none'], true) ? $mode : 'chips';
+		return in_array($mode, ['chips', 'drawer', 'none'], true) ? $mode : $default;
 	}
 
 	/**
@@ -614,7 +705,7 @@ final class PanelConfig {
 				return $value;
 			}
 			if(is_int($value) || is_float($value)){
-				return $value!==0;
+				return (float)$value!==0.0;
 			}
 			$value=Resource::normalizeName((string)$value);
 			if(in_array($value, ['1', 'true', 'yes', 'on', 'enabled', 'sticky'], true)){
@@ -811,6 +902,82 @@ final class PanelConfig {
 	public static function isPanelPath(string $url): bool {
 		$url=trim(str_replace(["\r", "\n"], '', $url));
 		return $url!=='' && !str_starts_with($url, '//') && !str_contains($url, '://');
+	}
+
+	/**
+	 * Builds the request-aware signed-navigation policy for the active surface.
+	 *
+	 * Secrets remain inside the configured key provider. Invalid or incomplete
+	 * enabled configuration creates an enforcing manager without a signer, which
+	 * fails closed for privileged return navigation while keeping diagnostics
+	 * secret-free.
+	 */
+	public static function navigationIntentManager(): PanelNavigationIntentManager {
+		$raw=self::config('navigation_intents', null);
+		$options=is_array($raw) ? $raw : [];
+		$provider=$options['key_provider'] ?? self::config('navigation_intent_key_provider');
+		$keys=$options['keys'] ?? self::config('navigation_intent_keys');
+		$single=$options['key'] ?? self::config('navigation_intent_key');
+		$explicitEnabled=$options['enabled'] ?? self::config('navigation_intent_enabled', null);
+		$enabled=$raw===false ? false : ($explicitEnabled!==null
+			? filter_var($explicitEnabled, FILTER_VALIDATE_BOOLEAN)
+			: ($provider instanceof PanelNavigationKeyProvider || is_array($keys) || (is_string($single) && $single!=='')));
+		if(!$provider instanceof PanelNavigationKeyProvider){
+			try{
+				if(is_array($keys) && $keys!==[]){
+					$current=(string)($options['current_key_id'] ?? self::config('navigation_intent_current_key_id', array_key_first($keys)));
+					$provider=new PanelStaticNavigationKeyProvider($keys, $current);
+				}
+				elseif(is_string($single) && $single!==''){
+					$keyId=(string)($options['key_id'] ?? self::config('navigation_intent_key_id', 'current'));
+					$provider=PanelStaticNavigationKeyProvider::single($single, $keyId);
+				}
+			}
+			catch(\Throwable $exception){
+				PanelTrace::record('navigation_intent.key_configuration_failed', ['exception'=>$exception]);
+				$provider=null;
+			}
+		}
+		$replay=$options['replay_guard'] ?? self::config('navigation_intent_replay_guard');
+		$signer=null;
+		if($provider instanceof PanelNavigationKeyProvider){
+			try{
+				// Probe the provider at configuration time so adapters that cannot
+				// produce their secret-free manifest fail closed before an intent is
+				// issued. This also keeps deferred provider faults out of rendering.
+				$provider->manifest();
+				$signer=new PanelNavigationIntentSigner(
+					$provider,
+					$replay instanceof PanelNavigationReplayGuard ? $replay : null,
+					max(0, min(300, (int)($options['leeway'] ?? self::config('navigation_intent_leeway', 15)))),
+					max(512, min(32768, (int)($options['max_token_bytes'] ?? self::config('navigation_intent_max_token_bytes', PanelNavigationIntentSigner::MAX_TOKEN_BYTES))))
+				);
+			}
+			catch(\Throwable $exception){ PanelTrace::record('navigation_intent.signer_configuration_failed', ['exception'=>$exception]); }
+		}
+		$panel=trim((string)($options['panel'] ?? self::config('panel_name', 'default'))) ?: 'default';
+		$surface=trim((string)($options['surface'] ?? self::config('navigation_intent_surface', $panel))) ?: $panel;
+		$migration=Resource::normalizeName((string)($options['unsigned_migration'] ?? self::config('navigation_intent_unsigned_migration', PanelNavigationIntentManager::MIGRATION_SAME_PANEL)));
+		if(!in_array($migration, [PanelNavigationIntentManager::MIGRATION_SAME_PANEL,PanelNavigationIntentManager::MIGRATION_DISABLED], true)){
+			$migration=PanelNavigationIntentManager::MIGRATION_DISABLED;
+		}
+		$resolver=$options['principal_resolver'] ?? self::config('navigation_intent_principal_resolver');
+		return new PanelNavigationIntentManager(
+			$signer,
+			$panel,
+			$surface,
+			(string)($options['audience'] ?? self::config('navigation_intent_audience', 'dataphyre.panel.navigation')),
+			$migration,
+			max(30, min(86400, (int)($options['ttl'] ?? self::config('navigation_intent_ttl', 900)))),
+			(string)($options['input_name'] ?? self::config('navigation_intent_input', PanelNavigationIntentManager::INPUT)),
+			is_callable($resolver) ? $resolver : null,
+			$enabled
+		);
+	}
+
+	/** Returns the secret-free signed-navigation capability manifest. */
+	public static function navigationIntentManifest(): array {
+		return self::navigationIntentManager()->manifest();
 	}
 
 	/**

@@ -23,6 +23,8 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 	private string $targetPath='';
 	private array $runtime=[];
 	private ?PanelPackageTrustPolicy $trustPolicy=null;
+	private ?PanelPackageSignatureVerifier $signatureVerifier=null;
+	private ?\Closure $activationGate=null;
 	private string $overwritePolicy='fail';
 	private array $meta=[];
 
@@ -30,14 +32,16 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 	 * Creates an install plan for a package template.
 	 *
 	 * Supported options are `runtime` for compatibility evaluation,
-	 * `trust_policy` for package trust checks, `overwrite_policy` for conflict
+	 * `trust_policy` for package trust checks, `signature_verifier` for real
+	 * artifact-bundle signature verification, `activation_gate` for a process-local
+	 * final marketplace or deployment policy check, `overwrite_policy` for conflict
 	 * handling (`fail`, `skip`, or `replace`), and `meta` for diagnostics carried
 	 * into manifests. The target path is normalized to a slash-separated package
 	 * relative path; absolute filesystem resolution is deferred until apply().
 	 *
 	 * @param PanelPackageTemplate $template Template containing package metadata and artifacts.
 	 * @param string $targetPath Optional package-relative target path used by manifest previews.
-	 * @param array{runtime?: array<string, mixed>, trust_policy?: PanelPackageTrustPolicy, overwrite_policy?: string, meta?: array<string, mixed>} $options Plan options.
+	 * @param array{runtime?: array<string, mixed>, trust_policy?: PanelPackageTrustPolicy, signature_verifier?: PanelPackageSignatureVerifier, activation_gate?: callable, overwrite_policy?: string, meta?: array<string, mixed>} $options Plan options.
 	 */
 	public function __construct(PanelPackageTemplate $template, string $targetPath='', array $options=[]) {
 		$this->template=$template;
@@ -45,6 +49,12 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 		$this->runtime=is_array($options['runtime'] ?? null) ? $options['runtime'] : PanelCompatibilityMatrix::defaultRuntime();
 		if(($options['trust_policy'] ?? null) instanceof PanelPackageTrustPolicy){
 			$this->trustPolicy=$options['trust_policy'];
+		}
+		if(($options['signature_verifier'] ?? null) instanceof PanelPackageSignatureVerifier){
+			$this->signatureVerifier=$options['signature_verifier'];
+		}
+		if(is_callable($options['activation_gate'] ?? null)){
+			$this->activationGate=\Closure::fromCallable($options['activation_gate']);
 		}
 		if(isset($options['overwrite_policy'])){
 			$this->overwritePolicy((string)$options['overwrite_policy']);
@@ -104,6 +114,31 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 	 */
 	public function trustPolicy(?PanelPackageTrustPolicy $policy): self {
 		$this->trustPolicy=$policy;
+		return $this;
+	}
+
+	/**
+	 * Sets or clears cryptographic verification for the complete artifact bundle.
+	 *
+	 * When configured, both manifest previews and apply() fail closed unless the
+	 * detached package signature, declared digest, public-key id, and every
+	 * artifact digest verify successfully.
+	 */
+	public function signatureVerifier(?PanelPackageSignatureVerifier $verifier): self {
+		$this->signatureVerifier=$verifier;
+		return $this;
+	}
+
+	/**
+	 * Sets or clears the process-local activation gate.
+	 *
+	 * The callback is never serialized. It receives a redacted context containing
+	 * only the phase and package identity, and may return a boolean or a decision
+	 * array. Array decisions must explicitly be complete, current, unrevoked,
+	 * unblocked, and allowed. Exceptions and malformed decisions fail closed.
+	 */
+	public function activationGate(?callable $gate): self {
+		$this->activationGate=$gate!==null ? \Closure::fromCallable($gate) : null;
 		return $this;
 	}
 
@@ -170,13 +205,14 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 	 * but the result still reports the actions that would have occurred.
 	 *
 	 * @param string $targetRoot Filesystem root that package artifacts must remain inside.
-	 * @param array{dry_run?: bool, overwrite?: bool, overwrite_policy?: string, backup_root?: string, meta?: array<string, mixed>} $options Apply-time behavior overrides.
+	 * @param array{dry_run?: bool, atomic?: bool, overwrite?: bool, overwrite_policy?: string, backup_root?: string, lock_timeout_ms?: int, meta?: array<string, mixed>} $options Apply-time behavior overrides.
 	 * @return PanelPackageApplyResult Structured result containing written, skipped, blocked, backup, timing, and metadata sections.
 	 */
 	public function apply(string $targetRoot, array $options=[]): PanelPackageApplyResult {
 		$started=microtime(true);
 		$startedAt=(new \DateTimeImmutable('@'.(string)(int)$started))->setTimezone(new \DateTimeZone(date_default_timezone_get()))->format(DATE_ATOM);
 		$dryRun=(bool)($options['dry_run'] ?? false);
+		$atomic=!array_key_exists('atomic', $options) || (bool)$options['atomic'];
 		$overwritePolicy=$this->effectiveOverwritePolicy($options);
 		$root=$this->resolveRoot($targetRoot, !$dryRun);
 		$manifest=$this->buildManifest(is_array($options['meta'] ?? null) ? $options['meta'] : [], $overwritePolicy, $root);
@@ -189,24 +225,44 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 			'plan_blocked'=>!empty($manifest['blocked']),
 			'step_count'=>is_countable($manifest['steps'] ?? null) ? count($manifest['steps']) : 0,
 		];
-		$dialback=\dataphyre\core::dialback('CALL_PANEL_FRAMEWORK_PACKAGE_BEFORE_APPLY', $dialbackPayload);
+		$dialback=is_callable(['\\dataphyre\\core', 'dialback'])
+			? \dataphyre\core::dialback('CALL_PANEL_FRAMEWORK_PACKAGE_BEFORE_APPLY', $dialbackPayload)
+			: null;
 		if($dialback instanceof PanelPackageApplyResult){
 			return $dialback;
 		}
 		if(is_array($dialback)){
 			return PanelPackageApplyResult::make($dialback);
 		}
+		if($this->signatureVerifier instanceof PanelPackageSignatureVerifier){
+			$postVerification=$this->signatureVerifier->verify($this->template)->toArray();
+			$plannedDigest=(string)($manifest['verification']['digest'] ?? '');
+			$currentDigest=(string)($postVerification['digest'] ?? '');
+			if(($postVerification['ok'] ?? false)!==true || $plannedDigest==='' || $currentDigest==='' || !hash_equals($plannedDigest, $currentDigest)){
+				$manifest['ready']=false;
+				$manifest['blocked']=true;
+				$manifest['verification']=$postVerification;
+				$manifest['meta']['template_changed_after_planning']=true;
+			}
+		}
 		$artifacts=[];
 		foreach($this->template->artifacts() as $artifact){
 			$path=$this->normalizeArtifactPath((string)($artifact['path'] ?? ''));
-			if($path!==''){
-				$artifacts[$path]=$artifact;
+			$key=strtolower($path);
+			if($path!=='' && !isset($artifacts[$key])){
+				$artifacts[$key]=$artifact;
 			}
 		}
 		$written=[];
 		$skipped=[];
 		$backups=[];
 		$blocked=[];
+		$attempted=[];
+		$reverted=[];
+		$transactionWrites=[];
+		$transactionRoot='';
+		$backupNamespace=$this->backupNamespace();
+		$lock=null;
 		$planBlocked=!empty($manifest['blocked']);
 		if($root===''){
 			$blocked[]=[
@@ -221,13 +277,38 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 				'action'=>'blocked',
 				'path'=>'',
 				'target'=>$root,
-				'reason'=>'Install plan is blocked by compatibility or trust policy.',
+				'reason'=>'Install plan is blocked by compatibility or trust policy, activation policy, signature verification, or artifact validation.',
 			];
 		}
-		foreach((array)($manifest['steps'] ?? []) as $step){
-			if(!is_array($step)){
-				continue;
+		$requiresLock=$atomic || $this->activationGate instanceof \Closure;
+		if(!$dryRun && $requiresLock && $root!=='' && !$planBlocked){
+			$lock=$this->acquirePackageLock($root, max(0, min(10000, (int)($options['lock_timeout_ms'] ?? 2500))));
+			if(!is_resource($lock)){
+				$blocked[]=[
+					'action'=>'blocked',
+					'path'=>'',
+					'target'=>$root,
+					'reason'=>'Package install lock could not be acquired.',
+				];
+				$planBlocked=true;
 			}
+		}
+		if(!$dryRun && !$planBlocked && $this->activationGate instanceof \Closure){
+			$activation=$this->evaluateActivationGate('activation');
+			$manifest['activation_gate']=$activation;
+			if(($activation['allowed'] ?? false)!==true){
+				$manifest['ready']=false;
+				$manifest['blocked']=true;
+				$planBlocked=true;
+				$blocked[]=[
+					'action'=>'blocked',
+					'path'=>'',
+					'target'=>$root,
+					'reason'=>'Package activation policy changed after planning; no artifact was published.',
+				];
+			}
+		}
+		foreach((array)($manifest['steps'] ?? []) as $step){
 			$path=(string)($step['path'] ?? '');
 			$action=(string)($step['action'] ?? '');
 			$target=$this->joinPath($root, $path);
@@ -258,16 +339,8 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 				];
 				continue;
 			}
-			if($action==='conflict' || !empty($step['blocked'])){
-				$blocked[]=[
-					'action'=>'conflict',
-					'path'=>$path,
-					'target'=>$target,
-					'reason'=>'Existing file conflicts with overwrite policy.',
-				];
-				continue;
-			}
-			if(!isset($artifacts[$path])){
+			$artifactKey=strtolower($path);
+			if(!isset($artifacts[$artifactKey])){
 				$blocked[]=[
 					'action'=>'blocked',
 					'path'=>$path,
@@ -276,10 +349,39 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 				];
 				continue;
 			}
-			$contents=(string)($artifacts[$path]['contents'] ?? '');
+			$contents=(string)($artifacts[$artifactKey]['contents'] ?? '');
+			$expectedExisting=(string)($step['existing_sha256'] ?? '');
+			if(!$dryRun){
+				if($this->pathContainsSymlink($target, $root)){
+					$blocked[]=[
+						'action'=>'blocked','path'=>$path,'target'=>$target,
+						'reason'=>'Artifact target or one of its ancestors is a symbolic link.',
+					];
+					continue;
+				}
+				$targetPresent=file_exists($target) || is_link($target);
+				if($action==='create' && $targetPresent){
+					$blocked[]=[
+						'action'=>'blocked','path'=>$path,'target'=>$target,
+						'reason'=>'Artifact target appeared after package planning and could not be written safely; install refused the race.',
+					];
+					continue;
+				}
+				if($action==='replace'){
+					$current=is_file($target) && !is_link($target) ? (hash_file('sha256', $target) ?: '') : '';
+					if($expectedExisting==='' || $current==='' || !hash_equals($expectedExisting, $current)){
+						$blocked[]=[
+							'action'=>'blocked','path'=>$path,'target'=>$target,
+							'reason'=>$current==='' ? 'Replacement target disappeared or is not a regular file.' : 'Replacement target changed after package planning; install refused stale bytes.',
+							'expected_sha256'=>$expectedExisting,'actual_sha256'=>$current,
+						];
+						continue;
+					}
+				}
+			}
 			$backup=null;
-			if($action==='replace' && is_file($target)){
-				$backup=$this->backupTarget($target, $path, $packageId, (string)($options['backup_root'] ?? ''), $dryRun);
+			if($action==='replace' && is_file($target) && !is_link($target)){
+				$backup=$this->backupTarget($target, $path, $packageId, (string)($options['backup_root'] ?? ''), $dryRun, $backupNamespace, $expectedExisting);
 				if(($options['backup_root'] ?? '')!=='' && $backup===null){
 					$blocked[]=[
 						'action'=>'blocked',
@@ -295,7 +397,7 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 			}
 			if(!$dryRun){
 				$directory=dirname($target);
-				if(!is_dir($directory) && !@mkdir($directory, 0775, true) && !is_dir($directory)){
+				if(!is_dir($directory) && !@mkdir($directory, 0755, true) && !is_dir($directory)){
 					$blocked[]=[
 						'action'=>'blocked',
 						'path'=>$path,
@@ -304,12 +406,77 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 					];
 					continue;
 				}
-				if(@file_put_contents($target, $contents)===false){
+				if(!$this->pathWithinRoot($target, $root) || $this->pathContainsSymlink($target, $root)){
 					$blocked[]=[
 						'action'=>'blocked',
 						'path'=>$path,
 						'target'=>$target,
-						'reason'=>'File could not be written.',
+						'reason'=>'Artifact target changed to a location outside the target root or through a symbolic-link ancestor.',
+					];
+					continue;
+				}
+				$snapshot='';
+				$existed=is_file($target) && !is_link($target);
+				if($atomic){
+					if($action==='create' && $existed){
+						$blocked[]=[
+							'action'=>'blocked','path'=>$path,'target'=>$target,
+							'reason'=>'Artifact target appeared after package planning; atomic install refused the race.',
+						];
+						continue;
+					}
+					if($action==='replace' && !$existed){
+						$blocked[]=[
+							'action'=>'blocked','path'=>$path,'target'=>$target,
+							'reason'=>'Replacement target disappeared after package planning; atomic install refused the race.',
+						];
+						continue;
+					}
+					if($transactionRoot===''){
+						$transactionRoot=$this->transactionDirectory();
+						if($transactionRoot===''){
+							$blocked[]=[
+								'action'=>'blocked','path'=>$path,'target'=>$target,
+								'reason'=>'Atomic package transaction snapshot could not be created.',
+							];
+							continue;
+						}
+					}
+					if($existed){
+						$snapshot=$transactionRoot.DIRECTORY_SEPARATOR.(string)count($transactionWrites).'.snapshot';
+						if(!@copy($target, $snapshot)){
+							$blocked[]=[
+								'action'=>'blocked','path'=>$path,'target'=>$target,
+								'reason'=>'Existing target could not be snapshotted for atomic install.',
+							];
+							continue;
+						}
+						$snapshotDigest=hash_file('sha256', $snapshot) ?: '';
+						$currentDigest=hash_file('sha256', $target) ?: '';
+						if($expectedExisting==='' || $snapshotDigest==='' || $currentDigest==='' || !hash_equals($expectedExisting, $snapshotDigest) || !hash_equals($expectedExisting, $currentDigest)){
+							@unlink($snapshot);
+							$blocked[]=[
+								'action'=>'blocked','path'=>$path,'target'=>$target,
+								'reason'=>'Atomic install snapshot did not match the planned replacement digest.',
+							];
+							continue;
+						}
+					}
+				}
+				$mode=$existed ? (fileperms($target) & 0777) : null;
+				$published=$this->publishArtifact($target, $contents, $action, $expectedExisting, $root, $mode);
+				if(!empty($published['touched']) && $atomic){
+					$transactionWrites[]=[
+						'action'=>$action,'path'=>$path,'target'=>$target,'snapshot'=>$snapshot,
+						'existed'=>$existed,'mode'=>$mode,'sha256'=>hash('sha256', $contents),
+					];
+				}
+				if(empty($published['ok'])){
+					$blocked[]=[
+						'action'=>'blocked',
+						'path'=>$path,
+						'target'=>$target,
+						'reason'=>(string)($published['reason'] ?? 'File could not be published atomically.'),
 					];
 					continue;
 				}
@@ -319,12 +486,64 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 				'path'=>$path,
 				'target'=>$target,
 				'bytes'=>strlen($contents),
+				'sha256'=>hash('sha256', $contents),
 				'dry_run'=>$dryRun,
 				'backup'=>$backup['backup'] ?? null,
 			];
 		}
+		$transactionRecovered=false;
+		if(!$dryRun && $atomic && $blocked!==[] && $transactionWrites!==[]){
+			$attempted=$transactionWrites;
+			$transactionRecovered=true;
+			foreach(array_reverse($transactionWrites) as $write){
+				$target=(string)($write['target'] ?? '');
+				$snapshot=(string)($write['snapshot'] ?? '');
+				if(!empty($write['existed'])){
+					$ok=$snapshot!=='' && is_file($snapshot) && $this->replaceFromSnapshot($snapshot, $target);
+					if($ok && is_int($write['mode'] ?? null)){@chmod($target, (int)$write['mode']);}
+					$reverted[]=['action'=>'restore_transaction_snapshot','path'=>(string)($write['path'] ?? ''),'target'=>$target,'ok'=>$ok];
+				}
+				else{
+					$ok=(!file_exists($target) && !is_link($target)) || @unlink($target);
+					$reverted[]=['action'=>'remove_transaction_write','path'=>(string)($write['path'] ?? ''),'target'=>$target,'ok'=>$ok];
+				}
+				if(!$ok){
+					$transactionRecovered=false;
+					$blocked[]=[
+						'action'=>'blocked','path'=>(string)($write['path'] ?? ''),'target'=>$target,
+						'reason'=>'Atomic package transaction recovery failed.',
+					];
+				}
+			}
+			if($transactionRecovered){
+				$written=[];
+			}
+		}
+		$preserveTransaction=$transactionRoot!=='' && $blocked!==[] && $transactionWrites!==[] && !$transactionRecovered;
+		if($transactionRoot!=='' && !$preserveTransaction){
+			$this->removeTransactionTree($transactionRoot);
+		}
+		if(is_resource($lock)){
+			@flock($lock, LOCK_UN);
+			@fclose($lock);
+		}
 		$finished=microtime(true);
 		$finishedAt=(new \DateTimeImmutable('@'.(string)(int)$finished))->setTimezone(new \DateTimeZone(date_default_timezone_get()))->format(DATE_ATOM);
+		$resultMeta=[
+			'dry_run'=>$dryRun,
+			'atomic'=>$atomic,
+			'transaction_reverted'=>$transactionRecovered,
+			'transaction_snapshot'=>$preserveTransaction ? $transactionRoot : '',
+			'overwrite_policy'=>$overwritePolicy,
+			'backup_root'=>(string)($options['backup_root'] ?? ''),
+			'activation_gate_configured'=>(bool)($manifest['activation_gate']['configured'] ?? false),
+			'activation_gate_passed'=>(bool)($manifest['activation_gate']['allowed'] ?? true),
+			'activation_gate_phase'=>(string)($manifest['activation_gate']['phase'] ?? ''),
+		];
+		if(is_array($manifest['verification'] ?? null)){
+			$resultMeta['signature_verified']=(bool)($manifest['verification']['ok'] ?? false);
+			$resultMeta['verification_digest']=(string)($manifest['verification']['digest'] ?? '');
+		}
 		$result=PanelPackageApplyResult::make([
 			'ok'=>$blocked===[],
 			'package'=>$manifest['package'] ?? [],
@@ -333,17 +552,15 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 			'skipped'=>$skipped,
 			'backups'=>$backups,
 			'blocked'=>$blocked,
+			'attempted'=>$attempted,
+			'reverted'=>$reverted,
 			'started_at'=>$startedAt,
 			'finished_at'=>$finishedAt,
 			'duration_ms'=>(int)round(($finished - $started) * 1000),
-			'meta'=>[
-				'dry_run'=>$dryRun,
-				'overwrite_policy'=>$overwritePolicy,
-				'backup_root'=>(string)($options['backup_root'] ?? ''),
-			],
+			'meta'=>$resultMeta,
 		]);
 		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Panel package apply '.($result->ok() ? 'succeeded' : 'blocked').'; package='.$packageId.'; dry_run='.($dryRun ? 'yes' : 'no').'; written='.count($result->written()).'; skipped='.count($result->skipped()).'; blocked='.count($result->blocked()).'; backups='.count($result->backups()), $S=$result->ok() ? 'info' : 'warning');
-		$dialback=\dataphyre\core::dialback('CALL_PANEL_FRAMEWORK_PACKAGE_AFTER_APPLY', $dialbackPayload+[
+		$dialback=is_callable(['\\dataphyre\\core', 'dialback']) ? \dataphyre\core::dialback('CALL_PANEL_FRAMEWORK_PACKAGE_AFTER_APPLY', $dialbackPayload+[
 			'ok'=>$result->ok(),
 			'counts'=>[
 				'written'=>count($result->written()),
@@ -352,7 +569,7 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 				'backups'=>count($result->backups()),
 			],
 			'duration_ms'=>$result->toArray()['duration_ms'] ?? 0,
-		]);
+		]) : null;
 		if($dialback instanceof PanelPackageApplyResult){
 			return $dialback;
 		}
@@ -377,17 +594,26 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 		$package=$this->template->package();
 		$compatibility=$package->compatibility($this->runtime);
 		$trust=$this->trustPolicy instanceof PanelPackageTrustPolicy ? $this->trustPolicy->evaluate($package) : null;
+		$verification=$this->signatureVerifier instanceof PanelPackageSignatureVerifier
+			? $this->signatureVerifier->verify($this->template)->toArray()
+			: null;
+		$activation=$this->evaluateActivationGate('preflight');
 		$steps=[];
 		$bytes=0;
 		$creates=0;
 		$replaces=0;
 		$skips=0;
 		$conflicts=0;
+		$invalid=0;
+		$seenPaths=[];
 		foreach($this->template->artifacts() as $artifact){
 			$path=$this->normalizeArtifactPath((string)($artifact['path'] ?? ''));
-			if($path===''){
+			$collisionKey=strtolower($path);
+			if($path==='' || isset($seenPaths[$collisionKey])){
+				$invalid++;
 				continue;
 			}
+			$seenPaths[$collisionKey]=true;
 			$targetBase=$targetRoot ?? $this->targetPath;
 			$target=$targetBase!=='' ? $targetBase.'/'.$path : $path;
 			$exists=$targetBase!=='' && is_file(str_replace('/', DIRECTORY_SEPARATOR, $target));
@@ -418,12 +644,18 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 				'path'=>$path,
 				'target'=>$target,
 				'exists'=>$exists,
+				'existing_sha256'=>$exists ? (hash_file('sha256', str_replace('/', DIRECTORY_SEPARATOR, $target)) ?: '') : '',
 				'kind'=>(string)($artifact['kind'] ?? 'asset'),
 				'bytes'=>(int)($artifact['bytes'] ?? 0),
 			];
 		}
-		$blocked=!($compatibility['ok'] ?? false) || ($trust!==null && ($trust['trusted'] ?? false)!==true) || $conflicts>0;
-		return [
+		$blocked=!($compatibility['ok'] ?? false)
+			|| ($trust!==null && ($trust['trusted'] ?? false)!==true)
+			|| ($verification!==null && ($verification['ok'] ?? false)!==true)
+			|| (($activation['configured'] ?? false)===true && ($activation['allowed'] ?? false)!==true)
+			|| $invalid>0
+			|| $conflicts>0;
+		$manifest=[
 			'type'=>'panel_package_install_plan',
 			'package'=>$package->toArray($this->runtime),
 			'target'=>$targetRoot ?? $this->targetPath,
@@ -432,16 +664,85 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 			'overwrite_policy'=>$overwritePolicy,
 			'compatibility'=>$compatibility,
 			'trust'=>$trust,
+			'activation_gate'=>$activation,
 			'summary'=>[
 				'steps'=>count($steps),
 				'creates'=>$creates,
 				'replaces'=>$replaces,
 				'skips'=>$skips,
 				'conflicts'=>$conflicts,
+				'invalid'=>$invalid,
 				'bytes'=>$bytes,
 			],
 			'steps'=>$steps,
 			'meta'=>array_replace($this->meta, $meta),
+		];
+		if($verification!==null){
+			$manifest['verification']=$verification;
+		}
+		return $manifest;
+	}
+
+	/** @return array<string,mixed> Redacted activation decision. */
+	private function evaluateActivationGate(string $phase): array {
+		$phase=$phase==='activation' ? 'activation' : 'preflight';
+		if(!$this->activationGate instanceof \Closure){
+			return [
+				'configured'=>false,'checked'=>false,'allowed'=>true,'complete'=>true,
+				'stale'=>false,'revoked'=>false,'blocked'=>false,'phase'=>$phase,
+				'reason_codes'=>[],'callback_serialized'=>false,
+			];
+		}
+		$package=$this->template->package();
+		try{
+			$raw=($this->activationGate)([
+				'phase'=>$phase,
+				'package'=>['id'=>$package->id(),'version'=>(string)$package->version()],
+			]);
+		}
+		catch(\Throwable){
+			return [
+				'configured'=>true,'checked'=>true,'allowed'=>false,'complete'=>false,
+				'stale'=>true,'revoked'=>false,'blocked'=>true,'phase'=>$phase,
+				'reason_codes'=>['activation_gate_unavailable'],'callback_serialized'=>false,
+			];
+		}
+		if(is_bool($raw)){
+			return [
+				'configured'=>true,'checked'=>true,'allowed'=>$raw,'complete'=>true,
+				'stale'=>false,'revoked'=>false,'blocked'=>!$raw,'phase'=>$phase,
+				'reason_codes'=>$raw ? [] : ['activation_gate_denied'],'callback_serialized'=>false,
+			];
+		}
+		if(!is_array($raw)){
+			return [
+				'configured'=>true,'checked'=>true,'allowed'=>false,'complete'=>false,
+				'stale'=>true,'revoked'=>false,'blocked'=>true,'phase'=>$phase,
+				'reason_codes'=>['activation_gate_invalid'],'callback_serialized'=>false,
+			];
+		}
+		$complete=($raw['complete'] ?? false)===true;
+		$stale=($raw['stale'] ?? true)===true;
+		$revoked=($raw['revoked'] ?? false)===true;
+		$blocked=($raw['blocked'] ?? false)===true;
+		$requested=($raw['allowed'] ?? false)===true;
+		$allowed=$requested && $complete && !$stale && !$revoked && !$blocked;
+		$reasonCodes=[];
+		foreach(is_array($raw['reason_codes'] ?? null) ? $raw['reason_codes'] : [] as $reason){
+			$reason=Resource::normalizeName((string)$reason);
+			if($reason!=='' && strlen($reason)<=128){$reasonCodes[$reason]=true;}
+		}
+		if(!$complete){$reasonCodes['activation_gate_incomplete']=true;}
+		if($stale){$reasonCodes['activation_gate_stale']=true;}
+		if($revoked){$reasonCodes['package_revoked']=true;}
+		if($blocked){$reasonCodes['activation_gate_blocked']=true;}
+		if(!$requested){$reasonCodes['activation_gate_denied']=true;}
+		$reasonCodes=array_keys($reasonCodes);
+		sort($reasonCodes,SORT_STRING);
+		return [
+			'configured'=>true,'checked'=>true,'allowed'=>$allowed,'complete'=>$complete,
+			'stale'=>$stale,'revoked'=>$revoked,'blocked'=>$blocked,'phase'=>$phase,
+			'reason_codes'=>$reasonCodes,'callback_serialized'=>false,
 		];
 	}
 
@@ -482,8 +783,18 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 				continue;
 			}
 			if($segment==='..'){
+				if($segments===[]){
+					return '';
+				}
 				array_pop($segments);
 				continue;
+			}
+			if(
+				preg_match('/[\x00-\x1F\x7F:]/', $segment)===1
+				|| rtrim($segment, ". ")!==$segment
+				|| preg_match('/\A(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?\z/i', $segment)===1
+			){
+				return '';
 			}
 			$segments[]=$segment;
 		}
@@ -502,6 +813,10 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 	private function effectiveOverwritePolicy(array $options): string {
 		if(array_key_exists('overwrite', $options)){
 			return !empty($options['overwrite']) ? 'replace' : 'fail';
+		}
+		if(array_key_exists('overwrite_policy', $options)){
+			$policy=Resource::normalizeName((string)$options['overwrite_policy']);
+			return in_array($policy, ['fail', 'skip', 'replace'], true) ? $policy : 'fail';
 		}
 		return $this->overwritePolicy;
 	}
@@ -569,9 +884,37 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 		if($path==='' || $root===''){
 			return false;
 		}
-		$comparisonPath=strtolower($path);
-		$comparisonRoot=strtolower(rtrim($root, DIRECTORY_SEPARATOR));
-		return $comparisonPath===$comparisonRoot || str_starts_with($comparisonPath, $comparisonRoot.DIRECTORY_SEPARATOR);
+		if(!$this->pathPrefixMatches($path, $root)){
+			return false;
+		}
+		$realRoot=realpath($root);
+		if($realRoot===false){
+			return false;
+		}
+		$ancestor=$path;
+		while(!file_exists($ancestor) && !is_link($ancestor)){
+			$parent=dirname($ancestor);
+			if($parent===$ancestor){
+				return false;
+			}
+			$ancestor=$parent;
+		}
+		$realAncestor=realpath($ancestor);
+		return $realAncestor!==false && $this->pathPrefixMatches($realAncestor, $realRoot);
+	}
+
+	/**
+	 * Compares a candidate path with a root using platform path semantics.
+	 *
+	 * Windows filesystems are treated case-insensitively; other platforms retain
+	 * case so similarly named sibling roots cannot be mistaken for descendants.
+	 *
+	 * @param string $path Candidate path.
+	 * @param string $root Root path.
+	 * @return bool Whether the candidate is the root or a descendant.
+	 */
+	private function pathPrefixMatches(string $path, string $root): bool {
+		return PanelFilesystemPath::prefixMatches($path, $root);
 	}
 
 	/**
@@ -585,29 +928,7 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 	 * @return string Normalized platform-specific path.
 	 */
 	private function normalizeFilesystemPath(string $path): string {
-		$path=str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
-		$prefix='';
-		if(preg_match('/^[A-Za-z]:\\\\/', $path)===1){
-			$prefix=substr($path, 0, 2);
-			$path=substr($path, 2);
-		}
-		$isAbsolute=str_starts_with($path, DIRECTORY_SEPARATOR);
-		$segments=[];
-		foreach(explode(DIRECTORY_SEPARATOR, $path) as $segment){
-			if($segment==='' || $segment==='.'){
-				continue;
-			}
-			if($segment==='..'){
-				array_pop($segments);
-				continue;
-			}
-			$segments[]=$segment;
-		}
-		$normalized=implode(DIRECTORY_SEPARATOR, $segments);
-		if($prefix!==''){
-			return $prefix.DIRECTORY_SEPARATOR.$normalized;
-		}
-		return ($isAbsolute ? DIRECTORY_SEPARATOR : '').$normalized;
+		return PanelFilesystemPath::normalize($path);
 	}
 
 	/**
@@ -623,36 +944,244 @@ final class PanelPackageInstallPlan implements \JsonSerializable {
 	 * @param string $packageId Package identifier used to namespace backups.
 	 * @param string $backupRoot Optional filesystem root for backups.
 	 * @param bool $dryRun Whether to skip filesystem writes.
-	 * @return array{path: string, target: string, backup: string, bytes: int, dry_run: bool}|null Backup descriptor, or null when backup is disabled or cannot be completed.
+	 * @return array{path: string, target: string, backup: string, bytes: int, sha256: string, dry_run: bool}|null Backup descriptor, or null when backup is disabled or cannot be completed.
 	 */
-	private function backupTarget(string $target, string $path, string $packageId, string $backupRoot, bool $dryRun): ?array {
+	private function backupTarget(string $target, string $path, string $packageId, string $backupRoot, bool $dryRun, string $namespace='', string $expectedSha256=''): ?array {
 		$backupRoot=trim($backupRoot);
-		if($backupRoot===''){
+		if($backupRoot==='' || !is_file($target) || is_link($target)){
+			return null;
+		}
+		$sourceDigest=hash_file('sha256', $target) ?: '';
+		if($sourceDigest==='' || ($expectedSha256!=='' && !hash_equals($expectedSha256, $sourceDigest))){
 			return null;
 		}
 		$backupBase=$this->resolveRoot($backupRoot, !$dryRun);
 		if($backupBase===''){
 			return null;
 		}
-		$backup=$this->joinPath($backupBase, Resource::normalizeName($packageId).'/'.date('Ymd-His').'/'.$path);
-		if(!$this->pathWithinRoot($backup, $backupBase)){
+		$packageNamespace=Resource::normalizeName($packageId);
+		if($packageNamespace===''){$packageNamespace='panel_package';}
+		$namespace=$namespace!=='' ? Resource::normalizeName($namespace) : $this->backupNamespace();
+		if($namespace===''){$namespace=$this->backupNamespace();}
+		$backup=$this->joinPath($backupBase, $packageNamespace.'/'.$namespace.'/'.$path);
+		if(!$this->pathWithinRoot($backup, $backupBase) || $this->pathContainsSymlink($backup, $backupBase)){
 			return null;
 		}
 		if(!$dryRun){
 			$directory=dirname($backup);
-			if(!is_dir($directory) && !@mkdir($directory, 0775, true) && !is_dir($directory)){
+			if(!is_dir($directory) && !@mkdir($directory, 0700, true) && !is_dir($directory)){
+				return null;
+			}
+			@chmod($directory, 0700);
+			if(!$this->pathWithinRoot($backup, $backupBase) || $this->pathContainsSymlink($backup, $backupBase)){
 				return null;
 			}
 			if(!@copy($target, $backup)){
 				return null;
 			}
+			$backupDigest=hash_file('sha256', $backup) ?: '';
+			$currentDigest=hash_file('sha256', $target) ?: '';
+			if($backupDigest==='' || $currentDigest==='' || !hash_equals($sourceDigest, $backupDigest) || !hash_equals($sourceDigest, $currentDigest)){
+				@unlink($backup);
+				return null;
+			}
+			$sourceDigest=$backupDigest;
 		}
 		return [
 			'path'=>$path,
 			'target'=>$target,
 			'backup'=>$backup,
-			'bytes'=>is_file($target) ? (int)filesize($target) : 0,
+			'bytes'=>$dryRun ? (int)filesize($target) : (int)filesize($backup),
+			'sha256'=>$sourceDigest,
 			'dry_run'=>$dryRun,
 		];
+	}
+
+	/** @return string Collision-resistant namespace shared by every backup in one apply. */
+	private function backupNamespace(): string {
+		try{$suffix=bin2hex(random_bytes(12));}catch(\Throwable){$suffix=str_replace('.', '', uniqid('', true));}
+		return date('Ymd-His').'-'.$suffix;
+	}
+
+	/** @return bool Whether the target or an ancestor beneath root is a symbolic link. */
+	private function pathContainsSymlink(string $path, string $root): bool {
+		$path=$this->normalizeFilesystemPath($path);
+		$root=$this->normalizeFilesystemPath($root);
+		if($path==='' || $root==='' || !$this->pathPrefixMatches($path, $root)){
+			return true;
+		}
+		if(is_link($root)){
+			return true;
+		}
+		$relative=ltrim(substr($path, strlen(rtrim($root, DIRECTORY_SEPARATOR))), DIRECTORY_SEPARATOR);
+		$current=rtrim($root, DIRECTORY_SEPARATOR);
+		foreach($relative==='' ? [] : explode(DIRECTORY_SEPARATOR, $relative) as $segment){
+			$current.=DIRECTORY_SEPARATOR.$segment;
+			if(is_link($current)){
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Stages and publishes one artifact without exposing partial target bytes.
+	 *
+	 * @return array{ok:bool,touched:bool,reason?:string}
+	 */
+	private function publishArtifact(string $target, string $contents, string $action, string $expectedExisting, string $root, ?int $mode): array {
+		$directory=dirname($target);
+		if(!is_dir($directory) || $this->pathContainsSymlink($target, $root)){
+			return ['ok'=>false,'touched'=>false,'reason'=>'Artifact target directory is unsafe.'];
+		}
+		try{$suffix=bin2hex(random_bytes(12));}catch(\Throwable){$suffix=str_replace('.', '', uniqid('', true));}
+		$staged=$directory.DIRECTORY_SEPARATOR.'.'.basename($target).'.dp-install-'.$suffix.'.tmp';
+		$displaced=$directory.DIRECTORY_SEPARATOR.'.'.basename($target).'.dp-install-displaced-'.$suffix.'.tmp';
+		$touched=false;
+		try{
+			$bytes=@file_put_contents($staged, $contents, LOCK_EX);
+			if($bytes===false || $bytes!==strlen($contents)){
+				return ['ok'=>false,'touched'=>false,'reason'=>'Artifact could not be written completely during staging.'];
+			}
+			$expected=hash('sha256', $contents);
+			$stagedDigest=hash_file('sha256', $staged) ?: '';
+			if($stagedDigest==='' || !hash_equals($expected, $stagedDigest)){
+				return ['ok'=>false,'touched'=>false,'reason'=>'Staged artifact failed digest verification.'];
+			}
+			if($this->pathContainsSymlink($target, $root)){
+				return ['ok'=>false,'touched'=>false,'reason'=>'Artifact target became a symbolic link before publication.'];
+			}
+			if($action==='create'){
+				if(file_exists($target) || is_link($target)){
+					return ['ok'=>false,'touched'=>false,'reason'=>'Artifact target appeared before publication.'];
+				}
+				if(!@link($staged, $target)){
+					return ['ok'=>false,'touched'=>false,'reason'=>'Staged artifact could not be published.'];
+				}
+				@unlink($staged);
+				$touched=true;
+			}
+			elseif($action==='replace'){
+				$current=is_file($target) && !is_link($target) ? (hash_file('sha256', $target) ?: '') : '';
+				if($expectedExisting==='' || $current==='' || !hash_equals($expectedExisting, $current)){
+					return ['ok'=>false,'touched'=>false,'reason'=>'Replacement target changed before publication.'];
+				}
+				if(!@rename($target, $displaced)){
+					return ['ok'=>false,'touched'=>false,'reason'=>'Replacement target could not be displaced atomically.'];
+				}
+				$touched=true;
+				if(!@link($staged, $target)){
+					$restored=@rename($displaced, $target);
+					return ['ok'=>false,'touched'=>!$restored,'reason'=>'Staged replacement could not be published.'];
+				}
+				@unlink($staged);
+			}
+			else{
+				return ['ok'=>false,'touched'=>false,'reason'=>'Unsupported artifact publication action.'];
+			}
+			$actual=hash_file('sha256', $target) ?: '';
+			if($actual==='' || !hash_equals($expected, $actual)){
+				if($action==='replace' && is_file($displaced)){
+					@unlink($target);
+					$restored=@rename($displaced, $target);
+					return ['ok'=>false,'touched'=>!$restored,'reason'=>'Published artifact failed digest verification.'];
+				}
+				if($action==='create'){@unlink($target);}
+				return ['ok'=>false,'touched'=>false,'reason'=>'Published artifact failed digest verification.'];
+			}
+			if(is_int($mode)){@chmod($target, $mode);}
+			if(is_file($displaced)){@unlink($displaced);}
+			return ['ok'=>true,'touched'=>true];
+		} finally { if(is_file($staged) || is_link($staged)){@unlink($staged);} }
+	}
+
+	/** @return resource|null Exclusive lock shared by package install and rollback. */
+	private function acquirePackageLock(string $root, int $timeoutMs) {
+		$directory=rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'dataphyre-panel-package-locks';
+		if(is_link($directory) || (!is_dir($directory) && !@mkdir($directory, 0700, true) && !is_dir($directory))){
+			return null;
+		}
+		@chmod($directory, 0700);
+		$lockPath=$directory.DIRECTORY_SEPARATOR.hash('sha256', $root).'.lock';
+		if(is_link($lockPath)){return null;}
+		$handle=@fopen($lockPath, 'c+');
+		if(!is_resource($handle)){
+			return null;
+		}
+		$deadline=microtime(true)+($timeoutMs/1000);
+		do{
+			if(@flock($handle, LOCK_EX | LOCK_NB)){
+				return $handle;
+			}
+			if($timeoutMs===0){break;}
+			usleep(10000);
+		}while(microtime(true)<$deadline);
+		@fclose($handle);
+		return null;
+	}
+
+	/** @return string Fresh private transaction directory, or an empty string. */
+	private function transactionDirectory(): string {
+		$base=rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'dataphyre-panel-package-transactions';
+		if(is_link($base) || (!is_dir($base) && !@mkdir($base, 0700, true) && !is_dir($base))){
+			return '';
+		}
+		@chmod($base, 0700);
+		try{$suffix=bin2hex(random_bytes(12));}catch(\Throwable){$suffix=str_replace('.', '', uniqid('', true));}
+		$directory=$base.DIRECTORY_SEPARATOR.$suffix;
+		return @mkdir($directory, 0700, false) ? $directory : '';
+	}
+
+	/** Restores a transaction snapshot without exposing a half-copied target. */
+	private function replaceFromSnapshot(string $snapshot, string $target): bool {
+		if(!is_file($snapshot) || is_link($snapshot) || is_link($target)){
+			return false;
+		}
+		$directory=dirname($target);
+		if(!is_dir($directory) && !@mkdir($directory, 0775, true) && !is_dir($directory)){
+			return false;
+		}
+		try{$suffix=bin2hex(random_bytes(8));}catch(\Throwable){$suffix=str_replace('.', '', uniqid('', true));}
+		$staged=$directory.DIRECTORY_SEPARATOR.'.'.basename($target).'.dp-install-restore-'.$suffix.'.tmp';
+		$displaced=$directory.DIRECTORY_SEPARATOR.'.'.basename($target).'.dp-install-displaced-'.$suffix.'.tmp';
+		if(!@copy($snapshot, $staged)){
+			return false;
+		}
+		$expected=hash_file('sha256', $snapshot) ?: '';
+		$actual=hash_file('sha256', $staged) ?: '';
+		if($expected==='' || !hash_equals($expected, $actual)){
+			@unlink($staged);
+			return false;
+		}
+		$moved=false;
+		if(is_file($target)){
+			$moved=@rename($target, $displaced);
+			if(!$moved){@unlink($staged);return false;}
+		}
+		if(!@rename($staged, $target)){
+			if($moved){@rename($displaced, $target);}
+			@unlink($staged);
+			return false;
+		}
+		if($moved && is_file($displaced)){@unlink($displaced);}
+		return true;
+	}
+
+	/** Removes only a transaction directory created beneath the private temp root. */
+	private function removeTransactionTree(string $directory): void {
+		$base=realpath(rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'dataphyre-panel-package-transactions');
+		$real=realpath($directory);
+		if($base===false || $real===false || !$this->pathPrefixMatches($real, $base) || $real===$base){
+			return;
+		}
+		$iterator=new \RecursiveIteratorIterator(
+			new \RecursiveDirectoryIterator($real, \FilesystemIterator::SKIP_DOTS),
+			\RecursiveIteratorIterator::CHILD_FIRST
+		);
+		foreach($iterator as $item){
+			if($item->isDir() && !$item->isLink()){@rmdir($item->getPathname());}
+			else{@unlink($item->getPathname());}
+		}
+		@rmdir($real);
 	}
 }

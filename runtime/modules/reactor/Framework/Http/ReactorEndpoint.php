@@ -27,8 +27,9 @@ final class ReactorEndpoint {
 	 * @param ReactorRequest|array|null $request Explicit request object, decoded request data, or null to capture input.
 	 * @return ReactorResponse Dispatch result from the Reactor runtime.
 	 */
-	public static function handle(ReactorRequest|array|null $request=null): ReactorResponse {
-		return Reactor::dispatch($request);
+	public static function handle(ReactorRequest|array|null $request=null, ReactorSecurityContext|array|null $securityContext=null): ReactorResponse {
+		$context=self::trustedHostContext($securityContext);
+		return Reactor::dispatch(ReactorRequest::from($request, $context));
 	}
 
 	/**
@@ -41,11 +42,12 @@ final class ReactorEndpoint {
 	 * @param ?array<int, ReactorRequest|array> $requests Explicit batch items, or null to capture the incoming batch.
 	 * @return array<int, array<string, mixed>> Serialized Reactor response payloads.
 	 */
-	public static function handleBatch(?array $requests=null): array {
-		$requests=$requests ?? ReactorRequest::captureBatch();
+	public static function handleBatch(?array $requests=null, ReactorSecurityContext|array|null $securityContext=null): array {
+		$context=self::trustedHostContext($securityContext);
+		$requests=$requests ?? ReactorRequest::captureBatch($context);
 		$responses=[];
 		foreach($requests as $request){
-			$response=Reactor::dispatch($request);
+			$response=Reactor::dispatch(ReactorRequest::from($request, $context));
 			$responses[]=$response->jsonSerialize();
 		}
 		ReactorTrace::record('batch.dispatched', ['requests'=>count($responses)]);
@@ -63,8 +65,8 @@ final class ReactorEndpoint {
 	 * @param bool $sendBody Whether to echo the JSON body as a side effect.
 	 * @return string Encoded JSON response body.
 	 */
-	public static function emit(ReactorRequest|array|null $request=null, bool $sendBody=true): string {
-		$response=self::handle($request);
+	public static function emit(ReactorRequest|array|null $request=null, bool $sendBody=true, ReactorSecurityContext|array|null $securityContext=null): string {
+		$response=self::handle($request, $securityContext);
 		if(!headers_sent()){
 			http_response_code($response->status());
 			header('Content-Type: application/json; charset=UTF-8');
@@ -89,8 +91,8 @@ final class ReactorEndpoint {
 	 * @param bool $sendBody Whether to echo the JSON body as a side effect.
 	 * @return string Encoded JSON envelope with status, ok, batch, and message keys.
 	 */
-	public static function emitBatch(?array $requests=null, bool $sendBody=true): string {
-		$responses=self::handleBatch($requests);
+	public static function emitBatch(?array $requests=null, bool $sendBody=true, ReactorSecurityContext|array|null $securityContext=null): string {
+		$responses=self::handleBatch($requests, $securityContext);
 		$status=200;
 		$ok=true;
 		foreach($responses as $response){
@@ -142,5 +144,25 @@ final class ReactorEndpoint {
 			echo $json;
 		}
 		return $json;
+	}
+
+	/**
+	 * Resolves trusted host context once per HTTP/batch boundary.
+	 *
+	 * Client body and header values are deliberately not consulted. Resolver
+	 * failure returns an empty context so the manager's pre-hydration gate emits a
+	 * stable fail-closed denial for every affected batch item.
+	 */
+	private static function trustedHostContext(ReactorSecurityContext|array|null $securityContext): ReactorSecurityContext {
+		try{
+			if($securityContext!==null){ return ReactorSecurityContext::fromTrusted($securityContext); }
+			$resolver=Reactor::config('security_context_resolver');
+			if(!is_callable($resolver)){ return ReactorSecurityContext::fromTrusted(); }
+			$resolved=$resolver();
+			return $resolved instanceof ReactorSecurityContext || is_array($resolved)
+				? ReactorSecurityContext::fromTrusted($resolved)
+				: ReactorSecurityContext::fromTrusted();
+		}
+		catch(\Throwable){ return ReactorSecurityContext::fromTrusted(); }
 	}
 }

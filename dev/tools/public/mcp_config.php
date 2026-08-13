@@ -31,7 +31,7 @@ HELP;
 
 $workspace=dataphyre_mcp_config_workspace_root(__DIR__);
 if(!is_array($workspace)){
-	fwrite(STDERR, "Unable to resolve Dataphyre Git worktree root. Expected common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php below a workspace root or runtime/modules/mcp/kernel/dataphyre_mcp.php below a standalone worktree.\n");
+	fwrite(STDERR, "Unable to resolve Dataphyre Git worktree root. Expected dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php below a workspace root or runtime/modules/mcp/kernel/dataphyre_mcp.php below a standalone worktree.\n");
 	exit(2);
 }
 $root=(string)$workspace['cwd'];
@@ -92,6 +92,12 @@ function dataphyre_mcp_config_workspace_root(string $tool_dir): ?array {
 			continue;
 		}
 		$root=rtrim(str_replace('\\', '/', $candidate), '/');
+		if(is_file($root.'/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')){
+			return [
+				'cwd'=>$root,
+				'server'=>'dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php',
+			];
+		}
 		if(is_file($root.'/common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php')){
 			return [
 				'cwd'=>$root,

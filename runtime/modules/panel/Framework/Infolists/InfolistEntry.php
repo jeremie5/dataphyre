@@ -14,10 +14,16 @@ namespace Dataphyre\Panel;
  * field rendering pipeline can describe resource details without exposing form
  * mutation behavior. Every fluent modifier returns a cloned entry with a cloned
  * Field, preserving builder immutability for shared resource definitions.
+ *
+ * @template TRecord = mixed
+ * @template TValue = mixed
+ * @template TState of array<string, mixed> = array<string, mixed>
  */
 final class InfolistEntry {
 	use PanelExtensible;
+	use HasCollectionItemPresentation;
 
+	/** @var Field<TRecord, TValue, TState> */
 	private Field $field;
 
 	/**
@@ -34,7 +40,7 @@ final class InfolistEntry {
 	 *
 	 * @param string $name Field/data path rendered by the entry.
 	 * @param string $type Field display type, such as text, badge, image, or date.
-	 * @return self Configured read-only infolist entry.
+	 * @return self<TRecord, TValue, TState> Configured read-only infolist entry.
 	 */
 	public static function make(string $name, string $type='text'): self {
 		return self::configured(new self(Field::make($name, $type)));
@@ -46,9 +52,9 @@ final class InfolistEntry {
 	 * Existing entries are returned unchanged. Field instances and array payloads are
 	 * wrapped as read-only entries; strings are treated as field names.
 	 *
-	 * @param Field|array<string, mixed>|string|self $entry Entry definition.
+	 * @param Field<TRecord, TValue, TState>|array<string, mixed>|string|self<TRecord, TValue, TState> $entry Entry definition.
 	 * @param string|null $type Display type applied when the definition does not provide one.
-	 * @return self Normalized infolist entry.
+	 * @return self<TRecord, TValue, TState> Normalized infolist entry.
 	 */
 	public static function from(Field|array|string|self $entry, ?string $type=null): self {
 		if($entry instanceof self){
@@ -67,7 +73,7 @@ final class InfolistEntry {
 	 * Sets the operator-facing entry label.
 	 *
 	 * @param string $label Label rendered beside or above the value.
-	 * @return self Cloned entry with updated label.
+	 * @return self<TRecord,TValue,TState> Cloned entry with updated label.
 	 */
 	public function label(string $label): self {
 		return $this->withField($this->field->label($label));
@@ -77,7 +83,7 @@ final class InfolistEntry {
 	 * Sets the display renderer type.
 	 *
 	 * @param string $type Field renderer type used by panel rendering.
-	 * @return self Cloned entry with updated type.
+	 * @return self<TRecord,TValue,TState> Cloned entry with updated type.
 	 */
 	public function type(string $type): self {
 		return $this->withField($this->field->type($type));
@@ -87,7 +93,7 @@ final class InfolistEntry {
 	 * Assigns the entry to an infolist section.
 	 *
 	 * @param string $section Section identifier or heading.
-	 * @return self Cloned entry with section metadata.
+	 * @return self<TRecord,TValue,TState> Cloned entry with section metadata.
 	 */
 	public function section(string $section): self {
 		return $this->withField($this->field->section($section));
@@ -97,7 +103,7 @@ final class InfolistEntry {
 	 * Sets the icon shown with the entry.
 	 *
 	 * @param string $icon Icon name understood by the panel renderer.
-	 * @return self Cloned entry with icon metadata.
+	 * @return self<TRecord,TValue,TState> Cloned entry with icon metadata.
 	 */
 	public function icon(string $icon): self {
 		return $this->withField($this->field->icon($icon));
@@ -107,7 +113,7 @@ final class InfolistEntry {
 	 * Renders the value as a badge with optional tone rules.
 	 *
 	 * @param array<string, mixed>|string $tones Static tone or value-to-tone map.
-	 * @return self Cloned entry configured for badge display.
+	 * @return self<TRecord,TValue,TState> Cloned entry configured for badge display.
 	 */
 	public function badge(array|string $tones=[]): self {
 		return $this->withField($this->field->badge($tones));
@@ -117,7 +123,7 @@ final class InfolistEntry {
 	 * Controls whether the rendered value exposes copy-to-clipboard behavior.
 	 *
 	 * @param bool $copyable Whether the entry value should be copyable.
-	 * @return self Cloned entry with copy behavior metadata.
+	 * @return self<TRecord,TValue,TState> Cloned entry with copy behavior metadata.
 	 */
 	public function copyable(bool $copyable=true): self {
 		return $this->withField($this->field->copyable($copyable));
@@ -127,7 +133,7 @@ final class InfolistEntry {
 	 * Sets text rendered before the entry value.
 	 *
 	 * @param string $prefix Value prefix.
-	 * @return self Cloned entry with prefix metadata.
+	 * @return self<TRecord,TValue,TState> Cloned entry with prefix metadata.
 	 */
 	public function prefix(string $prefix): self {
 		return $this->withField($this->field->prefix($prefix));
@@ -137,7 +143,7 @@ final class InfolistEntry {
 	 * Sets text rendered after the entry value.
 	 *
 	 * @param string $suffix Value suffix.
-	 * @return self Cloned entry with suffix metadata.
+	 * @return self<TRecord,TValue,TState> Cloned entry with suffix metadata.
 	 */
 	public function suffix(string $suffix): self {
 		return $this->withField($this->field->suffix($suffix));
@@ -147,7 +153,7 @@ final class InfolistEntry {
 	 * Sets the fallback label rendered for empty values.
 	 *
 	 * @param string $label Empty-state text.
-	 * @return self Cloned entry with empty-value label.
+	 * @return self<TRecord,TValue,TState> Cloned entry with empty-value label.
 	 */
 	public function emptyLabel(string $label): self {
 		return $this->withField($this->field->emptyLabel($label));
@@ -157,27 +163,46 @@ final class InfolistEntry {
 	 * Sets helper text rendered with the entry.
 	 *
 	 * @param string $description Operator-facing description.
-	 * @return self Cloned entry with description metadata.
+	 * @return self<TRecord,TValue,TState> Cloned entry with description metadata.
 	 */
 	public function description(string $description): self {
 		return $this->withField($this->field->description($description));
 	}
 
 	/**
-	 * Controls whether the value is rendered as trusted HTML.
+	 * Enables sanitized rich-HTML presentation for ordinary string values.
 	 *
-	 * @param bool $html Whether the renderer may output the value as HTML.
-	 * @return self Cloned entry with HTML rendering metadata.
+	 * This flag does not confer trust. Use PanelSafeHtml from displayUsing(), or
+	 * trustedHtml() for fixed framework-generated markup that must bypass the
+	 * sanitizer.
+	 *
+	 * @param bool $html Whether the renderer may sanitize and render rich text.
+	 * @return self<TRecord,TValue,TState> Cloned entry with HTML rendering metadata.
 	 */
 	public function html(bool $html=true): self {
 		return $this->withField($this->field->html($html));
 	}
 
 	/**
+	 * Sets fixed framework-generated markup through an explicit trust boundary.
+	 *
+	 * Do not pass request, record, translation, or remote-service values here.
+	 * Dynamic trusted markup must be returned as PanelSafeHtml from displayUsing()
+	 * after every interpolated external value has been escaped.
+	 *
+	 * @param string|PanelSafeHtml $html Trusted framework-generated markup.
+	 * @return self<TRecord,TValue,TState> Cloned entry with a trusted display callback.
+	 */
+	public function trustedHtml(string|PanelSafeHtml $html): self {
+		$safe=$html instanceof PanelSafeHtml ? $html : PanelSafeHtml::trusted($html);
+		return $this->withField($this->field->html()->displayUsing(static fn(): PanelSafeHtml=>$safe));
+	}
+
+	/**
 	 * Sets static option labels for enumerated values.
 	 *
 	 * @param array<string|int, mixed> $options Value-to-label option map.
-	 * @return self Cloned entry with static options.
+	 * @return self<TRecord,TValue,TState> Cloned entry with static options.
 	 */
 	public function options(array $options): self {
 		return $this->withField($this->field->options($options));
@@ -186,8 +211,8 @@ final class InfolistEntry {
 	/**
 	 * Sets a lazy option provider for enumerated values.
 	 *
-	 * @param callable $callback Callback invoked by the panel renderer to resolve options.
-	 * @return self Cloned entry with dynamic option provider.
+	 * @param callable(TRecord|null=, PanelRequest|null=, string=, Field<TRecord, TValue, TState>=): array<array-key, mixed> $callback Callback invoked by the panel renderer to resolve options.
+	 * @return self<TRecord,TValue,TState> Cloned entry with dynamic option provider.
 	 */
 	public function optionsUsing(callable $callback): self {
 		return $this->withField($this->field->optionsUsing($callback));
@@ -196,8 +221,8 @@ final class InfolistEntry {
 	/**
 	 * Sets a display-value transformer.
 	 *
-	 * @param callable $callback Callback invoked to transform the raw value for display.
-	 * @return self Cloned entry with display callback.
+	 * @param callable(TValue, TRecord|null=, PanelRequest|null=, Field<TRecord, TValue, TState>=): mixed $callback Callback invoked to transform the raw value for display.
+	 * @return self<TRecord,TValue,TState> Cloned entry with display callback.
 	 */
 	public function displayUsing(callable $callback): self {
 		return $this->withField($this->field->displayUsing($callback));
@@ -206,8 +231,8 @@ final class InfolistEntry {
 	/**
 	 * Sets a runtime visibility predicate.
 	 *
-	 * @param callable $callback Callback invoked by the renderer/resource context.
-	 * @return self Cloned entry with visibility callback.
+	 * @param callable(string, TRecord|null=, PanelRequest|null=, Field<TRecord, TValue, TState>=): bool $callback Callback invoked by the renderer/resource context.
+	 * @return self<TRecord,TValue,TState> Cloned entry with visibility callback.
 	 */
 	public function visibleUsing(callable $callback): self {
 		return $this->withField($this->field->visibleUsing($callback));
@@ -217,7 +242,7 @@ final class InfolistEntry {
 	 * Limits the entry to specific panel operations.
 	 *
 	 * @param array|string ...$operations Operation names or lists such as view, edit, create.
-	 * @return self Cloned entry with visible operation constraints.
+	 * @return self<TRecord,TValue,TState> Cloned entry with visible operation constraints.
 	 */
 	public function visibleOn(array|string ...$operations): self {
 		return $this->withField($this->field->visibleOn(...$operations));
@@ -227,7 +252,7 @@ final class InfolistEntry {
 	 * Hides the entry on specific panel operations.
 	 *
 	 * @param array|string ...$operations Operation names or lists such as view, edit, create.
-	 * @return self Cloned entry with hidden operation constraints.
+	 * @return self<TRecord,TValue,TState> Cloned entry with hidden operation constraints.
 	 */
 	public function hiddenOn(array|string ...$operations): self {
 		return $this->withField($this->field->hiddenOn(...$operations));
@@ -237,7 +262,7 @@ final class InfolistEntry {
 	 * Sets responsive grid column span metadata.
 	 *
 	 * @param int|string|array<string, mixed> $span Span value or breakpoint map.
-	 * @return self Cloned entry with grid span metadata.
+	 * @return self<TRecord,TValue,TState> Cloned entry with grid span metadata.
 	 */
 	public function columnSpan(int|string|array $span): self {
 		return $this->withField($this->field->columnSpan($span));
@@ -247,7 +272,7 @@ final class InfolistEntry {
 	 * Sets responsive grid column-start metadata.
 	 *
 	 * @param int|string|array<string, mixed> $start Start value or breakpoint map.
-	 * @return self Cloned entry with grid start metadata.
+	 * @return self<TRecord,TValue,TState> Cloned entry with grid start metadata.
 	 */
 	public function columnStart(int|string|array $start): self {
 		return $this->withField($this->field->columnStart($start));
@@ -257,7 +282,7 @@ final class InfolistEntry {
 	 * Sets responsive grid row span metadata.
 	 *
 	 * @param int|string|array<string, mixed> $span Row span value or breakpoint map.
-	 * @return self Cloned entry with row span metadata.
+	 * @return self<TRecord,TValue,TState> Cloned entry with row span metadata.
 	 */
 	public function rowSpan(int|string|array $span): self {
 		return $this->withField($this->field->rowSpan($span));
@@ -266,7 +291,7 @@ final class InfolistEntry {
 	/**
 	 * Expands the entry across the full available grid width.
 	 *
-	 * @return self Cloned entry with full-width layout metadata.
+	 * @return self<TRecord,TValue,TState> Cloned entry with full-width layout metadata.
 	 */
 	public function fullWidth(): self {
 		return $this->withField($this->field->fullWidth());
@@ -276,7 +301,7 @@ final class InfolistEntry {
 	 * Merges arbitrary renderer metadata into the entry field.
 	 *
 	 * @param array<string, mixed> $meta Metadata consumed by panel renderers.
-	 * @return self Cloned entry with merged metadata.
+	 * @return self<TRecord,TValue,TState> Cloned entry with merged metadata.
 	 */
 	public function meta(array $meta): self {
 		return $this->withField($this->field->meta($meta));
@@ -285,7 +310,7 @@ final class InfolistEntry {
 	/**
 	 * Returns the underlying read-only field definition.
 	 *
-	 * @return Field Field carrying entry metadata for panel rendering.
+	 * @return Field<TRecord, TValue, TState> Field carrying entry metadata for panel rendering.
 	 */
 	public function field(): Field {
 		return $this->field;
@@ -322,7 +347,7 @@ final class InfolistEntry {
 	 * Clones the entry with a read-only field carrying entry metadata.
 	 *
 	 * @param Field $field Field definition returned by a fluent modifier.
-	 * @return self Cloned entry wrapping the normalized field.
+	 * @return self<TRecord,TValue,TState> Cloned entry wrapping the normalized field.
 	 */
 	private function withField(Field $field): self {
 		$clone=clone $this;

@@ -649,9 +649,6 @@ class fulltext_engine{
 			$text=fulltext_engine\ngram::apply_ngrams($text);
 			$text=fulltext_engine\ngram::laplace_smoothing($text);
 		}
-		if(is_array($text)){
-			$text=implode(' ', $text);
-		}
 		$text=fulltext_engine\keyword_extraction::extract_keywords($text, false, $language);
 		return $text;
 	}
@@ -717,7 +714,7 @@ class fulltext_engine{
 			$normalized_score1=$score*1;
 			if($normalized_score1<0.1) return $normalized_score1;
 			$normalized_score2=0;
-			if(false!==$score=fulltext_engine\jaro_winkler::similarity($index_value, $search_value)){
+			if(false!==$score=fulltext_engine_jaro_winkler::similarity($index_value, $search_value)){
 				$normalized_score2=$score;
 			}
 			$normalized_score=$normalized_score1+$normalized_score2;
@@ -737,12 +734,9 @@ class fulltext_engine{
 		}
 		else
 		{
-			similar_text($index_value, $search_value, $score);
-			$normalized_score=$score/100;
-			if($normalized_score>1){
-				$normalized_score=1;
+				similar_text($index_value, $search_value, $score);
+				$normalized_score=$score/100;
 			}
-		}
 		return $normalized_score;
 	}
 
@@ -830,9 +824,6 @@ class fulltext_engine{
 		$expr=[];
 		foreach($matches[0] ?? [] as $part){
 			$part=trim((string)$part);
-			if($part===''){
-				continue;
-			}
 			if(preg_match('/^(AND|OR|NOT|\(|\))$/i', $part)){
 				$part=strtoupper(trim($part));
 			}
@@ -1268,7 +1259,6 @@ class fulltext_engine{
 		unset($index_definitions[$index_name]);
 		if(self::persist_index_definitions($index_definitions)) return true;
 		core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreFulltextEngine: Failed reading index definition.', 'safemode');
-		return false;
 	}
 
 	/**
@@ -1478,7 +1468,8 @@ class fulltext_engine{
 				}
 				else
 				{
-					if(false!==$current_index=json_decode((string)file_get_contents($filepath),true)){
+					$current_index=json_decode((string)file_get_contents($filepath), true);
+					if(is_array($current_index)){
 						foreach($current_index as $primary_key=>$entry){
 							if(is_array($entry)){
 								self::append_entry_matches($result_primarykeys, $primary_key, $entry, $search_data, $search_values_raw, $language, $boolean_mode, $threshold, $forced_algorithms);
@@ -1556,14 +1547,14 @@ class fulltext_engine{
 	 * @param string $language Locale or language code.
 	 * @return string Stemmed query text.
 	 */
-	public static function apply_stemming(string $query, string $language) : string {
+	public static function apply_stemming(string $query, string $language, ?callable $stemmer_loader=null) : string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		$load_stemmer=function($language){
+		$load_stemmer=$stemmer_loader ?? function($language){
 			$language_prefix=substr($language, 0, 2);
 		$file_path=dirname(__DIR__)."/stemmers/{$language_prefix}_stemmer.php";
 			if(file_exists($file_path)){
 				require_once($file_path);
-				$class_name="fulltext_engine\stemming\\".$language_prefix;
+				$class_name=__NAMESPACE__."\\fulltext_engine\\stemming\\".$language_prefix;
 				if(class_exists($class_name)){
 					return new $class_name();
 				}

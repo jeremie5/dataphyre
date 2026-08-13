@@ -83,7 +83,7 @@ trait dataphyre_mcp_planning_docs_surfaces {
 			$guidelines_position=$docs_profile==='builder' ? 'none' : 'after_modules';
 		}
 		$modules=[];
-		$guidelines_path='common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md';
+		$guidelines_path='dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md';
 		$sources=[];
 		$seen_paths=[];
 		$add_source=function(string $path, string $group, ?string $module=null) use (&$sources, &$seen_paths): void {
@@ -118,8 +118,8 @@ trait dataphyre_mcp_planning_docs_surfaces {
 			$add_source($guidelines_path, 'guidelines');
 		}
 		if($include_reference){
-			$add_source('common/dataphyre/docs/MODULES.md', 'reference');
-			$add_source('common/dataphyre/runtime/README.md', 'reference');
+			$add_source('dataphyre/docs/MODULES.md', 'reference');
+			$add_source('dataphyre/runtime/README.md', 'reference');
 		}
 		$chunk_sets=[];
 		foreach($sources as $source){
@@ -140,43 +140,27 @@ trait dataphyre_mcp_planning_docs_surfaces {
 			if($source_chunks!==[]){
 				$chunk_sets[]=[
 					'group'=>$source['group'],
+					'module'=>$source['module'],
 					'chunks'=>$source_chunks,
 				];
 			}
 		}
-		$take_round_robin=static function(array $sets, int $limit): array {
-			$result=[];
-			$offsets=array_fill(0, count($sets), 0);
-			while(count($result)<$limit){
-				$added=false;
-				foreach($sets as $index=>$set){
-					$available=$set['chunks'] ?? [];
-					$offset=$offsets[$index] ?? 0;
-					if(!is_array($available) || !isset($available[$offset])){
-						continue;
-					}
-					$result[]=$available[$offset];
-					$offsets[$index]=$offset+1;
-					$added=true;
-					if(count($result)>=$limit){
-						break;
-					}
-				}
-				if(!$added){
-					break;
-				}
-			}
-			return $result;
-		};
-		if($guidelines_position==='after_modules'){
-			$module_sets=array_values(array_filter($chunk_sets, static fn(array $set): bool => ($set['group'] ?? null)==='module'));
+		$module_source_sets=array_values(array_filter($chunk_sets, static fn(array $set): bool => ($set['group'] ?? null)==='module'));
+		$module_sets=$this->docs_chunk_module_sets($module_source_sets, $modules, $docs_profile);
+		if($docs_profile==='builder'){
 			$support_sets=array_values(array_filter($chunk_sets, static fn(array $set): bool => ($set['group'] ?? null)!=='module'));
-			$chunks=$take_round_robin($module_sets, $max_chunks);
+			$chunks=$this->docs_chunk_builder_selection($module_sets, $max_chunks);
 			if(count($chunks)<$max_chunks){
-				$chunks=array_merge($chunks, $take_round_robin($support_sets, $max_chunks-count($chunks)));
+				$chunks=array_merge($chunks, $this->docs_chunk_round_robin($support_sets, $max_chunks-count($chunks)));
+			}
+		}elseif($guidelines_position==='after_modules'){
+			$support_sets=array_values(array_filter($chunk_sets, static fn(array $set): bool => ($set['group'] ?? null)!=='module'));
+			$chunks=$this->docs_chunk_round_robin($module_sets, $max_chunks);
+			if(count($chunks)<$max_chunks){
+				$chunks=array_merge($chunks, $this->docs_chunk_round_robin($support_sets, $max_chunks-count($chunks)));
 			}
 		}else{
-			$chunks=$take_round_robin($chunk_sets, $max_chunks);
+			$chunks=$this->docs_chunk_round_robin($chunk_sets, $max_chunks);
 		}
 		return [
 			'write_policy'=>'read_only',
@@ -189,6 +173,113 @@ trait dataphyre_mcp_planning_docs_surfaces {
 			'max_chars_per_chunk'=>$max_chars,
 			'chunks'=>$chunks,
 		];
+	}
+
+	/**
+	 * Collapses document-level chunk sets into one ranked lane per requested
+	 * module. A growing module can therefore never crowd another requested
+	 * module out merely because its documentation filenames sort first.
+	 *
+	 * @param list<array<string,mixed>> $sets
+	 * @param list<string> $module_order
+	 * @return list<array<string,mixed>>
+	 */
+	private function docs_chunk_module_sets(array $sets, array $module_order, string $profile): array {
+		$grouped=[];
+		foreach($sets as $set){
+			$module=(string)($set['module'] ?? '');
+			if($module===''){
+				continue;
+			}
+			foreach(is_array($set['chunks'] ?? null) ? $set['chunks'] : [] as $chunk){
+				if(is_array($chunk)){
+					$grouped[$module][]=$chunk;
+				}
+			}
+		}
+		$result=[];
+		foreach($module_order as $module){
+			$chunks=$grouped[$module] ?? [];
+			if($chunks===[]){
+				continue;
+			}
+			if($profile==='builder'){
+				usort($chunks, function(array $left,array $right): int {
+					$score=$this->docs_chunk_builder_score($right)<=>$this->docs_chunk_builder_score($left);
+					if($score!==0){
+						return $score;
+					}
+					$path=strcmp((string)($left['path'] ?? ''),(string)($right['path'] ?? ''));
+					return $path!==0 ? $path : ((int)($left['index'] ?? 0)<=> (int)($right['index'] ?? 0));
+				});
+				$chunks=$this->docs_chunk_builder_diversify($chunks);
+			}
+			$result[]=['group'=>'module','module'=>$module,'chunks'=>$chunks];
+		}
+		return $result;
+	}
+
+	/**
+	 * Selects practical builder chunks by reserving one seat per requested
+	 * module, then filling the remaining budget by global relevance. This keeps
+	 * every module visible without forcing an artificial equal quota.
+	 *
+	 * @param list<array<string,mixed>> $sets
+	 * @return list<array<string,mixed>>
+	 */
+	private function docs_chunk_builder_selection(array $sets,int $limit): array {
+		$selected=[];
+		$remaining=[];
+		foreach($sets as $set){
+			$chunks=is_array($set['chunks'] ?? null) ? array_values($set['chunks']) : [];
+			if($chunks===[]){
+				continue;
+			}
+			$selected[]=array_shift($chunks);
+			$remaining=array_merge($remaining,$chunks);
+		}
+		usort($remaining,function(array $left,array $right): int {
+			$score=$this->docs_chunk_builder_score($right)<=>$this->docs_chunk_builder_score($left);
+			if($score!==0){
+				return $score;
+			}
+			$path=strcmp((string)($left['path'] ?? ''),(string)($right['path'] ?? ''));
+			return $path!==0 ? $path : ((int)($left['index'] ?? 0)<=> (int)($right['index'] ?? 0));
+		});
+		$remaining=$this->docs_chunk_builder_diversify($remaining,array_map(static fn(array $chunk): string=>(string)($chunk['heading'] ?? ''),$selected));
+		return array_values(array_slice(array_merge($selected,$remaining),0,$limit));
+	}
+
+	/**
+	 * Takes one item from each semantic lane before taking a second item from
+	 * any lane, preserving caller order and a strict result cap.
+	 *
+	 * @param list<array<string,mixed>> $sets
+	 * @return list<array<string,mixed>>
+	 */
+	private function docs_chunk_round_robin(array $sets, int $limit): array {
+		$result=[];
+		$offsets=array_fill(0, count($sets), 0);
+		while(count($result)<$limit){
+			$added=false;
+			foreach($sets as $index=>$set){
+				$available=$set['chunks'] ?? [];
+				$offset=$offsets[$index] ?? 0;
+				if(!is_array($available) || !isset($available[$offset])){
+					continue;
+				}
+				$result[]=$available[$offset];
+				$offsets[$index]=$offset+1;
+				$added=true;
+				if(count($result)>=$limit){
+					break;
+				}
+			}
+			if(!$added){
+				break;
+			}
+		}
+		return $result;
 	}
 
 	/**
@@ -277,10 +368,10 @@ trait dataphyre_mcp_planning_docs_surfaces {
 	 * @param list<array<string,mixed>> $chunks
 	 * @return list<array<string,mixed>>
 	 */
-	private function docs_chunk_builder_diversify(array $chunks): array {
+	private function docs_chunk_builder_diversify(array $chunks,array $seen_headings=[]): array {
 		$first=[];
 		$rest=[];
-		$seen=[];
+		$seen=array_fill_keys(array_map(static fn(mixed $heading): string=>strtolower(trim((string)$heading)),$seen_headings),true);
 		foreach($chunks as $chunk){
 			$heading=strtolower(trim((string)($chunk['heading'] ?? '')));
 			if($heading==='' || isset($seen[$heading])){
@@ -327,7 +418,7 @@ trait dataphyre_mcp_planning_docs_surfaces {
 				'name'=>'static_datadoc_contract',
 				'status'=>'available_without_sql',
 				'source_tool'=>'dataphyre_datadoc_static_summary',
-				'paths'=>['common/dataphyre/runtime/modules/datadoc/documentation/Dataphyre_Datadoc.md'],
+				'paths'=>['dataphyre/runtime/modules/datadoc/documentation/Dataphyre_Datadoc.md'],
 				'refresh_triggers'=>['Datadoc module source changes', 'Datadoc table contract changes'],
 			],
 		];
@@ -548,12 +639,12 @@ trait dataphyre_mcp_planning_docs_surfaces {
 	 */
 	private function datadoc_static_summary(): array {
 		$files=[
-			'main'=>'common/dataphyre/runtime/modules/datadoc/kernel/datadoc.main.php',
-			'tables'=>'common/dataphyre/runtime/modules/datadoc/kernel/datadoc.tables.php',
-			'tokenizer'=>'common/dataphyre/runtime/modules/datadoc/kernel/tokenizer.php',
-			'highlighter'=>'common/dataphyre/runtime/modules/datadoc/kernel/highlighter.php',
-			'diagnostic'=>'common/dataphyre/runtime/modules/datadoc/kernel/datadoc.diagnostic.php',
-			'documentation'=>'common/dataphyre/runtime/modules/datadoc/documentation/Dataphyre_Datadoc.md',
+			'main'=>'dataphyre/runtime/modules/datadoc/kernel/datadoc.main.php',
+			'tables'=>'dataphyre/runtime/modules/datadoc/kernel/datadoc.tables.php',
+			'tokenizer'=>'dataphyre/runtime/modules/datadoc/kernel/tokenizer.php',
+			'highlighter'=>'dataphyre/runtime/modules/datadoc/kernel/highlighter.php',
+			'diagnostic'=>'dataphyre/runtime/modules/datadoc/kernel/datadoc.diagnostic.php',
+			'documentation'=>'dataphyre/runtime/modules/datadoc/documentation/Dataphyre_Datadoc.md',
 		];
 		$sources=[];
 		foreach($files as $key=>$relative){

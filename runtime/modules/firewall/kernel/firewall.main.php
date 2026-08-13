@@ -7,6 +7,8 @@
  */
 namespace dataphyre;
 
+require_once dirname(__DIR__, 3).'/http.php';
+
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
 dp_define_module_config('firewall', 'DP_FIREWALL_CFG', [
@@ -20,14 +22,7 @@ if(function_exists('sql_define_table')){
 	sql_define_table('dataphyre.captcha_blocks', __DIR__.'/firewall.tables.php', 'captcha_blocks');
 }
 
-if(RUN_MODE!=='diagnostic'){
-	firewall::flooding_check();
-	firewall::captcha();
-}
-else
-{
-	require_once(__DIR__.'/firewall.diagnostic.php');
-}
+firewall::bootstrap(RUN_MODE);
 	
 /**
  * Applies legacy Dataphyre firewall throttling and captcha blocks.
@@ -37,6 +32,20 @@ else
  * state in cache or SQL, and clear session throttle/captcha markers.
  */
 class firewall{
+	public static function bootstrap(
+		string $runMode,
+		?callable $diagnosticLoader=null,
+		?callable $floodingCheck=null,
+		?callable $captchaCheck=null
+	): void {
+		if($runMode==='diagnostic'){
+			$diagnosticLoader??=static fn()=>require_once __DIR__.'/firewall.diagnostic.php';
+			$diagnosticLoader();
+			return;
+		}
+		($floodingCheck ?? static fn()=>self::flooding_check())();
+		($captchaCheck ?? static fn()=>self::captcha())();
+	}
 
 	/**
 	 * Processes captcha block state for the current visitor.
@@ -99,17 +108,20 @@ class firewall{
 	 * When the configured minimum request time is non-zero and the threshold is
 	 * reached, the firewall either sleeps or captcha-blocks the visitor.
 	 */
-	public static function flooding_check(){
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		if(null!==$early_return=core::dialback("CALL_FIREWALL_FLOODING_CHECK",...func_get_args())) return $early_return;
-		$throttling_config=DP_FIREWALL_CFG['throttling'];
-		$min_time=(int)$throttling_config['min_time'];
-		if($min_time!==0){
-			if(!empty($_SESSION['last_requests'])){
-				array_unshift($_SESSION['last_requests'], microtime(true));
-				$i=0;
-				foreach($_SESSION['last_requests'] as $value){
-					if(microtime(true)-$value<($min_time_per_request=$min_time)/1000){
+		public static function flooding_check(?array $throttlingConfig=null, ?callable $clock=null, ?callable $sleeper=null, ?callable $captchaBlocker=null){
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+			if(null!==$early_return=core::dialback("CALL_FIREWALL_FLOODING_CHECK",...func_get_args())) return $early_return;
+			$throttling_config=$throttlingConfig ?? DP_FIREWALL_CFG['throttling'];
+			$clock??=static fn(): float=>microtime(true);
+			$sleeper??='sleep';
+			$min_time=(int)$throttling_config['min_time'];
+			if($min_time!==0){
+				if(!empty($_SESSION['last_requests'])){
+					$now=(float)$clock();
+					array_unshift($_SESSION['last_requests'], $now);
+					$i=0;
+					foreach($_SESSION['last_requests'] as $value){
+						if($now-$value<($min_time_per_request=$min_time)/1000){
 						$i++;
 					}
 				}
@@ -118,11 +130,11 @@ class firewall{
 					if($action==='throttle'){
 						tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Request flooding detected, $i requests within $min_time_per_request ms; throttling request");
 						$throttle_time=(int)(strtotime((string)$throttling_config['throttle_time'], 0) ?: 1);
-						sleep(max(1, $throttle_time));
+								$sleeper(max(1, $throttle_time));
 					}
-					elseif($action==='captcha'){
-						tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Request flooding detected, $i requests within $min_time_per_request ms; captcha blocking");
-						self::captcha_block_user('request_flooding');
+						elseif($action==='captcha'){
+							tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Request flooding detected, $i requests within $min_time_per_request ms; captcha blocking");
+							($captchaBlocker ?? static fn(string $reason)=>self::captcha_block_user($reason))('request_flooding');
 					}
 				}
 				else
@@ -133,7 +145,7 @@ class firewall{
 			else 
 			{
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="No record of last requests timings");
-				$_SESSION['last_requests'][]=microtime(true);
+					$_SESSION['last_requests'][]=(float)$clock();
 			}
 			while(count($_SESSION['last_requests'])>10){
 				array_pop($_SESSION['last_requests']);
@@ -151,18 +163,9 @@ class firewall{
 	 * @param int $timing Minimum milliseconds between requests.
 	 * @return bool Always true in the current runtime.
 	 */
-	public static function rps_limiter(int $timing) : bool {
-		return true;
-		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		if(null!==$early_return=core::dialback("CALL_FIREWALL_RPS_LIMITER",...func_get_args())) return $early_return;
-		if(isset($_SESSION['last_requests'][0])){
-			if(microtime(true)-$_SESSION['last_requests'][0]<$timing/1000){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Request flooding detected");
-				return false;
-			}
+		public static function rps_limiter(int $timing) : bool {
+			return true;
 		}
-		return true;
-	}
 
 	/**
 	 * Checks whether the current visitor has an active captcha block.
@@ -173,7 +176,7 @@ class firewall{
 	 *
 	 * @return bool True when the current visitor is captcha-blocked.
 	 */
-	public static function check_if_captcha_blocked() : bool {
+		public static function check_if_captcha_blocked(?callable $redirect=null) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_FIREWALL_CHECK_IF_CAPTCHA_BLOCKED",...func_get_args())) return $early_return;
 		$ipaddress=$_SERVER['REMOTE_ADDR'];
@@ -200,10 +203,11 @@ class firewall{
 			}
 		}
 		if(isset($_SESSION['captcha_blocked']) && $_SESSION['captcha_blocked']===true){
-			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="User is captcha blocked");
-			if(!strpos($_SERVER["REQUEST_URI"], 'captcha')){
-				header('Location: '.core::url_self().'captcha?redir='.base64_encode(ltrim($_SERVER["REQUEST_URI"], "/")));
-				exit();
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="User is captcha blocked");
+				if(!strpos($_SERVER["REQUEST_URI"], 'captcha')){
+					$url=core::url_self().'captcha?redir='.base64_encode(ltrim($_SERVER["REQUEST_URI"], "/"));
+					$redirect??='\\dataphyre_http_redirect_and_terminate';
+					$redirect($url);
 			}
 			return true;
 		}

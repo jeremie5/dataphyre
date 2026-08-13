@@ -24,6 +24,8 @@ final class PanelPackageApplyResult implements \JsonSerializable {
 	private array $skipped;
 	private array $backups;
 	private array $blocked;
+	private array $attempted;
+	private array $reverted;
 	private string $startedAt;
 	private string $finishedAt;
 	private int $durationMs;
@@ -39,17 +41,27 @@ final class PanelPackageApplyResult implements \JsonSerializable {
 	 * @param array<string, mixed> $data Raw installer result payload.
 	 */
 	public function __construct(array $data=[]) {
-		$this->ok=(bool)($data['ok'] ?? false);
-		$this->package=is_array($data['package'] ?? null) ? $data['package'] : [];
+		$collectionsValid=true;
+		foreach(['written','skipped','backups','blocked','attempted','reverted'] as $section){
+			if(array_key_exists($section, $data) && (!is_array($data[$section]) || !array_is_list($data[$section]))){$collectionsValid=false;}
+		}
+		$this->package=is_array($data['package'] ?? null) ? $this->sanitize($data['package']) : [];
 		$this->targetRoot=(string)($data['target_root'] ?? '');
-		$this->written=array_values(array_filter((array)($data['written'] ?? []), 'is_array'));
-		$this->skipped=array_values(array_filter((array)($data['skipped'] ?? []), 'is_array'));
-		$this->backups=array_values(array_filter((array)($data['backups'] ?? []), 'is_array'));
-		$this->blocked=array_values(array_filter((array)($data['blocked'] ?? []), 'is_array'));
+		$this->written=$this->rows($data['written'] ?? []);
+		$this->skipped=$this->rows($data['skipped'] ?? []);
+		$this->backups=$this->rows($data['backups'] ?? []);
+		$this->blocked=$this->rows($data['blocked'] ?? []);
+		$this->attempted=$this->rows($data['attempted'] ?? []);
+		$this->reverted=$this->rows($data['reverted'] ?? []);
 		$this->startedAt=(string)($data['started_at'] ?? '');
 		$this->finishedAt=(string)($data['finished_at'] ?? '');
 		$this->durationMs=max(0, (int)($data['duration_ms'] ?? 0));
-		$this->meta=is_array($data['meta'] ?? null) ? $data['meta'] : [];
+		$this->meta=is_array($data['meta'] ?? null) ? $this->sanitize($data['meta']) : [];
+		$this->ok=(bool)($data['ok'] ?? false)
+			&& $collectionsValid
+			&& $this->blocked===[]
+			&& $this->attempted===[]
+			&& $this->reverted===[];
 	}
 
 	/**
@@ -125,10 +137,20 @@ final class PanelPackageApplyResult implements \JsonSerializable {
 		return $this->blocked;
 	}
 
+	/** @return array<int,array<string,mixed>> Writes attempted by an apply transaction that did not commit. */
+	public function attempted(): array {
+		return $this->attempted;
+	}
+
+	/** @return array<int,array<string,mixed>> Recovery operations that reverted an uncommitted transaction. */
+	public function reverted(): array {
+		return $this->reverted;
+	}
+
 	/**
 	 * Exports the complete package-apply audit payload.
 	 *
-	 * @return array{type:string,ok:bool,package:array,target_root:string,written:array,skipped:array,backups:array,blocked:array,started_at:string,finished_at:string,duration_ms:int,meta:array}
+	 * @return array{type:string,ok:bool,package:array,target_root:string,written:array,skipped:array,backups:array,blocked:array,attempted:array,reverted:array,started_at:string,finished_at:string,duration_ms:int,meta:array}
 	 */
 	public function toArray(): array {
 		return [
@@ -140,6 +162,8 @@ final class PanelPackageApplyResult implements \JsonSerializable {
 			'skipped'=>$this->skipped,
 			'backups'=>$this->backups,
 			'blocked'=>$this->blocked,
+			'attempted'=>$this->attempted,
+			'reverted'=>$this->reverted,
 			'started_at'=>$this->startedAt,
 			'finished_at'=>$this->finishedAt,
 			'duration_ms'=>$this->durationMs,
@@ -150,9 +174,29 @@ final class PanelPackageApplyResult implements \JsonSerializable {
 	/**
 	 * Serializes the package apply result for API responses and panel diagnostics.
 	 *
-	 * @return array{type:string,ok:bool,package:array,target_root:string,written:array,skipped:array,backups:array,blocked:array,started_at:string,finished_at:string,duration_ms:int,meta:array}
+	 * @return array{type:string,ok:bool,package:array,target_root:string,written:array,skipped:array,backups:array,blocked:array,attempted:array,reverted:array,started_at:string,finished_at:string,duration_ms:int,meta:array}
 	 */
 	public function jsonSerialize(): array {
 		return $this->toArray();
+	}
+
+	/** @return array<int,array<string,mixed>> */
+	private function rows(mixed $rows): array {
+		return array_values(array_map(fn(array $row): array => $this->sanitize($row), array_filter((array)$rows, 'is_array')));
+	}
+
+	/** Redacts common credential-bearing metadata keys before audit serialization. */
+	private function sanitize(mixed $value, string $key=''): mixed {
+		if($key!=='' && preg_match('/(?:^|_)(?:secret|password|passwd|token|private_key|secret_key|credential|authorization|cookie)(?:$|_)/i', $key)===1){
+			return '[REDACTED]';
+		}
+		if(!is_array($value)){
+			return $value;
+		}
+		$sanitized=[];
+		foreach($value as $itemKey=>$item){
+			$sanitized[$itemKey]=$this->sanitize($item, is_string($itemKey) ? $itemKey : '');
+		}
+		return $sanitized;
 	}
 }

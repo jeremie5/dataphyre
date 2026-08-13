@@ -14,49 +14,6 @@ namespace dataphyre;
  */
 trait parsing {
 
-    /**
-     * Replaces legacy bind tags with escaped render-data values.
-     *
-     * Only variables present in the render data are replaced; missing bind tokens
-     * remain for later diagnostics or parser stages. Values are escaped before
-     * interpolation because bind tags are direct HTML output.
-     *
-     * @param string $template Template source containing bind tags.
-     * @param array<string,mixed> $data Render data passed by reference for parser compatibility.
-     * @return string Template source with available bind tags expanded.
-     */
-    private static function bind_data(string $template, array &$data): string {
-        preg_match_all('/{{bind(\w+)}}/', $template, $matches);
-        foreach($matches[1] as $var){
-            if(isset($data[$var])){
-                $template=str_replace("{{bind $var}}", htmlspecialchars($data[$var]), $template);
-            }
-        }
-        return $template;
-    }
-
-    /**
-     * Replaces unresolved simple placeholders with a visible undefined marker.
-     *
-     * reserved control tokens are ignored so block, slot, condition, and
-     * loop markers can pass through later parser stages. Real missing variables
-     * are traced before being replaced to make template data-shape gaps visible.
-     */
-    private static function handle_undefined_variables(string $template, array $data): string {
-        preg_match_all('/{{(\w+)}}/', $template, $matches);
-		$reserved=['endslot', 'endblock', 'endif', 'else', 'endloop', 'break', 'continue'];
-        foreach($matches[1] as $variable){
-			if(in_array(strtolower((string)$variable), $reserved, true)){
-				continue;
-			}
-            if(!isset($data[$variable])){
-                tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, "Undefined variable in template: $variable");
-                $template=str_replace("{{".$variable."}}", '[Undefined]', $template);
-            }
-        }
-        return $template;
-    }
-
 	/**
 	 * Converts lazy component directives into client-addressable placeholders.
 	 *
@@ -210,10 +167,11 @@ trait parsing {
 	 * diagnostic surface from becoming an HTML injection vector.
 	 */
 	private static function parse_debug(string $template, array $data): string {
-		preg_match_all('/{{debug(\w+)}}/', $template, $matches);
-		foreach($matches[1] as $var_name){
+		preg_match_all('/{{debug\s+(\w+)}}/', $template, $matches, PREG_SET_ORDER);
+		foreach($matches as $match){
+			$var_name=$match[1];
 			$output=isset($data[$var_name]) ? print_r($data[$var_name], true) : 'undefined';
-			$template=str_replace("{{debug $var_name}}", '<pre>'.htmlspecialchars($output).'</pre>', $template);
+			$template=str_replace($match[0], '<pre>'.htmlspecialchars($output).'</pre>', $template);
 		}
 		return $template;
 	}

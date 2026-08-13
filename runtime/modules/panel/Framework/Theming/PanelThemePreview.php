@@ -70,7 +70,7 @@ final class PanelThemePreview {
 		$html='<div class="dp-theme-preview-section"><h3>Colors</h3><div class="dp-theme-preview-swatches">';
 		foreach($colors as $name=>$definition){
 			$key=is_array($definition['key'] ?? null) ? $definition['key'] : [];
-			$base=(string)($key['base'] ?? '#888888');
+			$base=self::cssValue($key['base'] ?? '#888888', '#888888');
 			$html.='<article class="dp-theme-preview-swatch"><span style="background:'.self::e($base).'"></span><strong>'.self::e((string)$name).'</strong><small>'.self::e($base).'</small></article>';
 		}
 		return $html.'</div></div>';
@@ -92,10 +92,10 @@ final class PanelThemePreview {
 			$surface=is_array($samples['surface'] ?? null) ? $samples['surface'] : [];
 			$control=is_array($samples['control'] ?? null) ? $samples['control'] : [];
 			$action=is_array($samples['action'] ?? null) ? $samples['action'] : [];
-			$html.='<article class="dp-theme-preview-mode" style="background:'.self::e((string)($surface['background'] ?? '#ffffff')).';color:'.self::e((string)($surface['text'] ?? '#111111')).';border-color:'.self::e((string)($surface['border'] ?? '#dddddd')).'">';
-			$html.='<h4>'.self::e((string)$mode).'</h4><p style="color:'.self::e((string)($surface['muted_text'] ?? $surface['text'] ?? '#555555')).'">Surface text and muted supporting copy.</p>';
-			$html.='<div class="dp-theme-preview-control" style="background:'.self::e((string)($control['background'] ?? '#ffffff')).';color:'.self::e((string)($control['text'] ?? '#111111')).';border-color:'.self::e((string)($control['border'] ?? '#dddddd')).';padding:'.self::e((string)($control['padding'] ?? '8px 10px')).'">Input value</div>';
-			$html.='<button type="button" style="background:'.self::e((string)($action['background'] ?? '#2563eb')).';color:'.self::e((string)($action['text'] ?? '#ffffff')).';padding:'.self::e((string)($action['padding'] ?? '8px 12px')).';border-radius:'.self::e((string)($action['radius'] ?? '8px')).'">Action</button>';
+			$html.='<article class="dp-theme-preview-mode" style="background:'.self::e(self::cssValue($surface['background'] ?? '#ffffff', '#ffffff')).';color:'.self::e(self::cssValue($surface['text'] ?? '#111111', '#111111')).';border-color:'.self::e(self::cssValue($surface['border'] ?? '#dddddd', '#dddddd')).'">';
+			$html.='<h4>'.self::e((string)$mode).'</h4><p style="color:'.self::e(self::cssValue($surface['muted_text'] ?? $surface['text'] ?? '#555555', '#555555')).'">Surface text and muted supporting copy.</p>';
+			$html.='<div class="dp-theme-preview-control" style="background:'.self::e(self::cssValue($control['background'] ?? '#ffffff', '#ffffff')).';color:'.self::e(self::cssValue($control['text'] ?? '#111111', '#111111')).';border-color:'.self::e(self::cssValue($control['border'] ?? '#dddddd', '#dddddd')).';padding:'.self::e(self::cssValue($control['padding'] ?? '8px 10px', '8px 10px')).'">Input value</div>';
+			$html.='<button type="button" style="background:'.self::e(self::cssValue($action['background'] ?? '#2563eb', '#2563eb')).';color:'.self::e(self::cssValue($action['text'] ?? '#ffffff', '#ffffff')).';padding:'.self::e(self::cssValue($action['padding'] ?? '8px 12px', '8px 12px')).';border-radius:'.self::e(self::cssValue($action['radius'] ?? '8px', '8px')).'">Action</button>';
 			$html.='</article>';
 		}
 		return $html.'</div></div>';
@@ -111,7 +111,8 @@ final class PanelThemePreview {
 		$rows='';
 		foreach($contrast as $mode=>$checks){
 			foreach(is_array($checks) ? $checks : [] as $check){
-				$status=(string)($check['status'] ?? 'unknown');
+				$status=strtolower(trim((string)($check['status'] ?? 'unknown')));
+				$status=in_array($status, ['pass', 'fail', 'unknown'], true) ? $status : 'unknown';
 				$rows.='<tr><td>'.self::e((string)$mode).'</td><td>'.self::e((string)($check['background'] ?? '')).' / '.self::e((string)($check['text'] ?? '')).'</td><td>'.self::e((string)($check['ratio'] ?? 'n/a')).'</td><td><span class="dp-theme-preview-status-'.$status.'">'.self::e($status).'</span></td></tr>';
 			}
 		}
@@ -125,6 +126,27 @@ final class PanelThemePreview {
 	 */
 	private static function css(): string {
 		return '.dp-theme-preview{display:grid;gap:14px;font-family:Arial,sans-serif;color:#111827}.dp-theme-preview-header{display:flex;justify-content:space-between;gap:12px;align-items:flex-end}.dp-theme-preview-header span,.dp-theme-preview-header small{color:#667085;font-size:12px;font-weight:700}.dp-theme-preview-header h2,.dp-theme-preview-section h3{margin:0}.dp-theme-preview-section{display:grid;gap:10px}.dp-theme-preview-swatches,.dp-theme-preview-modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}.dp-theme-preview-swatch,.dp-theme-preview-mode{border:1px solid #e5e7eb;border-radius:8px;padding:12px}.dp-theme-preview-swatch{display:grid;gap:5px}.dp-theme-preview-swatch span{display:block;height:42px;border-radius:6px}.dp-theme-preview-swatch strong{text-transform:capitalize}.dp-theme-preview-swatch small{color:#667085}.dp-theme-preview-mode{display:grid;gap:9px}.dp-theme-preview-mode h4{margin:0;text-transform:capitalize}.dp-theme-preview-mode p{margin:0}.dp-theme-preview-mode button{border:0;font-weight:700}.dp-theme-preview-control{border:1px solid;border-radius:6px}.dp-theme-preview-contrast{width:100%;border-collapse:collapse;border:1px solid #e5e7eb}.dp-theme-preview-contrast td{padding:8px 10px;border-bottom:1px solid #eef2f7}.dp-theme-preview-status-pass{color:#067647;font-weight:700}.dp-theme-preview-status-fail{color:#b42318;font-weight:700}.dp-theme-preview-status-unknown{color:#667085;font-weight:700}';
+	}
+
+	/**
+	 * Returns a preview-safe CSS value or a known renderer fallback.
+	 *
+	 * @param mixed $value Candidate value from a theme preview payload.
+	 * @param string $fallback Renderer-owned fallback value.
+	 * @return string Safe CSS value.
+	 */
+	private static function cssValue(mixed $value, string $fallback): string {
+		if(!is_scalar($value) && !$value instanceof \Stringable){
+			return $fallback;
+		}
+		$value=trim((string)$value);
+		if($value==='' || preg_match('/[\x00-\x1F\x7F;<>{}]/', $value)===1){
+			return $fallback;
+		}
+		if(preg_match('/(?:expression\s*\(|javascript\s*:|-moz-binding|@import)/i', $value)===1){
+			return $fallback;
+		}
+		return $value;
 	}
 
 	/**

@@ -153,10 +153,11 @@ trait dataphyre_mcp_client_prompt_surfaces {
 	private function prompt_catalog_theme(string $name): string {
 		return match($name){
 			'dataphyre_release_triage'=>'release',
-			'dataphyre_sql_schema_workflow'=>'sql',
+			'dataphyre_sql_schema_workflow', 'dataphyre_sql_migration_workflow'=>'sql',
 			'dataphyre_route_manifest_workflow'=>'routing',
 			'dataphyre_diagnostics_workflow'=>'diagnostics',
-			'dataphyre_panel_workflow'=>'panel',
+			'dataphyre_contract_workflow'=>'contracts',
+			'dataphyre_panel_workflow', 'dataphyre_panel_platform_workflow', 'dataphyre_panel_operations_workflow', 'dataphyre_panel_studio_workflow', 'dataphyre_panel_realtime_workflow', 'dataphyre_panel_adapter_workflow'=>'panel',
 			'dataphyre_runtime_guidelines'=>'guidelines',
 			default=>'planning',
 		};
@@ -170,13 +171,20 @@ trait dataphyre_mcp_client_prompt_surfaces {
 	 */
 	private function prompt_catalog_first_action(string $name): string {
 		return match($name){
-			'dataphyre_panel_workflow'=>'Call dataphyre_app_builder_plan_generate with payload_profile=compact first; read builder_response.first_read before opening detail pages. Follow builder_response.first_read.next_action and first_read.scaffold_completion_summary.next_continuation until deferred_entities is empty, preserving dependency_context; open planning, implementation, verification, or controls details only when the first read points there.',
+			'dataphyre_panel_workflow'=>'Catalog and describe the affected Panel domain first; choose app-builder, recipe, integration, or verification planning only after the source-derived contract is visible.',
+			'dataphyre_panel_platform_workflow'=>'Catalog the selected platform domains, graph dependencies, then produce an integration plan with explicit host providers and topology.',
+			'dataphyre_panel_operations_workflow'=>'Generate an Operations OS recipe, describe every selected policy/runtime domain, then build focused behavioral and exact-coverage proof.',
+			'dataphyre_panel_studio_workflow'=>'Generate a Studio recipe and describe collaboration, identity, persistence, media, browser lifecycle, and security boundaries before implementation.',
+			'dataphyre_panel_realtime_workflow'=>'Describe realtime, graph its data/security/observability dependencies, then select a provider/topology integration and verification plan.',
+			'dataphyre_panel_adapter_workflow'=>'Describe the target typed contract, select a provider/topology integration, then run reusable conformance and focused exact coverage.',
 			'dataphyre_feature_plan'=>'Call dataphyre_app_builder_plan_generate with payload_profile=compact first for app creation; read builder_response.first_read and follow builder_response.first_read.next_action before opening full planning details. Pass explicit entities, fields, and max_entities when known, using foreign_key_target for relationships, not_foreign_key for external ids, and json/jsonb for structured columns; open implementation_recipe, verification_execution_plan, acceptance_review_plan, or verification_recovery_plan only when ready for that phase.',
 			'dataphyre_release_triage'=>'Use Dataphyre maintainer release triage only for release-surface work, not ordinary app verification.',
 			'dataphyre_runtime_guidelines'=>'Read runtime guidelines when touching Dataphyre internals or elevated governance/security/release scope.',
 			'dataphyre_sql_schema_workflow'=>'Inspect SQL metadata and query plans only; do not execute SQL.',
+			'dataphyre_sql_migration_workflow'=>'Catalog the migration contract, including maintenance expand/contract and exact SemVer floor semantics; plan or validate immutable files, and leave drain/barrier, authorization, and database execution to application-owned release code.',
 			'dataphyre_route_manifest_workflow'=>'Inspect route manifests and URL previews only; do not dispatch handlers.',
 			'dataphyre_diagnostics_workflow'=>'List and read bounded diagnostics with redaction before drawing conclusions.',
+			'dataphyre_contract_workflow'=>'Catalog the affected module or contract term, describe the stable contract id, then select its focused executable evidence.',
 			default=>'Use the related tools as read-only planning context before app-owned edits.',
 		};
 	}
@@ -192,9 +200,16 @@ trait dataphyre_mcp_client_prompt_surfaces {
 		return match($name){
 			'dataphyre_release_triage'=>$default_catalog ? ['MCP/release-surface release validation tools'] : ['dataphyre_release_check', 'dataphyre_release_triage_summary', 'dataphyre_release_fix_plan'],
 			'dataphyre_sql_schema_workflow'=>['dataphyre_sql_tables_list', 'dataphyre_sql_schema_read', 'dataphyre_sql_clusters_list', 'dataphyre_sql_query_plan', 'dataphyre_sql_query_runner_contract'],
+			'dataphyre_sql_migration_workflow'=>['dataphyre_sql_migration_catalog', 'dataphyre_sql_migration_describe', 'dataphyre_sql_migration_manifest_validate', 'dataphyre_sql_migration_scaffold_plan'],
 			'dataphyre_route_manifest_workflow'=>['dataphyre_list_routes', 'dataphyre_route_manifest_read', 'dataphyre_route_url_preview', 'dataphyre_route_match_preview', 'dataphyre_route_source_ambiguity_report'],
 			'dataphyre_diagnostics_workflow'=>['dataphyre_tracelog_artifacts_list', 'dataphyre_tracelog_read', 'dataphyre_tracelog_search', 'dataphyre_diagnostics_last_error'],
-			'dataphyre_panel_workflow'=>['dataphyre_app_builder_plan_generate', 'dataphyre_task_pack_generate', 'dataphyre_panel_scaffold_catalog', 'dataphyre_run_panel_regression', 'dataphyre_run_panel_field_catalog_check'],
+			'dataphyre_contract_workflow'=>['dataphyre_contract_catalog', 'dataphyre_contract_describe', 'dataphyre_unit_tests_list', 'dataphyre_unit_test_manifest_read'],
+			'dataphyre_panel_workflow'=>['dataphyre_panel_capability_catalog', 'dataphyre_panel_capability_describe', 'dataphyre_panel_recipe_plan', 'dataphyre_panel_integration_plan', 'dataphyre_panel_verification_plan', 'dataphyre_app_builder_plan_generate'],
+			'dataphyre_panel_platform_workflow'=>['dataphyre_panel_capability_catalog', 'dataphyre_panel_capability_describe', 'dataphyre_panel_surface_graph', 'dataphyre_panel_integration_plan', 'dataphyre_panel_verification_plan'],
+			'dataphyre_panel_operations_workflow'=>['dataphyre_panel_recipe_plan', 'dataphyre_panel_capability_describe', 'dataphyre_panel_surface_graph', 'dataphyre_panel_verification_plan'],
+			'dataphyre_panel_studio_workflow'=>['dataphyre_panel_recipe_plan', 'dataphyre_panel_capability_describe', 'dataphyre_panel_surface_graph', 'dataphyre_panel_verification_plan'],
+			'dataphyre_panel_realtime_workflow'=>['dataphyre_panel_capability_describe', 'dataphyre_panel_surface_graph', 'dataphyre_panel_integration_plan', 'dataphyre_panel_verification_plan'],
+			'dataphyre_panel_adapter_workflow'=>['dataphyre_panel_capability_describe', 'dataphyre_panel_integration_plan', 'dataphyre_panel_verification_plan', 'dataphyre_contract_catalog'],
 			'dataphyre_runtime_guidelines'=>['dataphyre_mcp_status_board', 'dataphyre_mcp_enterprise_adoption_audit', 'dataphyre_mcp_docs_coverage_report', 'dataphyre_mcp_doctor'],
 			default=>['dataphyre_app_builder_plan_generate', 'dataphyre_task_pack_generate', 'dataphyre_module_docs_pack', 'dataphyre_scaffold_plan_generate'],
 		};
@@ -210,28 +225,39 @@ trait dataphyre_mcp_client_prompt_surfaces {
 		return match($name){
 			'dataphyre_runtime_guidelines'=>['dataphyre://ai-guidelines', 'dataphyre://agentic-enterprise', 'dataphyre://mcp-plan'],
 			'dataphyre_release_triage'=>['dataphyre://module-index', 'dataphyre://mcp-plan'],
-			'dataphyre_panel_workflow'=>[
-				'dataphyre://doc/common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md',
-				'dataphyre://doc/common/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md',
+			'dataphyre_panel_workflow', 'dataphyre_panel_platform_workflow', 'dataphyre_panel_operations_workflow', 'dataphyre_panel_studio_workflow', 'dataphyre_panel_realtime_workflow', 'dataphyre_panel_adapter_workflow'=>[
+				'dataphyre://panel',
+				'dataphyre://contracts',
+				'dataphyre://doc/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md',
+				'dataphyre://doc/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md',
 				'dataphyre://module-index',
 			],
 			'dataphyre_sql_schema_workflow'=>[
-				'dataphyre://doc/common/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md',
+				'dataphyre://doc/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md',
 				'dataphyre://module-index',
 			],
+			'dataphyre_sql_migration_workflow'=>[
+				'dataphyre://sql-migrations',
+				'dataphyre://sql-migrations/manifest-v3-schema',
+				'dataphyre://doc/dataphyre/runtime/modules/sql/documentation/Dataphyre_PostgreSQL_Migrations.md',
+			],
 			'dataphyre_route_manifest_workflow'=>[
-				'dataphyre://doc/common/dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md',
+				'dataphyre://doc/dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md',
 				'dataphyre://module-index',
 			],
 			'dataphyre_diagnostics_workflow'=>[
-				'dataphyre://doc/common/dataphyre/runtime/modules/tracelog/documentation/Dataphyre_Tracelog.md',
-				'dataphyre://doc/common/dataphyre/runtime/modules/issue/documentation/Dataphyre_Issue.md',
+				'dataphyre://doc/dataphyre/runtime/modules/tracelog/documentation/Dataphyre_Tracelog.md',
+				'dataphyre://doc/dataphyre/runtime/modules/issue/documentation/Dataphyre_Issue.md',
+				'dataphyre://module-index',
+			],
+			'dataphyre_contract_workflow'=>[
+				'dataphyre://contracts',
 				'dataphyre://module-index',
 			],
 			default=>[
-				'dataphyre://doc/common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md',
-				'dataphyre://doc/common/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md',
-				'dataphyre://doc/common/dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md',
+				'dataphyre://doc/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md',
+				'dataphyre://doc/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md',
+				'dataphyre://doc/dataphyre/runtime/modules/routing/documentation/Dataphyre_Routing.md',
 				'dataphyre://module-index',
 			],
 		};

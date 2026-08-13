@@ -16,6 +16,16 @@ final class PanelInstance {
 
 	private string $name;
 	private PanelManager $manager;
+	private PanelInstanceExtensionRegistry $extensionRegistry;
+	private PanelWidgetRuntimeRegistry $widgetRuntimeRegistry;
+	private ?PanelDataSurfaceRegistry $dataSurfaceRegistry=null;
+	private int $dataSurfaceRevision=0;
+	/** @var array{operation:string,revision:int} */
+	private array $dataSurfaceLifecycle=['operation'=>'unconfigured','revision'=>0];
+	private ?PanelPlatform $platform=null;
+	private int $platformRevision=0;
+	/** @var array{operation:string,revision:int} */
+	private array $platformLifecycle=['operation'=>'unconfigured','revision'=>0];
 	/** @var array<string, mixed> */
 	private array $config=[];
 	/** @var array<string, PanelPlugin> */
@@ -24,6 +34,14 @@ final class PanelInstance {
 	private array $pluginConfig=[];
 	/** @var array<string, array<string, mixed>> */
 	private array $pluginDescriptions=[];
+	/** @var array<string, string|null> Plugin id to registering plugin id. */
+	private array $pluginOwners=[];
+	/** @var array<string, true> */
+	private array $bootedPlugins=[];
+	private bool $bootingPlugins=false;
+	/** @var ?array<string,mixed> Pre-plugin surface checkpoint used for hot reload. */
+	private ?array $pluginLifecycleBaseline=null;
+	private bool $rebuildingPlugins=false;
 
 	/**
 	 * Creates a stateful Panel surface instance.
@@ -37,10 +55,26 @@ final class PanelInstance {
 	public function __construct(?string $name=null, ?PanelManager $manager=null, array $config=[]) {
 		$this->name=Resource::normalizeName((string)($name ?? ''));
 		$this->manager=$manager ?? new PanelManager();
+		$this->extensionRegistry=new PanelInstanceExtensionRegistry((string)($config['extension_conflict_policy'] ?? 'reject'));
+		$widgetScopeResolver=is_callable($config['widget_runtime_scope_resolver'] ?? null) ? $config['widget_runtime_scope_resolver'] : null;
+		$widgetBindingKeys=$config['widget_runtime_binding_keys'] ?? $config['widget_runtime_binding_key'] ?? null;
+		if(!is_array($widgetBindingKeys) && !is_string($widgetBindingKeys) && $widgetBindingKeys!==null){
+			throw new \InvalidArgumentException('widget_runtime_binding_keys must be a key map, string, or null.');
+		}
+		$widgetCurrentKey=is_string($config['widget_runtime_current_key'] ?? null) ? $config['widget_runtime_current_key'] : null;
+		$this->widgetRuntimeRegistry=new PanelWidgetRuntimeRegistry(
+			(string)($config['widget_runtime_conflict_policy'] ?? 'reject'),
+			$widgetScopeResolver,
+			$widgetBindingKeys,
+			$widgetCurrentKey
+		);
 		$this->config($config);
 		if($this->name!==''){
 			$this->config['panel_name']=$this->name;
 		}
+		$this->within(static function(): void {
+			PanelComponentRegistry::flush();
+		});
 	}
 
 	/**
@@ -73,6 +107,346 @@ final class PanelInstance {
 	 */
 	public function manager(): PanelManager {
 		return $this->manager;
+	}
+
+	/** Returns this surface's isolated component, macro/configurator, and theme state. */
+	public function extensions(): PanelInstanceExtensionRegistry {
+		return $this->extensionRegistry;
+	}
+
+	/** Explicit alias for extension authors migrating from PanelComponentRegistry statics. */
+	public function componentRegistry(): PanelInstanceExtensionRegistry {
+		return $this->extensionRegistry;
+	}
+
+	/** Returns this surface's isolated interactive-widget adapter registry. */
+	public function widgetRuntime(): PanelWidgetRuntimeRegistry {
+		return $this->widgetRuntimeRegistry;
+	}
+
+	/** Registers a runtime adapter without creating a process-global fallback. */
+	public function registerWidgetRuntimeAdapter(PanelWidgetRuntimeAdapter $adapter, ?string $alias=null, string $owner='application', array $meta=[]): self {
+		$this->widgetRuntimeRegistry->register($adapter, $alias, $owner, $meta);
+		return $this;
+	}
+
+	/** @return array<string,mixed> */
+	public function widgetRuntimeManifest(): array {
+		return $this->widgetRuntimeRegistry->manifest();
+	}
+
+	/** Reports whether this surface has a resolved, type-correct data registry. */
+	public function hasDataSources(): bool {
+		return $this->platform instanceof PanelPlatform
+			&& ($this->platform->serviceStatus('data.registry',PanelDataSourceRegistry::class)['state']??null)==='ready';
+	}
+
+	/** Returns the attached platform's already-resolved data registry without a global fallback. */
+	public function dataSources(): PanelDataSourceRegistry {
+		if(!$this->hasDataSources()){throw new \LogicException('This Panel surface does not have a ready data-source registry configured.');}
+		return$this->platform()->dataSources();
+	}
+
+	/** Registers an application or active-plugin data source contribution. @param array<string,mixed> $meta */
+	public function registerDataSource(string $name,PanelDataSource $source,bool $replace=false,array $meta=[]): self {
+		$registry=$this->dataSources();$owner=$this->extensionRegistry->contributorId();
+		if(in_array($owner,['application','legacy','core'],true)){$registry->register($name,$source,$replace);}
+		else{$registry->contribute($name,$source,$owner,$meta,$replace?'replace':null);}return$this;
+	}
+
+	/** Publishes only the snapshotted, secret-free registry contract. @return array<string,mixed> */
+	public function dataSourceManifest(): array {
+		$status=$this->platform?->serviceStatus('data.registry',PanelDataSourceRegistry::class)??['state'=>'missing'];
+		$ready=($status['state']??null)==='ready';
+		$manifest=$ready?$this->platform->dataSources()->manifest():[
+			'type'=>'panel_data_source_registry','contract_version'=>1,'revision'=>0,'conflict_policy'=>'reject','count'=>0,'sources'=>[],
+			'fingerprint'=>hash('sha256','[]'),'capabilities'=>['instance_scoped'=>true,'contributor_layers'=>true,'transactional_checkpoint'=>true,'registration_manifest_snapshot'=>true,'live_adapter_code_run_by_manifest'=>false,'secret_values_serialized'=>false],
+		];
+		$manifest['attachment']=['configured'=>$ready,'platform_attached'=>$this->platform instanceof PanelPlatform,'service_state'=>(string)($status['state']??'missing'),'platform_revision'=>$this->platformRevision,'registry_revision'=>$ready?$this->platform->dataSources()->revision():0,'lifecycle'=>$this->platformLifecycle];return$manifest;
+	}
+
+	/** Reports whether the complete typed realtime endpoint graph is already resolved. */
+	public function hasRealtime(): bool {
+		if(!$this->platform instanceof PanelPlatform){return false;}
+		foreach(['realtime.broker'=>PanelRealtimeBroker::class,'realtime.signer'=>PanelRealtimeIntentSigner::class,'realtime.endpoint'=>PanelRealtimeEndpoint::class]as$name=>$type){
+			if(($this->platform->serviceStatus($name,$type)['state']??null)!=='ready'){return false;}
+		}
+		try{$endpoint=$this->platform->realtime();return$endpoint->broker()===$this->platform->realtimeBroker()&&$endpoint->signer()===$this->platform->realtimeSigner();}catch(\Throwable){return false;}
+	}
+
+	/** Returns the explicitly attached, host-authorized realtime endpoint. */
+	public function realtime(): PanelRealtimeEndpoint {
+		if(!$this->hasRealtime()){throw new \LogicException('This Panel surface does not have a ready realtime endpoint configured.');}
+		return$this->platform()->realtime();
+	}
+
+	/** Publishes a bounded integration contract without resolving factories or installing a route. @return array<string,mixed> */
+	public function realtimeManifest(): array {
+		$services=[];
+		foreach(['broker'=>['realtime.broker',PanelRealtimeBroker::class],'signer'=>['realtime.signer',PanelRealtimeIntentSigner::class],'endpoint'=>['realtime.endpoint',PanelRealtimeEndpoint::class]]as$key=>[$name,$type]){
+			$services[$key]=$this->platform?->serviceStatus($name,$type)??['service'=>$name,'expected'=>$type,'present'=>false,'valid'=>false,'state'=>'missing','actual'=>null];
+		}
+		$cohesion=$this->realtimeCohesion($services);$ready=$cohesion['valid'];$endpoint=null;
+		if($ready){$safe=PanelSensitiveDataSanitizer::sanitize($this->platform->realtime()->jsonSerialize(),['max_depth'=>20,'max_items'=>1000,'max_string_bytes'=>4096]);$endpoint=is_array($safe)&&!array_is_list($safe)?$safe:null;}
+		return[
+			'type'=>'panel_realtime_integration','version'=>1,'endpoint'=>$endpoint,'client'=>PanelRealtimeClientAssets::manifest(),
+			'integration'=>['routes_registered'=>false,'host_route_required'=>true,'host_authorization_required'=>true,'host_csrf_origin_rate_limit_required'=>true,'query_requires_opt_in'=>true,'credential_named_query_keys_rejected'=>true,'connect_intent_transport'=>'header','resume_intent_transport'=>'header','graph_identity_enforced'=>true],
+			'attachment'=>['configured'=>$ready,'platform_attached'=>$this->platform instanceof PanelPlatform,'services'=>$services,'cohesion'=>$cohesion,'platform_revision'=>$this->platformRevision,'lifecycle'=>$this->platformLifecycle],
+		];
+	}
+
+	/** @param array<string,array<string,mixed>> $services @return array{evaluated:bool,valid:bool,mismatches:list<string>} */
+	private function realtimeCohesion(array $services):array{
+		foreach($services as$status){if(($status['state']??null)!=='ready'){return['evaluated'=>false,'valid'=>false,'mismatches'=>[]];}}
+		if(!$this->platform instanceof PanelPlatform){return['evaluated'=>false,'valid'=>false,'mismatches'=>[]];}
+		try{$endpoint=$this->platform->realtime();$mismatches=[];if($endpoint->broker()!==$this->platform->realtimeBroker()){$mismatches[]='realtime.endpoint.broker';}if($endpoint->signer()!==$this->platform->realtimeSigner()){$mismatches[]='realtime.endpoint.signer';}return['evaluated'=>true,'valid'=>$mismatches===[],'mismatches'=>$mismatches];}catch(\Throwable){return['evaluated'=>true,'valid'=>false,'mismatches'=>['graph_validation_failed']];}
+	}
+
+	/** Reports whether the complete agent-safe workflow graph is already resolved. */
+	public function hasAgentWorkflows(): bool {
+		if(!$this->platform instanceof PanelPlatform){return false;}
+		foreach(['agents.catalog'=>PanelAgentToolCatalog::class,'agents.policy'=>PanelAgentPolicyEngine::class,'agents.signer'=>PanelAgentIntentSigner::class,'agents.store'=>PanelAgentWorkflowStore::class,'agents.runtime'=>PanelAgentRuntime::class]as$name=>$type){
+			if(($this->platform->serviceStatus($name,$type)['state']??null)!=='ready'){return false;}
+		}
+		try{$runtime=$this->platform->agents();return$runtime->catalog()===$this->platform->agentTools()&&$runtime->policy()===$this->platform->agentPolicy()&&$runtime->signer()===$this->platform->agentSigner()&&$runtime->store()===$this->platform->agentStore();}catch(\Throwable){return false;}
+	}
+
+	/** Returns the explicitly configured agent-safe workflow runtime. */
+	public function agentRuntime(): PanelAgentRuntime {
+		if(!$this->hasAgentWorkflows()){throw new \LogicException('This Panel surface does not have a ready agent workflow runtime configured.');}
+		return$this->platform()->agents();
+	}
+
+	/** Registers a tool as an application or active-plugin contribution. */
+	public function registerAgentTool(PanelAgentTool $tool,PanelAgentToolExecutor $executor,int $priority=0): self {
+		$this->platform()->registerAgentTool($tool,$executor,$this->extensionRegistry->contributorId(),$priority);return$this;
+	}
+
+	/** Publishes only the sealed runtime contract; model, route, identity, callbacks, and secrets remain host-owned. @return array<string,mixed> */
+	public function agentWorkflowManifest(): array {
+		$definitions=['catalog'=>['agents.catalog',PanelAgentToolCatalog::class],'policy'=>['agents.policy',PanelAgentPolicyEngine::class],'signer'=>['agents.signer',PanelAgentIntentSigner::class],'store'=>['agents.store',PanelAgentWorkflowStore::class],'runtime'=>['agents.runtime',PanelAgentRuntime::class]];$services=[];
+		foreach($definitions as$key=>[$name,$type]){$services[$key]=$this->platform?->serviceStatus($name,$type)??['service'=>$name,'expected'=>$type,'present'=>false,'valid'=>false,'state'=>'missing','actual'=>null];}
+		$cohesion=$this->agentWorkflowCohesion($services);$ready=$cohesion['valid'];$runtime=null;
+		if($ready){$safe=PanelSensitiveDataSanitizer::sanitize($this->platform->agents()->jsonSerialize(),['max_depth'=>24,'max_items'=>1000,'max_string_bytes'=>4096]);$runtime=is_array($safe)&&!array_is_list($safe)?$safe:null;}
+		return[
+			'type'=>'panel_agent_workflow_integration','version'=>1,'runtime'=>$runtime,
+			'integration'=>['routes_registered'=>false,'model_client_registered'=>false,'identity_inferred'=>false,'host_authorization_required'=>true,'host_csrf_origin_rate_limit_required'=>true,'durable_store_host_required'=>true,'graph_identity_enforced'=>true],
+			'attachment'=>['configured'=>$ready,'platform_attached'=>$this->platform instanceof PanelPlatform,'services'=>$services,'cohesion'=>$cohesion,'platform_revision'=>$this->platformRevision,'lifecycle'=>$this->platformLifecycle],
+		];
+	}
+
+	/** @param array<string,array<string,mixed>> $services @return array{evaluated:bool,valid:bool,mismatches:list<string>} */
+	private function agentWorkflowCohesion(array $services):array{
+		foreach($services as$status){if(($status['state']??null)!=='ready'){return['evaluated'=>false,'valid'=>false,'mismatches'=>[]];}}
+		if(!$this->platform instanceof PanelPlatform){return['evaluated'=>false,'valid'=>false,'mismatches'=>[]];}
+		try{$runtime=$this->platform->agents();$mismatches=[];if($runtime->catalog()!==$this->platform->agentTools()){$mismatches[]='agents.runtime.catalog';}if($runtime->policy()!==$this->platform->agentPolicy()){$mismatches[]='agents.runtime.policy';}if($runtime->signer()!==$this->platform->agentSigner()){$mismatches[]='agents.runtime.signer';}if($runtime->store()!==$this->platform->agentStore()){$mismatches[]='agents.runtime.store';}return['evaluated'=>true,'valid'=>$mismatches===[],'mismatches'=>$mismatches];}catch(\Throwable){return['evaluated'=>true,'valid'=>false,'mismatches'=>['graph_validation_failed']];}
+	}
+
+	/** Attaches an explicitly secured, instance-owned DataSurface registry. */
+	public function useDataSurfaces(PanelDataSurfaceRegistry $registry,bool $replace=false): self {
+		$had=$this->dataSurfaceRegistry instanceof PanelDataSurfaceRegistry;
+		if($had&&!$replace){throw new \LogicException('This Panel surface already has a DataSurface registry configured.');}
+		$this->dataSurfaceRegistry=$registry;$this->dataSurfaceRevision++;
+		$this->dataSurfaceLifecycle=['operation'=>$had?'replaced':'attached','revision'=>$this->dataSurfaceRevision];return$this;
+	}
+
+	public function replaceDataSurfaces(PanelDataSurfaceRegistry $registry): self {return$this->useDataSurfaces($registry,true);}
+	public function withoutDataSurfaces(): self {
+		if($this->dataSurfaceRegistry instanceof PanelDataSurfaceRegistry){$this->dataSurfaceRegistry=null;$this->dataSurfaceRevision++;$this->dataSurfaceLifecycle=['operation'=>'detached','revision'=>$this->dataSurfaceRevision];}return$this;
+	}
+	public function hasDataSurfaces(): bool {return$this->dataSurfaceRegistry instanceof PanelDataSurfaceRegistry;}
+	public function dataSurfaces(): PanelDataSurfaceRegistry {
+		if(!$this->dataSurfaceRegistry instanceof PanelDataSurfaceRegistry){throw new \LogicException('This Panel surface does not have a DataSurface registry configured.');}return$this->dataSurfaceRegistry;
+	}
+	/** Registers an application or active-plugin contribution transactionally. @param array<string,mixed> $meta */
+	public function registerDataSurface(PanelDataSurfaceDefinition $definition,bool $replace=false,array $meta=[]): self {
+		$owner=$this->extensionRegistry->contributorId();
+		if(in_array($owner,['application','legacy','core'],true)){$this->dataSurfaces()->register($definition,$replace);}
+		else{$this->dataSurfaces()->contribute($definition,$owner,$meta,$replace?'replace':null);}return$this;
+	}
+	public function dataSurfaceEndpoint(): PanelDataSurfaceEndpoint {return new PanelDataSurfaceEndpoint($this->dataSurfaces());}
+	/** @return array<string,mixed> */
+	public function dataSurfaceManifest(): array {
+		$manifest=$this->dataSurfaceRegistry?->manifest()??['type'=>'panel_data_surface_registry','version'=>1,'count'=>0,'revision'=>0,'conflict_policy'=>'reject','authorization'=>'required','definitions'=>[],'fingerprint'=>hash('sha256','[]'),'capabilities'=>['instance_scoped'=>true,'contributor_layers'=>true,'transactional_checkpoint'=>true,'registration_manifest_snapshot'=>true,'live_adapter_code_run_by_manifest'=>false],'secrets_exposed'=>false];
+		$manifest['attachment']=['configured'=>$this->dataSurfaceRegistry instanceof PanelDataSurfaceRegistry,'revision'=>$this->dataSurfaceRevision,'registry_revision'=>$this->dataSurfaceRegistry?->revision()??0,'lifecycle'=>$this->dataSurfaceLifecycle];return$manifest;
+	}
+
+	/** @return array<string,mixed> */
+	public function extensionDiagnostics(): array {
+		return $this->extensionRegistry->diagnostics();
+	}
+
+	/** @return list<array<string,mixed>> */
+	public function extensionProvenance(?string $plugin=null): array {
+		return $this->extensionRegistry->provenance($plugin);
+	}
+
+	/**
+	 * Reports whether this surface owns a production platform container.
+	 */
+	public function hasPlatform(): bool {
+		return $this->platform instanceof PanelPlatform;
+	}
+
+	/**
+	 * Returns the production platform container attached to this surface.
+	 *
+	 * Platform access fails closed so callers cannot silently fall back to a
+	 * process-global service container when a surface was not configured.
+	 *
+	 * @throws \LogicException when this surface has no platform attachment.
+	 */
+	public function platform(): PanelPlatform {
+		if(!$this->platform instanceof PanelPlatform){
+			throw new \LogicException('This Panel surface does not have a platform configured.');
+		}
+		return $this->platform;
+	}
+
+	/** Creates a composable transactional framework adapter pack. @param array<string,mixed> $options */
+	public function adapterPack(string $id,string $version='1.0.0',array $options=[]):PanelAdapterPack {
+		return PanelAdapterPack::make($id,$version,$options);
+	}
+
+	/** Returns the first-party Access, Fulltext, and Mailer adapter pack. */
+	public function dataphyreAdapterPack():PanelAdapterPack {
+		return PanelDataphyreAdapterPack::make();
+	}
+
+	/** @param array<string,mixed> $config */
+	public function planAdapterPack(PanelAdapterPack $pack,array $config=[]):PanelAdapterPackPlan {
+		return $pack->plan($this,$config);
+	}
+
+	/** @param array<string,mixed> $config */
+	public function installAdapterPack(PanelAdapterPack $pack,array $config=[]):PanelAdapterPackActivation {
+		return $pack->install($this,$config);
+	}
+
+	/**
+	 * Attaches an existing platform or atomically builds filesystem defaults.
+	 *
+	 * @param PanelPlatform|array<string,mixed> $platform Platform container or defaults configuration.
+	 * @param bool $replace Whether an existing attachment may be replaced.
+	 */
+	public function usePlatform(PanelPlatform|array $platform, bool $replace=false): self {
+		$hadPlatform=$this->platform instanceof PanelPlatform;
+		if($hadPlatform && !$replace){
+			throw new \LogicException('This Panel surface already has a platform configured.');
+		}
+		$candidate=$platform instanceof PanelPlatform ? $platform : PanelPlatform::defaults($platform);
+		$previous=$this->platform;$previousActivation=$previous?->optional('operations_os.activation');$candidateActivation=$candidate->optional('operations_os.activation');
+		if($previousActivation!==null&&!$previousActivation instanceof PanelDomainActivationRuntime){throw new \UnexpectedValueException('Existing platform domain activation service is invalid.');}
+		if($candidateActivation!==null&&!$candidateActivation instanceof PanelDomainActivationRuntime){throw new \UnexpectedValueException('Candidate platform domain activation service is invalid.');}
+		$detached=false;$attached=false;
+		try{
+			if($previousActivation instanceof PanelDomainActivationRuntime){$previousActivation->detachManager($this->manager,true);$detached=true;}
+			if($candidateActivation instanceof PanelDomainActivationRuntime){$candidateActivation->attachManager($this->manager);$attached=true;}
+		}catch(\Throwable $error){if($attached&&$candidateActivation instanceof PanelDomainActivationRuntime){$candidateActivation->detachManager($this->manager,true);}if($detached&&$previousActivation instanceof PanelDomainActivationRuntime){$previousActivation->attachManager($this->manager);}throw$error;}
+		$this->platform=$candidate;
+		$this->platformRevision++;
+		$this->platformLifecycle=[
+			'operation'=>$hadPlatform ? 'replaced' : 'attached',
+			'revision'=>$this->platformRevision,
+		];
+		return $this;
+	}
+
+	/** @param PanelPlatform|array<string,mixed> $platform */
+	public function replacePlatform(PanelPlatform|array $platform): self {
+		return $this->usePlatform($platform, true);
+	}
+
+	/** Detaches the current platform without mutating the detached container. */
+	public function withoutPlatform(): self {
+		if($this->platform instanceof PanelPlatform){
+			$activation=$this->platform->optional('operations_os.activation');if($activation!==null&&!$activation instanceof PanelDomainActivationRuntime){throw new \UnexpectedValueException('Platform domain activation service is invalid.');}if($activation instanceof PanelDomainActivationRuntime){$activation->detachManager($this->manager,true);}
+			$this->platform=null;
+			$this->platformRevision++;
+			$this->platformLifecycle=['operation'=>'detached','revision'=>$this->platformRevision];
+		}
+		return $this;
+	}
+
+	/** Returns the configured platform HTTP-neutral controller. */
+	public function platformController(): PanelPlatformController {
+		return $this->platform()->controller();
+	}
+
+	/** Returns the cohesive governed Operations OS attached to this surface. */
+	public function operationsOs(): PanelOperationsOs {return $this->platform()->operationsOs();}
+	public function operationsConsole(): PanelOperationsConsole {return $this->platform()->operationsConsole();}
+	public function domainActivation(): PanelDomainActivationRuntime {return $this->platform()->domainActivation();}
+	public function commandFabric(): PanelCommandFabric {return $this->platform()->commandFabric();}
+	public function complianceLedger(): PanelComplianceLedger {return $this->platform()->complianceLedger();}
+	public function complianceAutomation(): PanelComplianceAutomation {return $this->platform()->complianceAutomation();}
+	public function localReplica(string|int $actorId): PanelLocalReplica {return $this->platform()->localReplica($actorId);}
+
+	/** @param array<string,mixed> $options @return array<string,PanelPage> */
+	public function platformPages(array $options=[]): array {
+		return $this->platform()->pages($options);
+	}
+
+	/**
+	 * Registers the configured platform's first-party domain pages on this surface.
+	 *
+	 * @param array<string,mixed> $options Page naming, navigation, and domain options.
+	 */
+	public function mountPlatformPages(array $options=[]): self {
+		foreach($this->platformPages($options) as $page){
+			$this->registerPage($page);
+		}
+		return $this;
+	}
+
+	public function openStudioEditor(PanelStudioDocument $document,string $principalId,?PanelStudioDefinition $initial=null): PanelStudioEditorSession {return PanelStudioEditor::open($this->platform()->studio(),$document,$principalId,$initial);}
+	/** @param array<string,mixed> $checkpoint */ public function resumeStudioEditor(PanelStudioDocument $document,string $principalId,array $checkpoint): PanelStudioEditorSession {return PanelStudioEditor::resume($this->platform()->studio(),$document,$principalId,$checkpoint);}
+	public function renderStudioEditor(PanelStudioEditorSession $session,PanelStudioEditorOptions $options): string {return PanelStudioEditor::render($session,$options);}
+	public function renderStudioVisualPreview(PanelStudioEditorSession $session,?PanelStudioVisualDataset $dataset=null,?PanelRequest $request=null): PanelStudioVisualPreview {return $this->within(fn():PanelStudioVisualPreview=>PanelStudioEditor::visualPreview($session,$dataset,$request));}
+	/** @return array<string,mixed> */ public function studioEditorManifest(?PanelStudioEditorSession $session=null): array {return PanelStudioEditor::manifest($session);}
+
+	/**
+	 * Returns a secret-free platform capability and attachment manifest.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function platformManifest(): array {
+		$manifest=($this->platform?->manifest() ?? PanelPlatformManifest::inspect())->jsonSerialize();
+		$manifest['attachment']=$this->platformState();
+		$manifest['data_sources']=$this->dataSourceManifest();
+		$manifest['data_surfaces']=$this->dataSurfaceManifest();
+		$manifest['realtime']=$this->realtimeManifest();
+		$manifest['agent_workflows']=$this->agentWorkflowManifest();
+		return $manifest;
+	}
+
+	/**
+	 * Returns safe lifecycle diagnostics without serializing service values.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function platformDiagnostics(): array {
+		$diagnostics=$this->platform?->diagnostics() ?? [
+			'type'=>'panel_platform_diagnostics',
+			'revision'=>0,
+			'lifecycle'=>['operation'=>'unconfigured','service'=>null,'revision'=>0],
+			'counts'=>$this->platformManifest()['counts'] ?? [],
+			'domains'=>$this->platformManifest()['domains'] ?? [],
+			'services'=>[],
+			'security'=>$this->platformManifest()['security'] ?? [],
+		];
+		$diagnostics['attachment']=$this->platformState();
+		return $diagnostics;
+	}
+
+	/** @return array{configured:bool,revision:int,service_revision:int,lifecycle:array{operation:string,revision:int}} */
+	public function platformState(): array {
+		return [
+			'configured'=>$this->platform instanceof PanelPlatform,
+			'revision'=>$this->platformRevision,
+			'service_revision'=>$this->platform?->revision() ?? 0,
+			'lifecycle'=>$this->platformLifecycle,
+		];
 	}
 
 	/**
@@ -384,15 +758,87 @@ final class PanelInstance {
 	 */
 	public function config(array|string $key, mixed $value=null): self {
 		if(is_array($key)){
-			foreach($key as $name=>$configValue){
-				$name=trim((string)$name);
-				if($name!==''){
-					$this->config[$name]=$configValue;
+			$directives=[];
+			$dataSurfaceDirectives=[];
+			if(array_key_exists('data_surface_registry',$key)){$dataSurfaceDirectives['data_surface_registry']=$key['data_surface_registry'];}
+			if(array_key_exists('data_surfaces',$key)){$dataSurfaceDirectives['data_surfaces']=$key['data_surfaces'];}
+			if(count($dataSurfaceDirectives)>1){throw new \InvalidArgumentException('Configure a Panel surface with only one DataSurface registry directive.');}
+			$replaceDataSurfaces=($key['data_surfaces_replace']??false)===true;
+			if($dataSurfaceDirectives===[]&&array_key_exists('data_surfaces_replace',$key)){throw new \InvalidArgumentException('data_surfaces_replace requires a DataSurface registry directive.');}
+			$dataSurfaceCandidate=null;
+			if($dataSurfaceDirectives!==[]){$dataSurfaceCandidate=$dataSurfaceDirectives[(string)array_key_first($dataSurfaceDirectives)];if(!$dataSurfaceCandidate instanceof PanelDataSurfaceRegistry){throw new \InvalidArgumentException('data_surface_registry must be a PanelDataSurfaceRegistry.');}if($this->dataSurfaceRegistry instanceof PanelDataSurfaceRegistry&&!$replaceDataSurfaces){throw new \LogicException('This Panel surface already has a DataSurface registry configured.');}}
+			if(array_key_exists('platform_instance', $key)){
+				$directives['platform_instance']=$key['platform_instance'];
+			}
+			if(array_key_exists('platform_config', $key)){
+				$directives['platform_config']=$key['platform_config'];
+			}
+			if(($key['platform'] ?? null) instanceof PanelPlatform){
+				$directives['platform']=$key['platform'];
+			}
+			if(count($directives)>1){
+				throw new \InvalidArgumentException('Configure a Panel surface with only one platform directive.');
+			}
+			$replace=($key['platform_replace'] ?? false)===true;
+			if($directives===[] && array_key_exists('platform_replace', $key)){
+				throw new \InvalidArgumentException('platform_replace requires platform_instance or platform_config.');
+			}
+			$candidate=null;
+			if($directives!==[]){
+				if($this->platform instanceof PanelPlatform && !$replace){
+					throw new \LogicException('This Panel surface already has a platform configured.');
+				}
+				$directive=(string)array_key_first($directives);
+				$input=$directives[$directive];
+				if($directive==='platform_config'){
+					if(!is_array($input)){
+						throw new \InvalidArgumentException('platform_config must be an array.');
+					}
+					$candidate=PanelPlatform::defaults($input);
+				}
+				elseif($input instanceof PanelPlatform){
+					$candidate=$input;
+				}
+				else{
+					throw new \InvalidArgumentException('platform_instance must be a PanelPlatform.');
 				}
 			}
+			$next=$this->config;
+			foreach($key as $name=>$configValue){
+				$name=trim((string)$name);
+				if($name==='' || in_array($name, ['platform_instance', 'platform_config', 'platform_replace','data_surface_registry','data_surfaces','data_surfaces_replace'], true) || ($name==='platform' && $candidate instanceof PanelPlatform)){
+					continue;
+				}
+				$next[$name]=$configValue;
+			}
+			$this->config=$next;
+			if($candidate instanceof PanelPlatform){
+				$this->usePlatform($candidate, $replace);
+			}
+			if($dataSurfaceCandidate instanceof PanelDataSurfaceRegistry){$this->useDataSurfaces($dataSurfaceCandidate,$replaceDataSurfaces);}
 			return $this;
 		}
 		$key=trim($key);
+		if($key==='platform_instance' || $key==='platform'){
+			if(!$value instanceof PanelPlatform){
+				throw new \InvalidArgumentException($key.' must be a PanelPlatform.');
+			}
+			return $this->usePlatform($value);
+		}
+		if($key==='platform_config'){
+			if(!is_array($value)){
+				throw new \InvalidArgumentException('platform_config must be an array.');
+			}
+			return $this->usePlatform($value);
+		}
+		if($key==='platform_replace'){
+			throw new \InvalidArgumentException('platform_replace is only valid beside a platform directive.');
+		}
+		if($key==='data_surface_registry'||$key==='data_surfaces'){
+			if(!$value instanceof PanelDataSurfaceRegistry){throw new \InvalidArgumentException($key.' must be a PanelDataSurfaceRegistry.');}
+			return$this->useDataSurfaces($value);
+		}
+		if($key==='data_surfaces_replace'){throw new \InvalidArgumentException('data_surfaces_replace is only valid beside a DataSurface registry directive.');}
 		if($key!==''){
 			$this->config[$key]=$value;
 		}
@@ -417,6 +863,16 @@ final class PanelInstance {
 	 */
 	public function homeLabel(string $label): self {
 		return $this->config('home_label', $label);
+	}
+
+	/**
+	 * Mounts a registered custom page at this surface's root URL.
+	 *
+	 * Passing null clears the override and restores the generated dashboard.
+	 */
+	public function homePage(string|PanelPage|null $page): self {
+		$name=$page instanceof PanelPage ? $page->name() : Resource::normalizeName((string)($page ?? ''));
+		return $this->config('home_page', $name!=='' ? $name : null);
 	}
 
 	/**
@@ -461,6 +917,76 @@ final class PanelInstance {
 	 */
 	public function tenantResolver(callable $resolver): self {
 		return $this->config('tenant_resolver', $resolver);
+	}
+
+	/**
+	 * Configures signed cross-page and modal navigation for this surface.
+	 *
+	 * A provider supports rotation directly. A string creates one current key. An
+	 * array may be a complete options map or a kid-to-secret keyring.
+	 */
+	public function navigationIntents(PanelNavigationKeyProvider|array|string|bool $configuration=true, ?string $currentKeyId=null, array $options=[]): self {
+		if($configuration===false){ return $this->config('navigation_intents', false); }
+		if($configuration===true){ return $this->config('navigation_intents', array_replace($options, ['enabled'=>true])); }
+		if($configuration instanceof PanelNavigationKeyProvider){
+			return $this->config('navigation_intents', array_replace($options, ['enabled'=>true,'key_provider'=>$configuration]));
+		}
+		if(is_string($configuration)){
+			return $this->config('navigation_intents', array_replace($options, ['enabled'=>true,'key'=>$configuration,'key_id'=>$currentKeyId ?? 'current']));
+		}
+		$known=['enabled','key_provider','keys','key','key_id','current_key_id','surface','panel','audience','ttl','leeway','max_token_bytes','unsigned_migration','input_name','replay_guard','principal_resolver'];
+		$isOptions=count(array_intersect(array_keys($configuration), $known))>0;
+		$config=$isOptions ? $configuration : ['keys'=>$configuration,'current_key_id'=>$currentKeyId ?? (string)array_key_first($configuration)];
+		return $this->config('navigation_intents', array_replace($config, $options, ['enabled'=>($config['enabled'] ?? true)!==false]));
+	}
+
+	/** Configures one current navigation signing key. */
+	public function navigationIntentKey(string $secret, string $keyId='current', array $options=[]): self {
+		return $this->navigationIntents($secret, $keyId, $options);
+	}
+
+	/** Configures a rotation-capable navigation key provider. */
+	public function navigationIntentKeyProvider(PanelNavigationKeyProvider $provider, array $options=[]): self {
+		return $this->navigationIntents($provider, null, $options);
+	}
+
+	/** Controls temporary acceptance of unsigned, unprivileged same-panel returns. */
+	public function navigationIntentMigration(string $policy): self {
+		$policy=Resource::normalizeName($policy);
+		if(!in_array($policy, [PanelNavigationIntentManager::MIGRATION_SAME_PANEL,PanelNavigationIntentManager::MIGRATION_DISABLED], true)){
+			throw new \InvalidArgumentException('Navigation intent migration policy must be same_panel or disabled.');
+		}
+		$current=is_array($this->config['navigation_intents'] ?? null) ? $this->config['navigation_intents'] : [];
+		return $this->config('navigation_intents', array_replace($current, ['enabled'=>true,'unsigned_migration'=>$policy]));
+	}
+
+	/** Binds navigation tokens to a named mounted surface. */
+	public function navigationIntentSurface(string $surface): self {
+		$surface=trim($surface);
+		if($surface==='' || strlen($surface)>128 || preg_match('/^[A-Za-z0-9][A-Za-z0-9._:-]*$/D', $surface)!==1){ throw new \InvalidArgumentException('Navigation intent surface is invalid.'); }
+		$current=is_array($this->config['navigation_intents'] ?? null) ? $this->config['navigation_intents'] : [];
+		return $this->config('navigation_intents', array_replace($current, ['enabled'=>true,'surface'=>$surface]));
+	}
+
+	/** Installs an optional atomic replay guard for single-use intents. */
+	public function navigationIntentReplayGuard(PanelNavigationReplayGuard $guard): self {
+		$current=is_array($this->config['navigation_intents'] ?? null) ? $this->config['navigation_intents'] : [];
+		return $this->config('navigation_intents', array_replace($current, ['enabled'=>true,'replay_guard'=>$guard]));
+	}
+
+	/** Issues a signed intent against this surface's scoped configuration. */
+	public function issueNavigationIntent(string $returnTarget, PanelRequest $request, array $options=[]): ?string {
+		return $this->within(fn(): ?string=>PanelConfig::navigationIntentManager()->issue($returnTarget, $request, $options));
+	}
+
+	/** Verifies a signed intent against this surface and request identity. */
+	public function verifyNavigationIntent(string $token, PanelRequest $request, array $expected=[]): PanelNavigationIntentVerification {
+		return $this->within(fn(): PanelNavigationIntentVerification=>PanelConfig::navigationIntentManager()->verify($token, $request, $expected));
+	}
+
+	/** Returns this surface's secret-free navigation intent capabilities. */
+	public function navigationIntentManifest(): array {
+		return $this->within(fn(): array=>PanelConfig::navigationIntentManifest());
 	}
 
 	/**
@@ -899,6 +1425,7 @@ final class PanelInstance {
 		if($hook===''){
 			return $this;
 		}
+		$this->extensionRegistry->assertPermission('render_hook.register');
 		$hooks=is_array($this->config['render_hooks'] ?? null) ? $this->config['render_hooks'] : [];
 		$current=$hooks[$hook] ?? [];
 		if(!is_array($current) || !array_is_list($current)){
@@ -919,9 +1446,6 @@ final class PanelInstance {
 	 */
 	public function renderHooks(array $hooks): self {
 		foreach($hooks as $hook=>$renderers){
-			if(!is_string($hook) && !is_int($hook)){
-				continue;
-			}
 			if(is_array($renderers) && array_is_list($renderers)){
 				foreach($renderers as $renderer){
 					if(is_callable($renderer) || is_string($renderer)){
@@ -997,7 +1521,7 @@ final class PanelInstance {
 	 * @return Resource.
 	 */
 	public function resource(?string $name=null): Resource {
-		return Resource::make($name);
+		return $this->within(static fn(): Resource=>Resource::make($name));
 	}
 
 	/**
@@ -1009,7 +1533,7 @@ final class PanelInstance {
 	 * @return PanelPage.
 	 */
 	public function page(string $name): PanelPage {
-		return PanelPage::make($name);
+		return $this->within(static fn(): PanelPage=>PanelPage::make($name));
 	}
 
 	/**
@@ -1027,19 +1551,21 @@ final class PanelInstance {
 				return $current;
 			}
 			if(is_array($current)){
-				$this->config['theme']=PanelTheme::fromArray($current);
+				$this->config['theme']=$this->within(static fn(): PanelTheme=>PanelTheme::fromArray($current));
 				return $this->config['theme'];
 			}
 			if(is_string($current) && trim($current)!==''){
-				$this->config['theme']=PanelTheme::namedTheme($current) ?? PanelTheme::make($current);
+				$this->config['theme']=$this->within(static fn(): PanelTheme=>PanelTheme::namedTheme($current) ?? PanelTheme::make($current));
 				return $this->config['theme'];
 			}
 			$this->config['theme']=PanelTheme::make($this->name!=='' ? $this->name : 'default');
 			return $this->config['theme'];
 		}
-		$this->config['theme']=$theme instanceof PanelTheme
-			? $theme
-			: ($theme instanceof PanelThemePreset ? $theme->toTheme($this->name!=='' ? $this->name : 'default') : (is_array($theme) ? PanelTheme::fromArray($theme) : (PanelTheme::namedTheme($theme) ?? PanelTheme::make($theme))));
+		$this->config['theme']=$this->within(function() use ($theme): PanelTheme {
+			return $theme instanceof PanelTheme
+				? $theme
+				: ($theme instanceof PanelThemePreset ? $theme->toTheme($this->name!=='' ? $this->name : 'default') : (is_array($theme) ? PanelTheme::fromArray($theme) : (PanelTheme::namedTheme($theme) ?? PanelTheme::make($theme))));
+		});
 		return $this->config['theme'];
 	}
 
@@ -1077,7 +1603,7 @@ final class PanelInstance {
 	 * @return PanelThemePreset.
 	 */
 	public function themePreset(string|array|PanelThemePreset $preset): PanelThemePreset {
-		return PanelTheme::presetDefinition($preset);
+		return $this->within(static fn(): PanelThemePreset=>PanelTheme::presetDefinition($preset));
 	}
 
 	/**
@@ -1089,7 +1615,7 @@ final class PanelInstance {
 	 * @return PanelThemePreset.
 	 */
 	public function registerThemePreset(PanelThemePreset|array $preset): PanelThemePreset {
-		return PanelTheme::register_preset($preset);
+		return $this->within(static fn(): PanelThemePreset=>PanelTheme::registerPreset($preset));
 	}
 
 	/**
@@ -1101,7 +1627,7 @@ final class PanelInstance {
 	 * @return PanelTheme.
 	 */
 	public function registerTheme(PanelTheme|array $theme): PanelTheme {
-		return PanelTheme::registerTheme($theme);
+		return $this->within(static fn(): PanelTheme=>PanelTheme::registerTheme($theme));
 	}
 
 	/**
@@ -1113,7 +1639,7 @@ final class PanelInstance {
 	 * @return ?PanelTheme.
 	 */
 	public function namedTheme(string $name): ?PanelTheme {
-		return PanelTheme::namedTheme($name);
+		return $this->within(static fn(): ?PanelTheme=>PanelTheme::namedTheme($name));
 	}
 
 	/**
@@ -1125,7 +1651,7 @@ final class PanelInstance {
 	 * @return PanelThemeLibrary.
 	 */
 	public function loadThemePresets(string|array $paths): PanelThemeLibrary {
-		return PanelTheme::loadPresets($paths);
+		return $this->within(static fn(): PanelThemeLibrary=>PanelTheme::loadPresets($paths));
 	}
 
 	/**
@@ -1137,7 +1663,7 @@ final class PanelInstance {
 	 * @return PanelThemeLibrary.
 	 */
 	public function loadThemes(string|array $paths): PanelThemeLibrary {
-		return PanelTheme::loadThemes($paths);
+		return $this->within(static fn(): PanelThemeLibrary=>PanelTheme::loadThemes($paths));
 	}
 
 	/**
@@ -1147,7 +1673,7 @@ final class PanelInstance {
 	 * @return PanelThemeLibrary.
 	 */
 	public function themeLibrary(): PanelThemeLibrary {
-		return PanelTheme::themeLibrary();
+		return $this->extensionRegistry->themeLibrary();
 	}
 
 	/**
@@ -1157,7 +1683,7 @@ final class PanelInstance {
 	 * @return array.
 	 */
 	public function themeDiagnostics(): array {
-		return PanelTheme::diagnostics();
+		return $this->extensionRegistry->themeLibrary()->diagnostics();
 	}
 
 	/**
@@ -1169,7 +1695,7 @@ final class PanelInstance {
 	 * @return array.
 	 */
 	public function themePreview(?string $name=null): array {
-		return $name===null ? $this->theme()->preview() : PanelTheme::previewTheme($name);
+		return $name===null ? $this->theme()->preview() : $this->extensionRegistry->themeLibrary()->preview($name);
 	}
 
 	/**
@@ -1182,7 +1708,7 @@ final class PanelInstance {
 	 * @return string.
 	 */
 	public function themePreviewHtml(?string $name=null, array $options=[]): string {
-		return $name===null ? $this->theme()->previewHtml($options) : PanelTheme::previewThemeHtml($name, $options);
+		return $name===null ? $this->theme()->previewHtml($options) : $this->extensionRegistry->themeLibrary()->previewHtml($name, $options);
 	}
 
 	/**
@@ -1196,7 +1722,7 @@ final class PanelInstance {
 	 * @return array.
 	 */
 	public function themeManifest(PanelTheme|array|string|null $theme=null, array $meta=[], bool $includePreview=false): array {
-		return ThemeManifest::from($theme ?? $this->theme(), $meta, $includePreview)->toArray();
+		return $this->within(fn(): array=>ThemeManifest::from($theme ?? $this->theme(), $meta, $includePreview)->toArray());
 	}
 
 	/**
@@ -1221,7 +1747,7 @@ final class PanelInstance {
 	 * @return NavigationItem.
 	 */
 	public function navigationItem(string $name): NavigationItem {
-		return NavigationItem::make($name);
+		return $this->within(static fn(): NavigationItem=>NavigationItem::make($name));
 	}
 
 	/**
@@ -1290,7 +1816,7 @@ final class PanelInstance {
 	 * @return Field.
 	 */
 	public function field(string $name, string $type='text'): Field {
-		return Field::make($name, $type);
+		return $this->within(static fn(): Field=>Field::make($name, $type));
 	}
 
 	/**
@@ -1303,7 +1829,7 @@ final class PanelInstance {
 	 * @return InfolistEntry.
 	 */
 	public function entry(string $name, string $type='text'): InfolistEntry {
-		return InfolistEntry::make($name, $type);
+		return $this->within(static fn(): InfolistEntry=>InfolistEntry::make($name, $type));
 	}
 
 	/**
@@ -1315,7 +1841,7 @@ final class PanelInstance {
 	 * @return InfolistEntry.
 	 */
 	public function textEntry(string $name): InfolistEntry {
-		return InfolistEntry::make($name, 'text');
+		return $this->within(static fn(): InfolistEntry=>InfolistEntry::make($name, 'text'));
 	}
 
 	/**
@@ -1328,7 +1854,7 @@ final class PanelInstance {
 	 * @return InfolistEntry.
 	 */
 	public function badgeEntry(string $name, array|string $tones=[]): InfolistEntry {
-		return InfolistEntry::make($name, 'badge')->badge($tones);
+		return $this->within(static fn(): InfolistEntry=>InfolistEntry::make($name, 'badge')->badge($tones));
 	}
 
 	/**
@@ -1340,7 +1866,7 @@ final class PanelInstance {
 	 * @return InfolistEntry.
 	 */
 	public function imageEntry(string $name): InfolistEntry {
-		return InfolistEntry::make($name, 'image');
+		return $this->within(static fn(): InfolistEntry=>InfolistEntry::make($name, 'image'));
 	}
 
 	/**
@@ -1352,7 +1878,7 @@ final class PanelInstance {
 	 * @return FormSection.
 	 */
 	public function formSection(string $name): FormSection {
-		return FormSection::make($name);
+		return $this->within(static fn(): FormSection=>FormSection::make($name));
 	}
 
 	/**
@@ -1376,7 +1902,7 @@ final class PanelInstance {
 	 * @return Schema.
 	 */
 	public function schema(array $components=[]): Schema {
-		return Schema::make($components);
+		return $this->within(static fn(): Schema=>Schema::make($components));
 	}
 
 	/**
@@ -1422,7 +1948,7 @@ final class PanelInstance {
 	 * @return Infolist.
 	 */
 	public function infolist(array $components=[]): Infolist {
-		return Infolist::make($components);
+		return $this->within(static fn(): Infolist=>Infolist::make($components));
 	}
 
 	/**
@@ -1435,7 +1961,7 @@ final class PanelInstance {
 	 * @return SchemaComponent.
 	 */
 	public function schemaComponent(string $kind, string $name=''): SchemaComponent {
-		return SchemaComponent::make($kind, $name);
+		return $this->within(static fn(): SchemaComponent=>SchemaComponent::make($kind, $name));
 	}
 
 	/**
@@ -1801,7 +2327,7 @@ final class PanelInstance {
 	 * @return Column.
 	 */
 	public function column(string $name, string $type='text'): Column {
-		return Column::make($name, $type);
+		return $this->within(static fn(): Column=>Column::make($name, $type));
 	}
 
 	/**
@@ -1813,7 +2339,7 @@ final class PanelInstance {
 	 * @return PageTable.
 	 */
 	public function pageTable(string $name): PageTable {
-		return PageTable::make($name);
+		return $this->within(static fn(): PageTable=>PageTable::make($name));
 	}
 
 	/**
@@ -1875,7 +2401,7 @@ final class PanelInstance {
 	 * @return TableFilter.
 	 */
 	public function pageFilter(string $name, string $type='text'): TableFilter {
-		return TableFilter::make($name, $type);
+		return $this->within(static fn(): TableFilter=>TableFilter::make($name, $type));
 	}
 
 	/**
@@ -1888,7 +2414,7 @@ final class PanelInstance {
 	 * @return TableFilter.
 	 */
 	public function filter(string $name, string $type='text'): TableFilter {
-		return TableFilter::make($name, $type);
+		return $this->within(static fn(): TableFilter=>TableFilter::make($name, $type));
 	}
 
 	/**
@@ -1900,7 +2426,7 @@ final class PanelInstance {
 	 * @return TableView.
 	 */
 	public function view(string $name): TableView {
-		return TableView::make($name);
+		return $this->within(static fn(): TableView=>TableView::make($name));
 	}
 
 	/**
@@ -1913,7 +2439,7 @@ final class PanelInstance {
 	 * @return TableSummary.
 	 */
 	public function summary(string $name, string $type='count'): TableSummary {
-		return TableSummary::make($name, $type);
+		return $this->within(static fn(): TableSummary=>TableSummary::make($name, $type));
 	}
 
 	/**
@@ -1925,7 +2451,7 @@ final class PanelInstance {
 	 * @return TableGroup.
 	 */
 	public function tableGroup(string $name): TableGroup {
-		return TableGroup::make($name);
+		return $this->within(static fn(): TableGroup=>TableGroup::make($name));
 	}
 
 	/**
@@ -1937,7 +2463,7 @@ final class PanelInstance {
 	 * @return Action.
 	 */
 	public function action(string $name): Action {
-		return Action::make($name);
+		return $this->within(static fn(): Action=>Action::make($name));
 	}
 
 	/**
@@ -1973,7 +2499,7 @@ final class PanelInstance {
 	 * @return ActionGroup.
 	 */
 	public function actionGroup(string $name, array $actions=[]): ActionGroup {
-		return ActionGroup::make($name)->actions($actions);
+		return $this->within(static fn(): ActionGroup=>ActionGroup::make($name)->actions($actions));
 	}
 
 	/**
@@ -2008,7 +2534,7 @@ final class PanelInstance {
 	 * @return RelationManager.
 	 */
 	public function relation(string $name): RelationManager {
-		return RelationManager::make($name);
+		return $this->within(static fn(): RelationManager=>RelationManager::make($name));
 	}
 
 	/**
@@ -2035,7 +2561,7 @@ final class PanelInstance {
 	 * @return Widget.
 	 */
 	public function widget(string $name, string $type='stat'): Widget {
-		return Widget::make($name, $type);
+		return $this->within(static fn(): Widget=>Widget::make($name, $type));
 	}
 
 	/**
@@ -2076,7 +2602,7 @@ final class PanelInstance {
 	 * @return Widget.
 	 */
 	public function stat(string $name, mixed $value=null): Widget {
-		return Widget::make($name)->value($value);
+		return $this->within(static fn(): Widget=>Widget::make($name)->value($value));
 	}
 
 	/**
@@ -2212,6 +2738,40 @@ final class PanelInstance {
 	public function registerCommands(array $commands): array {
 		return $this->within(fn(): array => $this->manager->registerCommands($commands));
 	}
+
+	/** Registers a custom global-search provider on this isolated surface. */
+	public function registerSearchProvider(PanelSearchProvider|array $provider): PanelSearchProvider {
+		return $this->within(fn(): PanelSearchProvider=>$this->manager->registerSearchProvider($provider));
+	}
+
+	/** @param list<PanelSearchProvider|array<string,mixed>> $providers @return list<PanelSearchProvider> */
+	public function registerSearchProviders(array $providers): array {
+		return $this->within(fn(): array=>$this->manager->registerSearchProviders($providers));
+	}
+
+	public function tenantRegistry(): PanelTenantRegistry { return $this->manager->tenantRegistry(); }
+	public function registerTenant(PanelTenant|array $tenant): PanelTenant { return $this->within(fn(): PanelTenant=>$this->manager->registerTenant($tenant)); }
+	/** @param list<PanelTenant|array<string,mixed>> $tenants @return list<PanelTenant> */
+	public function registerTenants(array $tenants): array { return $this->within(fn(): array=>$this->manager->registerTenants($tenants)); }
+	public function tenantDefinition(string $name): ?PanelTenant { return $this->manager->tenant($name); }
+	public function hasTenant(string $name): bool { return $this->manager->hasTenant($name); }
+	/** @return array<string,PanelTenant> */
+	public function tenants(): array { return $this->manager->tenants(); }
+	public function tenantMembershipsUsing(callable $resolver): self { $this->manager->tenantMembershipsUsing($resolver); return $this; }
+	public function tenantAuthorizationUsing(callable $resolver): self { $this->manager->tenantAuthorizationUsing($resolver); return $this; }
+	public function tenantActiveUsing(callable $resolver): self { $this->manager->tenantActiveUsing($resolver); return $this; }
+	public function tenantPersistenceUsing(callable $resolver): self { $this->manager->tenantPersistenceUsing($resolver); return $this; }
+	public function tenantEntitlementUsing(callable $resolver): self { $this->manager->tenantEntitlementUsing($resolver); return $this; }
+	public function tenantOnboardingStep(string $name, callable $apply, ?callable $rollback=null): self { $this->manager->tenantOnboardingStep($name,$apply,$rollback); return $this; }
+	/** @return array<string,PanelTenantMembership> */
+	public function tenantMemberships(PanelRequest $request): array { return $this->within(fn(): array=>$this->manager->tenantMemberships($request)); }
+	public function tenantContext(PanelRequest $request): PanelTenantContext { return $this->within(fn(): PanelTenantContext=>$this->manager->tenantContext($request)); }
+	public function switchTenant(string $tenant, PanelRequest $request): PanelTenantSwitchResult { return $this->within(fn(): PanelTenantSwitchResult=>$this->manager->switchTenant($tenant,$request)); }
+	/** @return list<array<string,mixed>> */
+	public function tenantSwitcher(PanelRequest $request): array { return $this->within(fn(): array=>$this->manager->tenantSwitcher($request)); }
+	public function onboardTenant(PanelTenant|array $tenant, PanelRequest $request, string $idempotencyKey): PanelTenantOnboardingResult { return $this->within(fn(): PanelTenantOnboardingResult=>$this->manager->onboardTenant($tenant,$request,$idempotencyKey)); }
+	/** @param string|list<string> $namespace */
+	public function tenantStorageScope(string $tenant, string|array $namespace, PanelRequest $request): PanelTenantStorageScope { return $this->within(fn(): PanelTenantStorageScope=>$this->manager->tenantStorageScope($tenant,$namespace,$request)); }
 
 	/**
 	 * Installs the authorization callback for this Panel surface.
@@ -2378,23 +2938,83 @@ final class PanelInstance {
 	public function plugin(PanelPlugin|string $plugin, array $config=[]): self {
 		$plugin=$this->resolvePlugin($plugin);
 		$id=Resource::normalizeName($plugin->id());
-		if($id===''){
-			throw new \InvalidArgumentException('Panel plugin id cannot be empty.');
+		if($id==='' || in_array($id, ['core','application','legacy'], true)){
+			throw new \InvalidArgumentException('Panel plugin id cannot be empty or reserved by the extension runtime.');
 		}
 		if(isset($this->plugins[$id])){
 			$this->pluginConfig[$id]=array_replace($this->pluginConfig[$id] ?? [], $config);
 			$this->syncPluginConfig();
 			return $this;
 		}
-		$this->plugins[$id]=$plugin;
-		$this->pluginConfig[$id]=$config;
-		$this->pluginDescriptions[$id]=$this->describePlugin($plugin, $config);
-		$this->syncPluginConfig();
-		return $this->within(function() use ($plugin): self {
-			$plugin->register($this);
-			$plugin->boot($this);
-			return $this;
-		});
+		$permissions=$this->pluginExtensionPermissions($plugin, $config);
+		$contributor=$this->extensionRegistry->contributorId();
+		$owner=in_array($contributor, ['application','legacy','core',$id], true) ? null : $contributor;
+		$capturedBaseline=false;
+		if($this->pluginLifecycleBaseline===null && !$this->rebuildingPlugins){
+			$this->pluginLifecycleBaseline=$this->pluginLifecycleCheckpoint(false);
+			$capturedBaseline=true;
+		}
+
+		$managerCheckpoint=$this->manager->contributionCheckpoint();
+		$extensionCheckpoint=$this->extensionRegistry->checkpoint();
+		$widgetRuntimeCheckpoint=$this->widgetRuntimeRegistry->checkpoint();
+		$surfaceCheckpoint=[
+			'config'=>$this->config,
+			'plugins'=>$this->plugins,
+			'plugin_config'=>$this->pluginConfig,
+			'plugin_descriptions'=>$this->pluginDescriptions,
+			'plugin_owners'=>$this->pluginOwners,
+			'booted_plugins'=>$this->bootedPlugins,
+			'data_surfaces'=>$this->dataSurfaceRegistry,
+			'data_surface_checkpoint'=>$this->dataSurfaceRegistry?->checkpoint(),
+			'data_surface_revision'=>$this->dataSurfaceRevision,
+			'data_surface_lifecycle'=>$this->dataSurfaceLifecycle,
+			'platform'=>$this->platform,
+			'platform_checkpoint'=>$this->platform?->checkpoint(),
+			'platform_revision'=>$this->platformRevision,
+			'platform_lifecycle'=>$this->platformLifecycle,
+		];
+		try{
+			// Stage the identity first so nested registration sees the complete graph.
+			$this->plugins[$id]=$plugin;
+			$this->pluginConfig[$id]=$config;
+			$this->pluginDescriptions[$id]=$this->describePlugin($plugin, $config, $permissions);
+			$this->pluginOwners[$id]=$owner;
+			$this->pluginDescriptions[$id]['owner']=$owner;
+			$this->syncPluginConfig();
+			return $this->extensionRegistry->runAs($id, $permissions, [
+				'class'=>$plugin::class,
+				'phase'=>'register',
+			], fn(): self=>$this->within(function() use ($plugin): self {
+				$plugin->register($this);
+				return $this;
+			}));
+		}
+		catch(\Throwable $exception){
+			$this->manager->restoreContributionCheckpoint($managerCheckpoint);
+			$this->extensionRegistry->restore($extensionCheckpoint);
+			$this->widgetRuntimeRegistry->restore($widgetRuntimeCheckpoint);
+			$this->config=$surfaceCheckpoint['config'];
+			$this->plugins=$surfaceCheckpoint['plugins'];
+			$this->pluginConfig=$surfaceCheckpoint['plugin_config'];
+			$this->pluginDescriptions=$surfaceCheckpoint['plugin_descriptions'];
+			$this->pluginOwners=$surfaceCheckpoint['plugin_owners'];
+			$this->bootedPlugins=$surfaceCheckpoint['booted_plugins'];
+			$this->dataSurfaceRegistry=$surfaceCheckpoint['data_surfaces'];
+			if($this->dataSurfaceRegistry instanceof PanelDataSurfaceRegistry&&is_array($surfaceCheckpoint['data_surface_checkpoint']??null)){$this->dataSurfaceRegistry->restore($surfaceCheckpoint['data_surface_checkpoint']);}
+			$this->dataSurfaceRevision=(int)$surfaceCheckpoint['data_surface_revision'];
+			$this->dataSurfaceLifecycle=$surfaceCheckpoint['data_surface_lifecycle'];
+			$this->platform=$surfaceCheckpoint['platform'];
+			if($this->platform instanceof PanelPlatform && is_array($surfaceCheckpoint['platform_checkpoint'] ?? null)){
+				$this->platform->restore($surfaceCheckpoint['platform_checkpoint']);
+			}
+			$this->platformRevision=$surfaceCheckpoint['platform_revision'];
+			$this->platformLifecycle=$surfaceCheckpoint['platform_lifecycle'];
+			if($capturedBaseline && $this->plugins===[]){
+				$this->pluginLifecycleBaseline=null;
+			}
+			throw $exception;
+		}
 	}
 
 	/**
@@ -2421,6 +3041,60 @@ final class PanelInstance {
 			}
 		}
 		return $this;
+	}
+
+	/**
+	 * Boots every registered plugin after the complete registration phase.
+	 *
+	 * Boot is idempotent, re-entrant safe, and continues through plugins that
+	 * are registered by another plugin's boot method. A throwing plugin remains
+	 * pending so an application may repair its dependency and retry explicitly.
+	 */
+	public function bootPlugins(): self {
+		if($this->bootingPlugins){
+			return $this;
+		}
+		return $this->within(function(): self {
+			$this->bootingPlugins=true;
+			try{
+				while(true){
+					$order=$this->pendingPluginBootOrder();
+					if($order===[]){
+						break;
+					}
+					foreach($order as $pendingId){
+						if(isset($this->bootedPlugins[$pendingId])){
+							continue;
+						}
+						$pendingPlugin=$this->plugins[$pendingId];
+						$permissions=$this->pluginExtensionPermissions($pendingPlugin, $this->pluginConfig[$pendingId] ?? []);
+						$checkpoint=$this->pluginLifecycleCheckpoint();
+						try{
+							$this->extensionRegistry->runAs($pendingId, $permissions, [
+								'class'=>$pendingPlugin::class,
+								'phase'=>'boot',
+							], function() use ($pendingPlugin): void {
+								$pendingPlugin->boot($this);
+							});
+						}
+						catch(\Throwable $exception){
+							$this->restorePluginLifecycleCheckpoint($checkpoint);
+							throw $exception;
+						}
+						$this->bootedPlugins[$pendingId]=true;
+					}
+				}
+			}
+			finally{
+				$this->bootingPlugins=false;
+			}
+			return $this;
+		});
+	}
+
+	/** Returns true when every currently registered plugin has completed boot. */
+	public function pluginsBooted(): bool {
+		return count($this->bootedPlugins)===count($this->plugins);
 	}
 
 	/**
@@ -2471,10 +3145,18 @@ final class PanelInstance {
 	 * @return array.
 	 */
 	public function pluginManifest(PanelPlugin|array|string $plugin, array $config=[], array $meta=[]): array {
+		$id=$plugin instanceof PanelPlugin ? Resource::normalizeName($plugin->id()) : '';
 		if(is_string($plugin)){
 			$id=Resource::normalizeName($plugin);
 			$plugin=$this->plugins[$id] ?? ($this->pluginDescriptions[$id] ?? $plugin);
 			$config=$config!==[] ? $config : ($this->pluginConfig[$id] ?? []);
+		}
+		if($id!=='' && isset($this->pluginDescriptions[$id])){
+			$meta=array_replace([
+				'extension_permissions'=>$this->pluginDescriptions[$id]['extension_permissions'] ?? [],
+				'extension_provenance'=>$this->extensionRegistry->provenance($id),
+				'extension_revision'=>$this->extensionRegistry->revision(),
+			], $meta);
 		}
 		return PluginManifest::from($plugin, $config, $meta)->toArray();
 	}
@@ -2494,6 +3176,120 @@ final class PanelInstance {
 			$manifests[(string)($manifest['id'] ?? $id)]=$manifest;
 		}
 		return $manifests;
+	}
+
+	/**
+	 * Transactionally unloads one plugin and rebuilds remaining plugins from the
+	 * pre-plugin surface checkpoint. Dependents must be removed explicitly or by
+	 * enabling cascade, preventing a live surface with a broken dependency graph.
+	 */
+	public function unloadPlugin(string $id, bool $cascade=false): self {
+		$id=Resource::normalizeName($id);
+		if($id==='' || !isset($this->plugins[$id])){
+			return $this;
+		}
+		$remove=[$id=>true];
+		do{
+			$changed=false;
+			foreach($this->plugins as $pluginId=>$plugin){
+				if(isset($remove[$pluginId])){ continue; }
+				$owner=$this->pluginOwners[$pluginId] ?? null;
+				if($owner!==null && isset($remove[$owner])){
+					if(!$cascade){
+						throw new \LogicException('Panel plugin "'.$id.'" cannot be unloaded while owned plugin "'.$pluginId.'" remains registered.');
+					}
+					$remove[$pluginId]=true;
+					$changed=true;
+					continue;
+				}
+				if(array_intersect($this->pluginDependencies($plugin), array_keys($remove))!==[]){
+					if(!$cascade){
+						throw new \LogicException('Panel plugin "'.$id.'" cannot be unloaded while dependent plugin "'.$pluginId.'" remains registered.');
+					}
+					$remove[$pluginId]=true;
+					$changed=true;
+				}
+			}
+		}while($changed);
+
+		$specifications=[];
+		foreach($this->plugins as $pluginId=>$plugin){
+			if(!isset($remove[$pluginId])){
+				$specifications[]=['plugin'=>$plugin,'config'=>$this->pluginConfig[$pluginId] ?? []];
+			}
+		}
+		$wasBooted=$this->pluginsBooted();
+		$transaction=$this->pluginLifecycleCheckpoint();
+		$baseline=$this->pluginLifecycleBaseline;
+		try{
+			foreach(array_reverse(array_keys($remove)) as $pluginId){
+				$this->invokePluginUnregister($pluginId);
+			}
+			$this->rebuildPlugins($specifications, $wasBooted);
+			$reappeared=array_values(array_intersect(array_keys($remove), array_keys($this->plugins)));
+			if($reappeared!==[]){
+				throw new \LogicException('Panel plugin unload was blocked because a remaining plugin registered: '.implode(', ', $reappeared).'.');
+			}
+		}
+		catch(\Throwable $exception){
+			$this->restorePluginLifecycleCheckpoint($transaction);
+			$this->pluginLifecycleBaseline=$baseline;
+			throw $exception;
+		}
+		return $this;
+	}
+
+	/** Backward-friendly lifecycle alias. */
+	public function unregisterPlugin(string $id, bool $cascade=false): self {
+		return $this->unloadPlugin($id, $cascade);
+	}
+
+	/**
+	 * Transactionally replaces and re-registers one plugin at its existing load
+	 * position. Passing null reloads the same plugin object and configuration.
+	 *
+	 * @param array<string,mixed>|null $config
+	 */
+	public function reloadPlugin(string $id, PanelPlugin|string|null $replacement=null, ?array $config=null): self {
+		$id=Resource::normalizeName($id);
+		if($id==='' || !isset($this->plugins[$id])){
+			throw new \InvalidArgumentException('Panel plugin is not registered: '.$id);
+		}
+		if(($this->pluginOwners[$id] ?? null)!==null){
+			throw new \LogicException('Nested Panel plugins must be reloaded through their owning plugin: '.$this->pluginOwners[$id].'.');
+		}
+		$replacement=$replacement===null ? $this->plugins[$id] : $this->resolvePlugin($replacement);
+		$replacementId=Resource::normalizeName($replacement->id());
+		if($replacementId==='' || $replacementId!==$id){
+			throw new \LogicException('Reloaded Panel plugins must preserve their stable id.');
+		}
+		$specifications=[];
+		foreach($this->plugins as $pluginId=>$plugin){
+			$specifications[]=$pluginId===$id
+				? ['plugin'=>$replacement,'config'=>$config ?? ($this->pluginConfig[$id] ?? [])]
+				: ['plugin'=>$plugin,'config'=>$this->pluginConfig[$pluginId] ?? []];
+		}
+		$wasBooted=$this->pluginsBooted();
+		$transaction=$this->pluginLifecycleCheckpoint();
+		$baseline=$this->pluginLifecycleBaseline;
+		try{
+			$this->invokePluginUnregister($id);
+			$this->rebuildPlugins($specifications, $wasBooted);
+		}
+		catch(\Throwable $exception){
+			$this->restorePluginLifecycleCheckpoint($transaction);
+			$this->pluginLifecycleBaseline=$baseline;
+			throw $exception;
+		}
+		return $this;
+	}
+
+	/** Runs application extension registration in this surface's isolated context. */
+	public function configureExtensions(callable $callback): self {
+		$this->within(function() use ($callback): void {
+			$callback($this, $this->extensionRegistry);
+		});
+		return $this;
 	}
 
 	/**
@@ -2565,6 +3361,38 @@ final class PanelInstance {
 	}
 
 	/**
+	 * Creates a cryptographic package verifier scoped to this Panel surface.
+	 *
+	 * Public keys remain host-owned and are never serialized by the verifier.
+	 *
+	 * @param array<string,mixed> $keys Public keys indexed by stable key id.
+	 * @param array<string,mixed> $options Verification limits and embedded-key policy.
+	 */
+	public function packageSignatureVerifier(array $keys=[], array $options=[]): PanelPackageSignatureVerifier {
+		return PanelPackageSignatureVerifier::make($keys, $options);
+	}
+
+	/** Creates a signer-isolated package registry publisher scoped to this surface. */
+	public function packageRegistryPublisher(
+		string $registry,
+		string $publisher,
+		string $keyId,
+		string $algorithm,
+		callable $signer,
+		PanelPackageSignatureVerifier $verifier,
+		PanelPackageTrustPolicy $trustPolicy,
+		?callable $clock=null,
+		array $options=[]
+	): PanelPackageRegistryPublisher {
+		return PanelPackageRegistryPublisher::make($registry, $publisher, $keyId, $algorithm, $signer, $verifier, $trustPolicy, $clock, $options);
+	}
+
+	/** Creates a crash-safe standalone registry operator and local transport. */
+	public function filesystemPackageRegistry(string $root, string $registry, string $publisher, int $retention=256): PanelFilesystemPackageRegistry {
+		return PanelFilesystemPackageRegistry::make($root, $registry, $publisher, $retention);
+	}
+
+	/**
 	 * Delegates the `package install plan` helper through this Panel surface.
 	 *
 	 * The call runs in the scoped panel context so manager state, configuration, and helper factories stay bound to this instance.
@@ -2599,6 +3427,19 @@ final class PanelInstance {
 	 */
 	public function resources(): array {
 		return $this->manager->resources();
+	}
+
+	public function searchProvider(string $name): ?PanelSearchProvider {
+		return $this->manager->searchProvider($name);
+	}
+
+	public function hasSearchProvider(string $name): bool {
+		return $this->manager->hasSearchProvider($name);
+	}
+
+	/** @return array<string,PanelSearchProvider> */
+	public function searchProviders(?PanelRequest $request=null, bool $visibleOnly=false): array {
+		return $this->within(fn(): array=>$this->manager->searchProviders($request, $visibleOnly));
 	}
 
 	/**
@@ -2708,6 +3549,11 @@ final class PanelInstance {
 		return $this->within(fn(): array => $this->manager->globalSearch($query, $request ?? PanelRequest::fromArray([]), $limit));
 	}
 
+	/** Returns results plus cursors, completeness, and partial diagnostics. */
+	public function globalSearchPage(string $query, ?PanelRequest $request=null, int $limit=12, string|array|null $cursor=null): PanelSearchPage {
+		return $this->within(fn(): PanelSearchPage=>$this->manager->globalSearchPage($query, $request ?? PanelRequest::fromArray([]), $limit, $cursor));
+	}
+
 	/**
 	 * Delegates the `search manifest` helper through this Panel surface.
 	 *
@@ -2767,9 +3613,18 @@ final class PanelInstance {
 	 * @return array.
 	 */
 	public function describe(): array {
+		$this->bootPlugins();
 		return $this->within(function(): array {
 			$description=$this->manager->describe();
 			$description['plugins']=array_values($this->pluginDescriptions);
+			$description['platform']=$this->platformManifest();
+			$description['extensions']=$this->extensionRegistry->diagnostics();
+			$description['widget_runtime']=$this->widgetRuntimeRegistry->manifest();
+			$description['data_sources']=$this->dataSourceManifest();
+			$description['data_surfaces']=$this->dataSurfaceManifest();
+			$description['realtime']=$this->realtimeManifest();
+			$description['agent_workflows']=$this->agentWorkflowManifest();
+			$description['studio_editor']=$this->studioEditorManifest();
 			return $description;
 		});
 	}
@@ -2784,6 +3639,7 @@ final class PanelInstance {
 	 * @return array.
 	 */
 	public function panelManifest(?PanelRequest $request=null, array $meta=[]): array {
+		$this->bootPlugins();
 		return $this->within(fn(): array => PanelManifest::from($this, $request, $meta)->toArray());
 	}
 
@@ -2796,6 +3652,7 @@ final class PanelInstance {
 	 * @return PanelPageResult.
 	 */
 	public function dispatch(PanelRequest|array|null $request=null): PanelPageResult {
+		$this->bootPlugins();
 		return $this->within(fn(): PanelPageResult => $this->manager->dispatch($request));
 	}
 
@@ -2810,6 +3667,7 @@ final class PanelInstance {
 	 * @return PanelPageResult.
 	 */
 	public function render(Resource|string|null $resource=null, string $operation='index', array $context=[]): PanelPageResult {
+		$this->bootPlugins();
 		return $this->within(fn(): PanelPageResult => $this->manager->render($resource, $operation, $context));
 	}
 
@@ -2852,7 +3710,115 @@ final class PanelInstance {
 	 * @return mixed value returned by the callback while this panel configuration is active.
 	 */
 	private function within(callable $callback): mixed {
-		return PanelContext::run(array_replace($this->config, ['__panel_manager'=>$this->manager]), $callback);
+		$context=array_replace($this->config, [
+			'__panel_manager'=>$this->manager,
+			'__panel_extension_registry'=>$this->extensionRegistry,
+			'__panel_widget_runtime_registry'=>$this->widgetRuntimeRegistry,
+			'__panel_instance'=>$this,
+		]);
+		if($this->platform instanceof PanelPlatform){
+			$context['__panel_platform']=$this->platform;
+		}
+		if($this->dataSurfaceRegistry instanceof PanelDataSurfaceRegistry){
+			$context['__panel_data_surfaces']=$this->dataSurfaceRegistry;
+		}
+		return PanelContext::run($context, $callback);
+	}
+
+	/**
+	 * Resolves a stable dependency-first order for every pending plugin.
+	 *
+	 * Dependencies are an additive convention for existing plugins: a public
+	 * zero-argument `dependencies()`, `requiredPlugins()`, or `requires()` method
+	 * may return a string, list of ids, or id-to-version map. The whole pending
+	 * graph is validated before the first boot callback runs, so missing and
+	 * cyclic dependencies cannot leave a partially booted surface.
+	 *
+	 * @return list<string> Normalized pending plugin ids in boot order.
+	 */
+	private function pendingPluginBootOrder(): array {
+		$pending=[];
+		$dependencies=[];
+		foreach($this->plugins as $id=>$plugin){
+			if(isset($this->bootedPlugins[$id])){
+				continue;
+			}
+			$pending[$id]=$plugin;
+			$dependencies[$id]=$this->pluginDependencies($plugin);
+		}
+		foreach($dependencies as $id=>$required){
+			foreach($required as $dependency){
+				if(!isset($this->plugins[$dependency])){
+					throw new \LogicException('Panel plugin "'.$id.'" requires missing plugin "'.$dependency.'".');
+				}
+			}
+		}
+
+		$order=[];
+		$visiting=[];
+		$visited=[];
+		$visit=function(string $id) use (&$visit, &$order, &$visiting, &$visited, $pending, $dependencies): void {
+			if(isset($visited[$id]) || !isset($pending[$id])){
+				return;
+			}
+			if(isset($visiting[$id])){
+				throw new \LogicException('Cyclic Panel plugin dependency detected at "'.$id.'".');
+			}
+			$visiting[$id]=true;
+			foreach($dependencies[$id] ?? [] as $dependency){
+				$visit($dependency);
+			}
+			unset($visiting[$id]);
+			$visited[$id]=true;
+			$order[]=$id;
+		};
+		foreach(array_keys($pending) as $id){
+			$visit($id);
+		}
+		return $order;
+	}
+
+	/** @return list<string> */
+	private function pluginDependencies(PanelPlugin $plugin): array {
+		$value=[];
+		foreach(['dependencies', 'requiredPlugins', 'requires'] as $method){
+			if(!method_exists($plugin, $method)){
+				continue;
+			}
+			$reflection=new \ReflectionMethod($plugin, $method);
+			if(!$reflection->isPublic() || $reflection->getNumberOfRequiredParameters()>0){
+				continue;
+			}
+			$value=$plugin->{$method}();
+			break;
+		}
+		if($value===null || $value===[] || $value===''){
+			return [];
+		}
+		if(is_string($value)){
+			$value=[$value];
+		}
+		elseif($value instanceof \Traversable){
+			$value=iterator_to_array($value);
+		}
+		if(!is_array($value)){
+			throw new \UnexpectedValueException('Panel plugin dependencies must be a string, array, or Traversable.');
+		}
+		if(!array_is_list($value)){
+			$value=array_keys($value);
+		}
+		$dependencies=[];
+		foreach($value as $dependency){
+			if(!is_string($dependency) && !is_int($dependency)){
+				throw new \UnexpectedValueException('Panel plugin dependency ids must be scalar names.');
+			}
+			$dependency=Resource::normalizeName((string)$dependency);
+			if($dependency===''){
+				throw new \UnexpectedValueException('Panel plugin dependency ids cannot be empty.');
+			}
+			$dependencies[$dependency]=true;
+		}
+		return array_keys($dependencies);
 	}
 
 	/**
@@ -2895,6 +3861,180 @@ final class PanelInstance {
 	private function syncPluginConfig(): void {
 		$this->config['plugin_config']=$this->pluginConfig;
 		$this->config['plugin_ids']=array_keys($this->plugins);
+	}
+
+	/** @return array<string,mixed> */
+	private function pluginLifecycleCheckpoint(bool $includePlugins=true): array {
+		return [
+			'manager'=>$this->manager->contributionCheckpoint(),
+			'extensions'=>$this->extensionRegistry->checkpoint(),
+			'widget_runtime'=>$this->widgetRuntimeRegistry->checkpoint(),
+			'config'=>$this->config,
+			'plugins'=>$includePlugins ? $this->plugins : [],
+			'plugin_config'=>$includePlugins ? $this->pluginConfig : [],
+			'plugin_descriptions'=>$includePlugins ? $this->pluginDescriptions : [],
+			'plugin_owners'=>$includePlugins ? $this->pluginOwners : [],
+			'booted_plugins'=>$includePlugins ? $this->bootedPlugins : [],
+			'data_surfaces'=>$this->dataSurfaceRegistry,
+			'data_surface_checkpoint'=>$this->dataSurfaceRegistry?->checkpoint(),
+			'data_surface_revision'=>$this->dataSurfaceRevision,
+			'data_surface_lifecycle'=>$this->dataSurfaceLifecycle,
+			'platform'=>$this->platform,
+			'platform_checkpoint'=>$this->platform?->checkpoint(),
+			'platform_revision'=>$this->platformRevision,
+			'platform_lifecycle'=>$this->platformLifecycle,
+		];
+	}
+
+	/** @param array<string,mixed> $checkpoint */
+	private function restorePluginLifecycleCheckpoint(array $checkpoint): void {
+		$this->manager->restoreContributionCheckpoint($checkpoint['manager']);
+		$this->extensionRegistry->restore($checkpoint['extensions']);
+		$this->widgetRuntimeRegistry->restore($checkpoint['widget_runtime']);
+		$this->config=$checkpoint['config'];
+		$this->plugins=$checkpoint['plugins'];
+		$this->pluginConfig=$checkpoint['plugin_config'];
+		$this->pluginDescriptions=$checkpoint['plugin_descriptions'];
+		$this->pluginOwners=$checkpoint['plugin_owners'];
+		$this->bootedPlugins=$checkpoint['booted_plugins'];
+		$this->dataSurfaceRegistry=$checkpoint['data_surfaces'];
+		if($this->dataSurfaceRegistry instanceof PanelDataSurfaceRegistry&&is_array($checkpoint['data_surface_checkpoint']??null)){$this->dataSurfaceRegistry->restore($checkpoint['data_surface_checkpoint']);}
+		$this->dataSurfaceRevision=(int)$checkpoint['data_surface_revision'];
+		$this->dataSurfaceLifecycle=$checkpoint['data_surface_lifecycle'];
+		$this->platform=$checkpoint['platform'];
+		if($this->platform instanceof PanelPlatform && is_array($checkpoint['platform_checkpoint'] ?? null)){
+			$this->platform->restore($checkpoint['platform_checkpoint']);
+		}
+		$this->platformRevision=(int)$checkpoint['platform_revision'];
+		$this->platformLifecycle=$checkpoint['platform_lifecycle'];
+		$this->syncPluginConfig();
+	}
+
+	/** @param list<array{plugin:PanelPlugin,config:array<string,mixed>}> $specifications */
+	private function rebuildPlugins(array $specifications, bool $boot): void {
+		if($this->pluginLifecycleBaseline===null){
+			throw new \LogicException('Panel plugin lifecycle baseline is unavailable.');
+		}
+		$transaction=$this->pluginLifecycleCheckpoint();
+		$baseline=$this->pluginLifecycleBaseline;
+		try{
+			$this->restorePluginLifecycleCheckpoint($baseline);
+			$this->plugins=[];
+			$this->pluginConfig=[];
+			$this->pluginDescriptions=[];
+			$this->pluginOwners=[];
+			$this->bootedPlugins=[];
+			$this->syncPluginConfig();
+			$this->rebuildingPlugins=true;
+			foreach($specifications as $specification){
+				$this->plugin($specification['plugin'], $specification['config']);
+			}
+			if($boot){
+				$this->bootPlugins();
+			}
+			if($specifications===[]){
+				$this->pluginLifecycleBaseline=null;
+			}
+		}
+		catch(\Throwable $exception){
+			$this->restorePluginLifecycleCheckpoint($transaction);
+			$this->pluginLifecycleBaseline=$baseline;
+			throw $exception;
+		}
+		finally{
+			$this->rebuildingPlugins=false;
+		}
+	}
+
+	private function invokePluginUnregister(string $id): void {
+		$plugin=$this->plugins[$id] ?? null;
+		if(!$plugin instanceof PanelPlugin || !method_exists($plugin, 'unregister')){
+			return;
+		}
+		$reflection=new \ReflectionMethod($plugin, 'unregister');
+		if(!$reflection->isPublic() || $reflection->getNumberOfRequiredParameters()>1){
+			return;
+		}
+		$checkpoint=$this->pluginLifecycleCheckpoint();
+		try{
+			$permissions=$this->pluginExtensionPermissions($plugin, $this->pluginConfig[$id] ?? []);
+			$this->extensionRegistry->runAs($id, $permissions, ['class'=>$plugin::class,'phase'=>'unregister'], function() use ($plugin, $reflection): void {
+				$this->within(function() use ($plugin, $reflection): void {
+					if($reflection->getNumberOfParameters()===0){ $plugin->unregister(); }
+					else{ $plugin->unregister($this); }
+				});
+			});
+		}
+		catch(\Throwable $exception){
+			$this->restorePluginLifecycleCheckpoint($checkpoint);
+			throw $exception;
+		}
+	}
+
+	/** @return list<string> */
+	private function pluginExtensionPermissions(PanelPlugin $plugin, array $config): array {
+		$value=$config['extension_permissions'] ?? $config['permissions'] ?? null;
+		if($value===null){
+			foreach(['extensionPermissions', 'permissions'] as $method){
+				if(!method_exists($plugin, $method)){ continue; }
+				$reflection=new \ReflectionMethod($plugin, $method);
+				if($reflection->isPublic() && $reflection->getNumberOfRequiredParameters()===0){
+					$value=$plugin->{$method}();
+					break;
+				}
+			}
+		}
+		$permissions=$this->normalizePluginPermissions($value);
+		if($permissions===[] && ($this->config['strict_extension_permissions'] ?? false)!==true){
+			$permissions=['component.*','extensible.*','theme.*','render_hook.*'];
+		}
+		$policy=$this->config['plugin_extension_permissions'] ?? null;
+		if(is_callable($policy)){
+			$allowed=$this->normalizePluginPermissions($policy($plugin->id(), $permissions, $plugin, $this));
+			return $this->intersectExtensionPermissions($permissions, $allowed);
+		}
+		if(is_array($policy)){
+			$id=Resource::normalizeName($plugin->id());
+			$allowed=array_key_exists($id, $policy) ? $this->normalizePluginPermissions($policy[$id]) : (array_is_list($policy) ? $this->normalizePluginPermissions($policy) : []);
+			$permissions=$this->intersectExtensionPermissions($permissions, $allowed);
+		}
+		return $permissions;
+	}
+
+	/** @return list<string> */
+	private function normalizePluginPermissions(mixed $value): array {
+		if(is_string($value)){ $value=preg_split('/[\s,|]+/', $value, -1, PREG_SPLIT_NO_EMPTY) ?: []; }
+		if($value instanceof \Traversable){ $value=iterator_to_array($value); }
+		if(!is_array($value)){ return []; }
+		$permissions=[];
+		foreach($value as $key=>$item){
+			$item=is_string($key) && is_bool($item) ? ($item ? $key : '') : (is_scalar($item) ? (string)$item : '');
+			$item=strtolower(trim(str_replace([':', '/', '\\'], '.', $item)));
+			$item=trim(preg_replace('/[^a-z0-9_.*-]+/', '_', $item) ?? '', '.');
+			if($item!==''){ $permissions[$item]=true; }
+		}
+		return array_values(array_keys($permissions));
+	}
+
+	/** @param list<string> $requested @param list<string> $allowed @return list<string> */
+	private function intersectExtensionPermissions(array $requested, array $allowed): array {
+		$effective=[];
+		foreach($requested as $request){
+			foreach($allowed as $allow){
+				if($this->extensionPermissionContains($request, $allow)){
+					$effective[$allow]=true;
+				}
+				elseif($this->extensionPermissionContains($allow, $request)){
+					$effective[$request]=true;
+				}
+			}
+		}
+		return array_values(array_keys($effective));
+	}
+
+	private function extensionPermissionContains(string $pattern, string $permission): bool {
+		if($pattern==='*' || $pattern===$permission){ return true; }
+		return str_ends_with($pattern, '.*') && str_starts_with($permission, substr($pattern, 0, -1));
 	}
 
 	/**
@@ -2942,12 +4082,13 @@ final class PanelInstance {
 	 *
 	 * @return array<string,mixed> Plugin manifest data for this surface.
 	 */
-	private function describePlugin(PanelPlugin $plugin, array $config): array {
+	private function describePlugin(PanelPlugin $plugin, array $config, ?array $permissions=null): array {
 		$id=Resource::normalizeName($plugin->id());
 		$description=[
 			'id'=>$id,
 			'class'=>$plugin::class,
 			'config_keys'=>array_keys($config),
+			'extension_permissions'=>$permissions ?? $this->pluginExtensionPermissions($plugin, $config),
 		];
 		foreach(['label', 'version', 'description'] as $method){
 			if(method_exists($plugin, $method)){

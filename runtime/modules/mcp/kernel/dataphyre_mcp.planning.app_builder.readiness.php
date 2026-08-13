@@ -134,9 +134,6 @@ trait dataphyre_mcp_planning_app_builder_readiness_surfaces {
 		foreach($schemas as $schema){
 			$entity=(string)($schema['entity'] ?? '');
 			foreach(is_array($schema['relationships'] ?? null) ? $schema['relationships'] : [] as $relationship){
-				if(!is_array($relationship)){
-					continue;
-				}
 				$scope='same_chunk_or_external';
 				foreach(is_array($dependency_context['dependencies'] ?? null) ? $dependency_context['dependencies'] : [] as $dependency){
 					if(!is_array($dependency)){

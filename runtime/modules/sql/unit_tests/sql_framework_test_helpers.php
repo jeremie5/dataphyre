@@ -6,6 +6,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+require_once dirname(__DIR__, 2).'/testing/tooling/bootstrap.php';
+
 if(!function_exists('tracelog')){
 	function tracelog(...$args): void {}
 }
@@ -13,7 +15,7 @@ if(!defined('RUN_MODE')){
 	define('RUN_MODE', 'unit_test');
 }
 if(!function_exists('dataphyre\\dp_define_module_config')){
-	eval('namespace dataphyre; function dp_define_module_config(string $module, string $constant, array $defaults=[]): void { if(!defined($constant)){ define($constant, $defaults); } }');
+	\Dataphyre\Test\define_test_symbols('namespace dataphyre; function dp_define_module_config(string $module, string $constant, array $defaults=[]): void { if(!defined($constant)){ define($constant, $defaults); } }');
 }
 
 require_once __DIR__.'/../Framework/SqlError.php';

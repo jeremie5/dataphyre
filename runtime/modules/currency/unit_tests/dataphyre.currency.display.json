@@ -58,7 +58,7 @@
         "expected":  [
                          "13.50"
                      ],
-        "file":  "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+        "file":  "/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
         "dependencies":  {
                              "class":  [
                                            "dataphyre\\currency"
@@ -82,7 +82,7 @@
         "expected":  [
                          "0.00"
                      ],
-        "file":  "/common/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
+        "file":  "/dataphyre/runtime/modules/currency/unit_tests/currency_test_helpers.php",
         "dependencies":  {
                              "class":  [
                                            "dataphyre\\currency"

@@ -124,7 +124,7 @@ final class ScaffoldTableArtifacts {
 			return $definition;
 		}
 		if(is_array($definition)){
-			return $conventionalDefinition->withOverrides($definition);
+			return $conventionalDefinition->with_overrides($definition);
 		}
 		throw new \RuntimeException("Application definition must return an array or application_definition: {$definitionFile}");
 	}
@@ -148,7 +148,7 @@ final class ScaffoldTableArtifacts {
 		}
 		return [
 			$definition->id.'\\framework',
-			$definition->rootDirectory.'/framework',
+			$definition->root_directory.'/framework',
 		];
 	}
 

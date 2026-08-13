@@ -69,10 +69,7 @@ final class Pool {
 			$failed=false;
 
 			$launchNext=function()use(&$launchNext, &$results, &$nextIndex, &$active, &$completed, &$failed, $items, $task, $total, $resolve, $reject){
-				if($failed===true){
-					return;
-				}
-				while($active<$this->concurrency && $nextIndex<$total){
+				while($failed!==true && $active<$this->concurrency && $nextIndex<$total){
 					$currentIndex=$nextIndex;
 					$nextIndex++;
 					$active++;

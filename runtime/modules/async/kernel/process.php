@@ -41,6 +41,50 @@ class process {
 	 * Poll interval in microseconds while waiting for task completion.
 	 */
 	public static $waitfor_loop_time=1000; // in microseconds
+	private static $dialback_handler=null;
+	private static $task_file_writer=null;
+
+	public static function set_dialback_handler(?callable $handler): void {
+		self::$dialback_handler=$handler;
+	}
+
+	public static function set_task_file_writer(?callable $writer): void {
+		self::$task_file_writer=$writer;
+	}
+
+	private static function dialback(string $event, mixed ...$arguments): mixed {
+		if(self::$dialback_handler!==null){
+			return (self::$dialback_handler)($event, ...$arguments);
+		}
+		return \dataphyre\core::dialback($event, ...$arguments);
+	}
+
+	private static function write_task_file(string $path, string $contents): int|false {
+		if(self::$task_file_writer!==null){
+			return (self::$task_file_writer)($path, $contents);
+		}
+		return \dataphyre\core::file_put_contents_forced($path, $contents);
+	}
+
+	/**
+	 * Resolves generated task state through an optional writable runtime root.
+	 *
+	 * Deployments and tests can provide ROOTPATH['async_tasks']; legacy installs
+	 * retain the historical module-cache fallback.
+	 */
+	private static function task_path(string $taskid, bool $completed=false, ?string $runtime_root=null): string {
+		$configured_root=$runtime_root ?? (
+			defined('ROOTPATH')
+			&& is_array(ROOTPATH)
+			&& is_string(ROOTPATH['async_tasks'] ?? null)
+				? (string)ROOTPATH['async_tasks']
+				: ''
+		);
+		$directory=trim($configured_root)!==''
+				? rtrim($configured_root, '/\\')
+				: __DIR__.'/../../cache/tasks';
+		return $directory.'/'.$taskid.($completed ? '_done' : '').'.php';
+	}
 
 	/**
 	 * Waits for every queued task in this request to finish or time out.
@@ -52,7 +96,7 @@ class process {
 	 */
 	static function waitfor_all(){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		if(null!==$early_return=\dataphyre\core::dialback("CALL_ASYNC_WAITFOR_ALL",...func_get_args())) return $early_return;
+		if(null!==$early_return=self::dialback("CALL_ASYNC_WAITFOR_ALL",...func_get_args())) return $early_return;
 		if(!empty(self::$queued_tasks)){
 			foreach(self::$queued_tasks as $taskid){
 				self::waitfor($taskid);
@@ -73,13 +117,13 @@ class process {
 	 */
 	static function waitfor(string|null $taskid){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		if(null!==$early_return=\dataphyre\core::dialback("CALL_ASYNC_WAITFOR",...func_get_args())) return $early_return;
+		if(null!==$early_return=self::dialback("CALL_ASYNC_WAITFOR",...func_get_args())) return $early_return;
 		$time=0;
 		if(!is_null($taskid)){
 			if(in_array($taskid, self::$queued_tasks)){
 				while(true){
 					clearstatcache();
-					if(file_exists(__DIR__."/../../cache/tasks/".$taskid."_done.php")){
+					if(file_exists(self::task_path($taskid, true))){
 						tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Task $taskid finished");
 						break;
 					}
@@ -93,8 +137,8 @@ class process {
 				if(isset(self::$task_kill_list[$taskid])){
 					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Cleaning up task $taskid");
 					posix_kill(intval(self::$task_kill_list[$taskid]));
-					unlink(__DIR__."/../../cache/tasks/".$taskid."_done.php");
-					unlink(__DIR__."/../../cache/tasks/".$taskid.".php");
+					unlink(self::task_path($taskid, true));
+					unlink(self::task_path($taskid));
 				}
 			}
 		}
@@ -113,19 +157,19 @@ class process {
 	 */
 	static function result(string|null $taskid, $wipe=true){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		if(null!==$early_return=\dataphyre\core::dialback("CALL_ASYNC_RESULT",...func_get_args())) return $early_return;
+		if(null!==$early_return=self::dialback("CALL_ASYNC_RESULT",...func_get_args())) return $early_return;
 		if(!is_null($taskid)){
-			if(false!==$result=file_get_contents(__DIR__."/../../cache/tasks/".$taskid."_done.php")){
+			if(false!==$result=file_get_contents(self::task_path($taskid, true))){
 				if($wipe===true){
-					unlink(__DIR__."/../../cache/tasks/".$taskid."_done.php");
+					unlink(self::task_path($taskid, true));
 				}
 				unset(self::$queued_tasks[array_search($taskid, self::$queued_tasks)]);
 				return json_decode($result, true);
 			}
 			if(isset(self::$task_kill_list[$taskid])){
 				posix_kill(intval(self::$task_kill_list[$taskid]));
-				unlink(__DIR__."/../../cache/tasks/".$taskid."_done.php");
-				unlink(__DIR__."/../../cache/tasks/".$taskid.".php");
+				unlink(self::task_path($taskid, true));
+				unlink(self::task_path($taskid));
 			}
 			return "task_unfinished";
 		}
@@ -143,20 +187,21 @@ class process {
 	 * @param string $file Source file containing the task body and `TASK-END` marker.
 	 * @param array<string, mixed>|null $variables Variables injected into the task function scope.
 	 * @param bool $logging Whether generated task tracelogging should be enabled.
+	 * @param bool $continue_in_background Whether the caller intends the generated task to outlive the current request.
 	 * @return string Generated task identifier.
 	 */
-	static function create(int $start_line, string $file, array|null $variables=array(), $logging=false) : string {
+	static function create(int $start_line, string $file, array|null $variables=array(), $logging=false, bool $continue_in_background=false) : string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		if(null!==$early_return=\dataphyre\core::dialback("CALL_ASYNC_CREATE",...func_get_args())) return $early_return;
+		if(null!==$early_return=self::dialback("CALL_ASYNC_CREATE",...func_get_args())) return $early_return;
 		$lines="";
 		$i=0;
+		$variables??=[];
 		if(!empty(DP_ASYNC_CFG['included_vars'])){
 			$variables=array_merge($variables,DP_ASYNC_CFG['included_vars']);
 		}
 		if(!empty(DP_ASYNC_CFG['excluded_vars'])){
 			$variables=array_diff_key($variables,DP_ASYNC_CFG['excluded_vars']);
 		}
-		$variables??=[];
 		while(true){
 			if(!in_array($taskid=time()."_".rand(1,99999999999999),self::$queued_tasks)){
 				break;
@@ -186,12 +231,14 @@ class process {
 		$pre.='foreach($vars as $var_name=>$value){${$var_name}=$value;}'.PHP_EOL;
 		$post='}'.PHP_EOL;
 		$post.='$result'."=json_encode(task(unserialize('".serialize($variables)."')));".PHP_EOL;
-		$post.='file_put_contents("'.__DIR__.'/../../cache/tasks/'.$taskid.'_done.php",$result);'.PHP_EOL;
+		$task_path=self::task_path($taskid);
+		$result_path=self::task_path($taskid, true);
+		$post.='file_put_contents('.var_export($result_path, true).',$result);'.PHP_EOL;
 		$post.='unlink(__FILE__);'.PHP_EOL;
-		if(false===\dataphyre\core::file_put_contents_forced(__DIR__."/../../cache/tasks/".$taskid.".php", $pre.$lines.$post)){
+		if(false===self::write_task_file($task_path, $pre.$lines.$post)){
 			\dataphyre\core::unavailable(__DIR__,__FILE__,__LINE__,__CLASS__,__FUNCTION__, $D='DataphyreAsync: Unable to write task file to cache task folder.', 'safemode');
 		}
-		exec("php ".__DIR__."/../../cache/tasks/".$taskid.".php > /dev/null 2> /dev/null &", $process_pid);
+		exec('php '.escapeshellarg($task_path).' > /dev/null 2> /dev/null &', $process_pid);
 		self::$queued_tasks[]=$taskid;
 		if($continue_in_background==false){
 			self::$task_kill_list[]=[$taskid=>$process_pid];

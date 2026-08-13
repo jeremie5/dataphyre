@@ -11,13 +11,16 @@ namespace Dataphyre\Panel;
  * Executes panel schema hydration, live state resolution, dehydration, and validation.
  *
  * SchemaLifecycle is the runtime bridge between Field definitions, PanelRequest input, records, and PanelFormState. It preserves field order, filters invalid field inputs, traces lifecycle events, resolves reactive field updates with bounded iterations, and records enough metadata for diagnostics to explain each form state transition.
+ *
+ * @template TRecord = mixed
+ * @template TState of array<string, mixed> = array<string, mixed>
  */
 final class SchemaLifecycle {
 
 	/**
 	 * Stores normalized fields and schema metadata for lifecycle operations.
 	 *
-	 * @param array<string, Field> $fields Fields keyed by normalized field name.
+	 * @param array<string, Field<TRecord, mixed, TState>> $fields Fields keyed by normalized field name.
 	 * @param array<string,mixed> $meta Schema metadata copied into state payloads and traces.
 	 */
 	private function __construct(
@@ -30,9 +33,9 @@ final class SchemaLifecycle {
 	 *
 	 * Non-field values are ignored so callers can pass mixed schema arrays without corrupting the lifecycle. Valid fields are keyed by Field::name(), ensuring later operations can address state consistently by field name.
 	 *
-	 * @param array<int|string,mixed> $fields Candidate Field objects.
+	 * @param array<int|string, Field<TRecord, mixed, TState>> $fields Candidate Field objects.
 	 * @param array<string,mixed> $meta Schema metadata copied into states and traces.
-	 * @return self Lifecycle bound to normalized fields and metadata.
+	 * @return self<TRecord, TState> Lifecycle bound to normalized fields and metadata.
 	 */
 	public static function make(array $fields, array $meta=[]): self {
 		$normalized=[];
@@ -49,8 +52,8 @@ final class SchemaLifecycle {
 	 *
 	 * The form supplies both its field list and metadata, keeping runtime lifecycle behavior aligned with the resource form used to render the panel.
 	 *
-	 * @param ResourceForm $form Resource form whose fields should be executed.
-	 * @return self Lifecycle derived from the form.
+	 * @param ResourceForm<TRecord, TState> $form Resource form whose fields should be executed.
+	 * @return self<TRecord, TState> Lifecycle derived from the form.
 	 */
 	public static function fromForm(ResourceForm $form): self {
 		return self::make($form->fieldsList(), $form->metadata());
@@ -61,8 +64,8 @@ final class SchemaLifecycle {
 	 *
 	 * Schema metadata is read from the schema array payload so generated schemas and runtime lifecycle state share the same descriptive context.
 	 *
-	 * @param Schema $schema Schema whose fields should be executed.
-	 * @return self Lifecycle derived from the schema.
+	 * @param Schema<TRecord, TState> $schema Schema whose fields should be executed.
+	 * @return self<TRecord, TState> Lifecycle derived from the schema.
 	 */
 	public static function fromSchema(Schema $schema): self {
 		return self::make($schema->fieldsList(), $schema->toArray()['meta'] ?? []);
@@ -72,7 +75,7 @@ final class SchemaLifecycle {
 	 * Returns the normalized field map used by lifecycle operations.
 	 *
 	 *
-	 * @return array<string, Field> Fields keyed by name.
+	 * @return array<string, Field<TRecord, mixed, TState>> Fields keyed by name.
 	 */
 	public function fields(): array {
 		return $this->fields;
@@ -93,7 +96,7 @@ final class SchemaLifecycle {
 	 *
 	 * For each field, prefill query values win over record/default values, while request input can override the chosen default. The field then receives the value through hydrateValue(), allowing field-specific casts, formatting, or component state preparation before a PanelFormState is returned.
 	 *
-	 * @param mixed $record Existing record array/object used for initial values.
+	 * @param TRecord|null $record Existing record array/object used for initial values.
 	 * @param ?PanelRequest $request Optional panel request supplying prefill and input values.
 	 * @return PanelFormState Hydrated state with lifecycle metadata and no validation errors.
 	 */
@@ -124,7 +127,7 @@ final class SchemaLifecycle {
 	 * File fields preserve the record value when the upload input is blank. Live state is resolved before dehydration, readonly fields are skipped unless explicitly dehydrated, hidden fields are skipped, and each included field controls final persistence conversion through dehydrateValue().
 	 *
 	 * @param PanelRequest $request Request supplying input and uploaded files.
-	 * @param mixed $record Existing record array/object used as fallback state.
+	 * @param TRecord|null $record Existing record array/object used as fallback state.
 	 * @param ?string $operation Panel operation such as create, edit, or form.
 	 * @return PanelFormState Dehydrated values with raw/dehydrated metadata.
 	 */
@@ -149,7 +152,7 @@ final class SchemaLifecycle {
 				continue;
 			}
 			$value=$resolvedValues[$name] ?? $rawValues[$name] ?? ($meta['default'] ?? null);
-			$values[$name]=$field->dehydrateValue($value, $record, $request);
+			$values[$name]=$field->dehydrateValue($value, $record, $request, $resolvedValues);
 		}
 		$state=PanelFormState::make($values, [], $this->stateMeta('dehydrate', [
 			'operation'=>$operation,
@@ -170,8 +173,8 @@ final class SchemaLifecycle {
 	 *
 	 * Incoming values are first passed through live state resolution so dependent server-side field changes are validated consistently. Readonly and hidden fields are skipped, and field errors are collected by name without throwing, producing a PanelFormState suitable for UI feedback.
 	 *
-	 * @param array<string,mixed> $values Candidate field values.
-	 * @param mixed $record Existing record array/object used by field validators.
+	 * @param TState $values Candidate field values.
+	 * @param TRecord|null $record Existing record array/object used by field validators.
 	 * @param ?PanelRequest $request Optional request context for operation and input-aware validators.
 	 * @param ?string $operation Panel operation override.
 	 * @return PanelFormState Resolved values plus field error arrays.
@@ -277,7 +280,7 @@ final class SchemaLifecycle {
 			if($name==='' || (($meta['readonly'] ?? false)===true && ($meta['meta']['dehydrated'] ?? null)!==true) || ($meta['meta']['dehydrated'] ?? true)===false || $field->isVisible($operation, $record, $request)===false){
 				continue;
 			}
-			$dehydratedValues[$name]=$field->dehydrateValue($currentValues[$name] ?? null, $record, $request);
+			$dehydratedValues[$name]=$field->dehydrateValue($currentValues[$name] ?? null, $record, $request, $currentValues);
 		}
 		$errors=[];
 		if($validate){

@@ -1,25 +1,71 @@
 [
-	{
-		"name": "create_challenge returns signed challenge envelope",
-		"function": "create_challenge",
-		"class": "dataphyre\\caspow",
-		"static_method": true,
-		"args": [
-			"unit_test_login",
-			{
-				"hardware_concurrency": 8,
-				"device_memory": 8,
-				"save_data": false,
-				"reduced_motion": false
-			}
-		],
-		"expected": {
-			"custom_script": "return is_array($result)\n\t&& ($result['version'] ?? null)==='2'\n\t&& !empty($result['challenge_id'])\n\t&& !empty($result['nonce'])\n\t&& ($result['algorithm'] ?? null)==='SHA-256'\n\t&& isset($result['difficulty_bits'], $result['issued_at'], $result['expires_at'], $result['signature'])\n\t&& ($result['scope'] ?? null)==='unit_test_login'\n\t&& ($result['expires_at'] ?? 0) > ($result['issued_at'] ?? 0);"
-		},
-		"dependencies": {
-			"class": ["dataphyre\\caspow"],
-			"function": ["dpvk"]
-		},
-		"max_millis": 20
-	}
+    {
+        "name": "create_challenge returns signed challenge envelope",
+        "function": "create_challenge",
+        "class": "dataphyre\\caspow",
+        "static_method": true,
+        "args": [
+            "unit_test_login",
+            {
+                "hardware_concurrency": 8,
+                "device_memory": 8,
+                "save_data": false,
+                "reduced_motion": false
+            }
+        ],
+        "expected": {
+            "assert": {
+                "type": "array",
+                "paths": {
+                    "version": {
+                        "same": "2"
+                    },
+                    "challenge_id": {
+                        "not_empty": true
+                    },
+                    "nonce": {
+                        "not_empty": true
+                    },
+                    "algorithm": {
+                        "same": "SHA-256"
+                    },
+            "difficulty_bits": {
+                "exists": true,
+                "not_same": null
+            },
+            "issued_at": {
+                "exists": true,
+                "not_same": null
+            },
+            "expires_at": {
+                "exists": true,
+                "not_same": null
+            },
+            "signature": {
+                "exists": true,
+                "not_same": null
+                    },
+                    "scope": {
+                        "same": "unit_test_login"
+                    }
+                },
+                "compare": [
+                    {
+                        "left": "expires_at",
+                        "operator": "greater_than",
+                        "right": "issued_at"
+                    }
+                ]
+            }
+        },
+        "dependencies": {
+            "class": [
+                "dataphyre\\caspow"
+            ],
+            "function": [
+                "dpvk"
+            ]
+        },
+        "max_millis": 20
+    }
 ]

@@ -1,0 +1,12 @@
+{
+  "cssBytes": 954330,
+  "jsBytes": 656544,
+  "importantDeclarations": 0,
+  "duplicateSelectorOccurrences": 2021,
+  "exactDuplicateRules": 0,
+  "maxSpecificity": 90,
+  "chainedPanelRoots": 37,
+  "managedGlobalListeners": 68,
+  "unmanagedGlobalListeners": 0,
+  "globalFunctionDeclarations": 0
+}

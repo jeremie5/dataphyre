@@ -25,6 +25,10 @@ final class app_locator {
 	 * @return string|null Normalized application directory, or null when not found.
 	 */
 	public static function locate(string $project_root, string $application_name, array $configured_roots=[]): ?string {
+		$direct=self::standalone_application_root($project_root, $application_name);
+		if($direct!==null){
+			return $direct;
+		}
 		foreach(self::roots($project_root, $configured_roots) as $applications_root){
 			$candidate=rtrim($applications_root, '/\\').'/'.$application_name;
 			if(is_dir($candidate)){
@@ -33,6 +37,39 @@ final class app_locator {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Resolves an existing standalone application repository without inventing a
+	 * second install layout contract. The existing dataphyre.app.json name is the
+	 * authority that binds the project root to the requested application id.
+	 */
+	private static function standalone_application_root(string $project_root, string $application_name): ?string {
+		$root=realpath($project_root);
+		if($root===false || !is_dir($root) || is_link($root.'/app.php') || !is_file($root.'/app.php') || !is_readable($root.'/app.php')){
+			return null;
+		}
+		$manifest=$root.'/dataphyre.app.json';
+		if(is_link($manifest) || !is_file($manifest) || !is_readable($manifest)){
+			return null;
+		}
+		$bytes=file_get_contents($manifest, false, null, 0, 65537);
+		if(!is_string($bytes) || strlen($bytes)>65536){
+			return null;
+		}
+		try{
+			$decoded=json_decode($bytes, true, 32, JSON_THROW_ON_ERROR);
+		}catch(\JsonException){
+			return null;
+		}
+		if(
+			!is_array($decoded) || array_is_list($decoded)
+			|| !is_string($decoded['name'] ?? null)
+			|| !hash_equals($application_name, $decoded['name'])
+		){
+			return null;
+		}
+		return rtrim($root, '/\\');
 	}
 
 	/**

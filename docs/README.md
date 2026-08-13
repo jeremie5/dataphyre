@@ -48,6 +48,7 @@ flight_sheet.example.php  Public bootstrap template
 ## Start Here
 
 - [Getting started](GETTING_STARTED.md)
+- [Local application development](LOCAL_DEVELOPMENT.md)
 - [Runtime README](../runtime/README.md)
 - [Module index](MODULES.md)
 - [Configuration reference](CONFIGURATION.md)

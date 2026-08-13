@@ -59,9 +59,6 @@ final class PermissionOptimizer {
 		foreach($unique as $rule){
 			$parsed=$parsedRules[$rule] ?? PermissionRule::unwrap($rule);
 			$permission=(string)($parsed['permission'] ?? '');
-			if($permission===''){
-				continue;
-			}
 			$opposite=($parsed['negative'] ? '' : '-').$permission;
 			if($parsed['negative']===false && isset($seen[$opposite])){
 				$findings[]=self::finding('conflicting_rule', 'warning', "Permission '{$permission}' is both granted and denied.", ['permission'=>$permission]);

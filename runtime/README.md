@@ -31,9 +31,10 @@ Minimal embedded/source entrypoint:
 require __DIR__.'/runtime/bootstrap.php';
 ```
 
-Most installations provide `flight_sheet.php` beside `runtime/` in the
-Dataphyre install root for bootstrap settings such as the default application,
-application roots, direct-access controls, and Flightdeck settings.
+Canonical embedded installations provide `flight_sheet.php` in the project
+root, one level above `dataphyre/runtime/`. Standalone package installs may keep
+it beside `runtime/`. The sheet selects the application, defines the module
+allow/deny policy, and supplies direct-access and Flightdeck settings.
 
 Composer vendor installs can keep `flight_sheet.php` and `applications/` in the
 consumer project root by setting `$_SERVER['DATAPHYRE_PROJECT_ROOT']` before

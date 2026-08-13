@@ -62,11 +62,12 @@ class issue{
 	 * @param array<string,mixed> $context Diagnostic context encoded for hashing, encrypted storage, and notification output.
 	 * @return string JSON object string, or "{}" when encoding cannot fully succeed.
 	 */
-	private static function encode_context(array $context): string {
-		$encoded_context=json_encode(
-			$context,
+	private static function encode_context(array $context, ?callable $encoder=null): string {
+		$encoder??=static fn(array $payload): string|false=>json_encode(
+			$payload,
 			JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE|JSON_PARTIAL_OUTPUT_ON_ERROR
 		);
+		$encoded_context=$encoder($context);
 		if($encoded_context===false){
 			return '{}';
 		}
@@ -100,21 +101,26 @@ class issue{
 	 *
 	 * @return string Configured module, core, or PHP default timezone identifier.
 	 */
-	private static function current_timezone_label(): string {
-		if(!empty(self::$timezone)){
-			return self::$timezone;
+	private static function current_timezone_label(array $observations=[]): string {
+		$module_timezone=array_key_exists('module_timezone', $observations)
+			? (string)$observations['module_timezone']
+			: (string)(self::$timezone ?? '');
+		if($module_timezone!==''){
+			return $module_timezone;
 		}
-		if(class_exists('\dataphyre\core', false)){
-			$configured_timezone=(string)(\dataphyre\core::config_all()['base_timezone'] ?? '');
-			if($configured_timezone!==''){
-				return $configured_timezone;
-			}
+		$configured_timezone=array_key_exists('core_timezone', $observations)
+			? (string)$observations['core_timezone']
+			: (class_exists('\dataphyre\core', false) ? (string)(\dataphyre\core::config_all()['base_timezone'] ?? '') : '');
+		if($configured_timezone!==''){
+			return $configured_timezone;
 		}
-		$core_timezone=(string)(DP_CORE_CFG['timezone'] ?? '');
+		$core_timezone=array_key_exists('config_timezone', $observations)
+			? (string)$observations['config_timezone']
+			: (string)(DP_CORE_CFG['timezone'] ?? '');
 		if($core_timezone!==''){
 			return $core_timezone;
 		}
-		return date_default_timezone_get();
+		return (string)($observations['default_timezone'] ?? date_default_timezone_get());
 	}
 
 	/**
@@ -122,14 +128,22 @@ class issue{
 	 *
 	 * @return string Request IP, core client IP, remote address, or 0.0.0.0 fallback.
 	 */
-	private static function current_execution_ip(): string {
-		if(defined('REQUEST_IP_ADDRESS')){
+	private static function current_execution_ip(array $observations=[]): string {
+		if(array_key_exists('request_ip', $observations)){
+			if($observations['request_ip']!==null && (string)$observations['request_ip']!==''){
+				return (string)$observations['request_ip'];
+			}
+		}elseif(defined('REQUEST_IP_ADDRESS')){
 			return (string)REQUEST_IP_ADDRESS;
 		}
-		if(class_exists('dataphyre\core')){
+		if(is_callable($observations['core_client_ip'] ?? null)){
+			return (string)$observations['core_client_ip']();
+		}
+		if(!array_key_exists('core_client_ip', $observations) && class_exists('dataphyre\core')){
 			return (string)\dataphyre\core::get_client_ip();
 		}
-		return (string)($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+		$server=is_array($observations['server'] ?? null) ? $observations['server'] : $_SERVER;
+		return (string)($server['REMOTE_ADDR'] ?? '0.0.0.0');
 	}
 
 	/**
@@ -146,9 +160,13 @@ class issue{
 	 *
 	 * @return ?int User id from additional context or access module, or null.
 	 */
-	private static function current_execution_userid(): ?int {
-		$userid=self::$additional_context['userid'] ?? null;
-		if($userid===null && class_exists('dataphyre\access') && method_exists('dataphyre\access', 'userid')){
+	private static function current_execution_userid(array $observations=[]): ?int {
+		$userid=array_key_exists('userid', $observations)
+			? $observations['userid']
+			: (self::$additional_context['userid'] ?? null);
+		if($userid===null && is_callable($observations['access_userid'] ?? null)){
+			$userid=$observations['access_userid']();
+		}elseif($userid===null && !array_key_exists('access_userid', $observations) && class_exists('dataphyre\access') && method_exists('dataphyre\access', 'userid')){
 			$userid=\dataphyre\access::userid();
 		}
 		if(is_numeric($userid)){

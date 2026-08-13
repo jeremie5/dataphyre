@@ -26,7 +26,8 @@ final class VestraDriver implements StorageDriver {
 	/**
 	 * Stores Vestra driver configuration.
 	 *
-	 * @param array<string, mixed> $config Driver configuration, including optional `manifest` path for alias persistence.
+	 * @param array<string, mixed> $config Driver configuration, including optional `manifest` path for alias persistence
+	 * and an optional `client_handler` adapter for propagation, URL, download, and usage operations.
 	 */
 	public function __construct(private array $config) {
 	}
@@ -83,21 +84,15 @@ final class VestraDriver implements StorageDriver {
 	 * @return bool `true` only when propagation succeeds and the alias manifest is updated.
 	 */
 	public function write(string $path, mixed $contents, array $options=[]): bool {
-		if($this->ensureVestra()!==true){
-			return false;
-		}
+		if($this->ensureVestra()!==true){ return false; }
 		$tmp=$this->temporaryPath($path, $options);
-		if($tmp===''){
-			return false;
-		}
+		if($tmp===''){ return false; }
 		$out=fopen($tmp, 'w+b');
 		$ok=is_resource($contents) ? Stream::copy($contents, $out) : fwrite($out, (string)$contents)!==false;
 		fclose($out);
-		if(!$ok){
-			@unlink($tmp);
-			return false;
-		}
-		$reference=\Dataphyre\Vestra\Client::propagate($tmp, (bool)($options['vestra_encrypt'] ?? false));
+		if(!$ok){ @unlink($tmp); return false; }
+		$handler=$this->config['client_handler'] ?? null;
+		$reference=is_callable($handler) ? $handler('propagate', [$tmp, (bool)($options['vestra_encrypt'] ?? false)], $this->config) : \Dataphyre\Vestra\Client::propagate($tmp, (bool)($options['vestra_encrypt'] ?? false));
 		@unlink($tmp);
 		if(!is_array($reference)){
 			return false;
@@ -118,7 +113,8 @@ final class VestraDriver implements StorageDriver {
 	public function delete(string $path): bool {
 		$reference=$this->lookup($path);
 		if($reference!==null && $this->ensureVestra()===true){
-			\dataphyre\vestra::update_use_count($reference, -1);
+			$handler=$this->config['client_handler'] ?? null;
+			is_callable($handler) ? $handler('update_use_count', [$reference, -1], $this->config) : \dataphyre\vestra::update_use_count($reference, -1);
 		}
 		return $this->forgetAlias($path);
 	}
@@ -188,10 +184,9 @@ final class VestraDriver implements StorageDriver {
 		if($reference===null){
 			return false;
 		}
-		if($this->ensureVestra()!==true){
-			return false;
-		}
-		return \Dataphyre\Vestra\Client::assetUrl($reference, $this->assetExtension($path, $options), $this->urlParameters($options));
+		if($this->ensureVestra()!==true){ return false; }
+		$handler=$this->config['client_handler'] ?? null;
+		return is_callable($handler) ? $handler('asset_url', [$reference, $this->assetExtension($path, $options), $this->urlParameters($options)], $this->config) : \Dataphyre\Vestra\Client::assetUrl($reference, $this->assetExtension($path, $options), $this->urlParameters($options));
 	}
 
 	/**
@@ -200,6 +195,7 @@ final class VestraDriver implements StorageDriver {
 	 * @return bool `true` when Vestra module and client APIs are available.
 	 */
 	private function ensureVestra(): bool {
+		if(is_callable($this->config['client_handler'] ?? null)){ return true; }
 		if(!class_exists('\dataphyre\vestra', false) && function_exists('\dp_module_present')){
 			$module=\dp_module_present('vestra');
 			if(is_array($module) && !empty($module[0])){
@@ -310,17 +306,12 @@ final class VestraDriver implements StorageDriver {
 	private function temporaryPath(string $path, array $options=[]): string {
 		$extension=$this->assetExtension((string)($options['original_name'] ?? $path), []);
 		$tmp=tempnam(sys_get_temp_dir(), 'dpstor_vestra_');
-		if($tmp===false){
-			return '';
-		}
+		if($tmp===false){ return ''; }
 		if($extension===''){
 			return $tmp;
 		}
 		$withExtension=$tmp.'.'.$extension;
-		if(@rename($tmp, $withExtension)){
-			return $withExtension;
-		}
-		return $tmp;
+		return @rename($tmp, $withExtension) ? $withExtension : $tmp;
 	}
 
 	/**
@@ -366,6 +357,11 @@ final class VestraDriver implements StorageDriver {
 	 * @return string|false Downloaded bytes, or false when HTTP/TLS fails.
 	 */
 	private function downloadUrl(string $url): string|false {
+		$handler=$this->config['client_handler'] ?? null;
+		if(is_callable($handler)){
+			$result=$handler('download', [$url], $this->config);
+			return is_string($result) ? $result : false;
+		}
 		$context_options=[
 			'http'=>[
 				'timeout'=>(float)($this->config['read_timeout'] ?? 30),
@@ -384,9 +380,7 @@ final class VestraDriver implements StorageDriver {
 		if(is_string($contents)){
 			return $contents;
 		}
-		if(!function_exists('curl_init')){
-			return false;
-		}
+		if(!function_exists('curl_init')){ return false; }
 		$curl=curl_init($url);
 		curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
 		curl_setopt($curl, CURLOPT_FOLLOWLOCATION, true);

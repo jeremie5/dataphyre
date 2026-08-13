@@ -8,7 +8,10 @@
             {
                 "from": "Support Team <support@example.com>",
                 "replyTo": "Replies <reply@example.com>",
-                "to": ["Ada Lovelace <ada@example.com>", "invalid"],
+                "to": [
+                    "Ada Lovelace <ada@example.com>",
+                    "invalid"
+                ],
                 "cc": {
                     "ops@example.com": "Ops"
                 },
@@ -20,7 +23,10 @@
                     "X-Campaign": 123,
                     "": "ignored"
                 },
-                "categories": ["onboarding", ""],
+                "categories": [
+                    "onboarding",
+                    ""
+                ],
                 "metadata": {
                     "campaign": "welcome"
                 }
@@ -28,11 +34,75 @@
         ],
         "expected": [
             {
-                "custom_script": "return is_array($result) && ($result['from']['email'] ?? null)==='support@example.com' && ($result['from']['name'] ?? null)==='Support Team' && ($result['reply_to']['email'] ?? null)==='reply@example.com' && ($result['reply_to']['name'] ?? null)==='Replies' && ($result['to'] ?? null)===[['email'=>'ada@example.com','name'=>'Ada Lovelace']] && ($result['cc'] ?? null)===[['email'=>'ops@example.com','name'=>'Ops']] && ($result['bcc'] ?? null)===[] && ($result['subject'] ?? null)==='Welcome' && ($result['html'] ?? null)==='<p>Hello</p>' && ($result['text'] ?? null)==='Hello' && ($result['headers'] ?? null)===['X-Campaign'=>'123'] && ($result['attachments'] ?? null)===[] && ($result['tags'] ?? null)===['onboarding'] && ($result['metadata'] ?? null)===['campaign'=>'welcome'];"
+                "assert": {
+                    "type": "array",
+                    "paths": {
+                        "from/email": {
+                            "same": "support@example.com"
+                        },
+                        "from/name": {
+                            "same": "Support Team"
+                        },
+                        "reply_to/email": {
+                            "same": "reply@example.com"
+                        },
+                        "reply_to/name": {
+                            "same": "Replies"
+                        },
+                        "to": {
+                            "same": [
+                                {
+                                    "email": "ada@example.com",
+                                    "name": "Ada Lovelace"
+                                }
+                            ]
+                        },
+                        "cc": {
+                            "same": [
+                                {
+                                    "email": "ops@example.com",
+                                    "name": "Ops"
+                                }
+                            ]
+                        },
+                        "bcc": {
+                            "same": []
+                        },
+                        "subject": {
+                            "same": "Welcome"
+                        },
+                        "html": {
+                            "same": "<p>Hello</p>"
+                        },
+                        "text": {
+                            "same": "Hello"
+                        },
+                        "headers": {
+                            "same": {
+                                "X-Campaign": "123"
+                            }
+                        },
+                        "attachments": {
+                            "same": []
+                        },
+                        "tags": {
+                            "same": [
+                                "onboarding"
+                            ]
+                        },
+                        "metadata": {
+                            "same": {
+                                "campaign": "welcome"
+                            }
+                        }
+                    }
+                }
             }
         ],
-        "file_dynamic": "return ROOTPATH['common_dataphyre_runtime'].'modules/mailer/Framework/Message.php';",
-        "max_millis": 5
+        "max_millis": 5,
+        "file": {
+            "runtime": "modules/mailer/Framework/Message.php"
+        }
     },
     {
         "name": "message_normalize_builds_one_click_unsubscribe_headers",
@@ -51,10 +121,64 @@
         ],
         "expected": [
             {
-                "custom_script": "return is_array($result) && ($result['from']['email'] ?? null)==='no-reply@example.invalid' && ($result['from']['name'] ?? null)==='Dataphyre' && array_key_exists('reply_to', $result) && $result['reply_to']===null && ($result['to'] ?? null)===[['email'=>'subscriber@example.com','name'=>'']] && ($result['cc'] ?? null)===[] && ($result['bcc'] ?? null)===[] && ($result['subject'] ?? null)==='' && ($result['html'] ?? null)==='' && ($result['text'] ?? null)==='' && ($result['headers'] ?? null)===['List-Unsubscribe'=>'<https://example.com/unsubscribe/abc>, <mailto:unsubscribe@example.com>','List-Unsubscribe-Post'=>'List-Unsubscribe=One-Click'] && ($result['attachments'] ?? null)===[] && ($result['tags'] ?? null)===[] && ($result['metadata'] ?? null)===[];"
+                "assert": {
+                    "type": "array",
+                    "paths": {
+                        "from/email": {
+                            "same": "no-reply@example.invalid"
+                        },
+                        "from/name": {
+                            "same": "Dataphyre"
+                        },
+                        "reply_to": {
+                            "exists": true,
+                            "same": null
+                        },
+                        "to": {
+                            "same": [
+                                {
+                                    "email": "subscriber@example.com",
+                                    "name": ""
+                                }
+                            ]
+                        },
+                        "cc": {
+                            "same": []
+                        },
+                        "bcc": {
+                            "same": []
+                        },
+                        "subject": {
+                            "same": ""
+                        },
+                        "html": {
+                            "same": ""
+                        },
+                        "text": {
+                            "same": ""
+                        },
+                        "headers": {
+                            "same": {
+                                "List-Unsubscribe": "<https://example.com/unsubscribe/abc>, <mailto:unsubscribe@example.com>",
+                                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"
+                            }
+                        },
+                        "attachments": {
+                            "same": []
+                        },
+                        "tags": {
+                            "same": []
+                        },
+                        "metadata": {
+                            "same": []
+                        }
+                    }
+                }
             }
         ],
-        "file_dynamic": "return ROOTPATH['common_dataphyre_runtime'].'modules/mailer/Framework/Message.php';",
-        "max_millis": 5
+        "max_millis": 5,
+        "file": {
+            "runtime": "modules/mailer/Framework/Message.php"
+        }
     }
 ]

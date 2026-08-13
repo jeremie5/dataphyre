@@ -1,14 +1,19 @@
-[{
-    "max_millis":  100,
-    "name":  "config_repository_scoped_contract",
-    "function":  "dp_core_unit_config_repository_contract",
-    "args":  [
-
-             ],
-    "expected":  [
-                     {
-                         "custom_script":  "return is_array($result) && !in_array(false, $result, true);"
-                     }
-                 ],
-    "file":  "/common/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
-}]
+[
+    {
+        "max_millis": 100,
+        "name": "config_repository_scoped_contract",
+        "function": "dp_core_unit_config_repository_contract",
+        "args": [],
+        "expected": [
+            {
+                "assert": {
+                    "type": "array",
+                    "not_contains": [
+                        false
+                    ]
+                }
+            }
+        ],
+        "file": "/dataphyre/runtime/modules/core/unit_tests/core_test_helpers.php"
+    }
+]

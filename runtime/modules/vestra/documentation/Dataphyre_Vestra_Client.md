@@ -18,7 +18,7 @@ tenant-aware delivery URLs, resource ingestion, and application usage accounting
 
 #### Configuration
 
-The module reads its configuration from `common/dataphyre/config/vestra.php` and
+The module reads its configuration from `dataphyre/config/vestra.php` and
 `applications/<app>/backend/dataphyre/config/vestra.php`.
 
 The owning kernel exposes the merged readonly config as `DP_VESTRA_CFG`.

@@ -26,11 +26,13 @@ final class NavigationItem {
 	private ?string $description=null;
 	private int $sort=100;
 	private mixed $badge=null;
+	/** @var (\Closure(?PanelRequest,self,?PanelManager):mixed)|null */
 	private ?\Closure $badgeResolver=null;
 	private string $badgeTone='neutral';
 	private bool $newTab=false;
 	private bool $hidden=false;
 	private bool $folderOnly=false;
+	/** @var (\Closure(?PanelRequest,self,?PanelManager):bool)|null */
 	private ?\Closure $visibilityResolver=null;
 	/** @var list<NavigationItem> */
 	private array $children=[];
@@ -239,7 +241,7 @@ final class NavigationItem {
 	 * Callable badges are evaluated only while building a runtime navigation entry, allowing request-aware counts without
 	 * making the static navigation manifest execute application code.
 	 *
-	 * @param mixed $badge Static badge value or callable resolver.
+	 * @param scalar|\Stringable|array<array-key,mixed>|null|callable(?PanelRequest,self,?PanelManager):mixed $badge Static badge value or callable resolver.
 	 * @return self Cloned navigation item with updated badge behavior.
 	 */
 	public function badge(mixed $badge): self {
@@ -257,7 +259,7 @@ final class NavigationItem {
 	/**
 	 * Returns a copy with a lazy request-aware badge resolver.
 	 *
-	 * @param callable $resolver Resolver called with PanelRequest, NavigationItem, and PanelManager.
+	 * @param callable(?PanelRequest,self,?PanelManager):mixed $resolver Resolver called with PanelRequest, NavigationItem, and PanelManager.
 	 * @return self Cloned navigation item with lazy badge behavior.
 	 */
 	public function badgeUsing(callable $resolver): self {
@@ -312,7 +314,7 @@ final class NavigationItem {
 	 *
 	 * Resolver exceptions are traced and treated as not visible, keeping navigation generation fail-closed.
 	 *
-	 * @param callable $resolver Resolver called with PanelRequest, NavigationItem, and PanelManager.
+	 * @param callable(?PanelRequest,self,?PanelManager):bool $resolver Resolver called with PanelRequest, NavigationItem, and PanelManager.
 	 * @return self Cloned navigation item with lazy visibility behavior.
 	 */
 	public function visibleUsing(callable $resolver): self {
@@ -341,7 +343,7 @@ final class NavigationItem {
 	 *
 	 * Invalid child entries are ignored so generated navigation arrays can be passed directly.
 	 *
-	 * @param array<int|string, NavigationItem|array<string, mixed>|mixed> $children Child item definitions.
+	 * @param array<int|string, NavigationItem|array<string, mixed>> $children Child item definitions.
 	 * @return self Cloned navigation item with replacement children.
 	 */
 	public function children(array $children): self {

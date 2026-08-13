@@ -94,7 +94,7 @@ final class CommandManifest {
 			'keywords'=>count($keywords),
 			'lazy'=>($manifest['visibility']['visible_lazy'] ?? false) || ($target['url_lazy'] ?? false),
 		]);
-		return $manifest;
+		return PanelManifestContract::stamp($manifest);
 	}
 
 	/**

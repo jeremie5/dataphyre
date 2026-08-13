@@ -10,9 +10,12 @@ namespace dataphyre;
 if(function_exists(__NAMESPACE__.'\\tracelog') || function_exists('tracelog')){
 	tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, 'Module initialization');
 }
+if(function_exists(__NAMESPACE__.'\\dp_define_module_config')){
+	dp_define_module_config('cache', 'DP_CACHE_CFG');
+}
 
 /**
- * Provides Dataphyre's optional process-local cache facade.
+ * Provides Dataphyre's optional cache facade.
  *
  * A healthy Memcached service is preferred for shared cache state. If the PHP
  * extension is unavailable, the service fails its health check, or an active
@@ -22,6 +25,9 @@ if(function_exists(__NAMESPACE__.'\\tracelog') || function_exists('tracelog')){
 class cache {
 
 	private const MAX_RELATIVE_EXPIRATION=2592000;
+	private const MAX_MEMCACHED_KEY_BYTES=250;
+	private const DEFAULT_MEMCACHED_HOST='127.0.0.1';
+	private const DEFAULT_MEMCACHED_PORT=11211;
 
 	/** @var object|null Active Memcached-compatible client. */
 	protected static $memcached=null;
@@ -35,9 +41,7 @@ class cache {
 	/** Public compatibility flag used by legacy runtime consumers. */
 	public static $started=false;
 
-	/**
-	 * Selects and health-checks the cache backend once per request.
-	 */
+	/** Selects and health-checks the cache backend once per request. */
 	private static function start(): void {
 		if(self::$started===true){
 			return;
@@ -49,7 +53,8 @@ class cache {
 		try{
 			$client=new \Memcached();
 			self::configure_client($client);
-			if($client->addServer('127.0.0.1', 11211)!==true){
+			[$host, $port]=self::server_address();
+			if($client->addServer($host, $port)!==true){
 				self::use_memory_fallback('Memcached server registration failed');
 				return;
 			}
@@ -67,8 +72,47 @@ class cache {
 	}
 
 	/**
-	 * Applies bounded connection settings when the extension exposes them.
+	 * Resolves the process-shared endpoint without placing environment values in
+	 * traces or generated configuration.
+	 *
+	 * @return array{0:string,1:int}
 	 */
+	private static function server_address(): array {
+		$config=defined('DP_CACHE_CFG') && is_array(DP_CACHE_CFG)
+			? (is_array(DP_CACHE_CFG['memcached'] ?? null) ? DP_CACHE_CFG['memcached'] : DP_CACHE_CFG)
+			: [];
+		$host=self::environment_value('DATAPHYRE_CACHE_MEMCACHED_HOST')
+			?? self::environment_value('MEMCACHED_HOST')
+			?? (is_string($config['host'] ?? null) ? trim($config['host']) : '');
+		if($host===''){
+			$host=self::DEFAULT_MEMCACHED_HOST;
+		}
+		$port=self::environment_value('DATAPHYRE_CACHE_MEMCACHED_PORT')
+			?? self::environment_value('MEMCACHED_PORT')
+			?? ($config['port'] ?? self::DEFAULT_MEMCACHED_PORT);
+		if(strlen($host)>255 || preg_match('/[\\x00-\\x20\\x7f]/', $host)===1){
+			self::trace_warning('Invalid Memcached host configuration; using the loopback default.');
+			$host=self::DEFAULT_MEMCACHED_HOST;
+		}
+		$port=filter_var($port, FILTER_VALIDATE_INT, [
+			'options'=>['min_range'=>1, 'max_range'=>65535],
+		]);
+		if($port===false){
+			self::trace_warning('Invalid Memcached port configuration; using the default port.');
+			$port=self::DEFAULT_MEMCACHED_PORT;
+		}
+		return [$host, (int)$port];
+	}
+
+	private static function environment_value(string $name): ?string {
+		$value=getenv($name);
+		if(!is_string($value) || trim($value)===''){
+			return null;
+		}
+		return trim($value);
+	}
+
+	/** Applies bounded connection settings when the extension exposes them. */
 	private static function configure_client(object $client): void {
 		foreach([
 			'Memcached::OPT_CONNECT_TIMEOUT'=>250,
@@ -80,9 +124,7 @@ class cache {
 		}
 	}
 
-	/**
-	 * @param mixed $versions Memcached version map returned by the extension.
-	 */
+	/** @param mixed $versions Memcached version map returned by the extension. */
 	private static function versions_are_healthy(mixed $versions): bool {
 		if(!is_array($versions) || $versions===[]){
 			return false;
@@ -95,9 +137,7 @@ class cache {
 		return true;
 	}
 
-	/**
-	 * Permanently selects request-local memory for the remainder of this request.
-	 */
+	/** Permanently selects request-local memory for the remainder of this request. */
 	private static function use_memory_fallback(string $reason): void {
 		self::$memcached=null;
 		self::$memory_fallback=true;
@@ -112,7 +152,15 @@ class cache {
 	}
 
 	private static function key(string|int $key): string {
-		return (string)$key;
+		$key=(string)$key;
+		if(
+			$key!==''
+			&& strlen($key)<=self::MAX_MEMCACHED_KEY_BYTES
+			&& preg_match('/[\\x00-\\x20\\x7f]/', $key)!==1
+		){
+			return $key;
+		}
+		return 'dataphyre:sha256:'.hash('sha256', $key);
 	}
 
 	/**
@@ -189,8 +237,19 @@ class cache {
 	}
 
 	/**
-	 * Fetches a cached value, returning null for a miss.
+	 * Health-checks the selected backend and reports whether it is process-shared.
+	 *
+	 * This must be true before a caller treats this facade as a shared cache. The
+	 * fail-open memory backend intentionally returns false.
 	 */
+	public static function isShared(): bool {
+		if(self::$started===false){
+			self::start();
+		}
+		return self::$memory_fallback===false && is_object(self::$memcached);
+	}
+
+	/** Fetches a cached value, returning null for a miss. */
 	public static function get(string|int $key): mixed {
 		if(self::$started===false){
 			self::start();
@@ -213,9 +272,7 @@ class cache {
 		return self::memory_get($key);
 	}
 
-	/**
-	 * Stores a value for an optional Memcached-compatible expiration.
-	 */
+	/** Stores a value for an optional Memcached-compatible expiration. */
 	public static function set(string|int $key, mixed $value, int $expiration=0): bool {
 		if(self::$started===false){
 			self::start();
@@ -234,9 +291,7 @@ class cache {
 		return self::memory_set($key, $value, $expiration);
 	}
 
-	/**
-	 * Deletes a cache key. Missing keys are treated as successfully absent.
-	 */
+	/** Deletes a cache key. Missing keys are treated as successfully absent. */
 	public static function delete(string|int $key): bool {
 		if(self::$started===false){
 			self::start();
@@ -257,9 +312,7 @@ class cache {
 		return true;
 	}
 
-	/**
-	 * Clears the selected backend.
-	 */
+	/** Clears the selected backend. */
 	public static function flush(): bool {
 		if(self::$started===false){
 			self::start();
@@ -279,16 +332,12 @@ class cache {
 		return true;
 	}
 
-	/**
-	 * Increments a numeric value, creating a missing counter from zero.
-	 */
+	/** Increments a numeric value, creating a missing counter from zero. */
 	public static function increment(string|int $key, int $offset=1): int|false {
 		return self::counter($key, $offset, false);
 	}
 
-	/**
-	 * Decrements a numeric value without allowing it to fall below zero.
-	 */
+	/** Decrements a numeric value without allowing it to fall below zero. */
 	public static function decrement(string|int $key, int $offset=1): int|false {
 		return self::counter($key, $offset, true);
 	}

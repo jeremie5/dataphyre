@@ -73,6 +73,12 @@ larger project or prepared as a standalone export.
 - [ ] Markdown local links pass.
 - [ ] JSON fixtures parse successfully.
 - [ ] Public CI validates Composer metadata, PHP linting, and MCP validation.
+- [ ] The generic `framework-exact-coverage` CI job runs TestKit with Xdebug,
+  rejects skipped or TODO cases, certifies the closed-world `runtime/modules`
+  inventory at exactly 100% line coverage, and retains coverage, JUnit, profile,
+  and summary artifacts.
+- [ ] Embedded source changes are protected by the same generic Dataphyre
+  framework exact-coverage contract before publication.
 - [ ] Package validation completes before publication.
 
 ## Embedded Install Review

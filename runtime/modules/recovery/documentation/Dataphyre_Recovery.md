@@ -2,7 +2,7 @@
 
 Dataphyre Recovery is the application-neutral failure and corrective-action
 contract for HTTP applications. It complements internal issue reporting and
-fatal-request contingency handling; it does not expose either system's private
+fatal-request recovery handling; it does not expose either system's private
 diagnostics.
 
 The module provides:

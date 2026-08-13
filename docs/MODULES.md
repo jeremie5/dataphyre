@@ -1,9 +1,9 @@
 ﻿# Dataphyre Modules
 
 This file maps the current module surface. Dataphyre can run embedded in a
-larger application, so not every module is part of the core boot path. Most
-modules are optional and are loaded only when present and enabled by the
-installation.
+larger application, so not every module is part of the core boot path. A
+non-empty `bootstrap.modules.enabled` list is authoritative. Installs without
+one retain legacy module discovery, and explicit disabled entries always win.
 
 For compatibility guarantees attached to these status labels, see
 [STABILITY.md](STABILITY.md).
@@ -13,6 +13,7 @@ For compatibility guarantees attached to these status labels, see
 - `core`: required runtime infrastructure.
 - `optional`: first-party module that can be enabled by an installation.
 - `adapter`: integration with a service, vendor, or product-specific API.
+- `tooling`: repository tooling with no runtime boot entrypoint.
 - `legacy`: carried forward for compatibility or historical installs.
 - `experimental`: present, but needs docs, tests, or public API hardening before
   it is treated as stable.
@@ -26,11 +27,11 @@ For compatibility guarantees attached to these status labels, see
 | `aceit_engine` | legacy | No | [docs](../runtime/modules/aceit_engine/documentation/Dataphyre_AceIt_Engine.md) | Legacy experimentation module. It does not use the current `kernel/<module>.main.php` or `Framework/` discovery shape. |
 | `api` | optional | No | [docs](../runtime/modules/api/documentation/Dataphyre_Api.md) | API route definitions, security schemes, OpenAPI generation, and Swagger UI support. |
 | `async` | optional | No | [docs](../runtime/modules/async/documentation/Dataphyre_Async.md) | Coroutines, promises, process dispatch, queues, and async task orchestration. |
-| `cache` | optional | No | [docs](../runtime/modules/cache/documentation/Dataphyre_Cache.md) | Fail-open Memcached cache facade with request-local memory fallback when the optional backend is unavailable. |
+| `cache` | optional | No | [docs](../runtime/modules/cache/documentation/Dataphyre_Cache.md) | Fail-open Memcached cache facade with request-local fallback and an explicit shared-backend health contract. |
 | `caspow` | optional | No | [docs](../runtime/modules/caspow/documentation/Dataphyre_CASPOW.md) | Proof-of-work anti-spam and abuse-control challenge system. |
 | `core` | core | Yes | [docs](../runtime/modules/core/documentation/Dataphyre_Core.md) | Runtime bootstrap, module discovery, config, helpers, app location, autoloading, and framework loading. |
 | `currency` | optional | No | [docs](../runtime/modules/currency/documentation/Dataphyre_Currency.md) | Money values, exchange rates, conversion, and formatting helpers. |
-| `datadoc` | optional | No | [docs](../runtime/modules/datadoc/documentation/Dataphyre_Datadoc.md) | Runtime and source documentation surface. |
+| `datadoc` | optional | No | [docs](../runtime/modules/datadoc/documentation/Dataphyre_Datadoc.md) | Universal static documentation engine and publication format, PHP source indexing, Dynadoc, and Manudoc surfaces. |
 | `date_translation` | optional | No | [docs](../runtime/modules/date_translation/documentation/Dataphyre_Date_Translation.md) | Localized date strings and language resources. |
 | `dpanel` | optional | No | [docs](../runtime/modules/dpanel/documentation/Dataphyre_Dpanel.md) | Diagnostics, dependency checks, and dynamic unit-test tooling. |
 | `firewall` | optional | No | [docs](../runtime/modules/firewall/documentation/Dataphyre_Firewall.md) | Request filtering, abuse controls, rate limits, and security routing support. |
@@ -45,14 +46,17 @@ For compatibility guarantees attached to these status labels, see
 | `mvc` | optional | No | [docs](../runtime/modules/mvc/documentation/Dataphyre_MVC.md) | Native MVC application layer that composes HTTP, Routing, Templating, and SQL into controllers, route groups, view results, middleware, and lightweight models. |
 | `permission` | optional | No | [docs](../runtime/modules/permission/documentation/Dataphyre_Permission.md) | Semantic authorization rules, roles, audits, permission catalogs, Panel authorization, policy gate integration, and optional Laravel adapter support. |
 | `reactor` | optional | No | [docs](../runtime/modules/reactor/documentation/Dataphyre_Reactor.md) | Server-driven component lifecycle, signed snapshots, actions, effects, model binding, nested components, and route-agnostic UI islands. |
+| `recovery` | optional | No | [docs](../runtime/modules/recovery/documentation/Dataphyre_Recovery.md) | Typed public problems, permission-aware corrective actions, safe evidence, and incident correlation hooks. |
 | `routing` | optional | No | [docs](../runtime/modules/routing/documentation/Dataphyre_Routing.md) | Dynamic and compiled routing support. |
 | `sanitation` | optional | No | [docs](../runtime/modules/sanitation/documentation/Dataphyre_Sanitation.md) | Input bags, sanitizer presets, validation, and sanitization results. |
 | `scheduling` | optional | No | [docs](../runtime/modules/scheduling/documentation/Dataphyre_Scheduling.md) | Framework task definitions, period helpers, scheduler routes, task runner, and scheduled job orchestration. |
+| `simulation` | optional | No | [docs](../runtime/modules/simulation/documentation/Dataphyre_Simulation.md) | Deterministic causal simulation with replayable randomness, bounded rules, scope isolation, and application-owned domain adapters. |
 | `sql` | optional | No | [docs](../runtime/modules/sql/documentation/Dataphyre_SQL.md) | Database access, query helpers, records, repositories, transactions, and table scaffolding. |
 | `storage` | optional | No | [docs](../runtime/modules/storage/documentation/Dataphyre_Storage.md) | Secure file storage abstraction for local disks, S3-compatible object storage, and thin Vestra reference aliases. |
 | `stripe` | adapter | No | [docs](../runtime/modules/stripe/documentation/Dataphyre_Stripe.md) | Stripe integration wrapper around the bundled Stripe PHP client. |
 | `supercookie` | optional | No | [docs](../runtime/modules/supercookie/documentation/Dataphyre_Supercookie.md) | JSON cookie-backed session/state helper. |
 | `templating` | optional | No | [docs](../runtime/modules/templating/documentation/Dataphyre_Templating.md) | Templates, manifests, rendering, bindings, layouts, and asset policy support. |
+| `testing` | tooling | No | [docs](../runtime/modules/testing/documentation/Dataphyre_Testing.md) | Self-describing TestKit contracts and the isolated code-test worker; module-specific tests remain with their owning modules. |
 | `time_machine` | optional | No | [docs](../runtime/modules/time_machine/documentation/Dataphyre_Time_Machine.md) | Time-aware diagnostics and runtime time helpers. |
 | `tracelog` | optional | No | [docs](../runtime/modules/tracelog/documentation/Dataphyre_Tracelog.md) | Execution tracing, handoff traces, and trace viewer support. |
 | `vestra` | adapter | No | [docs](../runtime/modules/vestra/documentation/Dataphyre_Vestra_Client.md) | Vestra Fabric client for object references, tenant-aware asset URLs, HTML ingestion, and application usage accounting. |
@@ -60,11 +64,15 @@ For compatibility guarantees attached to these status labels, see
 ## Public Release Notes
 
 - `core` is the runtime-critical module loaded by `runtime/bootstrap.php`.
-- Most optional modules are discovered by convention from `runtime/modules/<module>/`.
-- Application-level modules can override or disable common modules in an embedded
-  install.
+- When `bootstrap.modules.enabled` is non-empty, only its named optional modules
+  can load. Without that allow-list, legacy installs discover module directories.
+- `bootstrap.modules.disabled` wins in both modes. Application-level source can
+  override an allowed shared module's implementation, but cannot bypass an
+  explicit denial.
 - Product-specific install/plugin integrations are application-owned and are
   not baseline Dataphyre dependencies.
+- `testing` has no kernel or Framework entrypoint. Project tooling loads its
+  worker directly; normal requests do not load TestKit.
 - `stripe` and similar modules are adapters. They are documented as opt-in
   integrations with their own configuration.
 - Legacy and experimental modules stay clearly marked until their public API,

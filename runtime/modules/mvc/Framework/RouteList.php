@@ -90,9 +90,6 @@ final class RouteList {
 		if(is_object($handler)){
 			return $handler::class;
 		}
-		if(is_callable($handler)){
-			return 'callable';
-		}
 		return get_debug_type($handler);
 	}
 

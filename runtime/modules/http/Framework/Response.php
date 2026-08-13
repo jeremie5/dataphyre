@@ -26,7 +26,18 @@ final class Response {
 	public mixed $stream=null;
 	/** @var array<string, callable> Runtime response macros keyed by method name. */
 	private static array $macros=[];
+	private static $fileReader=null;
 	private ?string $normalizedEtagPayload=null;
+
+	/**
+	 * Installs a process-local file reader used by file response factories.
+	 *
+	 * Passing null restores file_get_contents(). Alternate runtimes and tests may
+	 * supply a callable receiving the validated readable file path.
+	 */
+	public static function useFileReader(?callable $reader): void {
+		self::$fileReader=$reader;
+	}
 
 	/**
 	 * Captures response body, status, and headers.
@@ -375,9 +386,10 @@ final class Response {
 	/**
 	 * Evaluates request validators against this response's ETag or Last-Modified.
 	 *
-	 * `If-None-Match` takes precedence when an ETag exists. Weak and strong ETags
-	 * compare after normalizing their validator wrappers. Last-Modified falls
-	 * back to `If-Modified-Since` timestamp comparison.
+	 * `If-None-Match` takes precedence whenever the request supplies it. Weak and
+	 * strong ETags compare after normalizing their validator wrappers, and `*`
+	 * matches any selected representation. Last-Modified falls back to
+	 * `If-Modified-Since` only when `If-None-Match` is absent.
 	 *
 	 * @param Request $request Incoming request containing conditional headers.
 	 * @return bool True when the request validators indicate the response is unchanged.
@@ -385,14 +397,15 @@ final class Response {
 	public function isNotModified(Request $request): bool {
 		$etag=$this->headerValue('ETag');
 		$ifNoneMatch=(string)$request->header('If-None-Match', '');
-		if($etag!==null && $ifNoneMatch!==''){
-			$normalizedEtag=$this->normalizedEtagPayload ??= $this->normalizeEtag($etag);
+		if($ifNoneMatch!==''){
+			$normalizedEtag=$etag!==null ? ($this->normalizedEtagPayload ??= $this->normalizeEtag($etag)) : null;
 			foreach(explode(',', $ifNoneMatch) as $candidate){
 				$candidate=trim($candidate);
-				if($candidate==='*' || $candidate===$etag || $this->normalizeEtag($candidate)===$normalizedEtag){
+				if($candidate==='*' || ($etag!==null && ($candidate===$etag || $this->normalizeEtag($candidate)===$normalizedEtag))){
 					return true;
 				}
 			}
+			return false;
 		}
 		$lastModified=$this->headerValue('Last-Modified');
 		$ifModifiedSince=(string)$request->header('If-Modified-Since', '');
@@ -631,7 +644,7 @@ final class Response {
 			throw new \InvalidArgumentException('Response file does not exist or is not readable: '.$path);
 		}
 		$filename=$name!==null && trim($name)!=='' ? trim($name) : basename($path);
-		$body=file_get_contents($path);
+		$body=self::$fileReader!==null ? (self::$fileReader)($path) : file_get_contents($path);
 		if($body===false){
 			throw new \RuntimeException('Response file could not be read: '.$path);
 		}
@@ -650,13 +663,8 @@ final class Response {
 	 * @return string MIME type suitable for Content-Type.
 	 */
 	private static function mimeType(string $path): string {
-		if(function_exists('mime_content_type')){
-			$mime=@mime_content_type($path);
-			if(is_string($mime) && $mime!==''){
-				return $mime;
-			}
-		}
-		return match(strtolower((string)pathinfo($path, PATHINFO_EXTENSION))){
+		$extension=strtolower((string)pathinfo($path, PATHINFO_EXTENSION));
+		$known=match($extension){
 			'css'=>'text/css; charset=utf-8',
 			'csv'=>'text/csv; charset=utf-8',
 			'gif'=>'image/gif',
@@ -669,8 +677,16 @@ final class Response {
 			'svg'=>'image/svg+xml',
 			'txt'=>'text/plain; charset=utf-8',
 			'webp'=>'image/webp',
-			default=>'application/octet-stream',
+			default=>null,
 		};
+		if($known!==null) return $known;
+		if(function_exists('mime_content_type')){
+			$mime=@mime_content_type($path);
+			if(is_string($mime) && $mime!==''){
+				return $mime;
+			}
+		}
+		return 'application/octet-stream';
 	}
 
 	/**

@@ -14,11 +14,25 @@ namespace {
 namespace {
 	require_once __DIR__.'/../kernel/date_translation.main.php';
 
+	final class DpDateTranslationFixtureState {
+		/** @param array<string,mixed> $locales */
+		public static function replaceLocales(array $locales): void {
+			$replace=\Closure::bind(
+				static function(array $values): void {
+					\dataphyre\date_translation::$date_locales=$values;
+				},
+				null,
+				\dataphyre\date_translation::class,
+			);
+			if(!$replace instanceof \Closure){
+				throw new \RuntimeException('Unable to install date-translation fixture locales.');
+			}
+			$replace($locales);
+		}
+	}
+
 	function dp_date_translation_unit_seed_french(): bool {
-		$reflection=new ReflectionClass(\dataphyre\date_translation::class);
-		$property=$reflection->getProperty('date_locales');
-		$property->setAccessible(true);
-		$property->setValue(null, [
+		DpDateTranslationFixtureState::replaceLocales([
 			'fr'=>[
 				'abstract'=>[
 					'today'=>'aujourd hui',

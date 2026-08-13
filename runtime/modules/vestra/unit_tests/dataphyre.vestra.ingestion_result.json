@@ -1,7 +1,7 @@
 [
   {
     "name": "vestra_ingestion_result_from_array_ignores_non_array_changes",
-    "file": "/common/dataphyre/runtime/modules/vestra/unit_tests/vestra_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/vestra/unit_tests/vestra_test_helpers.php",
     "function": "DataphyreUnitTests\\vestra_ingestion_result_from_array_json",
     "args": [
       {
@@ -14,7 +14,7 @@
   },
   {
     "name": "vestra_ingestion_result_reports_changed_status",
-    "file": "/common/dataphyre/runtime/modules/vestra/unit_tests/vestra_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/vestra/unit_tests/vestra_test_helpers.php",
     "function": "DataphyreUnitTests\\vestra_ingestion_result_status_json",
     "args": [
       "<link href=\"/vestra/app.css\">",
@@ -30,7 +30,7 @@
   },
   {
     "name": "vestra_asset_url_merges_query_parameters",
-    "file": "/common/dataphyre/runtime/modules/vestra/unit_tests/vestra_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/vestra/unit_tests/vestra_test_helpers.php",
     "function": "DataphyreUnitTests\\vestra_asset_url_json",
     "args": [
       {
@@ -54,7 +54,7 @@
   },
   {
     "name": "vestra_client_facade_delegates_configuration_paths_and_asset_urls",
-    "file": "/common/dataphyre/runtime/modules/vestra/unit_tests/vestra_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/vestra/unit_tests/vestra_test_helpers.php",
     "function": "DataphyreUnitTests\\vestra_client_facade_json",
     "args": [
       {
@@ -73,7 +73,7 @@
   },
   {
     "name": "vestra_asset_url_resolves_tenant_profile_alias",
-    "file": "/common/dataphyre/runtime/modules/vestra/unit_tests/vestra_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/vestra/unit_tests/vestra_test_helpers.php",
     "function": "DataphyreUnitTests\\vestra_asset_url_json",
     "args": [
       {

@@ -1357,6 +1357,7 @@ final class PanelRenderer {
 	use PanelRendererTables;
 	use PanelRendererData;
 	use PanelRendererForms;
+	use PanelRendererDataSurfaces;
 	use PanelRendererAssets;
 
 	/**
@@ -1371,14 +1372,8 @@ final class PanelRenderer {
 		$fallback=$default ?? (self::TEXT_DEFAULTS[$key] ?? $key);
 		try{
 			$localization=PanelConfig::config('localization');
-			if($localization!==null){
-				return PanelLocalization::from($localization)->translate($key, $parameters, null, $fallback);
-			}
-			return Panel::trans($key, $parameters, null, $fallback);
-		}
-		catch(\Throwable){
-			return PanelLocalization::make()->translate($key, $parameters, null, $fallback);
-		}
+			if($localization!==null){ return PanelLocalization::from($localization)->translate($key, $parameters, null, $fallback); }
+			return Panel::trans($key, $parameters, null, $fallback); } catch(\Throwable){ return PanelLocalization::make()->translate($key, $parameters, null, $fallback); }
 	}
 
 	/**

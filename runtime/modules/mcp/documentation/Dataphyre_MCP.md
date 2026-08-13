@@ -1,4 +1,4 @@
-﻿# Dataphyre MCP
+# Dataphyre MCP
 
 ## Goal
 
@@ -7,10 +7,10 @@ Dataphyre MCP is the local AI development server for agents building Dataphyre a
 The first transport is stdio so editors and coding agents can run it from the project root:
 
 ```powershell
-php common\dataphyre\runtime\modules\mcp\kernel\dataphyre_mcp.php
+php dataphyre\runtime\modules\mcp\kernel\dataphyre_mcp.php
 ```
 
-Client configs must use `common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php` as the MCP stdio server entrypoint. `common/dataphyre/runtime/modules/mcp/kernel/mcp.main.php` is only the Dataphyre runtime module bootstrap; it is linted and packaged with the module, but it is not a stdio MCP server.
+Client configs must use `dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php` as the MCP stdio server entrypoint. `dataphyre/runtime/modules/mcp/kernel/mcp.main.php` is only the Dataphyre runtime module bootstrap; it is linted and packaged with the module, but it is not a stdio MCP server.
 
 ## Current Capabilities
 
@@ -59,18 +59,30 @@ Client configs must use `common/dataphyre/runtime/modules/mcp/kernel/dataphyre_m
 - `dataphyre_sql_query_plan`: classify proposed SQL read statements, enforce static verb/table/row-limit guardrails, and return bounded preview SQL without connecting to a database, with data-safety metadata.
 - `dataphyre_sql_query_runner_contract`: unsafe-gated execution contract for any future read-only SQL runner, including planner preflight, audit output, rejection rules, and non-exposed credential fields.
 - `dataphyre_sql_runtime_readiness_plan`: read-only readiness contract for any future unsafe-gated SQL read runner without database connections or credential exposure.
+- `dataphyre_sql_migration_catalog`: discover the application-neutral PostgreSQL migration profile, manifest, runner, and inspector contracts without loading application code.
+- `dataphyre_sql_migration_describe`: describe one stable migration contract, workflow, public types, and safety boundary.
+- `dataphyre_sql_migration_manifest_validate`: validate a repo-local manifest-v3 plus confined immutable SQL files without database access or SQL execution.
+- `dataphyre_sql_migration_scaffold_plan`: generate exact no-write filenames, checksums, manifest entry, compatibility checks, and upgrade steps for one migration.
 - `dataphyre_tracelog_artifacts_list`: list bounded Tracelog and log artifacts without reading contents.
 - `dataphyre_tracelog_read`: read redacted previews from repo-local Tracelog or log artifacts with diagnostic safety metadata.
 - `dataphyre_tracelog_search`: search Tracelog/log artifacts with bounded reads, redaction, short snippets, and diagnostic safety metadata.
 - `dataphyre_diagnostics_last_error`: extract recent redacted error-looking snippets from repo-local Tracelog/log artifacts without executing diagnostics, with summary-first sharing guidance.
 - `dataphyre_browser_diagnostics_readiness_plan`: read-only readiness contract for any future unsafe-gated browser diagnostics runner without browser launch or HTTP requests, including diagnostic safety metadata.
 - `dataphyre_flightdeck_surfaces_list`: list Flightdeck surface files, route strings, assets, and classes without dispatching.
-- `dataphyre_unit_tests_list`: list Dataphyre JSON unit-test manifests without executing test code.
-- `dataphyre_unit_test_manifest_read`: summarize one JSON unit-test manifest without executing test code.
+- `dataphyre_contract_catalog`: source-derived catalog of executable TestKit contracts, PHP interface/abstract/named contracts, serialized payload contracts, and legacy JSON test manifests, with module/kind/query filters, version health, stable fingerprints, and bounded evidence. PHP sources are tokenized and JSON is decoded; source is never loaded or executed.
+- `dataphyre_contract_describe`: describe one stable contract ID or exact name with full method declarations, direct production implementations and test doubles, serialized producers, source evidence, and explicit TestKit `watches(type:...)` links without bootstrapping Dataphyre.
+- `dataphyre_unit_tests_list`: list source-declared TestKit `*.test.php` contracts and legacy JSON unit-test manifests without executing test code; filter by module, code/JSON kind, or exact semantic contract.
+- `dataphyre_unit_test_manifest_read`: summarize one TestKit `*.test.php` contract file or legacy JSON unit-test manifest without executing test code.
 - `dataphyre_browser_regression_manifest_summary`: static Panel browser regression and accessibility manifest contract summary without launching a browser.
 - `dataphyre_agent_context_generate`: generate read-only Dataphyre instruction file content for Codex, Claude, Cursor, or generic agents.
 - `dataphyre_scaffold_plan_generate`: generate dry-run implementation plans for Panel resources, routes/controllers, SQL tables, MVC controllers, and runtime modules with an extension boundary that keeps application behavior in app code, config, callbacks, dialbacks, plugins, MCP metadata, adapters, or reusable contracts before runtime internals.
 - `dataphyre_app_builder_plan_generate`: generate the ordinary app first step. Use `payload_profile=compact` for the first call: it returns a first-read `builder_response` with `next_action`, `next_detail_page`, concrete scaffold artifacts, naming, write-readiness, scaffold completion, focused verification handoff, policy attention when relevant, and collapsed governance. It omits `builder_plan`, raw `handoff_fields`, implementation recipes, acceptance reviews, verification execution bodies, data-model handoff bodies, and skeleton bodies by default; open the one page named by `next_detail_page`, and use `payload_profile=full` only when the agent is ready to adapt app-owned skeleton bodies or needs cross-page context.
+- `dataphyre_panel_capability_catalog`: source-derived, paginated catalog of every current Panel platform domain and Framework area, with semantic categories, evidence counts, and exact-match ranking.
+- `dataphyre_panel_capability_describe`: smart-partial descriptor for one stable Panel domain or area ID with `overview`, `contracts`, `integration`, `verification`, `security`, or `all` views.
+- `dataphyre_panel_surface_graph`: bounded dependency/dependent graph for selected Panel platform domains without loading Panel classes.
+- `dataphyre_panel_recipe_plan`: dry-run construction recipe for application, adapter, platform, Operations OS, Studio, realtime, or migration work.
+- `dataphyre_panel_integration_plan`: provider/topology-aware plan for typed bindings, explicit initialization, host-owned secrets/clients, transactional activation, rollback, persistence, and conformance.
+- `dataphyre_panel_verification_plan`: changed-path/domain-aware selection of focused TestKit, PHP 8.2/8.4 parity, phpdbg exact coverage, browser/asset evidence, and release proof boundaries. It plans proof but does not execute or claim it.
 - `dataphyre_panel_scaffold_catalog`: static Panel scaffolding/package-template/test surface inventory without executing generators.
 - `dataphyre_panel_package_manifest_summary`: static Panel package manifest, template, repository, install, rollback, trust, and compatibility contract summary.
 - `dataphyre_panel_theme_manifest_summary`: static Panel theme manifest, preset, asset, library, and preview contract summary without rendering previews.
@@ -83,8 +95,8 @@ Client configs must use `common/dataphyre/runtime/modules/mcp/kernel/dataphyre_m
 - `dataphyre_run_panel_field_catalog_check`: wrapper around the route-free Panel field catalog harness.
 - `dataphyre_verification_surface_catalog`: static catalog of JSON unit-test manifests, diagnostic files, route-free checks, regression scripts, and MCP/release helper scripts without executing them; ordinary app agents use it as discovery, not as a release gate.
 - `dataphyre_php_lint`: focused `php -l` checks for repo-local PHP files.
-- `dataphyre_release_check`: Dataphyre release-check boundary metadata for release or framework claims, not routine app behavior proof.
-- `dataphyre_release_triage_summary`: release-check boundary and available failure summary grouped by actionable categories.
+- `dataphyre_release_check`: executes the fixed application release preflight for `project_root`, `application`, and `environment`. It always returns a boolean `prediction.likely_to_deploy`; failures distinguish invalid configuration, an unavailable dependency, and executable verification failure with actionable codes. The tool preserves only the exact bounded public preflight envelope and fixed per-check evidence schemas. It terminates oversized output and rejects extra fields, contradictory evidence, raw health bodies, arbitrary failure text, and value-bearing nested data instead of returning them to an agent.
+- `dataphyre_release_triage_summary`: executes the same preflight and groups its failures by `configuration`, `dependency`, or `verification` without accepting a caller-selected command or release script.
 - `dataphyre_release_fix_plan`: ordered read-only maintainer repair batches from release-check failures.
 - `dataphyre_mcp_manifest_export`: client-visible manifest of tools, prompts, resources, groups, schemas, protocol, and safety posture.
 - `dataphyre_prompt_pack_export`: reusable workflow prompt bundles for clients and agents.
@@ -140,7 +152,7 @@ Client configs must use `common/dataphyre/runtime/modules/mcp/kernel/dataphyre_m
 - `dataphyre_mcp_verify_all`: aggregate maintainer MCP verification suite for MCP/release-surface claims, not routine app verification.
 - `dataphyre_mcp_doctor`: fast MCP module health check for MCP wiring, docs, tools, and app-coupling guardrails, not application behavior proof.
 
-Resources expose the module index, runtime README, this plan, AI guidelines, the agentic enterprise contract, capabilities, and discovered markdown documentation. Core resource URIs are `dataphyre://module-index`, `dataphyre://runtime-readme`, `dataphyre://mcp-plan`, `dataphyre://ai-guidelines`, `dataphyre://agentic-enterprise`, and `dataphyre://mcp-capabilities`. Prompts provide reusable Dataphyre feature planning, debug triage, and Panel workflow guidance.
+Resources expose the module index, runtime README, this plan, AI guidelines, the agentic enterprise contract, capabilities, bounded contract and Panel capability snapshots, the PostgreSQL migration contract, and discovered markdown documentation. Core resource URIs are `dataphyre://module-index`, `dataphyre://runtime-readme`, `dataphyre://mcp-plan`, `dataphyre://ai-guidelines`, `dataphyre://agentic-enterprise`, `dataphyre://mcp-capabilities`, `dataphyre://contracts`, `dataphyre://panel`, `dataphyre://sql-migrations`, and `dataphyre://sql-migrations/manifest-v3-schema`. Prompts provide reusable Dataphyre feature planning, debug triage, Panel capability, SQL migration, and contract-discovery guidance.
 
 The MCP `initialize` response and high-risk tool descriptions name the Application-Agent Default Lane before clients call manifests, resources, or prompts. Treat command-backed validation tools in `tools/list` as scoped maintainer or MCP/release-surface tools unless a payload explicitly says otherwise.
 Workflow playbooks make the same distinction: client playbooks may use `dataphyre_mcp_live_validate` only as local MCP client setup validation for stdio/server-entrypoint changes, not as ordinary app behavior proof; application work still uses focused app/module checks from the app-builder verification handoff or verification catalog.
@@ -158,11 +170,46 @@ MCP reads them without booting Dataphyre or executing plugin PHP, then annotates
 and declaration notes. This keeps app-local adapters available for diagnostics
 and planning while leaving the Dataphyre module index clean.
 
-The `dataphyre://ai-guidelines` resource and `dataphyre_runtime_guidelines` prompt provide baseline framework rules for agents before they edit Dataphyre runtime or application code. Additional workflow prompts include `dataphyre_feature_plan`, `dataphyre_debug_triage`, `dataphyre_panel_workflow`, `dataphyre_release_triage`, `dataphyre_sql_schema_workflow`, `dataphyre_route_manifest_workflow`, and `dataphyre_diagnostics_workflow` for app planning, diagnostics, Panel work, release triage, SQL schema inspection, route manifest inspection, and diagnostic handoffs.
+The `dataphyre://ai-guidelines` resource and `dataphyre_runtime_guidelines` prompt provide baseline framework rules for agents before they edit Dataphyre runtime or application code. Additional workflow prompts include `dataphyre_feature_plan`, `dataphyre_debug_triage`, `dataphyre_panel_workflow`, `dataphyre_panel_platform_workflow`, `dataphyre_panel_operations_workflow`, `dataphyre_panel_studio_workflow`, `dataphyre_panel_realtime_workflow`, `dataphyre_panel_adapter_workflow`, `dataphyre_release_triage`, `dataphyre_sql_schema_workflow`, `dataphyre_sql_migration_workflow`, `dataphyre_route_manifest_workflow`, `dataphyre_diagnostics_workflow`, and `dataphyre_contract_workflow` for app planning, diagnostics, focused Panel composition, release triage, SQL schema and migration inspection, route manifest inspection, diagnostic handoffs, and contract-first implementation work.
 
 The `dataphyre://agentic-enterprise` resource exposes the high-level enterprise contract for agent-first corporate Dataphyre work, including extension boundaries, MCP safety, and the release/benchmark expectations that apply only to explicit framework, corporate-ready, release-facing, or shared hot-path work.
 
 The `dataphyre://mcp-capabilities` resource returns the compact discovery snapshot: tools, prompts, resources, default safety posture, entrypoint and transport/path boundaries, package-release boundary, application-agent boundaries, compact workload and diagnostic handoff summaries, app-builder readiness summaries, compact `apply_readiness`, and intentionally unexposed unsafe surfaces.
+
+### Panel Capability Intelligence
+
+Dataphyre MCP 2.2 treats Panel as a federated source contract rather than five hand-maintained helper summaries. `dataphyre://panel` publishes the complete platform-domain map and counts for Framework files, documentation, tests, and normalized contracts. The resource remains intentionally compact: enumerate domains, then describe only the affected domain or Framework area with the view needed for the current decision.
+
+The index decodes the literal `PanelPlatformManifest` array with PHP tokens, joins feature and service classes to bounded source paths, indexes all Panel Framework areas, markdown headings, TestKit/legacy test files, and the shared contract catalog, and computes a stable inventory fingerprint. It never requires Panel source, runs test declarations, reflects classes, uses `eval`, bootstraps an application, dispatches routes, or connects to SQL, Redis, Storage, HTTP, browsers, workers, packages, or migrations. A newly source-discovered domain remains visible with an explicit `unclassified` fallback and a `missing_profiles` diagnostic until richer human semantics are added.
+
+Use the surfaces in decision order:
+
+1. `dataphyre_panel_capability_catalog` narrows the first read by kind, category, query, offset, and limit.
+2. `dataphyre_panel_capability_describe` exposes one bounded view and links exact source contracts, documentation, and executable evidence.
+3. `dataphyre_panel_surface_graph` makes cross-domain dependencies visible before composition.
+4. `dataphyre_panel_recipe_plan` or `dataphyre_panel_integration_plan` turns the selected contracts into ordered app/framework or provider/topology work.
+5. `dataphyre_panel_verification_plan` selects proof after real changed paths and the intended claim are known. Returned commands are plans, not evidence.
+
+The `dataphyre-panel-builder` skill packages those tools, `dataphyre://panel`, `dataphyre://contracts`, and the six Panel prompts for Codex, Claude, Cursor, or generic MCP clients. Ordinary CRUD/resource work continues into `dataphyre_app_builder_plan_generate payload_profile=compact` after domain discovery. Provider, shared persistence, Operations OS, Studio, realtime, and framework work remain in the typed integration/contract lane. Static availability never means host configuration, provider readiness, durability, successful activation, or proof.
+
+The older `dataphyre_panel_scaffold_catalog`, package/theme/documentation/media summaries remain narrow specialist snapshots. Their `panel_metadata_safety.primary_capability_surfaces` points clients to the complete current capability layer; the media summary now discovers the full Media directory plus local/shared snapshot stores instead of assuming the original file set is complete.
+
+### Contract Intelligence
+
+Dataphyre MCP 2.2 treats contracts as a first-class source graph rather than assuming every test is a legacy JSON manifest. `dataphyre_contract_catalog` unifies four families under stable IDs:
+
+- `test:<semantic-name>@<version>` for TestKit suite- and case-level `->contract(...)` declarations;
+- `php:<fully-qualified-name>` for interfaces, abstract classes, classes in `Contracts/`, and symbols ending in `Contract`;
+- `serialized:<type>` for source-declared payload discriminators such as manifests, intents, receipts, envelopes, checkpoints, schemas, events, requests, and responses;
+- `legacy:<repo-relative-path>` for JSON unit-test manifests.
+
+Contract catalog and test-list calls require at least one owning module. For example, call `dataphyre_contract_catalog` with `modules:["panel"]` and a query, then pass the returned stable ID to `dataphyre_contract_describe`. This smart-partial contract bounds token work and avoids rebuilding an unrelated whole-framework index. The `dataphyre://contracts` resource publishes `available_modules`; enumerate those modules when a framework-wide graph is needed. Each catalog partial returns deterministic pagination, an inventory fingerprint, parse diagnostics, per-kind and per-module counts, unresolved TestKit versions, serialized payloads without literal versions, and semantic-version conflicts.
+
+The descriptor keeps implementation evidence honest. PHP type contracts report direct source-declared implementers and extenders, with production implementations counted separately from test-support doubles. Executable evidence is linked only when TestKit explicitly declares `watches('type:...')`; the MCP does not infer behavioral coverage from filenames or broad text matches. Serialized records identify their producer and source confidence. Every record retains repo-relative path and line evidence.
+
+Contract discovery is static by design. It uses `token_get_all` and declarative JSON decoding only: no `require`, `include`, `eval`, reflection, runtime bootstrap, test discovery execution, route dispatch, SQL, storage, network access, or writes. Literal contract versions are resolved; class constants and computed expressions remain explicit `version_expression` values with `version_resolved=false`. Use the returned `php bin/dataphyre-test list --owner=<module> --cases --json` command when expanded datasets or runtime-resolved metadata are authoritative, then run the focused owner/path/contract lane.
+
+`dataphyre_unit_tests_list` and `dataphyre_unit_test_manifest_read` preserve the familiar test-inventory workflow while exposing both formats. Supply `modules`, then set `kind=code` for TestKit files or `kind=json` for legacy manifests. Code summaries include suite names, semantic contracts, declared cases, and the runtime metadata command; they never execute test helpers. The `dataphyre://contracts` resource is an MCP-scoped bootstrap partial plus the complete module-federation cursor, while `dataphyre_contract_workflow` encodes the catalog → descriptor → focused-evidence sequence for clients.
 
 Use that resource for lightweight client discovery. It keeps the proportional-overhead rule visible before clients open the full readiness report: app-builder or read-only inspection first, compact essentials inline, broad contracts and publication validation collapsed until explicitly requested for an escalation decision, and no `dataphyre_mcp_verify_all`, Dataphyre hot-path benchmarks, or runtime-internal edits as ordinary app ceremony.
 
@@ -355,6 +402,66 @@ Route and MVC inspection payloads expose `route_safety` so application agents ca
 
 Use `dataphyre_sql_runtime_readiness_plan` when a client needs the explicit planner, adapter, credential-redaction, row-bound, timeout, audit, and denied-behavior contract before considering any future unsafe-gated SQL read runner.
 
+### PostgreSQL migration support
+
+Migration MCP surfaces are application-neutral. They expose Dataphyre's public
+PostgreSQL profile, manifest-v3, schema inspector, and state-machine runner
+contracts without importing any consuming application's release vocabulary.
+
+Start with `dataphyre_sql_migration_catalog`, then call
+`dataphyre_sql_migration_describe` for the selected contract. Read
+`dataphyre://sql-migrations` for the compact capability/resource map and
+`dataphyre://sql-migrations/manifest-v3-schema` for the exact JSON Schema. The
+dedicated public guide is available at
+`dataphyre://doc/dataphyre/runtime/modules/sql/documentation/Dataphyre_PostgreSQL_Migrations.md`.
+
+`dataphyre_sql_migration_scaffold_plan` is a dry-run planner. It validates a
+neutral profile, derives exact stable filenames and SHA-256 values, emits the
+manifest entry that an application may append, checks an optional existing
+manifest tail, applies Dataphyre's rolling-expansion SQL scanner, and reuses the
+manifest loader's transaction-control, concurrent-index, and psql-command
+safety checks for both SQL directions. With existing history it rejects a
+post-cutoff bootstrap entry. Without `database_root`, `ready` can be true only
+for a self-contained initial `001` bootstrap matching `bootstrap_cutoff`. It
+does not create directories, write SQL, or rewrite a manifest.
+
+`dataphyre_sql_migration_manifest_validate` confines reads to a repo-local
+database directory, validates the profile and schema-v3 shape, verifies every
+listed SQL checksum, rejects unlisted SQL and symlink/path escape, and applies
+transaction/psql ownership checks. It never loads application code, resolves
+credentials, opens PDO, or executes migration SQL.
+
+The catalog, describe payload, and `dataphyre://sql-migrations` resource expose
+the runtime maintenance contract without performing it. `maintenance` applies
+the pending post-bootstrap-cutoff suffix when it contains `rolling_expand`
+and/or `rolling_contract`, using one Dataphyre-owned PostgreSQL transaction. A
+pending contract is eligible only when application release code supplies its
+caller-verified minimum active release and that exact Semantic Version has
+precedence greater than or equal to every applicable manifest
+`minimum_compatible_release`.
+
+Runtime deployment evidence reports the full pending inventory plus exact
+`selected_migrations`, `selected_phases`, and `deferred_migrations`. Bootstrap
+selects its leading bootstrap/expand prefix, rolling selects its leading expand
+prefix, and both defer the first contract plus its tail. Maintenance selects the
+complete post-cutoff expand/contract suffix. Pending work with an empty
+mode-specific selection is ineligible rather than a successful no-op.
+
+Semantic Version precedence follows SemVer rules. Build metadata is accepted
+but ignored for precedence, so `2.4.0+build.1` and `2.4.0+build.9` have equal
+precedence. The caller remains responsible for deriving and verifying the
+actual fleet floor; MCP does not inspect processes, nodes, or deployment state.
+
+The `dataphyre_sql_migration_workflow` prompt and
+`dataphyre-sql-migrations` skill encode catalog → describe → scaffold →
+validate. The SQL workflow playbook includes the same migration lane. The
+`sql_migrations` capability family advertises `read_only_or_dry_run` safety.
+Connections, live status, apply, rollback, release-identity translation,
+maintenance windows, drain/barrier completion, verified fleet-floor
+derivation, backup policy, staggered rollout coordination, and mutation
+authorization remain application-owned. MCP never opens PDO, acquires a
+migration lock, writes a journal, or executes SQL.
+
 Config, storage, and SQL metadata payloads expose `data_safety` so application agents can use key paths, value kinds, redaction flags, driver contracts, table names, schema columns, cluster aliases, and non-executing SQL plans for ordinary app planning. The contract embeds `application_agent_operating_contract` plus `ordinary_app_work`, names what is not returned, including secrets, usernames, resolved hosts/endpoints, database names, tenant-identifying values, and sensitive bucket names, and keeps heavier governance review reserved for release-facing or public Dataphyre framework claims, corporate-ready or enterprise-readiness claims, security/identity/access/session/credential/governance/tenant/privacy/compliance/data-residency/retention/legal-hold/access-policy work, Dataphyre framework internals or reusable framework contributions, or shared production hot-path changes.
 
 Use `dataphyre_browser_diagnostics_readiness_plan` when a client needs the explicit browser lifecycle, URL allow-list, artifact, redaction, mutation, timeout, and denied-output contract before considering any future browser diagnostics runner.
@@ -373,7 +480,7 @@ Use `dataphyre_remote_docs_readiness_plan` when a client needs the explicit base
 
 Use `dataphyre_datadoc_runtime_readiness_plan` when a client needs the explicit project-filter, SQL-readiness, output-bound, redaction, and denied-behavior contract before considering any future Datadoc SQL-backed reader. The plan includes `application_agent_operating_contract` plus `ordinary_app_work`, so app agents use Datadoc static summaries, docs chunks, docs index plans, and SQL planning metadata before treating SQL-backed reads as an unsafe extension.
 
-Use `dataphyre_mcp_skill_catalog` when a client or agent needs to discover registered Dataphyre MCP skills by target, theme, and related MCP surfaces. Registered skills are `dataphyre-app-builder`, `dataphyre-runtime-guidelines`, `dataphyre-mcp-client-setup`, `dataphyre-route-inspection`, `dataphyre-sql-schema-safety`, and `dataphyre-workflow-continuity`. The catalog exposes `dataphyre-app-builder` first for ordinary application work; that skill points to the app-builder planner first, optional builder task packs for module docs or ready prompts, optional cold-start/brief surfaces with task-specific first views, Panel/SQL module docs, and focused app/module verification without attaching runtime governance resources by default.
+Use `dataphyre_mcp_skill_catalog` when a client or agent needs to discover registered Dataphyre MCP skills by target, theme, and related MCP surfaces. Registered skills are `dataphyre-app-builder`, `dataphyre-panel-builder`, `dataphyre-runtime-guidelines`, `dataphyre-mcp-client-setup`, `dataphyre-route-inspection`, `dataphyre-sql-schema-safety`, and `dataphyre-workflow-continuity`. The catalog exposes `dataphyre-app-builder` first for ordinary application work; that skill points to the app-builder planner first, optional builder task packs for module docs or ready prompts, optional cold-start/brief surfaces with task-specific first views, Panel/SQL module docs, and focused app/module verification without attaching runtime governance resources by default. `dataphyre-panel-builder` is the first-class capability/contract lane for work that goes beyond ordinary resource scaffolding.
 
 Use `dataphyre_mcp_skill_manifest_export` when a client author needs portable skill registration metadata without writing client files.
 
@@ -435,7 +542,23 @@ Verification metadata payloads expose `verification_safety` with compact `ordina
 
 The verification surface catalog exposes `verification_next_action`, focused `recommended_mcp_tools`, publication-only validation tools, and `verification_handoff`. Copy-safe handoff fields include tool, surface, concrete app paths or arguments, pass/fail summary, failing check names, and app-owned follow-up edits without raw logs, secrets, tenant/customer identifiers, release proof, `dataphyre_mcp_verify_all` output, or Dataphyre benchmark output. App-builder handoffs also expose `focused_completion_packet` so agents can close ordinary app work with one compact, copy-safe evidence packet.
 
-Command-backed validation and release payloads such as `dataphyre_release_check`, `dataphyre_release_triage_summary`, `dataphyre_mcp_live_validate`, `dataphyre_mcp_verify_all`, and `dataphyre_mcp_doctor` expose `application_agent_operating_contract`, `ordinary_app_work`, and maintainer tool boundaries. Treat their evidence as maintainer proof for release, MCP wiring, or public framework claims, not as a routine requirement for application agents or proof of application behavior.
+Release and command-backed validation payloads such as `dataphyre_release_check`,
+`dataphyre_release_triage_summary`, `dataphyre_mcp_live_validate`,
+`dataphyre_mcp_verify_all`, and `dataphyre_mcp_doctor` expose
+`application_agent_operating_contract`, `ordinary_app_work`, and maintainer tool
+boundaries. `dataphyre_release_check` now executes
+`runtime/modules/core/kernel/application_release_preflight.php` with only
+`--project-root`, `--application`, and `--environment`. That public command
+validates configuration bootstrap, runs the native PostgreSQL migration plan in
+automatic dry-run mode when declared, boots the application through a fixed
+loopback router, and probes `GET /health`. Its `likely_to_deploy` field is always
+`true` or `false`; missing configuration and an unavailable executable or
+dependency are deterministic failures, never an unknown state. Dataphyre Cloud
+must invoke the same command inside the exact built candidate and separately
+preserve source commit, image digest, environment, and traffic identity before
+promotion. Aggregate MCP verification remains maintainer proof for MCP wiring
+or public framework claims, not a routine requirement for application agents or
+proof of broader application behavior.
 
 Use `dataphyre_mcp_status_board` when an agent needs a compact health and progress snapshot before deciding whether to inspect the full manifest or readiness report. Status snapshots include `app_builder_readiness`, compact `apply_readiness`, audience-tagged app-only `recommended_next_slices`, separate `publication_next_slices`, `publication_next_action`, collapsed `publication_or_framework_context`, `ordinary_app_work`, and an app-first verification policy so application agents start with `dataphyre_app_builder_plan_generate`, add task/start packs only as optional context, and do not treat MCP readiness as proof of application behavior or maintainer validation as routine app work.
 
@@ -624,6 +747,11 @@ The readiness report also exposes an app-contract-summary contract proving that 
 
 Use `dataphyre_mcp_live_validate` after MCP surface changes when a maintainer or client author needs to verify stdio framing, tool registration, prompt registration, resource registration, doctor output, prompt catalog output, capabilities resources, and warning-free stderr behavior through a spawned server process. Spawned command stdout/stderr returned through MCP is marked `redacted=true` and filtered for credential, signed URL, tenant/customer/product, and machine-local path patterns before it becomes copyable evidence.
 
+The public validator and self-test resolve standalone Dataphyre worktrees as
+well as workspace-rooted `dataphyre/` and legacy `common/dataphyre/` layouts.
+Legacy resolution is compatibility-only; new embedded installations should use
+the canonical workspace `dataphyre/` layout.
+
 Use focused application or module verification for app behavior. Use `dataphyre_mcp_verify_all` only for MCP/release-surface claims or after larger MCP slices when a single tool should run lint, live stdio validation, the full MCP self-test, doctor, and app-coupling guard checks. Its enterprise verification policy limits execution to bounded first-party commands, keeps route dispatch and SQL execution out of scope, and reminds agents that passing aggregate MCP verification supports MCP/release-surface claims rather than replacing focused module behavior tests.
 
 ## Agentic Capability Roadmap
@@ -638,7 +766,7 @@ Point MCP clients at the stdio command from the project root. Example manual JSO
     "dataphyre": {
       "command": "php",
       "args": [
-        "common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php"
+        "dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php"
       ]
     }
   }
@@ -655,7 +783,7 @@ For tools that may start local services or write smoke reports, add `--allow-uns
     "dataphyre": {
       "command": "php",
       "args": [
-        "common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php",
+        "dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php",
         "--allow-unsafe"
       ]
     }
@@ -718,7 +846,7 @@ For tools that may start local services or write smoke reports, add `--allow-uns
    - Flightdeck last request snapshot and browser event summaries.
    - Flightdeck surface inventory now.
    - Tracelog artifact discovery, redacted preview reading, and bounded search now.
-   - Dpanel JSON unit-test manifest discovery and summary now.
+   - Static TestKit code-contract and legacy JSON-manifest discovery and summary now.
    - Tracelog search and last-error retrieval.
    - Panel regression and static browser regression manifest summaries now.
 
@@ -760,11 +888,40 @@ For tools that may start local services or write smoke reports, add `--allow-uns
 
 ## Verification
 
+MCP verification is module-owned. Executable contracts live in
+`runtime/modules/mcp/unit_tests`; reusable scenario, transcript, kernel,
+fixture, and closed-world evidence builders live in
+`runtime/modules/mcp/testing`. Tests should name the domain behavior and leave
+reflection, subprocess framing, temporary repositories, malformed payload
+assembly, and raw array normalization inside those helpers. Use TestKit's
+non-public access boundary rather than `eval()`, and managed workspaces/state
+instead of request globals or ad hoc cleanup.
+
+On a Docker-backed checkout, run the focused semantic contracts during edits:
+
+```bash
+DATAPHYRE_TEST_SKIP_BUILD=1 bin/dataphyre-test-docker run \
+  --owner=mcp --path=closed_world --why-selected
+```
+
+For an MCP release-surface claim, require every production kernel file and
+every executable line under one stable source epoch:
+
+```bash
+DATAPHYRE_TEST_SKIP_BUILD=1 bin/dataphyre-test-docker run \
+  --owner=mcp --kind=code --parallel=8 \
+  --profile=cache/ci/mcp.profile.json \
+  --coverage=cache/ci/mcp.coverage.json \
+  --coverage-require=phpdbg \
+  --coverage-source=runtime/modules/mcp/kernel \
+  --coverage-closed-world --coverage-min-percent=100
+```
+
 Run syntax checks:
 
 ```powershell
-php -l common\dataphyre\runtime\modules\mcp\kernel\dataphyre_mcp.php
-php -l common\dataphyre\runtime\modules\mcp\kernel\mcp.main.php
+php -l dataphyre\runtime\modules\mcp\kernel\dataphyre_mcp.php
+php -l dataphyre\runtime\modules\mcp\kernel\mcp.main.php
 ```
 
 Smoke-test with an MCP initialize frame:
@@ -773,7 +930,7 @@ Smoke-test with an MCP initialize frame:
 $body = '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
 $length = [System.Text.Encoding]::UTF8.GetByteCount($body)
 $frame = "Content-Length: $length`r`n`r`n$body"
-$frame | php common\dataphyre\runtime\modules\mcp\kernel\dataphyre_mcp.php
+$frame | php dataphyre\runtime\modules\mcp\kernel\dataphyre_mcp.php
 ```
 
 Before publishing MCP surface changes, confirm MCP self-test evidence. Do not turn MCP publication validation into ordinary app-agent setup work.

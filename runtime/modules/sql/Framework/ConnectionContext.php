@@ -173,7 +173,7 @@ final class ConnectionContext {
 		null|bool|array|string $caching=false,
 		bool|null|array $clearCache=false
 	): mixed {
-		return $this->query($query, $vars, false, false, $caching, $clearCache);
+		return self::firstCell($this->query($query, $vars, false, false, $caching, $clearCache));
 	}
 
 	/**
@@ -270,7 +270,16 @@ final class ConnectionContext {
 		null|bool|array|string $caching=false,
 		bool|null|array $clearCache=false
 	): null|bool {
-		return $this->queueQuery($query, $callback, $queue, $vars, false, false, $caching, $clearCache);
+		return $this->queueQuery(
+			$query,
+			static fn(mixed $result): mixed=>$callback(self::firstCell($result)),
+			$queue,
+			$vars,
+			false,
+			false,
+			$caching,
+			$clearCache,
+		);
 	}
 
 	/**
@@ -342,5 +351,20 @@ final class ConnectionContext {
 			'sqlite'=>$query,
 			'dbms_cluster_override'=>$this->cluster,
 		];
+	}
+
+	/** Extracts the first result-set cell while preserving scalar failure values. */
+	private static function firstCell(mixed $result): mixed {
+		if(!is_array($result)){
+			return $result;
+		}
+		if($result===[]){
+			return null;
+		}
+		$first=$result[array_key_first($result)];
+		if(!is_array($first)){
+			return $first;
+		}
+		return $first===[] ? null : $first[array_key_first($first)];
 	}
 }

@@ -1,0 +1,11 @@
+<?php
+/**
+ * Combines two values.
+ *
+ * @param string $left Left value.
+ * @param string $right Right value.
+ * @return string Combined value.
+ */
+function combine_values(string $left, string $right): string {
+	return $left.$right;
+}

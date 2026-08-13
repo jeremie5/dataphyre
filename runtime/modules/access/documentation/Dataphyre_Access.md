@@ -314,7 +314,7 @@ return [
 ];
 ```
 
-Place that array in `common/dataphyre/config/access.php` or the application override file at `applications/<app>/backend/dataphyre/config/access.php`.
+Place that array in `dataphyre/config/access.php` or the application override file at `applications/<app>/backend/dataphyre/config/access.php`.
 
 Example effective reads in framework code:
 

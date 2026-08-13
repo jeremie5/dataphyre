@@ -430,11 +430,7 @@ final class Container {
 	 * @return bool True when the class exists and is instantiable.
 	 */
 	private function isInstantiable(string $class): bool {
-		try{
-			return (new \ReflectionClass($class))->isInstantiable();
-		}catch(\ReflectionException){
-			return false;
-		}
+		return (new \ReflectionClass($class))->isInstantiable();
 	}
 
 	/**

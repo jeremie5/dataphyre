@@ -1,7 +1,7 @@
 [
   {
     "name": "fulltext_search_results_from_kernel_response_serializes_hits",
-    "file": "/common/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
     "function": "DataphyreUnitTests\\fulltext_search_results_json",
     "args": [
       {
@@ -25,7 +25,7 @@
   },
   {
     "name": "fulltext_search_results_exposes_counts_ids_scores_and_first_hit",
-    "file": "/common/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
     "function": "DataphyreUnitTests\\fulltext_search_results_summary_json",
     "args": [
       {
@@ -47,7 +47,7 @@
   },
   {
     "name": "fulltext_index_definition_from_array_preserves_attributes",
-    "file": "/common/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
     "function": "DataphyreUnitTests\\fulltext_index_definition_json",
     "args": [
       {
@@ -67,7 +67,7 @@
   },
   {
     "name": "fulltext_index_sync_report_summarizes_all_buckets",
-    "file": "/common/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
     "function": "DataphyreUnitTests\\fulltext_index_sync_report_json",
     "args": [],
     "expected": "{\"summary\":{\"created\":1,\"unchanged\":1,\"mismatched\":1,\"pruned\":1,\"failed\":1},\"created\":[{\"name\":\"products\",\"type\":\"json\",\"primary_key_column_name\":\"sku\",\"language\":null}],\"unchanged\":[{\"name\":\"products\",\"type\":\"json\",\"primary_key_column_name\":\"sku\",\"language\":null}],\"mismatched\":[{\"current\":{\"name\":\"orders\",\"type\":\"sql\",\"primary_key_column_name\":\"legacy_id\",\"language\":null},\"desired\":{\"name\":\"orders\",\"type\":\"sql\",\"primary_key_column_name\":\"id\",\"language\":null}}],\"pruned\":[{\"name\":\"orders\",\"type\":\"sql\",\"primary_key_column_name\":\"legacy_id\",\"language\":null}],\"failed\":{\"archive\":\"missing primary key\"}}",
@@ -75,7 +75,7 @@
   },
   {
     "name": "fulltext_hydrated_results_tracks_documents_and_missing_ids",
-    "file": "/common/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
     "function": "DataphyreUnitTests\\fulltext_hydrated_results_json",
     "args": [],
     "expected": "{\"payload\":{\"index\":\"products\",\"results\":[{\"id\":\"sku-1\",\"score\":0.75,\"resolved\":true,\"document\":{\"sku\":\"sku-1\"}},{\"id\":\"sku-2\",\"score\":0.5,\"resolved\":false,\"document\":null}],\"count\":5,\"certainty\":0.61,\"time\":0.02},\"documents\":[{\"sku\":\"sku-1\"},null],\"missing_ids\":[\"sku-2\"]}",
@@ -83,7 +83,7 @@
   },
   {
     "name": "fulltext_query_execution_state_preserves_criteria_and_fingerprint",
-    "file": "/common/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
     "function": "DataphyreUnitTests\\fulltext_query_execution_state_json",
     "args": [],
     "expected": "{\"index\":\"products\",\"criteria\":{\"title\":\"red shoes\",\"description\":\"leather\",\"price\":\"120\"},\"language\":\"fr\",\"max_results\":12,\"boolean_mode\":false,\"threshold\":0.42,\"forced_algorithms\":\"levenshtein\",\"fingerprint_payload\":{\"type\":\"search_query\",\"index\":\"products\",\"criteria\":{\"title\":\"red shoes\",\"description\":\"leather\",\"price\":\"120\"},\"language\":\"fr\",\"max_results\":12,\"boolean_mode\":false,\"threshold\":0.42,\"forced_algorithms\":\"levenshtein\"},\"fingerprint\":\"5fdbd613be8c513a0a8578147e398940c6c25a6a\"}",
@@ -91,7 +91,7 @@
   },
   {
     "name": "fulltext_query_from_execution_state_normalizes_optional_fields",
-    "file": "/common/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/fulltext_engine/unit_tests/fulltext_engine_test_helpers.php",
     "function": "DataphyreUnitTests\\fulltext_query_from_execution_state_json",
     "args": [
       {

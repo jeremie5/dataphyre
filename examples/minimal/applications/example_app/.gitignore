@@ -1,0 +1,9 @@
+/cache/
+/config/static/
+/fulltext_indexes/
+/logs/
+/modules/
+/plugins/
+/sql_migration/
+/modcache.php
+/unavailable.php

@@ -6,12 +6,20 @@ complete Composer autoload surface.
 
 ## Runtime Entrypoint
 
-Boot Dataphyre explicitly:
+Boot a standalone Dataphyre checkout explicitly:
 
 ```php
 <?php
 
 require __DIR__.'/runtime/bootstrap.php';
+```
+
+An embedded project boots the canonical managed layout from its project root:
+
+```php
+<?php
+
+require __DIR__.'/dataphyre/runtime/bootstrap.php';
 ```
 
 The bootstrap file resolves `flight_sheet.php`, locates the configured
@@ -119,6 +127,22 @@ The Composer package metadata declares:
   `acceptance_review_plan`, and `local_convention_probe`), and project-wide
   package validation, `dataphyre_mcp_verify_all`, hot-path benchmarks, and runtime-internal edits
   are not default app-agent requirements
+
+Panel packages also carry
+`runtime/modules/panel/testing/panel_release_contract.json` and its dependency-
+free Node validator. The contract does not replace `RELEASE_MANIFEST.json`:
+package mode verifies that the manifest inventory exactly matches the prepared
+tree, then recomputes every represented byte count, SHA-256 digest, and the
+ordered tree digest. It additionally requires Panel's capability manifest,
+browser runners, representative committed baselines, and release validator to
+survive export. `.codex-tmp/`, `.tmp/`, CI metadata, developer tooling, caches,
+and dependency trees are rejected at the public boundary.
+
+Release-contract schema v2 additionally authenticates the complete Panel CI
+job graph and its fail-closed aggregate result. The validator retains schema v1
+read compatibility for older prepared-package evidence; only v2 can claim that
+unit, exact coverage, assets, browser matrices, committed pixels, and Datadoc
+publication all completed in the same release workflow.
 
 The package is currently best treated as an embedded runtime distribution rather
 than a drop-in library dependency.

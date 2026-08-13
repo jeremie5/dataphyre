@@ -11,9 +11,14 @@ namespace Dataphyre\Panel;
  * Fluent definition for a Panel relation manager.
  *
  * Relation managers describe how a resource renders and mutates related records, including table presentation, attach/detach flows, pivot updates, and authorization.
+ *
+ * @template TParentRecord = mixed
+ * @template TRelatedRecord = mixed
+ * @template TState of array<string, mixed> = array<string, mixed>
  */
 final class RelationManager {
 	use PanelExtensible;
+	use HasCollectionItemPresentation;
 
 	private string $name;
 	private string $label;
@@ -26,8 +31,9 @@ final class RelationManager {
 	private ?string $table=null;
 	private ?string $foreignKey=null;
 	private ?string $localKey=null;
+	/** @var ResourceTable<TRelatedRecord, TState> */
 	private ResourceTable $resourceTable;
-	/** @var array<string, TableSummary> */
+	/** @var array<string, TableSummary<TRelatedRecord, mixed>> */
 	private array $facts=[];
 	private ?\Closure $queryFactory=null;
 	private ?\Closure $authorizer=null;
@@ -76,7 +82,7 @@ final class RelationManager {
 	 * The builder normalizes names, labels, callbacks, renderer metadata, and manifest options before export.
 	 *
 	 * @param string $name Relation name before normalization.
-	 * @return self Configured relation manager with normalized name and default table builder.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Configured relation manager with normalized name and default table builder.
 	 */
 	public static function make(string $name): self {
 		return self::configured(new self($name));
@@ -88,7 +94,7 @@ final class RelationManager {
 	 * The builder normalizes names, labels, callbacks, renderer metadata, and manifest options before export.
 	 *
 	 * @param array<string,mixed> $definition Array manifest/configuration definition.
-	 * @return self Relation manager hydrated from manifest/configuration data.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Relation manager hydrated from manifest/configuration data.
 	 */
 	public static function fromArray(array $definition): self {
 		$relation=self::make((string)($definition['name'] ?? ''));
@@ -236,8 +242,8 @@ final class RelationManager {
 	 *
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
-	 * @param string|callable $description Static description or callback resolved against parent/relation context.
-	 * @return self Cloned relation manager with updated description metadata.
+	 * @param string|callable(TParentRecord|null=, Resource<TParentRecord, TState>|null=, PanelRequest|null=, self<TParentRecord, TRelatedRecord, TState>=, list<TRelatedRecord>=): string|null $description Static description or callback resolved against parent/relation context.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated description metadata.
 	 */
 	public function description(string|callable $description): self {
 		$clone=clone $this;
@@ -250,8 +256,8 @@ final class RelationManager {
 	 *
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
-	 * @param string|callable $title Static parent title or callback resolved against relation context.
-	 * @return self Cloned relation manager with updated parent title metadata.
+	 * @param string|callable(TParentRecord|null=, Resource<TParentRecord, TState>|null=, PanelRequest|null=, self<TParentRecord, TRelatedRecord, TState>=, list<TRelatedRecord>=): string|null $title Static parent title or callback resolved against relation context.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated parent title metadata.
 	 */
 	public function parentTitle(string|callable $title): self {
 		$clone=clone $this;
@@ -264,8 +270,8 @@ final class RelationManager {
 	 *
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
-	 * @param callable $resolver Relation-aware resolver callback.
-	 * @return self Cloned relation manager with updated parent title using metadata.
+	 * @param callable(TParentRecord|null=, Resource<TParentRecord, TState>|null=, PanelRequest|null=, self<TParentRecord, TRelatedRecord, TState>=, list<TRelatedRecord>=): string|null $resolver Relation-aware resolver callback.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated parent title using metadata.
 	 */
 	public function parentTitleUsing(callable $resolver): self {
 		return $this->parentTitle($resolver);
@@ -276,8 +282,8 @@ final class RelationManager {
 	 *
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
-	 * @param string|int|float|callable|null $badge Static badge value, badge callback, or null.
-	 * @return self Cloned relation manager with updated badge metadata.
+	 * @param string|int|float|null|callable(list<TRelatedRecord>, TParentRecord|null=, PanelRequest|null=, Resource<TParentRecord, TState>|null=, self<TParentRecord, TRelatedRecord, TState>=): scalar|\Stringable|null $badge Static badge value, badge callback, or null.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated badge metadata.
 	 */
 	public function badge(string|int|float|callable|null $badge): self {
 		$clone=clone $this;
@@ -290,8 +296,8 @@ final class RelationManager {
 	 *
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
-	 * @param callable $resolver Relation-aware resolver callback.
-	 * @return self Cloned relation manager with updated badge using metadata.
+	 * @param callable(list<TRelatedRecord>, TParentRecord|null=, PanelRequest|null=, Resource<TParentRecord, TState>|null=, self<TParentRecord, TRelatedRecord, TState>=): scalar|\Stringable|null $resolver Relation-aware resolver callback.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated badge using metadata.
 	 */
 	public function badgeUsing(callable $resolver): self {
 		return $this->badge($resolver);
@@ -304,7 +310,7 @@ final class RelationManager {
 	 *
 	 * @param string $heading Empty-state heading displayed when no related records are shown.
 	 * @param ?string $description Optional empty-state description.
-	 * @return self Cloned relation manager with updated empty state metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated empty state metadata.
 	 */
 	public function emptyState(string $heading, ?string $description=null): self {
 		$clone=clone $this;
@@ -319,7 +325,7 @@ final class RelationManager {
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
 	 * @param string $resource Related resource name before normalization.
-	 * @return self Cloned relation manager with updated related resource metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated related resource metadata.
 	 */
 	public function relatedResource(string $resource): self {
 		$clone=clone $this;
@@ -333,7 +339,7 @@ final class RelationManager {
 	 * Relation table metadata controls columns, filters, views, summaries, facts, empty state, and read-only behavior.
 	 *
 	 * @param string $table Database table used as the relation source.
-	 * @return self Cloned relation manager with updated table metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated table metadata.
 	 */
 	public function table(string $table): self {
 		$clone=clone $this;
@@ -347,7 +353,7 @@ final class RelationManager {
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
 	 * @param string $key Record key column before normalization.
-	 * @return self Cloned relation manager with updated foreign key metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated foreign key metadata.
 	 */
 	public function foreignKey(string $key): self {
 		$clone=clone $this;
@@ -361,7 +367,7 @@ final class RelationManager {
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
 	 * @param string $key Record key column before normalization.
-	 * @return self Cloned relation manager with updated local key metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated local key metadata.
 	 */
 	public function localKey(string $key): self {
 		$clone=clone $this;
@@ -374,8 +380,9 @@ final class RelationManager {
 	 *
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
-	 * @param callable $queryFactory Callback that returns the relation query source.
-	 * @return self Cloned relation manager with updated query using metadata.
+	 * @template TResolvedRelatedRecord
+	 * @param callable(TParentRecord, Resource<TParentRecord, TState>=, PanelRequest|null=, self<TParentRecord, TResolvedRelatedRecord, TState>=): PanelDataQuery|PanelDataSource|iterable<TResolvedRelatedRecord>|object|null $queryFactory Callback that returns the relation query source.
+	 * @return self<TParentRecord,TResolvedRelatedRecord,TState>
 	 */
 	public function queryUsing(callable $queryFactory): self {
 		$clone=clone $this;
@@ -388,8 +395,8 @@ final class RelationManager {
 	 *
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
-	 * @param callable $authorizer Callback that authorizes relation abilities.
-	 * @return self Cloned relation manager with updated authorize metadata.
+	 * @param callable(string, TParentRecord|null=, mixed=, Resource<TParentRecord, TState>|null=, self<TParentRecord, TRelatedRecord, TState>=): bool $authorizer Callback that authorizes relation abilities.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated authorize metadata.
 	 */
 	public function authorize(callable $authorizer): self {
 		$clone=clone $this;
@@ -403,7 +410,7 @@ final class RelationManager {
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
 	 * @param bool $readOnly Whether relation mutations are disabled.
-	 * @return self Cloned relation manager with updated read only metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated read only metadata.
 	 */
 	public function readOnly(bool $readOnly=true): self {
 		$clone=clone $this;
@@ -417,7 +424,7 @@ final class RelationManager {
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
 	 * @param bool $enabled Whether the relation operation is enabled.
-	 * @return self Cloned relation manager with updated create metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated create metadata.
 	 */
 	public function create(bool $enabled=true): self {
 		$clone=clone $this;
@@ -429,7 +436,7 @@ final class RelationManager {
 	 * Updates the without create metadata for this relation.
 	 *
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
-	 * @return self Cloned relation manager with updated without create metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated without create metadata.
 	 */
 	public function withoutCreate(): self {
 		return $this->create(false);
@@ -441,7 +448,7 @@ final class RelationManager {
 	 * Mutation metadata controls attach, detach, associate, dissociate, reorder, and pivot update workflows for related records.
 	 *
 	 * @param bool $enabled Whether the relation operation is enabled.
-	 * @return self Cloned relation manager with updated attach metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated attach metadata.
 	 */
 	public function attach(bool $enabled=true): self {
 		$clone=clone $this;
@@ -453,7 +460,7 @@ final class RelationManager {
 	 * Updates the without attach metadata for this relation.
 	 *
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
-	 * @return self Cloned relation manager with updated without attach metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated without attach metadata.
 	 */
 	public function withoutAttach(): self {
 		return $this->attach(false);
@@ -465,7 +472,7 @@ final class RelationManager {
 	 * Mutation metadata controls attach, detach, associate, dissociate, reorder, and pivot update workflows for related records.
 	 *
 	 * @param bool $enabled Whether the relation operation is enabled.
-	 * @return self Cloned relation manager with updated detach metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated detach metadata.
 	 */
 	public function detach(bool $enabled=true): self {
 		$clone=clone $this;
@@ -477,7 +484,7 @@ final class RelationManager {
 	 * Updates the without detach metadata for this relation.
 	 *
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
-	 * @return self Cloned relation manager with updated without detach metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated without detach metadata.
 	 */
 	public function withoutDetach(): self {
 		return $this->detach(false);
@@ -489,7 +496,7 @@ final class RelationManager {
 	 * Mutation metadata controls attach, detach, associate, dissociate, reorder, and pivot update workflows for related records.
 	 *
 	 * @param string $label User-facing relation operation label.
-	 * @return self Cloned relation manager with updated attach label metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated attach label metadata.
 	 */
 	public function attachLabel(string $label): self {
 		$clone=clone $this;
@@ -503,7 +510,7 @@ final class RelationManager {
 	 * Mutation metadata controls attach, detach, associate, dissociate, reorder, and pivot update workflows for related records.
 	 *
 	 * @param string $label User-facing relation operation label.
-	 * @return self Cloned relation manager with updated detach label metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated detach label metadata.
 	 */
 	public function detachLabel(string $label): self {
 		$clone=clone $this;
@@ -517,7 +524,7 @@ final class RelationManager {
 	 * Mutation metadata controls attach, detach, associate, dissociate, reorder, and pivot update workflows for related records.
 	 *
 	 * @param bool $enabled Whether the relation operation is enabled.
-	 * @return self Cloned relation manager with updated associate metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated associate metadata.
 	 */
 	public function associate(bool $enabled=true): self {
 		$clone=clone $this;
@@ -529,7 +536,7 @@ final class RelationManager {
 	 * Updates the without associate metadata for this relation.
 	 *
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
-	 * @return self Cloned relation manager with updated without associate metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated without associate metadata.
 	 */
 	public function withoutAssociate(): self {
 		return $this->associate(false);
@@ -541,7 +548,7 @@ final class RelationManager {
 	 * Mutation metadata controls attach, detach, associate, dissociate, reorder, and pivot update workflows for related records.
 	 *
 	 * @param bool $enabled Whether the relation operation is enabled.
-	 * @return self Cloned relation manager with updated dissociate metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated dissociate metadata.
 	 */
 	public function dissociate(bool $enabled=true): self {
 		$clone=clone $this;
@@ -553,7 +560,7 @@ final class RelationManager {
 	 * Updates the without dissociate metadata for this relation.
 	 *
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
-	 * @return self Cloned relation manager with updated without dissociate metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated without dissociate metadata.
 	 */
 	public function withoutDissociate(): self {
 		return $this->dissociate(false);
@@ -566,7 +573,7 @@ final class RelationManager {
 	 *
 	 * @param bool $enabled Whether the relation operation is enabled.
 	 * @param ?string $orderColumn Column storing related-record order.
-	 * @return self Cloned relation manager with updated reorderable metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated reorderable metadata.
 	 */
 	public function reorderable(bool $enabled=true, ?string $orderColumn=null): self {
 		$clone=clone $this;
@@ -583,7 +590,7 @@ final class RelationManager {
 	 * Mutation metadata controls attach, detach, associate, dissociate, reorder, and pivot update workflows for related records.
 	 *
 	 * @param string $label User-facing relation operation label.
-	 * @return self Cloned relation manager with updated associate label metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated associate label metadata.
 	 */
 	public function associateLabel(string $label): self {
 		$clone=clone $this;
@@ -597,7 +604,7 @@ final class RelationManager {
 	 * Mutation metadata controls attach, detach, associate, dissociate, reorder, and pivot update workflows for related records.
 	 *
 	 * @param string $label User-facing relation operation label.
-	 * @return self Cloned relation manager with updated dissociate label metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated dissociate label metadata.
 	 */
 	public function dissociateLabel(string $label): self {
 		$clone=clone $this;
@@ -611,7 +618,7 @@ final class RelationManager {
 	 * Mutation metadata controls attach, detach, associate, dissociate, reorder, and pivot update workflows for related records.
 	 *
 	 * @param string $label User-facing relation operation label.
-	 * @return self Cloned relation manager with updated reorder label metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated reorder label metadata.
 	 */
 	public function reorderLabel(string $label): self {
 		$clone=clone $this;
@@ -624,8 +631,8 @@ final class RelationManager {
 	 *
 	 * Mutation metadata controls attach, detach, associate, dissociate, reorder, and pivot update workflows for related records.
 	 *
-	 * @param array<int,Field|array<string,mixed>|string> $fields Pivot fields collected for attach/update-pivot forms.
-	 * @return self Cloned relation manager with updated pivot fields metadata.
+	 * @param array<int, Field<TRelatedRecord, mixed, TState>|array<string,mixed>|string> $fields Pivot fields collected for attach/update-pivot forms.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated pivot fields metadata.
 	 */
 	public function pivotFields(array $fields): self {
 		$clone=clone $this;
@@ -644,9 +651,9 @@ final class RelationManager {
 	 *
 	 * Mutation metadata controls attach, detach, associate, dissociate, reorder, and pivot update workflows for related records.
 	 *
-	 * @param Field|array|string $field Pivot field definition, manifest array, or field name.
+	 * @param Field<TRelatedRecord, mixed, TState>|array<string, mixed>|string $field Pivot field definition, manifest array, or field name.
 	 * @param ?string $type Field or summary type used when constructing from a string.
-	 * @return self Cloned relation manager with updated pivot field metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated pivot field metadata.
 	 */
 	public function pivotField(Field|array|string $field, ?string $type=null): self {
 		$field=$field instanceof Field ? $field : (is_array($field) ? Field::fromArray($field) : Field::make((string)$field, $type ?? 'text'));
@@ -662,8 +669,8 @@ final class RelationManager {
 	 *
 	 * Mutation metadata controls attach, detach, associate, dissociate, reorder, and pivot update workflows for related records.
 	 *
-	 * @param callable $handler Relation operation handler callback.
-	 * @return self Cloned relation manager with updated attachable records using metadata.
+	 * @param callable(TParentRecord, Resource<TParentRecord, TState>=, PanelRequest|null=, self<TParentRecord, TRelatedRecord, TState>=): iterable<TRelatedRecord> $handler Relation operation handler callback.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated attachable records using metadata.
 	 */
 	public function attachableRecordsUsing(callable $handler): self {
 		$clone=clone $this;
@@ -676,8 +683,8 @@ final class RelationManager {
 	 *
 	 * Mutation metadata controls attach, detach, associate, dissociate, reorder, and pivot update workflows for related records.
 	 *
-	 * @param callable $handler Relation operation handler callback.
-	 * @return self Cloned relation manager with updated attach using metadata.
+	 * @param callable(TParentRecord, mixed, PanelRequest=, Resource<TParentRecord, TState>=, self<TParentRecord, TRelatedRecord, TState>=): mixed $handler Relation operation handler callback.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated attach using metadata.
 	 */
 	public function attachUsing(callable $handler): self {
 		$clone=clone $this;
@@ -690,8 +697,8 @@ final class RelationManager {
 	 *
 	 * Mutation metadata controls attach, detach, associate, dissociate, reorder, and pivot update workflows for related records.
 	 *
-	 * @param callable $handler Relation operation handler callback.
-	 * @return self Cloned relation manager with updated detach using metadata.
+	 * @param callable(TParentRecord, mixed, PanelRequest=, Resource<TParentRecord, TState>=, self<TParentRecord, TRelatedRecord, TState>=): mixed $handler Relation operation handler callback.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated detach using metadata.
 	 */
 	public function detachUsing(callable $handler): self {
 		$clone=clone $this;
@@ -704,8 +711,8 @@ final class RelationManager {
 	 *
 	 * Mutation metadata controls attach, detach, associate, dissociate, reorder, and pivot update workflows for related records.
 	 *
-	 * @param callable $handler Relation operation handler callback.
-	 * @return self Cloned relation manager with updated associate using metadata.
+	 * @param callable(TParentRecord, mixed, PanelRequest=, Resource<TParentRecord, TState>=, self<TParentRecord, TRelatedRecord, TState>=): mixed $handler Relation operation handler callback.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated associate using metadata.
 	 */
 	public function associateUsing(callable $handler): self {
 		$clone=clone $this;
@@ -719,8 +726,8 @@ final class RelationManager {
 	 *
 	 * Mutation metadata controls attach, detach, associate, dissociate, reorder, and pivot update workflows for related records.
 	 *
-	 * @param callable $handler Relation operation handler callback.
-	 * @return self Cloned relation manager with updated dissociate using metadata.
+	 * @param callable(TParentRecord, mixed, PanelRequest=, Resource<TParentRecord, TState>=, self<TParentRecord, TRelatedRecord, TState>=): mixed $handler Relation operation handler callback.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated dissociate using metadata.
 	 */
 	public function dissociateUsing(callable $handler): self {
 		$clone=clone $this;
@@ -734,9 +741,9 @@ final class RelationManager {
 	 *
 	 * Mutation metadata controls attach, detach, associate, dissociate, reorder, and pivot update workflows for related records.
 	 *
-	 * @param callable $handler Relation operation handler callback.
+	 * @param callable(TParentRecord, list<mixed>, PanelRequest=, Resource<TParentRecord, TState>=, self<TParentRecord, TRelatedRecord, TState>=): mixed $handler Relation operation handler callback.
 	 * @param ?string $orderColumn Column storing related-record order.
-	 * @return self Cloned relation manager with updated reorder using metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated reorder using metadata.
 	 */
 	public function reorderUsing(callable $handler, ?string $orderColumn=null): self {
 		$clone=clone $this;
@@ -753,8 +760,8 @@ final class RelationManager {
 	 *
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
-	 * @param callable $handler Relation operation handler callback.
-	 * @return self Cloned relation manager with updated update pivot using metadata.
+	 * @param callable(TParentRecord, mixed, TState, PanelRequest=, Resource<TParentRecord, TState>=, self<TParentRecord, TRelatedRecord, TState>=): mixed $handler Relation operation handler callback.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated update pivot using metadata.
 	 */
 	public function updatePivotUsing(callable $handler): self {
 		$clone=clone $this;
@@ -767,8 +774,8 @@ final class RelationManager {
 	 *
 	 * Relation table metadata controls columns, filters, views, summaries, facts, empty state, and read-only behavior.
 	 *
-	 * @param array<int,Column|array<string,mixed>|string> $columns Related-record table columns.
-	 * @return self Cloned relation manager with updated columns metadata.
+	 * @param array<int, Column<TRelatedRecord, mixed>|array<string,mixed>|string> $columns Related-record table columns.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated columns metadata.
 	 */
 	public function columns(array $columns): self {
 		$clone=clone $this;
@@ -783,7 +790,7 @@ final class RelationManager {
 	 *
 	 * @param Column|array|string $column Column.
 	 * @param ?string $type Field or summary type used when constructing from a string.
-	 * @return self Cloned relation manager with updated column metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated column metadata.
 	 */
 	public function column(Column|array|string $column, ?string $type=null): self {
 		$clone=clone $this;
@@ -797,7 +804,7 @@ final class RelationManager {
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
 	 * @param int $rows Related-record rows shown per page.
-	 * @return self Cloned relation manager with updated per page metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated per page metadata.
 	 */
 	public function perPage(int $rows): self {
 		$clone=clone $this;
@@ -811,7 +818,7 @@ final class RelationManager {
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
 	 * @param array<int,int> $options Allowed related-record page sizes.
-	 * @return self Cloned relation manager with updated per page options metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated per page options metadata.
 	 */
 	public function perPageOptions(array $options): self {
 		$clone=clone $this;
@@ -826,7 +833,7 @@ final class RelationManager {
 	 *
 	 * @param string $column Related-record column used for initial table ordering.
 	 * @param string $direction Sort direction passed to the relation table.
-	 * @return self Cloned relation manager with updated default sort metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated default sort metadata.
 	 */
 	public function defaultSort(string $column, string $direction='asc'): self {
 		$clone=clone $this;
@@ -840,7 +847,7 @@ final class RelationManager {
 	 * Relation table metadata controls columns, filters, views, summaries, facts, empty state, and read-only behavior.
 	 *
 	 * @param array<int,TableView|array<string,mixed>|string> $views Related-record table views.
-	 * @return self Cloned relation manager with updated views metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated views metadata.
 	 */
 	public function views(array $views): self {
 		$clone=clone $this;
@@ -853,8 +860,8 @@ final class RelationManager {
 	 *
 	 * Relation table metadata controls columns, filters, views, summaries, facts, empty state, and read-only behavior.
 	 *
-	 * @param TableView|array|string $view View.
-	 * @return self Cloned relation manager with updated view metadata.
+	 * @param TableView<TRelatedRecord, TState>|array<string, mixed>|string $view View.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated view metadata.
 	 */
 	public function view(TableView|array|string $view): self {
 		$clone=clone $this;
@@ -868,7 +875,7 @@ final class RelationManager {
 	 * Relation table metadata controls columns, filters, views, summaries, facts, empty state, and read-only behavior.
 	 *
 	 * @param array<int,TableFilter|array<string,mixed>|string> $filters Related-record table filters.
-	 * @return self Cloned relation manager with updated filters metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated filters metadata.
 	 */
 	public function filters(array $filters): self {
 		$clone=clone $this;
@@ -881,9 +888,9 @@ final class RelationManager {
 	 *
 	 * Relation table metadata controls columns, filters, views, summaries, facts, empty state, and read-only behavior.
 	 *
-	 * @param TableFilter|array|string $filter Filter.
+	 * @param TableFilter<TRelatedRecord, mixed, TState>|array<string, mixed>|string $filter Filter.
 	 * @param ?string $type Field or summary type used when constructing from a string.
-	 * @return self Cloned relation manager with updated filter metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated filter metadata.
 	 */
 	public function filter(TableFilter|array|string $filter, ?string $type=null): self {
 		$clone=clone $this;
@@ -897,7 +904,7 @@ final class RelationManager {
 	 * Relation table metadata controls columns, filters, views, summaries, facts, empty state, and read-only behavior.
 	 *
 	 * @param array<int,TableSummary|array<string,mixed>|string> $summaries Related-record table summaries.
-	 * @return self Cloned relation manager with updated summaries metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated summaries metadata.
 	 */
 	public function summaries(array $summaries): self {
 		$clone=clone $this;
@@ -910,9 +917,9 @@ final class RelationManager {
 	 *
 	 * Relation table metadata controls columns, filters, views, summaries, facts, empty state, and read-only behavior.
 	 *
-	 * @param TableSummary|array|string $summary Summary.
+	 * @param TableSummary<TRelatedRecord, mixed>|array<string, mixed>|string $summary Summary.
 	 * @param ?string $type Field or summary type used when constructing from a string.
-	 * @return self Cloned relation manager with updated summary metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated summary metadata.
 	 */
 	public function summary(TableSummary|array|string $summary, ?string $type=null): self {
 		$clone=clone $this;
@@ -926,7 +933,7 @@ final class RelationManager {
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
 	 * @param array<int,TableSummary|array<string,mixed>|string> $facts Relation facts exposed beside the table.
-	 * @return self Cloned relation manager with updated facts metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated facts metadata.
 	 */
 	public function facts(array $facts): self {
 		$clone=clone $this;
@@ -942,9 +949,9 @@ final class RelationManager {
 	 *
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
-	 * @param TableSummary|array|string $fact Fact.
+	 * @param TableSummary<TRelatedRecord, mixed>|array<string, mixed>|string $fact Fact.
 	 * @param ?string $type Field or summary type used when constructing from a string.
-	 * @return self Cloned relation manager with updated fact metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated fact metadata.
 	 */
 	public function fact(TableSummary|array|string $fact, ?string $type=null): self {
 		$fact=$fact instanceof TableSummary
@@ -959,7 +966,7 @@ final class RelationManager {
 	 * Returns the table builder used by this relation.
 	 *
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
-	 * @return ResourceTable Table builder used to render related records.
+	 * @return ResourceTable<TRelatedRecord, TState> Table builder used to render related records.
 	 */
 	public function resourceTable(): ResourceTable {
 		return $this->resourceTable;
@@ -1141,7 +1148,7 @@ final class RelationManager {
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
 	 * @param array<string,mixed> $meta Relation metadata merged into the serialized manifest.
-	 * @return self Cloned relation manager with updated manifest metadata.
+	 * @return self<TParentRecord,TRelatedRecord,TState> Cloned relation manager with updated manifest metadata.
 	 */
 	public function meta(array $meta): self {
 		$clone=clone $this;
@@ -1154,9 +1161,9 @@ final class RelationManager {
 	 *
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
-	 * @param mixed $parentRecord Parent record that owns the relation.
+	 * @param TParentRecord|null $parentRecord Parent record that owns the relation.
 	 * @param ?PanelRequest $request Panel request for user, pagination, and table context.
-	 * @param ?Resource $parentResource Resource that owns the parent record.
+	 * @param Resource<TParentRecord, TState>|null $parentResource Resource that owns the parent record.
 	 * @param array<int,mixed> $records Related records used to resolve dynamic text.
 	 * @return ?string Static or callback-resolved relation description.
 	 */
@@ -1301,11 +1308,11 @@ final class RelationManager {
 	 *
 	 * Relation managers describe how a parent resource discovers, renders, and mutates connected records.
 	 *
-	 * @param Resource $parentResource Resource that owns the parent record.
-	 * @param mixed $parentRecord Parent record that owns the relation.
+	 * @param Resource<TParentRecord, TState> $parentResource Resource that owns the parent record.
+	 * @param TParentRecord $parentRecord Parent record that owns the relation.
 	 * @param ?PanelRequest $request Panel request for user, pagination, and table context.
 	 * @param bool $preferAll Whether full-record getters are preferred over paginated getters.
-	 * @return array<int,mixed> Related records after query resolution and parent-key filtering.
+	 * @return list<TRelatedRecord> Related records after query resolution and parent-key filtering.
 	 */
 	public function records(Resource $parentResource, mixed $parentRecord, ?PanelRequest $request=null, bool $preferAll=false): array {
 		$query=$this->makeQuery($parentResource, $parentRecord, $request);
@@ -1338,10 +1345,10 @@ final class RelationManager {
 	 *
 	 * Custom resolvers receive the parent record, parent resource, current request, and relation manager; fallback discovery excludes already attached records.
 	 *
-	 * @param Resource $parentResource Resource that owns the parent record.
-	 * @param mixed $parentRecord Parent record that owns the relation.
+	 * @param Resource<TParentRecord, TState> $parentResource Resource that owns the parent record.
+	 * @param TParentRecord $parentRecord Parent record that owns the relation.
 	 * @param ?PanelRequest $request Panel request for user, pagination, and table context.
-	 * @return array<int,mixed> Candidate related records excluding records already attached to the parent.
+	 * @return list<TRelatedRecord> Candidate related records excluding records already attached to the parent.
 	 */
 	public function attachableRecords(Resource $parentResource, mixed $parentRecord, ?PanelRequest $request=null): array {
 		if($this->attachableRecordsHandler!==null){

@@ -5,13 +5,22 @@
         "class": "dataphyre\\permission",
         "static_method": true,
         "args": [
-            ["view_order", "view_order", "-force_delete_order"]
+            [
+                "view_order",
+                "view_order",
+                "-force_delete_order"
+            ]
         ],
         "expected": [
-            ["panel.orders.view", "-panel.orders.force_delete"]
+            [
+                "panel.orders.view",
+                "-panel.orders.force_delete"
+            ]
         ],
-        "file_dynamic": "return dp_module_present(\"permission\")[0];",
-        "max_millis": 50
+        "max_millis": 50,
+        "file": {
+            "module": "permission"
+        }
     },
     {
         "name": "name_supports_custom_permission_and_resource_prefixes",
@@ -27,8 +36,10 @@
             }
         ],
         "expected": "admin.billing.invoices.create",
-        "file_dynamic": "return dp_module_present(\"permission\")[0];",
-        "max_millis": 50
+        "max_millis": 50,
+        "file": {
+            "module": "permission"
+        }
     },
     {
         "name": "audit_roles_reports_clean_known_role_set",
@@ -37,9 +48,13 @@
         "static_method": true,
         "args": [
             {
-                "manager": ["panel.orders.view"]
+                "manager": [
+                    "panel.orders.view"
+                ]
             },
-            ["panel.orders.view"],
+            [
+                "panel.orders.view"
+            ],
             [],
             {
                 "warn_uncovered_catalog": false
@@ -47,10 +62,40 @@
         ],
         "expected": [
             {
-                "custom_script": "return is_array($result) && ($result['ok'] ?? null)===true && ($result['counts']['error'] ?? null)===0 && ($result['counts']['warning'] ?? null)===0 && ($result['counts']['info'] ?? null)===0 && ($result['findings'] ?? null)===[] && ($result['catalog_count'] ?? null)===1 && ($result['role_count'] ?? null)===1 && ($result['assignment_count'] ?? null)===0;"
+                "assert": {
+                    "type": "array",
+                    "paths": {
+                        "ok": {
+                            "same": true
+                        },
+                        "counts/error": {
+                            "same": 0
+                        },
+                        "counts/warning": {
+                            "same": 0
+                        },
+                        "counts/info": {
+                            "same": 0
+                        },
+                        "findings": {
+                            "same": []
+                        },
+                        "catalog_count": {
+                            "same": 1
+                        },
+                        "role_count": {
+                            "same": 1
+                        },
+                        "assignment_count": {
+                            "same": 0
+                        }
+                    }
+                }
             }
         ],
-        "file_dynamic": "return dp_module_present(\"permission\")[0];",
-        "max_millis": 50
+        "max_millis": 50,
+        "file": {
+            "module": "permission"
+        }
     }
 ]

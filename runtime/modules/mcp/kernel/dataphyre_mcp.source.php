@@ -540,7 +540,7 @@ trait dataphyre_mcp_source_surfaces {
 				$roots[]=(string)$path;
 			}
 		}else{
-			$roots[]='common/dataphyre/runtime/modules/api';
+			$roots[]='dataphyre/runtime/modules/api';
 		}
 		$files=[];
 		foreach($roots as $root){
@@ -758,7 +758,8 @@ trait dataphyre_mcp_source_surfaces {
 	 * @return array<int,string> Literal string values in source order.
 	 */
 	private function literal_string_list_from_expression(string $expression): array {
-		if(preg_match_all('/([\'"])(.*?)\1/s', $expression, $matches)!==1){
+		$match_count=preg_match_all('/([\'"])(.*?)\1/s', $expression, $matches);
+		if($match_count===false || $match_count===0){
 			return [];
 		}
 		return array_values(array_filter(array_map(
@@ -1146,7 +1147,7 @@ trait dataphyre_mcp_source_surfaces {
 		);
 		return [
 			'server'=>'dataphyre-mcp',
-			'version'=>'2.0.3',
+			'version'=>'2.2.0',
 			'protocol'=>'2025-11-25',
 			'default_safety'=>'read_only',
 			'unsafe_enabled'=>$this->allow_unsafe,
@@ -1371,6 +1372,8 @@ trait dataphyre_mcp_source_surfaces {
 				'dataphyre://ai-guidelines',
 				'dataphyre://agentic-enterprise',
 				'dataphyre://mcp-capabilities',
+				'dataphyre://contracts',
+				'dataphyre://panel',
 			],
 			'intentionally_not_exposed'=>[
 				'SQL query execution',

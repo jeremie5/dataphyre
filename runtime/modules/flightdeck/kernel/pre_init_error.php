@@ -40,17 +40,20 @@ final class dataphyre_flightdeck_pre_init_error {
 	 *
 	 * @param ?string $message Human-readable bootstrap failure message.
 	 * @param ?object $exception Throwable-like object carrying trace information.
+	 * @param ?callable $terminator Optional deterministic login-success termination strategy.
+	 * @param ?bool $auth_available Optional deterministic authentication dependency state.
 	 * @return bool True when this renderer emitted a response.
 	 */
-	public static function render(?string $message, ?object $exception): bool {
-		if(class_exists('dataphyre_flightdeck_auth', false)!==true){
+	public static function render(?string $message, ?object $exception, ?callable $terminator=null, ?bool $auth_available=null): bool {
+		$auth_available ??= class_exists('dataphyre_flightdeck_auth', false);
+		if($auth_available!==true){
 			return false;
 		}
 		if(dataphyre_flightdeck_auth::enabled()!==true){
 			return false;
 		}
 		if(dataphyre_flightdeck_auth::authenticated()!==true){
-			self::render_login_gate($message);
+			self::render_login_gate($message,$terminator);
 			return true;
 		}
 		self::render_exception_page($message, $exception);
@@ -61,8 +64,9 @@ final class dataphyre_flightdeck_pre_init_error {
 	 * Emits the authentication gate shown before diagnostic details are revealed.
 	 *
 	 * @param ?string $message Bootstrap message safe enough to show before login.
+	 * @param ?callable $terminator Optional deterministic login-success termination strategy.
 	 */
-	private static function render_login_gate(?string $message): void {
+	private static function render_login_gate(?string $message, ?callable $terminator=null): void {
 		http_response_code(500);
 		header('Content-Type: text/html; charset=utf-8');
 		$error=dataphyre_flightdeck_auth::login_error();
@@ -77,7 +81,9 @@ final class dataphyre_flightdeck_pre_init_error {
 			elseif(dataphyre_flightdeck_auth::login($password)===true){
 				http_response_code(302);
 				header('Location: '.dataphyre_flightdeck_auth::current_uri());
-				exit;
+				if($terminator===null){exit;}
+				$terminator();
+				return;
 			}
 			else
 			{
@@ -157,10 +163,11 @@ final class dataphyre_flightdeck_pre_init_error {
 	 * Extracts stack frames from the exception or the optional snippet helper.
 	 *
 	 * @param ?object $exception Throwable-like object.
+	 * @param ?bool $stack_snippets_available Optional deterministic helper dependency state.
 	 * @return array Stack frames with file, line, symbol, index, and kind metadata.
 	 */
-	private static function frames(?object $exception): array {
-		if(class_exists('dataphyre_flightdeck_stack_snippets', false)){
+	private static function frames(?object $exception, ?bool $stack_snippets_available=null): array {
+		if(self::stack_snippets_available($stack_snippets_available)){
 			return dataphyre_flightdeck_stack_snippets::frames_from_exception($exception);
 		}
 		if($exception===null){
@@ -189,10 +196,11 @@ final class dataphyre_flightdeck_pre_init_error {
 	 * Builds a readable symbol label for a stack frame.
 	 *
 	 * @param array{function?:string,class?:string,type?:string,call?:string} $frame Raw stack frame from Throwable::getTrace() or snippet normalization.
+	 * @param ?bool $stack_snippets_available Optional deterministic helper dependency state.
 	 * @return string Symbol label such as Class::method or function.
 	 */
-	private static function frame_symbol(array $frame): string {
-		if(class_exists('dataphyre_flightdeck_stack_snippets', false)){
+	private static function frame_symbol(array $frame, ?bool $stack_snippets_available=null): string {
+		if(self::stack_snippets_available($stack_snippets_available)){
 			return dataphyre_flightdeck_stack_snippets::frame_symbol($frame);
 		}
 		$function=(string)($frame['function'] ?? '');
@@ -210,10 +218,11 @@ final class dataphyre_flightdeck_pre_init_error {
 	 * @param ?string $message Bootstrap failure message.
 	 * @param ?object $exception Throwable-like object.
 	 * @param array<int,array{index?:int,file?:string,line?:int,function?:string,class?:string,type?:string,symbol?:string,kind?:string}> $frames Stack frames already extracted for the report.
+	 * @param ?bool $stack_snippets_available Optional deterministic helper dependency state.
 	 * @return string Diagnostic HTML or an empty string when helper support is unavailable.
 	 */
-	private static function render_smart_diagnostics(?string $message, ?object $exception, array $frames): string {
-		if(class_exists('dataphyre_flightdeck_stack_snippets', false)!==true){
+	private static function render_smart_diagnostics(?string $message, ?object $exception, array $frames, ?bool $stack_snippets_available=null): string {
+		if(self::stack_snippets_available($stack_snippets_available)!==true){
 			return '';
 		}
 		$text=trim((string)($message ?? '')."\n".($exception!==null ? get_class($exception).': '.$exception->getMessage() : ''));
@@ -224,10 +233,11 @@ final class dataphyre_flightdeck_pre_init_error {
 	 * Renders quick navigation links for the displayed stack frames.
 	 *
 	 * @param array<int,array{index?:int,file?:string,line?:int,function?:string,class?:string,type?:string,symbol?:string,kind?:string}> $frames Stack frame payloads.
+	 * @param ?bool $stack_snippets_available Optional deterministic helper dependency state.
 	 * @return string Stack map HTML.
 	 */
-	private static function render_stack_map(array $frames): string {
-		if(class_exists('dataphyre_flightdeck_stack_snippets', false)){
+	private static function render_stack_map(array $frames, ?bool $stack_snippets_available=null): string {
+		if(self::stack_snippets_available($stack_snippets_available)){
 			return dataphyre_flightdeck_stack_snippets::render_stack_map($frames);
 		}
 		$html='<div class="fd-stack-map" aria-label="Call stack reference map">';
@@ -267,10 +277,13 @@ final class dataphyre_flightdeck_pre_init_error {
 	 *
 	 * @param array{index?:int,file?:string,line?:int,function?:string,class?:string,type?:string,symbol?:string,kind?:string} $frame Stack frame payload.
 	 * @param array<int,array{index?:int,file?:string,line?:int,function?:string,class?:string,type?:string,symbol?:string,kind?:string}> $frames Complete frame list used for caller/callee links.
+	 * @param ?bool $stack_snippets_available Optional deterministic helper dependency state.
+	 * @param ?callable $source_reader Optional deterministic source-file reader.
+	 * @param ?callable $highlighter Optional deterministic snippet highlighter adapter.
 	 * @return string Source snippet HTML.
 	 */
-	private static function render_snippet(array $frame, array $frames=[]): string {
-		if(class_exists('dataphyre_flightdeck_stack_snippets', false)){
+	private static function render_snippet(array $frame, array $frames=[], ?bool $stack_snippets_available=null, ?callable $source_reader=null, ?callable $highlighter=null): string {
+		if(self::stack_snippets_available($stack_snippets_available)){
 			return dataphyre_flightdeck_stack_snippets::render_snippet($frame, $frames);
 		}
 		$file=(string)($frame['file'] ?? '');
@@ -281,7 +294,7 @@ final class dataphyre_flightdeck_pre_init_error {
 			return '<div class="fd-snippet" id="fd-frame-'.$frame_index.'"><div class="fd-snippet-head"><h3><span class="fd-frame-index">#'.$frame_index.'</span> '.self::e($file ?: 'Unknown file').'</h3>'.self::snippet_actions([], $frame, $frames).'</div><p class="fd-muted">Source unavailable.</p></div>';
 		}
 		$start=max(1, $line - 8);
-		$lines=@file($file, FILE_IGNORE_NEW_LINES);
+		$lines=$source_reader!==null ? $source_reader($file) : @file($file, FILE_IGNORE_NEW_LINES);
 		if(!is_array($lines)){
 			return '<div class="fd-snippet" id="fd-frame-'.$frame_index.'"><div class="fd-snippet-head"><h3><span class="fd-frame-index">#'.$frame_index.'</span> '.self::e($file).'</h3>'.self::snippet_actions([], $frame, $frames).'</div><p class="fd-muted">Source unreadable.</p></div>';
 		}
@@ -289,7 +302,7 @@ final class dataphyre_flightdeck_pre_init_error {
 		$selected=self::normalize_snippet_lines($selected);
 		$code=implode("\n", $selected);
 		$datadoc_context=self::datadoc_frame_context($file, $line);
-		$highlighted=self::datadoc_highlight($code, $start, $line, $datadoc_context);
+		$highlighted=self::datadoc_highlight($code,$start,$line,$datadoc_context,null,$highlighter);
 		if($highlighted===null){
 			$highlighted='<pre class="fd-code">';
 			foreach($selected as $source_index=>$source_line){
@@ -315,15 +328,20 @@ final class dataphyre_flightdeck_pre_init_error {
 	 * @param int $start First source line represented in the excerpt.
 	 * @param int $line Frame line to highlight.
 	 * @param array{project?:string,namespace?:string,class?:string,function?:string,datadoc_url?:?string,project_url?:?string} $context Datadoc project, namespace, class, and function context.
+	 * @param ?string $highlighter_file Optional deterministic highlighter dependency path.
+	 * @param ?callable $renderer Optional deterministic highlighter adapter.
 	 * @return ?string Highlighted HTML, or null when Datadoc highlighter is unavailable.
 	 */
-	private static function datadoc_highlight(string $code, int $start, int $line, array $context=[]): ?string {
-		$highlighter=dirname(__DIR__, 2).'/datadoc/kernel/highlighter.php';
-		if(!is_file($highlighter)){
+	private static function datadoc_highlight(string $code, int $start, int $line, array $context=[], ?string $highlighter_file=null, ?callable $renderer=null): ?string {
+		$highlighter_file ??= dirname(__DIR__, 2).'/datadoc/kernel/highlighter.php';
+		if($renderer===null && !is_file($highlighter_file)){
 			return null;
 		}
 		try{
-			require_once($highlighter);
+			if($renderer!==null){
+				return $renderer($code,$start,$line,$context);
+			}
+			require_once($highlighter_file);
 			if(!class_exists('\dataphyre\datadoc\highlighter', false)){
 				return null;
 			}
@@ -398,9 +416,10 @@ final class dataphyre_flightdeck_pre_init_error {
 	 *
 	 * @param string $file Absolute frame file path.
 	 * @param int $line Frame line number.
+	 * @param ?callable $select Optional deterministic DataDoc query adapter.
 	 * @return array{project:string,namespace:string,class:string,function:string,datadoc_url:?string,project_url:?string} Datadoc context with project, symbol, and URL fields.
 	 */
-	private static function datadoc_frame_context(string $file, int $line): array {
+	private static function datadoc_frame_context(string $file, int $line, ?callable $select=null): array {
 		$context=[
 			'project'=>'',
 			'namespace'=>'',
@@ -409,18 +428,13 @@ final class dataphyre_flightdeck_pre_init_error {
 			'datadoc_url'=>null,
 			'project_url'=>null,
 		];
-		if(function_exists('sql_select')!==true){
+		if($select===null && function_exists('sql_select')!==true){
 			return $context;
 		}
+		$select ??= static fn(string $fields,string $table,string $query,array $variables,bool $fetch_all)=>sql_select($fields,$table,$query,$variables,$fetch_all);
 		try{
 			$normalized_file=str_replace('\\', '/', $file);
-			$projects=sql_select(
-				$S='*',
-				$L='datadoc.projects',
-				$P='ORDER BY title, name',
-				$V=[],
-				$F=true
-			);
+			$projects=$select('*','datadoc.projects','ORDER BY title, name',[],true);
 			if(!is_array($projects)){
 				return $context;
 			}
@@ -444,13 +458,7 @@ final class dataphyre_flightdeck_pre_init_error {
 			$project_name=(string)$best_project['name'];
 			$context['project']=$project_name;
 			$context['project_url']=self::datadoc_project_url($project_name);
-			$rows=sql_select(
-				$S='*',
-				$L='dataphyre.datadoc_data',
-				$P='WHERE file=? AND project=?',
-				$V=[$normalized_file, $project_name],
-				$F=true
-			);
+			$rows=$select('*','dataphyre.datadoc_data','WHERE file=? AND project=?',[$normalized_file,$project_name],true);
 			if(!is_array($rows)){
 				return $context;
 			}
@@ -540,11 +548,15 @@ final class dataphyre_flightdeck_pre_init_error {
 	/**
 	 * Resolves the Datadoc base URL without requiring full framework boot.
 	 *
+	 * @param ?bool $core_available Optional deterministic core dependency state.
+	 * @param ?string $core_url Optional deterministic core base URL.
 	 * @return string Datadoc base URL.
 	 */
-	private static function datadoc_base_url(): string {
-		if(class_exists('\dataphyre\core', false)){
-			return rtrim(\dataphyre\core::url_self(), '/').'/dataphyre/datadoc';
+	private static function datadoc_base_url(?bool $core_available=null, ?string $core_url=null): string {
+		$core_available ??= class_exists('\dataphyre\core', false);
+		if($core_available){
+			$core_url ??= \dataphyre\core::url_self();
+			return rtrim($core_url,'/').'/dataphyre/datadoc';
 		}
 		return '/dataphyre/datadoc';
 	}
@@ -641,5 +653,10 @@ final class dataphyre_flightdeck_pre_init_error {
 	 */
 	private static function e(string $value): string {
 		return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+	}
+
+	/** Resolves the optional stack helper with a deterministic diagnostics override. */
+	private static function stack_snippets_available(?bool $available=null): bool {
+		return $available ?? class_exists('dataphyre_flightdeck_stack_snippets',false);
 	}
 }

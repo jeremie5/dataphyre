@@ -39,8 +39,8 @@ final class SwaggerUiController {
 		$css=(string)($options['swagger_ui_css'] ?? 'https://unpkg.com/swagger-ui-dist@5/swagger-ui.css');
 		$bundleJs=(string)($options['swagger_ui_bundle_js'] ?? 'https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js');
 		$presetJs=(string)($options['swagger_ui_preset_js'] ?? 'https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js');
-		$shellCss=self::asset_url($assetPath, 'swagger-shell.css');
-		$initializerJs=self::asset_url($assetPath, 'swagger-init.js');
+		$shellCss=self::assetUrl($assetPath, 'swagger-shell.css');
+		$initializerJs=self::assetUrl($assetPath, 'swagger-init.js');
 
 		$html='<!DOCTYPE html>
 <html lang="en">

@@ -64,7 +64,21 @@ class vespa {
 	 * @return string Absolute staging directory under Dataphyre cache.
 	 */
 	private static function application_directory(string $application_name): string {
-		return ROOTPATH['dataphyre'].'cache/fulltext_engine/vespa/'.$application_name;
+		$default_root=ROOTPATH['dataphyre'].'cache/fulltext_engine/vespa';
+		$root=(string)(DP_FULLTEXT_ENGINE_CFG['external_engines']['vespa']['application_root']
+			?? DP_FULLTEXT_ENGINE_CFG['vespa']['application_root']
+			?? $default_root);
+		$root=trim($root);
+		return rtrim($root!=='' ? $root : $default_root, '/\\').'/'.$application_name;
+	}
+
+	/** Resolves the archive implementation used to package Vespa applications. */
+	private static function archive_class(): string {
+		$class=(string)(DP_FULLTEXT_ENGINE_CFG['external_engines']['vespa']['archive_class']
+			?? DP_FULLTEXT_ENGINE_CFG['vespa']['archive_class']
+			?? \ZipArchive::class);
+		$class=trim($class);
+		return $class!=='' ? $class : \ZipArchive::class;
 	}
 
 	/**
@@ -135,7 +149,8 @@ class vespa {
 	 * @return bool Whether the archive was written and closed successfully.
 	 */
 	private static function build_deployment_archive(string $source_directory, string $archive_path): bool {
-		if(!class_exists('\ZipArchive')){
+		$archive_class=self::archive_class();
+		if(!class_exists($archive_class)){
 			tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='ZipArchive extension is required for Vespa deployment packaging', $S='warning');
 			return false;
 		}
@@ -146,8 +161,10 @@ class vespa {
 		if(file_exists($archive_path)){
 			@unlink($archive_path);
 		}
-		$zip=new \ZipArchive();
-		if($zip->open($archive_path, \ZipArchive::CREATE | \ZipArchive::OVERWRITE)!==true){
+		$zip=new $archive_class();
+		$create_flag=(int)constant($archive_class.'::CREATE');
+		$overwrite_flag=(int)constant($archive_class.'::OVERWRITE');
+		if($zip->open($archive_path, $create_flag | $overwrite_flag)!==true){
 			return false;
 		}
 		$iterator=new \RecursiveIteratorIterator(
@@ -158,9 +175,6 @@ class vespa {
 			$full_path=$item->getPathname();
 			$relative_path=substr($full_path, strlen($source_directory)+1);
 			$relative_path=str_replace('\\', '/', $relative_path);
-			if($relative_path===''){
-				continue;
-			}
 			if($item->isDir()){
 				$zip->addEmptyDir($relative_path);
 				continue;
@@ -269,7 +283,7 @@ class vespa {
 	 * @param string $primary_key Primary key field exposed in summaries.
 	 * @return bool Whether the application package was prepared and activated.
 	 */
-	public static function create_index(string $application_name, string $primary_key): bool {
+	public static function create_index(string $application_name, string $primary_key, ?callable $archive_reader=null): bool {
 		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T = null, $S = 'function_call', $A=null);
 		$app_dir=self::application_directory($application_name);
 		$schema_dir=$app_dir.'/schemas';
@@ -324,7 +338,8 @@ XML;
 		if(self::build_deployment_archive($app_dir, $zip_path)!==true || !file_exists($zip_path)){
 			return false;
 		}
-		$zip_contents=file_get_contents($zip_path);
+		$archive_reader??=static fn(string $path): string|false=>@file_get_contents($path);
+		$zip_contents=$archive_reader($zip_path);
 		if($zip_contents===false){
 			@unlink($zip_path);
 			return false;

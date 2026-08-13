@@ -81,13 +81,7 @@ class access_qr_renderer{
 			return false;
 		}
 		$codewords=self::create_codewords($text, $version);
-		if($codewords===false){
-			return false;
-		}
 		$matrix=self::build_matrix($codewords, $version);
-		if($matrix===false){
-			return false;
-		}
 		$svg=self::render_svg($matrix['data'], $matrix['size'], max(0, $margin), max(64, min(512, $width)));
 		return 'data:image/svg+xml;base64,'.base64_encode($svg);
 	}
@@ -137,9 +131,9 @@ class access_qr_renderer{
 	 *
 	 * @param string $text Raw byte payload.
 	 * @param int $version Selected QR version.
-	 * @return array<int,int>|false Interleaved codewords, or false if packing fails.
+	 * @return array<int,int> Interleaved codewords.
 	 */
-	private static function create_codewords(string $text, int $version): array|false {
+	private static function create_codewords(string $text, int $version): array {
 		$data_codewords=self::TOTAL_CODEWORDS[$version]-self::EC_CODEWORDS_L[$version];
 		$buffer=[];
 		$bit_length=0;
@@ -154,16 +148,13 @@ class access_qr_renderer{
 		if($terminator>0){
 			self::put_bits($buffer, $bit_length, 0, $terminator);
 		}
-		while($bit_length%8!==0){
-			self::put_bit($buffer, $bit_length, false);
-		}
 		$pad_index=0;
 		while(count($buffer)<$data_codewords){
 			$buffer[]=self::PAD_BYTES[$pad_index%2];
 			$pad_index++;
 		}
 		if(count($buffer)!==$data_codewords){
-			return false;
+			throw new \LengthException('QR payload exceeds the selected version data capacity.');
 		}
 		return self::interleave_codewords($buffer, $version);
 	}
@@ -405,9 +396,9 @@ class access_qr_renderer{
 	 *
 	 * @param array<int,int> $codewords Complete interleaved codeword stream.
 	 * @param int $version QR version.
-	 * @return array{data:array<int,int>,size:int}|false Matrix payload, or false on failure.
+	 * @return array{data:array<int,int>,size:int} Matrix payload.
 	 */
-	private static function build_matrix(array $codewords, int $version): array|false {
+	private static function build_matrix(array $codewords, int $version): array {
 		$size=self::symbol_size($version);
 		$data=array_fill(0, $size*$size, 0);
 		$reserved=array_fill(0, $size*$size, 0);

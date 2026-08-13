@@ -1,0 +1,18 @@
+{
+  "presets": [
+    {
+      "name": "loaded-extension-preset",
+      "colors": {
+        "primary": "#234567"
+      }
+    }
+  ],
+  "themes": [
+    {
+      "name": "loaded-extension-theme",
+      "colors": {
+        "primary": "#345678"
+      }
+    }
+  ]
+}

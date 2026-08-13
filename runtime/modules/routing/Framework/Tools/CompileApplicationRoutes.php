@@ -36,18 +36,18 @@ final class CompileApplicationRoutes {
 			throw new \RuntimeException("Application {$applicationName} was not found in any configured application root.");
 		}
 		$definition=self::loadApplicationDefinition($applicationName, $applicationDirectory);
-		if(empty($definition->routesFile) || !is_file($definition->routesFile)){
+		if(empty($definition->routes_file) || !is_file($definition->routes_file)){
 			throw new \RuntimeException("Application has no framework routes file: {$applicationName}");
 		}
-		if(empty($definition->compiledRoutesFile)){
+		if(empty($definition->compiled_routes_file)){
 			throw new \RuntimeException("Application has no compiled routes output path: {$applicationName}");
 		}
-		$manifest=RouteCompiler::compileFile($definition->routesFile, [
+		$manifest=RouteCompiler::compileFile($definition->routes_file, [
 			'application'=>$definition->id,
 			'compiled_at'=>gmdate('c'),
 		]);
-		RouteCompiler::writeManifestFile($definition->compiledRoutesFile, $manifest);
-		return $definition->compiledRoutesFile;
+		RouteCompiler::writeManifestFile($definition->compiled_routes_file, $manifest);
+		return $definition->compiled_routes_file;
 	}
 
 	/**
@@ -70,7 +70,7 @@ final class CompileApplicationRoutes {
 			return $definition;
 		}
 		if(is_array($definition)){
-			return $conventionalDefinition->withOverrides($definition);
+			return $conventionalDefinition->with_overrides($definition);
 		}
 		throw new \RuntimeException("Application definition must return an array or application_definition: {$definitionFile}");
 	}

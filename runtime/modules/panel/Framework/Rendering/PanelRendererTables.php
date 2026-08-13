@@ -48,11 +48,12 @@ trait PanelRendererTables {
 	 * @param bool $alreadyPaginated Whether the supplied records are already page-bounded.
 	 * @return string Summary card section HTML or empty string.
 	 */
-	private static function summaryHtml(array $summaries, bool $alreadyPaginated=false): string {
+	private static function summaryHtml(array $summaries, bool $alreadyPaginated=false, array|string|null $presentation=null): string {
 		if($summaries===[]){
 			return '';
 		}
 		$html='';
+		$index=0;
 		foreach($summaries as $summary){
 			if(!is_array($summary)){
 				continue;
@@ -61,17 +62,19 @@ trait PanelRendererTables {
 			$label=self::e((string)($summary['label'] ?? ''));
 			$value=self::e(self::stringValue($summary['formatted'] ?? $summary['value'] ?? ''));
 			$type=self::e((string)($summary['type'] ?? 'summary'));
-			$html.='<article class="dp-panel-summary dp-panel-summary-'.$tone.'">'
+			$item='<article class="dp-panel-summary dp-panel-summary-'.$tone.'">'
 				.'<span class="dp-panel-summary-label">'.$label.'</span>'
 				.'<strong class="dp-panel-summary-value">'.$value.'</strong>'
 				.'<small class="dp-panel-summary-type">'.$type.'</small>'
 				.'</article>';
+			$html.=PanelCollectionPresentation::decorateItemHtml($item, $presentation, (string)($summary['name'] ?? ''), $index, is_array($summary['meta'] ?? null) ? $summary['meta'] : []);
+			$index++;
 		}
 		if($html===''){
 			return '';
 		}
 		$note=$alreadyPaginated ? '<p>Summaries reflect the records supplied to this page.</p>' : '';
-		return '<section class="dp-panel-summaries">'.$html.$note.'</section>';
+		return '<section class="dp-panel-summaries"'.PanelCollectionPresentation::htmlAttributes($presentation, 'grid').'>'.$html.$note.'</section>';
 	}
 
 	/**
@@ -129,15 +132,18 @@ trait PanelRendererTables {
 			'per_page'=>(string)$request->perPage($resource->resourceTable()->defaultPerPage()),
 		]+self::activeViewParams($resource, $request)+self::activeGroupParams($resource, $request)+self::activeFilterParams($resource, $request)+self::activeColumnParams($request)+self::activeDensityParams($request);
 		$params=self::filterQueryValues($params);
-		$html=self::tableGroupLink($resource, $params, 'none', self::panelText('table.ungrouped'), $active==='');
+		$presentation=$resource->resourceTable()->presentationFor('groups', 'segmented');
+		$html=PanelCollectionPresentation::decorateItemHtml(self::tableGroupLink($resource, $params, 'none', self::panelText('table.ungrouped'), $active===''), $presentation, 'none', 0);
+		$index=1;
 		foreach($groups as $group){
 			if(!$group instanceof TableGroup){
 				continue;
 			}
 			$meta=$group->toArray();
-			$html.=self::tableGroupLink($resource, $params, $group->name(), (string)($meta['label'] ?? $group->name()), $active===$group->name());
+			$html.=PanelCollectionPresentation::decorateItemHtml(self::tableGroupLink($resource, $params, $group->name(), (string)($meta['label'] ?? $group->name()), $active===$group->name()), $presentation, $group->name(), $index, is_array($meta['meta'] ?? null) ? $meta['meta'] : []);
+			$index++;
 		}
-		return '<nav class="dp-panel-table-groups" aria-label="'.self::e(self::panelText('table.grouping_aria', ['table'=>(string)$resource->pluralLabel()])).'">'.$html.'</nav>';
+		return '<nav class="dp-panel-table-groups"'.PanelCollectionPresentation::htmlAttributes($presentation, 'segmented').' aria-label="'.self::e(self::panelText('table.grouping_aria', ['table'=>(string)$resource->pluralLabel()])).'">'.$html.'</nav>';
 	}
 
 	/**
@@ -342,7 +348,9 @@ trait PanelRendererTables {
 			'q'=>trim((string)$request->query('q', '')),
 		];
 		$allParams=self::filterQueryValues($baseParams+self::activeColumnParams($request)+self::activeGroupParams($resource, $request));
-		$html=self::tableViewLink($resource, $allParams, 'all', self::panelText('common.all'), 'neutral', $activeView==='', $counts[''] ?? null);
+		$presentation=$resource->resourceTable()->presentationFor('views', 'segmented');
+		$html=PanelCollectionPresentation::decorateItemHtml(self::tableViewLink($resource, $allParams, 'all', self::panelText('common.all'), 'neutral', $activeView==='', $counts[''] ?? null), $presentation, 'all', 0);
+		$index=1;
 		foreach($views as $view){
 			if(!$view instanceof TableView){
 				continue;
@@ -359,7 +367,7 @@ trait PanelRendererTables {
 			$params+=self::activeGroupParams($resource, $request);
 			$params=self::filterQueryValues($params);
 			$badge=$counts[$view->name()] ?? $view->resolveBadge([], $request, $resource);
-			$html.=self::tableViewLink(
+			$item=self::tableViewLink(
 				$resource,
 				$params,
 				$view->name(),
@@ -368,8 +376,10 @@ trait PanelRendererTables {
 				$activeView===$view->name(),
 				$badge
 			);
+			$html.=PanelCollectionPresentation::decorateItemHtml($item, $presentation, $view->name(), $index, is_array($meta['meta'] ?? null) ? $meta['meta'] : []);
+			$index++;
 		}
-		return '<nav class="dp-panel-table-views" aria-label="'.self::e(self::panelText('table.views_aria', ['table'=>(string)$resource->pluralLabel()])).'">'.$html.'</nav>';
+		return '<nav class="dp-panel-table-views"'.PanelCollectionPresentation::htmlAttributes($presentation, 'segmented').' aria-label="'.self::e(self::panelText('table.views_aria', ['table'=>(string)$resource->pluralLabel()])).'">'.$html.'</nav>';
 	}
 
 	/**
@@ -783,14 +793,15 @@ trait PanelRendererTables {
 				continue;
 			}
 			$label=trim((string)($action['label'] ?? ''));
-			$url=trim((string)($action['url'] ?? ''));
+			$url=self::safeWidgetUrl((string)($action['url'] ?? ''));
 			if($label==='' || $url===''){
 				continue;
 			}
 			$tone=self::safeTone((string)($action['tone'] ?? 'neutral'));
 			$icon=trim((string)($action['icon'] ?? ''));
-			$target=trim((string)($action['target'] ?? ''));
-			$targetAttr=$target!=='' ? ' target="'.self::e($target).'" rel="noopener noreferrer"' : '';
+			$target=strtolower(trim((string)($action['target'] ?? '')));
+			$target=in_array($target, ['_blank', '_self'], true) ? $target : '';
+			$targetAttr=$target!=='' ? ' target="'.self::e($target).'"'.($target==='_blank' ? ' rel="noopener noreferrer"' : '') : '';
 			$iconHtml=$icon!=='' ? '<span aria-hidden="true">'.self::e(self::compactNavIcon($icon, $label)).'</span>' : '';
 			$html.='<a class="dp-panel-table-group-action dp-panel-table-group-action-'.$tone.'" href="'.self::e($url).'"'.$targetAttr.'>'.$iconHtml.'<strong>'.self::e($label).'</strong></a>';
 		}
@@ -928,10 +939,14 @@ trait PanelRendererTables {
 		foreach($params as $key=>$value){
 			$hidden.='<input type="hidden" name="'.self::e((string)$key).'" value="'.self::e((string)$value).'">';
 		}
+		$presentation=$resource->resourceTable()->presentationFor('filters', 'grid');
 		$controls='';
+		$index=0;
 		foreach($filters as $filter){
 			if($filter instanceof TableFilter && $filter->isVisible($request, $resource, $resource->resourceTable())){
-				$controls.=self::filterControl($filter, $request);
+				$meta=$filter->toArray();
+				$controls.=PanelCollectionPresentation::decorateItemHtml(self::filterControl($filter, $request), $presentation, $filter->name(), $index, is_array($meta['meta'] ?? null) ? $meta['meta'] : []);
+				$index++;
 			}
 		}
 		if($controls===''){
@@ -939,11 +954,13 @@ trait PanelRendererTables {
 		}
 		$activeChips=self::boardActiveFilterChipsHtml($resource, $request);
 		$activeCount=count(self::activeFilterIndicators($resource, $request));
-		$body='<form class="dp-panel-filters" method="get" action="'.self::e(PanelConfig::resourceUrl($resource, 'board')).'">'
+		$submit=PanelCollectionPresentation::decorateItemHtml('<button class="dp-panel-button dp-panel-button-secondary" type="submit">'.self::e(self::panelText('client.filter')).'</button>', $presentation, 'submit', $index);
+		$reset=PanelCollectionPresentation::decorateItemHtml('<a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(self::boardFilterResetUrl($resource, $request)).'">'.self::e(self::panelText('common.reset', [], 'Reset')).'</a>', $presentation, 'reset', $index+1);
+		$body='<form class="dp-panel-filters"'.PanelCollectionPresentation::htmlAttributes($presentation, 'grid').' method="get" action="'.self::e(PanelConfig::resourceUrl($resource, 'board')).'">'
 			.$hidden
 			.$controls
-			.'<button class="dp-panel-button dp-panel-button-secondary" type="submit">'.self::e(self::panelText('client.filter')).'</button>'
-			.'<a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(self::boardFilterResetUrl($resource, $request)).'">'.self::e(self::panelText('common.reset', [], 'Reset')).'</a>'
+			.$submit
+			.$reset
 			.'</form>'
 			.$activeChips;
 		return self::filterModalLauncher($resource, $activeCount, self::panelText('table.board_filters'), self::panelText('table.board_filters_description'), $body);
@@ -975,10 +992,14 @@ trait PanelRendererTables {
 		foreach($params as $key=>$value){
 			$hidden.='<input type="hidden" name="'.self::e((string)$key).'" value="'.self::e((string)$value).'">';
 		}
+		$presentation=$resource->resourceTable()->presentationFor('filters', 'grid');
 		$controls='';
+		$index=0;
 		foreach($filters as $filter){
 			if($filter instanceof TableFilter && $filter->isVisible($request, $resource, $resource->resourceTable())){
-				$controls.=self::filterControl($filter, $request);
+				$meta=$filter->toArray();
+				$controls.=PanelCollectionPresentation::decorateItemHtml(self::filterControl($filter, $request), $presentation, $filter->name(), $index, is_array($meta['meta'] ?? null) ? $meta['meta'] : []);
+				$index++;
 			}
 		}
 		if($controls===''){
@@ -987,11 +1008,13 @@ trait PanelRendererTables {
 		$activeChips=self::activeFilterChipsHtml($resource, $request);
 		$resetUrl=self::filterResetUrl($resource, $request);
 		$activeCount=count(self::activeFilterIndicators($resource, $request));
-		$body='<form class="dp-panel-filters" method="get" action="'.self::e(PanelConfig::resourceUrl($resource)).'">'
+		$submit=PanelCollectionPresentation::decorateItemHtml('<button class="dp-panel-button dp-panel-button-secondary" type="submit">'.self::e(self::panelText('client.filter')).'</button>', $presentation, 'submit', $index);
+		$reset=PanelCollectionPresentation::decorateItemHtml('<a class="dp-panel-button dp-panel-button-secondary" href="'.self::e($resetUrl).'">'.self::e(self::panelText('common.reset', [], 'Reset')).'</a>', $presentation, 'reset', $index+1);
+		$body='<form class="dp-panel-filters"'.PanelCollectionPresentation::htmlAttributes($presentation, 'grid').' method="get" action="'.self::e(PanelConfig::resourceUrl($resource)).'">'
 			.$hidden
 			.$controls
-			.'<button class="dp-panel-button dp-panel-button-secondary" type="submit">'.self::e(self::panelText('client.filter')).'</button>'
-			.'<a class="dp-panel-button dp-panel-button-secondary" href="'.self::e($resetUrl).'">'.self::e(self::panelText('common.reset', [], 'Reset')).'</a>'
+			.$submit
+			.$reset
 			.'</form>'
 			.$activeChips;
 		return self::filterModalLauncher($resource, $activeCount, self::panelText('table.filters'), self::panelText('table.filters_description', [], 'Narrow this table without losing your place.'), $body);
@@ -1594,8 +1617,8 @@ trait PanelRendererTables {
 		$csvQuery=$params!==[] ? '?'.http_build_query($params) : '';
 		$jsonParams=array_replace($params, ['format'=>'json']);
 		$jsonQuery='?'.http_build_query($jsonParams);
-		return '<a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(PanelConfig::resourceUrl($resource, 'export', $params)).'">'.self::e(self::panelText('table.export_csv')).'</a>'
-			.'<a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(PanelConfig::resourceUrl($resource, 'export', $jsonParams)).'">'.self::e(self::panelText('table.export_json')).'</a>';
+		return '<a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(PanelConfig::resourceUrl($resource, 'export', $params)).'" data-dp-panel-no-ajax="1">'.self::e(self::panelText('table.export_csv')).'</a>'
+			.'<a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(PanelConfig::resourceUrl($resource, 'export', $jsonParams)).'" data-dp-panel-no-ajax="1">'.self::e(self::panelText('table.export_json')).'</a>';
 	}
 
 	/**
@@ -1631,18 +1654,24 @@ trait PanelRendererTables {
 	 * @param int $page Current page.
 	 * @param int $perPage Current page size.
 	 * @param int|null $totalPages Optional precomputed total pages.
+	 * @param array<string,mixed> $dataSource Structured upstream result metadata.
 	 * @return string Pagination HTML or empty string.
 	 */
-	private static function paginationHtml(Resource $resource, PanelRequest $request, int $totalRecords, int $page, int $perPage, ?int $totalPages=null): string {
+	private static function paginationHtml(Resource $resource, PanelRequest $request, int $totalRecords, int $page, int $perPage, ?int $totalPages=null, array $dataSource=[]): string {
 		$totalPages ??=max(1, (int)ceil($totalRecords / max(1, $perPage)));
+		$sourcePage=is_array($dataSource['page'] ?? null) ? $dataSource['page'] : [];
+		$previousCursor=is_string($sourcePage['previous_cursor'] ?? null) ? trim($sourcePage['previous_cursor']) : '';
+		$nextCursor=is_string($sourcePage['next_cursor'] ?? null) ? trim($sourcePage['next_cursor']) : '';
+		$cursorMode=trim((string)$request->query('cursor', ''))!==''
+			|| (($sourcePage['total'] ?? null)===null && ($previousCursor!=='' || $nextCursor!==''));
 		$visibility=PanelConfig::tablePaginationVisibility();
 		if($visibility==='hide_empty' && $totalRecords===0){
 			return '';
 		}
-		if($visibility==='hide_single' && $totalPages<=1){
+		if($visibility==='hide_single' && $totalPages<=1 && !$cursorMode){
 			return '';
 		}
-		if($visibility==='hide_empty_or_single' && ($totalRecords===0 || $totalPages<=1)){
+		if($visibility==='hide_empty_or_single' && ($totalRecords===0 || ($totalPages<=1 && !$cursorMode))){
 			return '';
 		}
 		$page=max(1, min($page, $totalPages));
@@ -1655,6 +1684,18 @@ trait PanelRendererTables {
 			'per_page'=>$perPage,
 		]+self::activeViewParams($resource, $request)+self::activeGroupParams($resource, $request)+self::activeFilterParams($resource, $request)+self::activeColumnParams($request)+self::activeDensityParams($request);
 		$params=array_filter($params, static fn(mixed $value): bool => (string)$value!=='');
+		if($cursorMode){
+			$previous=$previousCursor!==''
+				? '<a class="dp-panel-button dp-panel-button-secondary" href="'.self::pageUrl($resource, $params+['cursor'=>$previousCursor], max(1, $page-1)).'">'.self::e(self::panelText('table.previous')).'</a>'
+				: '<span class="dp-panel-page-disabled">'.self::e(self::panelText('table.previous')).'</span>';
+			$next=$nextCursor!==''
+				? '<a class="dp-panel-button dp-panel-button-secondary" href="'.self::pageUrl($resource, $params+['cursor'=>$nextCursor], $page+1).'">'.self::e(self::panelText('table.next')).'</a>'
+				: '<span class="dp-panel-page-disabled">'.self::e(self::panelText('table.next')).'</span>';
+			return '<nav class="dp-panel-pagination" data-dp-panel-pagination="cursor">'
+				.'<span>'.self::e(self::panelText('data.showing_records', ['start'=>$start, 'end'=>$end, 'total'=>$totalRecords])).'</span>'
+				.'<div>'.$previous.'<span class="dp-panel-page-current" aria-current="page">'.self::e(self::panelText('data.page_count', ['page'=>$page, 'pages'=>$totalPages])).'</span>'.$next.'</div>'
+				.'</nav>';
+		}
 		$previous=$page>1
 			? '<a class="dp-panel-button dp-panel-button-secondary" href="'.self::pageUrl($resource, $params, $page-1).'">'.self::e(self::panelText('table.previous')).'</a>'
 			: '<span class="dp-panel-page-disabled">'.self::e(self::panelText('table.previous')).'</span>';
@@ -1759,7 +1800,7 @@ trait PanelRendererTables {
 		$description=trim((string)($state['description'] ?? ''));
 		$icon=trim((string)($state['icon'] ?? ''));
 		$actionLabel=trim((string)($state['action_label'] ?? ''));
-		$actionUrl=trim((string)($state['action_url'] ?? ''));
+		$actionUrl=self::safeWidgetUrl((string)($state['action_url'] ?? ''));
 		if($actionUrl==='' && $fallbackUrl!==null && $actionLabel!==''){
 			$actionUrl=$fallbackUrl;
 		}
@@ -2179,6 +2220,7 @@ trait PanelRendererTables {
 		}
 		$primary='';
 		$secondary='';
+		$recordItems=[];
 		if(!$includePrimaryLinks){
 			if($resource->can('view', $record, $request?->user())!==false){
 				$primary.='<a class="dp-panel-row-link" href="'.self::e($resource->recordUrl($record, 'show')).'"'.self::resourceModalAttributes('view', self::panelText('data.view_record_title', ['record'=>$rowLabel]), self::panelText('table.review_record_context'), 'lg', 'dialog', true).'>'.self::actionTextHtml(self::panelText('common.view'), 'eye').'</a>';
@@ -2189,11 +2231,17 @@ trait PanelRendererTables {
 		}
 		else {
 			if($resource->can('update', $record, $request?->user())!==false){
-				$primary.='<a class="dp-panel-button dp-panel-button-secondary" href="'.self::e($resource->recordUrl($record, 'edit')).'"'.self::resourceModalAttributes('edit', self::panelText('common.edit').' '.$rowLabel, self::panelText('table.update_record_same_view'), 'xl', 'slide_over', true).'>'.self::actionTextHtml(self::panelText('common.edit'), 'edit').'</a>';
+				$html='<a class="dp-panel-button dp-panel-button-secondary" href="'.self::e($resource->recordUrl($record, 'edit')).'"'.self::resourceModalAttributes('edit', self::panelText('common.edit').' '.$rowLabel, self::panelText('table.update_record_same_view'), 'xl', 'slide_over', true).'>'.self::actionTextHtml(self::panelText('common.edit'), 'edit').'</a>';
+				$primary.=$html;
+				$recordItems[]=['name'=>'edit','html'=>$html,'placement'=>'auto'];
 			}
 		}
 		if($resource->resourceTable()->previewActionEnabled()){
-			$secondary.='<button class="dp-panel-action dp-panel-action-info" type="button" data-dp-panel-preview-row>'.self::actionTextHtml(self::panelText('table.preview'), 'eye').'</button>';
+			$html='<button class="dp-panel-action dp-panel-action-info" type="button" data-dp-panel-preview-row>'.self::actionTextHtml(self::panelText('table.preview'), 'eye').'</button>';
+			$secondary.=$html;
+			if($includePrimaryLinks){
+				$recordItems[]=['name'=>'preview','html'=>$html,'placement'=>'overflow'];
+			}
 		}
 		if($resource->canTransition()){
 			foreach($resource->statusTransitionsList($record) as $transition){
@@ -2203,36 +2251,117 @@ trait PanelRendererTables {
 				){
 					continue;
 				}
-				$secondary.=self::transitionButton($resource, $record, $transition, $request, $returnUrl);
+				$html=self::transitionButton($resource, $record, $transition, $request, $returnUrl);
+				$secondary.=$html;
+				if($includePrimaryLinks && $html!==''){
+					$recordItems[]=['name'=>'transition_'.(string)$transition['name'],'html'=>$html,'placement'=>'auto'];
+				}
 			}
 		}
 		if($resource->canDuplicate() && $resource->can('duplicate', $record, $request?->user())!==false){
-			$secondary.=self::duplicateButton($resource, $record, $request, $returnUrl);
+			$html=self::duplicateButton($resource, $record, $request, $returnUrl);
+			$secondary.=$html;
+			if($includePrimaryLinks && $html!==''){
+				$recordItems[]=['name'=>'duplicate','html'=>$html,'placement'=>'overflow'];
+			}
 		}
 		if($resource->canRestore() && $resource->can('restore', $record, $request?->user())!==false){
-			$secondary.=self::restoreButton($resource, $record, $request, $returnUrl);
+			$html=self::restoreButton($resource, $record, $request, $returnUrl);
+			$secondary.=$html;
+			if($includePrimaryLinks && $html!==''){
+				$recordItems[]=['name'=>'restore','html'=>$html,'placement'=>'auto'];
+			}
 		}
 		if($resource->canDelete() && $resource->can('delete', $record, $request?->user())!==false){
-			$secondary.=self::deleteButton($resource, $record, $request, $returnUrl);
+			$html=self::deleteButton($resource, $record, $request, $returnUrl);
+			$secondary.=$html;
+			if($includePrimaryLinks && $html!==''){
+				$recordItems[]=['name'=>'delete','html'=>$html,'placement'=>'overflow'];
+			}
 		}
 		if($resource->canForceDelete() && $resource->can('force_delete', $record, $request?->user())!==false){
-			$secondary.=self::forceDeleteButton($resource, $record, $request, $returnUrl);
+			$html=self::forceDeleteButton($resource, $record, $request, $returnUrl);
+			$secondary.=$html;
+			if($includePrimaryLinks && $html!==''){
+				$recordItems[]=['name'=>'force_delete','html'=>$html,'placement'=>'overflow'];
+			}
 		}
 		foreach($resource->actionsList() as $action){
 			if($action instanceof ActionGroup){
-				$secondary.=self::resourceActionGroupButton($resource, $action, $record, false, null, $request, $returnUrl);
+				$html=self::resourceActionGroupButton($resource, $action, $record, false, null, $request, $returnUrl);
+				$secondary.=$html;
+				if($includePrimaryLinks && $html!==''){
+					$recordItems[]=['name'=>$action->name(),'html'=>$html,'placement'=>$action->recordPlacementMode()];
+				}
 				continue;
 			}
 			$meta=$action->toArray();
 			if(($meta['bulk'] ?? false)===true || !$action->isVisible($record, $request?->user(), $resource, $request) || $action->can($record, $request?->user(), $resource)===false){
 				continue;
 			}
-			$secondary.=self::actionButton($resource, $action, $key, false, null, $request, $returnUrl, $record);
+			$html=self::actionButton($resource, $action, $key, false, null, $request, $returnUrl, $record);
+			$secondary.=$html;
+			if($includePrimaryLinks && $html!==''){
+				$recordItems[]=['name'=>$action->name(),'html'=>$html,'placement'=>$action->recordPlacementMode()];
+			}
 		}
 		if($includePrimaryLinks){
-			return $primary.$secondary;
+			return self::recordActionsHtml($resource, $recordItems, $rowLabel);
 		}
 		return $primary.self::rowMoreActionsHtml($secondary, $rowLabel);
+	}
+
+	/**
+	 * Applies the resource's bounded record-heading policy and renders one accessible overflow menu.
+	 *
+	 * @param list<array{name:string,html:string,placement:string}> $items
+	 */
+	private static function recordActionsHtml(Resource $resource, array $items, string $recordLabel): string {
+		$inline=[];
+		$overflow=[];
+		$limit=$resource->recordActionLimitValue();
+		foreach($items as $item){
+			$html=trim((string)($item['html'] ?? ''));
+			if($html===''){
+				continue;
+			}
+			$name=(string)($item['name'] ?? '');
+			$placement=$resource->recordActionPlacementFor($name, (string)($item['placement'] ?? 'auto'));
+			if($placement==='primary' || ($placement==='auto' && count($inline)<$limit)){
+				$inline[]=$html;
+			}
+			else {
+				$overflow[]=$html;
+			}
+		}
+		if($overflow!==[]){
+			$inline[]=self::recordActionOverflowHtml($overflow, $recordLabel);
+		}
+		return implode('', $inline);
+	}
+
+	/**
+	 * Renders secondary record actions as a keyboard-operable ActionGroup disclosure.
+	 *
+	 * @param list<string> $actions
+	 */
+	private static function recordActionOverflowHtml(array $actions, string $recordLabel): string {
+		$actions=array_values(array_filter($actions, static fn(string $html): bool=>trim($html)!==''));
+		if($actions===[]){
+			return '';
+		}
+		$recordLabel=trim($recordLabel) ?: self::panelText('common.record');
+		$label=self::panelText('table.more');
+		$aria=self::panelText('table.more_actions_for', ['record'=>$recordLabel]);
+		$count=count($actions);
+		$summary=self::actionTextHtml($label, 'more-horizontal')
+			.'<span class="dp-panel-record-action-count" aria-hidden="true">'.self::e((string)$count).'</span>'
+			.'<span class="dp-panel-action-group-chevron" aria-hidden="true">&#9662;</span>';
+		$menu=self::actionGroupSectionHtml(self::panelText('table.actions'), $recordLabel).implode('', $actions);
+		return '<details class="dp-panel-action-group dp-panel-action-group-width-lg dp-panel-action-group-align-end dp-panel-record-action-overflow" data-dp-panel-record-action-overflow>'
+			.'<summary class="dp-panel-action dp-panel-action-neutral dp-panel-action-style-outline dp-panel-action-size-md" aria-label="'.self::e($aria).'">'.$summary.'</summary>'
+			.'<div class="dp-panel-action-menu dp-panel-record-action-menu" role="menu" aria-label="'.self::e($aria).'">'.$menu.'</div>'
+			.'</details>';
 	}
 
 	/**
@@ -2277,7 +2406,7 @@ trait PanelRendererTables {
 		$tone=self::safeTone((string)($transition['tone'] ?? 'primary'));
 		return '<form class="dp-panel-inline-action" method="post" action="'.self::e($url).'">'
 			.self::csrfInput()
-			.($returnUrl!==null ? self::returnInputUrl($returnUrl) : ($request!==null ? self::returnInput($resource, $request) : ''))
+			.($returnUrl!==null ? self::returnInputUrl($returnUrl, $request) : ($request!==null ? self::returnInput($resource, $request) : ''))
 			.'<input type="hidden" name="transition" value="'.self::e($name).'">'
 			.'<button class="dp-panel-action dp-panel-action-'.$tone.'" type="submit" data-confirm="'.self::e($confirm).'"'.self::resourceModalAttributes($name, $label.' '.$title, $confirm, 'sm', 'dialog', false, $label, self::panelText('common.cancel'), $tone).'>'.self::actionTextHtml($label, $name).'</button>'
 			.'</form>';
@@ -2299,7 +2428,7 @@ trait PanelRendererTables {
 		$confirm=self::panelText('action.duplicate_record_confirm', ['record'=>$title!=='' ? $title : self::panelText('action.this_record')]);
 		return '<form class="dp-panel-inline-action" method="post" action="'.self::e($url).'">'
 			.self::csrfInput()
-			.($returnUrl!==null ? self::returnInputUrl($returnUrl) : ($request!==null ? self::returnInput($resource, $request) : ''))
+			.($returnUrl!==null ? self::returnInputUrl($returnUrl, $request) : ($request!==null ? self::returnInput($resource, $request) : ''))
 			.'<button class="dp-panel-action dp-panel-action-neutral" type="submit" data-confirm="'.self::e($confirm).'"'.self::resourceModalAttributes('duplicate', self::panelText('action.duplicate_record'), $confirm, 'sm', 'dialog', false, $label, self::panelText('common.cancel'), 'neutral').'>'.self::actionTextHtml($label, 'copy').'</button>'
 			.'</form>';
 	}
@@ -2320,7 +2449,7 @@ trait PanelRendererTables {
 		$confirm=self::panelText('action.restore_record_confirm', ['record'=>$title!=='' ? $title : self::panelText('action.this_record')]);
 		return '<form class="dp-panel-inline-action" method="post" action="'.self::e($url).'">'
 			.self::csrfInput()
-			.($returnUrl!==null ? self::returnInputUrl($returnUrl) : ($request!==null ? self::returnInput($resource, $request) : ''))
+			.($returnUrl!==null ? self::returnInputUrl($returnUrl, $request) : ($request!==null ? self::returnInput($resource, $request) : ''))
 			.'<button class="dp-panel-action dp-panel-action-success" type="submit" data-confirm="'.self::e($confirm).'"'.self::resourceModalAttributes('restore', self::panelText('action.restore_record'), $confirm, 'sm', 'dialog', false, $label, self::panelText('common.cancel'), 'success').'>'.self::actionTextHtml($label, 'rotate-ccw').'</button>'
 			.'</form>';
 	}
@@ -2343,7 +2472,7 @@ trait PanelRendererTables {
 		$confirm=self::panelText('action.delete_record_confirm', ['record'=>$title!=='' ? $title : self::panelText('action.this_record')]);
 		return '<form class="dp-panel-inline-action" method="post" action="'.self::e($url).'">'
 			.self::csrfInput()
-			.($returnUrl!==null ? self::returnInputUrl($returnUrl) : ($request!==null ? self::returnInput($resource, $request) : ''))
+			.($returnUrl!==null ? self::returnInputUrl($returnUrl, $request) : ($request!==null ? self::returnInput($resource, $request) : ''))
 			.'<button class="dp-panel-action dp-panel-action-danger" type="submit" data-confirm="'.self::e($confirm).'"'.self::resourceModalAttributes('delete', self::panelText('action.delete_record'), $confirm, 'sm', 'dialog', false, $label, self::panelText('common.cancel'), 'danger').'>'.self::actionTextHtml($label, 'trash').'</button>'
 			.'</form>';
 	}
@@ -2367,7 +2496,7 @@ trait PanelRendererTables {
 		$confirm=self::panelText('action.force_delete_record_confirm', ['record'=>$title!=='' ? $title : self::panelText('action.this_record')]);
 		return '<form class="dp-panel-inline-action" method="post" action="'.self::e($url).'">'
 			.self::csrfInput()
-			.($returnUrl!==null ? self::returnInputUrl($returnUrl) : ($request!==null ? self::returnInput($resource, $request) : ''))
+			.($returnUrl!==null ? self::returnInputUrl($returnUrl, $request) : ($request!==null ? self::returnInput($resource, $request) : ''))
 			.'<button class="dp-panel-action dp-panel-action-danger" type="submit" data-confirm="'.self::e($confirm).'"'.self::resourceModalAttributes('force_delete', self::panelText('action.force_delete_record'), $confirm, 'sm', 'dialog', false, $label, self::panelText('common.cancel'), 'danger').'>'.self::actionTextHtml(self::panelText('action.force_delete'), 'trash-2').'</button>'
 			.'</form>';
 	}
@@ -2384,16 +2513,24 @@ trait PanelRendererTables {
 	 */
 	private static function resourceActions(Resource $resource, PanelRequest $request): string {
 		$html='';
+		$presentation=$resource->resourceTable()->presentationFor('actions', 'inline');
+		$index=0;
 		foreach($resource->actionsList() as $action){
 			if($action instanceof ActionGroup){
-				$html.=self::resourceActionGroupButton($resource, $action, null, false, null, $request);
+				$meta=$action->toArray();
+				$item=self::resourceActionGroupButton($resource, $action, null, false, null, $request);
+				if($item!==''){
+					$html.=PanelCollectionPresentation::decorateItemHtml($item, $presentation, $action->name(), $index, is_array($meta['meta'] ?? null) ? $meta['meta'] : []);
+					$index++;
+				}
 				continue;
 			}
 			$meta=$action->toArray();
 			if(($meta['bulk'] ?? false)===true || !$action->isVisible(null, $request->user(), $resource, $request) || $action->can(null, $request->user(), $resource)===false){
 				continue;
 			}
-			$html.=self::actionButton($resource, $action, null, false, null, $request);
+			$html.=PanelCollectionPresentation::decorateItemHtml(self::actionButton($resource, $action, null, false, null, $request), $presentation, $action->name(), $index, is_array($meta['meta'] ?? null) ? $meta['meta'] : []);
+			$index++;
 		}
 		return $html;
 	}
@@ -2401,15 +2538,16 @@ trait PanelRendererTables {
 	/**
 	 * Renders the status board navigation button when board mode is available.
 	 *
-	 * board navigation requires transition support, at least one status board view, and board
-	 * permission; table-only state is stripped from the board URL.
+	 * Board navigation requires at least one status board view and board permission;
+	 * read-only boards remain available without mutation callbacks, and table-only
+	 * state is stripped from the board URL.
 	 *
 	 * @param Resource $resource Resource owning the board.
 	 * @param PanelRequest $request Current panel request.
 	 * @return string Board button HTML or empty string.
 	 */
 	private static function statusBoardButtonHtml(Resource $resource, PanelRequest $request): string {
-		if($resource->canTransition()===false || self::statusBoardViews($resource)===[] || $resource->can('board', null, $request->user())===false){
+		if(self::statusBoardViews($resource)===[] || $resource->can('board', null, $request->user())===false){
 			return '';
 		}
 		$query=self::queryWithoutPage($request);
@@ -2482,8 +2620,8 @@ trait PanelRendererTables {
 		$csvUrl=PanelConfig::resourceUrl($resource, 'bulk_export', $query);
 		$jsonQuery=array_replace($query, ['format'=>'json']);
 		$jsonUrl=PanelConfig::resourceUrl($resource, 'bulk_export', $jsonQuery);
-		return '<button class="dp-panel-action dp-panel-action-neutral dp-panel-bulk-action" type="submit" form="'.self::e($formId).'" formaction="'.self::e($csvUrl).'">'.self::actionTextHtml(self::panelText('export.csv'), 'file-spreadsheet').'</button>'
-			.'<button class="dp-panel-action dp-panel-action-neutral dp-panel-bulk-action" type="submit" form="'.self::e($formId).'" formaction="'.self::e($jsonUrl).'">'.self::actionTextHtml(self::panelText('export.json'), 'braces').'</button>';
+		return '<button class="dp-panel-action dp-panel-action-neutral dp-panel-bulk-action" type="submit" form="'.self::e($formId).'" formaction="'.self::e($csvUrl).'" data-dp-panel-no-ajax="1">'.self::actionTextHtml(self::panelText('export.csv'), 'file-spreadsheet').'</button>'
+			.'<button class="dp-panel-action dp-panel-action-neutral dp-panel-bulk-action" type="submit" form="'.self::e($formId).'" formaction="'.self::e($jsonUrl).'" data-dp-panel-no-ajax="1">'.self::actionTextHtml(self::panelText('export.json'), 'braces').'</button>';
 	}
 
 	/**
@@ -2599,7 +2737,14 @@ trait PanelRendererTables {
 		if($formId!==null){
 			return $button;
 		}
-		return '<form class="dp-panel-inline-action" method="post" action="'.self::e($actionUrl).'">'.self::csrfInput().($returnUrl!==null ? self::returnInputUrl($returnUrl) : ($request!==null ? self::returnInput($resource, $request) : '')).$button.'</form>';
+		$actionReturn=$returnUrl ?? ($request!==null ? self::actionReturnUrl($resource, $request) : null);
+		if(is_string($actionReturn)){
+			$actionReturn=self::actionNavigationReturnUrl($meta, $actionReturn);
+		}
+		$returnInput=is_string($actionReturn)
+			? self::returnInputUrl($actionReturn, $request, self::actionNavigationIntentOptions($meta))
+			: '';
+		return '<form class="dp-panel-inline-action" method="post" action="'.self::e($actionUrl).'">'.self::csrfInput().$returnInput.$button.'</form>';
 	}
 
 	/**
@@ -2767,7 +2912,7 @@ trait PanelRendererTables {
 	 * @return array<string, mixed> Filtered query parameters.
 	 */
 	private static function queryWithoutPage(PanelRequest $request): array {
-		$query=$request->query();
+		$query=PanelRouteParser::withoutIdentityQuery($request->query());
 		unset($query['page'], $query['__panel_partial']);
 		return self::filterQueryValues($query);
 	}
@@ -2803,8 +2948,8 @@ trait PanelRendererTables {
 	 *
 	 * @return string Hidden return input HTML.
 	 */
-	private static function returnInput(Resource $resource, PanelRequest $request): string {
-		return '<input type="hidden" name="return_to" value="'.self::e(self::actionReturnUrl($resource, $request)).'">';
+	private static function returnInput(Resource $resource, PanelRequest $request, array $options=[]): string {
+		return PanelNavigationIntentRuntime::hiddenInputs(self::actionReturnUrl($resource, $request), $request, $options);
 	}
 
 	/**
@@ -2816,16 +2961,7 @@ trait PanelRendererTables {
 	 * @return string CSRF hidden input HTML or empty string.
 	 */
 	private static function csrfInput(): string {
-		if(!class_exists('\Dataphyre\Mvc\Session')){
-			return '';
-		}
-		try{
-			$token=\Dataphyre\Mvc\Session::token();
-		}
-		catch(\Throwable){
-			return '';
-		}
-		return is_string($token) && $token!=='' ? '<input type="hidden" name="_token" value="'.self::e($token).'">' : '';
+		return PanelCsrfTokenBridge::formInput();
 	}
 
 	/**
@@ -2834,9 +2970,12 @@ trait PanelRendererTables {
 	 * @param string $url Candidate return URL.
 	 * @return string Hidden return input HTML or empty string.
 	 */
-	private static function returnInputUrl(string $url): string {
+	private static function returnInputUrl(string $url, ?PanelRequest $request=null, array $options=[]): string {
 		$url=self::safeReturnUrl($url);
-		return $url!==null ? '<input type="hidden" name="return_to" value="'.self::e($url).'">' : '';
+		if($url===null){ return ''; }
+		return $request instanceof PanelRequest
+			? PanelNavigationIntentRuntime::hiddenInputs($url, $request, $options)
+			: '<input type="hidden" name="return_to" value="'.self::e($url).'">';
 	}
 
 	/**
@@ -2854,9 +2993,9 @@ trait PanelRendererTables {
 		}
 		$query=self::queryWithoutPage($request);
 		$operation=$request->operation();
+		$recordKey=$request->recordKey();
+		unset($query['uri'], $query['operation'], $query['action'], $query['record'], $query['relation'], $query['__panel_partial']);
 		if($operation==='action'){
-			unset($query['operation'], $query['action'], $query['record']);
-			$recordKey=$request->recordKey();
 			if($recordKey!==null && trim($recordKey)!==''){
 				return PanelConfig::resourceUrl($resource, 'show/'.rawurlencode($recordKey), $query);
 			}
@@ -2910,15 +3049,7 @@ trait PanelRendererTables {
 	 * @return string|null Safe return URL or null.
 	 */
 	private static function requestProvidedReturnUrl(PanelRequest $request): ?string {
-		foreach([$request->input('return_to'), $request->query('return_to')] as $candidate){
-			if(is_string($candidate)){
-				$url=self::safeReturnUrl($candidate);
-				if($url!==null){
-					return $url;
-				}
-			}
-		}
-		return null;
+		return PanelNavigationIntentRuntime::returnTarget($request);
 	}
 
 	/**
@@ -2931,17 +3062,7 @@ trait PanelRendererTables {
 	 * @return string|null Safe panel-local URL or null.
 	 */
 	private static function safeReturnUrl(string $url): ?string {
-		$url=trim(str_replace(["\r", "\n"], '', $url));
-		if($url==='' || !PanelConfig::isPanelPath($url)){
-			return null;
-		}
-		if(str_starts_with($url, '//') || str_contains($url, '://')){
-			return null;
-		}
-		$url=preg_replace('/([?&])__panel_partial=[^&#]*/', '$1', $url) ?? $url;
-		$url=str_replace(['?&', '&&'], ['?', '&'], $url);
-		$url=rtrim($url, '?&');
-		return $url;
+		return PanelNavigationTarget::normalize($url);
 	}
 
 	/**

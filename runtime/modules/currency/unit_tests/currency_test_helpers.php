@@ -5,80 +5,41 @@
  * Copyright (c) 2025 Shopiro Ltd.
  * SPDX-License-Identifier: MIT
  */if(!function_exists('dp_currency_unit_test_with_rates')){
-	function dp_currency_unit_test_with_rates(float|int|string|null $amount, string $source_currency, string $target_currency, bool $formatted=false, bool $show_free=false): string|float {
+	function dp_currency_unit_test_install_rates(array $rates=['USD'=>1.0, 'CAD'=>1.35, 'EUR'=>0.9]): void {
 		$source='unit_test';
 		if(class_exists('\dataphyre\currency') && method_exists('\dataphyre\currency', 'exchange_rate_sources')){
 			$sources=\dataphyre\currency::exchange_rate_sources();
 			$source=(string)($sources[0] ?? $source);
 		}
-		$_SESSION['exchange_rate_data']=[
-			'data'=>[
-				'USD'=>1.0,
-				'CAD'=>1.35,
-				'EUR'=>0.9,
+		dataphyre_dpanel_worker_application_state::replaceSession([
+			'exchange_rate_data'=>[
+				'data'=>$rates,
+				'time'=>time(),
+				'source'=>$source,
 			],
-			'time'=>time(),
-			'source'=>$source,
-		];
+		]);
+	}
+
+	function dp_currency_unit_test_with_rates(float|int|string|null $amount, string $source_currency, string $target_currency, bool $formatted=false, bool $show_free=false): string|float {
+		dp_currency_unit_test_install_rates();
 		return \dataphyre\currency::convert($amount, $source_currency, $target_currency, $formatted, $show_free);
 	}
 }
 if(!function_exists('dp_currency_unit_test_convert_minor_units_with_rates')){
 	function dp_currency_unit_test_convert_minor_units_with_rates(int $amount_minor, string $source_currency, string $target_currency): int {
-		$source='unit_test';
-		if(class_exists('\dataphyre\currency') && method_exists('\dataphyre\currency', 'exchange_rate_sources')){
-			$sources=\dataphyre\currency::exchange_rate_sources();
-			$source=(string)($sources[0] ?? $source);
-		}
-		$_SESSION['exchange_rate_data']=[
-			'data'=>[
-				'USD'=>1.0,
-				'CAD'=>1.35,
-				'EUR'=>0.9,
-				'JPY'=>150.0,
-				'KWD'=>0.307,
-			],
-			'time'=>time(),
-			'source'=>$source,
-		];
+		dp_currency_unit_test_install_rates(['USD'=>1.0, 'CAD'=>1.35, 'EUR'=>0.9, 'JPY'=>150.0, 'KWD'=>0.307]);
 		return \dataphyre\currency::convert_minor_units($amount_minor, $source_currency, $target_currency);
 	}
 }
 if(!function_exists('dp_currency_unit_test_currency_facade_convert_minor_units')){
 	function dp_currency_unit_test_currency_facade_convert_minor_units(int $amount_minor, string $source_currency, string $target_currency): int {
-		$source='unit_test';
-		if(class_exists('\dataphyre\currency') && method_exists('\dataphyre\currency', 'exchange_rate_sources')){
-			$sources=\dataphyre\currency::exchange_rate_sources();
-			$source=(string)($sources[0] ?? $source);
-		}
-		$_SESSION['exchange_rate_data']=[
-			'data'=>[
-				'USD'=>1.0,
-				'CAD'=>1.35,
-				'EUR'=>0.9,
-			],
-			'time'=>time(),
-			'source'=>$source,
-		];
+		dp_currency_unit_test_install_rates();
 		return \Dataphyre\Currency\Currency::convertMinorUnits($amount_minor, $source_currency, $target_currency);
 	}
 }
 if(!function_exists('dp_currency_unit_test_framework_convert_minor_units_entrypoints')){
 	function dp_currency_unit_test_framework_convert_minor_units_entrypoints(int $amount_minor, string $source_currency, string $target_currency): array {
-		$source='unit_test';
-		if(class_exists('\dataphyre\currency') && method_exists('\dataphyre\currency', 'exchange_rate_sources')){
-			$sources=\dataphyre\currency::exchange_rate_sources();
-			$source=(string)($sources[0] ?? $source);
-		}
-		$_SESSION['exchange_rate_data']=[
-			'data'=>[
-				'USD'=>1.0,
-				'CAD'=>1.35,
-				'EUR'=>0.9,
-			],
-			'time'=>time(),
-			'source'=>$source,
-		];
+		dp_currency_unit_test_install_rates();
 		$rates=\Dataphyre\Currency\Currency::rates();
 		$snapshot=\Dataphyre\Currency\Currency::snapshot();
 		$context=\Dataphyre\Currency\Currency::context();
@@ -150,10 +111,6 @@ if(!function_exists('dp_currency_unit_test_money_allocate_preserves_minor_units'
 }
 if(!function_exists('dp_currency_unit_test_php_minor_conversion_matches_bcmath')){
 	function dp_currency_unit_test_php_minor_conversion_matches_bcmath(): array {
-		$php=new \ReflectionMethod('\dataphyre\currency', 'php_minor_conversion');
-		$php->setAccessible(true);
-		$bc=new \ReflectionMethod('\dataphyre\currency', 'bc_minor_conversion');
-		$bc->setAccessible(true);
 		$cases=[
 			'typical'=>[12345, '1.234567', '1', 100, 100],
 			'negative'=>[-12345, '1.234567', '1', 100, 100],
@@ -163,8 +120,16 @@ if(!function_exists('dp_currency_unit_test_php_minor_conversion_matches_bcmath')
 		$result=[];
 		foreach($cases as $name=>$case){
 			[$minor, $numerator, $denominator, $source_factor, $target_factor]=$case;
-			$php_result=$php->invoke(null, $minor, $numerator, $denominator, $source_factor, $target_factor);
-			$bc_result=$bc->invoke(null, $minor, $numerator, $denominator, $source_factor, $target_factor, 24);
+			$php_result=\dataphyre_dpanel_worker_fixture_state::invokeNonPublic(
+				'\dataphyre\currency',
+				'php_minor_conversion',
+				[$minor, $numerator, $denominator, $source_factor, $target_factor]
+			);
+			$bc_result=\dataphyre_dpanel_worker_fixture_state::invokeNonPublic(
+				'\dataphyre\currency',
+				'bc_minor_conversion',
+				[$minor, $numerator, $denominator, $source_factor, $target_factor, 24]
+			);
 			$result[$name]=[
 				'php'=>$php_result,
 				'bc'=>$bc_result,
@@ -191,20 +156,7 @@ if(!function_exists('dp_currency_unit_test_exchange_quote_minor_normalization'))
 }
 if(!function_exists('dp_currency_unit_test_stored_money_minor_projection')){
 	function dp_currency_unit_test_stored_money_minor_projection(float|int|string|null $amount, string $source_currency, string $base_currency): array {
-		$source='unit_test';
-		if(class_exists('\dataphyre\currency') && method_exists('\dataphyre\currency', 'exchange_rate_sources')){
-			$sources=\dataphyre\currency::exchange_rate_sources();
-			$source=(string)($sources[0] ?? $source);
-		}
-		$_SESSION['exchange_rate_data']=[
-			'data'=>[
-				'USD'=>1.0,
-				'CAD'=>1.35,
-				'EUR'=>0.9,
-			],
-			'time'=>time(),
-			'source'=>$source,
-		];
+		dp_currency_unit_test_install_rates();
 		return \Dataphyre\Currency\Currency::storeMoney(
 			\Dataphyre\Currency\Currency::money($amount, $source_currency),
 			$base_currency

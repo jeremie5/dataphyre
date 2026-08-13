@@ -7,7 +7,7 @@
  */
 namespace dataphyre;
 
-register_shutdown_function(function(){
+function flush_postgresql_query_queue_at_shutdown(): void {
 	try{
 		do{
 			foreach(postgresql_query_builder::$queued_queries as $queue=>$queue_data){
@@ -21,7 +21,8 @@ register_shutdown_function(function(){
 	}catch(\Throwable $exception){
 		\dataphyre_shutdown_log('Exception on Dataphyre SQL PostgreSQL shutdown callback', $exception);
 	}
-});
+}
+register_shutdown_function(__NAMESPACE__.'\\flush_postgresql_query_queue_at_shutdown');
 
 /**
  * PostgreSQL queue executor for Dataphyre SQL helper functions.
@@ -106,6 +107,9 @@ class postgresql_query_builder {
 	 */
 	private static function connect_to_endpoint(string $endpoint, ?string $dbms_cluster): object|bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		// Callers resolve an ambient DataEnvironment before selecting an endpoint.
+		// Once a cluster is explicit, do not resolve it through the current ambient
+		// environment again: queued and nested work must stay on its captured cluster.
 		$dbms_cluster??=DP_SQL_CFG['default_cluster'];
 		if(isset(self::$conns[$dbms_cluster]))return self::$conns[$dbms_cluster];
 		if(!sql::is_server_available($endpoint)){
@@ -184,7 +188,7 @@ class postgresql_query_builder {
 				if(!$result=pg_execute($conn, $statement_name, $statement['vars'])){
 					throw new \Exception("Execution of prepared statement failed: ".pg_last_error($conn));
 				}
-				if($result instanceof \PgSql\Result){
+				if(is_object($result)){
 					if(pg_num_fields($result)===0){
 						$results[$index]=max(0, pg_affected_rows($result));
 					}
@@ -662,7 +666,7 @@ class postgresql_query_builder {
 			return false;
 		}
 		$query_result=[];
-		if($result instanceof \PgSql\Result){
+		if(is_object($result)){
 			if($associative!==true){
 				if(false!==$row=pg_fetch_assoc($result)){
 					self::normalize_pg_value($row, $result);
@@ -729,7 +733,7 @@ class postgresql_query_builder {
 		if($result===false){
 			return false;
 		}
-		if($result instanceof \PgSql\Result){
+		if(is_object($result)){
 			if($associative!==true){
 				if(false!==$query_result=pg_fetch_assoc($result)){
 					self::normalize_pg_value($query_result, $result);
@@ -785,7 +789,7 @@ class postgresql_query_builder {
 		if($result===false){
 			return $count;
 		}
-		if($result instanceof \PgSql\Result){
+		if(is_object($result)){
 			if($row=pg_fetch_assoc($result)){
 				$count=$row['count'];
 			}
@@ -873,7 +877,7 @@ class postgresql_query_builder {
 				if(!$result=pg_execute($conn, $statement_name, $vars)){
 					throw new \Exception("Failed to execute statement: ".pg_last_error($conn));
 				}
-				if($result instanceof \PgSql\Result){
+				if(is_object($result)){
 					if($row=pg_fetch_assoc($result)){
 						$result_key=$row;
 					}

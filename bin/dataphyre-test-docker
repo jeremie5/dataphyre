@@ -1,0 +1,104 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+dockerfile="$root/docker/testing/Dockerfile"
+image=${DATAPHYRE_TEST_IMAGE:-dataphyre-test:php8.4}
+parent_memory=${DATAPHYRE_TEST_PARENT_MEMORY:-4G}
+engine=${DATAPHYRE_TEST_ENGINE:-auto}
+coverage=0
+required_engine=''
+changed=0
+
+for argument in "$@"; do
+	case "$argument" in
+		--coverage|--coverage=*) coverage=1 ;;
+		--coverage-require=*) required_engine=${argument#--coverage-require=} ;;
+		--changed|--changed=*) changed=1 ;;
+	esac
+done
+
+git_root=$root
+git_prefix=''
+if [ "$changed" -eq 1 ] && command -v git >/dev/null 2>&1; then
+	discovered_git_root=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null || true)
+	if [ -n "$discovered_git_root" ] && [ "$discovered_git_root" != "$root" ]; then
+		git_root=$discovered_git_root
+		git_prefix=$(git -C "$root" rev-parse --show-prefix 2>/dev/null || true)
+	fi
+fi
+
+if [ "$engine" = auto ]; then
+	case "$required_engine" in
+		xdebug)
+			echo 'The Docker test runtime provides phpdbg exact coverage, not Xdebug. Use --coverage-require=phpdbg or DATAPHYRE_TEST_ENGINE=php with a custom image.' >&2
+			exit 2
+			;;
+		included_files) engine=php ;;
+		phpdbg) engine=phpdbg ;;
+		'') if [ "$coverage" -eq 1 ]; then engine=phpdbg; else engine=php; fi ;;
+		*) echo "Unsupported coverage engine: $required_engine" >&2; exit 2 ;;
+	esac
+fi
+
+case "$engine" in
+	php|phpdbg) ;;
+	*) echo 'DATAPHYRE_TEST_ENGINE must be auto, php, or phpdbg.' >&2; exit 2 ;;
+esac
+
+if [ "${DATAPHYRE_TEST_SKIP_BUILD:-0}" != 1 ]; then
+	docker build --file "$dockerfile" --tag "$image" "$root"
+fi
+
+uid=$(id -u)
+gid=$(id -g)
+
+if [ "$engine" = phpdbg ]; then
+	set -- phpdbg -d "memory_limit=$parent_memory" -qrr bin/dataphyre-test "$@"
+else
+	set -- php -d "memory_limit=$parent_memory" bin/dataphyre-test "$@"
+fi
+
+if [ "${DATAPHYRE_TEST_WRITABLE_SOURCE:-0}" = 1 ]; then
+	if [ "$git_root" != "$root" ]; then
+		exec docker run --rm --init \
+			--user "$uid:$gid" \
+			--env HOME=/tmp/dataphyre-test-home \
+			--env DATAPHYRE_TEST_GIT_ROOT=/workspace/repository \
+			--env "DATAPHYRE_TEST_GIT_PREFIX=$git_prefix" \
+			--mount "type=bind,source=$git_root,target=/workspace/repository,readonly" \
+			--mount "type=bind,source=$root,target=/workspace/dataphyre" \
+			--workdir /workspace/dataphyre \
+			"$image" "$@"
+	fi
+	exec docker run --rm --init \
+		--user "$uid:$gid" \
+		--env HOME=/tmp/dataphyre-test-home \
+		--mount "type=bind,source=$root,target=/workspace/dataphyre" \
+		--workdir /workspace/dataphyre \
+		"$image" "$@"
+fi
+
+# Test source is immutable by default. Persistent runner indexes and reports
+# remain writable under cache/, while test-owned disposable files live in the
+# container's /tmp through TestKit workspaces and ROOTPATH sandboxes.
+mkdir -p "$root/cache"
+if [ "$git_root" != "$root" ]; then
+	exec docker run --rm --init \
+		--user "$uid:$gid" \
+		--env HOME=/tmp/dataphyre-test-home \
+		--env DATAPHYRE_TEST_GIT_ROOT=/workspace/repository \
+		--env "DATAPHYRE_TEST_GIT_PREFIX=$git_prefix" \
+		--mount "type=bind,source=$git_root,target=/workspace/repository,readonly" \
+		--mount "type=bind,source=$root,target=/workspace/dataphyre,readonly" \
+		--mount "type=bind,source=$root/cache,target=/workspace/dataphyre/cache" \
+		--workdir /workspace/dataphyre \
+		"$image" "$@"
+fi
+exec docker run --rm --init \
+	--user "$uid:$gid" \
+	--env HOME=/tmp/dataphyre-test-home \
+	--mount "type=bind,source=$root,target=/workspace/dataphyre,readonly" \
+	--mount "type=bind,source=$root/cache,target=/workspace/dataphyre/cache" \
+	--workdir /workspace/dataphyre \
+	"$image" "$@"

@@ -72,11 +72,26 @@ final class PanelBrowserRegressionManifest implements \JsonSerializable {
 	 */
 	public function __construct(string $name, string $url, array $options=[]) {
 		$this->name=Resource::normalizeName($name) ?: 'browser_regression';
-		$this->url=trim($url);
-		if($this->url===''){
-			throw new \InvalidArgumentException('Browser regression URL cannot be empty.');
-		}
+		$this->url=self::normalizeUrl($url);
 		$this->apply($options);
+	}
+
+	/**
+	 * Normalizes a browser target without accepting scriptable or ambiguous schemes.
+	 * Root-relative application paths and absolute HTTP(S) URLs are portable across
+	 * the Windows and Linux browser runners. Protocol-relative, credential-bearing,
+	 * backslash, whitespace, control-byte, and fragment-only targets fail closed.
+	 */
+	public static function normalizeUrl(string $url): string {
+		if($url!==trim($url) || $url==='' || strlen($url)>2048 || preg_match('//u',$url)!==1 || preg_match('/[\x00-\x20\x7F\\\\]/',$url)===1 || $url[0]==='#' || str_starts_with($url,'//')){
+			throw new \InvalidArgumentException('Browser regression URL must be a bounded root-relative or HTTP(S) target.');
+		}
+		if($url[0]==='/'){ return $url; }
+		$parts=parse_url($url);
+		if(!is_array($parts) || !in_array(strtolower((string)($parts['scheme'] ?? '')),['http','https'],true) || trim((string)($parts['host'] ?? ''))==='' || isset($parts['user']) || isset($parts['pass'])){
+			throw new \InvalidArgumentException('Browser regression URL must be a bounded root-relative or HTTP(S) target.');
+		}
+		return $url;
 	}
 
 	/**

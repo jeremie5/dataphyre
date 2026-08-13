@@ -81,6 +81,26 @@ writing because PHP cannot safely export closures. Cache files are written via
 `Dataphyre\Routing\RouteCompiler`, which also owns route source discovery,
 manifest signatures, manifest reads, and exportability checks.
 
+### API metadata bridge
+
+An MVC route may carry compiled Dataphyre API metadata while MVC continues to
+own route matching, middleware, and controller resolution:
+
+```php
+$route=$routes->post('/orders', 'OrderController@store')
+	->api($endpoint->compile()['api'])
+	->name('orders.store');
+```
+
+`RouteDefinition::apiMetadata()` returns the attached metadata and `compile()`
+preserves it under the route's `api` key. A route name fills an empty API
+`operation_id` and is retained as an alias. During dispatch, declared API
+security is authorized before MVC middleware and API execution metadata runs
+inside the ordinary MVC middleware stack. If the API framework is unavailable,
+declared security or execution returns a non-cacheable 503 response; it never
+falls through to an unprotected MVC handler. Metadata-only routes may still use
+their ordinary MVC handler.
+
 ## Controllers
 
 ```php
@@ -515,17 +535,17 @@ Each entry includes `methods`, `domain`, `path`, `name`, `action`, `middleware`,
 The same data is available from the CLI:
 
 ```powershell
-php common/dataphyre/runtime/modules/mvc/kernel/route_list.php shop
-php common/dataphyre/runtime/modules/mvc/kernel/route_list.php --config=common/dataphyre/config/mvc.example.php --json
+php dataphyre/runtime/modules/mvc/kernel/route_list.php shop
+php dataphyre/runtime/modules/mvc/kernel/route_list.php --config=dataphyre/config/mvc.example.php --json
 ```
 
 Compiled route manifests can be warmed ahead of the first request when
 `manifest_cache` points at a writable file:
 
 ```powershell
-php common/dataphyre/runtime/modules/mvc/kernel/cache_routes.php shop
-php common/dataphyre/runtime/modules/mvc/kernel/cache_routes.php --config=common/dataphyre/config/mvc.example.php
-php common/dataphyre/runtime/modules/mvc/kernel/clear_cached_routes.php shop
+php dataphyre/runtime/modules/mvc/kernel/cache_routes.php shop
+php dataphyre/runtime/modules/mvc/kernel/cache_routes.php --config=dataphyre/config/mvc.example.php
+php dataphyre/runtime/modules/mvc/kernel/clear_cached_routes.php shop
 ```
 
 Groups can prefix route names with `as`:
@@ -857,7 +877,7 @@ Dataphyre SQL module.
 ## Regression Check
 
 ```powershell
-php common\dataphyre\runtime\modules\mvc\kernel\mvc_regression.php
+php dataphyre\runtime\modules\mvc\kernel\mvc_regression.php
 ```
 
 The runner verifies route parameters, controller string resolution, named URL

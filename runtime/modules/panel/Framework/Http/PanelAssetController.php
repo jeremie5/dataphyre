@@ -55,7 +55,32 @@ final class PanelAssetController {
 	 */
 	public static function response(string $asset, ?\Dataphyre\Http\Request $request=null): mixed {
 		$asset=basename(str_replace('\\', '/', $asset));
-		$payload=PanelRenderer::assetContent($asset);
+		$physical=strtolower($asset)==='panel-assets.json'
+			|| str_starts_with(strtolower($asset), 'panel-style-')
+			|| str_starts_with(strtolower($asset), 'panel-runtime-');
+		$capabilityScoped=in_array(strtolower($asset), ['panel.css', 'panel.js'], true)
+			|| strtolower($asset)==='panel-assets.json'
+			|| preg_match('/\Apanel-style-[a-z0-9][a-z0-9-]{0,63}\.css\z/i', $asset)===1;
+		$capabilities=null;
+		$capabilityToken=$request!==null ? trim((string)$request->query('dp_panel_caps', '')) : '';
+		if($capabilityToken!==''){
+			$capabilities=PanelAssetCapabilityManifest::decodeToken($capabilityToken);
+			if($capabilities===null || !$capabilityScoped){
+				$response=self::httpResponse('Panel asset variant not found.', 404, [
+					'Content-Type'=>'text/plain; charset=UTF-8',
+					'Cache-Control'=>'no-store',
+					'X-Content-Type-Options'=>'nosniff',
+				]);
+				self::trace($asset, $request, $response, false);
+				return $response;
+			}
+		}
+		$payload=strtolower($asset)==='panel-assets.json' && $request!==null && !PanelContext::has('asset_url_builder')
+			? PanelContext::run(
+				['asset_url_builder'=>self::manifestAssetUrlBuilder($request)],
+				static fn(): ?array=>PanelRenderer::assetContent($asset, $capabilities),
+			)
+			: PanelRenderer::assetContent($asset, $capabilities);
 		if($payload===null){
 			$response=self::httpResponse('Panel asset not found.', 404, [
 				'Content-Type'=>'text/plain; charset=UTF-8',
@@ -74,7 +99,11 @@ final class PanelAssetController {
 			'Last-Modified'=>gmdate('D, d M Y H:i:s', $mtime).' GMT',
 			'Vary'=>'Accept-Encoding',
 			'X-Content-Type-Options'=>'nosniff',
+			'X-Dataphyre-Panel-Asset-Mode'=>$physical ? 'physical' : ($capabilities===null ? 'full' : 'capability'),
 		];
+		if($capabilities!==null){
+			$headers['X-Dataphyre-Panel-Capabilities']=implode(',', $capabilities);
+		}
 		$response=self::httpResponse(strtoupper((string)($request?->method() ?? 'GET'))==='HEAD' ? '' : $content, 200, array_replace($headers, [
 			'Content-Length'=>(string)strlen($content),
 		]));
@@ -83,6 +112,19 @@ final class PanelAssetController {
 		}
 		self::trace($asset, $request, $response, true);
 		return $response;
+	}
+
+	/** Returns a same-route URL builder for the public physical-asset manifest. */
+	private static function manifestAssetUrlBuilder(\Dataphyre\Http\Request $request): \Closure {
+		$path='/'.ltrim($request->path(), '/');
+		$directory=preg_match('#/assets/[^/]+\z#', $path)===1 ? substr($path, 0, (int)strrpos($path, '/')) : '';
+		return static function(string $asset) use ($path, $directory): string {
+			$asset=basename(str_replace('\\', '/', trim($asset)));
+			if($directory!==''){
+				return $directory.'/'.rawurlencode($asset);
+			}
+			return $path.'?dp_panel_asset='.rawurlencode($asset);
+		};
 	}
 
 	/**
@@ -110,14 +152,31 @@ final class PanelAssetController {
 	 * @return void
 	 */
 	private static function trace(string $asset, ?\Dataphyre\Http\Request $request, mixed $response, bool $found): void {
+		$headers=self::responseHeaders($response);
 		PanelTrace::record('route.asset', [
 			'asset'=>$asset,
 			'path'=>$request?->path() ?? '',
 			'method'=>$request?->method() ?? '',
 			'status'=>self::responseStatus($response),
 			'found'=>$found,
-			'content_type'=>is_object($response) ? (string)($response->headers['Content-Type'] ?? '') : '',
+			'content_type'=>(string)($headers['Content-Type'] ?? $headers['content-type'] ?? ''),
 		]);
+	}
+
+	/**
+	 * Reads headers from either the HTTP response or the Panel fallback result.
+	 *
+	 * @param mixed $response Supported response value.
+	 * @return array<string,mixed> Response header map.
+	 */
+	private static function responseHeaders(mixed $response): array {
+		if($response instanceof PanelPageResult){
+			return $response->headers();
+		}
+		if(is_object($response) && isset($response->headers) && is_array($response->headers)){
+			return $response->headers;
+		}
+		return [];
 	}
 
 	/**

@@ -36,7 +36,7 @@ trait dataphyre_mcp_client_readiness_surfaces {
 			'documentation_api'=>[
 				'status'=>'implemented',
 				'tools'=>['dataphyre_search_docs', 'dataphyre_read_doc', 'dataphyre_module_docs_pack', 'dataphyre_docs_chunks_export', 'dataphyre_docs_index_plan', 'dataphyre_embeddings_readiness_plan', 'dataphyre_remote_docs_readiness_plan', 'dataphyre_datadoc_static_summary', 'dataphyre_datadoc_runtime_readiness_plan'],
-				'resources'=>['dataphyre://module-index', 'dataphyre://runtime-readme', 'dataphyre://mcp-plan', 'dataphyre://ai-guidelines', 'dataphyre://agentic-enterprise', 'dataphyre://mcp-capabilities'],
+				'resources'=>['dataphyre://module-index', 'dataphyre://runtime-readme', 'dataphyre://mcp-plan', 'dataphyre://ai-guidelines', 'dataphyre://agentic-enterprise', 'dataphyre://mcp-capabilities', 'dataphyre://contracts', 'dataphyre://panel'],
 				'remaining'=>['client-owned embeddings adapter only after embeddings readiness contract is enforceable', 'unsafe-gated remote documentation fetcher only after remote docs readiness contract is enforceable', 'unsafe-gated Datadoc SQL-backed reader only after Datadoc runtime readiness contract is enforceable'],
 			],
 			'routes_and_urls'=>[
@@ -54,9 +54,24 @@ trait dataphyre_mcp_client_readiness_surfaces {
 				'tools'=>['dataphyre_list_config_keys', 'dataphyre_config_shape_read', 'dataphyre_config_value_preview', 'dataphyre_storage_config_summary', 'dataphyre_storage_driver_catalog', 'dataphyre_mcp_safety_boundary_report'],
 				'remaining'=>[],
 			],
+			'contract_intelligence'=>[
+				'status'=>'implemented_static',
+				'tools'=>['dataphyre_contract_catalog', 'dataphyre_contract_describe', 'dataphyre_unit_tests_list', 'dataphyre_unit_test_manifest_read'],
+				'resources'=>['dataphyre://contracts'],
+				'prompts'=>['dataphyre_contract_workflow'],
+				'remaining'=>['expanded datasets and computed contract versions remain delegated to the authoritative TestKit list command'],
+			],
+			'panel_capability_intelligence'=>[
+				'status'=>'implemented_static',
+				'tools'=>['dataphyre_panel_capability_catalog', 'dataphyre_panel_capability_describe', 'dataphyre_panel_surface_graph', 'dataphyre_panel_recipe_plan', 'dataphyre_panel_integration_plan', 'dataphyre_panel_verification_plan'],
+				'resources'=>['dataphyre://panel'],
+				'prompts'=>['dataphyre_panel_workflow', 'dataphyre_panel_platform_workflow', 'dataphyre_panel_operations_workflow', 'dataphyre_panel_studio_workflow', 'dataphyre_panel_realtime_workflow', 'dataphyre_panel_adapter_workflow'],
+				'skills'=>['dataphyre-panel-builder'],
+				'remaining'=>[],
+			],
 			'diagnostics'=>[
 				'status'=>'implemented',
-				'tools'=>['dataphyre_tracelog_artifacts_list', 'dataphyre_tracelog_read', 'dataphyre_tracelog_search', 'dataphyre_diagnostics_last_error', 'dataphyre_browser_diagnostics_readiness_plan', 'dataphyre_flightdeck_surfaces_list', 'dataphyre_unit_tests_list', 'dataphyre_unit_test_manifest_read', 'dataphyre_browser_regression_manifest_summary', 'dataphyre_verification_surface_catalog', 'dataphyre_mcp_doctor'],
+				'tools'=>['dataphyre_tracelog_artifacts_list', 'dataphyre_tracelog_read', 'dataphyre_tracelog_search', 'dataphyre_diagnostics_last_error', 'dataphyre_browser_diagnostics_readiness_plan', 'dataphyre_flightdeck_surfaces_list', 'dataphyre_browser_regression_manifest_summary', 'dataphyre_verification_surface_catalog', 'dataphyre_mcp_doctor'],
 				'remaining'=>['unsafe-gated external browser runner only after browser diagnostics readiness contract is enforceable'],
 			],
 			'code_generation_helpers'=>[
@@ -67,7 +82,7 @@ trait dataphyre_mcp_client_readiness_surfaces {
 			'agent_context'=>[
 				'status'=>'implemented',
 				'tools'=>['dataphyre_agent_context_generate', 'dataphyre_app_builder_plan_generate', 'dataphyre_task_pack_generate', 'dataphyre_mcp_client_config_summary', 'dataphyre_mcp_client_install_checklist', 'dataphyre_mcp_client_config_install_plan', 'dataphyre_mcp_smoke_test_export', 'dataphyre_mcp_client_onboarding_pack', 'dataphyre_mcp_client_troubleshoot', 'dataphyre_mcp_client_compatibility_matrix', 'dataphyre_mcp_client_config_audit', 'dataphyre_mcp_surface_changelog', 'dataphyre_mcp_tool_call_examples_export', 'dataphyre_mcp_workflow_playbook_export', 'dataphyre_mcp_workflow_readiness_audit', 'dataphyre_mcp_workflow_session_export', 'dataphyre_mcp_workflow_transcript_schema_export', 'dataphyre_mcp_workflow_state_schema_export', 'dataphyre_mcp_workflow_state_audit', 'dataphyre_mcp_workflow_state_summary_export', 'dataphyre_mcp_workflow_state_transition_export', 'dataphyre_mcp_workflow_state_sync_pack_export', 'dataphyre_mcp_workflow_state_timeline_export', 'dataphyre_mcp_workflow_state_resume_brief_export', 'dataphyre_mcp_workflow_transcript_audit', 'dataphyre_mcp_workflow_transcript_summary_export', 'dataphyre_mcp_workflow_checkpoint_export', 'dataphyre_mcp_workflow_handoff_pack_export', 'dataphyre_mcp_workflow_catalog', 'dataphyre_mcp_workflow_lifecycle_export', 'dataphyre_mcp_workflow_next_action_export', 'dataphyre_mcp_workflow_recommend', 'dataphyre_mcp_workflow_recommendation_handoff_export', 'dataphyre_mcp_task_start_pack_export', 'dataphyre_mcp_agent_brief_export', 'dataphyre_mcp_tool_finder', 'dataphyre_mcp_resource_finder', 'dataphyre_mcp_readiness_report'],
-				'prompts'=>['dataphyre_feature_plan', 'dataphyre_debug_triage', 'dataphyre_panel_workflow', 'dataphyre_runtime_guidelines', 'dataphyre_release_triage', 'dataphyre_sql_schema_workflow', 'dataphyre_route_manifest_workflow', 'dataphyre_diagnostics_workflow'],
+				'prompts'=>['dataphyre_feature_plan', 'dataphyre_debug_triage', 'dataphyre_panel_workflow', 'dataphyre_panel_platform_workflow', 'dataphyre_panel_operations_workflow', 'dataphyre_panel_studio_workflow', 'dataphyre_panel_realtime_workflow', 'dataphyre_panel_adapter_workflow', 'dataphyre_runtime_guidelines', 'dataphyre_release_triage', 'dataphyre_sql_schema_workflow', 'dataphyre_route_manifest_workflow', 'dataphyre_diagnostics_workflow', 'dataphyre_contract_workflow'],
 				'remaining'=>['unsafe-gated client config file writer only after config install plan is enforceable'],
 			],
 			'skill_registration'=>[
@@ -147,9 +162,10 @@ trait dataphyre_mcp_client_readiness_surfaces {
 		$app_builder_required=[
 			'tools'=>['dataphyre_app_builder_plan_generate', 'dataphyre_task_pack_generate', 'dataphyre_mcp_task_start_pack_export', 'dataphyre_mcp_agent_brief_export', 'dataphyre_mcp_tool_finder', 'dataphyre_mcp_resource_finder'],
 			'prompts'=>['dataphyre_feature_plan', 'dataphyre_panel_workflow'],
-			'resources'=>[
-				'dataphyre://doc/common/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md',
-				'dataphyre://doc/common/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md',
+				'resources'=>[
+					'dataphyre://panel',
+					'dataphyre://doc/dataphyre/runtime/modules/panel/documentation/Dataphyre_Panel.md',
+				'dataphyre://doc/dataphyre/runtime/modules/sql/documentation/Dataphyre_SQL.md',
 				'dataphyre://module-index',
 			],
 			'skills'=>['dataphyre-app-builder'],

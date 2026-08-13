@@ -49,7 +49,7 @@ trait PanelRendererActions {
 		if($relation->can('view', $record, $request->user(), $resource)===false){
 			return self::forbidden($resource, $request);
 		}
-		$relationAction=Resource::normalizeName((string)$request->input('relation_action', ''));
+		$relationAction=Resource::normalizeName(self::scalarString($request->input('relation_action', '')));
 		if(strtoupper($request->method())==='POST' && $relationAction!==''){
 			return self::relationActionResult($resource, $relation, $request, $record, $relationAction);
 		}
@@ -122,7 +122,7 @@ trait PanelRendererActions {
 					'request'=>$request->toArray(),
 				], 404, ['action'=>$action]);
 			}
-			$relatedKey=trim((string)$request->input('related_key', ''));
+			$relatedKey=trim(self::scalarString($request->input('related_key', '')));
 			if($relatedKey===''){
 				return self::panelEmptyPage('relation.choose_record', 'relation.choose_record_body', [
 					'kind'=>'relation_'.$action.'_missing_key',
@@ -146,7 +146,7 @@ trait PanelRendererActions {
 					'request'=>$request->toArray(),
 				], 404, ['action'=>$action]);
 			}
-			$childKey=trim((string)$request->input('child_key', ''));
+			$childKey=trim(self::scalarString($request->input('child_key', '')));
 			if($childKey===''){
 				return self::panelEmptyPage('relation.choose_row', 'relation.choose_row_body', [
 					'kind'=>'relation_'.$action.'_missing_key',
@@ -171,7 +171,7 @@ trait PanelRendererActions {
 			}
 			$ordered=$request->input('ordered_keys', []);
 			$ordered=is_array($ordered) ? $ordered : [$ordered];
-			$ordered=array_values(array_filter(array_map(static fn(mixed $value): string => trim((string)$value), $ordered), static fn(string $value): bool => $value!==''));
+			$ordered=array_values(array_filter(array_map(static fn(mixed $value): string => trim(self::scalarString($value)), $ordered), static fn(string $value): bool => $value!==''));
 			if($ordered===[]){
 				return self::panelEmptyPage('relation.choose_order', 'relation.choose_order_body', [
 					'kind'=>'relation_reorder_missing_keys',
@@ -192,7 +192,7 @@ trait PanelRendererActions {
 					'request'=>$request->toArray(),
 				], 404);
 			}
-			$childKey=trim((string)$request->input('child_key', ''));
+			$childKey=trim(self::scalarString($request->input('child_key', '')));
 			if($childKey===''){
 				return self::panelEmptyPage('relation.choose_row', 'relation.choose_row_body', [
 					'kind'=>'relation_update_pivot_missing_key',
@@ -292,10 +292,11 @@ trait PanelRendererActions {
 			}
 		}
 		$actionMeta=$action->resolvedMeta($record, $request, $resource);
+		$navigationReturnUrl=self::actionNavigationReturnUrl($actionMeta, self::actionReturnUrl($resource, $request));
 		$modalContent=$action->resolveModalContent($record, $request, $resource);
 		if(!$action->hasFields() && ($actionMeta['has_handler'] ?? false)!==true && $modalContent!==null){
 			$content=self::modalContentHtml($modalContent) ?? '<p class="dp-panel-empty">'.self::e(self::panelText('action.no_details')).'</p>';
-			$returnUrl=self::actionReturnUrl($resource, $request);
+			$returnUrl=$navigationReturnUrl;
 			return self::page((string)($actionMeta['modal_heading'] ?? $actionMeta['label'] ?? self::panelText('action.default_label')), $content.'<div class="dp-panel-toolbar"><a class="dp-panel-button" href="'.self::e($returnUrl).'">'.self::e(self::panelText('common.back')).'</a></div>', [
 				'kind'=>'action_content',
 				'resource'=>$resource->toArray(),
@@ -315,7 +316,7 @@ trait PanelRendererActions {
 		$lifecycleContext=[
 			'action'=>$actionMeta,
 			'action_state'=>$actionState,
-			'return_url'=>self::actionReturnUrl($resource, $request),
+			'return_url'=>$navigationReturnUrl,
 			'trace'=>'action.lifecycle_result',
 		];
 		$lifecycle=$action->runBeforeValidate($record, $request, $resource);
@@ -324,7 +325,7 @@ trait PanelRendererActions {
 			return self::lifecycleResult($resource, $request, $record, 'action', $lifecycle, null, [], $lifecycleContext);
 		}
 		if($action->hasFields()){
-			if((string)$request->input('__panel_action_submit', '')!=='1'){
+			if(self::scalarString($request->input('__panel_action_submit', ''))!=='1'){
 				return self::actionForm($resource, $action, $request, $record);
 			}
 			$state=$action->form()->submit($request, $record, 'action');
@@ -377,7 +378,7 @@ trait PanelRendererActions {
 			$outcome['redirect']=self::safeReturnUrl((string)$actionMeta['redirect_to']);
 		}
 		if($outcome['redirect']===null && strtoupper($request->method())==='POST'){
-			$outcome['redirect']=self::actionReturnUrl($resource, $request);
+			$outcome['redirect']=$navigationReturnUrl;
 		}
 		PanelTrace::record('action.completed', [
 			'resource'=>$resource,
@@ -501,15 +502,16 @@ trait PanelRendererActions {
 			$section=trim((string)($meta['meta']['section'] ?? ''));
 			$section=$section!=='' ? $section : self::panelText('record.details');
 			$sections[$section] ??=[];
-			$sections[$section][]=self::fieldHtml($name, $meta, $value, $state->fieldErrors($name), !$fieldVisible);
+			$sections[$section][]=['html'=>self::fieldHtml($name, $meta, $value, $state->fieldErrors($name), !$fieldVisible), 'name'=>$name, 'meta'=>is_array($meta['meta'] ?? null) ? $meta['meta'] : []];
 		}
 		$hidden='<input type="hidden" name="__panel_action_submit" value="1">';
 		$hidden.=self::actionConfirmationInput($actionMeta);
-		$hidden.=self::returnInput($resource, $request);
+		$returnUrl=self::actionNavigationReturnUrl($actionMeta, self::actionReturnUrl($resource, $request));
+		$hidden.=self::returnInputUrl($returnUrl, $request, self::actionNavigationIntentOptions($actionMeta));
 		$selected=$request->input('selected', []);
 		$selected=is_array($selected) ? $selected : [$selected];
 		foreach($selected as $value){
-			$value=trim((string)$value);
+				$value=trim(self::scalarString($value));
 			if($value!==''){
 				$hidden.='<input type="hidden" name="selected[]" value="'.self::e($value).'">';
 			}
@@ -521,7 +523,6 @@ trait PanelRendererActions {
 		}
 		$recordKey=$request->recordKey();
 		$actionUrl=self::actionUrl($resource, (string)$actionMeta['name'], $recordKey, $request);
-		$returnUrl=self::actionReturnUrl($resource, $request);
 		$actionFormMeta=is_array($actionMeta['fields']['meta'] ?? null) ? $actionMeta['fields']['meta'] : [];
 		if(!is_array($actionFormMeta['accessibility'] ?? null)){
 			$resourceFormMeta=$resource->form()->toArray()['meta'] ?? [];
@@ -529,12 +530,17 @@ trait PanelRendererActions {
 				$actionFormMeta['accessibility']=$resourceFormMeta['accessibility'];
 			}
 		}
+		$formPresentations=is_array($actionMeta['fields']['presentation'] ?? null) ? $actionMeta['fields']['presentation'] : [];
+		$toolbarPresentation=$formPresentations['toolbar'] ?? $formPresentations['actions'] ?? null;
+		$toolbarAttributes=$toolbarPresentation===null ? '' : PanelCollectionPresentation::htmlAttributes($toolbarPresentation, 'inline');
+		$cancelAction=PanelCollectionPresentation::decorateItemHtml('<a class="dp-panel-button dp-panel-button-secondary" href="'.self::e($returnUrl).'" data-dp-panel-modal-cancel="1">'.self::e(self::panelText('common.cancel')).'</a>', $toolbarPresentation, 'cancel', 0);
+		$submitAction=PanelCollectionPresentation::decorateItemHtml('<button class="dp-panel-button" type="submit">'.self::e((string)$actionMeta['label']).'</button>', $toolbarPresentation, 'submit', 1);
 		$content='<form class="dp-panel-form" method="post"'.self::formEncodingAttr($actionMeta['fields']['fields'] ?? []).' action="'.self::e($actionUrl).'" data-dp-panel-reactive-url="'.self::e($actionUrl).'"'.self::accessibilityDefaultAttrs($actionFormMeta).'>'
 			.self::csrfInput()
 			.$hidden
 			.$summary
-			.self::formSectionsHtml($sections, (int)($actionMeta['fields']['columns'] ?? 1), $sectionMeta)
-			.'<div class="dp-panel-toolbar"><a class="dp-panel-button dp-panel-button-secondary" href="'.self::e($returnUrl).'">'.self::e(self::panelText('common.cancel')).'</a><button class="dp-panel-button" type="submit">'.self::e((string)$actionMeta['label']).'</button></div>'
+			.self::formSectionsHtml($sections, (int)($actionMeta['fields']['columns'] ?? 1), $sectionMeta, is_array($actionMeta['fields']['presentation'] ?? null) ? $actionMeta['fields']['presentation'] : [])
+			.'<div class="dp-panel-toolbar"'.$toolbarAttributes.'>'.$cancelAction.$submitAction.'</div>'
 			.'</form>';
 		$data=[
 			'kind'=>'action_form',
@@ -576,16 +582,17 @@ trait PanelRendererActions {
 	private static function actionConfirmationForm(Resource $resource, Action $action, PanelRequest $request, mixed $record=null, int $status=409): PanelPageResult {
 		$actionMeta=$action->resolvedMeta($record, $request, $resource);
 		$recordKey=$request->recordKey();
-		$hidden=self::actionConfirmationInput($actionMeta).self::returnInput($resource, $request);
+		$returnUrl=self::actionNavigationReturnUrl($actionMeta, self::actionReturnUrl($resource, $request));
+		$hidden=self::actionConfirmationInput($actionMeta).self::returnInputUrl($returnUrl, $request, self::actionNavigationIntentOptions($actionMeta));
 		$selected=$request->input('selected', []);
 		$selected=is_array($selected) ? $selected : [$selected];
 		foreach($selected as $value){
-			$value=trim((string)$value);
+				$value=trim(self::scalarString($value));
 			if($value!==''){
 				$hidden.='<input type="hidden" name="selected[]" value="'.self::e($value).'">';
 			}
 		}
-		$content=self::actionConfirmationContent($actionMeta, self::actionUrl($resource, (string)$actionMeta['name'], $recordKey, $request), self::actionReturnUrl($resource, $request), $hidden);
+		$content=self::actionConfirmationContent($actionMeta, self::actionUrl($resource, (string)$actionMeta['name'], $recordKey, $request), $returnUrl, $hidden);
 		$actionMode=($actionMeta['bulk'] ?? false)===true && is_array($record) ? 'bulk_action' : 'action';
 		$actionState=$action->state($record, $request, $resource, $actionMode, null, [], null, null, ['stage'=>'confirmation']);
 		$data=[
@@ -618,7 +625,7 @@ trait PanelRendererActions {
 	 * @return bool True when confirmation is present in submitted input or query data.
 	 */
 	private static function actionConfirmed(PanelRequest $request): bool {
-		return (string)$request->input('__panel_action_confirm', $request->query('__panel_action_confirm', ''))==='1';
+		return self::scalarString($request->input('__panel_action_confirm', $request->query('__panel_action_confirm', '')))==='1';
 	}
 
 	/**
@@ -668,6 +675,26 @@ trait PanelRendererActions {
 			.'</form>';
 	}
 
+	/** @param array<string,mixed> $actionMeta @return array<string,mixed> */
+	private static function actionNavigationIntentOptions(array $actionMeta): array {
+		$intent=is_array($actionMeta['navigation_intent'] ?? null) ? $actionMeta['navigation_intent'] : [];
+		if(($intent['enabled'] ?? true)!==true){ return []; }
+		$options=[
+			'operation'=>(string)($intent['operation'] ?? 'return'),
+			'outcome'=>(string)($intent['outcome'] ?? 'complete'),
+		];
+		if(is_string($intent['audience'] ?? null) && $intent['audience']!==''){ $options['audience']=$intent['audience']; }
+		return $options;
+	}
+
+	/** @param array<string,mixed> $actionMeta */
+	private static function actionNavigationReturnUrl(array $actionMeta, string $fallback): string {
+		$intent=is_array($actionMeta['navigation_intent'] ?? null) ? $actionMeta['navigation_intent'] : [];
+		if(($intent['enabled'] ?? true)!==true || !is_string($intent['return_target'] ?? null)){ return $fallback; }
+		$target=PanelNavigationTarget::normalize($intent['return_target']);
+		return $target ?? $fallback;
+	}
+
 	/**
 	 * Renders the bulk-update form for selected resource records.
 	 *
@@ -692,7 +719,7 @@ trait PanelRendererActions {
 		$selected=$request->input('selected', []);
 		$selected=is_array($selected) ? $selected : [$selected];
 		foreach($selected as $value){
-			$value=trim((string)$value);
+				$value=trim(self::scalarString($value));
 			if($value!==''){
 				$hidden.='<input type="hidden" name="selected[]" value="'.self::e($value).'">';
 			}
@@ -712,7 +739,7 @@ trait PanelRendererActions {
 			$section=trim((string)($meta['meta']['section'] ?? ''));
 			$section=$section!=='' ? $section : self::panelText('record.details');
 			$sections[$section] ??=[];
-			$sections[$section][]=self::fieldHtml($name, $meta, $value, $state->fieldErrors($name), !$fieldVisible);
+			$sections[$section][]=['html'=>self::fieldHtml($name, $meta, $value, $state->fieldErrors($name), !$fieldVisible), 'name'=>$name, 'meta'=>is_array($meta['meta'] ?? null) ? $meta['meta'] : []];
 		}
 		$summary='<div class="dp-panel-notice dp-panel-notice-info"><span>'.self::e(self::panelText('action.selected_records_will_update', ['count'=>count($records), 'record'=>self::panelText(count($records)===1 ? 'common.record' : 'common.records')])).'</span></div>';
 		if($state->invalid()){
@@ -720,12 +747,17 @@ trait PanelRendererActions {
 			$summary='<div class="dp-panel-alert">'.self::e(self::panelText('action.field_issue_summary', ['count'=>$count, 'issue'=>self::panelText($count===1 ? 'action.issue' : 'action.issues')])).'</div>'.$summary;
 		}
 		$reactiveUrl=PanelConfig::resourceUrl($resource, 'bulk_update');
+		$formPresentations=is_array($formMeta['presentation'] ?? null) ? $formMeta['presentation'] : [];
+		$toolbarPresentation=$formPresentations['toolbar'] ?? $formPresentations['actions'] ?? null;
+		$toolbarAttributes=$toolbarPresentation===null ? '' : PanelCollectionPresentation::htmlAttributes($toolbarPresentation, 'inline');
+		$cancelAction=PanelCollectionPresentation::decorateItemHtml('<a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(self::actionReturnUrl($resource, $request)).'" data-dp-panel-modal-cancel="1">'.self::e(self::panelText('common.cancel')).'</a>', $toolbarPresentation, 'cancel', 0);
+		$submitAction=PanelCollectionPresentation::decorateItemHtml('<button class="dp-panel-button" type="submit">'.self::e(self::panelText('action.update_selected')).'</button>', $toolbarPresentation, 'submit', 1);
 		$content='<form class="dp-panel-form" method="post"'.self::formEncodingAttr($formMeta['fields'] ?? []).' action="'.self::e(PanelConfig::resourceUrl($resource, 'bulk_update')).'" data-dp-panel-reactive-url="'.self::e($reactiveUrl).'">'
 			.self::csrfInput()
 			.$hidden
 			.$summary
-			.self::formSectionsHtml($sections, (int)($formMeta['columns'] ?? 1), $sectionMeta)
-			.'<div class="dp-panel-toolbar"><a class="dp-panel-button dp-panel-button-secondary" href="'.self::e(self::actionReturnUrl($resource, $request)).'">'.self::e(self::panelText('common.cancel')).'</a><button class="dp-panel-button" type="submit">'.self::e(self::panelText('action.update_selected')).'</button></div>'
+			.self::formSectionsHtml($sections, (int)($formMeta['columns'] ?? 1), $sectionMeta, is_array($formMeta['presentation'] ?? null) ? $formMeta['presentation'] : [])
+			.'<div class="dp-panel-toolbar"'.$toolbarAttributes.'>'.$cancelAction.$submitAction.'</div>'
 			.'</form>';
 		return self::page(self::panelText('action.bulk_update_title', ['resource'=>(string)$resource->label()]), $content, [
 			'kind'=>'bulk_update_form',
@@ -862,7 +894,7 @@ trait PanelRendererActions {
 		if($record===null || $resource->can('update', $record, $request->user())===false){
 			return self::forbidden($resource, $request);
 		}
-		$field=Resource::normalizeName((string)$request->input('field', ''));
+		$field=Resource::normalizeName(self::scalarString($request->input('field', '')));
 		$columns=$resource->resourceTable()->columnsList();
 		$column=$columns[$field] ?? null;
 		$indexRequest=$request->withQueryValue('operation', 'index');
@@ -890,7 +922,7 @@ trait PanelRendererActions {
 			'formatted'=>$formatted,
 			'notifications'=>$outcome['notifications'],
 		];
-		if(strtolower((string)$request->header('x-requested-with', ''))==='dataphyrepanelinline'){
+		if(strtolower(self::scalarString($request->header('x-requested-with', '')))==='dataphyrepanelinline'){
 			return PanelPageResult::json($payload, $outcome['status']);
 		}
 		self::flashNotifications($outcome['notifications']);
@@ -916,16 +948,21 @@ trait PanelRendererActions {
 	private static function inlineUpdateValue(Column $column, mixed $value): mixed {
 		$type=$column->editableInputType();
 		if($type==='checkbox' || $type==='boolean'){
-			return in_array(strtolower(trim((string)$value)), ['1', 'true', 'yes', 'on', 'live', 'enabled'], true) ? 1 : 0;
+			return in_array(strtolower(trim(self::scalarString($value))), ['1', 'true', 'yes', 'on', 'live', 'enabled'], true) ? 1 : 0;
 		}
 		if(in_array($type, ['number', 'integer', 'int'], true)){
-			$text=trim((string)$value);
+			$text=trim(self::scalarString($value));
 			if($text===''){
 				return null;
 			}
 			return str_contains($text, '.') ? (float)$text : (int)$text;
 		}
 		return is_scalar($value) || $value instanceof \Stringable ? trim((string)$value) : '';
+	}
+
+	/** Converts untrusted request values to text without emitting array/object coercion warnings. */
+	private static function scalarString(mixed $value): string {
+		return is_scalar($value) || $value instanceof \Stringable ? (string)$value : '';
 	}
 
 	/**
@@ -947,9 +984,16 @@ trait PanelRendererActions {
 	 */
 	private static function lifecycleResult(Resource $resource, PanelRequest $request, mixed $record, string $mode, PanelLifecycleResult $result, ?PanelFormState $state=null, array $input=[], array $context=[]): PanelPageResult {
 		$notifications=$result->notifications();
+		$redirectRequested=$result->redirectTo()!==null;
+		$redirect=$redirectRequested ? self::safeReturnUrl((string)$result->redirectTo()) : null;
 		if($notifications===[] && $result->message()!==''){
 			$notifications[]=PanelNotification::warning($result->message());
 		}
+		if($redirectRequested && $redirect===null){
+			$notifications[]=PanelNotification::warning(self::panelText('action.invalid_redirect', [], 'The requested redirect was blocked.'));
+		}
+		$lifecycle=$result->jsonSerialize();
+		$lifecycle['redirect_to']=$redirect;
 		$data=[
 			'kind'=>'lifecycle_result',
 			'resource'=>$resource->toArray(),
@@ -957,10 +1001,11 @@ trait PanelRendererActions {
 			'mode'=>$mode,
 			'input_keys'=>array_keys($input),
 			'form_state'=>$state?->jsonSerialize(),
-			'lifecycle'=>$result->jsonSerialize(),
+			'lifecycle'=>$lifecycle,
 		];
 		if(isset($context['action']) && is_array($context['action'])){
 			$data['action']=$context['action'];
+			$data['effects']=self::actionEffects($context['action']);
 		}
 		if(($context['action_state'] ?? null) instanceof PanelActionState){
 			$data['action_state']=$context['action_state']->jsonSerialize();
@@ -974,15 +1019,16 @@ trait PanelRendererActions {
 			'status'=>$result->status(),
 			'action_state'=>$context['action_state'] ?? null,
 		]);
-		if($result->redirectTo()!==null){
+		if($redirect!==null){
 			self::flashNotifications($notifications);
-			return PanelPageResult::redirect($result->redirectTo(), $data, $notifications, $result->status());
+			return PanelPageResult::redirect($redirect, $data, $notifications, $result->status());
 		}
 		$message=$result->message()!=='' ? $result->message() : ($result->halted() ? self::panelText('action.operation_stopped') : self::panelText('action.lifecycle_completed'));
 		$returnUrl=is_string($context['return_url'] ?? null) && trim((string)$context['return_url'])!=='' ? (string)$context['return_url'] : ($mode==='update' && $record!==null ? self::showReturnUrl($resource, $record) : PanelConfig::resourceUrl($resource));
 		$content='<div class="dp-panel-notice dp-panel-notice-warning"><span>'.self::e($message).'</span></div>'
 			.'<div class="dp-panel-toolbar"><a class="dp-panel-button dp-panel-button-secondary" href="'.self::e($returnUrl).'">'.self::e(self::panelText('common.back')).'</a></div>';
-		return self::page($result->halted() ? self::panelText('action.operation_stopped_title') : self::panelText('action.lifecycle_result_title'), $content, $data, $result->status(), $notifications);
+		$status=$redirectRequested ? 422 : $result->status();
+		return self::page($result->halted() ? self::panelText('action.operation_stopped_title') : self::panelText('action.lifecycle_result_title'), $content, $data, $status, $notifications);
 	}
 
 	/**
@@ -1276,7 +1322,7 @@ trait PanelRendererActions {
 		if($resource->can('note', $record, $request->user())===false || $resource->can('note:create', $record, $request->user())===false){
 			return self::forbidden($resource, $request);
 		}
-		$note=trim((string)$request->input('note', ''));
+		$note=trim(self::scalarString($request->input('note', '')));
 		if($note===''){
 			return self::panelEmptyPage('record.note_empty', 'record.note_empty_body', [
 				'kind'=>'note_empty',
@@ -1347,7 +1393,7 @@ trait PanelRendererActions {
 		if($resource->can('message', $record, $request->user())===false || $resource->can('message:send', $record, $request->user())===false){
 			return self::forbidden($resource, $request);
 		}
-		$body=trim((string)$request->input('body', $request->input('message', '')));
+		$body=trim(self::scalarString($request->input('body', $request->input('message', ''))));
 		if($body===''){
 			return self::panelEmptyPage('record.message_empty', 'record.message_empty_body', [
 				'kind'=>'message_empty',
@@ -1356,9 +1402,9 @@ trait PanelRendererActions {
 			], 422);
 		}
 		$message=[
-			'channel'=>Resource::normalizeName((string)$request->input('channel', 'email')),
-			'recipient'=>trim((string)$request->input('recipient', '')),
-			'subject'=>trim((string)$request->input('subject', '')),
+			'channel'=>Resource::normalizeName(self::scalarString($request->input('channel', 'email'))),
+			'recipient'=>trim(self::scalarString($request->input('recipient', ''))),
+			'subject'=>trim(self::scalarString($request->input('subject', ''))),
 			'body'=>$body,
 		];
 		$result=$resource->sendMessage($record, $message, $request);
@@ -1424,8 +1470,8 @@ trait PanelRendererActions {
 				'request'=>$request->toArray(),
 			], 404);
 		}
-		$tag=Resource::normalizeName((string)$request->input('tag', ''));
-		$action=Resource::normalizeName((string)$request->input('tag_action', $request->input('action', 'add')));
+		$tag=Resource::normalizeName(self::scalarString($request->input('tag', '')));
+		$action=Resource::normalizeName(self::scalarString($request->input('tag_action', $request->input('action', 'add'))));
 		if($tag==='' || !in_array($action, ['add', 'remove'], true)){
 			return self::panelEmptyPage('record.tag_not_selected', 'record.tag_not_selected_body', [
 				'kind'=>'tag_missing',
@@ -1576,12 +1622,12 @@ trait PanelRendererActions {
 				'request'=>$request->toArray(),
 			], 404);
 		}
-		$taskAction=Resource::normalizeName((string)$request->input('task_action', ''));
+		$taskAction=Resource::normalizeName(self::scalarString($request->input('task_action', '')));
 		$creating=in_array($taskAction, ['create', 'add'], true);
 		if($creating){
 			return self::taskCreateResult($resource, $request, $record);
 		}
-		$task=Resource::normalizeName((string)$request->input('task', $request->query('task', '')));
+		$task=Resource::normalizeName(self::scalarString($request->input('task', $request->query('task', ''))));
 		if($task===''){
 			return self::panelEmptyPage('record.task_not_selected', 'record.task_not_selected_body', [
 				'kind'=>'task_missing',
@@ -1660,8 +1706,8 @@ trait PanelRendererActions {
 				'request'=>$request->toArray(),
 			], 404);
 		}
-		$approval=Resource::normalizeName((string)$request->input('approval', $request->query('approval', '')));
-		$decision=Resource::normalizeName((string)$request->input('decision', $request->query('decision', '')));
+		$approval=Resource::normalizeName(self::scalarString($request->input('approval', $request->query('approval', ''))));
+		$decision=Resource::normalizeName(self::scalarString($request->input('decision', $request->query('decision', ''))));
 		if($approval==='' || !in_array($decision, ['approve', 'reject'], true)){
 			return self::panelEmptyPage('record.approval_not_selected', 'record.approval_not_selected_body', [
 				'kind'=>'approval_missing',
@@ -1724,7 +1770,7 @@ trait PanelRendererActions {
 		if($resource->can('task', $record, $request->user())===false || $resource->can('task:create', $record, $request->user())===false){
 			return self::forbidden($resource, $request);
 		}
-		$title=trim((string)$request->input('title', ''));
+		$title=trim(self::scalarString($request->input('title', '')));
 		if($title===''){
 			return self::panelEmptyPage('record.task_title_empty', 'record.task_title_empty_body', [
 				'kind'=>'task_create_empty',
@@ -1734,9 +1780,9 @@ trait PanelRendererActions {
 		}
 		$task=[
 			'title'=>$title,
-			'description'=>trim((string)$request->input('description', '')),
-			'due'=>trim((string)$request->input('due', '')),
-			'assignee'=>trim((string)$request->input('assignee', '')),
+			'description'=>trim(self::scalarString($request->input('description', ''))),
+			'due'=>trim(self::scalarString($request->input('due', ''))),
+			'assignee'=>trim(self::scalarString($request->input('assignee', ''))),
 		];
 		$result=$resource->createTask($record, $task, $request);
 		$outcome=self::outcome($result, self::panelText('record.task_added'));

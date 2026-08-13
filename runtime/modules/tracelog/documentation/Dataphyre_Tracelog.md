@@ -25,7 +25,7 @@ Flightdeck owns authentication, layout, navigation, and visual framing. Tracelog
 
 1. **Configuration Files**: The module loads readonly config from:
 
-   - `common/dataphyre/config/tracelog.php`
+   - `dataphyre/config/tracelog.php`
    - `applications/<app>/backend/dataphyre/config/tracelog.php`
    - `applications/<app>/backend/dataphyre/cache/config/tracelog.compiled.php`
 

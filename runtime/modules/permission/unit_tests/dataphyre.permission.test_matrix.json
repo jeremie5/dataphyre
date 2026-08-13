@@ -7,16 +7,26 @@
         "args": [
             {
                 "manager": {
-                    "permissions": ["panel.orders.*", "-panel.orders.force_delete"]
+                    "permissions": [
+                        "panel.orders.*",
+                        "-panel.orders.force_delete"
+                    ]
                 },
                 "viewer": {
-                    "permissions": ["panel.orders.view_any"]
+                    "permissions": [
+                        "panel.orders.view_any"
+                    ]
                 }
             },
             {
                 "manager": {
-                    "allow": ["panel.orders.view_any", "panel.orders.update"],
-                    "deny": ["panel.orders.force_delete"]
+                    "allow": [
+                        "panel.orders.view_any",
+                        "panel.orders.update"
+                    ],
+                    "deny": [
+                        "panel.orders.force_delete"
+                    ]
                 },
                 "viewer": {
                     "panel.orders.view_any": true,
@@ -25,10 +35,25 @@
             }
         ],
         "expected": {
-            "custom_script": "return is_array($result) && ($result['ok'] ?? null) === true && ($result['total'] ?? null) === 5 && ($result['failed'] ?? null) === 0;"
+            "assert": {
+                "type": "array",
+                "paths": {
+                    "ok": {
+                        "same": true
+                    },
+                    "total": {
+                        "same": 5
+                    },
+                    "failed": {
+                        "same": 0
+                    }
+                }
+            }
         },
-        "file_dynamic": "return dp_module_present(\"permission\")[0];",
-        "max_millis": 50
+        "max_millis": 50,
+        "file": {
+            "module": "permission"
+        }
     },
     {
         "name": "test_matrix_returns_failure_explanations",
@@ -38,19 +63,39 @@
         "args": [
             {
                 "viewer": {
-                    "permissions": ["panel.orders.view_any"]
+                    "permissions": [
+                        "panel.orders.view_any"
+                    ]
                 }
             },
             {
                 "viewer": {
-                    "allow": ["panel.orders.update"]
+                    "allow": [
+                        "panel.orders.update"
+                    ]
                 }
             }
         ],
         "expected": {
-            "custom_script": "return is_array($result) && ($result['ok'] ?? null) === false && ($result['failed'] ?? null) === 1 && isset($result['failures'][0]['explain']);"
+            "assert": {
+                "type": "array",
+                "paths": {
+                    "ok": {
+                        "same": false
+                    },
+                    "failed": {
+                        "same": 1
+                    },
+                "failures/0/explain": {
+                    "exists": true,
+                    "not_same": null
+                }
+                }
+            }
         },
-        "file_dynamic": "return dp_module_present(\"permission\")[0];",
-        "max_millis": 50
+        "max_millis": 50,
+        "file": {
+            "module": "permission"
+        }
     }
 ]

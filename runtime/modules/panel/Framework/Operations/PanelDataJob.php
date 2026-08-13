@@ -176,7 +176,7 @@ final class PanelDataJob implements \JsonSerializable {
 	 * @return self This job with queue metadata updated.
 	 */
 	public function queue(string|bool|null $queue='default'): self {
-		$this->queue=$queue===false || $queue===null ? null : (Resource::normalizeName((string)$queue) ?: 'default');
+		$this->queue=$queue===false || $queue===null ? null : ($queue===true ? 'default' : (Resource::normalizeName($queue) ?: 'default'));
 		return $this;
 	}
 

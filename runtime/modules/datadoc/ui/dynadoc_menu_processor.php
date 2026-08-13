@@ -6,14 +6,15 @@
  * SPDX-License-Identifier: MIT
  */
 if(\dataphyre\datadoc::logged_in()!==true){
-	exit();
+	return;
 }
 
 $project_name=(string)(\dataphyre\routing::$bindings['project'] ?? ($_GET['project'] ?? ''));
 $project=\dataphyre\datadoc::get_project($project_name);
 if($project===null){
 	http_response_code(404);
-	exit('Invalid project.');
+	echo 'Invalid project.';
+	return;
 }
 
 $kind=strtolower(trim((string)($_GET['kind'] ?? 'dynamic')));

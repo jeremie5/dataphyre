@@ -79,7 +79,7 @@ final class NavigationManifest {
 			'mode'=>$mode,
 			'active'=>(string)($active['name'] ?? ''),
 		]);
-		return $manifest;
+		return PanelManifestContract::stamp($manifest);
 	}
 
 	/**

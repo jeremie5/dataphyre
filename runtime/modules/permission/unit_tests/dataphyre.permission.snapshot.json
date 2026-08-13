@@ -6,15 +6,36 @@
         "static_method": true,
         "args": [
             {
-                "permissions": ["panel.orders.view_any"]
+                "permissions": [
+                    "panel.orders.view_any"
+                ]
             },
-            ["panel.orders.view_any", "panel.orders.update"]
+            [
+                "panel.orders.view_any",
+                "panel.orders.update"
+            ]
         ],
         "expected": {
-            "custom_script": "return is_array($result) && in_array('panel.orders.view_any', $result['allowed'] ?? [], true) && in_array('panel.orders.update', $result['denied'] ?? [], true);"
+            "assert": {
+                "type": "array",
+                "paths": {
+                    "allowed": {
+                        "contains": [
+                            "panel.orders.view_any"
+                        ]
+                    },
+                    "denied": {
+                        "contains": [
+                            "panel.orders.update"
+                        ]
+                    }
+                }
+            }
         },
-        "file_dynamic": "return dp_module_present(\"permission\")[0];",
-        "max_millis": 50
+        "max_millis": 50,
+        "file": {
+            "module": "permission"
+        }
     },
     {
         "name": "diff_snapshots_reports_effective_grants",
@@ -28,7 +49,9 @@
                     "panel.orders.update": false
                 },
                 "roles": [],
-                "rules": ["panel.orders.view_any"]
+                "rules": [
+                    "panel.orders.view_any"
+                ]
             },
             {
                 "decisions": {
@@ -36,13 +59,34 @@
                     "panel.orders.update": true
                 },
                 "roles": [],
-                "rules": ["panel.orders.*"]
+                "rules": [
+                    "panel.orders.*"
+                ]
             }
         ],
         "expected": {
-            "custom_script": "return is_array($result) && ($result['ok'] ?? null) === false && in_array('panel.orders.update', $result['granted'] ?? [], true) && in_array('panel.orders.*', $result['rule_changes']['added'] ?? [], true);"
+            "assert": {
+                "type": "array",
+                "paths": {
+                    "ok": {
+                        "same": false
+                    },
+                    "granted": {
+                        "contains": [
+                            "panel.orders.update"
+                        ]
+                    },
+                    "rule_changes/added": {
+                        "contains": [
+                            "panel.orders.*"
+                        ]
+                    }
+                }
+            }
         },
-        "file_dynamic": "return dp_module_present(\"permission\")[0];",
-        "max_millis": 50
+        "max_millis": 50,
+        "file": {
+            "module": "permission"
+        }
     }
 ]

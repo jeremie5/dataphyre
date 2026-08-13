@@ -578,12 +578,8 @@ final class CurrencyManager {
 		$overrides=array_replace($money->contextOverrides(), $overrides);
 		$target_currency=mb_strtoupper(trim($target_currency));
 		$quote=$this->quoteOrFail($money->currency(), $target_currency, $refresh, $overrides);
-		return Money::fromMinor(
-			$quote->convertMinorUnits($money->minorAmount()),
-			$target_currency,
-			$this,
-			$overrides
-		);
+		$minor_amount=$quote->convertMinorUnits($money->minorAmount());
+		return Money::fromMinor($minor_amount, $target_currency, $this, $overrides);
 	}
 
 	/**
@@ -850,9 +846,6 @@ final class CurrencyManager {
 		$sign=$total_units<0 ? -1 : 1;
 		$total_units=abs($total_units);
 		$ratio_sum=array_sum($prepared);
-		if($ratio_sum<=0){
-			return [];
-		}
 		$unit_allocations=[];
 		$fractional_parts=[];
 		$positions=[];

@@ -11,13 +11,24 @@ namespace Dataphyre\Panel;
  * Fluent definition for a Panel resource.
  *
  * A resource gathers navigation metadata, record access, forms, tables, actions, relations, tenant scoping, lifecycle hooks, and mutation handlers into the manifest used by Panel pages.
+ *
+ * @template TRecord = mixed
+ * @template TState of array<string, mixed> = array<string, mixed>
+ * @phpstan-type PanelRecordResolver callable(TRecord, PanelRequest=, self<TRecord, TState>=): mixed
+ * @psalm-type PanelRecordResolver = callable(TRecord, PanelRequest=, self<TRecord, TState>=): mixed
+ * @phpstan-type PanelRecordMutation callable(TRecord, mixed=, PanelRequest=, self<TRecord, TState>=): mixed
+ * @psalm-type PanelRecordMutation = callable(TRecord, mixed=, PanelRequest=, self<TRecord, TState>=): mixed
+ * @phpstan-type PanelDataMutator callable(TState, TRecord|null=, string=, mixed=, self<TRecord, TState>=): TState
+ * @psalm-type PanelDataMutator = callable(TState, TRecord|null=, string=, mixed=, self<TRecord, TState>=): TState
  */
 final class Resource {
 	use PanelExtensible;
+	use HasCollectionPresentations;
 
 	private string $name='';
 	private string $label='';
 	private string $pluralLabel='';
+	/** @var class-string<TRecord>|null */
 	private ?string $model=null;
 	private ?string $repository=null;
 	private ?string $table=null;
@@ -92,18 +103,27 @@ final class Resource {
 	private ?\Closure $tasksHandler=null;
 	private ?\Closure $taskHandler=null;
 	private ?\Closure $createTaskHandler=null;
+	/** @var ResourceForm<TRecord, TState> */
 	private ResourceForm $form;
+	/** @var ResourceForm<TRecord, TState> */
 	private ResourceForm $bulkUpdateForm;
+	/** @var Schema<TRecord, TState>|Infolist<TRecord, TState>|null */
 	private Schema|Infolist|null $infolistSchema=null;
+	/** @var ResourceTable<TRecord, TState> */
 	private ResourceTable $resourceTable;
 	private string $statusField='status';
+	/** @var array<string,array{name:string,status:string,label:string,tone:string,meta:array<string,mixed>}> */
+	private array $statusBoardColumns=[];
 	/** @var array<string,array<string,mixed>> */
 	private array $statusTransitions=[];
 	private bool $statusWidgetsEnabled=false;
 	private string $actionFit='stretch';
+	private int $recordActionLimit=2;
+	/** @var array<string, string> */
+	private array $recordActionPlacements=[];
 	/** @var array<string, Action|ActionGroup> */
 	private array $actions=[];
-	/** @var array<string, RelationManager> */
+	/** @var array<string, RelationManager<TRecord, mixed, TState>> */
 	private array $relations=[];
 
 	/**
@@ -127,7 +147,7 @@ final class Resource {
 	 * Resource definitions gather navigation, forms, tables, actions, relations, authorization, tenants, lifecycle hooks, and record handlers into one manifest.
 	 *
 	 * @param ?string $name Normalized field, resource, surface, or helper name.
-	 * @return self Configured resource definition with default form, bulk form, and table builders.
+	 * @return self<TRecord,TState> Configured resource definition with default form, bulk form, and table builders.
 	 */
 	public static function make(?string $name=null): self {
 		return self::configured(new self($name));
@@ -139,7 +159,7 @@ final class Resource {
 	 * Resource definitions gather navigation, forms, tables, actions, relations, authorization, tenants, lifecycle hooks, and record handlers into one manifest.
 	 *
 	 * @param array<string,mixed> $definition Array definition imported from configuration or a manifest.
-	 * @return self Resource definition hydrated from the supplied manifest array.
+	 * @return self<TRecord,TState> Resource definition hydrated from the supplied manifest array.
 	 */
 	public static function fromArray(array $definition): self {
 		$resource=self::make((string)($definition['name'] ?? ''));
@@ -177,6 +197,15 @@ final class Resource {
 		}
 		if(isset($definition['action_fit']) && is_string($definition['action_fit'])){
 			$resource=$resource->actionFit($definition['action_fit']);
+		}
+		if(isset($definition['record_action_limit'])){
+			$resource=$resource->recordActionLimit((int)$definition['record_action_limit']);
+		}
+		if(isset($definition['record_action_placements']) && is_array($definition['record_action_placements'])){
+			$resource=$resource->recordActionPlacements($definition['record_action_placements']);
+		}
+		if(isset($definition['record_presentation']) && is_array($definition['record_presentation'])){
+			$resource=$resource->collectionPresentations($definition['record_presentation']);
 		}
 		if(!empty($definition['hidden_from_navigation'])){
 			$resource=$resource->hideFromNavigation();
@@ -367,6 +396,9 @@ final class Resource {
 		if(isset($definition['status_field']) && is_string($definition['status_field'])){
 			$resource=$resource->statusField($definition['status_field']);
 		}
+		if(isset($definition['status_board_columns']) && is_array($definition['status_board_columns'])){
+			$resource=$resource->statusBoardColumns($definition['status_board_columns']);
+		}
 		if(isset($definition['transitions']) && is_array($definition['transitions'])){
 			$resource=$resource->statusTransitions($definition['transitions']);
 		}
@@ -477,8 +509,9 @@ final class Resource {
 	 *
 	 * The model class is metadata for resource consumers; it is trimmed here but not autoload-validated so optional domain classes can be registered lazily.
 	 *
-	 * @param string $class Model class name stored in resource metadata.
-	 * @return self Cloned resource definition with updated model metadata.
+	 * @template TModel of object
+	 * @param class-string<TModel> $class Model class name stored in resource metadata.
+	 * @return self<TModel, TState> Cloned resource definition refined to the supplied model type.
 	 */
 	public function model(string $class): self {
 		$clone=clone $this;
@@ -492,7 +525,7 @@ final class Resource {
 	 * The repository class is metadata for query factories and save handlers; it is trimmed here but not autoload-validated during manifest construction.
 	 *
 	 * @param string $class Repository class name stored in resource metadata.
-	 * @return self Cloned resource definition with updated repository metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated repository metadata.
 	 */
 	public function repository(string $class): self {
 		$clone=clone $this;
@@ -506,7 +539,7 @@ final class Resource {
 	 * The table string is metadata for default query factories and generated manifests; blank input clears the table binding.
 	 *
 	 * @param string $table Table name stored after trimming.
-	 * @return self Cloned resource definition with updated table metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated table metadata.
 	 */
 	public function table(string $table): self {
 		$clone=clone $this;
@@ -520,7 +553,7 @@ final class Resource {
 	 * URLs are normalized to an absolute Panel path with one leading slash and no trailing slash noise from caller input.
 	 *
 	 * @param string $url Resource URL path relative to the Panel root.
-	 * @return self Cloned resource definition with updated url metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated url metadata.
 	 */
 	public function url(string $url): self {
 		$clone=clone $this;
@@ -535,7 +568,7 @@ final class Resource {
 	 * Blank input clears the group so the resource appears at the root level for renderers that group navigation.
 	 *
 	 * @param string $group Navigation group label or key.
-	 * @return self Cloned resource definition with updated group metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated group metadata.
 	 */
 	public function group(string $group): self {
 		$clone=clone $this;
@@ -549,7 +582,7 @@ final class Resource {
 	 * String parents are normalized as navigation keys; NavigationItem parents contribute their own normalized name. Empty values clear the parent.
 	 *
 	 * @param string|NavigationItem|null $parent Parent navigation key, item object, or null to clear.
-	 * @return self Cloned resource definition with updated navigation parent metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated navigation parent metadata.
 	 */
 	public function navigationParent(string|NavigationItem|null $parent): self {
 		$clone=clone $this;
@@ -564,7 +597,7 @@ final class Resource {
 	 * This is a semantic alias for navigationParent().
 	 *
 	 * @param string|NavigationItem|null $parent Parent navigation key, item object, or null to clear.
-	 * @return self Cloned resource definition with updated folder metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated folder metadata.
 	 */
 	public function folder(string|NavigationItem|null $parent): self {
 		return $this->navigationParent($parent);
@@ -576,7 +609,7 @@ final class Resource {
 	 * Blank input clears the icon so renderers can fall back to their default resource symbol.
 	 *
 	 * @param string $icon Icon token stored after trimming.
-	 * @return self Cloned resource definition with updated icon metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated icon metadata.
 	 */
 	public function icon(string $icon): self {
 		$clone=clone $this;
@@ -590,7 +623,7 @@ final class Resource {
 	 * Lower sort values appear earlier in navigation lists that honor resource ordering.
 	 *
 	 * @param int $sort Navigation sort weight.
-	 * @return self Cloned resource definition with updated sort metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated sort metadata.
 	 */
 	public function sort(int $sort): self {
 		$clone=clone $this;
@@ -604,7 +637,7 @@ final class Resource {
 	 * Hidden resources can still be routed, authorized, and rendered directly; this flag only affects navigation manifest output.
 	 *
 	 * @param bool $hidden Whether the resource should be omitted from navigation.
-	 * @return self Cloned resource definition with updated hide from navigation metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated hide from navigation metadata.
 	 */
 	public function hideFromNavigation(bool $hidden=true): self {
 		$clone=clone $this;
@@ -618,7 +651,7 @@ final class Resource {
 	 * Blank input clears the description so renderers do not emit empty helper text.
 	 *
 	 * @param string $description Description text stored after trimming.
-	 * @return self Cloned resource definition with updated navigation description metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated navigation description metadata.
 	 */
 	public function navigationDescription(string $description): self {
 		$clone=clone $this;
@@ -632,7 +665,7 @@ final class Resource {
 	 * Callable badges are evaluated later by navigation builders; static badges are stored as-is so numeric counts, labels, or null can be represented.
 	 *
 	 * @param mixed $badge Static badge value or callable badge resolver.
-	 * @return self Cloned resource definition with updated navigation badge metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated navigation badge metadata.
 	 */
 	public function navigationBadge(mixed $badge): self {
 		$clone=clone $this;
@@ -651,8 +684,8 @@ final class Resource {
 	 *
 	 * The callback is stored until navigation manifests are built, keeping potentially expensive counts out of resource construction.
 	 *
-	 * @param callable $resolver Callback that returns the badge value for navigation.
-	 * @return self Cloned resource definition with the navigation badge using callback registered.
+	 * @param callable(PanelRequest|null=,self<TRecord,TState>=,PanelManager|null=):mixed $resolver Callback that returns the badge value for navigation.
+	 * @return self<TRecord,TState> Cloned resource definition with the navigation badge using callback registered.
 	 */
 	public function navigationBadgeUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -666,7 +699,7 @@ final class Resource {
 	 * Unsupported tones fall back to neutral so renderer manifests always contain a known tone token.
 	 *
 	 * @param string $tone Badge tone token.
-	 * @return self Cloned resource definition with updated navigation badge tone metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated navigation badge tone metadata.
 	 */
 	public function navigationBadgeTone(string $tone): self {
 		$tone=self::normalizeName($tone);
@@ -681,7 +714,7 @@ final class Resource {
 	 * Enabling search only exposes the resource to Panel search orchestration; actual query behavior still depends on configured columns or a custom search handler.
 	 *
 	 * @param bool $searchable Whether global search should include this resource.
-	 * @return self Cloned resource definition with updated global searchable metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated global searchable metadata.
 	 */
 	public function globalSearchable(bool $searchable=true): self {
 		$clone=clone $this;
@@ -693,7 +726,7 @@ final class Resource {
 	 * Alias for globalSearchable().
 	 *
 	 * @param bool $searchable Whether global search should include this resource.
-	 * @return self Cloned resource definition with updated global search metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated global search metadata.
 	 */
 	public function globalSearch(bool $searchable=true): self {
 		return $this->globalSearchable($searchable);
@@ -705,7 +738,7 @@ final class Resource {
 	 * Column names are normalized, blanks are removed, and duplicates are collapsed before the search manifest is emitted.
 	 *
 	 * @param array<int,string> $columns Searchable column names.
-	 * @return self Cloned resource definition with updated global search columns metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated global search columns metadata.
 	 */
 	public function globalSearchColumns(array $columns): self {
 		$columns=array_values(array_filter(array_map(
@@ -722,8 +755,8 @@ final class Resource {
 	 *
 	 * Installing a handler also enables global search. The callback is invoked by Panel search execution with the request/query context instead of relying on column metadata alone.
 	 *
-	 * @param callable $handler Callback that returns global search result entries.
-	 * @return self Cloned resource definition with the global search using callback registered.
+	 * @param callable(string, PanelRequest=, self<TRecord, TState>=): iterable<array<string, mixed>|PanelSearchResult> $handler Callback that returns global search result entries.
+	 * @return self<TRecord,TState> Cloned resource definition with the global search using callback registered.
 	 */
 	public function globalSearchUsing(callable $handler): self {
 		$clone=clone $this;
@@ -737,8 +770,8 @@ final class Resource {
 	 *
 	 * The resolver receives record context during search result formatting and lets resources avoid exposing raw model fields as titles.
 	 *
-	 * @param callable $resolver Callback that returns a result title for a record.
-	 * @return self Cloned resource definition with the global search title using callback registered.
+	 * @param callable(TRecord, self<TRecord, TState>=): string $resolver Callback that returns a result title for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the global search title using callback registered.
 	 */
 	public function globalSearchTitleUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -751,8 +784,8 @@ final class Resource {
 	 *
 	 * The resolver receives record context during search result formatting and can add secondary text without changing stored record data.
 	 *
-	 * @param callable $resolver Callback that returns a result subtitle for a record.
-	 * @return self Cloned resource definition with the global search subtitle using callback registered.
+	 * @param callable(TRecord, self<TRecord, TState>=): string|null $resolver Callback that returns a result subtitle for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the global search subtitle using callback registered.
 	 */
 	public function globalSearchSubtitleUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -763,8 +796,8 @@ final class Resource {
 	/**
 	 * Registers the activity callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns record activity entries for detail and audit surfaces.
-	 * @return self Cloned resource definition with the activity using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns record activity entries for detail and audit surfaces.
+	 * @return self<TRecord,TState> Cloned resource definition with the activity using callback registered.
 	 */
 	public function activityUsing(callable $handler): self {
 		$clone=clone $this;
@@ -775,8 +808,8 @@ final class Resource {
 	/**
 	 * Registers the insights callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns insight cards or metrics for the resource surface.
-	 * @return self Cloned resource definition with the insights using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns insight cards or metrics for the resource surface.
+	 * @return self<TRecord,TState> Cloned resource definition with the insights using callback registered.
 	 */
 	public function insightsUsing(callable $handler): self {
 		$clone=clone $this;
@@ -787,8 +820,8 @@ final class Resource {
 	/**
 	 * Registers the record insights callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns insight cards or metrics for a record surface.
-	 * @return self Cloned resource definition with the record insights using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns insight cards or metrics for a record surface.
+	 * @return self<TRecord,TState> Cloned resource definition with the record insights using callback registered.
 	 */
 	public function recordInsightsUsing(callable $handler): self {
 		return $this->insightsUsing($handler);
@@ -797,8 +830,8 @@ final class Resource {
 	/**
 	 * Registers the alerts callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns alert rows for the resource surface.
-	 * @return self Cloned resource definition with the alerts using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns alert rows for the resource surface.
+	 * @return self<TRecord,TState> Cloned resource definition with the alerts using callback registered.
 	 */
 	public function alertsUsing(callable $handler): self {
 		$clone=clone $this;
@@ -809,8 +842,8 @@ final class Resource {
 	/**
 	 * Registers the record alerts callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns alert rows for a record surface.
-	 * @return self Cloned resource definition with the record alerts using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns alert rows for a record surface.
+	 * @return self<TRecord,TState> Cloned resource definition with the record alerts using callback registered.
 	 */
 	public function recordAlertsUsing(callable $handler): self {
 		return $this->alertsUsing($handler);
@@ -819,8 +852,8 @@ final class Resource {
 	/**
 	 * Registers the links callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns related links for the resource or record.
-	 * @return self Cloned resource definition with the links using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns related links for the resource or record.
+	 * @return self<TRecord,TState> Cloned resource definition with the links using callback registered.
 	 */
 	public function linksUsing(callable $handler): self {
 		$clone=clone $this;
@@ -831,8 +864,8 @@ final class Resource {
 	/**
 	 * Registers the record links callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns related links for a record.
-	 * @return self Cloned resource definition with the record links using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns related links for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the record links using callback registered.
 	 */
 	public function recordLinksUsing(callable $handler): self {
 		return $this->linksUsing($handler);
@@ -841,8 +874,8 @@ final class Resource {
 	/**
 	 * Registers the contacts callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns contact rows for the resource or record.
-	 * @return self Cloned resource definition with the contacts using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns contact rows for the resource or record.
+	 * @return self<TRecord,TState> Cloned resource definition with the contacts using callback registered.
 	 */
 	public function contactsUsing(callable $handler): self {
 		$clone=clone $this;
@@ -853,8 +886,8 @@ final class Resource {
 	/**
 	 * Registers the record contacts callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns contact rows for a record.
-	 * @return self Cloned resource definition with the record contacts using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns contact rows for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the record contacts using callback registered.
 	 */
 	public function recordContactsUsing(callable $handler): self {
 		return $this->contactsUsing($handler);
@@ -863,8 +896,8 @@ final class Resource {
 	/**
 	 * Registers the locations callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns location rows or map data for the resource.
-	 * @return self Cloned resource definition with the locations using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns location rows or map data for the resource.
+	 * @return self<TRecord,TState> Cloned resource definition with the locations using callback registered.
 	 */
 	public function locationsUsing(callable $handler): self {
 		$clone=clone $this;
@@ -875,8 +908,8 @@ final class Resource {
 	/**
 	 * Registers the record locations callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns location rows or map data for a record.
-	 * @return self Cloned resource definition with the record locations using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns location rows or map data for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the record locations using callback registered.
 	 */
 	public function recordLocationsUsing(callable $handler): self {
 		return $this->locationsUsing($handler);
@@ -885,8 +918,8 @@ final class Resource {
 	/**
 	 * Registers the changes callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns change-history rows for the resource.
-	 * @return self Cloned resource definition with the changes using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns change-history rows for the resource.
+	 * @return self<TRecord,TState> Cloned resource definition with the changes using callback registered.
 	 */
 	public function changesUsing(callable $handler): self {
 		$clone=clone $this;
@@ -897,8 +930,8 @@ final class Resource {
 	/**
 	 * Registers the record changes callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns change-history rows for a record.
-	 * @return self Cloned resource definition with the record changes using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns change-history rows for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the record changes using callback registered.
 	 */
 	public function recordChangesUsing(callable $handler): self {
 		return $this->changesUsing($handler);
@@ -907,8 +940,8 @@ final class Resource {
 	/**
 	 * Registers the tags callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns tag values or tag metadata for the resource.
-	 * @return self Cloned resource definition with the tags using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns tag values or tag metadata for the resource.
+	 * @return self<TRecord,TState> Cloned resource definition with the tags using callback registered.
 	 */
 	public function tagsUsing(callable $handler): self {
 		$clone=clone $this;
@@ -919,8 +952,8 @@ final class Resource {
 	/**
 	 * Registers the record tags callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns tag values or tag metadata for a record.
-	 * @return self Cloned resource definition with the record tags using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns tag values or tag metadata for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the record tags using callback registered.
 	 */
 	public function recordTagsUsing(callable $handler): self {
 		return $this->tagsUsing($handler);
@@ -929,8 +962,8 @@ final class Resource {
 	/**
 	 * Registers the tag callback for this resource.
 	 *
-	 * @param callable $handler Callback that applies a tag mutation to a record.
-	 * @return self Cloned resource definition with the tag using callback registered.
+	 * @param PanelRecordMutation $handler Callback that applies a tag mutation to a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the tag using callback registered.
 	 */
 	public function tagUsing(callable $handler): self {
 		$clone=clone $this;
@@ -941,8 +974,8 @@ final class Resource {
 	/**
 	 * Registers the update tag callback for this resource.
 	 *
-	 * @param callable $handler Callback that applies a tag update to a record.
-	 * @return self Cloned resource definition with the update tag using callback registered.
+	 * @param PanelRecordMutation $handler Callback that applies a tag update to a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the update tag using callback registered.
 	 */
 	public function updateTagUsing(callable $handler): self {
 		return $this->tagUsing($handler);
@@ -951,8 +984,8 @@ final class Resource {
 	/**
 	 * Registers the items callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns item rows for the resource or record.
-	 * @return self Cloned resource definition with the items using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns item rows for the resource or record.
+	 * @return self<TRecord,TState> Cloned resource definition with the items using callback registered.
 	 */
 	public function itemsUsing(callable $handler): self {
 		$clone=clone $this;
@@ -963,8 +996,8 @@ final class Resource {
 	/**
 	 * Registers the record items callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns item rows for a record.
-	 * @return self Cloned resource definition with the record items using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns item rows for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the record items using callback registered.
 	 */
 	public function recordItemsUsing(callable $handler): self {
 		return $this->itemsUsing($handler);
@@ -973,8 +1006,8 @@ final class Resource {
 	/**
 	 * Registers the totals callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns aggregate totals for the resource.
-	 * @return self Cloned resource definition with the totals using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns aggregate totals for the resource.
+	 * @return self<TRecord,TState> Cloned resource definition with the totals using callback registered.
 	 */
 	public function totalsUsing(callable $handler): self {
 		$clone=clone $this;
@@ -985,8 +1018,8 @@ final class Resource {
 	/**
 	 * Registers the record totals callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns aggregate totals for a record.
-	 * @return self Cloned resource definition with the record totals using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns aggregate totals for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the record totals using callback registered.
 	 */
 	public function recordTotalsUsing(callable $handler): self {
 		return $this->totalsUsing($handler);
@@ -995,8 +1028,8 @@ final class Resource {
 	/**
 	 * Registers the approvals callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns approval rows for the resource or record.
-	 * @return self Cloned resource definition with the approvals using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns approval rows for the resource or record.
+	 * @return self<TRecord,TState> Cloned resource definition with the approvals using callback registered.
 	 */
 	public function approvalsUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1007,8 +1040,8 @@ final class Resource {
 	/**
 	 * Registers the record approvals callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns approval rows for a record.
-	 * @return self Cloned resource definition with the record approvals using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns approval rows for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the record approvals using callback registered.
 	 */
 	public function recordApprovalsUsing(callable $handler): self {
 		return $this->approvalsUsing($handler);
@@ -1017,8 +1050,8 @@ final class Resource {
 	/**
 	 * Registers the approval callback for this resource.
 	 *
-	 * @param callable $handler Callback that resolves or mutates one approval request.
-	 * @return self Cloned resource definition with the approval using callback registered.
+	 * @param PanelRecordMutation $handler Callback that resolves or mutates one approval request.
+	 * @return self<TRecord,TState> Cloned resource definition with the approval using callback registered.
 	 */
 	public function approvalUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1029,8 +1062,8 @@ final class Resource {
 	/**
 	 * Registers the resolve approval callback for this resource.
 	 *
-	 * @param callable $handler Callback that resolves one approval request.
-	 * @return self Cloned resource definition with the resolve approval using callback registered.
+	 * @param PanelRecordMutation $handler Callback that resolves one approval request.
+	 * @return self<TRecord,TState> Cloned resource definition with the resolve approval using callback registered.
 	 */
 	public function resolveApprovalUsing(callable $handler): self {
 		return $this->approvalUsing($handler);
@@ -1039,8 +1072,8 @@ final class Resource {
 	/**
 	 * Registers the notes callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns note rows for the resource or record.
-	 * @return self Cloned resource definition with the notes using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns note rows for the resource or record.
+	 * @return self<TRecord,TState> Cloned resource definition with the notes using callback registered.
 	 */
 	public function notesUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1051,8 +1084,8 @@ final class Resource {
 	/**
 	 * Registers the note callback for this resource.
 	 *
-	 * @param callable $handler Callback that creates or updates one note.
-	 * @return self Cloned resource definition with the note using callback registered.
+	 * @param PanelRecordMutation $handler Callback that creates or updates one note.
+	 * @return self<TRecord,TState> Cloned resource definition with the note using callback registered.
 	 */
 	public function noteUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1063,8 +1096,8 @@ final class Resource {
 	/**
 	 * Registers the add note callback for this resource.
 	 *
-	 * @param callable $handler Callback that creates one note for a record.
-	 * @return self Cloned resource definition with the add note using callback registered.
+	 * @param PanelRecordMutation $handler Callback that creates one note for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the add note using callback registered.
 	 */
 	public function addNoteUsing(callable $handler): self {
 		return $this->noteUsing($handler);
@@ -1073,8 +1106,8 @@ final class Resource {
 	/**
 	 * Registers the messages callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns message rows for the resource or record.
-	 * @return self Cloned resource definition with the messages using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns message rows for the resource or record.
+	 * @return self<TRecord,TState> Cloned resource definition with the messages using callback registered.
 	 */
 	public function messagesUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1085,8 +1118,8 @@ final class Resource {
 	/**
 	 * Registers the record messages callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns message rows for a record.
-	 * @return self Cloned resource definition with the record messages using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns message rows for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the record messages using callback registered.
 	 */
 	public function recordMessagesUsing(callable $handler): self {
 		return $this->messagesUsing($handler);
@@ -1095,8 +1128,8 @@ final class Resource {
 	/**
 	 * Registers the message callback for this resource.
 	 *
-	 * @param callable $handler Callback that creates or updates one message.
-	 * @return self Cloned resource definition with the message using callback registered.
+	 * @param PanelRecordMutation $handler Callback that creates or updates one message.
+	 * @return self<TRecord,TState> Cloned resource definition with the message using callback registered.
 	 */
 	public function messageUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1107,8 +1140,8 @@ final class Resource {
 	/**
 	 * Registers the send message callback for this resource.
 	 *
-	 * @param callable $handler Callback that sends one message for a record.
-	 * @return self Cloned resource definition with the send message using callback registered.
+	 * @param PanelRecordMutation $handler Callback that sends one message for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the send message using callback registered.
 	 */
 	public function sendMessageUsing(callable $handler): self {
 		return $this->messageUsing($handler);
@@ -1117,8 +1150,8 @@ final class Resource {
 	/**
 	 * Registers the shipments callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns shipment rows for the resource or record.
-	 * @return self Cloned resource definition with the shipments using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns shipment rows for the resource or record.
+	 * @return self<TRecord,TState> Cloned resource definition with the shipments using callback registered.
 	 */
 	public function shipmentsUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1129,8 +1162,8 @@ final class Resource {
 	/**
 	 * Registers the record shipments callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns shipment rows for a record.
-	 * @return self Cloned resource definition with the record shipments using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns shipment rows for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the record shipments using callback registered.
 	 */
 	public function recordShipmentsUsing(callable $handler): self {
 		return $this->shipmentsUsing($handler);
@@ -1139,8 +1172,8 @@ final class Resource {
 	/**
 	 * Registers the payments callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns payment rows for the resource or record.
-	 * @return self Cloned resource definition with the payments using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns payment rows for the resource or record.
+	 * @return self<TRecord,TState> Cloned resource definition with the payments using callback registered.
 	 */
 	public function paymentsUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1151,8 +1184,8 @@ final class Resource {
 	/**
 	 * Registers the record payments callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns payment rows for a record.
-	 * @return self Cloned resource definition with the record payments using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns payment rows for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the record payments using callback registered.
 	 */
 	public function recordPaymentsUsing(callable $handler): self {
 		return $this->paymentsUsing($handler);
@@ -1161,8 +1194,8 @@ final class Resource {
 	/**
 	 * Registers the attachments callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns attachment rows for the resource or record.
-	 * @return self Cloned resource definition with the attachments using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns attachment rows for the resource or record.
+	 * @return self<TRecord,TState> Cloned resource definition with the attachments using callback registered.
 	 */
 	public function attachmentsUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1173,8 +1206,8 @@ final class Resource {
 	/**
 	 * Registers the attach callback for this resource.
 	 *
-	 * @param callable $handler Callback that attaches an uploaded file or attachment record.
-	 * @return self Cloned resource definition with the attach using callback registered.
+	 * @param PanelRecordMutation $handler Callback that attaches an uploaded file or attachment record.
+	 * @return self<TRecord,TState> Cloned resource definition with the attach using callback registered.
 	 */
 	public function attachUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1185,8 +1218,8 @@ final class Resource {
 	/**
 	 * Registers the upload attachment callback for this resource.
 	 *
-	 * @param callable $handler Callback that persists an uploaded attachment.
-	 * @return self Cloned resource definition with the upload attachment using callback registered.
+	 * @param PanelRecordMutation $handler Callback that persists an uploaded attachment.
+	 * @return self<TRecord,TState> Cloned resource definition with the upload attachment using callback registered.
 	 */
 	public function uploadAttachmentUsing(callable $handler): self {
 		return $this->attachUsing($handler);
@@ -1195,8 +1228,8 @@ final class Resource {
 	/**
 	 * Registers the tasks callback for this resource.
 	 *
-	 * @param callable $handler Callback that returns task rows for the resource or record.
-	 * @return self Cloned resource definition with the tasks using callback registered.
+	 * @param PanelRecordResolver $handler Callback that returns task rows for the resource or record.
+	 * @return self<TRecord,TState> Cloned resource definition with the tasks using callback registered.
 	 */
 	public function tasksUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1207,8 +1240,8 @@ final class Resource {
 	/**
 	 * Registers the task callback for this resource.
 	 *
-	 * @param callable $handler Callback that updates one task.
-	 * @return self Cloned resource definition with the task using callback registered.
+	 * @param PanelRecordMutation $handler Callback that updates one task.
+	 * @return self<TRecord,TState> Cloned resource definition with the task using callback registered.
 	 */
 	public function taskUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1219,8 +1252,8 @@ final class Resource {
 	/**
 	 * Registers the update task callback for this resource.
 	 *
-	 * @param callable $handler Callback that updates one task for a record.
-	 * @return self Cloned resource definition with the update task using callback registered.
+	 * @param PanelRecordMutation $handler Callback that updates one task for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the update task using callback registered.
 	 */
 	public function updateTaskUsing(callable $handler): self {
 		return $this->taskUsing($handler);
@@ -1229,8 +1262,8 @@ final class Resource {
 	/**
 	 * Registers the create task callback for this resource.
 	 *
-	 * @param callable $handler Callback that creates one task for a record.
-	 * @return self Cloned resource definition with the create task using callback registered.
+	 * @param PanelRecordMutation $handler Callback that creates one task for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the create task using callback registered.
 	 */
 	public function createTaskUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1241,8 +1274,8 @@ final class Resource {
 	/**
 	 * Registers the add task callback for this resource.
 	 *
-	 * @param callable $handler Callback that creates one task for a record.
-	 * @return self Cloned resource definition with the add task using callback registered.
+	 * @param PanelRecordMutation $handler Callback that creates one task for a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the add task using callback registered.
 	 */
 	public function addTaskUsing(callable $handler): self {
 		return $this->createTaskUsing($handler);
@@ -1253,8 +1286,8 @@ final class Resource {
 	 *
 	 * The callback becomes the resource authorization boundary for abilities, records, users, and the resource instance.
 	 *
-	 * @param callable $authorizer Callback that returns whether an ability is allowed.
-	 * @return self Cloned resource definition with updated authorize metadata.
+	 * @param callable(string, TRecord|null=, mixed=, self<TRecord, TState>=): bool $authorizer Callback that returns whether an ability is allowed.
+	 * @return self<TRecord,TState> Cloned resource definition with updated authorize metadata.
 	 */
 	public function authorize(callable $authorizer): self {
 		$clone=clone $this;
@@ -1269,7 +1302,7 @@ final class Resource {
 	 *
 	 * @param string $field Tenant key field on resource records.
 	 * @param bool $required Whether missing tenant context should block scoped operations.
-	 * @return self Cloned resource definition with updated tenant scoped metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated tenant scoped metadata.
 	 */
 	public function tenantScoped(string $field='tenant_id', bool $required=true): self {
 		$clone=clone $this;
@@ -1280,10 +1313,26 @@ final class Resource {
 	}
 
 	/**
+	 * Returns the immutable tenant boundary needed by adapters and scope guards.
+	 *
+	 * This intentionally avoids exporting the complete resource manifest on query
+	 * hot paths that only need the field and required-context policy.
+	 *
+	 * @return array{scoped:bool,field:?string,required:bool}
+	 */
+	public function tenantScopeDefinition(): array {
+		return [
+			'scoped'=>$this->tenantField!==null,
+			'field'=>$this->tenantField,
+			'required'=>$this->tenantRequired,
+		];
+	}
+
+	/**
 	 * Disables tenant scoping and clears tenant callbacks.
 	 *
 	 * This removes the field, resolver, and custom scope callback so later manifests and query builders treat the resource as unscoped.
-	 * @return self Cloned resource definition with updated without tenant scope metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated without tenant scope metadata.
 	 */
 	public function withoutTenantScope(): self {
 		$clone=clone $this;
@@ -1298,8 +1347,8 @@ final class Resource {
 	 *
 	 * The resolver is invoked by Panel runtime code when it needs tenant context for query filtering or mutation authorization.
 	 *
-	 * @param callable $resolver Callback that returns the current tenant identifier.
-	 * @return self Cloned resource definition with the tenant using callback registered.
+	 * @param callable(self<TRecord, TState>=): string|int|null $resolver Callback that returns the current tenant identifier.
+	 * @return self<TRecord,TState> Cloned resource definition with the tenant using callback registered.
 	 */
 	public function tenantUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -1312,8 +1361,8 @@ final class Resource {
 	 *
 	 * Custom scope callbacks let resources apply tenant filtering to non-standard query builders while keeping tenant enforcement centralized.
 	 *
-	 * @param callable $scope Callback that receives query and tenant context.
-	 * @return self Cloned resource definition with the tenant scope using callback registered.
+	 * @param callable(mixed, string|int|null=, self<TRecord, TState>=): mixed $scope Callback that receives query and tenant context.
+	 * @return self<TRecord,TState> Cloned resource definition with the tenant scope using callback registered.
 	 */
 	public function tenantScopeUsing(callable $scope): self {
 		$clone=clone $this;
@@ -1327,7 +1376,7 @@ final class Resource {
 	 * Required tenant scopes can fail closed before records are queried or mutated when no tenant can be resolved.
 	 *
 	 * @param bool $required Whether tenant context is mandatory.
-	 * @return self Cloned resource definition with updated tenant required metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated tenant required metadata.
 	 */
 	public function tenantRequired(bool $required=true): self {
 		$clone=clone $this;
@@ -1341,7 +1390,7 @@ final class Resource {
 	 * String policies are validated as loadable classes immediately. Arrays and objects are deferred to authorizePolicy(), which resolves ability-specific methods at authorization time.
 	 *
 	 * @param array|object|string $policy Policy class, instance, or ability map.
-	 * @return self Cloned resource definition with updated policy metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated policy metadata.
 	 */
 	public function policy(array|object|string $policy): self {
 		if(is_string($policy)){
@@ -1549,8 +1598,8 @@ final class Resource {
 	/**
 	 * Registers the query callback for this resource.
 	 *
-	 * @param callable $queryFactory Callback that returns or customizes the query source used for resource records.
-	 * @return self Cloned resource definition with the query using callback registered.
+	 * @param callable(PanelRequest|null=, self<TRecord, TState>=): PanelDataQuery|PanelDataSource|iterable<TRecord>|object|null $queryFactory Callback that returns or customizes the query source used for resource records.
+	 * @return self<TRecord,TState> Cloned resource definition with the query using callback registered.
 	 */
 	public function queryUsing(callable $queryFactory): self {
 		$clone=clone $this;
@@ -1563,8 +1612,8 @@ final class Resource {
 	 *
 	 * Lifecycle callbacks let Panel transform record data before display, before validation, before persistence, and after persistence.
 	 *
-	 * @param callable $saveHandler Callback that persists validated resource form data.
-	 * @return self Cloned resource definition with the save using callback registered.
+	 * @param callable(TState, TRecord|null=, string=, mixed=, self<TRecord, TState>=): mixed $saveHandler Callback that persists validated resource form data.
+	 * @return self<TRecord,TState> Cloned resource definition with the save using callback registered.
 	 */
 	public function saveUsing(callable $saveHandler): self {
 		$clone=clone $this;
@@ -1577,8 +1626,8 @@ final class Resource {
 	 *
 	 * Lifecycle callbacks let Panel transform record data before display, before validation, before persistence, and after persistence.
 	 *
-	 * @param callable $mutator Callback that normalizes submitted form data before validation or persistence.
-	 * @return self Cloned resource definition with the mutate form data using callback registered.
+	 * @param PanelDataMutator $mutator Callback that normalizes submitted form data before validation or persistence.
+	 * @return self<TRecord,TState> Cloned resource definition with the mutate form data using callback registered.
 	 */
 	public function mutateFormDataUsing(callable $mutator): self {
 		$clone=clone $this;
@@ -1589,8 +1638,8 @@ final class Resource {
 	/**
 	 * Registers the mutate create data callback for this resource.
 	 *
-	 * @param callable $mutator Callback that normalizes create data before persistence.
-	 * @return self Cloned resource definition with the mutate create data using callback registered.
+	 * @param PanelDataMutator $mutator Callback that normalizes create data before persistence.
+	 * @return self<TRecord,TState> Cloned resource definition with the mutate create data using callback registered.
 	 */
 	public function mutateCreateDataUsing(callable $mutator): self {
 		$clone=clone $this;
@@ -1601,8 +1650,8 @@ final class Resource {
 	/**
 	 * Registers the mutate update data callback for this resource.
 	 *
-	 * @param callable $mutator Callback that normalizes update data before persistence.
-	 * @return self Cloned resource definition with the mutate update data using callback registered.
+	 * @param PanelDataMutator $mutator Callback that normalizes update data before persistence.
+	 * @return self<TRecord,TState> Cloned resource definition with the mutate update data using callback registered.
 	 */
 	public function mutateUpdateDataUsing(callable $mutator): self {
 		$clone=clone $this;
@@ -1615,8 +1664,8 @@ final class Resource {
 	 *
 	 * Lifecycle callbacks let Panel transform record data before display, before validation, before persistence, and after persistence.
 	 *
-	 * @param callable $mutator Callback that normalizes record data before filling the form.
-	 * @return self Cloned resource definition with the mutate fill data using callback registered.
+	 * @param PanelDataMutator $mutator Callback that normalizes record data before filling the form.
+	 * @return self<TRecord,TState> Cloned resource definition with the mutate fill data using callback registered.
 	 */
 	public function mutateFillDataUsing(callable $mutator): self {
 		$clone=clone $this;
@@ -1629,8 +1678,8 @@ final class Resource {
 	 *
 	 * Lifecycle callbacks let Panel transform record data before display, before validation, before persistence, and after persistence.
 	 *
-	 * @param callable $mutator Callback that normalizes record data before filling the form.
-	 * @return self Cloned resource definition with the mutate form data before fill using callback registered.
+	 * @param PanelDataMutator $mutator Callback that normalizes record data before filling the form.
+	 * @return self<TRecord,TState> Cloned resource definition with the mutate form data before fill using callback registered.
 	 */
 	public function mutateFormDataBeforeFillUsing(callable $mutator): self {
 		return $this->mutateFillDataUsing($mutator);
@@ -1641,8 +1690,8 @@ final class Resource {
 	 *
 	 * Lifecycle callbacks let Panel transform record data before display, before validation, before persistence, and after persistence.
 	 *
-	 * @param callable $mutator Callback that normalizes create-form fill data.
-	 * @return self Cloned resource definition with the mutate create fill data using callback registered.
+	 * @param PanelDataMutator $mutator Callback that normalizes create-form fill data.
+	 * @return self<TRecord,TState> Cloned resource definition with the mutate create fill data using callback registered.
 	 */
 	public function mutateCreateFillDataUsing(callable $mutator): self {
 		$clone=clone $this;
@@ -1655,8 +1704,8 @@ final class Resource {
 	 *
 	 * Lifecycle callbacks let Panel transform record data before display, before validation, before persistence, and after persistence.
 	 *
-	 * @param callable $mutator Callback that normalizes create-form fill data before controls are populated.
-	 * @return self Cloned resource definition with the mutate create form data before fill using callback registered.
+	 * @param PanelDataMutator $mutator Callback that normalizes create-form fill data before controls are populated.
+	 * @return self<TRecord,TState> Cloned resource definition with the mutate create form data before fill using callback registered.
 	 */
 	public function mutateCreateFormDataBeforeFillUsing(callable $mutator): self {
 		return $this->mutateCreateFillDataUsing($mutator);
@@ -1667,8 +1716,8 @@ final class Resource {
 	 *
 	 * Lifecycle callbacks let Panel transform record data before display, before validation, before persistence, and after persistence.
 	 *
-	 * @param callable $mutator Callback that normalizes edit-form fill data.
-	 * @return self Cloned resource definition with the mutate edit fill data using callback registered.
+	 * @param PanelDataMutator $mutator Callback that normalizes edit-form fill data.
+	 * @return self<TRecord,TState> Cloned resource definition with the mutate edit fill data using callback registered.
 	 */
 	public function mutateEditFillDataUsing(callable $mutator): self {
 		$clone=clone $this;
@@ -1681,8 +1730,8 @@ final class Resource {
 	 *
 	 * Lifecycle callbacks let Panel transform record data before display, before validation, before persistence, and after persistence.
 	 *
-	 * @param callable $mutator Callback that normalizes edit-form fill data before controls are populated.
-	 * @return self Cloned resource definition with the mutate edit form data before fill using callback registered.
+	 * @param PanelDataMutator $mutator Callback that normalizes edit-form fill data before controls are populated.
+	 * @return self<TRecord,TState> Cloned resource definition with the mutate edit form data before fill using callback registered.
 	 */
 	public function mutateEditFormDataBeforeFillUsing(callable $mutator): self {
 		return $this->mutateEditFillDataUsing($mutator);
@@ -1693,8 +1742,8 @@ final class Resource {
 	 *
 	 * Lifecycle callbacks let Panel transform record data before display, before validation, before persistence, and after persistence.
 	 *
-	 * @param callable $handler Lifecycle callback invoked before form fill data is applied.
-	 * @return self Cloned resource definition with the before fill using callback registered.
+	 * @param callable(TRecord|null, string=, mixed=, self<TRecord, TState>=): mixed $handler Lifecycle callback invoked before form fill data is applied.
+	 * @return self<TRecord,TState> Cloned resource definition with the before fill using callback registered.
 	 */
 	public function beforeFillUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1707,8 +1756,8 @@ final class Resource {
 	 *
 	 * Lifecycle callbacks let Panel transform record data before display, before validation, before persistence, and after persistence.
 	 *
-	 * @param callable $handler Lifecycle callback invoked after form fill data is prepared.
-	 * @return self Cloned resource definition with the after fill using callback registered.
+	 * @param callable(PanelFormState, TRecord|null=, string=, mixed=, self<TRecord, TState>=): PanelFormState|null $handler Lifecycle callback invoked after form fill data is prepared.
+	 * @return self<TRecord,TState> Cloned resource definition with the after fill using callback registered.
 	 */
 	public function afterFillUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1719,8 +1768,8 @@ final class Resource {
 	/**
 	 * Registers the before validate callback for this resource.
 	 *
-	 * @param callable $handler Lifecycle callback invoked before form data validation.
-	 * @return self Cloned resource definition with the before validate using callback registered.
+	 * @param callable(TRecord|null, string=, mixed=, self<TRecord, TState>=): PanelLifecycleResult|array<string, mixed>|bool|null $handler Lifecycle callback invoked before form data validation.
+	 * @return self<TRecord,TState> Cloned resource definition with the before validate using callback registered.
 	 */
 	public function beforeValidateUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1731,8 +1780,8 @@ final class Resource {
 	/**
 	 * Registers the after validate callback for this resource.
 	 *
-	 * @param callable $handler Lifecycle callback invoked after form data validation.
-	 * @return self Cloned resource definition with the after validate using callback registered.
+	 * @param callable(PanelFormState, TRecord|null=, string=, mixed=, self<TRecord, TState>=): PanelFormState|PanelLifecycleResult|array<string, mixed>|bool|null $handler Lifecycle callback invoked after form data validation.
+	 * @return self<TRecord,TState> Cloned resource definition with the after validate using callback registered.
 	 */
 	public function afterValidateUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1745,8 +1794,8 @@ final class Resource {
 	 *
 	 * Lifecycle callbacks let Panel transform record data before display, before validation, before persistence, and after persistence.
 	 *
-	 * @param callable $handler Lifecycle callback invoked before record persistence.
-	 * @return self Cloned resource definition with the before save using callback registered.
+	 * @param callable(TState, TRecord|null=, string=, mixed=, self<TRecord, TState>=): TState|PanelLifecycleResult|array<string, mixed>|bool|null $handler Lifecycle callback invoked before record persistence.
+	 * @return self<TRecord,TState> Cloned resource definition with the before save using callback registered.
 	 */
 	public function beforeSaveUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1759,8 +1808,8 @@ final class Resource {
 	 *
 	 * Lifecycle callbacks let Panel transform record data before display, before validation, before persistence, and after persistence.
 	 *
-	 * @param callable $handler Lifecycle callback invoked after record persistence.
-	 * @return self Cloned resource definition with the after save using callback registered.
+	 * @param callable(mixed, TState=, TRecord|null=, string=, mixed=, self<TRecord, TState>=): mixed $handler Lifecycle callback invoked after record persistence.
+	 * @return self<TRecord,TState> Cloned resource definition with the after save using callback registered.
 	 */
 	public function afterSaveUsing(callable $handler): self {
 		$clone=clone $this;
@@ -1771,8 +1820,8 @@ final class Resource {
 	/**
 	 * Registers the import callback for this resource.
 	 *
-	 * @param callable $importHandler Callback that imports resource rows from uploaded or parsed input.
-	 * @return self Cloned resource definition with the import using callback registered.
+	 * @param callable(list<TState>,mixed=,self<TRecord,TState>=):mixed $importHandler Callback that imports resource rows from uploaded or parsed input.
+	 * @return self<TRecord,TState> Cloned resource definition with the import using callback registered.
 	 */
 	public function importUsing(callable $importHandler): self {
 		$clone=clone $this;
@@ -1785,8 +1834,8 @@ final class Resource {
 	 *
 	 * Mutation callbacks centralize duplicate, transition, restore, delete, force-delete, and bulk update workflows.
 	 *
-	 * @param callable $transitionHandler Callback that applies a status transition to a record.
-	 * @return self Cloned resource definition with the transition using callback registered.
+	 * @param callable(string,TRecord,mixed=,self<TRecord,TState>=):mixed $transitionHandler Callback that applies a status transition to a record.
+	 * @return self<TRecord,TState> Cloned resource definition with the transition using callback registered.
 	 */
 	public function transitionUsing(callable $transitionHandler): self {
 		$clone=clone $this;
@@ -1799,8 +1848,8 @@ final class Resource {
 	 *
 	 * Action definitions describe command availability, forms, handlers, confirmation state, and renderer placement.
 	 *
-	 * @param callable $bulkUpdateHandler Callback that applies bulk updates to selected records.
-	 * @return self Cloned resource definition with the bulk update using callback registered.
+	 * @param callable(TState,list<TRecord>,mixed=,self<TRecord,TState>=):mixed $bulkUpdateHandler Callback that applies bulk updates to selected records.
+	 * @return self<TRecord,TState> Cloned resource definition with the bulk update using callback registered.
 	 */
 	public function bulkUpdateUsing(callable $bulkUpdateHandler): self {
 		$clone=clone $this;
@@ -1813,8 +1862,8 @@ final class Resource {
 	 *
 	 * Mutation callbacks centralize duplicate, transition, restore, delete, force-delete, and bulk update workflows.
 	 *
-	 * @param callable $duplicateHandler Callback that duplicates one resource record.
-	 * @return self Cloned resource definition with the duplicate using callback registered.
+	 * @param callable(TRecord,mixed=,self<TRecord,TState>=):mixed $duplicateHandler Callback that duplicates one resource record.
+	 * @return self<TRecord,TState> Cloned resource definition with the duplicate using callback registered.
 	 */
 	public function duplicateUsing(callable $duplicateHandler): self {
 		$clone=clone $this;
@@ -1827,8 +1876,8 @@ final class Resource {
 	 *
 	 * Mutation callbacks centralize duplicate, transition, restore, delete, force-delete, and bulk update workflows.
 	 *
-	 * @param callable $restoreHandler Callback that restores one soft-deleted resource record.
-	 * @return self Cloned resource definition with the restore using callback registered.
+	 * @param callable(TRecord,mixed=,self<TRecord,TState>=):mixed $restoreHandler Callback that restores one soft-deleted resource record.
+	 * @return self<TRecord,TState> Cloned resource definition with the restore using callback registered.
 	 */
 	public function restoreUsing(callable $restoreHandler): self {
 		$clone=clone $this;
@@ -1841,8 +1890,8 @@ final class Resource {
 	 *
 	 * Mutation callbacks centralize duplicate, transition, restore, delete, force-delete, and bulk update workflows.
 	 *
-	 * @param callable $deleteHandler Callback that deletes one resource record.
-	 * @return self Cloned resource definition with the delete using callback registered.
+	 * @param callable(TRecord,mixed=,self<TRecord,TState>=):mixed $deleteHandler Callback that deletes one resource record.
+	 * @return self<TRecord,TState> Cloned resource definition with the delete using callback registered.
 	 */
 	public function deleteUsing(callable $deleteHandler): self {
 		$clone=clone $this;
@@ -1855,8 +1904,8 @@ final class Resource {
 	 *
 	 * Mutation callbacks centralize duplicate, transition, restore, delete, force-delete, and bulk update workflows.
 	 *
-	 * @param callable $forceDeleteHandler Callback that permanently deletes one resource record.
-	 * @return self Cloned resource definition with the force delete using callback registered.
+	 * @param callable(TRecord,mixed=,self<TRecord,TState>=):mixed $forceDeleteHandler Callback that permanently deletes one resource record.
+	 * @return self<TRecord,TState> Cloned resource definition with the force delete using callback registered.
 	 */
 	public function forceDeleteUsing(callable $forceDeleteHandler): self {
 		$clone=clone $this;
@@ -1867,8 +1916,8 @@ final class Resource {
 	/**
 	 * Registers the record key callback for this resource.
 	 *
-	 * @param callable|string $resolver Callback or field name used to derive the stable record key.
-	 * @return self Cloned resource definition with the record key using callback registered.
+	 * @param (callable(TRecord, self<TRecord, TState>=): string|int|float|bool|null)|string $resolver Callback or field name used to derive the stable record key.
+	 * @return self<TRecord,TState> Cloned resource definition with the record key using callback registered.
 	 */
 	public function recordKeyUsing(callable|string $resolver): self {
 		$clone=clone $this;
@@ -1881,8 +1930,8 @@ final class Resource {
 	/**
 	 * Registers the record title callback for this resource.
 	 *
-	 * @param callable|string $resolver Callback or field name used to derive the record subtitle.
-	 * @return self Cloned resource definition with the record title using callback registered.
+	 * @param (callable(TRecord, self<TRecord, TState>=): string|int|float|bool|null)|string $resolver Callback or field name used to derive the record title.
+	 * @return self<TRecord,TState> Cloned resource definition with the record title using callback registered.
 	 */
 	public function recordTitleUsing(callable|string $resolver): self {
 		$clone=clone $this;
@@ -1895,8 +1944,8 @@ final class Resource {
 	/**
 	 * Registers the record subtitle callback for this resource.
 	 *
-	 * @param callable|string $resolver Resolver.
-	 * @return self Cloned resource definition with the record subtitle using callback registered.
+	 * @param (callable(TRecord, self<TRecord, TState>=): string|int|float|bool|null)|string $resolver Resolver.
+	 * @return self<TRecord,TState> Cloned resource definition with the record subtitle using callback registered.
 	 */
 	public function recordSubtitleUsing(callable|string $resolver): self {
 		$clone=clone $this;
@@ -1909,8 +1958,8 @@ final class Resource {
 	/**
 	 * Registers the record url callback for this resource.
 	 *
-	 * @param callable $resolver Callback that returns the record detail URL.
-	 * @return self Cloned resource definition with the record url using callback registered.
+	 * @param callable(TRecord, string=, self<TRecord, TState>=): string $resolver Callback that returns the record detail URL.
+	 * @return self<TRecord,TState> Cloned resource definition with the record url using callback registered.
 	 */
 	public function recordUrlUsing(callable $resolver): self {
 		$clone=clone $this;
@@ -2177,6 +2226,9 @@ final class Resource {
 				'field'=>$this->tenantField,
 				'required'=>$this->tenantRequired,
 			]);
+			if($this->tenantRequired && $source instanceof PanelDataSourceResourceQuery){
+				return $source->deny();
+			}
 			return $this->tenantRequired && is_array($source) ? [] : $source;
 		}
 		if($this->tenantScope!==null){
@@ -2482,7 +2534,7 @@ final class Resource {
 	/**
 	 * Runs the import records workflow for this resource.
 	 *
-	 * @param array<int,array<string,mixed>|mixed> $rows Import rows before per-row validation and persistence.
+	 * @param list<TState> $rows Import rows before per-row validation and persistence.
 	 * @param mixed $request Panel request payload or framework request object.
 	 * @return mixed Import callback result, or null when imports are not configured.
 	 */
@@ -2714,8 +2766,8 @@ final class Resource {
 	 *
 	 * Action definitions describe command availability, forms, handlers, confirmation state, and renderer placement.
 	 *
-	 * @param array<int,Field|array<string,mixed>|string> $fields Bulk update form fields.
-	 * @return self Cloned resource definition with updated bulk fields metadata.
+	 * @param array<int, Field<TRecord, mixed, TState>|array<string,mixed>|string> $fields Bulk update form fields.
+	 * @return self<TRecord,TState> Cloned resource definition with updated bulk fields metadata.
 	 */
 	public function bulkFields(array $fields): self {
 		$clone=clone $this;
@@ -2728,9 +2780,9 @@ final class Resource {
 	 *
 	 * Action definitions describe command availability, forms, handlers, confirmation state, and renderer placement.
 	 *
-	 * @param Field|array|string $field Field.
+	 * @param Field<TRecord, mixed, TState>|array<string, mixed>|string $field Field.
 	 * @param ?string $type Type.
-	 * @return self Cloned resource definition with updated bulk field metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated bulk field metadata.
 	 */
 	public function bulkField(Field|array|string $field, ?string $type=null): self {
 		$clone=clone $this;
@@ -2743,8 +2795,8 @@ final class Resource {
 	 *
 	 * Lifecycle callbacks let Panel transform record data before display, before validation, before persistence, and after persistence.
 	 *
-	 * @param ?ResourceForm $form Form.
-	 * @return ResourceForm|self Resource form when read, or the resource after update.
+	 * @param ResourceForm<TRecord, TState>|null $form Form.
+	 * @return ($form is not null ? self<TRecord,TState> : ResourceForm<TRecord,TState>) Resource form when read, or the resource after update.
 	 */
 	public function bulkForm(?ResourceForm $form=null): ResourceForm|self {
 		if($form===null){
@@ -2761,7 +2813,7 @@ final class Resource {
 	 * Action definitions describe command availability, forms, handlers, confirmation state, and renderer placement.
 	 *
 	 * @param Schema $schema Schema.
-	 * @return self Cloned resource definition with updated bulk schema metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated bulk schema metadata.
 	 */
 	public function bulkSchema(Schema $schema): self {
 		$clone=clone $this;
@@ -2773,7 +2825,7 @@ final class Resource {
 	 * Updates the fields setting for this resource.
 	 *
 	 * @param array<int,Field|array<string,mixed>|string> $fields Resource form fields.
-	 * @return self Cloned resource definition with updated fields metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated fields metadata.
 	 */
 	public function fields(array $fields): self {
 		$clone=clone $this;
@@ -2784,9 +2836,9 @@ final class Resource {
 	/**
 	 * Updates the field setting for this resource.
 	 *
-	 * @param Field|array|string $field Field.
+	 * @param Field<TRecord, mixed, TState>|array<string, mixed>|string $field Field.
 	 * @param ?string $type Type.
-	 * @return self Cloned resource definition with updated field metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated field metadata.
 	 */
 	public function field(Field|array|string $field, ?string $type=null): self {
 		$clone=clone $this;
@@ -2799,8 +2851,8 @@ final class Resource {
 	 *
 	 * Lifecycle callbacks let Panel transform record data before display, before validation, before persistence, and after persistence.
 	 *
-	 * @param array<int,FormSection|array<string,mixed>|string> $sections Resource form sections.
-	 * @return self Cloned resource definition with updated form sections metadata.
+	 * @param array<int, FormSection<TRecord, TState>|array<string,mixed>|string> $sections Resource form sections.
+	 * @return self<TRecord,TState> Cloned resource definition with updated form sections metadata.
 	 */
 	public function formSections(array $sections): self {
 		$clone=clone $this;
@@ -2813,9 +2865,9 @@ final class Resource {
 	 *
 	 * Lifecycle callbacks let Panel transform record data before display, before validation, before persistence, and after persistence.
 	 *
-	 * @param FormSection|array|string $section Section.
-	 * @param ?array<int,Field|array<string,mixed>|string> $fields Optional fields for the section.
-	 * @return self Cloned resource definition with updated form section metadata.
+	 * @param FormSection<TRecord, TState>|array<string, mixed>|string $section Section.
+	 * @param array<int, Field<TRecord, mixed, TState>|array<string,mixed>|string>|null $fields Optional fields for the section.
+	 * @return self<TRecord,TState> Cloned resource definition with updated form section metadata.
 	 */
 	public function formSection(FormSection|array|string $section, ?array $fields=null): self {
 		$clone=clone $this;
@@ -2829,7 +2881,7 @@ final class Resource {
 	 * Lifecycle callbacks let Panel transform record data before display, before validation, before persistence, and after persistence.
 	 *
 	 * @param int $columns Requested table column count for resource layout.
-	 * @return self Cloned resource definition with updated form columns metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated form columns metadata.
 	 */
 	public function formColumns(int $columns): self {
 		$clone=clone $this;
@@ -2842,8 +2894,8 @@ final class Resource {
 	 *
 	 * Lifecycle callbacks let Panel transform record data before display, before validation, before persistence, and after persistence.
 	 *
-	 * @param ?ResourceForm $form Form.
-	 * @return ResourceForm|self Resource form when read, or the resource after update.
+	 * @param ResourceForm<TRecord, TState>|null $form Form.
+	 * @return ResourceForm<TRecord, TState>|self<TRecord, TState> Resource form when read, or the resource after update.
 	 */
 	public function form(?ResourceForm $form=null): ResourceForm|self {
 		if($form===null){
@@ -2857,8 +2909,8 @@ final class Resource {
 	/**
 	 * Updates the schema setting for this resource.
 	 *
-	 * @param Schema $schema Schema.
-	 * @return self Cloned resource definition with updated schema metadata.
+	 * @param Schema<TRecord, TState> $schema Schema.
+	 * @return self<TRecord,TState> Cloned resource definition with updated schema metadata.
 	 */
 	public function schema(Schema $schema): self {
 		$clone=clone $this;
@@ -2869,8 +2921,8 @@ final class Resource {
 	/**
 	 * Updates the infolist setting for this resource.
 	 *
-	 * @param Schema|Infolist|array|null $schema Schema.
-	 * @return Schema|Infolist|self Infolist schema when read, or the resource after update.
+	 * @param Schema<TRecord, TState>|Infolist<TRecord, TState>|array<string, mixed>|null $schema Schema.
+	 * @return ($schema is not null ? self<TRecord,TState> : Schema<TRecord,TState>|Infolist<TRecord,TState>) Infolist schema when read, or the resource after update.
 	 */
 	public function infolist(Schema|Infolist|array|null $schema=null): Schema|Infolist|self {
 		if($schema===null){
@@ -2888,7 +2940,7 @@ final class Resource {
 	 * Updates the infolist entries setting for this resource.
 	 *
 	 * @param array<int,Field|InfolistEntry|array<string,mixed>|string> $entries Infolist entries.
-	 * @return self Cloned resource definition with updated infolist entries metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated infolist entries metadata.
 	 */
 	public function infolistEntries(array $entries): self {
 		return $this->infolist(Infolist::make($entries));
@@ -2899,7 +2951,7 @@ final class Resource {
 	 *
 	 * @param Field|InfolistEntry|array|string $entry Entry.
 	 * @param ?string $type Type.
-	 * @return self Cloned resource definition with updated infolist entry metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated infolist entry metadata.
 	 */
 	public function infolistEntry(Field|InfolistEntry|array|string $entry, ?string $type=null): self {
 		$infolist=$this->infolist();
@@ -2973,7 +3025,7 @@ final class Resource {
 	 * Column declarations are delegated to ResourceTable so arrays, strings, and Column objects normalize into the renderer manifest consistently.
 	 *
 	 * @param array<int,Column|array<string,mixed>|string> $columns Table columns.
-	 * @return self Cloned resource definition with updated columns metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated columns metadata.
 	 */
 	public function columns(array $columns): self {
 		$clone=clone $this;
@@ -2986,9 +3038,9 @@ final class Resource {
 	 *
 	 * The column declaration is normalized by ResourceTable and appended without changing existing columns.
 	 *
-	 * @param Column|array|string $column Column declaration, name, or Column instance.
+	 * @param Column<TRecord, mixed>|array<string, mixed>|string $column Column declaration, name, or Column instance.
 	 * @param ?string $type Optional column type when the declaration is a string.
-	 * @return self Cloned resource definition with updated column metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated column metadata.
 	 */
 	public function column(Column|array|string $column, ?string $type=null): self {
 		$clone=clone $this;
@@ -3000,7 +3052,7 @@ final class Resource {
 	 * Updates the per page setting for this resource.
 	 *
 	 * @param int $rows Default row count requested by the resource index table.
-	 * @return self Cloned resource definition with updated per page metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated per page metadata.
 	 */
 	public function perPage(int $rows): self {
 		$clone=clone $this;
@@ -3012,7 +3064,7 @@ final class Resource {
 	 * Updates the per page options setting for this resource.
 	 *
 	 * @param array<int,int> $options Allowed page sizes.
-	 * @return self Cloned resource definition with updated per page options metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated per page options metadata.
 	 */
 	public function perPageOptions(array $options): self {
 		$clone=clone $this;
@@ -3025,7 +3077,7 @@ final class Resource {
 	 *
 	 * @param string $column Column used for the default table sort.
 	 * @param string $direction Sort direction token normalized by ResourceTable.
-	 * @return self Cloned resource definition with updated default sort metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated default sort metadata.
 	 */
 	public function defaultSort(string $column, string $direction='asc'): self {
 		$clone=clone $this;
@@ -3037,7 +3089,7 @@ final class Resource {
 	 * Updates the filters setting for this resource.
 	 *
 	 * @param array<int,TableFilter|array<string,mixed>|string> $filters Table filters.
-	 * @return self Cloned resource definition with updated filters metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated filters metadata.
 	 */
 	public function filters(array $filters): self {
 		$clone=clone $this;
@@ -3048,9 +3100,9 @@ final class Resource {
 	/**
 	 * Updates the filter setting for this resource.
 	 *
-	 * @param TableFilter|array|string $filter Filter declaration, name, or TableFilter instance.
+	 * @param TableFilter<TRecord, mixed, TState>|array<string, mixed>|string $filter Filter declaration, name, or TableFilter instance.
 	 * @param ?string $type Optional filter type when the declaration is a string.
-	 * @return self Cloned resource definition with updated filter metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated filter metadata.
 	 */
 	public function filter(TableFilter|array|string $filter, ?string $type=null): self {
 		$clone=clone $this;
@@ -3063,12 +3115,12 @@ final class Resource {
 	 *
 	 * Empty state metadata is rendered when the unfiltered resource table has no rows.
 	 *
-	 * @param string|array|callable $heading Heading text, full empty-state config, or resolver callback.
+	 * @param string|array<string,mixed>|callable(PanelRequest,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=,bool=):scalar|\Stringable|array<string,mixed>|null $heading Heading text, full empty-state config, or resolver callback.
 	 * @param ?string $description Optional supporting text.
 	 * @param ?string $actionLabel Optional call-to-action label.
-	 * @param string|callable|null $actionUrl Optional static URL or URL resolver.
+	 * @param string|callable(PanelRequest,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=,bool=):scalar|\Stringable|null $actionUrl Optional static URL or URL resolver.
 	 * @param ?string $icon Optional icon token.
-	 * @return self Cloned resource definition with updated empty state metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated empty state metadata.
 	 */
 	public function emptyState(string|array|callable $heading, ?string $description=null, ?string $actionLabel=null, string|callable|null $actionUrl=null, ?string $icon=null): self {
 		$clone=clone $this;
@@ -3081,12 +3133,12 @@ final class Resource {
 	 *
 	 * Filtered empty state metadata is rendered when filters/search produce no matching rows while the resource may still contain records.
 	 *
-	 * @param string|array|callable $heading Heading text, full empty-state config, or resolver callback.
+	 * @param string|array<string,mixed>|callable(PanelRequest,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=,bool=):scalar|\Stringable|array<string,mixed>|null $heading Heading text, full empty-state config, or resolver callback.
 	 * @param ?string $description Optional supporting text.
 	 * @param ?string $actionLabel Optional call-to-action label.
-	 * @param string|callable|null $actionUrl Optional static URL or URL resolver.
+	 * @param string|callable(PanelRequest,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=,bool=):scalar|\Stringable|null $actionUrl Optional static URL or URL resolver.
 	 * @param ?string $icon Optional icon token.
-	 * @return self Cloned resource definition with updated filtered empty state metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated filtered empty state metadata.
 	 */
 	public function filteredEmptyState(string|array|callable $heading, ?string $description=null, ?string $actionLabel=null, string|callable|null $actionUrl=null, ?string $icon=null): self {
 		$clone=clone $this;
@@ -3100,8 +3152,8 @@ final class Resource {
 	 * The URL can be static or resolved at render time by ResourceTable.
 	 *
 	 * @param string $label Action label shown in the empty state.
-	 * @param string|callable $url Static URL or URL resolver for the action.
-	 * @return self Cloned resource definition with updated empty state action metadata.
+	 * @param string|callable(PanelRequest,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=,bool=):scalar|\Stringable|null $url Static URL or URL resolver for the action.
+	 * @return self<TRecord,TState> Cloned resource definition with updated empty state action metadata.
 	 */
 	public function emptyStateAction(string $label, string|callable $url): self {
 		$clone=clone $this;
@@ -3115,8 +3167,8 @@ final class Resource {
 	 * The URL can be static or resolved at render time by ResourceTable.
 	 *
 	 * @param string $label Action label shown in the filtered empty state.
-	 * @param string|callable $url Static URL or URL resolver for the action.
-	 * @return self Cloned resource definition with updated filtered empty state action metadata.
+	 * @param string|callable(PanelRequest,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=,bool=):scalar|\Stringable|null $url Static URL or URL resolver for the action.
+	 * @return self<TRecord,TState> Cloned resource definition with updated filtered empty state action metadata.
 	 */
 	public function filteredEmptyStateAction(string $label, string|callable $url): self {
 		$clone=clone $this;
@@ -3128,7 +3180,7 @@ final class Resource {
 	 * Updates the views setting for this resource.
 	 *
 	 * @param array<int,TableView|array<string,mixed>|string> $views Table views.
-	 * @return self Cloned resource definition with updated views metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated views metadata.
 	 */
 	public function views(array $views): self {
 		$clone=clone $this;
@@ -3136,11 +3188,227 @@ final class Resource {
 		return $clone;
 	}
 
+	/** @param array<string,mixed>|string $presentation */
+	public function tablePresentation(string $collection, array|string $presentation): self {
+		$clone=clone $this;
+		$clone->resourceTable=$clone->resourceTable->collectionPresentation($collection, $presentation);
+		return $clone;
+	}
+
+	/** @param array<string,mixed>|PanelCollectionItemPresentation $presentation */
+	public function tableCollectionItemPresentation(string $collection, string|int $item, array|PanelCollectionItemPresentation $presentation): self {
+		$clone=clone $this;
+		$clone->resourceTable=$clone->resourceTable->collectionItemPresentation($collection, $item, $presentation);
+		return $clone;
+	}
+
+	/** @param array<string|int,array<string,mixed>|PanelCollectionItemPresentation> $presentations */
+	public function tableCollectionItemPresentations(string $collection, array $presentations): self {
+		$clone=clone $this;
+		$clone->resourceTable=$clone->resourceTable->collectionItemPresentations($collection, $presentations);
+		return $clone;
+	}
+
+	public function tableCollectionFinalRow(string $collection, string $policy='fill'): self {
+		$clone=clone $this;
+		$clone->resourceTable=$clone->resourceTable->collectionFinalRow($collection, $policy);
+		return $clone;
+	}
+
+	/** @param array<string,mixed> $options */
+	public function brickTableCollection(string $collection, bool $enabled=true, array $options=[]): self {
+		return $this->tablePresentation($collection, $enabled ? array_replace(['display'=>'brick'], $options) : self::collectionDefaultDisplay($collection));
+	}
+
+	/** @param array<string,mixed> $options */
+	public function masonryTableCollection(string $collection, bool $enabled=true, array $options=[]): self {
+		return $this->tablePresentation($collection, $enabled ? array_replace(['display'=>'masonry', 'masonry'=>'rows', 'fit'=>'fill'], $options) : self::collectionDefaultDisplay($collection));
+	}
+
+	public function viewsPresentation(array|string $presentation): self { return $this->tablePresentation('views', $presentation); }
+	public function viewsDisplay(string $display): self { return $this->viewsPresentation($display); }
+	public function brickViews(bool $enabled=true): self { return $this->brickTableCollection('views', $enabled); }
+	public function groupsPresentation(array|string $presentation): self { return $this->tablePresentation('groups', $presentation); }
+	public function groupsDisplay(string $display): self { return $this->groupsPresentation($display); }
+	public function brickGroups(bool $enabled=true): self { return $this->brickTableCollection('groups', $enabled); }
+	public function summariesPresentation(array|string $presentation): self { return $this->tablePresentation('summaries', $presentation); }
+	public function summariesDisplay(string $display): self { return $this->summariesPresentation($display); }
+	public function brickSummaries(bool $enabled=true): self { return $this->brickTableCollection('summaries', $enabled); }
+	public function filtersPresentation(array|string $presentation): self { return $this->tablePresentation('filters', $presentation); }
+	public function filtersDisplay(string $display): self { return $this->filtersPresentation($display); }
+	public function brickFilters(bool $enabled=true): self { return $this->brickTableCollection('filters', $enabled); }
+	public function actionsPresentation(array|string $presentation): self { return $this->tablePresentation('actions', $presentation); }
+	public function actionsDisplay(string $display): self { return $this->actionsPresentation($display); }
+	public function brickActions(bool $enabled=true): self { return $this->brickTableCollection('actions', $enabled); }
+	public function masonryActions(bool $enabled=true, array $options=[]): self { return $this->masonryTableCollection('actions', $enabled, $options); }
+	public function toolsPresentation(array|string $presentation): self { return $this->tablePresentation('tools', $presentation); }
+	public function toolsDisplay(string $display): self { return $this->toolsPresentation($display); }
+	public function brickTools(bool $enabled=true): self { return $this->brickTableCollection('tools', $enabled); }
+	public function masonryTools(bool $enabled=true, array $options=[]): self { return $this->masonryTableCollection('tools', $enabled, $options); }
+
+	/** @param array<string,mixed>|string $presentation */
+	public function recordPresentation(string $collection, array|string $presentation): self {
+		return $this->collectionPresentation($collection, $presentation);
+	}
+
+	/** @param array<string,mixed>|PanelCollectionItemPresentation $presentation */
+	public function recordItemPresentation(string $collection, string|int $item, array|PanelCollectionItemPresentation $presentation): self {
+		return $this->collectionItemPresentation($collection, $item, $presentation);
+	}
+
+	/** @param array<string|int,array<string,mixed>|PanelCollectionItemPresentation> $presentations */
+	public function recordItemPresentations(string $collection, array $presentations): self {
+		return $this->collectionItemPresentations($collection, $presentations);
+	}
+
+	public function recordFinalRow(string $collection, string $policy='fill'): self {
+		return $this->collectionFinalRow($collection, $policy);
+	}
+
+	/** @param array<string,mixed> $options */
+	public function masonryRecords(string $collection, bool $enabled=true, array $options=[]): self {
+		return $enabled
+			? $this->rowMasonry($collection, $options)
+			: $this->collectionPresentation($collection, self::collectionDefaultDisplay($collection));
+	}
+
+	/** @param array<string,mixed> $options */
+	public function brickRecords(string $collection, bool $enabled=true, array $options=[]): self {
+		return $this->recordPresentation($collection, $enabled ? array_replace(['display'=>'brick'], $options) : self::collectionDefaultDisplay($collection));
+	}
+
+	/** @param array<string,mixed> $options */
+	public function masonryViews(bool $enabled=true, array $options=[]): self {
+		return $this->masonryTableCollection('views', $enabled, $options);
+	}
+
+	/** @param array<string,mixed> $options */
+	public function masonryGroups(bool $enabled=true, array $options=[]): self {
+		return $this->masonryTableCollection('groups', $enabled, $options);
+	}
+
+	/** @param array<string,mixed> $options */
+	public function masonrySummaries(bool $enabled=true, array $options=[]): self {
+		return $this->masonryTableCollection('summaries', $enabled, $options);
+	}
+
+	/** @param array<string,mixed> $options */
+	public function masonryFilters(bool $enabled=true, array $options=[]): self {
+		return $this->masonryTableCollection('filters', $enabled, $options);
+	}
+
+	/** @param array<string,mixed>|string $presentation */
+	public function formPresentation(string $collection, array|string $presentation): self {
+		$clone=clone $this;
+		$clone->form=$clone->form->collectionPresentation($collection, $presentation);
+		return $clone;
+	}
+
+	/** @param array<string,mixed>|PanelCollectionItemPresentation $presentation */
+	public function formCollectionItemPresentation(string $collection, string|int $item, array|PanelCollectionItemPresentation $presentation): self {
+		$clone=clone $this;
+		$clone->form=$clone->form->collectionItemPresentation($collection, $item, $presentation);
+		return $clone;
+	}
+
+	public function formCollectionFinalRow(string $collection, string $policy='fill'): self {
+		$clone=clone $this;
+		$clone->form=$clone->form->collectionFinalRow($collection, $policy);
+		return $clone;
+	}
+
+	/** @param array<string,mixed> $options */
+	public function brickFormCollection(string $collection, bool $enabled=true, array $options=[]): self {
+		return $this->formPresentation($collection, $enabled ? array_replace(['display'=>'brick'], $options) : self::collectionDefaultDisplay($collection));
+	}
+
+	/** @param array<string,mixed> $options */
+	public function masonryFormCollection(string $collection, bool $enabled=true, array $options=[]): self {
+		return $this->formPresentation($collection, $enabled ? array_replace(['display'=>'masonry', 'masonry'=>'rows', 'fit'=>'fill'], $options) : self::collectionDefaultDisplay($collection));
+	}
+
+	public function fieldsPresentation(array|string $presentation): self { return $this->formPresentation('fields', $presentation); }
+	public function fieldsDisplay(string $display): self { return $this->fieldsPresentation($display); }
+	public function brickFields(bool $enabled=true): self { return $this->brickFormCollection('fields', $enabled); }
+	public function masonryFields(bool $enabled=true, array $options=[]): self { return $this->masonryFormCollection('fields', $enabled, $options); }
+	public function sectionsPresentation(array|string $presentation): self { return $this->formPresentation('sections', $presentation); }
+	public function sectionsDisplay(string $display): self { return $this->sectionsPresentation($display); }
+	public function brickSections(bool $enabled=true): self { return $this->brickFormCollection('sections', $enabled); }
+	public function masonrySections(bool $enabled=true, array $options=[]): self { return $this->masonryFormCollection('sections', $enabled, $options); }
+	public function tabsPresentation(array|string $presentation): self { return $this->formPresentation('tabs', $presentation); }
+	public function tabsDisplay(string $display): self { return $this->tabsPresentation($display); }
+	public function brickTabs(bool $enabled=true): self { return $this->brickFormCollection('tabs', $enabled); }
+	public function masonryTabs(bool $enabled=true, array $options=[]): self { return $this->masonryFormCollection('tabs', $enabled, $options); }
+	public function stepsPresentation(array|string $presentation): self { return $this->formPresentation('steps', $presentation); }
+	public function stepsDisplay(string $display): self { return $this->stepsPresentation($display); }
+	public function brickSteps(bool $enabled=true): self { return $this->brickFormCollection('steps', $enabled); }
+	public function masonrySteps(bool $enabled=true, array $options=[]): self { return $this->masonryFormCollection('steps', $enabled, $options); }
+
+	/** @param array<string,mixed>|string $presentation */
+	public function infolistPresentation(string $collection, array|string $presentation): self {
+		$infolist=$this->infolist();
+		$infolist=$infolist instanceof Infolist ? $infolist : Infolist::fromSchema($infolist);
+		$clone=clone $this;
+		$clone->infolistSchema=$infolist->collectionPresentation($collection, $presentation);
+		return $clone;
+	}
+
+	/** @param array<string,mixed>|PanelCollectionItemPresentation $presentation */
+	public function infolistCollectionItemPresentation(string $collection, string|int $item, array|PanelCollectionItemPresentation $presentation): self {
+		$infolist=$this->infolist();
+		$infolist=$infolist instanceof Infolist ? $infolist : Infolist::fromSchema($infolist);
+		$clone=clone $this;
+		$clone->infolistSchema=$infolist->collectionItemPresentation($collection, $item, $presentation);
+		return $clone;
+	}
+
+	public function infolistCollectionFinalRow(string $collection, string $policy='fill'): self {
+		$infolist=$this->infolist();
+		$infolist=$infolist instanceof Infolist ? $infolist : Infolist::fromSchema($infolist);
+		$clone=clone $this;
+		$clone->infolistSchema=$infolist->collectionFinalRow($collection, $policy);
+		return $clone;
+	}
+
+	/** @param array<string,mixed> $options */
+	public function brickInfolistCollection(string $collection, bool $enabled=true, array $options=[]): self {
+		return $this->infolistPresentation($collection, $enabled ? array_replace(['display'=>'brick'], $options) : self::collectionDefaultDisplay($collection));
+	}
+
+	/** @param array<string,mixed> $options */
+	public function masonryInfolistCollection(string $collection, bool $enabled=true, array $options=[]): self {
+		return $this->infolistPresentation($collection, $enabled ? array_replace(['display'=>'masonry', 'masonry'=>'rows', 'fit'=>'fill'], $options) : self::collectionDefaultDisplay($collection));
+	}
+
+	public function entriesPresentation(array|string $presentation): self { return $this->infolistPresentation('entries', $presentation); }
+	public function entriesDisplay(string $display): self { return $this->entriesPresentation($display); }
+	public function brickEntries(bool $enabled=true): self { return $this->brickInfolistCollection('entries', $enabled); }
+	public function masonryEntries(bool $enabled=true, array $options=[]): self { return $this->masonryInfolistCollection('entries', $enabled, $options); }
+	public function infolistSectionsPresentation(array|string $presentation): self { return $this->infolistPresentation('sections', $presentation); }
+	public function brickInfolistSections(bool $enabled=true): self { return $this->brickInfolistCollection('sections', $enabled); }
+	public function masonryInfolistSections(bool $enabled=true, array $options=[]): self { return $this->masonryInfolistCollection('sections', $enabled, $options); }
+	public function infolistTabsPresentation(array|string $presentation): self { return $this->infolistPresentation('tabs', $presentation); }
+	public function brickInfolistTabs(bool $enabled=true): self { return $this->brickInfolistCollection('tabs', $enabled); }
+	public function masonryInfolistTabs(bool $enabled=true, array $options=[]): self { return $this->masonryInfolistCollection('tabs', $enabled, $options); }
+	public function infolistStepsPresentation(array|string $presentation): self { return $this->infolistPresentation('steps', $presentation); }
+	public function brickInfolistSteps(bool $enabled=true): self { return $this->brickInfolistCollection('steps', $enabled); }
+	public function masonryInfolistSteps(bool $enabled=true, array $options=[]): self { return $this->masonryInfolistCollection('steps', $enabled, $options); }
+
+	/** @param array<string,mixed> $options */
+	public function masonryFormFields(bool $enabled=true, array $options=[]): self {
+		return $this->masonryFields($enabled, $options);
+	}
+
+	/** @param array<string,mixed> $options */
+	public function masonryFormSections(bool $enabled=true, array $options=[]): self {
+		return $this->masonrySections($enabled, $options);
+	}
+
 	/**
 	 * Updates the view setting for this resource.
 	 *
-	 * @param TableView|array|string $view View declaration, name, or TableView instance.
-	 * @return self Cloned resource definition with updated view metadata.
+	 * @param TableView<TRecord, TState>|array<string, mixed>|string $view View declaration, name, or TableView instance.
+	 * @return self<TRecord,TState> Cloned resource definition with updated view metadata.
 	 */
 	public function view(TableView|array|string $view): self {
 		$clone=clone $this;
@@ -3152,7 +3420,7 @@ final class Resource {
 	 * Updates the summaries setting for this resource.
 	 *
 	 * @param array<int,TableSummary|array<string,mixed>|string> $summaries Table summaries.
-	 * @return self Cloned resource definition with updated summaries metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated summaries metadata.
 	 */
 	public function summaries(array $summaries): self {
 		$clone=clone $this;
@@ -3163,9 +3431,9 @@ final class Resource {
 	/**
 	 * Updates the summary setting for this resource.
 	 *
-	 * @param TableSummary|array|string $summary Summary declaration, name, or TableSummary instance.
+	 * @param TableSummary<TRecord, mixed>|array<string, mixed>|string $summary Summary declaration, name, or TableSummary instance.
 	 * @param ?string $type Optional summary type when the declaration is a string.
-	 * @return self Cloned resource definition with updated summary metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated summary metadata.
 	 */
 	public function summary(TableSummary|array|string $summary, ?string $type=null): self {
 		$clone=clone $this;
@@ -3178,8 +3446,8 @@ final class Resource {
 	 *
 	 * Group declarations are normalized by ResourceTable before becoming renderer manifest metadata.
 	 *
-	 * @param array<int,TableGroup|array<string,mixed>|string> $groups Table groups.
-	 * @return self Cloned resource definition with updated table groups metadata.
+	 * @param array<int, TableGroup<TRecord, mixed>|array<string,mixed>|string> $groups Table groups.
+	 * @return self<TRecord,TState> Cloned resource definition with updated table groups metadata.
 	 */
 	public function tableGroups(array $groups): self {
 		$clone=clone $this;
@@ -3192,8 +3460,8 @@ final class Resource {
 	 *
 	 * The group declaration is normalized by ResourceTable and appended without changing existing groups.
 	 *
-	 * @param TableGroup|array|string $group Group declaration, name, or TableGroup instance.
-	 * @return self Cloned resource definition with updated table group metadata.
+	 * @param TableGroup<TRecord, mixed>|array<string, mixed>|string $group Group declaration, name, or TableGroup instance.
+	 * @return self<TRecord,TState> Cloned resource definition with updated table group metadata.
 	 */
 	public function tableGroup(TableGroup|array|string $group): self {
 		$clone=clone $this;
@@ -3206,9 +3474,9 @@ final class Resource {
 	 *
 	 * Attributes may be static or resolved per record. Merge mode preserves existing row attributes while replacement mode lets callers define the full row attribute set.
 	 *
-	 * @param array|callable $attributes Static row attributes or resolver callback.
+	 * @param array<string,mixed>|callable(TRecord,PanelRequest|null=,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=):array<string,mixed> $attributes Static row attributes or resolver callback.
 	 * @param bool $merge Whether to merge with existing row attributes.
-	 * @return self Cloned resource definition with updated row attributes metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated row attributes metadata.
 	 */
 	public function rowAttributes(array|callable $attributes, bool $merge=true): self {
 		$clone=clone $this;
@@ -3221,9 +3489,9 @@ final class Resource {
 	 *
 	 * This is a semantic alias for rowAttributes().
 	 *
-	 * @param array|callable $attributes Static row attributes or resolver callback.
+	 * @param array<string,mixed>|callable(TRecord,PanelRequest|null=,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=):array<string,mixed> $attributes Static row attributes or resolver callback.
 	 * @param bool $merge Whether to merge with existing row attributes.
-	 * @return self Cloned resource definition with updated record attributes metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated record attributes metadata.
 	 */
 	public function recordAttributes(array|callable $attributes, bool $merge=true): self {
 		return $this->rowAttributes($attributes, $merge);
@@ -3234,7 +3502,7 @@ final class Resource {
 	 *
 	 * @param string $name HTML attribute name stored for each table row.
 	 * @param mixed $value Static value or renderer-resolved value for the attribute.
-	 * @return self Cloned resource definition with updated row attribute metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated row attribute metadata.
 	 */
 	public function rowAttribute(string $name, mixed $value=true): self {
 		$clone=clone $this;
@@ -3247,7 +3515,7 @@ final class Resource {
 	 *
 	 * @param string $name Data attribute suffix stored for each table row.
 	 * @param mixed $value Static value or renderer-resolved value for the data attribute.
-	 * @return self Cloned resource definition with updated row data metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated row data metadata.
 	 */
 	public function rowData(string $name, mixed $value=true): self {
 		$clone=clone $this;
@@ -3260,7 +3528,7 @@ final class Resource {
 	 *
 	 * @param string $name ARIA attribute suffix stored for each table row.
 	 * @param mixed $value Static value or renderer-resolved value for the ARIA attribute.
-	 * @return self Cloned resource definition with updated row aria metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated row aria metadata.
 	 */
 	public function rowAria(string $name, mixed $value=true): self {
 		$clone=clone $this;
@@ -3273,9 +3541,9 @@ final class Resource {
 	 *
 	 * Row clicks can be disabled, routed to a static target, or resolved per record. Modal mode tells renderers whether to open the target in a Panel modal flow.
 	 *
-	 * @param bool|string|callable $target Click target flag, URL/action name, or resolver callback.
+	 * @param bool|string|callable(TRecord,PanelRequest|null=,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=,string=):string|array<string,mixed>|null $target Click target flag, URL/action name, or resolver callback.
 	 * @param bool $modal Whether the click target should open in a modal flow.
-	 * @return self Cloned resource definition with updated row click metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated row click metadata.
 	 */
 	public function rowClick(bool|string|callable $target=true, bool $modal=true): self {
 		$clone=clone $this;
@@ -3288,9 +3556,9 @@ final class Resource {
 	 *
 	 * This is a semantic alias for rowClick().
 	 *
-	 * @param bool|string|callable $target Click target flag, URL/action name, or resolver callback.
+	 * @param bool|string|callable(TRecord,PanelRequest|null=,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=,string=):string|array<string,mixed>|null $target Click target flag, URL/action name, or resolver callback.
 	 * @param bool $modal Whether the click target should open in a modal flow.
-	 * @return self Cloned resource definition with updated clickable rows metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated clickable rows metadata.
 	 */
 	public function clickableRows(bool|string|callable $target=true, bool $modal=true): self {
 		return $this->rowClick($target, $modal);
@@ -3303,7 +3571,7 @@ final class Resource {
 	 *
 	 * @param string $operation Resource operation or action name.
 	 * @param bool $modal Whether the row action should open in a modal flow.
-	 * @return self Cloned resource definition with updated row action metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated row action metadata.
 	 */
 	public function rowAction(string $operation='show', bool $modal=true): self {
 		$clone=clone $this;
@@ -3318,7 +3586,7 @@ final class Resource {
 	 *
 	 * @param string $actionName Action registered on this resource.
 	 * @param bool $modal Whether the action should open in a modal flow.
-	 * @return self Cloned resource definition with updated record action metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated record action metadata.
 	 */
 	public function recordAction(string $actionName, bool $modal=true): self {
 		$clone=clone $this;
@@ -3329,9 +3597,9 @@ final class Resource {
 	/**
 	 * Updates the row url setting for this resource.
 	 *
-	 * @param callable $resolver Callback that returns a row URL for the current record.
+	 * @param callable(TRecord,PanelRequest|null=,self<TRecord,TState>|null=,ResourceTable<TRecord,TState>|null=,string=):(?string) $resolver Callback that returns a row URL for the current record.
 	 * @param bool $modal Whether the URL should open in a modal flow.
-	 * @return self Cloned resource definition with updated row url metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated row url metadata.
 	 */
 	public function rowUrl(callable $resolver, bool $modal=true): self {
 		$clone=clone $this;
@@ -3343,7 +3611,7 @@ final class Resource {
 	 * Updates the previewable setting for this resource.
 	 *
 	 * @param bool $enabled Whether rows can expose preview affordances.
-	 * @return self Cloned resource definition with updated previewable metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated previewable metadata.
 	 */
 	public function previewable(bool $enabled=true): self {
 		$clone=clone $this;
@@ -3357,7 +3625,7 @@ final class Resource {
 	 * This is a semantic alias for previewable().
 	 *
 	 * @param bool $enabled Whether rows can expose preview affordances.
-	 * @return self Cloned resource definition with updated row preview metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated row preview metadata.
 	 */
 	public function rowPreview(bool $enabled=true): self {
 		return $this->previewable($enabled);
@@ -3367,7 +3635,7 @@ final class Resource {
 	 * Toggles the preview action exposed by table renderers.
 	 *
 	 * @param bool $enabled Whether preview action UI should be available.
-	 * @return self Cloned resource definition with updated preview action metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated preview action metadata.
 	 */
 	public function previewAction(bool $enabled=true): self {
 		return $this->previewable($enabled);
@@ -3378,9 +3646,9 @@ final class Resource {
 	 *
 	 * Preview field declarations can be static or resolved per record; showAction controls whether the table also surfaces an explicit preview command.
 	 *
-	 * @param array|callable $fields Static preview fields or resolver callback.
+	 * @param array<int|string,mixed>|callable(TRecord,PanelRequest|null=,Resource<TRecord,TState>|null=,ResourceTable<TRecord,TState>=):array<int|string,mixed> $fields Static preview fields or resolver callback.
 	 * @param bool $showAction Whether renderers should show a preview action.
-	 * @return self Cloned resource definition with updated preview fields metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated preview fields metadata.
 	 */
 	public function previewFields(array|callable $fields, bool $showAction=true): self {
 		$clone=clone $this;
@@ -3393,8 +3661,8 @@ final class Resource {
 	 *
 	 * Table metadata defines columns, filters, grouping, pagination, summaries, and row actions used by the resource index view.
 	 *
-	 * @param ?ResourceTable $table Table.
-	 * @return ResourceTable|self Resource table when read, or the resource after update.
+	 * @param ResourceTable<TRecord, TState>|null $table Table.
+	 * @return ($table is not null ? self<TRecord,TState> : ResourceTable<TRecord,TState>) Resource table when read, or the resource after update.
 	 */
 	public function resourceTable(?ResourceTable $table=null): ResourceTable|self {
 		if($table===null){
@@ -3438,10 +3706,12 @@ final class Resource {
 	 * @param array<int,mixed> $records Records loaded for table state.
 	 * @param bool $alreadyPaginated Whether the record set has already been paginated upstream.
 	 * @param array<string,mixed> $preferences Table preference state.
+	 * @param array<string,mixed> $dataSource Structured data-source result metadata.
+	 * @param ?int $totalRecords Upstream total when records contain only one page.
 	 * @return PanelTableState Resolved table state.
 	 */
-	public function tableState(PanelRequest $request, array $records=[], bool $alreadyPaginated=false, array $preferences=[]): PanelTableState {
-		return $this->resourceTable->state($request, $records, $this, $alreadyPaginated, $preferences);
+	public function tableState(PanelRequest $request, array $records=[], bool $alreadyPaginated=false, array $preferences=[], array $dataSource=[], ?int $totalRecords=null): PanelTableState {
+		return $this->resourceTable->state($request, $records, $this, $alreadyPaginated, $preferences, $dataSource, $totalRecords);
 	}
 
 	/**
@@ -3464,7 +3734,7 @@ final class Resource {
 	 * Configures table presentation for resource records.
 	 *
 	 * Table metadata defines columns, filters, grouping, pagination, summaries, and row actions used by the resource index view.
-	 * @return array<string,TableGroup> Table groups keyed by group name.
+	 * @return array<string, TableGroup<TRecord, mixed>> Table groups keyed by group name.
 	 */
 	public function tableGroupsList(): array {
 		return $this->resourceTable->groupsList();
@@ -3536,7 +3806,7 @@ final class Resource {
 	 * Updates the status field setting for this resource.
 	 *
 	 * @param string $field Resource field name used by metadata or lookup helpers.
-	 * @return self Cloned resource definition with updated status field metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated status field metadata.
 	 */
 	public function statusField(string $field): self {
 		$field=self::normalizeName($field);
@@ -3546,10 +3816,91 @@ final class Resource {
 	}
 
 	/**
+	 * Replaces the declarative columns exposed by the resource status board.
+	 *
+	 * Board columns are independent from transition handlers: a resource may render
+	 * a useful read-only board and become draggable later when the trusted host
+	 * attaches a save or transition callback.
+	 *
+	 * @param array<string|int,array<string,mixed>|string> $columns Board-column definitions.
+	 * @return self<TRecord,TState> Cloned resource with the normalized board columns.
+	 */
+	public function statusBoardColumns(array $columns): self {
+		$clone=clone $this;
+		$clone->statusBoardColumns=[];
+		foreach($columns as $key=>$column){
+			if(is_array($column)){
+				if(is_string($key) && !isset($column['name']) && !isset($column['status'])){
+					$column['name']=$key;
+					$column['status']=$key;
+				}
+				$clone=$clone->statusBoardColumn($column);
+				continue;
+			}
+			if(!is_string($column)){
+				continue;
+			}
+			$clone=is_string($key)
+				? $clone->statusBoardColumn(['name'=>$key, 'status'=>$key, 'label'=>$column])
+				: $clone->statusBoardColumn($column);
+		}
+		return $clone;
+	}
+
+	/**
+	 * Adds or replaces one declarative status-board column.
+	 *
+	 * @param array<string,mixed>|string $column Column definition or status/name shorthand.
+	 * @param ?string $status Raw record status represented by the column when shorthand is used.
+	 * @param ?string $label Optional display label for shorthand input.
+	 * @param string $tone Visual tone token.
+	 * @param array<string,mixed> $meta Renderer-safe column metadata.
+	 * @return self<TRecord,TState> Cloned resource with the board column applied.
+	 */
+	public function statusBoardColumn(array|string $column, ?string $status=null, ?string $label=null, string $tone='neutral', array $meta=[]): self {
+		$definition=is_array($column) ? $column : [
+			'name'=>$column,
+			'status'=>$status ?? $column,
+			'label'=>$label,
+			'tone'=>$tone,
+			'meta'=>$meta,
+		];
+		$statusValue=trim((string)($definition['status'] ?? $definition['name'] ?? ''));
+		$name=self::normalizeName((string)($definition['name'] ?? $statusValue));
+		if($name==='' || $statusValue===''){
+			return clone $this;
+		}
+		$toneValue=self::normalizeName((string)($definition['tone'] ?? 'neutral'));
+		if(!in_array($toneValue, ['neutral', 'primary', 'success', 'warning', 'danger', 'info'], true)){
+			$toneValue='neutral';
+		}
+		$columnMeta=is_array($definition['meta'] ?? null) ? $definition['meta'] : [];
+		$clone=clone $this;
+		$clone->statusBoardColumns[$name]=[
+			'name'=>$name,
+			'status'=>$statusValue,
+			'label'=>trim((string)($definition['label'] ?? '')) ?: self::humanize($statusValue),
+			'tone'=>$toneValue,
+			'meta'=>$columnMeta,
+		];
+		return $clone;
+	}
+
+	/** @return array<string,array{name:string,status:string,label:string,tone:string,meta:array<string,mixed>}> */
+	public function statusBoardColumnsList(): array {
+		return $this->statusBoardColumns;
+	}
+
+	/** Reports whether this resource has at least one renderable board column. */
+	public function hasStatusBoard(): bool {
+		return $this->statusTableViews()!==[];
+	}
+
+	/**
 	 * Updates the status widgets setting for this resource.
 	 *
 	 * @param bool $enabled Whether this resource feature should be enabled.
-	 * @return self Cloned resource definition with updated status widgets metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated status widgets metadata.
 	 */
 	public function statusWidgets(bool $enabled=true): self {
 		$clone=clone $this;
@@ -3561,7 +3912,7 @@ final class Resource {
 	 * Updates the status transitions setting for this resource.
 	 *
 	 * @param array<string,array<string,mixed>|string>|array<int,array<string,mixed>|string> $transitions Status transition definitions.
-	 * @return self Cloned resource definition with updated status transitions metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated status transitions metadata.
 	 */
 	public function statusTransitions(array $transitions): self {
 		$clone=clone $this;
@@ -3648,7 +3999,7 @@ final class Resource {
 	 * Action definitions describe command availability, forms, handlers, confirmation state, and renderer placement.
 	 *
 	 * @param array<int,Action|ActionGroup|array<string,mixed>|string> $actions Action definitions.
-	 * @return self Cloned resource definition with updated actions metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated actions metadata.
 	 */
 	public function actions(array $actions): self {
 		$clone=clone $this;
@@ -3664,7 +4015,7 @@ final class Resource {
 	 * Action definitions describe command availability, forms, handlers, confirmation state, and renderer placement.
 	 *
 	 * @param string $fit Image or media fit mode requested by the renderer.
-	 * @return self Cloned resource definition with updated action fit metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated action fit metadata.
 	 */
 	public function actionFit(string $fit): self {
 		$fit=self::normalizeName($fit);
@@ -3679,7 +4030,7 @@ final class Resource {
 	 * Action definitions describe command availability, forms, handlers, confirmation state, and renderer placement.
 	 *
 	 * @param bool $enabled Whether this resource feature should be enabled.
-	 * @return self Cloned resource definition with updated stretch actions metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated stretch actions metadata.
 	 */
 	public function stretchActions(bool $enabled=true): self {
 		return $this->actionFit($enabled ? 'stretch' : 'content');
@@ -3696,12 +4047,80 @@ final class Resource {
 	}
 
 	/**
+	 * Bounds automatically placed actions in a record heading before the remainder moves into More.
+	 */
+	public function recordActionLimit(int $limit): self {
+		$clone=clone $this;
+		$clone->recordActionLimit=max(0, min(24, $limit));
+		return $clone;
+	}
+
+	/** Returns the configured automatic record-heading action limit. */
+	public function recordActionLimitValue(): int {
+		return $this->recordActionLimit;
+	}
+
+	/**
+	 * Overrides one built-in, custom, transition, or group action's record-heading placement.
+	 *
+	 * Renderer keys include `edit`, `preview`, `transition_<name>`, `duplicate`, `restore`,
+	 * `delete`, `force_delete`, and custom action or action-group names.
+	 */
+	public function recordActionPlacement(string $action, string $placement): self {
+		$action=self::normalizeName($action);
+		if($action===''){
+			return clone $this;
+		}
+		$placement=self::normalizeName($placement);
+		$placement=match($placement){
+			'primary', 'inline', 'visible' => 'primary',
+			'overflow', 'menu', 'secondary' => 'overflow',
+			default => 'auto',
+		};
+		$clone=clone $this;
+		if($placement==='auto'){
+			unset($clone->recordActionPlacements[$action]);
+		}
+		else {
+			$clone->recordActionPlacements[$action]=$placement;
+		}
+		return $clone;
+	}
+
+	/** @param array<string, string> $placements */
+	public function recordActionPlacements(array $placements): self {
+		$clone=clone $this;
+		foreach($placements as $action=>$placement){
+			if(is_string($action) && is_string($placement)){
+				$clone=$clone->recordActionPlacement($action, $placement);
+			}
+		}
+		return $clone;
+	}
+
+	/** Resolves a resource override before falling back to an action's own placement. */
+	public function recordActionPlacementFor(string $action, string $fallback='auto'): string {
+		$action=self::normalizeName($action);
+		$placement=$this->recordActionPlacements[$action] ?? self::normalizeName($fallback);
+		return match($placement){
+			'primary', 'inline', 'visible' => 'primary',
+			'overflow', 'menu', 'secondary' => 'overflow',
+			default => 'auto',
+		};
+	}
+
+	/** @return array<string, string> */
+	public function recordActionPlacementMap(): array {
+		return $this->recordActionPlacements;
+	}
+
+	/**
 	 * Configures resource actions and bulk operations.
 	 *
 	 * Action definitions describe command availability, forms, handlers, confirmation state, and renderer placement.
 	 *
 	 * @param Action|ActionGroup|array|string $action Action.
-	 * @return self Cloned resource definition with updated action metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated action metadata.
 	 */
 	public function action(Action|ActionGroup|array|string $action): self {
 		$action=$action instanceof Action || $action instanceof ActionGroup
@@ -3719,7 +4138,7 @@ final class Resource {
 	 *
 	 * @param ActionGroup|array|string $group Group.
 	 * @param array<int,Action|array<string,mixed>|string> $actions Nested actions for the group.
-	 * @return self Cloned resource definition with updated action group metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated action group metadata.
 	 */
 	public function actionGroup(ActionGroup|array|string $group, array $actions=[]): self {
 		$group=$group instanceof ActionGroup ? $group : (is_array($group) ? ActionGroup::fromArray($group) : ActionGroup::make((string)$group)->actions($actions));
@@ -3763,7 +4182,7 @@ final class Resource {
 	 * Relation metadata lets Panel render nested tables, forms, and counts for records connected to this resource.
 	 *
 	 * @param array<int,RelationManager|array<string,mixed>|string> $relations Relation manager definitions.
-	 * @return self Cloned resource definition with updated relations metadata.
+	 * @return self<TRecord,TState> Cloned resource definition with updated relations metadata.
 	 */
 	public function relations(array $relations): self {
 		$clone=clone $this;
@@ -3778,8 +4197,10 @@ final class Resource {
 	 *
 	 * Relation metadata lets Panel render nested tables, forms, and counts for records connected to this resource.
 	 *
-	 * @param RelationManager|array|string $relation Relation.
-	 * @return self Cloned resource definition with updated relation metadata.
+	 * @template TRelated
+	 * @template TRelationState of array<string,mixed>
+	 * @param RelationManager<TRecord,TRelated,TRelationState>|array<string,mixed>|string $relation Relation.
+	 * @return self<TRecord,TState> Cloned resource definition with updated relation metadata.
 	 */
 	public function relation(RelationManager|array|string $relation): self {
 		$relation=$relation instanceof RelationManager
@@ -3836,7 +4257,7 @@ final class Resource {
 	/**
 	 * Resolves the record key value for Panel rendering.
 	 *
-	 * @param mixed $record Resource record or row payload supplied by Panel.
+	 * @param TRecord $record Resource record or row payload supplied by Panel.
 	 * @return string Stable record key, or an empty string when the record cannot be keyed.
 	 */
 	public function recordKey(mixed $record): string {
@@ -3859,7 +4280,7 @@ final class Resource {
 	/**
 	 * Resolves the record title value for Panel rendering.
 	 *
-	 * @param mixed $record Resource record or row payload supplied by Panel.
+	 * @param TRecord $record Resource record or row payload supplied by Panel.
 	 * @return string Display title resolved from the callback, record fields, or fallback key.
 	 */
 	public function recordTitle(mixed $record): string {
@@ -3883,7 +4304,7 @@ final class Resource {
 	/**
 	 * Resolves the record subtitle value for Panel rendering.
 	 *
-	 * @param mixed $record Resource record or row payload supplied by Panel.
+	 * @param TRecord $record Resource record or row payload supplied by Panel.
 	 * @return string Optional display subtitle, or an empty string when unavailable.
 	 */
 	public function recordSubtitle(mixed $record): string {
@@ -3906,7 +4327,7 @@ final class Resource {
 	/**
 	 * Resolves the record url value for Panel rendering.
 	 *
-	 * @param mixed $record Resource record or row payload supplied by Panel.
+	 * @param TRecord $record Resource record or row payload supplied by Panel.
 	 * @param string $operation Resource operation name such as create, edit, view, or delete.
 	 * @return string Record URL for the requested operation, or an empty string when routing cannot be built.
 	 */
@@ -4602,7 +5023,7 @@ final class Resource {
 	 * @return array Renderer-facing resource manifest with navigation, forms, tables, actions, relations, authorization, and lifecycle metadata.
 	 */
 	public function toArray(): array {
-		return [
+		$manifest=[
 			'name'=>$this->name,
 			'label'=>$this->label,
 			'plural_label'=>$this->pluralLabel,
@@ -4661,6 +5082,8 @@ final class Resource {
 			'resolved_views'=>array_map(static fn(TableView $view): array => $view->toArray(), array_values($this->tableViewsList())),
 			'actions'=>array_map(static fn(Action|ActionGroup $action): array => $action->toArray(), array_values($this->actions)),
 			'action_fit'=>$this->actionFit,
+			'record_action_limit'=>$this->recordActionLimit,
+			'record_action_placements'=>$this->recordActionPlacements,
 			'relations'=>array_map(static fn(RelationManager $relation): array => $relation->toArray(), array_values($this->relations)),
 			'authorizes'=>$this->authorizer!==null,
 			'saves'=>$this->saveHandler!==null,
@@ -4677,6 +5100,7 @@ final class Resource {
 			'imports'=>$this->canImport(),
 			'transitions'=>$this->statusTransitions,
 			'status_field'=>$this->statusField,
+			'status_board_columns'=>$this->statusBoardColumns,
 			'status_widgets'=>$this->statusWidgetsEnabled,
 			'bulk_updates'=>$this->canBulkUpdate(),
 			'duplicates'=>$this->duplicateHandler!==null,
@@ -4685,6 +5109,10 @@ final class Resource {
 			'force_deletes'=>$this->forceDeleteHandler!==null,
 			'queryable'=>$this->queryFactory!==null || $this->repository!==null || $this->table!==null,
 		];
+		if($this->presentations()!==[]){
+			$manifest['record_presentation']=$this->presentations();
+		}
+		return $manifest;
 	}
 
 	/**
@@ -4823,6 +5251,10 @@ final class Resource {
 					'subtitle'=>(string)($result['subtitle'] ?? ''),
 					'record_key'=>$key,
 					'url'=>$url!=='' ? $url : ($key!=='' ? PanelConfig::resourceUrl($this, 'show/'.$key) : PanelConfig::resourceUrl($this)),
+					'icon'=>(string)($result['icon'] ?? ''),
+					'score'=>is_numeric($result['score'] ?? null) ? (float)$result['score'] : 0.0,
+					'dedupe_key'=>trim((string)($result['dedupe_key'] ?? '')),
+					'meta'=>is_array($result['meta'] ?? null) ? $result['meta'] : [],
 				];
 			}
 			else {
@@ -4916,10 +5348,13 @@ final class Resource {
 	 * @param mixed $value Raw field value.
 	 * @param mixed $record Source record, when available.
 	 * @param ?PanelRequest $request Current Panel request.
-	 * @return string Display-safe text value.
+	 * @return string|PanelSafeHtml Display-safe text or explicit safe markup.
 	 */
-	private static function displayEntryValue(Field $field, array $meta, mixed $value, mixed $record=null, ?PanelRequest $request=null): string {
+	private static function displayEntryValue(Field $field, array $meta, mixed $value, mixed $record=null, ?PanelRequest $request=null): string|PanelSafeHtml {
 		$display=$field->displayValue($value, $record, $request);
+		if($display instanceof PanelSafeHtml){
+			return $display;
+		}
 		if($display!==$value){
 			return self::entryStringValue($display);
 		}
@@ -4978,7 +5413,7 @@ final class Resource {
 			return (string)$options[$key];
 		}
 		foreach($options as $optionValue=>$label){
-			if(is_array($label) && (isset($label['options']) || isset($label['label']))){
+			if(is_array($label) && (isset($label['options']) || (isset($label['label']) && !array_key_exists('value', $label)))){
 				$groupOptions=is_array($label['options'] ?? null) ? $label['options'] : $label;
 				unset($groupOptions['label'], $groupOptions['options']);
 				$found=self::entryOptionLabel($groupOptions, $key);
@@ -4992,9 +5427,6 @@ final class Resource {
 				if($optionValue===$key){
 					return (string)($label['label'] ?? $key);
 				}
-			}
-			elseif((string)$optionValue===$key){
-				return (string)$label;
 			}
 		}
 		return null;
@@ -5116,45 +5548,67 @@ final class Resource {
 	}
 
 	/**
-	 * Generates table views from configured status transitions.
+	 * Generates table views from explicit board columns and status transitions.
 	 *
-	 * Every discovered source and target status becomes a TableView with a status
-	 * filter closure, allowing transition metadata to automatically seed index
-	 * view tabs.
+	 * Explicit columns preserve their key, label, tone, and metadata. Transition
+	 * sources and targets fill only statuses that are not already represented,
+	 * allowing read-only boards and avoiding duplicate lanes when a custom column
+	 * key differs from its raw status value.
 	 *
 	 * @return array<string,TableView> Generated status table views keyed by normalized status.
 	 */
 	private function statusTableViews(): array {
-		if($this->statusTransitions===[]){
+		if($this->statusTransitions===[] && $this->statusBoardColumns===[]){
 			return [];
 		}
 		$statuses=[];
+		$statusNames=[];
+		foreach($this->statusBoardColumns as $name=>$column){
+			$statuses[$name]=[
+				'status'=>(string)$column['status'],
+				'label'=>(string)$column['label'],
+				'tone'=>(string)$column['tone'],
+				'meta'=>is_array($column['meta']) ? $column['meta'] : [],
+				'explicit'=>true,
+			];
+			$statusNames[self::normalizeName((string)$column['status'])]=$name;
+		}
 		foreach($this->statusTransitions as $transition){
 			foreach((array)($transition['from'] ?? []) as $from){
 				$from=trim((string)$from);
-				if($from!=='' && !isset($statuses[$from])){
-					$statuses[$from]=['label'=>self::humanize($from), 'tone'=>'neutral'];
+				$statusName=self::normalizeName($from);
+				$name=$statusNames[$statusName]??$statusName;
+				if($name!=='' && !isset($statuses[$name])){
+					$statuses[$name]=['status'=>$from, 'label'=>self::humanize($from), 'tone'=>'neutral', 'meta'=>[], 'explicit'=>false];
 				}
 			}
 			$to=trim((string)($transition['to'] ?? ''));
-			if($to!==''){
-				$statuses[$to]=[
+			$statusName=self::normalizeName($to);
+			$name=$statusNames[$statusName]??$statusName;
+			if($name!=='' && !isset($statuses[$name])){
+				$statuses[$name]=[
+					'status'=>$to,
 					'label'=>self::humanize($to),
 					'tone'=>(string)($transition['tone'] ?? 'neutral'),
+					'meta'=>[],
+					'explicit'=>false,
 				];
 			}
 		}
 		$views=[];
-		foreach($statuses as $status=>$meta){
-			$name=self::normalizeName($status);
-			if($name===''){
-				continue;
-			}
+		foreach($statuses as $name=>$meta){
+			$status=(string)($meta['status'] ?? $name);
 			$statusField=$this->statusField;
+			$viewMeta=is_array($meta['meta'] ?? null) ? $meta['meta'] : [];
+			$viewMeta=array_replace($viewMeta, [
+				'generated_status_view'=>true,
+				'explicit_status_board_column'=>($meta['explicit'] ?? false)===true,
+				'status_value'=>$status,
+			]);
 			$views[$name]=TableView::make($name)
 				->label((string)($meta['label'] ?? self::humanize($status)))
 				->tone((string)($meta['tone'] ?? 'neutral'))
-				->meta(['generated_status_view'=>true])
+				->meta($viewMeta)
 				->where(static fn(mixed $record): bool => (string)self::recordValue($record, $statusField, '')===$status);
 		}
 		return $views;

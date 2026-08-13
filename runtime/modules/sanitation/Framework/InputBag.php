@@ -587,7 +587,7 @@ final class InputBag {
 		foreach($segments as $index=>$segment){
 			if($index===$lastIndex){
 				$current[$segment]=$value;
-				return;
+				break;
 			}
 			if(!isset($current[$segment]) || !is_array($current[$segment])){
 				$current[$segment]=[];
@@ -613,7 +613,7 @@ final class InputBag {
 		foreach($segments as $index=>$segment){
 			if($index===$lastIndex){
 				unset($current[$segment]);
-				return;
+				break;
 			}
 			if(!isset($current[$segment]) || !is_array($current[$segment])){
 				return;

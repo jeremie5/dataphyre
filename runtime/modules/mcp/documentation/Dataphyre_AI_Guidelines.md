@@ -1,4 +1,4 @@
-﻿# Dataphyre AI Guidelines
+# Dataphyre AI Guidelines
 
 These guidelines are for AI coding agents working inside Dataphyre applications. The default MCP use case is building and maintaining applications with Dataphyre; framework-maintainer guidance applies only when the task explicitly touches Dataphyre internals, release surfaces, or shared hot paths.
 
@@ -27,8 +27,8 @@ These guidelines are for AI coding agents working inside Dataphyre applications.
 ## Runtime Shape
 
 - Treat Dataphyre as a modular PHP runtime, not as a single routed application.
-- Runtime modules live under `common/dataphyre/runtime/modules/<module>`.
-- Use `common/dataphyre/docs/AGENTIC_ENTERPRISE.md` as the high-level contract
+- Runtime modules live under `dataphyre/runtime/modules/<module>`.
+- Use `dataphyre/docs/AGENTIC_ENTERPRISE.md` as the high-level contract
   for agent-first corporate work: extension boundaries, MCP safety, release
   hygiene, and benchmark expectations.
 - Prefer module `Framework/` classes for public contracts and `kernel/` files for bootstrap or compatibility surfaces.
@@ -42,6 +42,8 @@ These guidelines are for AI coding agents working inside Dataphyre applications.
 - Use docs index plans when clients need local markdown chunks, optional remote documentation templates, semantic-search metadata, refresh triggers, and embedding payloads without MCP network calls or index writes.
 - Use Datadoc runtime readiness plans before discussing future Datadoc SQL-backed readers; default MCP workflows must not query Datadoc records, dispatch Datadoc UI routes, or execute tokenizers/highlighters.
 - Use dependency maps before changing shared modules with unclear contracts or bootstrap dependencies.
+- Use `dataphyre_contract_catalog` before changing a shared interface, serialized payload, or behavior with a TestKit semantic contract. Supply the owning module, then call `dataphyre_contract_describe` with the stable ID and select focused evidence through `dataphyre_unit_tests_list modules=[...] kind=code`; enumerate `dataphyre://contracts.available_modules` only when a framework-wide graph is actually required.
+- Treat contract discovery as static source metadata: literal versions resolve directly, computed versions stay explicit and unresolved, and TestKit files are never required or executed. Use the returned focused TestKit list command only when runtime-expanded cases or computed versions matter.
 - Use OpenAPI runtime readiness plans before discussing future runtime OpenAPI readers; default MCP workflows must not bootstrap applications, dispatch routes, or generate OpenAPI at runtime.
 - Use route runtime provenance plans before discussing future runtime route readers; default MCP workflows must not bootstrap applications, dispatch routes, execute middleware, invoke controllers, or write route cache files.
 - Use SQL runtime readiness plans before discussing future read-only SQL runners; default MCP workflows must not connect to databases, execute SQL, hydrate schemas, or expose credentials.
@@ -134,6 +136,11 @@ These guidelines are for AI coding agents working inside Dataphyre applications.
 ## Panel
 
 - Panel is route-free and manifest-oriented.
+- Start Panel work with `dataphyre_panel_capability_catalog`, then describe the affected `panel:domain:*` or `panel:area:*` record. Read only the contracts, integration, verification, security, or complete view needed for the next decision.
+- Read `dataphyre://panel` when a client needs the full current domain map. It is a bounded source-derived index, not a runtime readiness report.
+- Use `dataphyre_panel_surface_graph` before composing multiple platform domains, `dataphyre_panel_recipe_plan` for cross-domain construction, and `dataphyre_panel_integration_plan` for callback/PDO/Redis/Dataphyre Storage/filesystem/memory/custom provider boundaries.
+- Use `dataphyre_panel_verification_plan` only after changed paths and the intended claim are known. Execute its selected focused, dual-runtime, exact, browser, or release lanes before reporting proof; the plan itself proves nothing.
+- Static platform availability never means configured, ready, durable, activated, healthy, or verified. Hosts retain identity, policy, credentials, clients, connections, keys, persistence, infrastructure, external effects, routing, browser policy, and deployment authority.
 - Demo/live examples should prove framework APIs, not become the only implementation.
 - Prefer `Panel`, `PanelInstance`, manifests, renderers, test harnesses, and regression suites over hardcoded admin URLs.
 - Documentation catalog inspection should stay static; summarize catalog and entry contracts without building or rendering a docs site.

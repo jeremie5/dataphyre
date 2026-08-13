@@ -30,11 +30,11 @@ trait dataphyre_mcp_planning_agent_context_surfaces {
 		}
 		$modules=[];
 		$documents=[
-			'common/dataphyre/docs/AGENTIC_ENTERPRISE.md',
-			'common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
-			'common/dataphyre/docs/MODULES.md',
-			'common/dataphyre/runtime/README.md',
-			'common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md',
+			'dataphyre/docs/AGENTIC_ENTERPRISE.md',
+			'dataphyre/runtime/modules/mcp/documentation/Dataphyre_AI_Guidelines.md',
+			'dataphyre/docs/MODULES.md',
+			'dataphyre/runtime/README.md',
+			'dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md',
 		];
 		foreach(array_slice($requested_modules, 0, 12) as $module){
 			$module=trim((string)$module);
@@ -59,8 +59,8 @@ trait dataphyre_mcp_planning_agent_context_surfaces {
 				'purpose'=>'Ordinary app work starts from the compact app-builder lane before broad runtime instructions.',
 			],
 			'escalation_refs'=>[
-				'enterprise_contract'=>'common/dataphyre/docs/AGENTIC_ENTERPRISE.md',
-				'mcp_boundary'=>'common/dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md',
+				'enterprise_contract'=>'dataphyre/docs/AGENTIC_ENTERPRISE.md',
+				'mcp_boundary'=>'dataphyre/runtime/modules/mcp/documentation/Dataphyre_MCP.md',
 				'readiness_report'=>'dataphyre_mcp_readiness_report',
 				'enterprise_audit'=>'dataphyre_mcp_enterprise_adoption_audit',
 			],
@@ -128,14 +128,14 @@ trait dataphyre_mcp_planning_agent_context_surfaces {
 		$lines[]='';
 		$lines[]='## Enterprise Contract';
 		$lines[]='';
-		$lines[]='- Read `common/dataphyre/docs/AGENTIC_ENTERPRISE.md` before framework-level edits.';
+		$lines[]='- Read `dataphyre/docs/AGENTIC_ENTERPRISE.md` before framework-level edits.';
 		$lines[]='- Prefer config, dialbacks, callbacks, plugins, MCP metadata, and reusable modules before changing Dataphyre internals for an application.';
 		$lines[]='- Keep agent-facing behavior discoverable, bounded, extensible, proven, portable, and composable.';
 		$lines[]='- For Dataphyre shared production hot-path changes only, keep the change only with Dataphyre maintainer proof; ordinary application agents should not inherit that evidence burden.';
 		$lines[]='';
 		$lines[]='## Runtime Shape';
 		$lines[]='';
-		$lines[]='- Dataphyre is a modular PHP runtime under `common/dataphyre/runtime/modules/<module>`.';
+		$lines[]='- Dataphyre is a modular PHP runtime under `dataphyre/runtime/modules/<module>`.';
 		$lines[]='- Prefer module `Framework/` classes for public contracts and `kernel/` files for bootstrap or compatibility surfaces.';
 		$lines[]='- Keep reusable framework work route-free unless the Routing module or an application route layer owns it.';
 		$lines[]='- Do not hardcode product-specific paths, URLs, names, credentials, or assumptions in shared runtime code.';

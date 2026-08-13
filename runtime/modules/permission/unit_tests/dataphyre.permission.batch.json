@@ -5,16 +5,34 @@
         "class": "dataphyre\\permission",
         "static_method": true,
         "args": [
-            ["panel.orders.view", "panel.orders.force_delete"],
+            [
+                "panel.orders.view",
+                "panel.orders.force_delete"
+            ],
             {
-                "permissions": ["panel.orders.*", "-panel.orders.force_delete"]
+                "permissions": [
+                    "panel.orders.*",
+                    "-panel.orders.force_delete"
+                ]
             }
         ],
         "expected": {
-            "custom_script": "return is_array($result) && ($result['panel.orders.view'] ?? null) === true && ($result['panel.orders.force_delete'] ?? null) === false;"
+            "assert": {
+                "type": "array",
+                "paths": {
+                    "panel.orders.view": {
+                        "same": true
+                    },
+                    "panel.orders.force_delete": {
+                        "same": false
+                    }
+                }
+            }
         },
-        "file_dynamic": "return dp_module_present(\"permission\")[0];",
-        "max_millis": 50
+        "max_millis": 50,
+        "file": {
+            "module": "permission"
+        }
     },
     {
         "name": "filter_allowed_returns_only_allowed_permissions",
@@ -22,15 +40,28 @@
         "class": "dataphyre\\permission",
         "static_method": true,
         "args": [
-            ["panel.orders.view", "panel.orders.force_delete", "panel.products.view"],
+            [
+                "panel.orders.view",
+                "panel.orders.force_delete",
+                "panel.products.view"
+            ],
             {
-                "permissions": ["panel.orders.*", "-panel.orders.force_delete"]
+                "permissions": [
+                    "panel.orders.*",
+                    "-panel.orders.force_delete"
+                ]
             }
         ],
         "expected": {
-            "custom_script": "return $result === ['panel.orders.view'];"
+            "assert": {
+                "same": [
+                    "panel.orders.view"
+                ]
+            }
         },
-        "file_dynamic": "return dp_module_present(\"permission\")[0];",
-        "max_millis": 50
+        "max_millis": 50,
+        "file": {
+            "module": "permission"
+        }
     }
 ]

@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: read
+
 on:
   pull_request:
   push:
@@ -18,10 +21,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate the standalone development example
+        run: docker compose -f examples/minimal/compose.dev.yaml config --quiet
+
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: "8.1"
+          extensions: openssl, sodium, fileinfo, mbstring, intl, gd, sqlite3, pdo_sqlite, zip, curl
           coverage: none
 
       - name: Validate Composer metadata
@@ -31,8 +38,833 @@ jobs:
         shell: pwsh
         run: ./dev/tools/public/lint_php.ps1
 
+      - name: Verify canonical test CLI and Docker wrapper
+        shell: bash
+        run: |
+          mkdir -p cache/ci
+          php bin/dataphyre-test --help > /dev/null
+          php bin/dataphyre-test list --scope=framework --owner=testing --path=runner --kind=code --cases --no-test-cache --json > cache/ci/testing-cli-direct.json
+          php -r '$report=json_decode((string) file_get_contents("cache/ci/testing-cli-direct.json"), true); $cases=array_sum(array_map(static fn(array $test): int=>(int) ($test["cases"] ?? 0), $report["tests"] ?? [])); if (!is_array($report) || (int) ($report["matched"] ?? 0) < 1 || $cases < 1) { fwrite(STDERR, "Direct testing CLI inventory is empty or invalid.\n"); exit(1); }'
+          docker build --file docker/testing/Dockerfile --tag dataphyre-test:php8.4 .
+          DATAPHYRE_TEST_SKIP_BUILD=1 sh bin/dataphyre-test-docker --help > /dev/null
+          DATAPHYRE_TEST_SKIP_BUILD=1 sh bin/dataphyre-test-docker list --scope=framework --owner=testing --path=runner --kind=code --cases --no-test-cache --json > cache/ci/testing-cli-docker.json
+          php -r '$report=json_decode((string) file_get_contents("cache/ci/testing-cli-docker.json"), true); $cases=array_sum(array_map(static fn(array $test): int=>(int) ($test["cases"] ?? 0), $report["tests"] ?? [])); if (!is_array($report) || (int) ($report["matched"] ?? 0) < 1 || $cases < 1) { fwrite(STDERR, "Docker testing CLI inventory is empty or invalid.\n"); exit(1); }'
+
+      - name: Verify immutable Git archive surface
+        shell: pwsh
+        run: >-
+          ./dev/tools/private/release/check_release_archive.ps1
+          -Root (Get-Location).Path
+          -Ref $env:GITHUB_SHA
+          -Php php
+          -NoSecretScan
+
+      - name: Boot and restart the initialized minimal consumer
+        shell: bash
+        run: sh dev/tools/public/smoke_minimal_consumer.sh
+
       - name: Run MCP self-test
         run: php dev/tools/public/mcp_self_test.php
 
       - name: Run MCP live validation
         run: php dev/tools/public/mcp_live_validate.php
+
+  datadoc-documentation:
+    name: Datadoc documentation contracts (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.2", "8.4"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: openssl, sodium, fileinfo, mbstring, intl
+          coverage: none
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run Datadoc portal, publication, CLI, and exact-coverage proofs
+        shell: bash
+        run: |
+          mkdir -p cache/ci/datadoc-documentation
+          php -l dev/tools/datadoc_docs.php
+          php -l runtime/modules/datadoc/Framework/DocumentationCorpus.php
+          php -l runtime/modules/datadoc/Framework/DocumentationPortal.php
+          php -l runtime/modules/datadoc/Framework/DocumentationPortalBuild.php
+          php -l runtime/modules/datadoc/Framework/DocumentationPortalPublication.php
+          php -l runtime/modules/datadoc/Framework/DocumentationPortalWriteResult.php
+          node --check runtime/modules/datadoc/testing/datadoc_documentation_portal_browser_regression.js
+          node --check runtime/modules/panel/testing/panel_documentation_portal_browser_regression.js
+          php runtime/modules/datadoc/testing/datadoc_documentation_corpus_test_runner.php > cache/ci/datadoc-documentation/corpus-${{ matrix.php }}.json
+          php runtime/modules/datadoc/testing/datadoc_documentation_portal_test_runner.php > cache/ci/datadoc-documentation/portal-${{ matrix.php }}.json
+          php runtime/modules/datadoc/testing/datadoc_documentation_cli_test_runner.php > cache/ci/datadoc-documentation/cli-${{ matrix.php }}.json
+          php runtime/modules/panel/testing/panel_documentation_portal_test_runner.php > cache/ci/datadoc-documentation/panel-adapter-${{ matrix.php }}.json
+          phpdbg -d opcache.enable_cli=0 -qrr runtime/modules/datadoc/testing/datadoc_documentation_portal_phpdbg_coverage.php > cache/ci/datadoc-documentation/exact-${{ matrix.php }}.json
+
+      - name: Upload Datadoc documentation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: datadoc-documentation-php-${{ matrix.php }}
+          path: cache/ci/datadoc-documentation
+          if-no-files-found: error
+
+  datadoc-documentation-browser:
+    name: Datadoc documentation browser regression
+    needs: datadoc-documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: openssl, sodium, fileinfo, mbstring, intl
+          coverage: none
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Generate and exercise a Datadoc-owned static release
+        shell: bash
+        run: |
+          mkdir -p cache/ci/datadoc-browser/workspace/docs/guides/deep/reference cache/ci/datadoc-browser/workspace/runtime/modules/panel/documentation/assets cache/ci/datadoc-browser/workspace-screenshots cache/ci/datadoc-browser/panel-screenshots
+          php -r '$png=base64_decode("iVBORw0KGgoAAAANSUhEUgAACAAAAAAgCAIAAAAJhg82AAAACXBIWXMAAA7EAAAOxAGVKw4bAAABJUlEQVR42u3ZQREAIAzAMEDNrOEZMfjoJRL67Z77FgAAAAAA0HIkAAAAAACAHgMAAAAAAACCDAAAAAAAAAgyAAAAAAAAIMgAAAAAAACAIAMAAAAAAACCDAAAAAAAAAgyAAAAAAAAIMgAAAAAAACAIAMAAAAAAACCDAAAAAAAAAgyAAAAAAAAIMgAAAAAAACAIAMAAAAAAACCDAAAAAAAAAgyAAAAAAAAIMgAAAAAAACAIAMAAAAAAACCDAAAAAAAAAgyAAAAAAAAIMgAAAAAAACAIAMAAAAAAACCDAAAAAAAAAgyAAAAAAAAIMgAAAAAAACAIAMAAAAAAACCDAAAAAAAAAgyAAAAAAAAIMgAAAAAAACAIAMAAAAAAACCDAAAAAAAAAj6dCgBrVYE3jUAAAAASUVORK5CYII=", true); if (!is_string($png)) { exit(1); } file_put_contents("cache/ci/datadoc-browser/workspace/docs/README.md", "# Dataphyre project documentation\n\nUniversal workspace browser proof.\n"); file_put_contents("cache/ci/datadoc-browser/workspace/runtime/logo.png", $png); file_put_contents("cache/ci/datadoc-browser/workspace/runtime/README.md", "# Runtime Documentation\n\nThe project runtime manual.\n"); file_put_contents("cache/ci/datadoc-browser/workspace/docs/guides/deep/reference/contract.md", "# Publication Contract\n\n## Immutable releases\n\nDatadoc publishes documentation atomically.\n"); file_put_contents("cache/ci/datadoc-browser/workspace/runtime/modules/panel/documentation/index.md", "# Panel Manual\n\n## Module composition\n\n![Panel](assets/panel.png)\n"); file_put_contents("cache/ci/datadoc-browser/workspace/runtime/modules/panel/documentation/assets/panel.png", $png);'
+          php dev/tools/datadoc_docs.php \
+            --root cache/ci/datadoc-browser/workspace \
+            --workspace \
+            --output site \
+            --version 1.0.0 \
+            --title "Dataphyre Documentation" \
+            --write > cache/ci/datadoc-browser/publication.json
+
+          php dev/tools/panel_docs.php \
+            --root "$PWD" \
+            --source runtime/modules/panel/Framework \
+            --output cache/ci/datadoc-browser/panel \
+            --version 1.0.0 \
+            --title "Dataphyre Panel" \
+            --portal \
+            --write > cache/ci/datadoc-browser/panel-publication.json
+
+          docroot="$PWD/cache/ci/datadoc-browser"
+          datadoc_url="http://127.0.0.1:4177/workspace/site/versions/1.0.0/index.html"
+          panel_url="http://127.0.0.1:4177/panel/versions/1.0.0/index.html"
+          php -S 127.0.0.1:4177 -t "$docroot" > cache/ci/datadoc-browser/server.log 2>&1 &
+          server_pid=$!
+          browser_pid=''
+          trap 'kill "$server_pid" 2>/dev/null || true; if [ -n "$browser_pid" ]; then kill "$browser_pid" 2>/dev/null || true; fi' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent "$datadoc_url" > /dev/null && curl --fail --silent "$panel_url" > /dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent "$datadoc_url" > /dev/null
+          curl --fail --silent "$panel_url" > /dev/null
+
+          CHROME_PATH="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)"
+          if [ -z "$CHROME_PATH" ] || [ ! -x "$CHROME_PATH" ]; then
+            echo "Chrome or Chromium is unavailable." >&2
+            exit 1
+          fi
+          "$CHROME_PATH" \
+            --headless=new \
+            --no-sandbox \
+            --disable-gpu \
+            --disable-background-networking \
+            --no-first-run \
+            --remote-allow-origins=* \
+            --remote-debugging-port=9223 \
+            --user-data-dir="$RUNNER_TEMP/datadoc-chrome" \
+            "$datadoc_url" > cache/ci/datadoc-browser/browser.log 2>&1 &
+          browser_pid=$!
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:9223/json > /dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:9223/json > /dev/null
+
+          node runtime/modules/datadoc/testing/datadoc_documentation_portal_browser_regression.js \
+            "$datadoc_url" \
+            http://127.0.0.1:9223 \
+            cache/ci/datadoc-browser/workspace-screenshots > cache/ci/datadoc-browser/workspace-report.json
+          node runtime/modules/panel/testing/panel_documentation_portal_browser_regression.js \
+            "$panel_url" \
+            http://127.0.0.1:9223 \
+            cache/ci/datadoc-browser/panel-screenshots > cache/ci/datadoc-browser/panel-report.json
+          node -e 'const fs=require("fs"); for(const name of ["workspace","panel"]){const report=JSON.parse(fs.readFileSync(`cache/ci/datadoc-browser/${name}-report.json`,"utf8")); const expectedImages=name==="workspace"; if(report.type!=="datadoc_documentation_portal_browser_regression"||report.content_images_required!==expectedImages||report.checks<42||report.failures.length!==0||report.screenshots.length!==6){throw new Error(`${name} documentation browser proof is incomplete: `+JSON.stringify(report));}}'
+
+      - name: Upload Datadoc browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: datadoc-documentation-browser
+          path: cache/ci/datadoc-browser
+          if-no-files-found: error
+
+  panel-release-contract:
+    name: Panel release contract (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.2", "8.4"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: openssl, sodium, fileinfo, mbstring, intl, gd, sqlite3, pdo_sqlite, zip, curl
+          coverage: none
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run adversarial release-contract self-test
+        run: node runtime/modules/panel/testing/panel_release_contract.js --self-test
+
+      - name: Validate source capability and CI contract
+        run: >-
+          node runtime/modules/panel/testing/panel_release_contract.js
+          --mode=source
+          --php=php
+          --report=cache/ci/panel-release-contract/source-${{ matrix.php }}.json
+
+      - name: Prepare public package export
+        if: matrix.php == '8.4'
+        shell: pwsh
+        run: |
+          $exportRoot = Join-Path $env:RUNNER_TEMP 'panel-public-export'
+          & ./dev/tools/private/release/prepare_public_export.ps1 `
+            -Root (Get-Location).Path `
+            -Output $exportRoot `
+            -SkipChecks
+
+      - name: Validate prepared package inventory
+        if: matrix.php == '8.4'
+        shell: bash
+        run: >-
+          node runtime/modules/panel/testing/panel_release_contract.js
+          --mode=package
+          --root="$RUNNER_TEMP/panel-public-export"
+          --contract="$RUNNER_TEMP/panel-public-export/runtime/modules/panel/testing/panel_release_contract.json"
+          --php=php
+          --report=cache/ci/panel-release-contract/package-8.4.json
+
+      - name: Upload Panel release-contract evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-release-contract-php-${{ matrix.php }}
+          path: cache/ci/panel-release-contract
+          if-no-files-found: error
+
+  panel-unit:
+    name: Panel strict unit tests (PHP 8.1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.1"
+          extensions: openssl, sodium, fileinfo, mbstring, intl, gd, sqlite3, pdo_sqlite, zip, curl
+          coverage: none
+
+      - name: Verify Panel test inventory
+        run: |
+          mkdir -p cache/ci
+          php -d memory_limit=512M bin/dataphyre-test list --scope=framework --owner=panel --kind=code --memory=512M --json > cache/ci/panel-inventory.json
+          php -r '$report=json_decode((string) file_get_contents("cache/ci/panel-inventory.json"), true); if (!is_array($report) || (int) ($report["matched"] ?? 0) < 1) { fwrite(STDERR, "Panel test inventory is empty or invalid.\n"); exit(1); }'
+
+      - name: Run complete Panel code suite
+        run: >-
+          php -d memory_limit=512M bin/dataphyre-test run
+          --scope=framework
+          --owner=panel
+          --kind=code
+          --no-test-cache
+          --parallel=1
+          --memory=512M
+          --fail-skipped
+          --fail-todo
+          --junit=cache/ci/panel-8.1.xml
+
+      - name: Upload Panel unit-test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-unit-php-8.1
+          path: |
+            cache/ci/panel-inventory.json
+            cache/ci/panel-8.1.xml
+          if-no-files-found: error
+
+  panel-exact-coverage:
+    name: Panel exact source coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP with Xdebug
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: openssl, sodium, fileinfo, mbstring, intl, gd, sqlite3, pdo_sqlite, zip, curl
+          coverage: xdebug
+
+      - name: Run Panel suite with exact line coverage
+        env:
+          XDEBUG_MODE: coverage
+        run: >-
+          php -d memory_limit=1G bin/dataphyre-test run
+          --scope=framework
+          --owner=panel
+          --kind=code
+          --no-test-cache
+          --parallel=1
+          --memory=1G
+          --fail-skipped
+          --fail-todo
+          --coverage=cache/ci/panel.coverage.json
+          --coverage-require=xdebug
+          --coverage-source=runtime/modules/panel/Framework,runtime/modules/panel/kernel
+          --coverage-closed-world
+          --coverage-min-percent=100
+          --junit=cache/ci/panel-coverage.xml
+
+      - name: Enforce complete Panel source inventory
+        run: >-
+          php -d memory_limit=1G runtime/modules/panel/testing/panel_php_coverage_gate.php
+          --coverage=cache/ci/panel.coverage.json
+          --require-engine=xdebug
+          --minimum-percent=100
+          --json
+          > cache/ci/panel-coverage-gate.json
+
+      - name: Upload Panel coverage evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-exact-coverage
+          path: |
+            cache/ci/panel.coverage.json
+            cache/ci/panel-coverage.xml
+            cache/ci/panel-coverage-gate.json
+          if-no-files-found: error
+
+  panel-assets:
+    name: Panel asset architecture
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: openssl, sodium, fileinfo, mbstring, intl, gd, sqlite3, pdo_sqlite, zip, curl
+          coverage: none
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Generate deterministic Panel assets
+        run: >-
+          php runtime/modules/panel/testing/panel_asset_snapshot.php
+          --output-dir=cache/ci/panel-assets
+          --asset=panel.css,panel.js,panel-head.js,panel-editor.js,panel-editor-assets.js,panel-extensions.js,panel-platform.css,panel-quality.js
+          --report=cache/ci/panel-assets/snapshot.json
+
+      - name: Run standalone Panel asset release lane
+        run: >-
+          node runtime/modules/panel/testing/panel_release_gate.js
+          --lanes=asset
+          --css-file=cache/ci/panel-assets/panel.css
+          --js-file=cache/ci/panel-assets/panel.js
+          --artifact-dir=cache/ci/panel-assets/release
+          --report=cache/ci/panel-assets/release/report.json
+
+      - name: Validate browser-runner contracts
+        run: |
+          node --check runtime/modules/panel/testing/panel_asset_architecture_audit.js
+          node runtime/modules/panel/testing/panel_asset_architecture_audit.js --self-test
+          node --check runtime/modules/panel/testing/panel_release_gate.js
+          node --check runtime/modules/panel/testing/panel_browser_scenarios.js
+          node --check runtime/modules/panel/testing/panel_interaction_regression.js
+          node --check runtime/modules/panel/testing/panel_visual_regression.js
+          node --check cache/ci/panel-assets/panel.js
+          node --check cache/ci/panel-assets/panel-head.js
+          node --check cache/ci/panel-assets/panel-editor.js
+          node --check cache/ci/panel-assets/panel-editor-assets.js
+          node --check cache/ci/panel-assets/panel-extensions.js
+          node --check cache/ci/panel-assets/panel-quality.js
+          node runtime/modules/panel/testing/panel_interaction_regression.js --list > cache/ci/panel-assets/browser-scenarios.json
+
+      - name: Validate central Panel asset release contract
+        run: >-
+          node runtime/modules/panel/testing/panel_release_contract.js
+          --mode=asset
+          --asset-snapshot=cache/ci/panel-assets/snapshot.json
+          --asset-audit=cache/ci/panel-assets/release/asset-architecture.json
+          --report=cache/ci/panel-assets/release-contract.json
+
+      - name: Upload Panel asset evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-asset-architecture
+          path: cache/ci/panel-assets
+          if-no-files-found: error
+
+  panel-browser:
+    name: Panel browser release gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: openssl, sodium, fileinfo, mbstring, intl, gd, sqlite3, pdo_sqlite, zip, curl
+          coverage: none
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install pinned browser bridge
+        run: >-
+          npm install
+          --prefix .tmp/puppeteer-check
+          --no-save
+          --no-package-lock
+          puppeteer-core@25.3.0
+
+      - name: Run complete Panel browser gate
+        shell: bash
+        run: |
+          mkdir -p cache/ci/panel-browser
+          php -l runtime/modules/panel/testing/fixtures/panel_browser_showroom.php
+          php -l runtime/modules/panel/testing/fixtures/panel_browser_showroom_routing_stub.php
+          CHROME_PATH="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)"
+          if [ -z "$CHROME_PATH" ] || [ ! -x "$CHROME_PATH" ]; then
+            echo "Chrome or Chromium is unavailable." >&2
+            exit 1
+          fi
+          export CHROME_PATH
+
+          php -S 127.0.0.1:8098 runtime/modules/panel/testing/fixtures/panel_browser_showroom.php > cache/ci/panel-browser/server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:8098/panel > /dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat cache/ci/panel-browser/server.log >&2
+            exit 1
+          fi
+
+          status=0
+          node runtime/modules/panel/testing/panel_release_gate.js \
+            --lanes=interaction,visual \
+            --base-url=http://127.0.0.1:8098/panel \
+            --artifact-dir=cache/ci/panel-browser/default \
+            --report=cache/ci/panel-browser/default/report.json || status=1
+
+          node runtime/modules/panel/testing/panel_visual_regression.js \
+            --base-url=http://127.0.0.1:8098/panel \
+            --audit-only \
+            --theme=glass \
+            --scenario=orders_index,orders_create,orders_board,orders_show,feature_showcase \
+            --viewport=320,desktop \
+            --theme-mode=light,dark,system \
+            --direction=ltr,rtl \
+            --artifact-dir=cache/ci/panel-browser/theme-direction \
+            --report=cache/ci/panel-browser/theme-direction/report.json || status=1
+
+          node runtime/modules/panel/testing/panel_visual_regression.js \
+            --base-url=http://127.0.0.1:8098/panel \
+            --audit-only \
+            --theme=glass \
+            --scenario=orders_index,orders_create,orders_show,feature_showcase \
+            --viewport=mobile,laptop \
+            --zoom=2 \
+            --reduced-motion=reduce \
+            --forced-colors=active \
+            --artifact-dir=cache/ci/panel-browser/reflow-media \
+            --report=cache/ci/panel-browser/reflow-media/report.json || status=1
+
+          node runtime/modules/panel/testing/panel_visual_regression.js \
+            --base-url=http://127.0.0.1:8098/panel \
+            --audit-only \
+            --theme=glass \
+            --scenario=orders_index,orders_board,orders_create,feature_showcase \
+            --viewport=desktop \
+            --container-width=320,768,1024 \
+            --direction=ltr,rtl \
+            --artifact-dir=cache/ci/panel-browser/container \
+            --report=cache/ci/panel-browser/container/report.json || status=1
+
+          node <<'NODE' || status=1
+          const fs=require('fs');
+          const read=file=>{
+            if(!fs.existsSync(file)){throw new Error('Missing browser report: '+file);}
+            return JSON.parse(fs.readFileSync(file,'utf8'));
+          };
+          const exact=(report,total,label)=>{
+            if(report.summary?.total!==total||report.summary?.failed!==0){
+              throw new Error(label+' expected '+total+' passing results, got '+JSON.stringify(report.summary));
+            }
+          };
+          exact(read('cache/ci/panel-browser/default/interaction.json'),52,'interaction');
+          exact(read('cache/ci/panel-browser/default/visual/report.json'),52,'default visual');
+          exact(read('cache/ci/panel-browser/theme-direction/report.json'),60,'theme/direction');
+          const media=read('cache/ci/panel-browser/reflow-media/report.json');
+          exact(media,8,'200%/media');
+          if(media.capabilities?.reducedMotion?.status!=='supported'||media.capabilities?.forcedColors?.status!=='supported'){
+            throw new Error('Media emulation was not executed: '+JSON.stringify(media.capabilities));
+          }
+          exact(read('cache/ci/panel-browser/container/report.json'),24,'isolated container');
+          NODE
+
+          node runtime/modules/panel/testing/panel_inclusive_quality_regression.test.js || status=1
+          php dev/tools/panel_developer.php inclusive-quality \
+            --name=ci_inclusive \
+            --url=/panel \
+            --output=cache/ci/panel-browser/inclusive/matrix.json > /dev/null || status=1
+          node runtime/modules/panel/testing/panel_inclusive_quality_regression.js \
+            --manifest=cache/ci/panel-browser/inclusive/matrix.json \
+            --base-url=http://127.0.0.1:8098 \
+            --browser="$CHROME_PATH" \
+            --report=cache/ci/panel-browser/inclusive/browser.json \
+            --capabilities=cache/ci/panel-browser/inclusive/capabilities.json || status=1
+          node runtime/modules/panel/testing/panel_release_gate.js \
+            --lanes=inclusive \
+            --php=php \
+            --inclusive-manifest=cache/ci/panel-browser/inclusive/matrix.json \
+            --inclusive-capabilities=cache/ci/panel-browser/inclusive/capabilities.json \
+            --inclusive-evidence=cache/ci/panel-browser/inclusive/browser.json \
+            --artifact-dir=cache/ci/panel-browser/inclusive/release \
+            --report=cache/ci/panel-browser/inclusive/release.json || status=1
+
+          node <<'NODE' || status=1
+          const fs=require('fs');
+          const browser=JSON.parse(fs.readFileSync('cache/ci/panel-browser/inclusive/browser.json','utf8'));
+          const gate=JSON.parse(fs.readFileSync('cache/ci/panel-browser/inclusive/release/inclusive-quality.json','utf8'));
+          if(browser.summary?.total!==78||browser.summary?.passed!==78||browser.summary?.failed!==0||browser.summary?.blocked!==0){
+            throw new Error('Inclusive browser matrix expected 78 passing cases: '+JSON.stringify(browser.summary));
+          }
+          if(browser.security?.sandbox_disabled!==false||browser.security?.main_frame_navigation_policy!=='pre_request_same_origin_allowlist'||browser.evidence?.some(item=>item.matrix_digest!==browser.matrix?.digest)){
+            throw new Error('Inclusive browser evidence lost sandbox, navigation, or matrix binding: '+JSON.stringify(browser.security));
+          }
+          if(gate.passed!==true||gate.automated?.passed!==78||gate.automated?.missing!==0||gate.declared_manual?.total!==48){
+            throw new Error('Inclusive quality release gate did not preserve automated/manual truth: '+JSON.stringify({automated:gate.automated,declared_manual:gate.declared_manual}));
+          }
+          NODE
+
+          node runtime/modules/panel/testing/panel_release_contract.js \
+            --mode=browser \
+            --browser-evidence-root=cache/ci/panel-browser \
+            --report=cache/ci/panel-browser/release-contract.json || status=1
+
+          exit "$status"
+
+      - name: Upload Panel browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-browser-release-gate
+          path: cache/ci/panel-browser
+          if-no-files-found: error
+
+  panel-visual-regression:
+    name: Panel committed visual regression
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: openssl, sodium, fileinfo, mbstring, intl, gd, sqlite3, pdo_sqlite, zip, curl
+          coverage: none
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install pinned browser bridge
+        run: >-
+          npm install
+          --prefix .tmp/puppeteer-check
+          --no-save
+          --no-package-lock
+          puppeteer-core@25.3.0
+
+      - name: Compare the source showroom with committed references
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path 'cache/ci/panel-pixel' | Out-Null
+          php -l runtime/modules/panel/testing/fixtures/panel_browser_showroom.php
+          if ($LASTEXITCODE -ne 0) { throw 'The Panel browser showroom failed PHP lint.' }
+          php -l runtime/modules/panel/testing/fixtures/panel_browser_showroom_routing_stub.php
+          if ($LASTEXITCODE -ne 0) { throw 'The Panel browser routing stub failed PHP lint.' }
+
+          $browserCandidates = @(
+            (Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Google/Chrome/Application/chrome.exe'),
+            (Join-Path $env:ProgramFiles 'Microsoft/Edge/Application/msedge.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft/Edge/Application/msedge.exe')
+          )
+          $browser = $browserCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $browser) { throw 'Chrome or Edge is unavailable.' }
+          $env:CHROME_PATH = $browser
+
+          $server = $null
+          try {
+            $server = Start-Process -FilePath 'php' `
+              -ArgumentList @('-S', '127.0.0.1:8098', 'runtime/modules/panel/testing/fixtures/panel_browser_showroom.php') `
+              -RedirectStandardOutput 'cache/ci/panel-pixel/server.stdout.log' `
+              -RedirectStandardError 'cache/ci/panel-pixel/server.stderr.log' `
+              -WindowStyle Hidden `
+              -PassThru
+
+            $ready = $false
+            foreach ($attempt in 1..30) {
+              try {
+                $response = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8098/panel' -TimeoutSec 2
+                if ($response.StatusCode -eq 200) {
+                  $ready = $true
+                  break
+                }
+              }
+              catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+            if (-not $ready) {
+              Get-Content 'cache/ci/panel-pixel/server.stderr.log' -ErrorAction SilentlyContinue
+              throw 'The Panel browser showroom did not become ready.'
+            }
+
+            node runtime/modules/panel/testing/panel_visual_regression.js `
+              --base-url=http://127.0.0.1:8098/panel `
+              --artifact-dir=cache/ci/panel-pixel `
+              --report=cache/ci/panel-pixel/report.json
+            if ($LASTEXITCODE -ne 0) { throw 'Committed Panel visual regression failed.' }
+
+            $report = Get-Content 'cache/ci/panel-pixel/report.json' -Raw | ConvertFrom-Json
+            if ($report.summary.total -ne 52 -or $report.summary.failed -ne 0) {
+              throw "Expected 52 passing visual comparisons, got $($report.summary | ConvertTo-Json -Compress)."
+            }
+
+            node runtime/modules/panel/testing/panel_release_contract.js `
+              --mode=pixel `
+              --pixel-report=cache/ci/panel-pixel/report.json `
+              --report=cache/ci/panel-pixel/release-contract.json
+            if ($LASTEXITCODE -ne 0) { throw 'Panel pixel release contract failed.' }
+          }
+          finally {
+            if ($null -ne $server -and -not $server.HasExited) {
+              Stop-Process -Id $server.Id -Force
+            }
+          }
+
+      - name: Upload Panel pixel-comparison evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-committed-visual-regression
+          path: cache/ci/panel-pixel
+          if-no-files-found: error
+
+  panel-release:
+    name: Panel release aggregate
+    if: always()
+    needs:
+      - panel-release-contract
+      - panel-unit
+      - panel-exact-coverage
+      - panel-assets
+      - panel-browser
+      - panel-visual-regression
+      - datadoc-documentation
+      - datadoc-documentation-browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Require every Panel release evidence job
+        env:
+          PANEL_RELEASE_JOB_RESULTS: >-
+            {"panel-release-contract":"${{ needs['panel-release-contract'].result }}","panel-unit":"${{ needs['panel-unit'].result }}","panel-exact-coverage":"${{ needs['panel-exact-coverage'].result }}","panel-assets":"${{ needs['panel-assets'].result }}","panel-browser":"${{ needs['panel-browser'].result }}","panel-visual-regression":"${{ needs['panel-visual-regression'].result }}","datadoc-documentation":"${{ needs['datadoc-documentation'].result }}","datadoc-documentation-browser":"${{ needs['datadoc-documentation-browser'].result }}"}
+        run: >-
+          node runtime/modules/panel/testing/panel_release_contract.js
+          --mode=aggregate
+          --job-results="$PANEL_RELEASE_JOB_RESULTS"
+          --report=cache/ci/panel-release/aggregate.json
+
+      - name: Upload Panel release aggregate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-release-aggregate
+          path: cache/ci/panel-release
+          if-no-files-found: error
+
+  unit-tests:
+    name: Unit tests (${{ matrix.os }}, PHP ${{ matrix.php }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            php: "8.1"
+          - os: ubuntu-latest
+            php: "8.3"
+          - os: windows-latest
+            php: "8.3"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: openssl, sodium, fileinfo, mbstring, intl, gd, sqlite3, pdo_sqlite, zip, curl
+          coverage: none
+
+      - name: Run first-party framework tests
+        run: >-
+          php -d memory_limit=512M bin/dataphyre-test run
+          --scope=framework
+          --parallel=4
+          --isolate=auto
+          --memory=512M
+          --profile=artifacts/unit-tests.profile.json
+          --junit=artifacts/unit-tests.junit.xml
+          --github-annotations
+
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-tests-${{ matrix.os }}-php-${{ matrix.php }}
+          path: artifacts/
+          if-no-files-found: warn
+
+  framework-exact-coverage:
+    name: Framework exact source coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP with Xdebug
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: openssl, sodium, fileinfo, mbstring, intl, gd, sqlite3, pdo_sqlite, zip, curl
+          coverage: xdebug
+
+      - name: Run the complete framework exact-coverage gate
+        env:
+          XDEBUG_MODE: coverage
+        shell: bash
+        run: |
+          mkdir -p cache/ci
+          php -d memory_limit=1G bin/dataphyre-test run \
+            --scope=framework \
+            --kind=code \
+            --no-test-cache \
+            --parallel=4 \
+            --isolate=auto \
+            --memory=1G \
+            --fail-skipped \
+            --fail-todo \
+            --coverage=cache/ci/framework.coverage.json \
+            --coverage-require=xdebug \
+            --coverage-source=runtime/modules \
+            --coverage-closed-world \
+            --coverage-min-percent=100 \
+            --junit=cache/ci/framework.junit.xml \
+            --profile=cache/ci/framework.profile.json \
+            --json \
+            > cache/ci/framework.summary.json
+
+      - name: Upload framework exact-coverage evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: framework-exact-coverage
+          path: |
+            cache/ci/framework.coverage.json
+            cache/ci/framework.junit.xml
+            cache/ci/framework.profile.json
+            cache/ci/framework.summary.json
+          if-no-files-found: error

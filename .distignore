@@ -17,9 +17,15 @@
 !/plugins/post_init/.gitkeep
 /cache/
 /cache/*
+/.codex-tmp/
+/.tmp/
+/hosttmp/
+/tmp/
+/workspace/
 /logs/
 /logs/*
 /runtime/cache/
+/runtime/modules/core/unit_tests/fixtures/core-functions-unavailable-missing/cache/
 /runtime/logs/
 /runtime/modcache.php
 /runtime/modules/profanity/

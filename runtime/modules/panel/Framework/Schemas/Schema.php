@@ -13,11 +13,15 @@ namespace Dataphyre\Panel;
  * Schema is the bridge between legacy ResourceForm definitions and the newer component tree used
  * by manifests and lifecycle processing. It can normalize array definitions, expose flattened field
  * and section indexes, build manifests, and drive hydrate/dehydrate/validate/submit state flows.
+ *
+ * @template TRecord = mixed
+ * @template TState of array<string, mixed> = array<string, mixed>
  */
 final class Schema {
+	use HasCollectionPresentations;
 	use PanelExtensible;
 
-	/** @var array<int, SchemaComponent> */
+	/** @var list<SchemaComponent<TRecord, mixed, TState>> */
 	private array $components=[];
 	private int $columns=1;
 	private array $meta=[];
@@ -25,8 +29,8 @@ final class Schema {
 	/**
 	 * Creates a configured schema from component definitions.
 	 *
-	 * @param list<SchemaComponent|Field|array<string,mixed>|string> $components Initial SchemaComponent, Field, section, array, or string definitions.
-	 * @return self New schema after PanelExtensible configuration hooks run.
+	 * @param list<SchemaComponent<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|array<string,mixed>|string> $components Initial SchemaComponent, Field, section, array, or string definitions.
+	 * @return self<TRecord, TState> New schema after PanelExtensible configuration hooks run.
 	 */
 	public static function make(array $components=[]): self {
 		return self::configured(new self())->components($components);
@@ -39,7 +43,7 @@ final class Schema {
 	 * associative payloads containing `components`, or legacy `fields`/`sections` definitions.
 	 *
 	 * @param mixed $definition Schema, ResourceForm, array payload, or unsupported value.
-	 * @return ?self Normalized schema, or null when the value cannot describe a schema.
+	 * @return self<TRecord, TState>|null Normalized schema, or null when the value cannot describe a schema.
 	 */
 	public static function from(mixed $definition): ?self {
 		if($definition instanceof self){
@@ -59,6 +63,9 @@ final class Schema {
 			if(isset($definition['meta']) && is_array($definition['meta'])){
 				$schema=$schema->meta($definition['meta']);
 			}
+			if(isset($definition['presentation']) && is_array($definition['presentation'])){
+				$schema=$schema->collectionPresentations($definition['presentation']);
+			}
 			return $schema;
 		}
 		if(is_array($definition['fields'] ?? null) || is_array($definition['sections'] ?? null)){
@@ -68,6 +75,9 @@ final class Schema {
 			}
 			if(isset($definition['meta']) && is_array($definition['meta'])){
 				$form=$form->meta($definition['meta']);
+			}
+			if(isset($definition['presentation']) && is_array($definition['presentation'])){
+				$form=$form->collectionPresentations($definition['presentation']);
 			}
 			if(is_array($definition['sections'] ?? null)){
 				$form=$form->sections($definition['sections']);
@@ -86,8 +96,8 @@ final class Schema {
 	 * Fields with `meta.section` are grouped under matching form sections; unsectioned fields are
 	 * appended as loose field components. Form columns and metadata are preserved.
 	 *
-	 * @param ResourceForm $form Form definition to convert.
-	 * @return self Schema containing section components and loose field components.
+	 * @param ResourceForm<TRecord, TState> $form Form definition to convert.
+	 * @return self<TRecord, TState> Schema containing section components and loose field components.
 	 */
 	public static function fromForm(ResourceForm $form): self {
 		$schema=self::make();
@@ -109,14 +119,14 @@ final class Schema {
 		foreach($loose as $field){
 			$schema=$schema->field($field);
 		}
-		return $schema->columns($form->columnsCount())->meta($form->metadata());
+		return $schema->columns($form->columnsCount())->meta($form->metadata())->collectionPresentations($form->presentations());
 	}
 
 	/**
 	 * Replaces the component tree with normalized component definitions.
 	 *
-	 * @param list<SchemaComponent|Field|array<string,mixed>|string> $components Component definitions accepted by component().
-	 * @return self Cloned schema with a fresh component list.
+	 * @param list<SchemaComponent<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|array<string,mixed>|string> $components Component definitions accepted by component().
+	 * @return self<TRecord,TState> Cloned schema with a fresh component list.
 	 */
 	public function components(array $components): self {
 		$clone=clone $this;
@@ -133,17 +143,14 @@ final class Schema {
 	 * Infolist entries are converted to fields before component normalization. Unsupported or empty
 	 * component definitions are ignored and return the current schema unchanged.
 	 *
-	 * @param SchemaComponent|Field|FormSection|InfolistEntry|array|string $component Component definition.
-	 * @return self Cloned schema when a component is accepted; current schema when ignored.
+	 * @param SchemaComponent<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|FormSection<TRecord, TState>|InfolistEntry<TRecord, mixed, TState>|array<string, mixed>|string $component Component definition.
+	 * @return self<TRecord,TState> Cloned schema when a component is accepted; current schema when ignored.
 	 */
 	public function component(SchemaComponent|Field|FormSection|InfolistEntry|array|string $component): self {
 		if($component instanceof InfolistEntry){
 			$component=$component->field();
 		}
 		$component=SchemaComponent::from($component);
-		if(!$component instanceof SchemaComponent){
-			return $this;
-		}
 		$clone=clone $this;
 		$clone->components[]=$component;
 		return $clone;
@@ -152,9 +159,9 @@ final class Schema {
 	/**
 	 * Appends a field component.
 	 *
-	 * @param Field|InfolistEntry|array|string $field Field or field-like definition.
+	 * @param Field<TRecord, mixed, TState>|InfolistEntry<TRecord, mixed, TState>|array<string, mixed>|string $field Field or field-like definition.
 	 * @param ?string $type Optional field type when the field is created from a string/array.
-	 * @return self Schema with the field component appended.
+	 * @return self<TRecord,TState> Schema with the field component appended.
 	 */
 	public function field(Field|InfolistEntry|array|string $field, ?string $type=null): self {
 		return $this->component(SchemaComponent::field($field, $type));
@@ -163,9 +170,9 @@ final class Schema {
 	/**
 	 * Appends an infolist entry as a field component.
 	 *
-	 * @param Field|InfolistEntry|array|string $field Entry or field-like definition.
+	 * @param Field<TRecord, mixed, TState>|InfolistEntry<TRecord, mixed, TState>|array<string, mixed>|string $field Entry or field-like definition.
 	 * @param ?string $type Optional entry type when built from a string/array.
-	 * @return self Schema with the entry's backing field appended.
+	 * @return self<TRecord,TState> Schema with the entry's backing field appended.
 	 */
 	public function entry(Field|InfolistEntry|array|string $field, ?string $type=null): self {
 		$entry=InfolistEntry::from($field, $type);
@@ -175,9 +182,9 @@ final class Schema {
 	/**
 	 * Appends a section component with optional child fields.
 	 *
-	 * @param FormSection|array|string $section Section definition.
-	 * @param list<SchemaComponent|Field|array<string,mixed>|string> $fields Child field/component definitions placed in the section.
-	 * @return self Schema with the section component appended.
+	 * @param FormSection<TRecord, TState>|array<string, mixed>|string $section Section definition.
+	 * @param list<SchemaComponent<TRecord, mixed, TState>|Field<TRecord, mixed, TState>|array<string,mixed>|string> $fields Child field/component definitions placed in the section.
+	 * @return self<TRecord,TState> Schema with the section component appended.
 	 */
 	public function section(FormSection|array|string $section, array $fields=[]): self {
 		return $this->component(SchemaComponent::section($section, $fields));
@@ -188,7 +195,7 @@ final class Schema {
 	 *
 	 * @param string $name Group label/name.
 	 * @param list<SchemaComponent|Field|array<string,mixed>|string> $children Child component definitions.
-	 * @return self Schema with the group component appended.
+	 * @return self<TRecord,TState> Schema with the group component appended.
 	 */
 	public function group(string $name, array $children=[]): self {
 		return $this->component(SchemaComponent::group($name, $children));
@@ -199,7 +206,7 @@ final class Schema {
 	 *
 	 * @param string $name Tab label/name.
 	 * @param list<SchemaComponent|Field|array<string,mixed>|string> $children Child component definitions.
-	 * @return self Schema with the tab component appended.
+	 * @return self<TRecord,TState> Schema with the tab component appended.
 	 */
 	public function tab(string $name, array $children=[]): self {
 		return $this->component(SchemaComponent::tab($name, $children));
@@ -210,7 +217,7 @@ final class Schema {
 	 *
 	 * @param string $name Step label/name.
 	 * @param list<SchemaComponent|Field|array<string,mixed>|string> $children Child component definitions.
-	 * @return self Schema with the step component appended.
+	 * @return self<TRecord,TState> Schema with the step component appended.
 	 */
 	public function step(string $name, array $children=[]): self {
 		return $this->component(SchemaComponent::step($name, $children));
@@ -223,7 +230,7 @@ final class Schema {
 	 * stored in metadata as `grid_columns`.
 	 *
 	 * @param int|array $columns Fixed column count or breakpoint-to-count map.
-	 * @return self Cloned schema with updated grid settings.
+	 * @return self<TRecord,TState> Cloned schema with updated grid settings.
 	 */
 	public function columns(int|array $columns): self {
 		$clone=clone $this;
@@ -241,7 +248,7 @@ final class Schema {
 	 * Merges metadata into the schema.
 	 *
 	 * @param array<string,mixed> $meta Metadata consumed by manifests, lifecycle, or panel extensions.
-	 * @return self Cloned schema with merged metadata.
+	 * @return self<TRecord,TState> Cloned schema with merged metadata.
 	 */
 	public function meta(array $meta): self {
 		$clone=clone $this;
@@ -252,7 +259,7 @@ final class Schema {
 	/**
 	 * Returns the root component list.
 	 *
-	 * @return array<int,SchemaComponent> Root components in render order.
+	 * @return list<SchemaComponent<TRecord, mixed, TState>> Root components in render order.
 	 */
 	public function componentsList(): array {
 		return $this->components;
@@ -263,7 +270,7 @@ final class Schema {
 	 *
 	 * Later components with the same field name replace earlier entries, matching manifest/lifecycle lookup behavior.
 	 *
-	 * @return array<string,Field> Fields keyed by normalized field name.
+	 * @return array<string, Field<TRecord, mixed, TState>> Fields keyed by normalized field name.
 	 */
 	public function fieldsList(): array {
 		$fields=[];
@@ -278,7 +285,7 @@ final class Schema {
 	/**
 	 * Returns flattened sections from every component.
 	 *
-	 * @return array<string,FormSection> Sections keyed by normalized section name.
+	 * @return array<string, FormSection<TRecord, TState>> Sections keyed by normalized section name.
 	 */
 	public function sectionsList(): array {
 		$sections=[];
@@ -327,7 +334,7 @@ final class Schema {
 	 * @return ResourceForm Form representation of the schema.
 	 */
 	public function toForm(?int $columns=null): ResourceForm {
-		$form=ResourceForm::make()->columns($columns ?? $this->columns)->meta($this->meta);
+		$form=ResourceForm::make()->columns($columns ?? $this->columns)->meta($this->meta)->collectionPresentations($this->presentations());
 		foreach($this->sectionsList() as $section){
 			$form=$form->section($section);
 		}
@@ -341,7 +348,7 @@ final class Schema {
 	 * Creates a lifecycle processor for the schema fields.
 	 *
 	 * @param array<string,mixed> $meta Runtime metadata merged over schema metadata.
-	 * @return SchemaLifecycle Lifecycle processor for hydrate/dehydrate/validate/submit flows.
+	 * @return SchemaLifecycle<TRecord, TState> Lifecycle processor for hydrate/dehydrate/validate/submit flows.
 	 */
 	public function lifecycle(array $meta=[]): SchemaLifecycle {
 		return SchemaLifecycle::make($this->fieldsList(), array_replace($this->meta, $meta));
@@ -361,7 +368,7 @@ final class Schema {
 	/**
 	 * Hydrates schema field state from an optional record and request.
 	 *
-	 * @param mixed $record Existing record used as field source data.
+	 * @param TRecord|null $record Existing record used as field source data.
 	 * @param ?PanelRequest $request Current panel request, when available.
 	 * @return PanelFormState Hydrated field state.
 	 */
@@ -373,7 +380,7 @@ final class Schema {
 	 * Dehydrates request input into schema field state.
 	 *
 	 * @param PanelRequest $request Current panel request containing submitted values.
-	 * @param mixed $record Existing record context.
+	 * @param TRecord|null $record Existing record context.
 	 * @param ?string $operation Operation context for field rules.
 	 * @return PanelFormState Dehydrated field state.
 	 */
@@ -384,8 +391,8 @@ final class Schema {
 	/**
 	 * Validates a value array against schema field rules.
 	 *
-	 * @param array<string,mixed> $values Candidate field values.
-	 * @param mixed $record Existing record context.
+	 * @param TState $values Candidate field values.
+	 * @param TRecord|null $record Existing record context.
 	 * @param ?PanelRequest $request Current panel request, when available.
 	 * @param ?string $operation Operation context for field rules.
 	 * @return PanelFormState Validation state with values and errors.
@@ -398,7 +405,7 @@ final class Schema {
 	 * Dehydrates and validates the current request as a form submission.
 	 *
 	 * @param PanelRequest $request Current panel request.
-	 * @param mixed $record Existing record context.
+	 * @param TRecord|null $record Existing record context.
 	 * @param ?string $operation Operation context for field rules.
 	 * @return PanelFormState Submitted state with validation results.
 	 */
@@ -412,7 +419,7 @@ final class Schema {
 	 * @param mixed $record Existing record context.
 	 * @param ?PanelRequest $request Current panel request, when available.
 	 * @param ?string $operation Operation context for field rules.
-	 * @param array<string,mixed> $input Explicit input values.
+	 * @param TState $input Explicit input values.
 	 * @param bool $validate Whether validation should run while building state.
 	 * @return PanelFormState Resolved schema state.
 	 */
@@ -438,6 +445,7 @@ final class Schema {
 			'components'=>array_map(static fn(SchemaComponent $component): array => $component->toArray(), $this->components),
 			'fields'=>array_map(static fn(Field $field): array => $field->toArray(), array_values($this->fieldsList())),
 			'sections'=>array_map(static fn(FormSection $section): array => $section->toArray(), array_values($this->sectionsList())),
+			'presentation'=>$this->presentations(),
 			'meta'=>$this->meta,
 		];
 	}

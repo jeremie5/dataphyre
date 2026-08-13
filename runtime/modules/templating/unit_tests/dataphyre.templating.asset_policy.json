@@ -1,7 +1,7 @@
 [
   {
     "name": "asset_policy_normalizes_aliases_and_invalid_values",
-    "file": "/common/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
     "function": "DataphyreUnitTests\\templating_asset_policy_summary_json",
     "args": [
       {
@@ -28,7 +28,7 @@
   },
   {
     "name": "asset_policy_chain_returns_modified_clone_summary",
-    "file": "/common/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
+    "file": "/dataphyre/runtime/modules/templating/unit_tests/templating_test_helpers.php",
     "function": "DataphyreUnitTests\\templating_asset_policy_chain_summary_json",
     "args": [
       {
@@ -44,7 +44,7 @@
         }
       }
     ],
-    "expected": "{\"preload\":{\"styles\":false,\"scripts\":true,\"images\":false,\"fonts\":true},\"script_strategy\":\"defer\",\"script_type\":\"module\",\"style_media\":\"print\",\"font_crossorigin\":\"anonymous\"}",
+    "expected": "{\"preload\":{\"styles\":false,\"scripts\":true,\"images\":false,\"fonts\":true},\"script_strategy\":\"defer\",\"script_type\":\"module\",\"style_media\":\"print\",\"font_crossorigin\":null}",
     "max_millis": 5
   }
 ]

@@ -119,7 +119,7 @@ class tokenizer{
 	 * @param non-empty-string $filename PHP source file to inspect without executing it.
 	 * @return list<array{type:string,namespace:string,class:string,function:string,content:string,line:int,phpdoc:array{description:string,tags:array<string,string|list<string>>}}>|false
 	 */
-	public static function tokenize($filename){
+	public static function tokenize($filename, ?callable $file_opener=null){
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(!file_exists($filename)){
 			return false;
@@ -137,7 +137,7 @@ class tokenizer{
 		$active_class=null;
 		$active_function=null;
 		$multiline_string_quote=null;
-		$file=fopen($filename, "r");
+		$file=($file_opener ?? static fn(string $path,string $mode): mixed=>fopen($path,$mode))($filename, "r");
 		if(!$file){
 			return false;
 		}

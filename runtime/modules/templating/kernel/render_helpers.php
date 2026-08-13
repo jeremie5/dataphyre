@@ -203,18 +203,6 @@ trait render_helpers {
         }
         return $template;
     }
-	
-    /**
-     * Adds a value to the renderer-wide global context map.
-     *
-     * @param string $key Placeholder key used as `{{global.key}}`.
-     * @param mixed $value Scalar-like value rendered through HTML escaping.
-     * @return void
-     */
-    public static function add_to_global_context(string $key, mixed$value): void {
-        self::$global_context[$key]=$value;
-    }
-
 	/**
 	 * Parses a comma-separated template argument list into runtime values.
 	 *

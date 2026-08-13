@@ -208,12 +208,12 @@ trait dataphyre_mcp_client_example_surfaces {
 			'diagnostics'=>[
 				[
 					'name'=>'List tracelog artifacts',
-					'request'=>['jsonrpc'=>'2.0', 'id'=>401, 'method'=>'tools/call', 'params'=>['name'=>'dataphyre_tracelog_artifacts_list', 'arguments'=>['scope'=>'common/dataphyre/cache', 'limit'=>10]]],
+					'request'=>['jsonrpc'=>'2.0', 'id'=>401, 'method'=>'tools/call', 'params'=>['name'=>'dataphyre_tracelog_artifacts_list', 'arguments'=>['scope'=>'dataphyre/cache', 'limit'=>10]]],
 					'expect'=>'Lists bounded log artifacts without reading their contents.',
 				],
 				[
 					'name'=>'Find recent diagnostics',
-					'request'=>['jsonrpc'=>'2.0', 'id'=>402, 'method'=>'tools/call', 'params'=>['name'=>'dataphyre_diagnostics_last_error', 'arguments'=>['scope'=>'common/dataphyre/cache', 'limit'=>5]]],
+					'request'=>['jsonrpc'=>'2.0', 'id'=>402, 'method'=>'tools/call', 'params'=>['name'=>'dataphyre_diagnostics_last_error', 'arguments'=>['scope'=>'dataphyre/cache', 'limit'=>5]]],
 					'expect'=>'Returns redacted recent error-looking snippets from local diagnostics.',
 				],
 			],
@@ -225,7 +225,7 @@ trait dataphyre_mcp_client_example_surfaces {
 				],
 				[
 					'name'=>'Audit client config',
-					'request'=>['jsonrpc'=>'2.0', 'id'=>502, 'method'=>'tools/call', 'params'=>['name'=>'dataphyre_mcp_client_config_audit', 'arguments'=>['config'=>['mcpServers'=>['dataphyre'=>['command'=>'php', 'args'=>['common/dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php']]]]]]],
+					'request'=>['jsonrpc'=>'2.0', 'id'=>502, 'method'=>'tools/call', 'params'=>['name'=>'dataphyre_mcp_client_config_audit', 'arguments'=>['config'=>['mcpServers'=>['dataphyre'=>['command'=>'php', 'args'=>['dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php']]]]]]],
 					'expect'=>'Checks a proposed client config for portable Dataphyre stdio setup issues.',
 				],
 			],
@@ -258,15 +258,7 @@ trait dataphyre_mcp_client_example_surfaces {
 		];
 		$selected=$workflow==='all' ? $examples : [$workflow=>$examples[$workflow]];
 		$tool_names=array_map(static fn(array $tool): string => (string)($tool['name'] ?? ''), $this->list_tools()['tools']);
-		$missing=[];
-		foreach($selected as $items){
-			foreach($items as $item){
-				$name=(string)($item['request']['params']['name'] ?? '');
-				if($name!=='' && !in_array($name, $tool_names, true)){
-					$missing[]=$name;
-				}
-			}
-		}
+		$missing=$this->mcp_tool_example_missing_registrations($selected,$tool_names);
 		$payload=[
 			'export_type'=>'dataphyre_mcp_tool_call_examples_export',
 			'write_policy'=>'read_only',
@@ -275,7 +267,7 @@ trait dataphyre_mcp_client_example_surfaces {
 			'protocol'=>'2025-11-25',
 			'example_groups'=>$selected,
 			'example_count'=>array_sum(array_map('count', $selected)),
-			'missing_registered_tools'=>array_values(array_unique($missing)),
+			'missing_registered_tools'=>$missing,
 			'workflow_policy'=>[
 				'app'=>[
 					'first_copy'=>'dataphyre_app_builder_plan_generate',
@@ -351,6 +343,18 @@ trait dataphyre_mcp_client_example_surfaces {
 			$payload['tool_audience_boundaries']=$this->mcp_current_tool_audience_boundaries();
 		}
 		return $payload;
+	}
+
+	/** @param array<string,list<array<string,mixed>>> $groups @param list<string> $tool_names @return list<string> */
+	private function mcp_tool_example_missing_registrations(array $groups,array $tool_names): array {
+		$missing=[];
+		foreach($groups as $items){
+			foreach($items as $item){
+				$name=(string)($item['request']['params']['name'] ?? '');
+				if($name!=='' && !in_array($name,$tool_names,true)){$missing[]=$name;}
+			}
+		}
+		return array_values(array_unique($missing));
 	}
 
 }

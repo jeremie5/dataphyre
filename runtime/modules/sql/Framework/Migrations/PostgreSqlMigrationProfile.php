@@ -35,7 +35,7 @@ final class PostgreSqlMigrationProfile implements JsonSerializable {
 		'occurred_at',
 	];
 	public const VERSION_PATTERN='/^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:(?:0|[1-9][0-9]*)|(?:[0-9]*[A-Za-z-][0-9A-Za-z-]*))(?:\.(?:(?:0|[1-9][0-9]*)|(?:[0-9]*[A-Za-z-][0-9A-Za-z-]*)))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/D';
-	public const MIGRATION_ID_PATTERN='/^[0-9]{3}_[a-z0-9_]+$/D';
+	public const MIGRATION_ID_PATTERN='/^[0-9]{3}_[a-z0-9_]{1,124}$/D';
 
 	private string $applicationId;
 	private string $schema;

@@ -56,10 +56,7 @@ final class AwsSignatureV4 {
 		$date=gmdate('Ymd', $timestamp);
 		$parts=parse_url($url);
 		$host=(string)($parts['host'] ?? '');
-		$path=(string)($parts['path'] ?? '/');
-		if($path===''){
-			$path='/';
-		}
+		$path=(string)($parts['path'] ?? '') ?: '/';
 		$query=(string)($parts['query'] ?? '');
 		$payloadHash=hash('sha256', $payload);
 		$headers=[

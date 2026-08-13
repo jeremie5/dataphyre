@@ -1,0 +1,28 @@
+{
+    "schema_version": 1,
+    "classes": {
+        "Dataphyre\\Panel\\Field": {
+            "templates": [
+                "@template TRecord",
+                "@template TValue",
+                "@template TState"
+            ],
+            "methods": {
+                "currencyLabel": {
+                    "return": "self<TRecord,TValue,TState>",
+                    "parameters": [
+                        {
+                            "name": "currency",
+                            "type": "non-empty-string"
+                        }
+                    ]
+                },
+                "tenantDefault": {
+                    "return": "self<TRecord,TValue,TState>",
+                    "parameters": [],
+                    "static": false
+                }
+            }
+        }
+    }
+}

@@ -43,6 +43,13 @@ final class dataphyre_flightdeck_tracelog_surface {
 		self::render_viewer();
 	}
 
+	/** Dispatches only when this file is serving a page rather than an asset. */
+	public static function dispatch_entrypoint(bool $asset_request): void {
+		if($asset_request!==true){
+			self::dispatch();
+		}
+	}
+
 	/**
 	 * Splits the current Tracelog route into decoded path segments.
 	 *
@@ -54,7 +61,10 @@ final class dataphyre_flightdeck_tracelog_surface {
 		if(str_starts_with($path, $base)){
 			$path=substr($path, strlen($base));
 		}
-		return array_values(array_filter(explode('/', trim($path, '/')), static fn($segment)=>$segment!==''));
+		return array_values(array_map(
+			static fn(string $segment): string=>rawurldecode($segment),
+			array_filter(explode('/',trim($path,'/')),static fn($segment)=>$segment!==''),
+		));
 	}
 
 	/**
@@ -64,24 +74,29 @@ final class dataphyre_flightdeck_tracelog_surface {
 	 * retained session copy. Fresh buffers are cleared after rendering to avoid
 	 * repeatedly showing stale request-local trace state.
 	 *
+	 * @param array<string,mixed> $runtime Optional deterministic runtime observations.
 	 * @return void Emits the Tracelog viewer page.
 	 */
-	private static function render_viewer(): void {
-		$jit_info=[];
-		if(function_exists('opcache_get_status')){
-			$opcache_status=opcache_get_status();
-			if(is_array($opcache_status) && isset($opcache_status['jit']) && is_array($opcache_status['jit'])){
-				$jit_info=$opcache_status['jit'];
-			}
-		}
-		$load_average=function_exists('sys_getloadavg') ? sys_getloadavg() : false;
+	private static function render_viewer(array $runtime=[]): void {
+		$opcache_status=array_key_exists('opcache_status',$runtime)
+			? $runtime['opcache_status']
+			: (function_exists('opcache_get_status') ? opcache_get_status() : false);
+		$jit_info=is_array($opcache_status) && isset($opcache_status['jit']) && is_array($opcache_status['jit'])
+			? $opcache_status['jit']
+			: [];
+		$load_average=array_key_exists('load_average',$runtime)
+			? $runtime['load_average']
+			: (function_exists('sys_getloadavg') ? sys_getloadavg() : false);
 
 		$handoff_token=(string)($_GET['handoff'] ?? ($_SESSION['flightdeck_last_tracelog_handoff'] ?? ''));
-		$handoff_trace=(class_exists('\dataphyre\tracelog', false) && method_exists('\dataphyre\tracelog', 'last_handoff_trace'))
-			? \dataphyre\tracelog::last_handoff_trace($handoff_token)
-			: '';
+		$handoff_trace=array_key_exists('handoff_trace',$runtime)
+			? (string)$runtime['handoff_trace']
+			: ((class_exists('\dataphyre\tracelog', false) && method_exists('\dataphyre\tracelog', 'last_handoff_trace'))
+				? \dataphyre\tracelog::last_handoff_trace($handoff_token)
+				: '');
 		if($handoff_trace===''){
-			$handoff_trace=self::read_handoff_trace($handoff_token);
+			$handoff_directory=array_key_exists('handoff_directory',$runtime) ? (string)$runtime['handoff_directory'] : null;
+			$handoff_trace=self::read_handoff_trace($handoff_token,$handoff_directory);
 		}
 		$session_trace=(string)($_SESSION['tracelog'] ?? '');
 		$retained_trace=(string)($_SESSION['flightdeck_last_tracelog'] ?? '');
@@ -92,7 +107,9 @@ final class dataphyre_flightdeck_tracelog_surface {
 		$project_memory=((int)($_SESSION['memory_used'] ?? 0)) - $memory_overhead;
 		$project_memory_peak=((int)($_SESSION['memory_used_peak'] ?? 0)) - $memory_overhead;
 
-		$plotter_available=self::plotter_available();
+		$plotter_available=array_key_exists('plotter_available',$runtime)
+			? (bool)$runtime['plotter_available']
+			: self::plotter_available();
 		$content=self::render_runtime_metrics([
 			['Execution', number_format((float)($_SESSION['exec_time'] ?? 0), 3).'s'],
 			['Project Memory', self::storage(max(0, $project_memory)).' / '.self::storage(max(0, $project_memory_peak))],
@@ -159,10 +176,11 @@ final class dataphyre_flightdeck_tracelog_surface {
 	 * viewer can still recover traces after redirects.
 	 *
 	 * @param string $handoff_token Signed handoff token from query string or session.
+	 * @param ?string $directory Optional deterministic handoff directory.
 	 * @return string Trace HTML/text buffer, or an empty string when unavailable.
 	 */
-	private static function read_handoff_trace(string $handoff_token): string {
-		$directory=self::handoff_directory();
+	private static function read_handoff_trace(string $handoff_token, ?string $directory=null): string {
+		$directory ??= self::handoff_directory();
 		if($directory==='' || !is_dir($directory)){
 			return '';
 		}
@@ -185,14 +203,16 @@ final class dataphyre_flightdeck_tracelog_surface {
 	/**
 	 * Locates the cache directory used for tracelog handoff files.
 	 *
+	 * @param ?array<string,mixed> $roots Optional deterministic root map.
 	 * @return string Absolute cache directory, or an empty string when roots are unavailable.
 	 */
-	private static function handoff_directory(): string {
-		if(defined('ROOTPATH') && !empty(ROOTPATH['dataphyre'])){
-			return rtrim((string)ROOTPATH['dataphyre'], '/\\').'/cache/tracelog_handoff';
+	private static function handoff_directory(?array $roots=null): string {
+		$roots ??= defined('ROOTPATH') && is_array(ROOTPATH) ? ROOTPATH : [];
+		if(!empty($roots['dataphyre'])){
+			return rtrim((string)$roots['dataphyre'], '/\\').'/cache/tracelog_handoff';
 		}
-		if(defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre'])){
-			return rtrim((string)ROOTPATH['common_dataphyre'], '/\\').'/cache/tracelog_handoff';
+		if(!empty($roots['common_dataphyre'])){
+			return rtrim((string)$roots['common_dataphyre'], '/\\').'/cache/tracelog_handoff';
 		}
 		return '';
 	}
@@ -203,16 +223,19 @@ final class dataphyre_flightdeck_tracelog_surface {
 	 * Plotter frames are read from a newline-delimited JSON cache file, capped to
 	 * a large but bounded set, then the file is removed so graph data is single-use.
 	 *
+	 * @param ?string $plotter_file Optional deterministic plotting data file.
+	 * @param int $trace_limit Maximum decoded trace frames to consume.
 	 * @return void Emits the plotter page.
 	 */
-	private static function render_plotter(): void {
-		$plotter_file=self::plotter_file();
+	private static function render_plotter(?string $plotter_file=null, int $trace_limit=10000): void {
+		$plotter_file ??= self::plotter_file();
+		$trace_limit=max(1,$trace_limit);
 		$traces=[];
 		if(is_file($plotter_file)){
 			foreach(file($plotter_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line){
 				$decoded=json_decode((string)$line, true);
 				if(!empty($decoded)){
-					if(count($traces)>10000){
+					if(count($traces)>=$trace_limit){
 						break;
 					}
 					$traces[]=$decoded;
@@ -426,23 +449,29 @@ HTML;
 	/**
 	 * Reports whether graph plotting data is available or pending.
 	 *
+	 * @param ?string $plotter_file Optional deterministic plotting data file.
+	 * @param ?bool $session_plotting Optional deterministic session plotting state.
 	 * @return bool True when a plotter cache file or session plotting flag exists.
 	 */
-	private static function plotter_available(): bool {
-		return is_file(self::plotter_file()) || !empty($_SESSION['tracelog_plotting']);
+	private static function plotter_available(?string $plotter_file=null, ?bool $session_plotting=null): bool {
+		$plotter_file ??= self::plotter_file();
+		$session_plotting ??= !empty($_SESSION['tracelog_plotting']);
+		return is_file($plotter_file) || $session_plotting;
 	}
 
 	/**
 	 * Locates the newline-delimited JSON file used by trace plotting.
 	 *
+	 * @param ?array<string,mixed> $roots Optional deterministic root map.
 	 * @return string Absolute plotter cache path, or an empty string when roots are unavailable.
 	 */
-	private static function plotter_file(): string {
-		if(defined('ROOTPATH') && !empty(ROOTPATH['dataphyre'])){
-			return rtrim((string)ROOTPATH['dataphyre'], '/\\').'/cache/tracelog_plotting.dat';
+	private static function plotter_file(?array $roots=null): string {
+		$roots ??= defined('ROOTPATH') && is_array(ROOTPATH) ? ROOTPATH : [];
+		if(!empty($roots['dataphyre'])){
+			return rtrim((string)$roots['dataphyre'], '/\\').'/cache/tracelog_plotting.dat';
 		}
-		if(defined('ROOTPATH') && !empty(ROOTPATH['common_dataphyre'])){
-			return rtrim((string)ROOTPATH['common_dataphyre'], '/\\').'/cache/tracelog_plotting.dat';
+		if(!empty($roots['common_dataphyre'])){
+			return rtrim((string)$roots['common_dataphyre'], '/\\').'/cache/tracelog_plotting.dat';
 		}
 		return '';
 	}
@@ -508,6 +537,6 @@ HTML;
 	}
 }
 
-if(defined('DATAPHYRE_FLIGHTDECK_ASSET_REQUEST')!==true){
-	dataphyre_flightdeck_tracelog_surface::dispatch();
-}
+dataphyre_flightdeck_tracelog_surface::dispatch_entrypoint(
+	defined('DATAPHYRE_FLIGHTDECK_ASSET_REQUEST')===true,
+);

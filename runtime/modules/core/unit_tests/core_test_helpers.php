@@ -4,7 +4,46 @@
  *
  * Copyright (c) 2025 Shopiro Ltd.
  * SPDX-License-Identifier: MIT
- */if(!function_exists('dp_core_unit_config_round_trip')){
+ */
+require_once __DIR__.'/../../testing/tooling/bootstrap.php';
+
+if(!defined('DP_CORE_FILE_FIXTURE_OWNER_LOADED') && !class_exists(DpCoreFileFixtureOwner::class, false)){
+	define('DP_CORE_FILE_FIXTURE_OWNER_LOADED', true);
+	/** Gives code and legacy JSON core file fixtures one owned workspace lifecycle. */
+	final class DpCoreFileFixtureOwner {
+		public static function withContext(callable $scenario): mixed {
+			$context=new \Dataphyre\Test\Context('core file fixture', file:__FILE__, suite:'core');
+			try{
+				return $scenario($context);
+			}finally{
+				$context->runDeferred();
+			}
+		}
+
+		public static function run(callable $scenario): mixed {
+			return self::withContext(static fn(\Dataphyre\Test\Context $context): mixed=>$scenario($context->workspace('core-file-helpers')));
+		}
+	}
+}
+
+if(!function_exists('dp_core_unit_install_crypto_fixture')){
+	function dp_core_unit_install_crypto_fixture(): void {
+		\dataphyre\core::register_dialback('CALL_CORE_ENCRYPT_DATA', static function(string $payload, array $salt=[]): string {
+			return '0:fixture:'.base64_encode(json_encode(['salt'=>$salt, 'payload'=>$payload], JSON_UNESCAPED_SLASHES));
+		});
+		\dataphyre\core::register_dialback('CALL_CORE_DECRYPT_DATA', static function(string $encrypted, array $salt=[]): string {
+			$decoded=json_decode((string)base64_decode(substr($encrypted, strlen('0:fixture:')), true), true);
+			return is_array($decoded) && ($decoded['salt'] ?? null)===$salt
+				? (string)($decoded['payload'] ?? '')
+				: '[DecryptFail]';
+		});
+		\dataphyre\core::register_dialback('CALL_CORE_GET_PASSWORD', static function(string $payload): string {
+			return rtrim(strtr(base64_encode(hash('sha256', $payload, true)), '+/', '-_'), '=');
+		});
+	}
+}
+
+if(!function_exists('dp_core_unit_config_round_trip')){
 	function dp_core_unit_config_round_trip(): array {
 		\dataphyre\core::add_config('unit/nested/value', 'ok');
 		\dataphyre\core::add_config(['unit'=>['other'=>'kept']]);
@@ -28,10 +67,14 @@ if(!function_exists('dp_core_unit_url_update')){
 
 if(!function_exists('dp_core_unit_url_self_update')){
 	function dp_core_unit_url_self_update(): string {
-		$_SERVER['QUERY_STRING']='a=1&b=2&uri=drop';
-		$_SERVER['REQUEST_URI']='/orders?a=1&b=2&uri=drop';
-		$_SERVER['HTTP_HOST']='example.test';
-		return \dataphyre\core::url_self_updated_querystring(['c'=>'see'], ['b']);
+		return DpCoreFileFixtureOwner::withContext(static function(\Dataphyre\Test\Context $context): string {
+			$context->globalMap('_SERVER')->merge([
+				'QUERY_STRING'=>'a=1&b=2&uri=drop',
+				'REQUEST_URI'=>'/orders?a=1&b=2&uri=drop',
+				'HTTP_HOST'=>'example.test',
+			]);
+			return \dataphyre\core::url_self_updated_querystring(['c'=>'see'], ['b']);
+		});
 	}
 }
 
@@ -56,6 +99,7 @@ function dp_core_unit_high_precision_shape(): bool {
 
 if(!function_exists('dp_core_unit_crypto_round_trip')){
 	function dp_core_unit_crypto_round_trip(): array {
+		dp_core_unit_install_crypto_fixture();
 		$encrypted=\dataphyre\core::encrypt_data('secret payload', ['unit', 'test']);
 		return [
 			'encrypted_prefix'=>substr($encrypted, 0, 2),
@@ -67,29 +111,33 @@ if(!function_exists('dp_core_unit_crypto_round_trip')){
 
 if(!function_exists('dp_core_unit_csrf_lifecycle')){
 	function dp_core_unit_csrf_lifecycle(): array {
-		$_SESSION['token']=[];
-		$token=\dataphyre\core::csrf('unit_form');
-		return [
-			'token_is_string'=>is_string($token) && strlen($token)===32,
-			'valid'=>\dataphyre\core::csrf('unit_form', $token),
-			'invalid'=>\dataphyre\core::csrf('unit_form', 'bad-token'),
-		];
+		return DpCoreFileFixtureOwner::withContext(static function(\Dataphyre\Test\Context $context): array {
+			$context->globalMap('_SESSION')->put('token', []);
+			$token=\dataphyre\core::csrf('unit_form');
+			return [
+				'token_is_string'=>is_string($token) && strlen($token)===32,
+				'valid'=>\dataphyre\core::csrf('unit_form', $token),
+				'invalid'=>\dataphyre\core::csrf('unit_form', 'bad-token'),
+			];
+		});
 	}
 }
 
 if(!function_exists('dp_core_unit_file_helpers')){
 	function dp_core_unit_file_helpers(): array {
-		$root=sys_get_temp_dir().'/dataphyre-core-unit-'.bin2hex(random_bytes(4));
-		$file=$root.'/nested/file.txt';
-		$bytes=\dataphyre\core::file_put_contents_forced($file, 'hello');
-		$contents=is_file($file) ? file_get_contents($file) : false;
-		$removed=\dataphyre\core::force_rmdir($root);
-		return [
-			'bytes'=>$bytes,
-			'contents'=>$contents,
-			'removed'=>$removed,
-			'exists_after'=>file_exists($root),
-		];
+		return DpCoreFileFixtureOwner::run(static function(\Dataphyre\Test\TempWorkspace $workspace): array {
+			$root=$workspace->root();
+			$file=$workspace->path('nested/file.txt');
+			$bytes=\dataphyre\core::file_put_contents_forced($file, 'hello');
+			$contents=is_file($file) ? file_get_contents($file) : false;
+			$removed=\dataphyre\core::force_rmdir($root);
+			return [
+				'bytes'=>$bytes,
+				'contents'=>$contents,
+				'removed'=>$removed,
+				'exists_after'=>file_exists($root),
+			];
+		});
 	}
 }
 
@@ -106,6 +154,7 @@ if(!function_exists('dp_core_unit_storage_units')){
 
 if(!function_exists('dp_core_unit_password_shape')){
 	function dp_core_unit_password_shape(): bool {
+		dp_core_unit_install_crypto_fixture();
 		$password=\dataphyre\core::get_password('secret');
 		return is_string($password) && $password!=='' && !str_contains($password, '=');
 	}

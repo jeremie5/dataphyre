@@ -26,6 +26,61 @@ trait PanelRendererRecordSections {
 	}
 
 	/**
+	 * Resolves an opt-in layout for one record submodule.
+	 *
+	 * The wrapper remains byte-identical when neither the resource nor an item
+	 * declares presentation metadata. Local item metadata still activates the
+	 * natural collection wrapper so spans and row breaks have a layout context.
+	 *
+	 * @param array<int,array<string,mixed>> $items
+	 * @return ?array<string,mixed>
+	 */
+	private static function recordCollectionPresentation(Resource $resource, string $collection, array $items=[], string $defaultDisplay='grid'): ?array {
+		$key=Resource::normalizeName($collection);
+		$presentations=$resource->presentations();
+		if(array_key_exists($key, $presentations)){
+			return PanelCollectionPresentation::normalize($presentations[$key], $defaultDisplay);
+		}
+		foreach($items as $item){
+			if(is_array($item) && PanelCollectionItemPresentation::fromMeta($item)!==[]){
+				return PanelCollectionPresentation::normalize(null, $defaultDisplay);
+			}
+		}
+		return null;
+	}
+
+	/** @param ?array<string,mixed> $presentation */
+	private static function recordCollectionAttributes(?array $presentation, string $defaultDisplay): string {
+		return $presentation===null ? '' : PanelCollectionPresentation::htmlAttributes($presentation, $defaultDisplay);
+	}
+
+	/** @param ?array<string,mixed> $presentation
+	 *  @param array<string,mixed> $meta
+	 */
+	private static function recordCollectionItemHtml(string $html, ?array $presentation, string|int|null $name, int $index, array $meta=[]): string {
+		return PanelCollectionPresentation::decorateItemHtml($html, $presentation, $name, $index, $meta);
+	}
+
+	/**
+	 * Carries local item-presentation metadata through record payload normalization.
+	 *
+	 * @param array<string,mixed> $normalized
+	 * @param array<string,mixed> $source
+	 * @return array<string,mixed>
+	 */
+	private static function recordItemDescriptor(array $normalized, array $source): array {
+		$nested=is_array($source['meta'] ?? null) && !array_is_list($source['meta']) ? $source['meta'] : [];
+		$presentation=PanelCollectionItemPresentation::merge(
+			PanelCollectionItemPresentation::fromMeta($nested),
+			PanelCollectionItemPresentation::fromMeta($source),
+		);
+		if($presentation!==[]){
+			$normalized['item_presentation']=$presentation;
+		}
+		return $normalized;
+	}
+
+	/**
 	 * Renders visible relation managers for a record detail page.
 	 *
 	 * relation managers are nested resource surfaces. Each manager is
@@ -33,14 +88,41 @@ trait PanelRendererRecordSections {
 	 * resource before relation-table markup is appended.
 	 */
 	private static function relationsHtml(Resource $resource, PanelRequest $request, mixed $record=null): string {
-		$html='';
+		$relations=[];
 		foreach($resource->relationManagers() as $relation){
 			if($relation->can('view', $record, $request->user(), $resource)===false){
 				continue;
 			}
-			$html.=self::relationTableHtml($resource, $relation, $request, $record);
+			$meta=$relation->toArray();
+			$relationMeta=is_array($meta['meta'] ?? null) ? $meta['meta'] : [];
+			$type=Resource::normalizeName((string)($relationMeta['relation_type'] ?? $relationMeta['type'] ?? $relationMeta['kind'] ?? 'table')) ?: 'table';
+			if(PanelComponentRegistry::relationTypeHasHook($type, 'authorize') && PanelComponentRegistry::callRelationTypeHook($type, 'authorize', $relation, $resource, $request, $record)===false){
+				continue;
+			}
+			$context=['renderer'=>__CLASS__, 'meta'=>$meta];
+			$before=PanelComponentRegistry::relationTypeHasHook($type, 'before_render')
+				? PanelComponentRegistry::callRelationTypeHook($type, 'before_render', $relation, $resource, $request, $record, $context)
+				: null;
+			$custom=PanelComponentRegistry::renderRelation($type, $relation, $resource, $request, $record, $context);
+			$relationHtml=(is_string($before) ? $before : '').($custom ?? self::relationTableHtml($resource, $relation, $request, $record));
+			if($custom!==null && PanelComponentRegistry::relationTypeHasHook($type, 'after_render')){
+				$after=PanelComponentRegistry::callRelationTypeHook($type, 'after_render', $relation, $relationHtml, $resource, $request, $record, $context);
+				if(is_string($after)){ $relationHtml=$after; }
+			}
+			$relations[]=[
+				'name'=>$relation->name(),
+				'meta'=>$relationMeta,
+				'html'=>$relationHtml,
+			];
 		}
-		return $html;
+		$presentation=self::recordCollectionPresentation($resource, 'relations', array_map(static fn(array $relation): array=>$relation['meta'], $relations), 'stack');
+		$html='';
+		foreach($relations as $index=>$relation){
+			$html.=self::recordCollectionItemHtml($relation['html'], $presentation, $relation['name'], $index, $relation['meta']);
+		}
+		return $presentation===null || $html===''
+			? $html
+			: '<div class="dp-panel-relations"'.self::recordCollectionAttributes($presentation, 'stack').'>'.$html.'</div>';
 	}
 
 	/**
@@ -58,8 +140,9 @@ trait PanelRendererRecordSections {
 		if($items===[]){
 			return '';
 		}
+		$presentation=self::recordCollectionPresentation($resource, 'alerts', $items, 'stack');
 		$html='';
-		foreach($items as $item){
+		foreach($items as $index=>$item){
 			$tone=self::safeTone((string)($item['tone'] ?? 'warning'));
 			$title=self::e((string)($item['title'] ?? self::panelText('record.needs_attention')));
 			$message=trim((string)($item['message'] ?? ''));
@@ -72,17 +155,18 @@ trait PanelRendererRecordSections {
 					$meta.='<span>'.self::e($detail).'</span>';
 				}
 			}
-			$html.='<article class="dp-panel-alert-card dp-panel-alert-'.$tone.'">'
+			$itemHtml='<article class="dp-panel-alert-card dp-panel-alert-'.$tone.'">'
 				.'<div><strong>'.$title.'</strong>'.($message!=='' ? '<p>'.self::e($message).'</p>' : '').($meta!=='' ? '<small>'.$meta.'</small>' : '').'</div>'
 				.($url!=='' ? '<a class="dp-panel-action dp-panel-action-'.$tone.'" href="'.self::e($url).'">'.self::e($action!=='' ? $action : self::panelText('record.open')).'</a>' : '')
 				.'</article>';
+			$html.=self::recordCollectionItemHtml($itemHtml, $presentation, (string)($item['title'] ?? ''), $index, $item);
 		}
 		PanelTrace::record('record.alerts_rendered', [
 			'resource'=>$resource,
 			'request'=>$request,
 			'item_count'=>count($items),
 		]);
-		return '<section class="dp-panel-alerts">'.$html.'</section>';
+		return '<section class="dp-panel-alerts"'.self::recordCollectionAttributes($presentation, 'stack').'>'.$html.'</section>';
 	}
 
 	/**
@@ -113,14 +197,14 @@ trait PanelRendererRecordSections {
 			if(!is_array($meta)){
 				$meta=[$meta];
 			}
-			$normalized[]=[
+			$normalized[]=self::recordItemDescriptor([
 				'title'=>$title!=='' ? $title : self::panelText('record.needs_attention'),
 				'message'=>$message,
 				'tone'=>(string)($item['tone'] ?? $item['status'] ?? 'warning'),
 				'url'=>self::safeWidgetUrl((string)($item['url'] ?? $item['href'] ?? $item['to'] ?? '')),
 				'action'=>trim((string)($item['action'] ?? $item['action_label'] ?? $item['button'] ?? self::panelText('record.open'))),
 				'meta'=>$meta,
-			];
+			], $item);
 		}
 		return $normalized;
 	}
@@ -140,8 +224,9 @@ trait PanelRendererRecordSections {
 		if($items===[]){
 			return '';
 		}
+		$presentation=self::recordCollectionPresentation($resource, 'insights', $items, 'grid');
 		$html='';
-		foreach($items as $item){
+		foreach($items as $index=>$item){
 			$tone=self::safeTone((string)($item['tone'] ?? 'neutral'));
 			$label=self::e((string)($item['label'] ?? self::panelText('record.insight')));
 			$value=self::e(self::stringValue($item['value'] ?? ''));
@@ -152,16 +237,17 @@ trait PanelRendererRecordSections {
 				.'<span class="dp-panel-insight-label">'.$label.'</span>'
 				.'<strong>'.$value.'</strong>'
 				.($description!=='' ? '<small>'.self::e($description).'</small>' : '');
-			$html.=$url!==''
+			$itemHtml=$url!==''
 				? '<a class="dp-panel-insight dp-panel-insight-'.$tone.'" href="'.self::e($url).'">'.$body.'</a>'
 				: '<article class="dp-panel-insight dp-panel-insight-'.$tone.'">'.$body.'</article>';
+			$html.=self::recordCollectionItemHtml($itemHtml, $presentation, (string)($item['label'] ?? ''), $index, $item);
 		}
 		PanelTrace::record('record.insights_rendered', [
 			'resource'=>$resource,
 			'request'=>$request,
 			'item_count'=>count($items),
 		]);
-		return '<section class="dp-panel-insights">'.$html.'</section>';
+		return '<section class="dp-panel-insights"'.self::recordCollectionAttributes($presentation, 'grid').'>'.$html.'</section>';
 	}
 
 	/**
@@ -185,14 +271,14 @@ trait PanelRendererRecordSections {
 			}
 			$label=trim((string)($item['label'] ?? $item['title'] ?? (is_string($key) ? $key : self::panelText('record.insight'))));
 			$value=$item['value'] ?? $item['metric'] ?? $item['count'] ?? '';
-			$normalized[]=[
+			$normalized[]=self::recordItemDescriptor([
 				'label'=>$label!=='' ? $label : self::panelText('record.insight'),
 				'value'=>$value,
 				'description'=>trim((string)($item['description'] ?? $item['detail'] ?? $item['help'] ?? '')),
 				'tone'=>(string)($item['tone'] ?? $item['status'] ?? 'neutral'),
 				'icon'=>trim((string)($item['icon'] ?? '')),
 				'url'=>self::safeWidgetUrl((string)($item['url'] ?? $item['href'] ?? '')),
-			];
+			], $item);
 		}
 		return $normalized;
 	}
@@ -212,8 +298,9 @@ trait PanelRendererRecordSections {
 		if($items===[]){
 			return '';
 		}
+		$presentation=self::recordCollectionPresentation($resource, 'links', $items, 'grid');
 		$html='';
-		foreach($items as $item){
+		foreach($items as $index=>$item){
 			$tone=self::safeTone((string)($item['tone'] ?? 'neutral'));
 			$label=self::e((string)($item['label'] ?? self::panelText('record.link_default')));
 			$url=self::e((string)($item['url'] ?? ''));
@@ -221,18 +308,19 @@ trait PanelRendererRecordSections {
 			$group=trim((string)($item['group'] ?? ''));
 			$icon=trim((string)($item['icon'] ?? ''));
 			$external=!empty($item['external']) || preg_match('/^https?:\/\//i', (string)($item['url'] ?? ''))===1;
-			$html.='<a class="dp-panel-link dp-panel-link-'.$tone.'" href="'.$url.'"'.($external ? ' target="_blank" rel="noopener noreferrer"' : '').'>'
+			$itemHtml='<a class="dp-panel-link dp-panel-link-'.$tone.'" href="'.$url.'"'.($external ? ' target="_blank" rel="noopener noreferrer"' : '').'>'
 				.'<span class="dp-panel-link-top">'.($icon!=='' ? '<span class="dp-panel-link-icon">'.self::e($icon).'</span>' : '').($group!=='' ? '<small>'.self::e($group).'</small>' : '').'</span>'
 				.'<strong>'.$label.'</strong>'
 				.($description!=='' ? '<span>'.self::e($description).'</span>' : '')
 				.'</a>';
+			$html.=self::recordCollectionItemHtml($itemHtml, $presentation, (string)($item['label'] ?? ''), $index, $item);
 		}
 		PanelTrace::record('record.links_rendered', [
 			'resource'=>$resource,
 			'request'=>$request,
 			'item_count'=>count($items),
 		]);
-		return '<section class="dp-panel-links"><header><h2>'.self::e(self::panelText('record.links')).'</h2><span>'.self::recordCountLabel(count($items), 'record.link', 'record.link_plural').'</span></header><div class="dp-panel-link-grid">'.$html.'</div></section>';
+		return '<section class="dp-panel-links"><header><h2>'.self::e(self::panelText('record.links')).'</h2><span>'.self::recordCountLabel(count($items), 'record.link', 'record.link_plural').'</span></header><div class="dp-panel-link-grid"'.self::recordCollectionAttributes($presentation, 'grid').'>'.$html.'</div></section>';
 	}
 
 	/**
@@ -259,7 +347,7 @@ trait PanelRendererRecordSections {
 				continue;
 			}
 			$label=trim((string)($item['label'] ?? $item['title'] ?? $item['name'] ?? (is_string($key) ? $key : self::panelText('record.link_default'))));
-			$normalized[]=[
+			$normalized[]=self::recordItemDescriptor([
 				'label'=>$label!=='' ? $label : self::panelText('record.link_default'),
 				'url'=>$url,
 				'description'=>trim((string)($item['description'] ?? $item['detail'] ?? $item['help'] ?? '')),
@@ -267,7 +355,7 @@ trait PanelRendererRecordSections {
 				'tone'=>(string)($item['tone'] ?? $item['status'] ?? 'neutral'),
 				'icon'=>trim((string)($item['icon'] ?? '')),
 				'external'=>(bool)($item['external'] ?? false),
-			];
+			], $item);
 		}
 		return $normalized;
 	}
@@ -287,8 +375,9 @@ trait PanelRendererRecordSections {
 		if($items===[]){
 			return '';
 		}
+		$presentation=self::recordCollectionPresentation($resource, 'contacts', $items, 'grid');
 		$html='';
-		foreach($items as $item){
+		foreach($items as $index=>$item){
 			$tone=self::safeTone((string)($item['tone'] ?? 'neutral'));
 			$name=self::e((string)($item['name'] ?? self::panelText('record.contact_default')));
 			$role=trim((string)($item['role'] ?? ''));
@@ -310,17 +399,18 @@ trait PanelRendererRecordSections {
 				}
 			}
 			$title=$url!=='' ? '<a href="'.self::e($url).'">'.$name.'</a>' : '<strong>'.$name.'</strong>';
-			$html.='<article class="dp-panel-contact dp-panel-contact-'.$tone.'">'
+			$itemHtml='<article class="dp-panel-contact dp-panel-contact-'.$tone.'">'
 				.'<header><div>'.$title.($role!=='' ? '<small>'.self::e($role).'</small>' : '').'</div>'.($status!=='' ? '<span class="dp-panel-badge dp-panel-badge-'.$tone.'">'.self::e($status).'</span>' : '').'</header>'
 				.($details!=='' ? '<div class="dp-panel-contact-details">'.$details.'</div>' : '')
 				.'</article>';
+			$html.=self::recordCollectionItemHtml($itemHtml, $presentation, (string)($item['name'] ?? ''), $index, $item);
 		}
 		PanelTrace::record('record.contacts_rendered', [
 			'resource'=>$resource,
 			'request'=>$request,
 			'item_count'=>count($items),
 		]);
-		return '<section class="dp-panel-contacts"><header><h2>'.self::e(self::panelText('record.contacts')).'</h2><span>'.self::recordCountLabel(count($items), 'record.contact', 'record.contact_plural').'</span></header><div class="dp-panel-contact-list">'.$html.'</div></section>';
+		return '<section class="dp-panel-contacts"><header><h2>'.self::e(self::panelText('record.contacts')).'</h2><span>'.self::recordCountLabel(count($items), 'record.contact', 'record.contact_plural').'</span></header><div class="dp-panel-contact-list"'.self::recordCollectionAttributes($presentation, 'grid').'>'.$html.'</div></section>';
 	}
 
 	/**
@@ -344,7 +434,7 @@ trait PanelRendererRecordSections {
 			}
 			$name=trim((string)($item['name'] ?? $item['label'] ?? $item['title'] ?? $item['display_name'] ?? (is_string($key) ? $key : self::panelText('record.contact_default'))));
 			$status=Resource::normalizeName((string)($item['status'] ?? $item['state'] ?? ''));
-			$normalized[]=[
+			$normalized[]=self::recordItemDescriptor([
 				'name'=>$name!=='' ? $name : self::panelText('record.contact_default'),
 				'role'=>trim((string)($item['role'] ?? $item['type'] ?? $item['kind'] ?? '')),
 				'email'=>trim((string)($item['email'] ?? $item['mail'] ?? '')),
@@ -354,7 +444,7 @@ trait PanelRendererRecordSections {
 				'status'=>$status,
 				'url'=>self::safeWidgetUrl((string)($item['url'] ?? $item['href'] ?? $item['profile_url'] ?? '')),
 				'tone'=>(string)($item['tone'] ?? ($status==='blocked' ? 'danger' : ($status==='verified' || $status==='active' ? 'success' : 'neutral'))),
-			];
+			], $item);
 		}
 		return $normalized;
 	}
@@ -374,8 +464,9 @@ trait PanelRendererRecordSections {
 		if($items===[]){
 			return '';
 		}
+		$presentation=self::recordCollectionPresentation($resource, 'locations', $items, 'grid');
 		$html='';
-		foreach($items as $item){
+		foreach($items as $index=>$item){
 			$tone=self::safeTone((string)($item['tone'] ?? 'neutral'));
 			$label=self::e((string)($item['label'] ?? self::panelText('record.location_default')));
 			$type=trim((string)($item['type'] ?? ''));
@@ -396,18 +487,19 @@ trait PanelRendererRecordSections {
 				}
 			}
 			$title=$url!=='' ? '<a href="'.self::e($url).'" target="_blank" rel="noopener noreferrer">'.$label.'</a>' : '<strong>'.$label.'</strong>';
-			$html.='<article class="dp-panel-location dp-panel-location-'.$tone.'">'
+			$itemHtml='<article class="dp-panel-location dp-panel-location-'.$tone.'">'
 				.'<header><div>'.$title.($type!=='' ? '<small>'.self::e($type).'</small>' : '').'</div>'.($status!=='' ? '<span class="dp-panel-badge dp-panel-badge-'.$tone.'">'.self::e($status).'</span>' : '').'</header>'
 				.($addressLines!=='' ? '<address>'.$addressLines.'</address>' : '')
 				.($meta!=='' ? '<small class="dp-panel-location-meta">'.$meta.'</small>' : '')
 				.'</article>';
+			$html.=self::recordCollectionItemHtml($itemHtml, $presentation, (string)($item['label'] ?? ''), $index, $item);
 		}
 		PanelTrace::record('record.locations_rendered', [
 			'resource'=>$resource,
 			'request'=>$request,
 			'item_count'=>count($items),
 		]);
-		return '<section class="dp-panel-locations"><header><h2>'.self::e(self::panelText('record.locations')).'</h2><span>'.self::recordCountLabel(count($items), 'record.location', 'record.location_plural').'</span></header><div class="dp-panel-location-list">'.$html.'</div></section>';
+		return '<section class="dp-panel-locations"><header><h2>'.self::e(self::panelText('record.locations')).'</h2><span>'.self::recordCountLabel(count($items), 'record.location', 'record.location_plural').'</span></header><div class="dp-panel-location-list"'.self::recordCollectionAttributes($presentation, 'grid').'>'.$html.'</div></section>';
 	}
 
 	/**
@@ -459,7 +551,7 @@ trait PanelRendererRecordSections {
 			$lat=trim((string)($item['lat'] ?? $item['latitude'] ?? ''));
 			$lng=trim((string)($item['lng'] ?? $item['lon'] ?? $item['longitude'] ?? ''));
 			$coordinates=$lat!=='' && $lng!=='' ? $lat.', '.$lng : '';
-			$normalized[]=[
+			$normalized[]=self::recordItemDescriptor([
 				'label'=>$label!=='' ? $label : self::panelText('record.location_default'),
 				'type'=>trim((string)($item['type'] ?? $item['kind'] ?? $item['role'] ?? '')),
 				'status'=>$status,
@@ -468,7 +560,7 @@ trait PanelRendererRecordSections {
 				'coordinates'=>$coordinates,
 				'url'=>self::safeWidgetUrl((string)($item['url'] ?? $item['href'] ?? $item['map_url'] ?? '')),
 				'tone'=>(string)($item['tone'] ?? ($status==='invalid' ? 'danger' : ($status==='verified' ? 'success' : 'neutral'))),
-			];
+			], $item);
 		}
 		return $normalized;
 	}
@@ -488,8 +580,9 @@ trait PanelRendererRecordSections {
 		if($items===[] && !$resource->canUpdateTag()){
 			return '';
 		}
+		$presentation=self::recordCollectionPresentation($resource, 'tags', $items, 'inline');
 		$list='';
-		foreach($items as $item){
+		foreach($items as $index=>$item){
 			$name=(string)($item['name'] ?? '');
 			$label=trim((string)($item['label'] ?? self::panelText('record.tag')));
 			$tone=self::safeTone((string)($item['tone'] ?? 'neutral'));
@@ -501,13 +594,14 @@ trait PanelRendererRecordSections {
 				$removeBody=self::panelText('record.remove_tag_body', ['label'=>$label]);
 				$remove='<form method="post" action="'.self::e(PanelConfig::resourceUrl($resource, 'tag/'.rawurlencode($key))).'">'
 					.self::csrfInput()
-					.self::returnInputUrl(self::showReturnUrl($resource, $record))
+					.self::returnInputUrl(self::showReturnUrl($resource, $record), $request)
 					.'<input type="hidden" name="tag" value="'.self::e($name).'">'
 					.'<input type="hidden" name="tag_action" value="remove">'
 					.'<button type="submit" title="'.self::e($removeTitle).'" data-confirm="'.self::e(self::panelText('record.remove_tag_confirm', ['label'=>$label])).'"'.self::resourceModalAttributes('remove_tag', self::panelText('record.remove_tag'), $removeBody, 'sm', 'dialog', false, self::panelText('record.remove_tag'), self::panelText('common.cancel'), 'danger').'>x</button>'
 					.'</form>';
 			}
-			$list.='<span class="dp-panel-tag dp-panel-tag-'.$tone.'"'.($description!=='' ? ' title="'.self::e($description).'"' : '').'>'.self::e($label).$remove.'</span>';
+			$itemHtml='<span class="dp-panel-tag dp-panel-tag-'.$tone.'"'.($description!=='' ? ' title="'.self::e($description).'"' : '').'>'.self::e($label).$remove.'</span>';
+			$list.=self::recordCollectionItemHtml($itemHtml, $presentation, $name, $index, $item);
 		}
 		if($list===''){
 			$list='<p class="dp-panel-empty">'.self::e(self::panelText('record.tags_empty')).'</p>';
@@ -517,7 +611,7 @@ trait PanelRendererRecordSections {
 			$key=$resource->recordKey($record);
 			$form='<form class="dp-panel-tag-form" method="post" action="'.self::e(PanelConfig::resourceUrl($resource, 'tag/'.rawurlencode($key))).'">'
 				.self::csrfInput()
-				.self::returnInputUrl(self::showReturnUrl($resource, $record))
+				.self::returnInputUrl(self::showReturnUrl($resource, $record), $request)
 				.'<input type="hidden" name="tag_action" value="add">'
 				.'<label><span>'.self::e(self::panelText('record.add_tag')).'</span><input type="text" name="tag" required></label>'
 				.'<div class="dp-panel-modal-form-actions"><button class="dp-panel-button dp-panel-button-secondary" type="button" data-dp-panel-modal-cancel>'.self::e(self::panelText('common.cancel')).'</button><button class="dp-panel-button" type="submit">'.self::e(self::panelText('record.add_tag')).'</button></div>'
@@ -530,7 +624,7 @@ trait PanelRendererRecordSections {
 			'item_count'=>count($items),
 			'can_update'=>$form!=='',
 		]);
-		return '<section class="dp-panel-tags"><header><h2>'.self::e(self::panelText('record.tags')).'</h2><span>'.self::recordCountLabel(count($items), 'record.tag', 'record.tag_plural').'</span>'.$action.'</header><div class="dp-panel-tag-list">'.$list.'</div></section>';
+		return '<section class="dp-panel-tags"><header><h2>'.self::e(self::panelText('record.tags')).'</h2><span>'.self::recordCountLabel(count($items), 'record.tag', 'record.tag_plural').'</span>'.$action.'</header><div class="dp-panel-tag-list"'.self::recordCollectionAttributes($presentation, 'inline').'>'.$list.'</div></section>';
 	}
 
 	/**
@@ -557,12 +651,12 @@ trait PanelRendererRecordSections {
 			if($name==='' && $label===''){
 				continue;
 			}
-			$normalized[]=[
+			$normalized[]=self::recordItemDescriptor([
 				'name'=>$name!=='' ? $name : Resource::normalizeName($label),
 				'label'=>$label!=='' ? $label : $name,
 				'description'=>trim((string)($item['description'] ?? $item['detail'] ?? $item['help'] ?? '')),
 				'tone'=>(string)($item['tone'] ?? $item['status'] ?? 'neutral'),
-			];
+			], $item);
 		}
 		return $normalized;
 	}
@@ -582,8 +676,9 @@ trait PanelRendererRecordSections {
 		if($items===[]){
 			return '';
 		}
+		$presentation=self::recordCollectionPresentation($resource, 'items', $items, 'grid');
 		$rows='';
-		foreach($items as $item){
+		foreach($items as $index=>$item){
 			$tone=self::safeTone((string)($item['tone'] ?? 'neutral'));
 			$title=self::e((string)($item['title'] ?? self::panelText('record.item_default')));
 			$url=self::safeWidgetUrl((string)($item['url'] ?? ''));
@@ -596,17 +691,18 @@ trait PanelRendererRecordSections {
 				}
 			}
 			$heading=$url!=='' ? '<a href="'.self::e($url).'">'.$title.'</a>' : '<strong>'.$title.'</strong>';
-			$rows.='<article class="dp-panel-item dp-panel-item-'.$tone.'">'
+			$itemHtml='<article class="dp-panel-item dp-panel-item-'.$tone.'">'
 				.'<header>'.$heading.($status!=='' ? '<span class="dp-panel-badge dp-panel-badge-'.$tone.'">'.self::e($status).'</span>' : '').'</header>'
 				.($details!=='' ? '<small>'.$details.'</small>' : '')
 				.'</article>';
+			$rows.=self::recordCollectionItemHtml($itemHtml, $presentation, (string)($item['sku'] ?: ($item['title'] ?? '')), $index, $item);
 		}
 		PanelTrace::record('record.items_rendered', [
 			'resource'=>$resource,
 			'request'=>$request,
 			'item_count'=>count($items),
 		]);
-		return '<section class="dp-panel-items"><header><h2>'.self::e(self::panelText('record.items')).'</h2><span>'.self::recordCountLabel(count($items), 'record.item', 'record.item_plural').'</span></header><div class="dp-panel-item-list">'.$rows.'</div></section>';
+		return '<section class="dp-panel-items"><header><h2>'.self::e(self::panelText('record.items')).'</h2><span>'.self::recordCountLabel(count($items), 'record.item', 'record.item_plural').'</span></header><div class="dp-panel-item-list"'.self::recordCollectionAttributes($presentation, 'grid').'>'.$rows.'</div></section>';
 	}
 
 	/**
@@ -633,7 +729,7 @@ trait PanelRendererRecordSections {
 			$unitPrice=self::itemMoneyValue($item['unit_price'] ?? $item['price'] ?? $item['rate'] ?? '', $currency);
 			$total=self::itemMoneyValue($item['total'] ?? $item['amount'] ?? $item['subtotal'] ?? '', $currency);
 			$quantity=$item['quantity'] ?? $item['qty'] ?? $item['count'] ?? '';
-			$normalized[]=[
+			$normalized[]=self::recordItemDescriptor([
 				'title'=>$title!=='' ? $title : self::panelText('record.item_default'),
 				'sku'=>self::stringValue($item['sku'] ?? $item['code'] ?? $item['reference'] ?? ''),
 				'type'=>Resource::normalizeName((string)($item['type'] ?? $item['kind'] ?? $item['category'] ?? '')),
@@ -643,7 +739,7 @@ trait PanelRendererRecordSections {
 				'status'=>$status,
 				'url'=>self::safeWidgetUrl((string)($item['url'] ?? $item['href'] ?? $item['item_url'] ?? '')),
 				'tone'=>(string)($item['tone'] ?? ($status==='cancelled' ? 'danger' : ($status==='fulfilled' || $status==='active' ? 'success' : 'neutral'))),
-			];
+			], $item);
 		}
 		return $normalized;
 	}
@@ -677,24 +773,26 @@ trait PanelRendererRecordSections {
 		if($items===[]){
 			return '';
 		}
+		$presentation=self::recordCollectionPresentation($resource, 'totals', $items, 'grid');
 		$html='';
-		foreach($items as $item){
+		foreach($items as $index=>$item){
 			$tone=self::safeTone((string)($item['tone'] ?? 'neutral'));
 			$label=self::e((string)($item['label'] ?? self::panelText('record.total_default')));
 			$value=self::e((string)($item['value'] ?? ''));
 			$description=trim((string)($item['description'] ?? ''));
-			$html.='<article class="dp-panel-total dp-panel-total-'.$tone.'">'
+			$itemHtml='<article class="dp-panel-total dp-panel-total-'.$tone.'">'
 				.'<span>'.$label.'</span>'
 				.'<strong>'.$value.'</strong>'
 				.($description!=='' ? '<small>'.self::e($description).'</small>' : '')
 				.'</article>';
+			$html.=self::recordCollectionItemHtml($itemHtml, $presentation, (string)($item['label'] ?? ''), $index, $item);
 		}
 		PanelTrace::record('record.totals_rendered', [
 			'resource'=>$resource,
 			'request'=>$request,
 			'item_count'=>count($items),
 		]);
-		return '<section class="dp-panel-totals"><header><h2>'.self::e(self::panelText('record.totals')).'</h2><span>'.self::recordCountLabel(count($items), 'record.line', 'record.line_plural').'</span></header><div class="dp-panel-total-list">'.$html.'</div></section>';
+		return '<section class="dp-panel-totals"><header><h2>'.self::e(self::panelText('record.totals')).'</h2><span>'.self::recordCountLabel(count($items), 'record.line', 'record.line_plural').'</span></header><div class="dp-panel-total-list"'.self::recordCollectionAttributes($presentation, 'grid').'>'.$html.'</div></section>';
 	}
 
 	/**
@@ -724,12 +822,12 @@ trait PanelRendererRecordSections {
 			$itemCurrency=strtoupper(trim((string)($item['currency'] ?? $currency)));
 			$value=$item['value'] ?? $item['amount'] ?? $item['total'] ?? $item['balance'] ?? $item['paid'] ?? '';
 			$status=Resource::normalizeName((string)($item['status'] ?? $item['state'] ?? ''));
-			$normalized[]=[
+			$normalized[]=self::recordItemDescriptor([
 				'label'=>$label!=='' ? self::humanPaymentType($label) : self::panelText('record.total_default'),
 				'value'=>self::itemMoneyValue($value, $itemCurrency),
 				'description'=>trim((string)($item['description'] ?? $item['detail'] ?? $item['help'] ?? '')),
 				'tone'=>(string)($item['tone'] ?? ($status==='due' || $status==='unpaid' ? 'warning' : ($status==='paid' || $status==='settled' ? 'success' : 'neutral'))),
-			];
+			], $item);
 		}
 		return $normalized;
 	}
@@ -749,9 +847,10 @@ trait PanelRendererRecordSections {
 		if($items===[] && !$resource->canResolveApproval()){
 			return '';
 		}
+		$presentation=self::recordCollectionPresentation($resource, 'approvals', $items, 'stack');
 		$list='';
 		$pendingCount=0;
-		foreach($items as $item){
+		foreach($items as $index=>$item){
 			$name=(string)($item['name'] ?? '');
 			$title=trim((string)($item['title'] ?? self::panelText('record.approval')));
 			$status=Resource::normalizeName((string)($item['status'] ?? 'pending'));
@@ -777,17 +876,18 @@ trait PanelRendererRecordSections {
 					}
 					$actions.='<form class="dp-panel-inline-action" method="post" action="'.self::e(PanelConfig::resourceUrl($resource, 'approval/'.rawurlencode($key))).'">'
 						.self::csrfInput()
-						.self::returnInputUrl(self::showReturnUrl($resource, $record))
+						.self::returnInputUrl(self::showReturnUrl($resource, $record), $request)
 						.'<input type="hidden" name="approval" value="'.self::e($name).'">'
 						.'<input type="hidden" name="decision" value="'.$decision.'">'
 						.'<button class="dp-panel-action dp-panel-action-'.($decision==='approve' ? 'success' : 'danger').'" type="submit" data-confirm="'.self::e(self::panelText('record.approval_action_confirm', ['action'=>$label, 'title'=>$title])).'"'.self::resourceModalAttributes('approval_'.$decision, self::panelText('record.approval_action_title', ['action'=>$label]), self::panelText('record.approval_action_confirm', ['action'=>$label, 'title'=>$title]), 'sm', 'dialog', false, $label, self::panelText('common.cancel'), $decision==='approve' ? 'success' : 'danger').'>'.self::e($label).'</button>'
 						.'</form>';
 				}
 			}
-			$list.='<article class="dp-panel-approval dp-panel-approval-'.$tone.($pending ? '' : ' dp-panel-approval-resolved').'">'
+			$itemHtml='<article class="dp-panel-approval dp-panel-approval-'.$tone.($pending ? '' : ' dp-panel-approval-resolved').'">'
 				.'<div class="dp-panel-approval-body"><strong>'.self::e($title).'</strong>'.($description!=='' ? '<p>'.self::e($description).'</p>' : '').($meta!=='' ? '<small>'.$meta.'</small>' : '').'</div>'
 				.'<div class="dp-panel-approval-side"><span class="dp-panel-badge dp-panel-badge-'.$tone.'">'.self::e($status!=='' ? $status : self::panelText('record.pending')).'</span>'.($actions!=='' ? '<div class="dp-panel-approval-actions">'.$actions.'</div>' : '').'</div>'
 				.'</article>';
+			$list.=self::recordCollectionItemHtml($itemHtml, $presentation, $name!=='' ? $name : $title, $index, $item);
 		}
 		if($list===''){
 			$list='<p class="dp-panel-empty">'.self::e(self::panelText('record.approvals_empty')).'</p>';
@@ -799,7 +899,7 @@ trait PanelRendererRecordSections {
 			'pending_count'=>$pendingCount,
 			'can_resolve'=>$resource->canResolveApproval(),
 		]);
-		return '<section class="dp-panel-approvals"><header><h2>'.self::e(self::panelText('record.approvals')).'</h2><span>'.$pendingCount.' '.self::e(self::panelText('record.pending')).'</span></header><div class="dp-panel-approval-list">'.$list.'</div></section>';
+		return '<section class="dp-panel-approvals"><header><h2>'.self::e(self::panelText('record.approvals')).'</h2><span>'.$pendingCount.' '.self::e(self::panelText('record.pending')).'</span></header><div class="dp-panel-approval-list"'.self::recordCollectionAttributes($presentation, 'stack').'>'.$list.'</div></section>';
 	}
 
 	/**
@@ -821,7 +921,7 @@ trait PanelRendererRecordSections {
 			$name=Resource::normalizeName((string)($item['name'] ?? $item['id'] ?? $item['key'] ?? (is_string($key) ? $key : '')));
 			$title=trim((string)($item['title'] ?? $item['label'] ?? $item['name'] ?? $name));
 			$status=Resource::normalizeName((string)($item['status'] ?? ($item['state'] ?? 'pending')));
-			$normalized[]=[
+			$normalized[]=self::recordItemDescriptor([
 				'name'=>$name,
 				'title'=>$title!=='' ? $title : self::panelText('record.approval'),
 				'description'=>trim((string)($item['description'] ?? $item['message'] ?? $item['detail'] ?? '')),
@@ -830,7 +930,7 @@ trait PanelRendererRecordSections {
 				'time'=>self::stringValue($item['time'] ?? $item['requested_at'] ?? $item['created_at'] ?? ''),
 				'due'=>self::stringValue($item['due'] ?? $item['due_at'] ?? $item['deadline'] ?? ''),
 				'tone'=>(string)($item['tone'] ?? $item['status'] ?? ''),
-			];
+			], $item);
 		}
 		return $normalized;
 	}
@@ -850,8 +950,9 @@ trait PanelRendererRecordSections {
 		if($items===[]){
 			return '';
 		}
+		$presentation=self::recordCollectionPresentation($resource, 'activity', $items, 'stack');
 		$html='';
-		foreach($items as $item){
+		foreach($items as $index=>$item){
 			$tone=self::safeTone((string)($item['tone'] ?? 'neutral'));
 			$title=self::e((string)($item['title'] ?? self::panelText('record.activity')));
 			$message=trim((string)($item['message'] ?? ''));
@@ -869,17 +970,19 @@ trait PanelRendererRecordSections {
 			foreach($meta as $detail){
 				$details.='<span>'.self::e($detail).'</span>';
 			}
-			$html.='<article class="dp-panel-activity-item dp-panel-activity-'.$tone.'">'
+			$itemHtml='<article class="dp-panel-activity-item dp-panel-activity-'.$tone.'">'
 				.'<div class="dp-panel-activity-dot"></div>'
 				.'<div class="dp-panel-activity-body">'.$heading.($message!=='' ? '<p>'.self::e($message).'</p>' : '').($details!=='' ? '<small>'.$details.'</small>' : '').'</div>'
 				.'</article>';
+			$html.=self::recordCollectionItemHtml($itemHtml, $presentation, (string)($item['title'] ?? ''), $index, $item);
 		}
 		PanelTrace::record('record.activity_rendered', [
 			'resource'=>$resource,
 			'request'=>$request,
 			'item_count'=>count($items),
 		]);
-		return '<section class="dp-panel-activity"><header><h2>'.self::e(self::panelText('record.activity')).'</h2><span>'.self::recordCountLabel(count($items), 'record.event', 'record.event_plural').'</span></header>'.$html.'</section>';
+		$body=$presentation===null ? $html : '<div class="dp-panel-activity-list"'.self::recordCollectionAttributes($presentation, 'stack').'>'.$html.'</div>';
+		return '<section class="dp-panel-activity"><header><h2>'.self::e(self::panelText('record.activity')).'</h2><span>'.self::recordCountLabel(count($items), 'record.event', 'record.event_plural').'</span></header>'.$body.'</section>';
 	}
 
 	/**
@@ -907,7 +1010,7 @@ trait PanelRendererRecordSections {
 			if(!is_array($meta)){
 				$meta=[$meta];
 			}
-			$normalized[]=[
+			$normalized[]=self::recordItemDescriptor([
 				'title'=>$title!=='' ? $title : self::panelText('record.activity'),
 				'message'=>$message,
 				'time'=>$time!==null ? self::stringValue($time) : '',
@@ -915,7 +1018,7 @@ trait PanelRendererRecordSections {
 				'tone'=>self::safeTone($tone),
 				'url'=>self::safeWidgetUrl((string)($item['url'] ?? '')),
 				'meta'=>$meta,
-			];
+			], $item);
 		}
 		return $normalized;
 	}
@@ -935,8 +1038,9 @@ trait PanelRendererRecordSections {
 		if($items===[]){
 			return '';
 		}
+		$presentation=self::recordCollectionPresentation($resource, 'changes', $items, 'stack');
 		$html='';
-		foreach($items as $item){
+		foreach($items as $index=>$item){
 			$tone=self::safeTone((string)($item['tone'] ?? 'neutral'));
 			$field=self::e((string)($item['field'] ?? self::panelText('record.change')));
 			$before=self::e((string)($item['before'] ?? ''));
@@ -951,18 +1055,19 @@ trait PanelRendererRecordSections {
 				}
 			}
 			$heading=$url!=='' ? '<a href="'.self::e($url).'">'.$field.'</a>' : '<strong>'.$field.'</strong>';
-			$html.='<article class="dp-panel-change dp-panel-change-'.$tone.'">'
+			$itemHtml='<article class="dp-panel-change dp-panel-change-'.$tone.'">'
 				.'<header>'.$heading.($meta!=='' ? '<small>'.$meta.'</small>' : '').'</header>'
 				.'<div class="dp-panel-change-values"><div><span>'.self::e(self::panelText('record.before')).'</span><code>'.$before.'</code></div><div><span>'.self::e(self::panelText('record.after')).'</span><code>'.$after.'</code></div></div>'
 				.($reason!=='' ? '<p>'.self::e($reason).'</p>' : '')
 				.'</article>';
+			$html.=self::recordCollectionItemHtml($itemHtml, $presentation, (string)($item['field'] ?? ''), $index, $item);
 		}
 		PanelTrace::record('record.changes_rendered', [
 			'resource'=>$resource,
 			'request'=>$request,
 			'item_count'=>count($items),
 		]);
-		return '<section class="dp-panel-changes"><header><h2>'.self::e(self::panelText('record.changes')).'</h2><span>'.self::recordCountLabel(count($items), 'record.change', 'record.change_plural').'</span></header><div class="dp-panel-change-list">'.$html.'</div></section>';
+		return '<section class="dp-panel-changes"><header><h2>'.self::e(self::panelText('record.changes')).'</h2><span>'.self::recordCountLabel(count($items), 'record.change', 'record.change_plural').'</span></header><div class="dp-panel-change-list"'.self::recordCollectionAttributes($presentation, 'stack').'>'.$html.'</div></section>';
 	}
 
 	/**
@@ -990,7 +1095,7 @@ trait PanelRendererRecordSections {
 			if($field==='' && self::stringValue($before)==='' && self::stringValue($after)===''){
 				continue;
 			}
-			$normalized[]=[
+			$normalized[]=self::recordItemDescriptor([
 				'field'=>$field!=='' ? $field : self::panelText('record.change'),
 				'before'=>self::stringValue($before),
 				'after'=>self::stringValue($after),
@@ -999,7 +1104,7 @@ trait PanelRendererRecordSections {
 				'reason'=>trim((string)($item['reason'] ?? $item['message'] ?? $item['description'] ?? '')),
 				'tone'=>(string)($item['tone'] ?? $item['status'] ?? 'neutral'),
 				'url'=>self::safeWidgetUrl((string)($item['url'] ?? $item['href'] ?? '')),
-			];
+			], $item);
 		}
 		return $normalized;
 	}
@@ -1020,8 +1125,9 @@ trait PanelRendererRecordSections {
 		if($items===[]){
 			return '';
 		}
+		$presentation=self::recordCollectionPresentation($resource, 'payments', $items, 'grid');
 		$html='';
-		foreach($items as $item){
+		foreach($items as $index=>$item){
 			$tone=self::safeTone((string)($item['tone'] ?? 'neutral'));
 			$title=self::e((string)($item['title'] ?? self::panelText('record.payment_default')));
 			$amount=self::e((string)($item['amount'] ?? ''));
@@ -1035,18 +1141,19 @@ trait PanelRendererRecordSections {
 				}
 			}
 			$heading=$url!=='' ? '<a href="'.self::e($url).'">'.$title.'</a>' : '<strong>'.$title.'</strong>';
-			$html.='<article class="dp-panel-payment dp-panel-payment-'.$tone.'">'
+			$itemHtml='<article class="dp-panel-payment dp-panel-payment-'.$tone.'">'
 				.'<header>'.$heading.($status!=='' ? '<span class="dp-panel-badge dp-panel-badge-'.$tone.'">'.self::e($status).'</span>' : '').'</header>'
 				.($amount!=='' ? '<div class="dp-panel-payment-amount">'.$amount.'</div>' : '')
 				.($details!=='' ? '<small>'.$details.'</small>' : '')
 				.'</article>';
+			$html.=self::recordCollectionItemHtml($itemHtml, $presentation, (string)(($item['reference'] ?? '') ?: ($item['title'] ?? '')), $index, $item);
 		}
 		PanelTrace::record('record.payments_rendered', [
 			'resource'=>$resource,
 			'request'=>$request,
 			'item_count'=>count($items),
 		]);
-		return '<section class="dp-panel-payments"><header><h2>'.self::e(self::panelText('record.payments')).'</h2><span>'.count($items).' '.self::e(self::panelText(count($items)===1 ? 'record.entry' : 'record.entries')).'</span></header><div class="dp-panel-payment-list">'.$html.'</div></section>';
+		return '<section class="dp-panel-payments"><header><h2>'.self::e(self::panelText('record.payments')).'</h2><span>'.count($items).' '.self::e(self::panelText(count($items)===1 ? 'record.entry' : 'record.entries')).'</span></header><div class="dp-panel-payment-list"'.self::recordCollectionAttributes($presentation, 'grid').'>'.$html.'</div></section>';
 	}
 
 	/**
@@ -1082,7 +1189,7 @@ trait PanelRendererRecordSections {
 			}
 			$title=trim((string)($item['title'] ?? $item['label'] ?? $item['name'] ?? self::humanPaymentType($type)));
 			$reference=$item['reference'] ?? $item['transaction_id'] ?? $item['payment_intent'] ?? $item['charge_id'] ?? $item['refund_id'] ?? $item['payout_id'] ?? null;
-			$normalized[]=[
+			$normalized[]=self::recordItemDescriptor([
 				'title'=>$title!=='' ? $title : self::panelText('record.payment_default'),
 				'amount'=>$amountText,
 				'type'=>$type,
@@ -1092,7 +1199,7 @@ trait PanelRendererRecordSections {
 				'time'=>self::stringValue($item['time'] ?? $item['at'] ?? $item['created_at'] ?? $item['paid_at'] ?? ''),
 				'url'=>self::safeWidgetUrl((string)($item['url'] ?? $item['href'] ?? $item['dashboard_url'] ?? '')),
 				'tone'=>$tone,
-			];
+			], $item);
 		}
 		return $normalized;
 	}
@@ -1124,8 +1231,9 @@ trait PanelRendererRecordSections {
 		if($items===[]){
 			return '';
 		}
+		$presentation=self::recordCollectionPresentation($resource, 'shipments', $items, 'grid');
 		$html='';
-		foreach($items as $item){
+		foreach($items as $index=>$item){
 			$tone=self::safeTone((string)($item['tone'] ?? 'neutral'));
 			$title=self::e((string)($item['title'] ?? self::panelText('record.shipment_default')));
 			$status=self::e((string)($item['status'] ?? ''));
@@ -1139,18 +1247,19 @@ trait PanelRendererRecordSections {
 				}
 			}
 			$heading=$url!=='' ? '<a href="'.self::e($url).'" target="_blank" rel="noopener noreferrer">'.$title.'</a>' : '<strong>'.$title.'</strong>';
-			$html.='<article class="dp-panel-shipment dp-panel-shipment-'.$tone.'">'
+			$itemHtml='<article class="dp-panel-shipment dp-panel-shipment-'.$tone.'">'
 				.'<header>'.$heading.($status!=='' ? '<span class="dp-panel-badge dp-panel-badge-'.$tone.'">'.$status.'</span>' : '').'</header>'
 				.($tracking!=='' ? '<code>'.self::e($tracking).'</code>' : '')
 				.($details!=='' ? '<small>'.$details.'</small>' : '')
 				.'</article>';
+			$html.=self::recordCollectionItemHtml($itemHtml, $presentation, $tracking!=='' ? $tracking : (string)($item['title'] ?? ''), $index, $item);
 		}
 		PanelTrace::record('record.shipments_rendered', [
 			'resource'=>$resource,
 			'request'=>$request,
 			'item_count'=>count($items),
 		]);
-		return '<section class="dp-panel-shipments"><header><h2>'.self::e(self::panelText('record.shipments')).'</h2><span>'.self::recordCountLabel(count($items), 'record.shipment', 'record.shipment_plural').'</span></header><div class="dp-panel-shipment-list">'.$html.'</div></section>';
+		return '<section class="dp-panel-shipments"><header><h2>'.self::e(self::panelText('record.shipments')).'</h2><span>'.self::recordCountLabel(count($items), 'record.shipment', 'record.shipment_plural').'</span></header><div class="dp-panel-shipment-list"'.self::recordCollectionAttributes($presentation, 'grid').'>'.$html.'</div></section>';
 	}
 
 	/**
@@ -1176,7 +1285,7 @@ trait PanelRendererRecordSections {
 			$tone=(string)($item['tone'] ?? ($status==='delivered' ? 'success' : (in_array($status, ['delayed', 'exception', 'failed'], true) ? 'danger' : ($status==='in_transit' || $status==='shipped' ? 'info' : 'neutral'))));
 			$title=trim((string)($item['title'] ?? $item['label'] ?? $item['name'] ?? (is_string($key) ? $key : self::panelText('record.shipment_default'))));
 			$tracking=trim((string)($item['tracking'] ?? $item['tracking_number'] ?? $item['number'] ?? $item['code'] ?? ''));
-			$normalized[]=[
+			$normalized[]=self::recordItemDescriptor([
 				'title'=>$title!=='' ? $title : self::panelText('record.shipment_default'),
 				'tracking'=>$tracking,
 				'carrier'=>self::stringValue($item['carrier'] ?? $item['provider'] ?? ''),
@@ -1187,7 +1296,7 @@ trait PanelRendererRecordSections {
 				'destination'=>self::stringValue($item['destination'] ?? $item['to'] ?? ''),
 				'url'=>self::safeWidgetUrl((string)($item['url'] ?? $item['href'] ?? $item['tracking_url'] ?? '')),
 				'tone'=>$tone,
-			];
+			], $item);
 		}
 		return $normalized;
 	}
@@ -1204,7 +1313,9 @@ trait PanelRendererRecordSections {
 			return '';
 		}
 		$items=self::normalizeNoteItems($resource->recordNotes($record, $request));
+		$presentation=self::recordCollectionPresentation($resource, 'notes', $items, 'stack');
 		$list='';
+		$renderIndex=0;
 		foreach($items as $item){
 			$message=trim((string)($item['message'] ?? ''));
 			if($message===''){
@@ -1218,7 +1329,8 @@ trait PanelRendererRecordSections {
 					$meta.='<span>'.self::e($detail).'</span>';
 				}
 			}
-			$list.='<article class="dp-panel-note"><p>'.self::e($message).'</p>'.($meta!=='' ? '<small>'.$meta.'</small>' : '').'</article>';
+			$itemHtml='<article class="dp-panel-note"><p>'.self::e($message).'</p>'.($meta!=='' ? '<small>'.$meta.'</small>' : '').'</article>';
+			$list.=self::recordCollectionItemHtml($itemHtml, $presentation, null, $renderIndex++, $item);
 		}
 		if($list===''){
 			$list='<p class="dp-panel-empty">'.self::e(self::panelText('record.notes_empty')).'</p>';
@@ -1228,7 +1340,7 @@ trait PanelRendererRecordSections {
 			$key=$resource->recordKey($record);
 			$form='<form class="dp-panel-note-form" method="post" action="'.self::e(PanelConfig::resourceUrl($resource, 'note/'.rawurlencode($key))).'">'
 				.self::csrfInput()
-				.self::returnInputUrl(self::showReturnUrl($resource, $record))
+				.self::returnInputUrl(self::showReturnUrl($resource, $record), $request)
 				.'<label><span>'.self::e(self::panelText('record.add_note')).'</span><textarea name="note" rows="3" required></textarea></label>'
 				.'<div class="dp-panel-modal-form-actions"><button class="dp-panel-button dp-panel-button-secondary" type="button" data-dp-panel-modal-cancel>'.self::e(self::panelText('common.cancel')).'</button><button class="dp-panel-button" type="submit">'.self::e(self::panelText('record.add_note')).'</button></div>'
 				.'</form>';
@@ -1240,7 +1352,7 @@ trait PanelRendererRecordSections {
 			'item_count'=>count($items),
 			'can_add'=>$form!=='',
 		]);
-		return '<section class="dp-panel-notes"><header><h2>'.self::e(self::panelText('record.notes')).'</h2><span>'.self::recordCountLabel(count($items), 'record.note', 'record.note_plural').'</span>'.$action.'</header><div class="dp-panel-note-list">'.$list.'</div></section>';
+		return '<section class="dp-panel-notes"><header><h2>'.self::e(self::panelText('record.notes')).'</h2><span>'.self::recordCountLabel(count($items), 'record.note', 'record.note_plural').'</span>'.$action.'</header><div class="dp-panel-note-list"'.self::recordCollectionAttributes($presentation, 'stack').'>'.$list.'</div></section>';
 	}
 
 	/**
@@ -1262,11 +1374,11 @@ trait PanelRendererRecordSections {
 			$message=trim((string)($item['message'] ?? $item['note'] ?? $item['body'] ?? $item['text'] ?? ''));
 			$author=$item['author'] ?? $item['actor'] ?? $item['user'] ?? $item['by'] ?? null;
 			$time=$item['time'] ?? $item['at'] ?? $item['created_at'] ?? $item['timestamp'] ?? null;
-			$normalized[]=[
+			$normalized[]=self::recordItemDescriptor([
 				'message'=>$message,
 				'author'=>$author!==null ? self::stringValue($author) : '',
 				'time'=>$time!==null ? self::stringValue($time) : '',
-			];
+			], $item);
 		}
 		return $normalized;
 	}
@@ -1283,7 +1395,9 @@ trait PanelRendererRecordSections {
 			return '';
 		}
 		$items=self::normalizeAttachmentItems($resource->recordAttachments($record, $request));
+		$presentation=self::recordCollectionPresentation($resource, 'attachments', $items, 'grid');
 		$list='';
+		$renderIndex=0;
 		foreach($items as $item){
 			$name=trim((string)($item['name'] ?? ''));
 			if($name===''){
@@ -1298,7 +1412,8 @@ trait PanelRendererRecordSections {
 				}
 			}
 			$title=$url!=='' ? '<a href="'.self::e($url).'">'.$name.'</a>' : '<strong>'.self::e($name).'</strong>';
-			$list.='<article class="dp-panel-attachment">'.$title.($meta!=='' ? '<small>'.$meta.'</small>' : '').'</article>';
+			$itemHtml='<article class="dp-panel-attachment">'.$title.($meta!=='' ? '<small>'.$meta.'</small>' : '').'</article>';
+			$list.=self::recordCollectionItemHtml($itemHtml, $presentation, $name, $renderIndex++, $item);
 		}
 		if($list===''){
 			$list='<p class="dp-panel-empty">'.self::e(self::panelText('record.attachments_empty')).'</p>';
@@ -1308,7 +1423,7 @@ trait PanelRendererRecordSections {
 			$key=$resource->recordKey($record);
 			$form='<form class="dp-panel-attachment-form" method="post" enctype="multipart/form-data" action="'.self::e(PanelConfig::resourceUrl($resource, 'attach/'.rawurlencode($key))).'">'
 				.self::csrfInput()
-				.self::returnInputUrl(self::showReturnUrl($resource, $record))
+				.self::returnInputUrl(self::showReturnUrl($resource, $record), $request)
 				.'<label><span>'.self::e(self::panelText('record.add_attachment')).'</span><input type="file" name="attachment" required></label>'
 				.'<div class="dp-panel-modal-form-actions"><button class="dp-panel-button dp-panel-button-secondary" type="button" data-dp-panel-modal-cancel>'.self::e(self::panelText('common.cancel')).'</button><button class="dp-panel-button" type="submit">'.self::e(self::panelText('record.upload')).'</button></div>'
 				.'</form>';
@@ -1320,7 +1435,7 @@ trait PanelRendererRecordSections {
 			'item_count'=>count($items),
 			'can_attach'=>$form!=='',
 		]);
-		return '<section class="dp-panel-attachments"><header><h2>'.self::e(self::panelText('record.attachments')).'</h2><span>'.self::recordCountLabel(count($items), 'record.file', 'record.file_plural').'</span>'.$action.'</header><div class="dp-panel-attachment-list">'.$list.'</div></section>';
+		return '<section class="dp-panel-attachments"><header><h2>'.self::e(self::panelText('record.attachments')).'</h2><span>'.self::recordCountLabel(count($items), 'record.file', 'record.file_plural').'</span>'.$action.'</header><div class="dp-panel-attachment-list"'.self::recordCollectionAttributes($presentation, 'grid').'>'.$list.'</div></section>';
 	}
 
 	/**
@@ -1348,14 +1463,14 @@ trait PanelRendererRecordSections {
 			if($name==='' && $url!==''){
 				$name=basename((string)parse_url($url, PHP_URL_PATH));
 			}
-			$normalized[]=[
+			$normalized[]=self::recordItemDescriptor([
 				'name'=>$name,
 				'url'=>self::safeWidgetUrl($url),
 				'type'=>$type,
 				'size'=>$size!==null ? self::formatBytes($size) : '',
 				'time'=>$time!==null ? self::stringValue($time) : '',
 				'author'=>$author!==null ? self::stringValue($author) : '',
-			];
+			], $item);
 		}
 		return $normalized;
 	}
@@ -1372,7 +1487,9 @@ trait PanelRendererRecordSections {
 			return '';
 		}
 		$items=self::normalizeMessageItems($resource->recordMessages($record, $request));
+		$presentation=self::recordCollectionPresentation($resource, 'messages', $items, 'stack');
 		$list='';
+		$renderIndex=0;
 		foreach($items as $item){
 			$subject=trim((string)($item['subject'] ?? ''));
 			$body=trim((string)($item['body'] ?? ''));
@@ -1387,11 +1504,12 @@ trait PanelRendererRecordSections {
 					$meta.='<span>'.self::e($value).'</span>';
 				}
 			}
-			$list.='<article class="dp-panel-message dp-panel-message-'.$tone.'">'
+			$itemHtml='<article class="dp-panel-message dp-panel-message-'.$tone.'">'
 				.($subject!=='' ? '<strong>'.self::e($subject).'</strong>' : '')
 				.($body!=='' ? '<p>'.self::e($body).'</p>' : '')
 				.($meta!=='' ? '<small>'.$meta.'</small>' : '')
 				.'</article>';
+			$list.=self::recordCollectionItemHtml($itemHtml, $presentation, $subject!=='' ? $subject : null, $renderIndex++, $item);
 		}
 		if($list===''){
 			$list='<p class="dp-panel-empty">'.self::e(self::panelText('record.messages_empty')).'</p>';
@@ -1401,7 +1519,7 @@ trait PanelRendererRecordSections {
 			$key=$resource->recordKey($record);
 			$form='<form class="dp-panel-message-form" method="post" action="'.self::e(PanelConfig::resourceUrl($resource, 'message/'.rawurlencode($key))).'">'
 				.self::csrfInput()
-				.self::returnInputUrl(self::showReturnUrl($resource, $record))
+				.self::returnInputUrl(self::showReturnUrl($resource, $record), $request)
 				.'<div class="dp-panel-message-form-row"><label><span>'.self::e(self::panelText('record.channel')).'</span><select name="channel"><option value="email">'.self::e(self::panelText('record.email')).'</option><option value="sms">'.self::e(self::panelText('record.sms')).'</option><option value="chat">'.self::e(self::panelText('record.chat')).'</option><option value="system">'.self::e(self::panelText('record.system')).'</option></select></label><label><span>'.self::e(self::panelText('record.recipient')).'</span><input type="text" name="recipient"></label></div>'
 				.'<label><span>'.self::e(self::panelText('record.subject')).'</span><input type="text" name="subject"></label>'
 				.'<label><span>'.self::e(self::panelText('record.message_body')).'</span><textarea name="body" rows="3" required></textarea></label>'
@@ -1415,7 +1533,7 @@ trait PanelRendererRecordSections {
 			'item_count'=>count($items),
 			'can_send'=>$form!=='',
 		]);
-		return '<section class="dp-panel-messages"><header><h2>'.self::e(self::panelText('record.messages')).'</h2><span>'.self::recordCountLabel(count($items), 'record.message', 'record.message_plural').'</span>'.$action.'</header><div class="dp-panel-message-list">'.$list.'</div></section>';
+		return '<section class="dp-panel-messages"><header><h2>'.self::e(self::panelText('record.messages')).'</h2><span>'.self::recordCountLabel(count($items), 'record.message', 'record.message_plural').'</span>'.$action.'</header><div class="dp-panel-message-list"'.self::recordCollectionAttributes($presentation, 'stack').'>'.$list.'</div></section>';
 	}
 
 	/**
@@ -1436,7 +1554,7 @@ trait PanelRendererRecordSections {
 			}
 			$status=Resource::normalizeName((string)($item['status'] ?? $item['state'] ?? ''));
 			$tone=(string)($item['tone'] ?? ($status==='failed' ? 'danger' : ($status==='sent' || $status==='delivered' ? 'success' : 'neutral')));
-			$normalized[]=[
+			$normalized[]=self::recordItemDescriptor([
 				'subject'=>trim((string)($item['subject'] ?? $item['title'] ?? '')),
 				'body'=>trim((string)($item['body'] ?? $item['message'] ?? $item['text'] ?? $item['content'] ?? '')),
 				'channel'=>Resource::normalizeName((string)($item['channel'] ?? $item['type'] ?? '')),
@@ -1445,7 +1563,7 @@ trait PanelRendererRecordSections {
 				'sender'=>self::stringValue($item['sender'] ?? $item['from'] ?? $item['actor'] ?? $item['user'] ?? ''),
 				'time'=>self::stringValue($item['time'] ?? $item['sent_at'] ?? $item['created_at'] ?? ''),
 				'tone'=>$tone,
-			];
+			], $item);
 		}
 		return $normalized;
 	}
@@ -1465,9 +1583,10 @@ trait PanelRendererRecordSections {
 		if($items===[] && !$resource->canUpdateTask()){
 			return '';
 		}
+		$presentation=self::recordCollectionPresentation($resource, 'tasks', $items, 'stack');
 		$list='';
 		$completedCount=0;
-		foreach($items as $item){
+		foreach($items as $index=>$item){
 			$name=(string)($item['name'] ?? '');
 			$title=trim((string)($item['title'] ?? self::panelText('record.task')));
 			$completed=($item['completed'] ?? false)===true;
@@ -1490,17 +1609,18 @@ trait PanelRendererRecordSections {
 				$label=$completed ? self::panelText('record.reopen') : self::panelText('record.complete');
 				$action='<form class="dp-panel-inline-action" method="post" action="'.self::e(PanelConfig::resourceUrl($resource, 'task/'.rawurlencode($key))).'">'
 					.self::csrfInput()
-					.self::returnInputUrl(self::showReturnUrl($resource, $record))
+					.self::returnInputUrl(self::showReturnUrl($resource, $record), $request)
 					.'<input type="hidden" name="task" value="'.self::e($name).'">'
 					.'<input type="hidden" name="completed" value="'.$nextCompleted.'">'
 					.'<button class="dp-panel-action dp-panel-action-'.($completed ? 'neutral' : 'success').'" type="submit" data-confirm="'.self::e(self::panelText('record.task_action_confirm', ['action'=>$label, 'title'=>$title])).'"'.self::resourceModalAttributes('task_'.$label, self::panelText('record.task_action_title', ['action'=>$label]), self::panelText('record.task_action_confirm', ['action'=>$label, 'title'=>$title]), 'sm', 'dialog', false, $label, self::panelText('common.cancel'), $completed ? 'neutral' : 'success').'>'.self::e($label).'</button>'
 					.'</form>';
 			}
-			$list.='<article class="dp-panel-task dp-panel-task-'.$tone.($completed ? ' dp-panel-task-complete' : '').'">'
+			$itemHtml='<article class="dp-panel-task dp-panel-task-'.$tone.($completed ? ' dp-panel-task-complete' : '').'">'
 				.'<div class="dp-panel-task-check">'.($completed ? '&#10003;' : '').'</div>'
 				.'<div class="dp-panel-task-body"><strong>'.self::e($title).'</strong>'.($description!=='' ? '<p>'.self::e($description).'</p>' : '').($meta!=='' ? '<small>'.$meta.'</small>' : '').'</div>'
 				.($action!=='' ? '<div class="dp-panel-task-action">'.$action.'</div>' : '')
 				.'</article>';
+			$list.=self::recordCollectionItemHtml($itemHtml, $presentation, $name!=='' ? $name : $title, $index, $item);
 		}
 		if($list===''){
 			$list='<p class="dp-panel-empty">'.self::e(self::panelText('record.tasks_empty')).'</p>';
@@ -1510,7 +1630,7 @@ trait PanelRendererRecordSections {
 			$key=$resource->recordKey($record);
 			$form='<form class="dp-panel-task-form" method="post" action="'.self::e(PanelConfig::resourceUrl($resource, 'task/'.rawurlencode($key))).'">'
 				.self::csrfInput()
-				.self::returnInputUrl(self::showReturnUrl($resource, $record))
+				.self::returnInputUrl(self::showReturnUrl($resource, $record), $request)
 				.'<input type="hidden" name="task_action" value="create">'
 				.'<label><span>'.self::e(self::panelText('record.add_task')).'</span><input type="text" name="title" required></label>'
 				.'<label><span>'.self::e(self::panelText('record.details')).'</span><textarea name="description" rows="2"></textarea></label>'
@@ -1526,7 +1646,7 @@ trait PanelRendererRecordSections {
 			'completed_count'=>$completedCount,
 			'can_create'=>$form!=='',
 		]);
-		return '<section class="dp-panel-tasks"><header><h2>'.self::e(self::panelText('record.tasks')).'</h2><span>'.self::e(self::panelText('record.task_status', ['completed'=>$completedCount, 'total'=>count($items)])).'</span>'.$action.'</header><div class="dp-panel-task-list">'.$list.'</div></section>';
+		return '<section class="dp-panel-tasks"><header><h2>'.self::e(self::panelText('record.tasks')).'</h2><span>'.self::e(self::panelText('record.task_status', ['completed'=>$completedCount, 'total'=>count($items)])).'</span>'.$action.'</header><div class="dp-panel-task-list"'.self::recordCollectionAttributes($presentation, 'stack').'>'.$list.'</div></section>';
 	}
 
 	/**
@@ -1552,7 +1672,7 @@ trait PanelRendererRecordSections {
 			if(in_array($status, ['done', 'complete', 'completed', 'closed'], true)){
 				$completed=true;
 			}
-			$normalized[]=[
+			$normalized[]=self::recordItemDescriptor([
 				'name'=>$name,
 				'title'=>$title!=='' ? $title : self::panelText('record.task'),
 				'description'=>trim((string)($item['description'] ?? $item['message'] ?? $item['detail'] ?? '')),
@@ -1560,7 +1680,7 @@ trait PanelRendererRecordSections {
 				'due'=>self::stringValue($item['due'] ?? $item['due_at'] ?? $item['deadline'] ?? ''),
 				'assignee'=>self::stringValue($item['assignee'] ?? $item['owner'] ?? $item['user'] ?? ''),
 				'tone'=>(string)($item['tone'] ?? ($completed ? 'success' : ($status==='blocked' ? 'danger' : ($status==='waiting' ? 'warning' : 'neutral')))),
-			];
+			], $item);
 		}
 		return $normalized;
 	}
