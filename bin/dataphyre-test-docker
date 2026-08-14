@@ -112,6 +112,8 @@ if [ "$container_root" -eq 1 ]; then
 			--user 0:0 \
 			--network none \
 			--env HOME=/tmp/dataphyre-test-home \
+			--env "DATAPHYRE_TEST_SOURCE_UID=$uid" \
+			--env "DATAPHYRE_TEST_SOURCE_GID=$gid" \
 			--env "XDEBUG_MODE=$xdebug_mode" \
 			--env "PHP_INI_SCAN_DIR=$php_ini_scan_dir" \
 			--env DATAPHYRE_TEST_CONTAINER_ROOT=1 \
@@ -121,19 +123,31 @@ if [ "$container_root" -eq 1 ]; then
 			--mount "type=bind,source=$root,target=/workspace/dataphyre,readonly" \
 			"$root_cache_flag" "$root_cache_value" \
 			--workdir /workspace/dataphyre \
-			"$image" "$@"
+			"$image" sh -c '
+				status=0
+				"$@" || status=$?
+				chown -R "$DATAPHYRE_TEST_SOURCE_UID:$DATAPHYRE_TEST_SOURCE_GID" /workspace/dataphyre/cache || status=1
+				exit "$status"
+			' dataphyre-test-root "$@"
 	fi
 	exec docker run --rm --init \
 		--user 0:0 \
 		--network none \
 		--env HOME=/tmp/dataphyre-test-home \
+		--env "DATAPHYRE_TEST_SOURCE_UID=$uid" \
+		--env "DATAPHYRE_TEST_SOURCE_GID=$gid" \
 		--env "XDEBUG_MODE=$xdebug_mode" \
 		--env "PHP_INI_SCAN_DIR=$php_ini_scan_dir" \
 		--env DATAPHYRE_TEST_CONTAINER_ROOT=1 \
 		--mount "type=bind,source=$root,target=/workspace/dataphyre,readonly" \
 		"$root_cache_flag" "$root_cache_value" \
 		--workdir /workspace/dataphyre \
-		"$image" "$@"
+		"$image" sh -c '
+			status=0
+			"$@" || status=$?
+			chown -R "$DATAPHYRE_TEST_SOURCE_UID:$DATAPHYRE_TEST_SOURCE_GID" /workspace/dataphyre/cache || status=1
+			exit "$status"
+		' dataphyre-test-root "$@"
 fi
 # Test source is immutable by default. Persistent runner indexes and reports
 # remain writable under cache/, while test-owned disposable files live in the

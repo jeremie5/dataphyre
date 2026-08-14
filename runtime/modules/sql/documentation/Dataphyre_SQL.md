@@ -626,6 +626,33 @@ a failed child query cannot be presented as an empty relation. The equivalent
 static repository primitives are `allOrFailOnReadError(...)` and
 `firstOrFailOnReadError(...)`.
 
+Raw joined or aggregate reads have the same opt-in strict boundary on `DB` and
+cluster-bound `ConnectionContext` objects:
+
+```php
+$rows=DB::rowsOrFailOnReadError(
+	'SELECT stores.id, assignments.screen_id
+	 FROM stores
+	 LEFT JOIN assignments ON assignments.store_id=stores.id
+	 WHERE stores.tenant_id=?',
+	[$tenant_id],
+);
+
+$store=DB::connection('reporting')->rowOrFailOnReadError(
+	'SELECT stores.* FROM stores WHERE stores.id=? LIMIT 1',
+	[$store_id],
+);
+```
+
+`rowsOrFailOnReadError()` returns `[]` and `rowOrFailOnReadError()` returns
+`null` only for a successful no-row result. A driver failure, or any malformed
+non-array payload, raises the same structured `SQL read error` used by strict
+repository queries. Cluster overrides, prepared values, and cache policies are
+preserved; callers do not need to inspect `sql::last_query_error()` themselves.
+The legacy `false`-as-absence exception is restricted to PostgreSQL-compatible
+clusters with no recorded query error. MySQL and SQLite `false` results always
+fail closed.
+
 Queued reads return the same row shapes as their immediate equivalents, including row transforms and repository eager-loaded relations. Collection helpers such as `queuePluck(...)`, `queueKeyBy(...)`, and `queueExists(...)` are derived from the normalized queued read callbacks. Static repository finder helpers also have queued forms, including `queueFindOneBy(...)`, `queueFindOneByOrFail(...)`, `queueFindManyByIds(...)`, and hydrated/keyed variants. `queueFirstOrFail(...)`, `queueFindOrFail(...)`, `queueFindOneRecordByOrFail(...)`, `queueFindRecordOrFail(...)`, `queueValueOrFail(...)`, and `queueSole(...)` raise the same structured SQL exceptions as their immediate equivalents when the queued callback is processed. `queuePaginate(...)` queues the count and page-item reads together, then calls back once with a `PageResult` when both results are available. Queued writes pass the affected-row style result to the callback, so code can handle `0`, a positive row count, or `false` without reaching into the raw driver response. Repository write conveniences also have queued forms, including `queueUpdateById(...)`, `queueIncrementById(...)`, and `queueDeleteById(...)`. Queued optimistic writes such as `queueUpdateWithVersion(...)` and `queueUpdateByIdWithVersion(...)` call back with a `MutationResult` so `stale()` and `throwIfStale()` stay available. Queued batch writes such as `queueCreateMany(...)` and `queueUpsertMany(...)` call back once with a `MutationBatchResult` after every queued row callback has resolved. If a queued statement fails because a registered table or column is missing, Dataphyre hydrates the registered definition once and retries the queue.
 
 ## Currency Integration

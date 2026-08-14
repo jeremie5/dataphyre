@@ -6,6 +6,8 @@
  * SPDX-License-Identifier: MIT
  */
 require_once __DIR__.'/shared_request_keys.php';
+require_once __DIR__.'/modules/core/Framework/InternalApplicationBootstrapOnly.php';
+\Dataphyre\InternalApplicationBootstrapOnly::sealOrdinaryRuntime();
 
 /**
  * Returns the private context installed only by fixed release-preflight health
@@ -62,6 +64,8 @@ function dataphyre_internal_managed_runtime_bootstrap_context(): ?array {
 try{
 	bootstrap();
 }catch(\Throwable $exception){
+	$bootstrapOnly=\Dataphyre\InternalApplicationBootstrapOnly::context();
+	if($bootstrapOnly!==null) throw $exception;
 	if(defined('IS_PRODUCTION') && IS_PRODUCTION===false){
 		echo $exception->getMessage();
 		exit();
@@ -82,6 +86,8 @@ try{
  */
 function bootstrap(){
  
+	$application_bootstrap_only=\Dataphyre\InternalApplicationBootstrapOnly::context();
+	if($application_bootstrap_only!==null) $GLOBALS['dataphyre_debug_logging_suppressed']=true;
 	tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Let there be light');
 	$application_release_preflight=dataphyre_internal_application_release_preflight_context();
 	$managed_runtime_bootstrap=dataphyre_internal_managed_runtime_bootstrap_context();
@@ -96,6 +102,10 @@ function bootstrap(){
 	$bootstrap_config=$bootstrap_state['bootstrap'];
 	$bootstrap_application_roots=$bootstrap_state['application_roots'];
 	$bootstrap_module_policy=$bootstrap_state['modules'];
+	if($application_bootstrap_only!==null
+		&& !\hash_equals($application_bootstrap_only['project_root'],(string)\realpath($project_root))){
+		throw new RuntimeException('Bootstrap-only project root does not match bootstrap resolution.');
+	}
 	if($managed_runtime_bootstrap!==null){
 		$managed_project_root=realpath((string)($managed_runtime_bootstrap['project_root'] ?? ''));
 		$resolved_project_root=realpath($project_root);
@@ -118,7 +128,8 @@ function bootstrap(){
 	if($flightdeck_replay['enabled']===true){
 		$bootstrap_config['is_production']=true;
 	}
-	$GLOBALS['dataphyre_debug_logging_suppressed']=($flightdeck_replay['enabled'] ?? false)===true;
+	$GLOBALS['dataphyre_debug_logging_suppressed']=($flightdeck_replay['enabled'] ?? false)===true
+		|| $application_bootstrap_only!==null;
 	$GLOBALS['dataphyre_bootstrap_config']=$bootstrap_config;
 	$GLOBALS['dataphyre_flightdeck_config']=is_array($bootstrap_config['flightdeck'] ?? null) ? $bootstrap_config['flightdeck'] : [];
 	$GLOBALS['dataphyre_flightdeck_replay']=$flightdeck_replay;
@@ -133,7 +144,7 @@ function bootstrap(){
 	define('IS_PRODUCTION', $bootstrap_config['is_production'] ?? true);
 	define('DATAPHYRE_FLIGHTDECK_REPLAY', (bool)($flightdeck_replay['enabled'] ?? false));
 	define('DATAPHYRE_FLIGHTDECK_REPLAY_READONLY', (bool)($flightdeck_replay['enabled'] ?? false) && (bool)($flightdeck_replay['readonly'] ?? false));
-	define('DATAPHYRE_DEBUG_LOGGING_SUPPRESSED', DATAPHYRE_FLIGHTDECK_REPLAY===true);
+	define('DATAPHYRE_DEBUG_LOGGING_SUPPRESSED', DATAPHYRE_FLIGHTDECK_REPLAY===true || $application_bootstrap_only!==null);
 	define('LICENSE', $bootstrap_config['license'] ?? false);
 
 	if(isset($_GET['tracelog']) && DATAPHYRE_FLIGHTDECK_REPLAY!==true){
@@ -189,7 +200,7 @@ function bootstrap(){
 		}
 		else
 		{
-		if($application_release_preflight===null && $managed_runtime_bootstrap===null
+		if($application_release_preflight===null && $managed_runtime_bootstrap===null && $application_bootstrap_only===null
 			&& $bootstrap_config['prevent_keyless_direct_access']===true && DATAPHYRE_FLIGHTDECK_REPLAY!==true){
 			if(!file_exists($file=$project_root.'/direct_access_key')){
 				file_put_contents($file, bin2hex(openssl_random_pseudo_bytes(32)));
@@ -214,7 +225,8 @@ function bootstrap(){
 		}
 	}
 
-	if($application_release_preflight===null && $managed_runtime_bootstrap===null && $bootstrap_config['allow_app_override']===true){
+	if($application_release_preflight===null && $managed_runtime_bootstrap===null && $application_bootstrap_only===null
+		&& $bootstrap_config['allow_app_override']===true){
 		if(!file_exists($file=$project_root.'/app_override_key')){
 			file_put_contents($file, bin2hex(openssl_random_pseudo_bytes(32)));
 		}
@@ -253,6 +265,7 @@ function bootstrap(){
 		require_once(__DIR__.'/modules/core/kernel/bootstrap.php');
 		\dataphyre\runtime::boot($project_root, APP, $bootstrap_application_roots);
 	}catch(\Throwable $exception){
+		if($application_bootstrap_only!==null) throw $exception;
 		pre_init_error('Fatal error: Unable to load application bootstrap', $exception);
 	}
 

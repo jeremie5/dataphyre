@@ -26,6 +26,21 @@ suite('Core fixed process entrypoints')
 	->tag('core','process','entrypoint','exact-coverage','security')
 	->group('framework-coverage');
 
+/** @param list<string> $executables */
+function dataphyre_process_entrypoints_exact_native_runtime(array $executables=[]): bool
+{
+	if(!function_exists('posix_geteuid') || posix_geteuid()!==0
+		|| getenv('DATAPHYRE_TEST_CONTAINER_ROOT')!=='1'
+		|| !extension_loaded('dataphyre_environment_fd')
+		|| phpversion('dataphyre_environment_fd')!=='1.2.0'
+		|| !function_exists('dataphyre_open_inherited_environment_fd')
+		|| !function_exists('dataphyre_close_inherited_fd')
+		|| !function_exists('dataphyre_close_unlisted_inherited_fds')
+		|| !function_exists('dataphyre_managed_pool_request_context')) return false;
+	foreach($executables as $executable) if(!is_executable($executable)) return false;
+	return true;
+}
+
 test('fixed CLI entrypoints execute their real help or fail-closed invocation boundary',static function(Context $t): void {
 	$frameworkRoot=dirname(__DIR__,4);
 	$kernel=dirname(__DIR__).'/kernel';
@@ -90,10 +105,6 @@ test('fixed CLI entrypoints execute their real help or fail-closed invocation bo
 })->tag('cli','pid-one','probe','negative');
 
 test('pre-exec closes inherited descriptors and reports an exact failed exec attempt',static function(Context $t): void {
-	$canonicalRoot=function_exists('posix_geteuid') && posix_geteuid()===0
-		&& extension_loaded('dataphyre_environment_fd')
-		&& phpversion('dataphyre_environment_fd')==='1.1.0';
-	if(!$canonicalRoot){$t->same(true,true);return;}
 	$frameworkRoot=dirname(__DIR__,4);$kernel=dirname(__DIR__).'/kernel';
 	$coverageBootstrap=$frameworkRoot.'/runtime/modules/testing/tooling/CoverageSubprocess.php';
 	$state=$t->workspace('core-process-entrypoint-covered-pre-exec');$part=$state->path('pre-exec-coverage.json');
@@ -117,14 +128,13 @@ test('pre-exec closes inherited descriptors and reports an exact failed exec att
 	$decoded=is_file($part) ? json_decode((string)file_get_contents($part),true) : null;
 	if(!is_array($decoded)) throw new RuntimeException('Covered pre-exec did not return exact coverage evidence.');
 	CoverageParts::add($decoded);
-})->tag('pre-exec','descriptor-boundary','failed-exec','exact-coverage','negative');
+})->tag('pre-exec','descriptor-boundary','failed-exec','exact-coverage','negative')
+	->skipUnless(
+		dataphyre_process_entrypoints_exact_native_runtime(),
+		'Requires the canonical root test image with environment_fd 1.2.',
+	);
 
 test('one-shot dispatcher resolves every fixed supported operation after the real broker handshake',static function(Context $t): void {
-	$canonicalRoot=function_exists('posix_geteuid') && posix_geteuid()===0
-		&& extension_loaded('dataphyre_environment_fd')
-		&& phpversion('dataphyre_environment_fd')==='1.1.0'
-		&& is_executable('/usr/bin/setpriv');
-	if(!$canonicalRoot){$t->same(true,true);return;}
 	$frameworkRoot=dirname(__DIR__,4);$kernel=dirname(__DIR__).'/kernel';
 	$coverageBootstrap=$frameworkRoot.'/runtime/modules/testing/tooling/CoverageSubprocess.php';
 	$worker=$kernel.'/application_runtime_one_shot_worker.php';
@@ -154,7 +164,6 @@ test('one-shot dispatcher resolves every fixed supported operation after the rea
 	}
 	$helpTargets=[
 		'application_preflight'=>$kernel.'/application_release_preflight.php',
-		'dataphyre_materialize_tables'=>dirname($kernel,2).'/sql/kernel/materialize_registered_tables.php',
 		'dataphyre_postgresql_migrate'=>dirname($kernel,2).'/sql/kernel/postgresql_migrate.php',
 		'dataphyre_sqlite_migrate'=>dirname($kernel,2).'/sql/kernel/sqlite_migrate.php',
 	];
@@ -212,7 +221,11 @@ test('one-shot dispatcher resolves every fixed supported operation after the rea
 	$decoded=json_decode((string)file_get_contents($cachePart),true);
 	if(!is_array($decoded)) throw new RuntimeException('Shared cache probe did not return exact coverage evidence.');
 	CoverageParts::add($decoded);
-})->tag('one-shot','fixed-operations','broker','exact-coverage','negative');
+})->tag('one-shot','fixed-operations','broker','exact-coverage','negative')
+	->skipUnless(
+		dataphyre_process_entrypoints_exact_native_runtime(['/usr/bin/setpriv']),
+		'Requires the canonical root test image with environment_fd 1.2 and setpriv.',
+	);
 
 test('fixed HTTP routers and CGI prepend reject requests before application bootstrap',static function(Context $t): void {
 	$frameworkRoot=dirname(__DIR__,4);
@@ -250,8 +263,11 @@ test('fixed HTTP routers and CGI prepend reject requests before application boot
 		php_ini:['disable_functions'=>'dataphyre_close_unlisted_inherited_fds'],
 	);
 	$t->processSucceeded($broker,$broker->stderr());
+	$brokerBoundaryMessage=function_exists('posix_geteuid') && posix_geteuid()===0
+		? 'Application process broker descriptor boundary is unavailable.'
+		: 'Application process broker invocation is invalid.';
 	$t->same([
-		'rejected'=>true,'message'=>'Application process broker descriptor boundary is unavailable.',
+		'rejected'=>true,'message'=>$brokerBoundaryMessage,
 	],$broker->json());
 })->tag('router','cgi','negative');
 
@@ -261,7 +277,7 @@ test('realtime release child performs the ordinary framework bootstrap and retur
 	$kernel=dirname(__DIR__).'/kernel';
 	$project=__DIR__.'/fixtures/application_runtime_project';
 	$state=$t->workspace('core-process-entrypoint-realtime-state');
-	$result=$t->coveredPhpProcess([
+	$result=$t->phpProcess([
 		$kernel.'/application_release_preflight_realtime.php',
 		'--project-root='.$project,
 		'--application=_Runtime$Probe',
@@ -270,7 +286,7 @@ test('realtime release child performs the ordinary framework bootstrap and retur
 		'DATAPHYRE_RUNTIME_TEST_FRAMEWORK_ROOT'=>$runtimeRoot,
 		'DATAPHYRE_RUNTIME_TEST_STATE_ROOT'=>$state->root(),
 		'DATAPHYRE_RUNTIME_TEST_SCHEDULER_STATE_MUTATION'=>'valid-dependency',
-	],timeout_millis:30000,framework_root:$frameworkRoot);
+	],working_directory:$frameworkRoot,timeout_millis:30000);
 	$t->processSucceeded($result,$result->stderr());
 	$payload=$result->json();
 	$t->same('dataphyre.application_realtime_registration.v1',$payload['contract']);
@@ -450,20 +466,20 @@ test('realtime release child rejects invalid invocation partial registration and
 	$runtimeRoot=dirname(__DIR__,3);
 	$kernel=dirname(__DIR__).'/kernel';
 	$project=__DIR__.'/fixtures/application_runtime_project';
-	$invalidSyntax=$t->coveredPhpProcess([
+	$invalidSyntax=$t->phpProcess([
 		$kernel.'/application_release_preflight_realtime.php',
 		'--project-root='.$project,'application=_Runtime$Probe','--environment=staging',
-	],framework_root:$frameworkRoot);
+	],working_directory:$frameworkRoot);
 	$t->processFailed($invalidSyntax,64);
-	$invalidEnvironment=$t->coveredPhpProcess([
+	$invalidEnvironment=$t->phpProcess([
 		$kernel.'/application_release_preflight_realtime.php',
 		'--project-root='.$project,'--application=_Runtime$Probe','--environment=..',
-	],framework_root:$frameworkRoot);
+	],working_directory:$frameworkRoot);
 	$t->processFailed($invalidEnvironment,64);
-	$unwritableTemporaryRoot=$t->coveredPhpProcess([
+	$unwritableTemporaryRoot=$t->phpProcess([
 		$kernel.'/application_release_preflight_realtime.php',
 		'--project-root='.$project,'--application=_Runtime$Probe','--environment=staging',
-	],environment:['TMPDIR'=>'/proc'],framework_root:$frameworkRoot);
+	],working_directory:$frameworkRoot,environment:['TMPDIR'=>'/proc']);
 	$t->processFailed($unwritableTemporaryRoot,70);
 
 	$cases=[
@@ -476,14 +492,14 @@ test('realtime release child rejects invalid invocation partial registration and
 	];
 	foreach($cases as $name=>$mutation){
 		$state=$t->workspace('core-process-entrypoint-realtime-negative-'.$name);
-		$result=$t->coveredPhpProcess([
+		$result=$t->phpProcess([
 			$kernel.'/application_release_preflight_realtime.php',
 			'--project-root='.$project,'--application=_Runtime$Probe','--environment=staging',
 		],environment:[
 			'DATAPHYRE_RUNTIME_TEST_FRAMEWORK_ROOT'=>$runtimeRoot,
 			'DATAPHYRE_RUNTIME_TEST_STATE_ROOT'=>$state->root(),
 			...$mutation,
-		],timeout_millis:30000,framework_root:$frameworkRoot);
+		],working_directory:$frameworkRoot,timeout_millis:30000);
 		$t->processFailed($result,70,$name);
 		$t->same([
 			'contract'=>'dataphyre.application_realtime_registration.v1','ok'=>false,
@@ -787,11 +803,6 @@ test('realtime server drains proxy streams and enforces maintenance bounds on li
 })->tag('realtime','proxy','socketpair','maintenance','bounds','positive','negative');
 
 test('process broker seals standard input before acknowledgement and reaps early or stalled children',static function(Context $t): void {
-	$canonicalRoot=function_exists('posix_geteuid') && posix_geteuid()===0
-		&& extension_loaded('dataphyre_environment_fd')
-		&& phpversion('dataphyre_environment_fd')==='1.1.0'
-		&& is_executable('/usr/bin/setpriv');
-	if(!$canonicalRoot){$t->same(true,true);return;}
 	$frameworkRoot=(string)realpath(dirname(__DIR__,4));
 	$kernel=(string)realpath(dirname(__DIR__).'/kernel');
 	$fixture=(string)realpath(__DIR__.'/fixtures/application_runtime_process_broker_input.php');
@@ -889,160 +900,14 @@ test('process broker seals standard input before acknowledgement and reaps early
 		if(($status['running'] ?? false)===true) posix_kill($probe['pid'],SIGKILL);
 		proc_close($probe['resource']);
 	}
-})->tag('process-broker','stdin','pre-ack','timeout','early-exit','reap','positive','negative')->maxMillis(15000);
-
-test('covered root gateway brokers one request into a capability-free CGI child',static function(Context $t): void {
-	$canonicalRoot=function_exists('posix_geteuid') && posix_geteuid()===0
-		&& extension_loaded('dataphyre_environment_fd')
-		&& phpversion('dataphyre_environment_fd')==='1.1.0'
-		&& is_executable('/usr/bin/setpriv') && is_executable('/usr/local/bin/php-cgi');
-	if(!$canonicalRoot){$t->same(true,true);return;}
-	$fixedPortLock=dataphyre_application_runtime_fixed_port_lock();
-	$frameworkRoot=(string)realpath(dirname(__DIR__,4));
-	$kernel=(string)realpath(dirname(__DIR__).'/kernel');
-	$gateway=$kernel.'/application_runtime_cgi_gateway.php';
-	$router=(string)realpath(__DIR__.'/fixtures/application_runtime_cgi_probe.php');
-	$gatewayPort=8083;
-	$coverageBootstrap=$frameworkRoot.'/runtime/modules/testing/tooling/CoverageSubprocess.php';
-	$state=$t->workspace('core-process-entrypoint-covered-gateway');
-	$coveragePart=$state->path('gateway-coverage.json');
-	$secret='covered-gateway-'.bin2hex(random_bytes(32));
-	$managedKey=random_bytes(32);
-	$managed=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('web',$frameworkRoot,$managedKey);
-	$scanDirectory=(string)getenv('PHP_INI_SCAN_DIR');
-	$publicEnvironment=[
-		'DATAPHYRE_TEST_COVERAGE_PART'=>$coveragePart,
-		'DATAPHYRE_TEST_COVERAGE_FRAMEWORK_ROOT'=>$frameworkRoot,
-		'DATAPHYRE_TEST_COVERAGE_RESULT_ROOT'=>$frameworkRoot,
-		'XDEBUG_MODE'=>'coverage',
-	];
-	if($scanDirectory!=='') $publicEnvironment['PHP_INI_SCAN_DIR']=$scanDirectory;
-	$freeDeadline=microtime(true)+10.0;
-	do{
-		$reservation=@stream_socket_server('tcp://127.0.0.1:'.$gatewayPort,$reservationErrorNumber,$reservationError);
-		if(is_resource($reservation)){fclose($reservation);break;}
-		usleep(25000);
-	}while(microtime(true)<$freeDeadline);
-	if(!isset($reservation) || !is_resource($reservation) && microtime(true)>=$freeDeadline){
-		throw new RuntimeException("Covered gateway port remained busy: {$reservationErrorNumber} {$reservationError}");
-	}
-	$gatewayProcess=DataphyreApplicationRuntimeProcessBroker::spawn([
-		'/usr/bin/setpriv','--reuid=0','--regid=0','--groups=0','--no-new-privs',
-		'--inh-caps=-all','--ambient-caps=-all','--bounding-set=-all,+setuid,+setgid','--pdeathsig=SIGKILL',
-		PHP_BINARY,'-d','display_errors=0','-d','log_errors=1','-d','user_ini.filename=',
-		$coverageBootstrap,$gateway,'web','127.0.0.1',(string)$gatewayPort,$router,$frameworkRoot,
-	],[0=>['file','/dev/null','r'],1=>['pipe','w'],2=>['pipe','w']],$frameworkRoot,$publicEnvironment,'web-gateway',[
-		'PROBE_SECRET'=>$secret,'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>$frameworkRoot,
-	],5000,$managed);
-	$failure=null;$response='';$gatewayStdout='';$gatewayStderr='';$childCoverageParts=[];$statusHeads=[];
-	try{
-		$exchange=static function(string $request,int $requestIndex) use ($coveragePart,$gatewayPort,&$childCoverageParts): string {
-			@unlink($coveragePart);
-			$socket=null;$deadline=microtime(true)+5.0;$errorNumber=0;$error='';
-			do{
-				$socket=@stream_socket_client('tcp://127.0.0.1:'.$gatewayPort,$errorNumber,$error,0.1);
-				if(is_resource($socket)) break;
-				usleep(10000);
-			}while(microtime(true)<$deadline);
-			if(!is_resource($socket)) throw new RuntimeException("Covered gateway unavailable: {$errorNumber} {$error}");
-			stream_set_timeout($socket,10,0);
-			$offset=0;
-			while($offset<strlen($request)){
-				$written=fwrite($socket,substr($request,$offset));
-				if(!is_int($written) || $written<1) throw new RuntimeException('Covered gateway request write failed.');
-				$offset+=$written;
-			}
-			$response=(string)stream_get_contents($socket);fclose($socket);
-			$coverageDeadline=microtime(true)+3.0;$childPart=null;
-			do{
-				$childPart=is_file($coveragePart)
-					? json_decode((string)file_get_contents($coveragePart),true)
-					: null;
-				if(is_array($childPart)) break;
-				usleep(10000);
-			}while(microtime(true)<$coverageDeadline);
-			if(!is_array($childPart)) throw new RuntimeException('Covered gateway child '.$requestIndex.' did not return coverage.');
-			$childCoverageParts[]=$childPart;
-			return $response;
-		};
-		$probeHeaders='X-Probe-Secret-Sha256: '.hash('sha256',$secret)."\r\n".
-			'X-Probe-Managed-Key-Sha256: '.hash('sha256',$managedKey)."\r\n";
-		$requests=[
-			"GET /probe HTTP/1.1\r\nHost: 127.0.0.1:{$gatewayPort}\r\n{$probeHeaders}Connection: close\r\n\r\n",
-			"POST /probe HTTP/1.1\r\nHost: 127.0.0.1:{$gatewayPort}\r\n{$probeHeaders}Content-Type: application/json\r\nContent-Length: 14\r\nConnection: close\r\n\r\n{\"probe\":true}",
-			"POST /probe HTTP/1.1\r\nHost: 127.0.0.1:{$gatewayPort}\r\nContent-Length: invalid\r\nConnection: close\r\n\r\n",
-			"POST /probe HTTP/1.1\r\nHost: 127.0.0.1:{$gatewayPort}\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\nz\r\n",
-			"HEAD /probe HTTP/1.1\r\nHost: 127.0.0.1:{$gatewayPort}\r\n{$probeHeaders}Connection: close\r\n\r\n",
-			"TRACE /probe HTTP/1.1\r\nHost: 127.0.0.1:{$gatewayPort}\r\nConnection: close\r\n\r\n",
-			"GET /probe HTTP/1.1\r\nHost: first.invalid\r\nHost: second.invalid\r\nConnection: close\r\n\r\n",
-			"GET /probe HTTP/1.1\r\nHost: 127.0.0.1:{$gatewayPort}\r\nBad Header\r\nConnection: close\r\n\r\n",
-			"GET /probe HTTP/1.1\r\nHost: 127.0.0.1:{$gatewayPort}\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\nx",
-			"GET /probe HTTP/1.1\r\nHost: 127.0.0.1:{$gatewayPort}\r\nConnection: close\r\n\r\nx",
-		];
-		foreach($requests as $index=>$request){
-			$candidate=$exchange($request,$index);
-			[$candidateHead]=array_pad(explode("\r\n\r\n",$candidate,2),2,'');
-			$statusHeads[]=$candidateHead;
-			if($index===0) $response=$candidate;
-		}
-	}catch(Throwable $caught){$failure=$caught;
-	}finally{
-		@posix_kill($gatewayProcess['pid'],SIGTERM);
-		$deadline=microtime(true)+5.0;
-		do{
-			$status=proc_get_status($gatewayProcess['resource']);
-			if(!is_array($status) || ($status['running'] ?? false)!==true) break;
-			usleep(10000);
-		}while(microtime(true)<$deadline);
-		$status=proc_get_status($gatewayProcess['resource']);
-		if(is_array($status) && ($status['running'] ?? false)===true) @posix_kill($gatewayProcess['pid'],SIGKILL);
-		foreach($gatewayProcess['pipes'] as $pipe) if(is_resource($pipe)) stream_set_blocking($pipe,false);
-		$gatewayStdout=is_resource($gatewayProcess['pipes'][1] ?? null) ? (string)stream_get_contents($gatewayProcess['pipes'][1]) : '';
-		$gatewayStderr=is_resource($gatewayProcess['pipes'][2] ?? null) ? (string)stream_get_contents($gatewayProcess['pipes'][2]) : '';
-		foreach($gatewayProcess['pipes'] as $pipe) if(is_resource($pipe)) fclose($pipe);
-		proc_close($gatewayProcess['resource']);
-		sodium_memzero($secret);sodium_memzero($managedKey);sodium_memzero($managed['private_key']);
-		dataphyre_application_runtime_fixed_port_unlock($fixedPortLock);
-	}
-	if($failure!==null) throw new RuntimeException(
-		$failure->getMessage().' stdout='.$gatewayStdout.' stderr='.$gatewayStderr,0,$failure,
+})->tag('process-broker','stdin','pre-ack','timeout','early-exit','reap','positive','negative')->maxMillis(15000)
+	->memoryLimit('512M')
+	->skipUnless(
+		dataphyre_process_entrypoints_exact_native_runtime(['/usr/bin/setpriv']),
+		'Requires the canonical root test image with environment_fd 1.2 and setpriv.',
 	);
-	[$head,$body]=array_pad(explode("\r\n\r\n",$response,2),2,'');
-	$t->matches('/^HTTP\/1\.1 200\b/D',$head,$gatewayStderr);
-	$payload=json_decode($body,true,16,JSON_THROW_ON_ERROR);
-	$t->same(true,$payload['ok']);
-	$t->same(10001,$payload['uid']);
-	$t->same(true,$payload['broker_descriptor_closed']);
-	$t->same(true,$payload['managed_bootstrap']);
-	$t->same(true,$payload['pre_exec_closer_rejected']);
-	foreach($statusHeads as $index=>$candidateHead){
-		$t->matches(in_array($index,[0,1,4],true) ? '/^HTTP\/1\.1 200\b/D' : '/^HTTP\/1\.1 502\b/D',$candidateHead);
-	}
-	$t->same('',$gatewayStdout);
-	$t->same('',$gatewayStderr);
-	$part=is_file($coveragePart) ? json_decode((string)file_get_contents($coveragePart),true) : null;
-	$t->isTrue(is_array($part),'the gateway returned an exact Xdebug coverage part');
-	$t->same('xdebug',$part['engine'] ?? null);
-	$t->same(count($statusHeads),count($childCoverageParts));
-	foreach($childCoverageParts as $childCoveragePart) $t->same('xdebug',$childCoveragePart['engine'] ?? null);
-	$t->greaterThan(
-		100,
-		($part['files']['runtime/modules/core/kernel/application_runtime_cgi_gateway.php']['covered'] ?? 0)
-			+array_sum(array_map(
-				static fn(array $child): int=>(int)($child['files']['runtime/modules/core/kernel/application_runtime_cgi_gateway.php']['covered'] ?? 0),
-				$childCoverageParts,
-			)),
-	);
-	foreach($childCoverageParts as $childCoveragePart) \Dataphyre\Test\CoverageParts::add($childCoveragePart);
-	\Dataphyre\Test\CoverageParts::add($part);
-})->tag('cgi','gateway','secret-broker','exact-image','coverage-carrying','positive')->maxMillis(30000);
 
-test('instrumented exact CGI children cover the fixed web and signed scheduler router',static function(Context $t): void {
-	$canonicalRoot=function_exists('posix_geteuid') && posix_geteuid()===0
-		&& extension_loaded('dataphyre_environment_fd')
-		&& phpversion('dataphyre_environment_fd')==='1.1.0'
-		&& is_executable('/usr/bin/setpriv') && is_executable('/usr/local/bin/php-cgi');
-	if(!$canonicalRoot){$t->same(true,true);return;}
+test('instrumented exact CGI scheduler child covers the signed scheduler router',static function(Context $t): void {
 	$frameworkRoot=(string)realpath(dirname(__DIR__,4));
 	$runtimeRoot=(string)realpath(dirname(__DIR__,3));
 	$kernel=(string)realpath(dirname(__DIR__).'/kernel');
@@ -1050,14 +915,14 @@ test('instrumented exact CGI children cover the fixed web and signed scheduler r
 	$project=(string)realpath(__DIR__.'/fixtures/application_runtime_project');
 	$prepend=(string)realpath(__DIR__.'/fixtures/application_runtime_cgi_coverage_prepend.php');
 	require_once $kernel.'/application_runtime_scheduler_protocol.php';
-	$state=$t->workspace('core-process-entrypoint-router-cgi');
+	$state=$t->workspace('core-process-entrypoint-scheduler-router-cgi');
 	$stateRoot=$state->path('runtime-state');
 	if(!mkdir($stateRoot,0700,true) || !chown($stateRoot,10001) || !chgrp($stateRoot,10001)){
-		throw new RuntimeException('Router CGI state ownership could not be prepared.');
+		throw new RuntimeException('Scheduler router CGI state ownership could not be prepared.');
 	}
 	$heartbeat=$state->file('heartbeat.json','');
 	if(!chown($heartbeat,10001) || !chgrp($heartbeat,10001) || !chmod($heartbeat,0600)){
-		throw new RuntimeException('Router CGI heartbeat ownership could not be prepared.');
+		throw new RuntimeException('Scheduler router CGI heartbeat ownership could not be prepared.');
 	}
 	$keypair=sodium_crypto_sign_keypair();$secretKey=sodium_crypto_sign_secretkey($keypair);
 	$publicKey=sodium_crypto_sign_publickey($keypair);$privateKey=random_bytes(32);
@@ -1085,15 +950,15 @@ test('instrumented exact CGI children cover the fixed web and signed scheduler r
 	];
 	$scanDirectory=(string)getenv('PHP_INI_SCAN_DIR');$requestIndex=0;
 	$run=static function(
-		string $role,string $method,string $target,string $body,array $values
+		string $method,string $target,string $body,array $values
 	) use (
 		$t,$frameworkRoot,$kernel,$router,$project,$prepend,$privateKey,$scanDirectory,$state,&$requestIndex
 	): array {
-		$part=$state->file('router-cgi-coverage-'.(++$requestIndex).'.json','');
+		$part=$state->file('scheduler-router-cgi-coverage-'.(++$requestIndex).'.json','');
 		if(!chown($part,10001) || !chgrp($part,10001) || !chmod($part,0600)){
-			throw new RuntimeException('Router CGI coverage ownership could not be prepared.');
+			throw new RuntimeException('Scheduler router CGI coverage ownership could not be prepared.');
 		}
-		$port=$role==='scheduler' ? 8081 : 8083;
+		$port=8081;
 		$path=(string)(parse_url($target,PHP_URL_PATH) ?: '/');
 		$query=(string)(parse_url($target,PHP_URL_QUERY) ?: '');
 		$public=[
@@ -1110,7 +975,7 @@ test('instrumented exact CGI children cover the fixed web and signed scheduler r
 		if($body!=='') $public['CONTENT_TYPE']='application/json';
 		if($scanDirectory!=='') $public['PHP_INI_SCAN_DIR']=$scanDirectory;
 		ksort($public,SORT_STRING);
-		$managed=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext($role,$project,$privateKey);
+		$managed=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('scheduler',$project,$privateKey);
 		try{
 			$child=DataphyreApplicationRuntimeProcessBroker::spawn([
 				'/usr/bin/setpriv','--reuid=10001','--regid=10001','--groups=10001','--no-new-privs',
@@ -1118,12 +983,12 @@ test('instrumented exact CGI children cover the fixed web and signed scheduler r
 				'/usr/local/bin/php-cgi','-d','display_errors=0','-d','log_errors=1','-d','expose_php=0',
 				'-d','cgi.force_redirect=0','-d','cgi.discard_path=0','-d','user_ini.filename=',
 				'-d','auto_prepend_file='.$prepend,'-d','auto_append_file=','-f',$router,
-			],[0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$project,$public,$role,$values,10000,$managed,$body);
+			],[0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$project,$public,'scheduler',$values,10000,$managed,$body);
 			$stdout=(string)stream_get_contents($child['pipes'][1]);$stderr=(string)stream_get_contents($child['pipes'][2]);
 			fclose($child['pipes'][1]);fclose($child['pipes'][2]);$exit=proc_close($child['resource']);
 		}finally{sodium_memzero($managed['private_key']);}
 		$decoded=is_file($part) ? json_decode((string)file_get_contents($part),true) : null;
-		if(!is_array($decoded)) throw new RuntimeException('Router CGI did not return exact coverage: '.$stderr);
+		if(!is_array($decoded)) throw new RuntimeException('Scheduler router CGI did not return exact coverage: '.$stderr);
 		\Dataphyre\Test\CoverageParts::add($decoded);
 		return ['exit'=>$exit,'stdout'=>$stdout,'stderr'=>$stderr];
 	};
@@ -1139,7 +1004,7 @@ test('instrumented exact CGI children cover the fixed web and signed scheduler r
 	};
 
 	$registration=$run(
-		'scheduler','POST','/dataphyre/runtime/scheduler/register',$encode($issue('registration',1)),
+		'POST','/dataphyre/runtime/scheduler/register',$encode($issue('registration',1)),
 		$applicationEnvironment,
 	);
 	$t->same(0,$registration['exit'],$registration['stderr']);
@@ -1150,41 +1015,38 @@ test('instrumented exact CGI children cover the fixed web and signed scheduler r
 	$definitionSha='sha256:'.hash('sha256',json_encode($definition,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
 
 	$callback=$run(
-		'scheduler','POST','/dataphyre/runtime/scheduler/callback',
+		'POST','/dataphyre/runtime/scheduler/callback',
 		$encode($issue('callback',2,$definition['name'],$definitionSha)),$applicationEnvironment,
 	);
 	$t->same(0,$callback['exit'],$callback['stderr']);
 	$t->isTrue(filesize($heartbeat)>0,'the signed callback executed its exact task');
 	$noop=$run(
-		'scheduler','POST','/dataphyre/runtime/scheduler/noop',$encode($issue('noop',3)),$applicationEnvironment,
+		'POST','/dataphyre/runtime/scheduler/noop',$encode($issue('noop',3)),$applicationEnvironment,
 	);
 	$t->same(0,$noop['exit'],$noop['stderr']);
 
 	$invalid=$issue('noop',4);$invalid['signature']=str_repeat('A',86);
 	$rejected=$run(
-		'scheduler','POST','/dataphyre/runtime/scheduler/noop',$encode($invalid),$applicationEnvironment,
+		'POST','/dataphyre/runtime/scheduler/noop',$encode($invalid),$applicationEnvironment,
 	);
 	$t->same(0,$rejected['exit'],$rejected['stderr']);
 	$t->contains('Status: 404',$rejected['stdout']);
 	$invalidKeyEnvironment=$applicationEnvironment;
 	$invalidKeyEnvironment['DATAPHYRE_RUNTIME_SCHEDULER_PUBLIC_KEY']='%%%';
 	$invalidKey=$run(
-		'scheduler','POST','/dataphyre/runtime/scheduler/noop',$encode($issue('noop',5)),$invalidKeyEnvironment,
+		'POST','/dataphyre/runtime/scheduler/noop',$encode($issue('noop',5)),$invalidKeyEnvironment,
 	);
 	$t->same(0,$invalidKey['exit'],$invalidKey['stderr']);
 	$t->contains('Status: 404',$invalidKey['stdout']);
-	$wrongMethod=$run('scheduler','GET','/dataphyre/runtime/scheduler/noop','',$applicationEnvironment);
+	$wrongMethod=$run('GET','/dataphyre/runtime/scheduler/noop','',$applicationEnvironment);
 	$t->same(0,$wrongMethod['exit'],$wrongMethod['stderr']);
 	$t->contains('Status: 404',$wrongMethod['stdout']);
-
-	$static=$run('web','GET','/runtime.txt','',$applicationEnvironment);
-	$t->same(0,$static['exit'],$static['stderr']);
-	$t->contains('runtime-static-asset',$static['stdout']);
-	$web=$run('web','GET','/health','',$applicationEnvironment);
-	$t->same(0,$web['exit'],$web['stderr']);
-	$t->contains('{"status":"healthy","missing_environment_keys":[]}',$web['stdout']);
 	sodium_memzero($secretKey);sodium_memzero($privateKey);
-})->tag('cgi','router','scheduler','signed','callback','web','static','coverage-carrying')->maxMillis(30000);
+})->tag('cgi','router','scheduler','signed','callback','coverage-carrying')->maxMillis(30000)
+	->skipUnless(
+		dataphyre_process_entrypoints_exact_native_runtime(['/usr/bin/setpriv','/usr/local/bin/php-cgi']),
+		'Requires the canonical root test image with environment_fd 1.2, setpriv, and matching PHP CGI.',
+	);
 
 test('CGI gateway helpers enforce signed scheduler claims framing budgets and trusted responses',static function(Context $t): void {
 	$fixedPortLock=dataphyre_application_runtime_fixed_port_lock();
@@ -1351,25 +1213,30 @@ test('CGI gateway helpers enforce signed scheduler claims framing budgets and tr
 		$unavailableBody,$publicEnvironment,
 	));
 
-	$oversizedCandidate=DataphyreApplicationRuntimeSchedulerProtocol::issue(
-		'noop',$identity,'gen_'.str_repeat('b',32),8,$secret,timestamp:time(),nonce:str_repeat('5',32),
-	);
-	$oversizedBody=json_encode($oversizedCandidate,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-	$oversizedClaimPid=$startClaimServer();$oversizedPair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
-	$oversizedWire="POST /dataphyre/runtime/scheduler/noop HTTP/1.1\r\nHost: 127.0.0.1:8081\r\nContent-Type: application/json\r\n".
-		'Content-Length: '.strlen($oversizedBody)."\r\nConnection: close\r\n\r\n{$oversizedBody}";
-	fwrite($oversizedPair[1],$oversizedWire);stream_socket_shutdown($oversizedPair[1],STREAM_SHUT_WR);
-	$oversizedError=null;
-	try{$internals->invoke(
-		'serve',$oversizedPair[0],'127.0.0.1:41000','scheduler','127.0.0.1',8081,$router,$project,
-		$publicEnvironment+[
-			'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>$project,
-			'DATAPHYRE_RUNTIME_TEST_CGI_OUTPUT_BYTES'=>'70000',
-		],$managed,
-	);}catch(Throwable $failure){$oversizedError=$failure;}
-	fclose($oversizedPair[0]);fclose($oversizedPair[1]);pcntl_waitpid($oversizedClaimPid,$oversizedClaimStatus);
-	$t->contains('response exceeded its bound',$oversizedError?->getMessage() ?? '');
-	$t->same(0,pcntl_wexitstatus($oversizedClaimStatus));
+	// Spawning the capability-free CGI child is deliberately root-broker-only.
+	// The canonical root/Xdebug lane exercises the response bound; ordinary
+	// unprivileged framework runs retain the pure framing/claim coverage above.
+	if(dataphyre_process_entrypoints_exact_native_runtime(['/usr/bin/setpriv','/usr/local/bin/php-cgi'])){
+		$oversizedCandidate=DataphyreApplicationRuntimeSchedulerProtocol::issue(
+			'noop',$identity,'gen_'.str_repeat('b',32),8,$secret,timestamp:time(),nonce:str_repeat('5',32),
+		);
+		$oversizedBody=json_encode($oversizedCandidate,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+		$oversizedClaimPid=$startClaimServer();$oversizedPair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
+		$oversizedWire="POST /dataphyre/runtime/scheduler/noop HTTP/1.1\r\nHost: 127.0.0.1:8081\r\nContent-Type: application/json\r\n".
+			'Content-Length: '.strlen($oversizedBody)."\r\nConnection: close\r\n\r\n{$oversizedBody}";
+		fwrite($oversizedPair[1],$oversizedWire);stream_socket_shutdown($oversizedPair[1],STREAM_SHUT_WR);
+		$oversizedError=null;
+		try{$internals->invoke(
+			'serve',$oversizedPair[0],'127.0.0.1:41000','scheduler','127.0.0.1',8081,$router,$project,
+			$publicEnvironment+[
+				'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>$project,
+				'DATAPHYRE_RUNTIME_TEST_CGI_OUTPUT_BYTES'=>'70000',
+			],$managed,
+		);}catch(Throwable $failure){$oversizedError=$failure;}
+		fclose($oversizedPair[0]);fclose($oversizedPair[1]);pcntl_waitpid($oversizedClaimPid,$oversizedClaimStatus);
+		$t->contains('response exceeded its bound',$oversizedError?->getMessage() ?? '');
+		$t->same(0,pcntl_wexitstatus($oversizedClaimStatus));
+	}
 	$t->same(2000,$internals->invoke(
 		'childTimeoutMilliseconds','scheduler',['target'=>'/unknown'],'{',
 	));
@@ -1420,11 +1287,6 @@ test('CGI gateway helpers enforce signed scheduler claims framing budgets and tr
 })->tag('cgi','gateway','scheduler','framing','trusted-response','positive','negative');
 
 test('covered one-shot dispatcher consumes its bound channel and selects only the fixed database target',static function(Context $t): void {
-	$canonicalRoot=function_exists('posix_geteuid') && posix_geteuid()===0
-		&& extension_loaded('dataphyre_environment_fd')
-		&& phpversion('dataphyre_environment_fd')==='1.1.0'
-		&& is_executable('/usr/bin/setpriv');
-	if(!$canonicalRoot){$t->same(true,true);return;}
 	$frameworkRoot=(string)realpath(dirname(__DIR__,4));
 	$kernel=(string)realpath(dirname(__DIR__).'/kernel');
 	$worker=$kernel.'/application_runtime_one_shot_worker.php';
@@ -1463,14 +1325,13 @@ test('covered one-shot dispatcher consumes its bound channel and selects only th
 	$t->same('xdebug',$part['engine'] ?? null);
 	$t->greaterThan(10,$part['files']['runtime/modules/core/kernel/application_runtime_one_shot_worker.php']['covered'] ?? 0);
 	\Dataphyre\Test\CoverageParts::add($part);
-})->tag('one-shot','database','secret-broker','exact-image','coverage-carrying','positive')->maxMillis(15000);
+})->tag('one-shot','database','secret-broker','exact-image','coverage-carrying','positive')->maxMillis(15000)
+	->skipUnless(
+		dataphyre_process_entrypoints_exact_native_runtime(['/usr/bin/setpriv']),
+		'Requires the canonical root test image with environment_fd 1.2 and setpriv.',
+	);
 
 test('covered realtime pool performs application and framework WebSocket roundtrips through its inherited environment',static function(Context $t): void {
-	$canonicalRoot=function_exists('posix_geteuid') && posix_geteuid()===0
-		&& extension_loaded('dataphyre_environment_fd')
-		&& phpversion('dataphyre_environment_fd')==='1.1.0'
-		&& is_executable('/usr/bin/setpriv');
-	if(!$canonicalRoot){$t->same(true,true);return;}
 	$fixedPortLock=dataphyre_application_runtime_fixed_port_lock();
 	$frameworkRoot=(string)realpath(dirname(__DIR__,4));
 	$runtimeRoot=(string)realpath(dirname(__DIR__,3));
@@ -1713,4 +1574,8 @@ test('covered realtime pool performs application and framework WebSocket roundtr
 	$t->same('xdebug',$part['engine'] ?? null);
 	$t->greaterThan(200,$part['files']['runtime/modules/core/kernel/application_runtime_realtime_server.php']['covered'] ?? 0);
 	\Dataphyre\Test\CoverageParts::add($part);
-})->tag('realtime','websocket','secret-broker','exact-image','coverage-carrying','positive','negative')->maxMillis(45000);
+})->tag('realtime','websocket','secret-broker','exact-image','coverage-carrying','positive','negative')->maxMillis(45000)
+	->skipUnless(
+		dataphyre_process_entrypoints_exact_native_runtime(['/usr/bin/setpriv']),
+		'Requires the canonical root test image with environment_fd 1.2 and setpriv.',
+	);

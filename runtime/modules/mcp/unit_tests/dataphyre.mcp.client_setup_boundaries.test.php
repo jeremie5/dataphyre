@@ -42,6 +42,8 @@ test('each client setup boundary reads as a portable setup contract',static func
 		$t->same('<cursor-mcp-config-path>',$contract['plans']['cursor']['config_path']);
 		$t->same('<mcp-client-config-path>',$contract['plans']['generic']['config_path']);
 		$t->same('generic',$contract['plans']['unsupported']['target']);
+		$t->contains('exact Dataphyre revision resolved by the application dependency lock',$contract['entrypoint_contract']['client_policy']);
+		$t->contains('framework-maintainer checkout proves only that checkout',$contract['entrypoint_contract']['client_policy']);
 		foreach($contract['plans'] as $plan){
 			$t->isFalse($plan['artifacts_written']);
 			$t->pathEquals('proposed_config.mcpServers.dataphyre.command','php',$plan);

@@ -22,6 +22,9 @@ final class ResponseEmitter {
 	 * @param mixed $response Response instance, scalar, array, or other value accepted by Response::normalize().
 	 */
 	public static function emit(mixed $response): void {
+		if(\defined('DATAPHYRE_INTERNAL_APPLICATION_BOOTSTRAP_ONLY')
+			&& \class_exists(\Dataphyre\InternalApplicationBootstrapOnly::class,false)
+			&& \Dataphyre\InternalApplicationBootstrapOnly::context()!==null) return;
 		self::emitResponse(Response::normalize($response));
 	}
 

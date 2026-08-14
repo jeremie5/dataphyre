@@ -572,6 +572,44 @@ final class DB {
 	}
 
 	/**
+	 * Executes a raw single-row read while preserving SQL failure semantics.
+	 *
+	 * @param string|array $query SQL string or DBMS-keyed query array.
+	 * @param ?array $vars Bound parameter values.
+	 * @param null|bool|array|string $caching Read-cache policy.
+	 * @param bool|null|array $clearCache Cache invalidation policy.
+	 * @return ?array First associative row, or `null` when no row matches.
+	 * @throws \RuntimeException When the SQL read fails or returns a malformed payload.
+	 */
+	public static function rowOrFailOnReadError(
+		string|array $query,
+		?array $vars=null,
+		null|bool|array|string $caching=false,
+		bool|null|array $clearCache=false
+	): ?array {
+		return static::connection()->rowOrFailOnReadError($query, $vars, $caching, $clearCache);
+	}
+
+	/**
+	 * Executes a raw multi-row read while preserving SQL failure semantics.
+	 *
+	 * @param string|array $query SQL string or DBMS-keyed query array.
+	 * @param ?array $vars Bound parameter values.
+	 * @param null|bool|array|string $caching Read-cache policy.
+	 * @param bool|null|array $clearCache Cache invalidation policy.
+	 * @return array Query rows, including a valid empty list.
+	 * @throws \RuntimeException When the SQL read fails or returns a malformed payload.
+	 */
+	public static function rowsOrFailOnReadError(
+		string|array $query,
+		?array $vars=null,
+		null|bool|array|string $caching=false,
+		bool|null|array $clearCache=false
+	): array {
+		return static::connection()->rowsOrFailOnReadError($query, $vars, $caching, $clearCache);
+	}
+
+	/**
 	 * Queues a query for deferred SQL execution on the default connection context.
 	 *
 	 * @param string|array $query SQL string or DBMS-keyed query array.

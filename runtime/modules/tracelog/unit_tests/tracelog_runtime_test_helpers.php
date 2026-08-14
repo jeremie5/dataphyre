@@ -258,6 +258,31 @@ final class DpTracelogRuntimeScenario {
 		});
 	}
 
+	/** Persists when PHP exposes a null session, as can happen during shutdown. */
+	public function persistThroughNullProcessSession(string $trace): array {
+		return $this->context->withGlobal('_SESSION', null, function(GlobalState $session) use($trace): array {
+			$runtime=$this->runtime();
+			unset($runtime['session']);
+			\dataphyre\tracelog::reset($runtime);
+			$this->activate(false)->replaceTraceBuffer($trace)->persist();
+			$value=$session->value();
+			return is_array($value) ? $value : [];
+		});
+	}
+
+	/** Runs the shutdown persistence path when no process session exists yet. */
+	public function shutdownThroughMissingProcessSession(string $trace): array {
+		return $this->context->withoutGlobal('_SESSION', function(GlobalState $session) use($trace): array {
+			$runtime=$this->runtime();
+			unset($runtime['session']);
+			\dataphyre\tracelog::reset($runtime);
+			$this->activate(false)->replaceTraceBuffer($trace);
+			\dataphyre\tracelog::shutdown();
+			$value=$session->value();
+			return is_array($value) ? $value : [];
+		});
+	}
+
 	/** Defers through a malformed injected retroactive buffer and returns its normalized rows. */
 	public function deferWithMalformedRuntimeBuffer(string $message): array {
 		$this->reset(['retroactive'=>'malformed'])->activate(true)->trace($message);

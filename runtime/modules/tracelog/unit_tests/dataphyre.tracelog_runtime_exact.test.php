@@ -209,6 +209,8 @@ test('state boundaries normalize malformed injected storage and contain PHP proc
 	$scenario=DpTracelogRuntimeScenario::open($t);
 	$t->same('normalized session', $scenario->persistWithMalformedRuntimeSession('normalized session')['tracelog']);
 	$t->same('process session', $scenario->persistThroughProcessSession('process session')['tracelog']);
+	$t->same('null process session', $scenario->persistThroughNullProcessSession('null process session')['tracelog']);
+	$t->same('shutdown session', $scenario->shutdownThroughMissingProcessSession('shutdown session')['tracelog']);
 
 	$scenario->reset()->recordFileWrites()->activate(false);
 	\dataphyre\tracelog::set_plotting(true);

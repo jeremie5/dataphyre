@@ -7,6 +7,7 @@
  */
 declare(strict_types=1);
 
+require_once dirname(__DIR__).'/Framework/ApplicationEnvironmentIdentifier.php';
 /**
  * Root-owned, single-use post-exec application environment broker.
  *
@@ -21,6 +22,7 @@ final class DataphyreApplicationRuntimeChildEnvironment
 	public const CONTRACT='dataphyre.application_child_environment.v3';
 	public const ACK_CONTRACT='dataphyre.application_child_environment_ack.v1';
 	public const MANAGED_BOOTSTRAP_CONTRACT='dataphyre.managed_runtime_bootstrap.v1';
+	public const ONE_SHOT_MATERIALIZER_BOOTSTRAP_CONTRACT='dataphyre.one_shot_materializer_bootstrap.v1';
 	public const INHERITED_FD=198;
 	public const MAX_BYTES=524288;
 	public const MAX_ENTRIES=576;
@@ -29,8 +31,10 @@ final class DataphyreApplicationRuntimeChildEnvironment
 	private const POOL_UID=10001;
 	private const POOL_GID=10001;
 	private static bool $consumed=false;
+	private static bool $managedWebPoolRequest=false;
 	/** @var null|array{contract:string,role:string,project_root:string,private_key:string} */
 	private static ?array $managedBootstrap=null;
+	private static ?array $oneShotMaterializerBootstrap=null;
 
 	/** @return array{0:resource,1:resource} */
 	public static function socketPair(): array
@@ -113,6 +117,118 @@ final class DataphyreApplicationRuntimeChildEnvironment
 		return $consumed['values'];
 	}
 
+	/**
+	 * Activates one request in the fixed native FPM pool after RINIT restored the
+	 * sealed application environment. The master-only envelope is never reopened.
+	 *
+	 * @return array<string,string>
+	 */
+	public static function activateManagedWebPoolRequest(): array
+	{
+		if(self::$managedWebPoolRequest || PHP_SAPI!=='fpm-fcgi'
+			|| !function_exists('dataphyre_managed_pool_request_context')){
+			throw new RuntimeException('Managed web-pool request boundary is unavailable.');
+		}
+		$native=dataphyre_managed_pool_request_context();
+		if(!is_array($native)
+			|| array_keys($native)!==[
+				'contract','role','project_root','master_pid','worker_pid','managed_bootstrap','environment',
+			]
+			|| ($native['contract'] ?? null)!=='dataphyre.managed_php_web_request.v1'
+			|| ($native['role'] ?? null)!=='web'
+			|| !is_string($native['project_root'] ?? null)
+			|| !is_int($native['master_pid'] ?? null) || $native['master_pid']<2
+			|| !is_int($native['worker_pid'] ?? null) || $native['worker_pid']!==getmypid()
+			|| posix_getppid()!==$native['master_pid']
+			|| !is_array($native['managed_bootstrap'] ?? null)
+			|| !is_array($native['environment'] ?? null)){
+			throw new RuntimeException('Managed web-pool request context is invalid.');
+		}
+		$values=$native['environment'];
+		$managedBootstrap=&$native['managed_bootstrap'];
+		self::validateValues($values);
+		self::validateManagedBootstrap($managedBootstrap,'web-pool',$values);
+		$root=realpath($native['project_root']);
+		if(!is_string($root) || is_link($native['project_root'])
+			|| !hash_equals($root,$native['project_root'])
+			|| !hash_equals($root,(string)(getenv('DATAPHYRE_RUNTIME_PROJECT_ROOT') ?: ''))
+			|| !self::privilegeBoundary(getmypid(),'web-pool')
+			|| (string)(getenv('DATAPHYRE_RUNTIME_POOL') ?: '')!=='web'
+			|| (string)(getenv('DATAPHYRE_RUNTIME_POOL_ROLE') ?: '')!=='web'){
+			throw new RuntimeException('Managed web-pool request identity is invalid.');
+		}
+		foreach($values as $name=>$value){
+			$projected=getenv($name);
+			if(!is_string($projected) || !hash_equals($value,$projected)){
+				throw new RuntimeException('Managed web-pool request environment is invalid.');
+			}
+			$_ENV[$name]=$value;$_SERVER[$name]=$value;
+		}
+		$_ENV['DATAPHYRE_RUNTIME_POOL']='web';$_SERVER['DATAPHYRE_RUNTIME_POOL']='web';
+		$_ENV['DATAPHYRE_RUNTIME_POOL_ROLE']='web';$_SERVER['DATAPHYRE_RUNTIME_POOL_ROLE']='web';
+		if(!chdir($root)) throw new RuntimeException('Managed web-pool request working directory is invalid.');
+		umask(0027);
+		self::$managedWebPoolRequest=true;
+		self::establishManagedBootstrap($managedBootstrap,'web',$values,true);
+		$values['DATAPHYRE_RUNTIME_POOL']='web';$values['DATAPHYRE_RUNTIME_POOL_ROLE']='web';
+		ksort($values,SORT_STRING);
+		return $values;
+	}
+
+	/** Binds the consumed broker transport to the worker-validated materializer. */
+	public static function establishOneShotMaterializerBootstrap(string $operation,string $target): void {
+		$caller=\realpath((string)((\debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS,1)[0] ?? [])['file'] ?? ''));
+		$worker=\realpath(__DIR__.'/application_runtime_one_shot_worker.php');
+		$expected=\realpath(\dirname(__DIR__,3).'/modules/sql/kernel/materialize_registered_tables.php');
+		$resolved=\realpath($target);$projectPath=(string)(\getenv('DATAPHYRE_RUNTIME_PROJECT_ROOT') ?: '');$projectRoot=\realpath($projectPath);
+		$application=(string)(\getenv('DATAPHYRE_FRAMEWORK_APPLICATION') ?: '');$environment=(string)(\getenv('DATAPHYRE_ENVIRONMENT') ?: '');
+		$release=(string)(\getenv('DATAPHYRE_APPLICATION_RELEASE') ?: '');
+		$serverArgument=(string)((\is_array($_SERVER['argv'] ?? null) ? $_SERVER['argv'] : [])[0] ?? '');
+		$globalArgument=(string)((\is_array($GLOBALS['argv'] ?? null) ? $GLOBALS['argv'] : [])[0] ?? '');
+		if(!\is_string($caller) || !\is_string($worker) || !\hash_equals($worker,$caller)
+			|| $operation!=='dataphyre_materialize_tables'
+			|| !\is_string($expected) || !\is_string($resolved) || \is_link($target) || !\hash_equals($expected,$resolved)
+			|| !\hash_equals($target,$resolved) || !\hash_equals($resolved,$serverArgument) || !\hash_equals($resolved,$globalArgument)
+			|| !\hash_equals($resolved,(string)($_SERVER['SCRIPT_FILENAME'] ?? ''))
+			|| self::$oneShotMaterializerBootstrap!==null || !\is_string($projectRoot) || !\is_dir($projectRoot)
+			|| \is_link($projectPath) || !\hash_equals($projectPath,$projectRoot)
+			|| \preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$application)!==1
+			|| !\Dataphyre\ApplicationEnvironmentIdentifier::valid($environment)
+			|| \preg_match('/^dep_[a-f0-9]{40}$/D',$release)!==1
+			|| !self::privilegeBoundary(\getmypid(),'one-shot')
+			|| !\in_array(PHP_SAPI,['cli','phpdbg'],true)
+			|| (string)(\getenv('DATAPHYRE_RUNTIME_POOL') ?: '')!=='one-shot'
+			|| (string)(\getenv('DATAPHYRE_RUNTIME_POOL_ROLE') ?: '')!=='one-shot'){
+			throw new RuntimeException('One-shot materializer bootstrap boundary is invalid.');
+		}
+		self::$oneShotMaterializerBootstrap=['contract'=>self::ONE_SHOT_MATERIALIZER_BOOTSTRAP_CONTRACT,
+			'role'=>'one-shot','operation'=>$operation,'target'=>$resolved,'project_root_raw'=>$projectPath,'project_root'=>$projectRoot,
+			'application'=>$application,'environment'=>$environment,'release_id'=>$release,'argv0'=>$serverArgument,'sapi'=>PHP_SAPI,
+		];
+	}
+	/** Returns non-secret proof of the root-brokered, worker-bound materializer operation. */
+	public static function oneShotMaterializerBootstrapAttestation(): ?array {
+		$caller=\realpath((string)((\debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS,1)[0] ?? [])['file'] ?? ''));
+		$expectedCaller=\realpath(\dirname(__DIR__).'/Framework/InternalApplicationBootstrapOnly.php');
+		if(!\is_string($caller) || !\is_string($expectedCaller) || !\hash_equals($expectedCaller,$caller))
+			throw new RuntimeException('One-shot materializer attestation caller is invalid.');
+		$proof=self::$oneShotMaterializerBootstrap;
+		$script=(string)($_SERVER['SCRIPT_FILENAME'] ?? '');
+		$argument=(string)((\is_array($_SERVER['argv'] ?? null) ? $_SERVER['argv'] : [])[0] ?? '');
+		$globalArgument=(string)((\is_array($GLOBALS['argv'] ?? null) ? $GLOBALS['argv'] : [])[0] ?? '');
+		$projectPath=(string)(\getenv('DATAPHYRE_RUNTIME_PROJECT_ROOT') ?: '');
+		if(!\is_array($proof) || !\hash_equals($proof['target'],$script) || !\hash_equals($proof['target'],$argument)
+			|| !\hash_equals($proof['target'],$globalArgument) || !\hash_equals($proof['target'],(string)(\realpath($script) ?: ''))
+			|| !\hash_equals($proof['argv0'],$argument) || !\hash_equals($proof['project_root_raw'],$projectPath)
+			|| !\hash_equals($proof['project_root'],(string)(\realpath($projectPath) ?: ''))
+			|| !\hash_equals($proof['application'],(string)(\getenv('DATAPHYRE_FRAMEWORK_APPLICATION') ?: ''))
+			|| !\hash_equals($proof['environment'],(string)(\getenv('DATAPHYRE_ENVIRONMENT') ?: ''))
+			|| !\hash_equals($proof['release_id'],(string)(\getenv('DATAPHYRE_APPLICATION_RELEASE') ?: ''))
+			|| (string)(\getenv('DATAPHYRE_RUNTIME_POOL') ?: '')!=='one-shot'
+			|| (string)(\getenv('DATAPHYRE_RUNTIME_POOL_ROLE') ?: '')!=='one-shot'
+			|| !self::privilegeBoundary(\getmypid(),'one-shot')) throw new RuntimeException('One-shot materializer attestation is invalid.');
+		return $proof;
+	}
 	/**
 	 * Consumes the root gateway envelope without activating application bootstrap.
 	 * The returned typed context may only be rebrokered to a fresh final CGI child.
@@ -335,7 +451,7 @@ final class DataphyreApplicationRuntimeChildEnvironment
 	private static function validateManagedBootstrap(?array $context,string $transportRole,array $values): void
 	{
 		$expectedRole=match($transportRole){
-			'web','web-gateway'=>'web','scheduler','scheduler-gateway'=>'scheduler','realtime'=>'realtime',
+			'web','web-pool','web-gateway'=>'web','scheduler','scheduler-gateway'=>'scheduler','realtime'=>'realtime',
 			default=>null,
 		};
 		if($expectedRole===null){
@@ -365,11 +481,15 @@ final class DataphyreApplicationRuntimeChildEnvironment
 	}
 
 	/** @param array<string,mixed> $context @param array<string,string> $values */
-	private static function establishManagedBootstrap(array &$context,string $role,array $values): void
+	private static function establishManagedBootstrap(
+		array &$context,string $role,array $values,bool $persistentWebPool=false,
+	): void
 	{
 		if(self::$managedBootstrap!==null) throw new RuntimeException('Managed runtime bootstrap was already established.');
 		self::validateManagedBootstrap($context,$role,$values);
-		$expectedSapi=in_array($role,['web','scheduler'],true) ? 'cgi-fcgi' : 'cli';
+		$expectedSapi=$persistentWebPool && $role==='web'
+			? 'fpm-fcgi'
+			: (in_array($role,['web','scheduler'],true) ? 'cgi-fcgi' : 'cli');
 		$expectedPort=match($role){'web'=>'8083','scheduler'=>'8081',default=>null};
 		if(PHP_SAPI!==$expectedSapi
 			|| !hash_equals($role,(string)(getenv('DATAPHYRE_RUNTIME_POOL') ?: ''))
@@ -396,7 +516,9 @@ final class DataphyreApplicationRuntimeChildEnvironment
 			|| !hash_equals($context['project_root'],(string)(realpath(
 				(string)(getenv('DATAPHYRE_RUNTIME_PROJECT_ROOT') ?: ''),
 			)))
-			|| (in_array($context['role'],['web','scheduler'],true) ? PHP_SAPI!=='cgi-fcgi' : PHP_SAPI!=='cli')){
+			|| ($context['role']==='web' && self::$managedWebPoolRequest
+				? PHP_SAPI!=='fpm-fcgi'
+				: (in_array($context['role'],['web','scheduler'],true) ? PHP_SAPI!=='cgi-fcgi' : PHP_SAPI!=='cli'))){
 			throw new RuntimeException('Managed runtime bootstrap attestation is invalid.');
 		}
 	}
@@ -460,7 +582,7 @@ final class DataphyreApplicationRuntimeChildEnvironment
 
 	private static function validateRole(string $role): void
 	{
-		if(!in_array($role,['web','scheduler','realtime','one-shot','web-gateway','scheduler-gateway'],true)){
+		if(!in_array($role,['web','web-pool','scheduler','realtime','one-shot','web-gateway','scheduler-gateway'],true)){
 			throw new RuntimeException('Child environment role is invalid.');
 		}
 	}

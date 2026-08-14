@@ -149,7 +149,7 @@ trait dataphyre_mcp_client_surfaces {
 		return [
 			'stdio_server'=>'dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php',
 			'module_bootstrap'=>'dataphyre/runtime/modules/mcp/kernel/mcp.main.php',
-			'client_policy'=>'MCP stdio clients must launch dataphyre_mcp.php from the project root; mcp.main.php is the Dataphyre runtime module bootstrap and is not a stdio MCP server.',
+			'client_policy'=>'MCP stdio clients must launch dataphyre_mcp.php from the project root. Application release evidence requires the exact Dataphyre revision resolved by the application dependency lock; a separate framework-maintainer checkout proves only that checkout. mcp.main.php is the Dataphyre runtime module bootstrap and is not a stdio MCP server.',
 			'validation_tool'=>'dataphyre/dev/tools/public/mcp_live_validate.php',
 			'validation_policy'=>'The dev/tools validator is a Dataphyre maintainer fallback for MCP wiring checks, not ordinary application-agent release or app-behavior proof.',
 		];

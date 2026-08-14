@@ -142,4 +142,12 @@ final class TypeInventory {
 		}
 		return $this->reflection->newInstanceArgs($arguments);
 	}
+
+	/** Creates an instance for boundary tests that must not execute the production constructor. */
+	public function withoutConstructor(): object {
+		if(!$this->isInstantiable()){
+			throw new \LogicException('TypeInventory target is not instantiable: '.$this->name().'.');
+		}
+		return $this->reflection->newInstanceWithoutConstructor();
+	}
 }

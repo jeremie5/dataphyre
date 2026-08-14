@@ -13,6 +13,135 @@ if (\dataphyre\core::load_framework_module('scheduling') !== true) {
     throw new RuntimeException('Scheduling module was not loaded.');
 }
 
+if((string)getenv('DATAPHYRE_RUNTIME_TEST_BOOTSTRAP_ONLY_MATERIALIZER')==='1'){
+	require_once __DIR__.'/bootstrap_only_sql.php';
+}
+
+$bootstrapOnlyMutation=(string)getenv('DATAPHYRE_RUNTIME_TEST_BOOTSTRAP_ONLY_MUTATION');
+if($bootstrapOnlyMutation!==''){
+	$preflight=&$GLOBALS['DATAPHYRE_INTERNAL_APPLICATION_RELEASE_PREFLIGHT']; // dataphyre-test-architecture: exempt[raw-global-variable] reason="Adversarial bootstrap fixture deliberately targets the private preflight proof against substitution."
+	$stateRoot=is_array($preflight ?? null) ? (string)($preflight['state_root'] ?? '') : '';
+	if(str_starts_with($bootstrapOnlyMutation,'deferred-')){
+		$GLOBALS['dataphyre_deferred_sql_table_definitions'][]=static function() use ($bootstrapOnlyMutation): void { // dataphyre-test-architecture: exempt[raw-global-variable] reason="Adversarial bootstrap fixture injects a deferred tenant callback into the legacy SQL registry."
+			if($bootstrapOnlyMutation==='deferred-transport-environment'){
+				putenv('DATAPHYRE_RUNTIME_APPLICATION=tenant-forgery');
+			}elseif($bootstrapOnlyMutation==='deferred-output-buffer-replace'){
+				ob_end_clean();ob_start(static fn(string $chunk): string=>$chunk); // dataphyre-test-architecture: exempt[raw-output-buffer] reason="Adversarial bootstrap fixture replaces the framework swallow buffer at the same depth."
+			}elseif($bootstrapOnlyMutation==='deferred-cwd'){
+				if(!chdir(sys_get_temp_dir())) throw new RuntimeException('Fixture could not mutate its cwd.'); // dataphyre-test-architecture: exempt[unmanaged-system-temporary-directory] reason="Adversarial bootstrap fixture must move to a known native directory outside the project root."
+			}elseif($bootstrapOnlyMutation==='deferred-exit'){
+				exit(0);
+			}else throw new RuntimeException('Unknown deferred bootstrap-only mutation fixture.');
+		};
+	}elseif($bootstrapOnlyMutation==='bootstrap-exit'){
+		exit(0);
+	}elseif($bootstrapOnlyMutation==='state-delete'){
+		if($stateRoot==='' || !@rmdir($stateRoot)) throw new RuntimeException('Fixture could not delete the preflight state root.');
+	}elseif($bootstrapOnlyMutation==='state-replace'){
+		if($stateRoot==='' || !@rmdir($stateRoot) || !@mkdir($stateRoot,0700,true)){
+			throw new RuntimeException('Fixture could not replace the preflight state root.');
+		}
+	}elseif($bootstrapOnlyMutation==='private-key'){
+		$corruptPrivateKey=\Closure::bind(static function(): void {
+			\Dataphyre\InternalApplicationBootstrapOnly::$privateKey=random_bytes(32);
+		},null,\Dataphyre\InternalApplicationBootstrapOnly::class);
+		if(!$corruptPrivateKey instanceof \Closure) throw new RuntimeException('Fixture could not bind the private-key mutation.');
+		$corruptPrivateKey();
+	}elseif($bootstrapOnlyMutation==='proof-private-key'){
+		$preflight['private_key']=str_repeat('f',64);
+	}elseif($bootstrapOnlyMutation==='proof-token'){
+		$preflight['token']=str_repeat('e',64);
+	}elseif($bootstrapOnlyMutation==='transport-environment'){
+		putenv('DATAPHYRE_RUNTIME_APPLICATION=tenant-forgery');
+	}elseif($bootstrapOnlyMutation==='transport-argv'){
+		$_SERVER['argv'][0]=__FILE__; // dataphyre-test-architecture: exempt[raw-superglobal] reason="Adversarial bootstrap fixture corrupts the native server argv projection."
+		$GLOBALS['argv'][0]=__FILE__; // dataphyre-test-architecture: exempt[raw-global-variable] reason="Adversarial bootstrap fixture corrupts the native global argv projection."
+	}elseif($bootstrapOnlyMutation==='transport-request'){
+		$_GET['tenant-forgery']='1'; // dataphyre-test-architecture: exempt[raw-superglobal] reason="Adversarial bootstrap fixture injects request input that registration-only mode must reject."
+	}elseif($bootstrapOnlyMutation==='output-buffer-replace'){
+		ob_end_clean();ob_start(static fn(string $chunk): string=>$chunk); // dataphyre-test-architecture: exempt[raw-output-buffer] reason="Adversarial bootstrap fixture replaces the active framework swallow buffer."
+	}else throw new RuntimeException('Unknown bootstrap-only mutation fixture.');
+	if($bootstrapOnlyMutation!=='output-buffer-replace') \Dataphyre\InternalApplicationBootstrapOnly::context();
+}
+
+if((string)getenv('DATAPHYRE_RUNTIME_TEST_BOOTSTRAP_ONLY_GLOBAL_POISON')==='1'){
+	$GLOBALS['stateRoot']='/app'; // dataphyre-test-architecture: exempt[raw-global-variable] reason="Adversarial fixture poisons a former script-global state-root name."
+	$GLOBALS['projectRoot']='/tenant-forgery'; // dataphyre-test-architecture: exempt[raw-global-variable] reason="Adversarial fixture poisons a former script-global project-root name."
+	$GLOBALS['application']='tenant-forgery'; // dataphyre-test-architecture: exempt[raw-global-variable] reason="Adversarial fixture poisons a former script-global application name."
+	$GLOBALS['environment']='tenant-forgery'; // dataphyre-test-architecture: exempt[raw-global-variable] reason="Adversarial fixture poisons a former script-global environment name."
+	$GLOBALS['successPayload']=['contract'=>'tenant-forgery']; // dataphyre-test-architecture: exempt[raw-global-variable] reason="Adversarial fixture poisons a former script-global evidence name."
+}
+
+$bootstrapOnlyEvidence=(string)getenv('DATAPHYRE_RUNTIME_TEST_BOOTSTRAP_ONLY_EVIDENCE');
+if($bootstrapOnlyEvidence!==''){
+	$bootstrapOnlyRuntime=rtrim((string)getenv('DATAPHYRE_RUNTIME_TEST_FRAMEWORK_ROOT'),'/\\');
+	require_once $bootstrapOnlyRuntime.'/modules/http/Framework/Request.php';
+	require_once $bootstrapOnlyRuntime.'/modules/http/Framework/Response.php';
+	require_once $bootstrapOnlyRuntime.'/modules/http/Framework/ResponseEmitter.php';
+	require_once $bootstrapOnlyRuntime.'/modules/mvc/Framework/MvcApplication.php';
+	require_once $bootstrapOnlyRuntime.'/modules/mvc/Framework/MvcDispatcher.php';
+	require_once $bootstrapOnlyRuntime.'/modules/testing/tooling/TypeInventory.php';
+	require_once __DIR__.'/bootstrap_only_namespace_hijack.php';
+	$context=\Dataphyre\InternalApplicationBootstrapOnly::context();
+	if((string)getenv('DATAPHYRE_RUNTIME_TEST_BOOTSTRAP_ONLY_SCHEDULER_MUTATION')==='1'){
+		\dataphyre\scheduling::use_state_root('/app');
+		\dataphyre\scheduling::use_activation_mode('default');
+		$corruptSchedulingState=\Closure::bind(static function(): void {
+			\dataphyre\scheduling::$state_root='/app/';
+			\dataphyre\scheduling::$activation_mode='default';
+		},null,\dataphyre\scheduling::class);
+		if(!$corruptSchedulingState instanceof \Closure) throw new RuntimeException('Fixture could not bind the scheduler mutation.');
+		$corruptSchedulingState();
+	}
+	$schedulerCallback=(string)getenv('DATAPHYRE_RUNTIME_TEST_BOOTSTRAP_ONLY_SCHEDULER_CALLBACK');
+	$schedulerAccepted=\dataphyre\scheduling::run(
+		'runtime.bootstrap-only',__DIR__.'/scheduled_task.php',3600,30,'64M',[],'',
+		static function(callable $callback) use ($schedulerCallback): void {
+			if($schedulerCallback!=='') file_put_contents($schedulerCallback,'registered',LOCK_EX);
+		},
+	);
+	$mvcApplication=\Dataphyre\Test\TypeInventory::of(\Dataphyre\Mvc\MvcApplication::class)->withoutConstructor();
+	$mvc=new \Dataphyre\Mvc\MvcDispatcher($mvcApplication);
+	$request=\Dataphyre\Http\Request::create('GET','/runtime/bootstrap-only');
+	$response=$mvc->dispatch($request);
+	$statusBefore=http_response_code();
+	\Dataphyre\Http\ResponseEmitter::emit(\Dataphyre\Http\Response::make('forbidden',299));
+	$statusAfter=http_response_code();
+	$unavailableRejected=false;
+	try{\dataphyre\core::unavailable(__FILE__,(string)__LINE__,__CLASS__,__FUNCTION__,'fixture','fixture');}
+	catch(RuntimeException $exception){$unavailableRejected=str_contains($exception->getMessage(),'Registration-only');}
+	$reflectionActivationRejected=false;
+	try{
+		$replayActivation=\Closure::bind(static function(array $context): void {
+			\Dataphyre\InternalApplicationBootstrapOnly::activate($context,static function(): void {});
+		},null,\Dataphyre\InternalApplicationBootstrapOnly::class);
+		if(!$replayActivation instanceof \Closure) throw new RuntimeException('Fixture could not bind the activation replay.');
+		$replayActivation($context);
+	}catch(Throwable){$reflectionActivationRejected=true;}
+	file_put_contents($bootstrapOnlyEvidence,json_encode([
+		'purpose'=>$context['purpose'],'scheduler_accepted'=>$schedulerAccepted,
+		'scheduler_directory'=>\dataphyre\scheduling::scheduler_directory('runtime.bootstrap-only'),
+		'cwd'=>realpath((string)getcwd()),
+		'terminal_writer_callable'=>function_exists('dataphyre_realtime_preflight_write'),
+		'mvc_status'=>$response->status,'mvc_body'=>$response->body,
+		'emitter_status_unchanged'=>$statusBefore===$statusAfter,'unavailable_rejected'=>$unavailableRejected,
+		'reflection_activation_rejected'=>$reflectionActivationRejected,
+	],JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),LOCK_EX);
+	echo 'forbidden-application-output';
+}
+
+$bootstrapOnlyShutdown=(string)getenv('DATAPHYRE_RUNTIME_TEST_BOOTSTRAP_ONLY_SHUTDOWN');
+if($bootstrapOnlyShutdown!==''){
+	register_shutdown_function(static function() use ($bootstrapOnlyShutdown): void {
+		$context=\Dataphyre\InternalApplicationBootstrapOnly::context();
+		$stateRoot=(string)($context['preflight_state_root'] ?? '');
+		file_put_contents($bootstrapOnlyShutdown,json_encode([
+			'purpose'=>$context['purpose'],'state_root_present'=>$stateRoot==='' || (is_dir($stateRoot) && !is_link($stateRoot)),
+		],JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),LOCK_EX);
+		echo 'forbidden-shutdown-output';
+	});
+}
+
 if((string)getenv('DATAPHYRE_RUNTIME_POOL_ROLE')==='health-preflight'){
 	\dataphyre\scheduling::run(
 		'runtime.health.preflight',

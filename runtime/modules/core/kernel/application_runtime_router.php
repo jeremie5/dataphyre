@@ -10,10 +10,14 @@ declare(strict_types=1);
 $pool=match((string)($_SERVER['SERVER_PORT'] ?? '')){'8081'=>'scheduler','8083'=>'web',default=>''};
 require_once __DIR__.'/application_runtime_child_environment.php';
 try{
-	$runtimeEnvironment=is_array($GLOBALS['DATAPHYRE_INTERNAL_CGI_ENVIRONMENT'] ?? null)
-		? $GLOBALS['DATAPHYRE_INTERNAL_CGI_ENVIRONMENT']
-		: DataphyreApplicationRuntimeChildEnvironment::consumeInherited($pool);
-	unset($GLOBALS['DATAPHYRE_INTERNAL_CGI_ENVIRONMENT']);
+	$runtimeEnvironment=PHP_SAPI==='fpm-fcgi'
+		? (is_array($GLOBALS['DATAPHYRE_INTERNAL_FPM_ENVIRONMENT'] ?? null)
+			? $GLOBALS['DATAPHYRE_INTERNAL_FPM_ENVIRONMENT']
+			: throw new RuntimeException('Managed FPM request environment is unavailable.'))
+		: (is_array($GLOBALS['DATAPHYRE_INTERNAL_CGI_ENVIRONMENT'] ?? null)
+			? $GLOBALS['DATAPHYRE_INTERNAL_CGI_ENVIRONMENT']
+			: DataphyreApplicationRuntimeChildEnvironment::consumeInherited($pool));
+	unset($GLOBALS['DATAPHYRE_INTERNAL_FPM_ENVIRONMENT'],$GLOBALS['DATAPHYRE_INTERNAL_CGI_ENVIRONMENT']);
 }
 catch(Throwable){http_response_code(404);echo '{"ok":false}';return;}
 $projectRoot=(string)(getenv('DATAPHYRE_RUNTIME_PROJECT_ROOT') ?: '');

@@ -742,6 +742,9 @@ class tracelog {
 			}
 			return self::$runtime['session'];
 		}
+		if(!isset($_SESSION) || !is_array($_SESSION)){
+			$_SESSION=[];
+		}
 		return $_SESSION;
 	}
 

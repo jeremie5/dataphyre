@@ -215,6 +215,73 @@ final class ConnectionContext {
 	}
 
 	/**
+	 * Executes a raw single-row read without collapsing SQL failure into absence.
+	 *
+	 * PostgreSQL-compatible drivers' historical raw-query convention can return `false` both when a
+	 * first-row read has no match and when execution fails. A cleared kernel error
+	 * makes that sentinel a successful absence; every other non-array payload is a
+	 * malformed or failed read and raises a structured SQL exception.
+	 *
+	 * @param string|array $query SQL string or DBMS-keyed query array.
+	 * @param ?array $vars Bound parameter values.
+	 * @param null|bool|array|string $caching Read-cache policy.
+	 * @param bool|null|array $clearCache Cache invalidation policy.
+	 * @return ?array First associative row, or `null` when no row matches.
+	 * @throws \RuntimeException When the SQL read fails or returns a malformed payload.
+	 */
+	public function rowOrFailOnReadError(
+		string|array $query,
+		?array $vars=null,
+		null|bool|array|string $caching=false,
+		bool|null|array $clearCache=false
+	): ?array {
+		$result=$this->query($query, $vars, false, false, $caching, $clearCache);
+		if($this->isSuccessfulFalseReadAbsence($result)){
+			return null;
+		}
+		if(!is_array($result)){
+			throw SqlError::readFailure(self::class, 'row', [
+				'cluster'=>$this->cluster ?? DB::defaultCluster(),
+				'result_type'=>get_debug_type($result),
+			]);
+		}
+		return $result;
+	}
+
+	/**
+	 * Executes a raw multi-row read without collapsing SQL failure into `[]`.
+	 *
+	 * A successful empty PostgreSQL-compatible result may use the legacy `false` sentinel
+	 * with no recorded kernel error. That exact shape normalizes to an empty list;
+	 * actual failures and malformed non-array results raise a structured exception.
+	 *
+	 * @param string|array $query SQL string or DBMS-keyed query array.
+	 * @param ?array $vars Bound parameter values.
+	 * @param null|bool|array|string $caching Read-cache policy.
+	 * @param bool|null|array $clearCache Cache invalidation policy.
+	 * @return array Query rows, including a valid empty list.
+	 * @throws \RuntimeException When the SQL read fails or returns a malformed payload.
+	 */
+	public function rowsOrFailOnReadError(
+		string|array $query,
+		?array $vars=null,
+		null|bool|array|string $caching=false,
+		bool|null|array $clearCache=false
+	): array {
+		$result=$this->query($query, $vars, true, true, $caching, $clearCache);
+		if($this->isSuccessfulFalseReadAbsence($result)){
+			return [];
+		}
+		if(!is_array($result)){
+			throw SqlError::readFailure(self::class, 'rows', [
+				'cluster'=>$this->cluster ?? DB::defaultCluster(),
+				'result_type'=>get_debug_type($result),
+			]);
+		}
+		return $result;
+	}
+
+	/**
 	 * Queues a query for deferred SQL execution on this context's cluster.
 	 *
 	 * The callback receives the normalized kernel result when `execute_queue()` drains the queue.
@@ -351,6 +418,14 @@ final class ConnectionContext {
 			'sqlite'=>$query,
 			'dbms_cluster_override'=>$this->cluster,
 		];
+	}
+
+	/** Distinguishes PostgreSQL's successful no-row sentinel from read failure. */
+	private function isSuccessfulFalseReadAbsence(mixed $result): bool {
+		return $result===false
+			&& strtolower(trim((string)DB::clusterDbms($this->cluster)))==='postgresql'
+			&& method_exists(\dataphyre\sql::class, 'last_query_error')
+			&& \dataphyre\sql::last_query_error()===null;
 	}
 
 	/** Extracts the first result-set cell while preserving scalar failure values. */

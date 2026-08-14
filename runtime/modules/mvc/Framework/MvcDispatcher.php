@@ -49,6 +49,9 @@ final class MvcDispatcher {
 	 * @return Response Final response after middleware, handler, errors, and default headers.
 	 */
 	public function dispatch(Request $request): Response {
+		if(\defined('DATAPHYRE_INTERNAL_APPLICATION_BOOTSTRAP_ONLY')
+			&& \class_exists(\Dataphyre\InternalApplicationBootstrapOnly::class,false)
+			&& \Dataphyre\InternalApplicationBootstrapOnly::context()!==null) return Response::noContent();
 		try{
 			$match=$this->match($request);
 			if($match!==null){

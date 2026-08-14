@@ -49,11 +49,11 @@ final class realtime {
 		if(isset(self::$routes[$path])){
 			throw new InvalidArgumentException('Realtime path is already registered.');
 		}
-		if(count(self::$routes)>=128){
+		if(\count(self::$routes)>=128){
 			throw new LogicException('Realtime registration limit was reached.');
 		}
 		self::$routes[$path]=['authorize'=>$authorize, 'events'=>$events];
-		ksort(self::$routes, SORT_STRING);
+		\ksort(self::$routes, \SORT_STRING);
 	}
 
 	/**
@@ -63,8 +63,8 @@ final class realtime {
 	 * @return array<string,array{authorize:callable,events:callable}>
 	 */
 	public static function runtimeRoutes(): array {
-		$pool=(string)(getenv('DATAPHYRE_RUNTIME_POOL') ?: '');
-		if(!in_array($pool, ['realtime','realtime-preflight'], true)){
+		$pool=(string)(\getenv('DATAPHYRE_RUNTIME_POOL') ?: '');
+		if(!\in_array($pool, ['realtime','realtime-preflight'], true)){
 			throw new LogicException('Realtime registrations are available only to the fixed Dataphyre runtime.');
 		}
 		self::$sealed=true;
@@ -79,23 +79,23 @@ final class realtime {
 	 */
 	public static function runtimeEvidence(): array {
 		$routes=self::runtimeRoutes();
-		$paths=array_keys($routes);
-		$encoded=json_encode($paths, JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
+		$paths=\array_keys($routes);
+		$encoded=\json_encode($paths, \JSON_UNESCAPED_SLASHES|\JSON_THROW_ON_ERROR);
 		return [
-			'route_count'=>count($paths),
-			'registration_sha256'=>'sha256:'.hash('sha256', $encoded),
+			'route_count'=>\count($paths),
+			'registration_sha256'=>'sha256:'.\hash('sha256', $encoded),
 		];
 	}
 
 	private static function validPath(string $path): bool {
 		return $path!==self::FRAMEWORK_PROBE_PATH
-			&& strlen($path)>=2
-			&& strlen($path)<=256
-			&& !str_contains($path, '//')
-			&& preg_match('#^/(?:[A-Za-z0-9._~-]+/)*[A-Za-z0-9._~-]+$#D', $path)===1
-			&& !str_contains($path, '/./')
-			&& !str_contains($path, '/../')
-			&& !str_ends_with($path, '/.')
-			&& !str_ends_with($path, '/..');
+			&& \strlen($path)>=2
+			&& \strlen($path)<=256
+			&& !\str_contains($path, '//')
+			&& \preg_match('#^/(?:[A-Za-z0-9._~-]+/)*[A-Za-z0-9._~-]+$#D', $path)===1
+			&& !\str_contains($path, '/./')
+			&& !\str_contains($path, '/../')
+			&& !\str_ends_with($path, '/.')
+			&& !\str_ends_with($path, '/..');
 	}
 }

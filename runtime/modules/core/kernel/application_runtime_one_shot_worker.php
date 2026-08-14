@@ -10,6 +10,7 @@ declare(strict_types=1);
 /** Fixed post-exec dispatcher for the only Cloud-supported application operations. */
 if(PHP_SAPI!=='cli' || ($argc ?? 0)<3 || ($argc ?? 0)>8) exit(64);
 require_once __DIR__.'/application_runtime_child_environment.php';
+require_once dirname(__DIR__).'/Framework/InternalApplicationBootstrapOnly.php';
 try{DataphyreApplicationRuntimeChildEnvironment::consumeInherited('one-shot');}
 catch(Throwable){exit(78);}
 $operation=$argv[1] ?? null;$target=$argv[2] ?? null;$arguments=array_slice($argv,3);
@@ -32,4 +33,11 @@ if(!is_string($real) || !is_string($expectedReal) || !hash_equals($expectedReal,
 $GLOBALS['argv']=[$real,...$arguments];$GLOBALS['argc']=count($GLOBALS['argv']);
 $_SERVER['argv']=$GLOBALS['argv'];$_SERVER['argc']=$GLOBALS['argc'];
 $_SERVER['SCRIPT_FILENAME']=$real;
+if($operation==='dataphyre_materialize_tables' && !($arguments===['--help'] || $arguments===['-h'])){
+	try{DataphyreApplicationRuntimeChildEnvironment::establishOneShotMaterializerBootstrap($operation,$real);}
+	catch(Throwable){exit(78);}
+}else{
+	try{\Dataphyre\InternalApplicationBootstrapOnly::sealNonMaterializerOneShot($operation);}
+	catch(Throwable){exit(78);}
+}
 require $real;exit(0);

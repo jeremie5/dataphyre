@@ -6,12 +6,14 @@ COPY docker/testing/browser/package.json /opt/dataphyre-browser/package.json
 RUN cd /opt/dataphyre-browser \
     && npm install --omit=dev --no-audit --no-fund
 
+FROM php:8.4-fpm-bookworm AS php-fpm-runtime
+
 FROM php:8.4-cli-bookworm
 
 ARG XDEBUG_VERSION=3.5.3
 
 LABEL org.opencontainers.image.title="Dataphyre testing runtime" \
-      org.opencontainers.image.description="Hermetic PHP 8.4 CLI/phpdbg runtime for the first-party Dataphyre test runner"
+      org.opencontainers.image.description="Hermetic PHP 8.4 CLI/phpdbg/FPM runtime for the first-party Dataphyre test runner"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV DATAPHYRE_BROWSER_NODE_MODULES=/opt/dataphyre-browser/node_modules \
@@ -74,7 +76,11 @@ RUN set -eux; \
 	docker-php-ext-enable dataphyre_environment_fd; \
 	cd /; \
 	rm -rf /tmp/dataphyre-environment-fd; \
-	php -r 'exit(extension_loaded("dataphyre_environment_fd") && phpversion("dataphyre_environment_fd") === "1.1.0" && function_exists("dataphyre_open_inherited_environment_fd") && function_exists("dataphyre_close_inherited_fd") && function_exists("dataphyre_close_unlisted_inherited_fds") ? 0 : 1);'
+	php -r 'exit(extension_loaded("dataphyre_environment_fd") && phpversion("dataphyre_environment_fd") === "1.2.0" && function_exists("dataphyre_open_inherited_environment_fd") && function_exists("dataphyre_close_inherited_fd") && function_exists("dataphyre_close_unlisted_inherited_fds") && function_exists("dataphyre_managed_pool_request_context") ? 0 : 1);'
+
+# Keep the test image's CLI/phpdbg toolchain while adding the exact matching FPM
+# SAPI binary needed to exercise Dataphyre's persistent managed-web boundary.
+COPY --from=php-fpm-runtime /usr/local/sbin/php-fpm /usr/local/sbin/php-fpm
 
 COPY --from=browser-dependencies /usr/local/bin/node /usr/local/bin/node
 COPY --from=browser-dependencies /opt/dataphyre-browser /opt/dataphyre-browser
@@ -92,6 +98,8 @@ RUN { \
     } > /usr/local/etc/php/conf.d/dataphyre-testing.ini \
 	&& php -r 'foreach(["bcmath","curl","dataphyre_environment_fd","gd","intl","mbstring","pdo_sqlite","sodium","zip"] as $extension){if(!extension_loaded($extension)){fwrite(STDERR,"Missing extension: $extension\n");exit(1);}} if(extension_loaded("xdebug")){fwrite(STDERR,"Xdebug must be opt-in.\n");exit(1);}' \
 	&& PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d:/usr/local/etc/php-xdebug.d XDEBUG_MODE=off php -r 'exit(extension_loaded("xdebug")&&phpversion("xdebug")==="3.5.3"?0:1);' \
-    && command -v phpdbg >/dev/null
+	&& command -v phpdbg >/dev/null \
+	&& php-fpm -v \
+	&& test "$(php -r 'echo PHP_VERSION;')" = "$(php-fpm -i | sed -n 's/^PHP Version => //p' | head -n 1)"
 
 WORKDIR /workspace/dataphyre

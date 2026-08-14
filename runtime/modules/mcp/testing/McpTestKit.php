@@ -1065,6 +1065,7 @@ final class McpClientSetupBoundaryHarness {
 		return [
 			'plans'=>$plans,
 			'checklists'=>$checklists,
+			'entrypoint_contract'=>$this->kernel->invoke('mcp_server_entrypoint_contract'),
 			'normalized_target'=>$this->kernel->invoke('mcp_client_target',' CURSOR '),
 			'fallback_target'=>$this->kernel->invoke('mcp_client_target','telepathic-client'),
 		];

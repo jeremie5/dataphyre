@@ -51,6 +51,17 @@ final class runtime {
 	 * @throws \RuntimeException When the app cannot be found or has no executable boot path.
 	 */
 	public static function boot(string $project_root, string $application_name, array $application_roots=[]): void {
+		$bootstrapOnly=\class_exists(\Dataphyre\InternalApplicationBootstrapOnly::class,false)
+			? \Dataphyre\InternalApplicationBootstrapOnly::context()
+			: null;
+		if($bootstrapOnly!==null){
+			$resolvedProject=\realpath($project_root);
+			if(!\is_string($resolvedProject)
+				|| !\hash_equals($bootstrapOnly['project_root'],$resolvedProject)
+				|| !\hash_equals($bootstrapOnly['application'],$application_name)){
+				throw new \RuntimeException('Bootstrap-only runtime application identity is invalid.');
+			}
+		}
 		$application_directory=app_locator::locate($project_root, $application_name, $application_roots);
 		if($application_directory===null){
 			throw new \RuntimeException("Application {$application_name} was not found in any configured application root.");
@@ -59,11 +70,14 @@ final class runtime {
 		self::$current_application_definition=$definition;
 		self::$current_project_root=rtrim($project_root, '/\\');
 		self::register_application_autoload($definition);
-		if(self::boot_compiled_routes($definition)===true){
+		if($bootstrapOnly===null && self::boot_compiled_routes($definition)===true){
 			return;
 		}
 		if(self::boot_framework_application($definition)===true){
 			return;
+		}
+		if($bootstrapOnly!==null){
+			throw new \RuntimeException("Application {$application_name} has no registration-safe Framework bootstrap path.");
 		}
 		if($definition->should_fallback_to_legacy_bootstrap()===true){
 			self::boot_legacy_application($application_directory, $definition);

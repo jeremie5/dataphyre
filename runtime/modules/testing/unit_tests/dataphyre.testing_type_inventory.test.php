@@ -69,8 +69,12 @@ test('type inventory makes API shape selection and invocation self-describing',s
 	$t->instanceOf(DpTypeInventoryContract::class,$instance);
 	$t->same('value',$instance->value);
 	$t->same('array',$inventory->newInstanceWithArguments(['array'])->value);
+	$withoutConstructor=$inventory->withoutConstructor();
+	$t->instanceOf(DpTypeInventoryContract::class,$withoutConstructor);
+	$t->throws(static fn()=>$withoutConstructor->value,Error::class);
 	$t->same('left-right',$inventory->invoke('staticJoin',null,'left','right'));
 	$t->same('value:suffix',$inventory->invokeWithArguments($inventory->method('instanceJoin'),$instance,['suffix']));
 	$t->throws(static fn()=>$inventory->invoke('hidden',$instance),LogicException::class);
 	$t->throws(static fn()=>TypeInventory::of(DpTypeInventoryAbstractContract::class)->newInstance(),LogicException::class);
+	$t->throws(static fn()=>TypeInventory::of(DpTypeInventoryAbstractContract::class)->withoutConstructor(),LogicException::class);
 })->tag('testing','type-inventory','api')->group('framework-coverage');

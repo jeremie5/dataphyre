@@ -6,4 +6,5 @@ PHP_ARG_ENABLE([dataphyre_environment_fd],
 if test "$PHP_DATAPHYRE_ENVIRONMENT_FD" != "no"; then
   AC_DEFINE([HAVE_DATAPHYRE_ENVIRONMENT_FD], [1], [Dataphyre environment fd support])
   PHP_NEW_EXTENSION([dataphyre_environment_fd], [dataphyre_environment_fd.c], [$ext_shared])
+  PHP_ADD_EXTENSION_DEP([dataphyre_environment_fd], [json], [true])
 fi

@@ -118,6 +118,7 @@ function dp_sql_kernel_scenario(Context $t): DpSqlKernelScenario {
 	$sql->replacePropertyForTest('table_definition_registry',[]);
 	$sql->replacePropertyForTest('loaded_table_definition_files',[]);
 	$sql->replacePropertyForTest('structure_hydration_retrying',[]);
+	$sql->replacePropertyForTest('unavailable_servers',[]);
 	$t->nonPublic(Transaction::class)->replacePropertyForTest('activeDepthByCluster',[]);
 	$t->nonPublic(Transaction::class)->replacePropertyForTest('activeTransactions',[]);
 	$t->nonPublic(Transaction::class)->replacePropertyForTest('flushingCacheInvalidations',false);
@@ -234,6 +235,7 @@ test('sql kernel main core deep coverage classifies writes tables assertions and
 	$scenario=dp_sql_kernel_scenario($t);
 	$state=$scenario->fixture;
 	$session=$scenario->session;
+	$sql=$scenario->sql;
 	$t->isTrue(\dataphyre\sql::query_has_write(' /* lead */ -- comment'."\n".'WITH rows AS (SELECT 1) UPDATE users SET active=1'));
 	$t->isTrue(\dataphyre\sql::query_has_write('WITH changed AS (UPDATE users SET active=1 RETURNING *) SELECT * FROM changed'));
 	$t->isFalse(\dataphyre\sql::query_has_write('WITH rows AS (SELECT 1) SELECT * FROM rows'));
@@ -246,13 +248,20 @@ test('sql kernel main core deep coverage classifies writes tables assertions and
 	$t->same(null,$dbms);
 	$t->same('value',\dataphyre\sql::assert('value','message'));
 	$t->throws(static fn()=>\dataphyre\sql::assert(false,'failed'),RuntimeException::class);
-	$t->isTrue(\dataphyre\sql::flag_server_unavailable('127.0.0.1'));
-	$session->put('unavailable_servers',[
-		'recent'=>date('Y-m-d H:i:s'),
-		'old'=>'2000-01-01 00:00:00',
-	]);
-	$t->isFalse(\dataphyre\sql::is_server_available('recent'));
-	$t->isTrue(\dataphyre\sql::is_server_available('old'));
+	$browserSessionOutages=[
+		'browser-poison'=>microtime(true),
+		'legacy-old'=>'2000-01-01 00:00:00',
+	];
+	$session->put('unavailable_servers',$browserSessionOutages);
+	$t->isTrue(\dataphyre\sql::is_server_available('browser-poison'));
+	$t->isTrue(\dataphyre\sql::flag_server_unavailable('request-local'));
+	$t->isFalse(\dataphyre\sql::is_server_available('request-local'));
+	$t->same($browserSessionOutages,$session->get('unavailable_servers'));
+	$sql->replacePropertyForTest('unavailable_servers',[]);
+	$t->isTrue(\dataphyre\sql::is_server_available('request-local'));
+	$sql->replacePropertyForTest('unavailable_servers',['expired'=>microtime(true)-6.0]);
+	$t->isTrue(\dataphyre\sql::is_server_available('expired'));
+	$t->same([],$sql->readProperty('unavailable_servers'));
 	$t->isTrue(\dataphyre\sql::is_server_available('unknown'));
 	dp_sql_kernel_dialback($state,'CALL_SQL_FLAG_SERVER_UNAVAILABLE',false);
 	$t->isFalse(\dataphyre\sql::flag_server_unavailable('dialback'));

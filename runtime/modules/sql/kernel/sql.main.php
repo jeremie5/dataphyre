@@ -52,6 +52,9 @@ class sql {
 	private static array $table_definition_registry=[];
 	private static array $loaded_table_definition_files=[];
 	private static array $structure_hydration_retrying=[];
+	/** @var array<string,float> Request-local database endpoint outage observations. */
+	private static array $unavailable_servers=[];
+	private const SERVER_UNAVAILABLE_SECONDS=5.0;
 
 	/**
 	 * Resolves the cluster for the active execution-local data environment.
@@ -1486,7 +1489,7 @@ class sql {
 	public static function flag_server_unavailable(string $serverip) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_FLAG_SERVER_UNAVAILABLE",...func_get_args())) return $early_return;
-		$_SESSION['unavailable_servers'][$serverip]=microtime();
+		self::$unavailable_servers[$serverip]=microtime(true);
 		return true;
 	}
 
@@ -1501,12 +1504,13 @@ class sql {
 	public static function is_server_available(string $serverip) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		if(null!==$early_return=core::dialback("CALL_SQL_IS_SERVER_AVAILABLE",...func_get_args())) return $early_return;
-		$_SESSION['unavailable_servers']??=[];
-		if(isset($_SESSION['unavailable_servers'][$serverip])){
-			if(strtotime($_SESSION['unavailable_servers'][$serverip])>strtotime("-5 seconds")){
-				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Server ".$serverip." is known as not being available", $S="warning");
-				return false;
-			}
+		$unavailable_since=self::$unavailable_servers[$serverip] ?? null;
+		if(is_float($unavailable_since) && $unavailable_since>(microtime(true)-self::SERVER_UNAVAILABLE_SECONDS)){
+			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Server ".$serverip." is known as not being available", $S="warning");
+			return false;
+		}
+		if($unavailable_since!==null){
+			unset(self::$unavailable_servers[$serverip]);
 		}
 		return true;
 	}

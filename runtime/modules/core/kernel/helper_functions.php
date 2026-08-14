@@ -26,10 +26,20 @@ function dp_managed_runtime_bootstrap_context(): ?array {
 	return is_array($context) ? $context : null;
 }
 
+/** @return null|array{contract:string,purpose:string,transport:string,project_root:string,application:string,environment:string,runtime_bootstrap:string,entrypoint:string,preflight_state_root:string,preflight_state_root_identity_sha256:string,transport_binding_sha256:string,private_key_sha256:string} */
+function dp_application_bootstrap_only_context(): ?array {
+	if(!\defined('DATAPHYRE_INTERNAL_APPLICATION_BOOTSTRAP_ONLY')
+		|| !\class_exists(\Dataphyre\InternalApplicationBootstrapOnly::class,false)){
+		return null;
+	}
+	return \Dataphyre\InternalApplicationBootstrapOnly::context();
+}
+
 /** Source-local generated state belongs only to ordinary self-hosted installs. */
 function dp_source_local_runtime_writes_allowed(): bool {
 	return dp_application_release_preflight_context()===null
-		&& dp_managed_runtime_bootstrap_context()===null;
+		&& dp_managed_runtime_bootstrap_context()===null
+		&& dp_application_bootstrap_only_context()===null;
 }
 
 /**
@@ -437,6 +447,9 @@ function dpvks(): array {
 	$application_release_preflight=dp_application_release_preflight_context();
 	if($application_release_preflight!==null){
 		return [$application_release_preflight['private_key']];
+	}
+	if(dp_application_bootstrap_only_context()!==null){
+		return [\Dataphyre\InternalApplicationBootstrapOnly::privateKey()];
 	}
 	if(dp_managed_runtime_bootstrap_context()!==null){
 		if(!class_exists('DataphyreApplicationRuntimeChildEnvironment', false)){

@@ -51,7 +51,7 @@ function dataphyre_secret_broker_exact_root_runtime(): bool
 	return function_exists('posix_geteuid') && posix_geteuid()===0
 		&& getenv('DATAPHYRE_TEST_CONTAINER_ROOT')==='1'
 		&& extension_loaded('dataphyre_environment_fd')
-		&& phpversion('dataphyre_environment_fd')==='1.1.0'
+		&& phpversion('dataphyre_environment_fd')==='1.2.0'
 		&& is_executable('/usr/bin/setpriv') && is_executable('/usr/local/bin/php-cgi');
 }
 
@@ -446,7 +446,7 @@ test('source contract contains no reusable child secret file or persistent php d
 	$t->contains('dataphyre_internal_managed_runtime_bootstrap_context',$bootstrap);
 	$t->contains("return '/var/log/dataphyre/'",$bootstrap);
 	$t->contains('$application_release_preflight===null && $managed_runtime_bootstrap===null',$bootstrap);
-	$t->contains('$applicationReleasePreflight!==null || $managedRuntimeBootstrap!==null ? true',$core);
+	$t->contains('$applicationReleasePreflight!==null || $managedRuntimeBootstrap!==null || $applicationBootstrapOnly!==null',$core);
 	$t->contains('$applicationReleasePreflight===null && $managedRuntimeBootstrap===null',$core);
 	$t->contains('function dp_source_local_runtime_writes_allowed()',$helpers);
 	$t->contains('managedBootstrapPrivateKeyForCore',$helpers);

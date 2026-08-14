@@ -12,6 +12,11 @@ php dataphyre\runtime\modules\mcp\kernel\dataphyre_mcp.php
 
 Client configs must use `dataphyre/runtime/modules/mcp/kernel/dataphyre_mcp.php` as the MCP stdio server entrypoint. `dataphyre/runtime/modules/mcp/kernel/mcp.main.php` is only the Dataphyre runtime module bootstrap; it is linted and packaged with the module, but it is not a stdio MCP server.
 
+For application release prediction, launch that entrypoint from the exact
+Dataphyre revision resolved by the application's dependency lock. An MCP server
+launched from a separate framework-maintainer checkout proves that checkout,
+not the revision the application, CI, or release platform will run.
+
 ## Current Capabilities
 
 - `dataphyre_application_info`: PHP version, runtime presence, git status, module list, and unsafe-tool state.

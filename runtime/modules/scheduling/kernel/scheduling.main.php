@@ -40,8 +40,8 @@ class scheduling {
 
 	/** Selects an alternate scheduler state root for embedded and isolated runtimes. */
 	public static function use_state_root(?string $root): void {
-		if(self::managed_pool()) return;
-		self::$state_root=$root===null ? null : rtrim($root, '/\\').'/';
+		if(self::managed_pool() || self::bootstrap_context()!==null) return;
+		self::$state_root=$root===null ? null : \rtrim($root, '/\\').'/';
 	}
 
 	/**
@@ -54,20 +54,21 @@ class scheduling {
 	 * definitions but cannot run application tasks.
 	 */
 	public static function use_activation_mode(?string $mode): void {
-		if(self::managed_pool()) return;
-		self::$activation_mode=$mode===null ? null : strtolower(trim($mode));
+		if(self::managed_pool() || self::bootstrap_context()!==null) return;
+		self::$activation_mode=$mode===null ? null : \strtolower(\trim($mode));
 	}
 
 	/** Returns the normalized scheduler activation mode for this process. */
 	public static function activation_mode(): string {
-		if(defined('DATAPHYRE_INTERNAL_MANAGED_SCHEDULER_ROLE')) return 'supervisor';
+		if(self::bootstrap_context()!==null) return 'record_only';
+		if(\defined('DATAPHYRE_INTERNAL_MANAGED_SCHEDULER_ROLE')) return 'supervisor';
 		if(self::managed_pool()) return 'record_only';
 		$mode=self::$activation_mode;
 		if($mode===null){
-			$value=getenv('DATAPHYRE_SCHEDULER_ACTIVATION_MODE');
-			$mode=is_string($value) ? strtolower(trim($value)) : '';
-			$runtime_role=strtolower(trim((string)(getenv('DATAPHYRE_RUNTIME_POOL_ROLE') ?: '')));
-			if($mode==='' && in_array($runtime_role, ['web','scheduler','realtime'], true)){
+			$value=\getenv('DATAPHYRE_SCHEDULER_ACTIVATION_MODE');
+			$mode=\is_string($value) ? \strtolower(\trim($value)) : '';
+			$runtime_role=\strtolower(\trim((string)(\getenv('DATAPHYRE_RUNTIME_POOL_ROLE') ?: '')));
+			if($mode==='' && \in_array($runtime_role, ['web','scheduler','realtime'], true)){
 				$mode='record_only';
 			}
 		}
@@ -182,7 +183,7 @@ class scheduling {
      */
 	public static function run(string $name, string $file_path, float $frequency, float $timeout, string $memory_limit, array $dependencies, ?string $app_override=null, ?callable $shutdown_registrar=null) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		if(!isset($app_override))$app_override=APP;
+		if(!isset($app_override))$app_override=\APP;
 		if(self::activation_mode()==='supervisor') $app_override='';
 		$name=self::normalize_scheduler_name($name);
 		if($name===''){
@@ -205,6 +206,9 @@ class scheduling {
 			self::record_runtime_tick_registration(null,false);
 			return false;
 		}
+		if(self::bootstrap_registration_only()){
+			return true;
+		}
 		if(self::activation_mode()==='supervisor'){
 			self::record_preflight_registration(true);
 			return self::record_runtime_tick_registration($scheduler,true);
@@ -215,6 +219,7 @@ class scheduling {
 			return false;
 		}
 		self::record_preflight_registration(true);
+		if(self::bootstrap_context()!==null) return true;
 		if(self::record_runtime_tick_registration($scheduler,true)!==true){
 			return false;
 		}
@@ -347,14 +352,19 @@ class scheduling {
 	 */
 	public static function scheduler_directory(string $name): string {
 		$name=self::normalize_scheduler_name($name);
-		$root=self::$state_root;
+		$bootstrapContext=self::bootstrap_context();
+		$root=$bootstrapContext!==null
+			? ($bootstrapContext['purpose']===\Dataphyre\InternalApplicationBootstrapOnly::PREFLIGHT
+				? $bootstrapContext['preflight_state_root']
+				: (string)\ROOTPATH['dataphyre'])
+			: self::$state_root;
 		if($root===null){
-			$environment_root=getenv('DATAPHYRE_SCHEDULER_STATE_ROOT');
-			$root=is_string($environment_root) && trim($environment_root)!==''
-				? trim($environment_root)
-				: (string)ROOTPATH['dataphyre'];
+			$environment_root=\getenv('DATAPHYRE_SCHEDULER_STATE_ROOT');
+			$root=\is_string($environment_root) && \trim($environment_root)!==''
+				? \trim($environment_root)
+				: (string)\ROOTPATH['dataphyre'];
 		}
-		return rtrim($root, '/\\').'/'.self::CACHE_PATH.($name!=='' ? $name.'/' : '');
+		return \rtrim($root, '/\\').'/'.self::CACHE_PATH.($name!=='' ? $name.'/' : '');
 	}
 
 	/**
@@ -679,10 +689,10 @@ class scheduling {
 	 * @return string Path-safe scheduler name, or an empty string when invalid.
 	 */
 	private static function normalize_scheduler_name(string $name): string {
-		$name=trim($name);
+		$name=\trim($name);
 		if(
-			$name==='' || strlen($name)>128 || in_array($name, ['.', '..'], true)
-			|| preg_match('/^[A-Za-z0-9._-]+$/D', $name)!==1
+			$name==='' || \strlen($name)>128 || \in_array($name, ['.', '..'], true)
+			|| \preg_match('/^[A-Za-z0-9._-]+$/D', $name)!==1
 		){
 			return '';
 		}
@@ -705,15 +715,15 @@ class scheduling {
 	 * @return ?array{name:string, file_path:string, frequency:float, dependencies:array<int, string>, timeout:float, memory_limit:string, app_override:string} Definition, or null when validation fails.
 	 */
 	private static function normalize_scheduler_definition(string $name, string $file_path, float $frequency, float $timeout, string $memory_limit, array $dependencies, string $app_override): ?array {
-		$file_path=realpath($file_path) ?: $file_path;
-		if(!is_file($file_path)){
+		$file_path=\realpath($file_path) ?: $file_path;
+		if(!\is_file($file_path)){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Scheduler file does not exist: '.$file_path, $T='warning');
 			return null;
 		}
 		$normalized_dependencies=[];
 		foreach($dependencies as $dependency){
-			$dependency_path=realpath((string)$dependency) ?: (string)$dependency;
-			if($dependency_path==='' || !is_file($dependency_path)){
+			$dependency_path=\realpath((string)$dependency) ?: (string)$dependency;
+			if($dependency_path==='' || !\is_file($dependency_path)){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Scheduler dependency does not exist: '.$dependency_path, $T='warning');
 				return null;
 			}
@@ -722,10 +732,10 @@ class scheduling {
 		return [
             'name'=>$name,
             'file_path'=>$file_path,
-            'frequency'=>max(0.0, $frequency),
-            'dependencies'=>array_keys($normalized_dependencies),
-            'timeout'=>max(1.0, $timeout),
-            'memory_limit'=>trim($memory_limit)==='' ? '128M' : $memory_limit,
+			'frequency'=>\max(0.0, $frequency),
+			'dependencies'=>\array_keys($normalized_dependencies),
+			'timeout'=>\max(1.0, $timeout),
+			'memory_limit'=>\trim($memory_limit)==='' ? '128M' : $memory_limit,
 			'app_override'=>$app_override,
         ];
 	}
@@ -771,29 +781,69 @@ class scheduling {
 	 */
 	private static function persist_scheduler_definition(array $scheduler): bool {
 		$properties_file=self::scheduler_properties_file((string)$scheduler['name']);
-		$payload=json_encode($scheduler, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES);
-		if(!is_string($payload)){
+		$payload=\json_encode($scheduler, \JSON_PRETTY_PRINT|\JSON_UNESCAPED_SLASHES);
+		if(!\is_string($payload)){
 			return false;
 		}
-		$existing=@file_get_contents($properties_file);
+		if(self::bootstrap_context()!==null){
+			return self::persist_bootstrap_scheduler_definition($properties_file,$payload);
+		}
+		$existing=@\file_get_contents($properties_file);
 		if($existing===$payload){
 			return true;
 		}
 		return core::file_put_contents_forced($properties_file, $payload)!==false;
 	}
 
+	/** Writes only beneath the still-attested private release-preflight state root. */
+	private static function persist_bootstrap_scheduler_definition(string $propertiesFile,string $payload): bool {
+		$context=self::bootstrap_context();
+		if(($context['purpose'] ?? null)!==\Dataphyre\InternalApplicationBootstrapOnly::PREFLIGHT) return false;
+		$stateRoot=(string)$context['preflight_state_root'];
+		$expectedPrefix=\rtrim($stateRoot,'/\\').'/'.self::CACHE_PATH;
+		if(!\str_starts_with($propertiesFile,$expectedPrefix)
+			|| !\str_ends_with($propertiesFile,'/properties.json')) return false;
+		$relative=\substr($propertiesFile,\strlen($expectedPrefix));
+		if(\preg_match('/^[A-Za-z0-9._-]+\/properties\.json$/D',$relative)!==1) return false;
+		$directories=[
+			\rtrim($stateRoot,'/\\').'/cache',
+			\rtrim($stateRoot,'/\\').'/cache/scheduling',
+			\dirname($propertiesFile),
+		];
+		foreach($directories as $directory){
+			\clearstatcache(true,$directory);
+			if(!\file_exists($directory) && !\is_link($directory)){
+				if(!@\mkdir($directory,0700)) return false;
+			}
+			$stat=\is_link($directory) ? false : @\lstat($directory);
+			if(!\is_array($stat) || (($stat['mode'] ?? 0)&0170000)!==0040000
+				|| !\is_dir($directory) || \realpath($directory)!==$directory) return false;
+		}
+		\clearstatcache(true,$propertiesFile);
+		if(\is_link($propertiesFile) || (\file_exists($propertiesFile) && !\is_file($propertiesFile))) return false;
+		$written=@\file_put_contents($propertiesFile,$payload,\LOCK_EX);
+		if(!\is_int($written) || $written!==\strlen($payload)) return false;
+		\clearstatcache(true,$propertiesFile);
+		$stat=\is_link($propertiesFile) ? false : @\lstat($propertiesFile);
+		if(!\is_array($stat) || (($stat['mode'] ?? 0)&0170000)!==0100000 || ($stat['nlink'] ?? 0)!==1
+			|| @\file_get_contents($propertiesFile)!==$payload) return false;
+		try{\Dataphyre\InternalApplicationBootstrapOnly::context();}
+		catch(\Throwable){return false;}
+		return true;
+	}
+
 	/** Records ignored registration failures only inside the fixed isolated preflight child. */
 	private static function record_preflight_registration(bool $accepted): void {
-		if(!function_exists('dp_application_release_preflight_context')
-			|| dp_application_release_preflight_context()===null){
+		if(!\function_exists('dp_application_release_preflight_context')
+			|| \dp_application_release_preflight_context()===null){
 			return;
 		}
 		$context=&$GLOBALS['DATAPHYRE_INTERNAL_APPLICATION_RELEASE_PREFLIGHT'];
-		$context['scheduler_attempt_count']=is_int($context['scheduler_attempt_count'] ?? null)
+		$context['scheduler_attempt_count']=\is_int($context['scheduler_attempt_count'] ?? null)
 			? $context['scheduler_attempt_count']+1
 			: 1;
 		if($accepted!==true){
-			$context['scheduler_failure_count']=is_int($context['scheduler_failure_count'] ?? null)
+			$context['scheduler_failure_count']=\is_int($context['scheduler_failure_count'] ?? null)
 				? $context['scheduler_failure_count']+1
 				: 1;
 		}
@@ -903,6 +953,20 @@ class scheduling {
 			return constant('DATAPHYRE_INTERNAL_MANAGED_SCHEDULER_ROLE')==='scheduler';
 		}
 		return in_array(strtolower(trim((string)(getenv('DATAPHYRE_RUNTIME_POOL_ROLE') ?: ''))),['web','realtime'],true);
+	}
+
+	/** Returns the immutable registration-only context, if this is its fixed process. */
+	private static function bootstrap_context(): ?array {
+		return \defined('DATAPHYRE_INTERNAL_APPLICATION_BOOTSTRAP_ONLY')
+			&& \class_exists(\Dataphyre\InternalApplicationBootstrapOnly::class,false)
+			? \Dataphyre\InternalApplicationBootstrapOnly::context()
+			: null;
+	}
+
+	/** The fixed materializer validates definitions but owns no scheduler state. */
+	private static function bootstrap_registration_only(): bool {
+		$context=self::bootstrap_context();
+		return $context!==null && ($context['purpose'] ?? null)===\Dataphyre\InternalApplicationBootstrapOnly::MATERIALIZER;
 	}
 
 	/**

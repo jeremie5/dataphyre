@@ -553,6 +553,79 @@ function dataphyre_runtime_require_scheduler_replay_rejection(
 	}finally{fclose($socket);}
 }
 
+/**
+ * Evaluates whether completed callbacks actually fit their declared cadence.
+ *
+ * Successful HTTP receipts are not timing evidence. The supervisor measures the
+ * real synchronous scheduler-gateway path around every callback and allows one
+ * second only because durable success timestamps currently have second precision.
+ * A first execution may establish its phase anywhere in its first cadence window;
+ * later executions must start when due. Every callback must complete before the
+ * next declared period, and work completed early in a serial cycle must not be due
+ * again before that same cycle ends.
+ *
+ * @param list<array{name:string,frequency_milliseconds:int,due_at_milliseconds:int,first_execution:bool,started_at_milliseconds:int,completed_at_milliseconds:int}> $observations
+ * @return array{ok:bool,observation_count:int,late_start_count:int,late_completion_count:int,overdue_again_count:int,max_start_lateness_milliseconds:int,max_completion_lateness_milliseconds:int,max_recurrence_lateness_milliseconds:int}
+ */
+function dataphyre_runtime_scheduler_cadence_assessment(
+	array $observations,
+	int $cycleCompletedAtMilliseconds,
+	int $intervalMilliseconds,
+): array {
+	if($cycleCompletedAtMilliseconds<1000 || $intervalMilliseconds<1000 || $intervalMilliseconds>60000){
+		throw new RuntimeException('Scheduler cadence timing boundary is invalid.');
+	}
+	$lateStarts=0;$lateCompletions=0;$overdueAgain=0;
+	$maxStartLateness=0;$maxCompletionLateness=0;$maxRecurrenceLateness=0;
+	$graceMilliseconds=1000;
+	foreach($observations as $observation){
+		if(!is_array($observation) || array_keys($observation)!==[
+			'name','frequency_milliseconds','due_at_milliseconds','first_execution',
+			'started_at_milliseconds','completed_at_milliseconds',
+		] || !is_string($observation['name'] ?? null)
+			|| preg_match('/^[A-Za-z0-9._-]{1,128}$/D',$observation['name'])!==1
+			|| !is_int($observation['frequency_milliseconds'] ?? null)
+			|| $observation['frequency_milliseconds']<0
+			|| $observation['frequency_milliseconds']>2147483647
+			|| !is_int($observation['due_at_milliseconds'] ?? null)
+			|| !is_bool($observation['first_execution'] ?? null)
+			|| !is_int($observation['started_at_milliseconds'] ?? null)
+			|| !is_int($observation['completed_at_milliseconds'] ?? null)
+			|| $observation['due_at_milliseconds']<1000
+			|| $observation['started_at_milliseconds']<$observation['due_at_milliseconds']
+			|| $observation['completed_at_milliseconds']<$observation['started_at_milliseconds']
+			|| $cycleCompletedAtMilliseconds<$observation['completed_at_milliseconds']){
+			throw new RuntimeException('Scheduler cadence observation is invalid.');
+		}
+		$cadenceMilliseconds=$observation['frequency_milliseconds']>0
+			? $observation['frequency_milliseconds']
+			: $intervalMilliseconds;
+		$startDeadline=$observation['due_at_milliseconds']+$graceMilliseconds
+			+($observation['first_execution'] ? $cadenceMilliseconds : 0);
+		$completionDeadline=$observation['due_at_milliseconds']+$cadenceMilliseconds+$graceMilliseconds;
+		$nextDueDeadline=$observation['completed_at_milliseconds']+$cadenceMilliseconds+$graceMilliseconds;
+		$startLateness=max(0,$observation['started_at_milliseconds']-$startDeadline);
+		$completionLateness=max(0,$observation['completed_at_milliseconds']-$completionDeadline);
+		$recurrenceLateness=max(0,$cycleCompletedAtMilliseconds-$nextDueDeadline);
+		if($startLateness>0) $lateStarts++;
+		if($completionLateness>0) $lateCompletions++;
+		if($recurrenceLateness>0) $overdueAgain++;
+		$maxStartLateness=max($maxStartLateness,$startLateness);
+		$maxCompletionLateness=max($maxCompletionLateness,$completionLateness);
+		$maxRecurrenceLateness=max($maxRecurrenceLateness,$recurrenceLateness);
+	}
+	return [
+		'ok'=>$lateStarts===0 && $lateCompletions===0 && $overdueAgain===0,
+		'observation_count'=>count($observations),
+		'late_start_count'=>$lateStarts,
+		'late_completion_count'=>$lateCompletions,
+		'overdue_again_count'=>$overdueAgain,
+		'max_start_lateness_milliseconds'=>$maxStartLateness,
+		'max_completion_lateness_milliseconds'=>$maxCompletionLateness,
+		'max_recurrence_lateness_milliseconds'=>$maxRecurrenceLateness,
+	];
+}
+
 /** Runs one active cadence without allowing a deactivation to schedule a second tick. */
 function dataphyre_runtime_run_scheduler_cycle(
 	int $port,
@@ -568,25 +641,42 @@ function dataphyre_runtime_run_scheduler_cycle(
 	float &$nextTick,
 	?callable $requestRunner=null,
 	?callable $activationPersister=null,
+	?callable $clockMilliseconds=null,
+	?callable $cadenceReporter=null,
 ): void {
 	$startedAt=microtime(true);
+	$clockMilliseconds ??= static fn(): int=>(int)floor(microtime(true)*1000);
+	$cycleStartedAtMilliseconds=$clockMilliseconds();
+	if(!is_int($cycleStartedAtMilliseconds) || $cycleStartedAtMilliseconds<1000){
+		throw new RuntimeException('Scheduler cadence clock is invalid.');
+	}
 	$runtime['scheduler_cycle_in_progress']=true;
 	try{
 		$cycleFailed=false;
+		$cadenceObservations=[];
 		$requestRunner ??= 'dataphyre_runtime_scheduler_request';
 		$registration=$runtime['scheduler_registration'];
 		if(!dataphyre_runtime_scheduler_registration_valid($registration)){
 			throw new RuntimeException('Scheduler registration evidence is invalid.');
 		}
 		DataphyreApplicationRuntimeSchedulerState::reconcile($identity,$registration['definitions']);
-		$due=DataphyreApplicationRuntimeSchedulerState::due($identity,$registration['definitions'],time());
-		foreach($due as $definition){
+		$due=DataphyreApplicationRuntimeSchedulerState::dueSchedule(
+			$identity,$registration['definitions'],$cycleStartedAtMilliseconds,
+		);
+		foreach($due as $scheduled){
 			dataphyre_runtime_apply_activation_request($runtime,$activationRequested,$nextTick,$activationPersister);
 			if($runtime['active']!==true) break;
+			$definition=$scheduled['definition'];
+			$callbackStartedAtMilliseconds=$clockMilliseconds();
+			if(!is_int($callbackStartedAtMilliseconds)
+				|| $callbackStartedAtMilliseconds<$scheduled['due_at_milliseconds']){
+				throw new RuntimeException('Scheduler callback start time is invalid.');
+			}
 			$definitionSha=DataphyreApplicationRuntimeSchedulerState::definitionSha256($definition);
 			$claimNonce=bin2hex(random_bytes(32));
 			if(!DataphyreApplicationRuntimeSchedulerState::claim(
-				$identity,$definition,$identity['release_id'],$generation,$claimNonce,time(),
+				$identity,$definition,$identity['release_id'],$generation,$claimNonce,
+				max(1,intdiv($callbackStartedAtMilliseconds,1000)),
 			)) continue;
 			try{
 				$requestRunner(
@@ -594,9 +684,23 @@ function dataphyre_runtime_run_scheduler_cycle(
 					$statusListener,$runtime,$pendingRequests,$activationRequested,$nextTick,
 					$definition['name'],$definitionSha,$definition['timeout_milliseconds'],
 				);
+				$callbackCompletedAtMilliseconds=$clockMilliseconds();
+				if(!is_int($callbackCompletedAtMilliseconds)
+					|| $callbackCompletedAtMilliseconds<$callbackStartedAtMilliseconds){
+					throw new RuntimeException('Scheduler callback completion time is invalid.');
+				}
 				DataphyreApplicationRuntimeSchedulerState::recordSuccess(
-					$identity,$definition,$identity['release_id'],$generation,time(),$claimNonce,
+					$identity,$definition,$identity['release_id'],$generation,
+					max(1,intdiv($callbackCompletedAtMilliseconds,1000)),$claimNonce,
 				);
+				$cadenceObservations[]=[
+					'name'=>$definition['name'],
+					'frequency_milliseconds'=>$definition['frequency_milliseconds'],
+					'due_at_milliseconds'=>$scheduled['due_at_milliseconds'],
+					'first_execution'=>$scheduled['first_execution'],
+					'started_at_milliseconds'=>$callbackStartedAtMilliseconds,
+					'completed_at_milliseconds'=>$callbackCompletedAtMilliseconds,
+				];
 			}catch(Throwable){
 				DataphyreApplicationRuntimeSchedulerState::releaseClaim(
 					$identity,$definition,$identity['release_id'],$generation,$claimNonce,
@@ -604,7 +708,25 @@ function dataphyre_runtime_run_scheduler_cycle(
 				$cycleFailed=true;
 			}
 		}
-		$runtime['last_result']=$cycleFailed ? 'failed' : 'ok';
+		$cycleCompletedAtMilliseconds=$clockMilliseconds();
+		if(!is_int($cycleCompletedAtMilliseconds) || $cycleCompletedAtMilliseconds<$cycleStartedAtMilliseconds){
+			throw new RuntimeException('Scheduler cycle completion time is invalid.');
+		}
+		$cadence=dataphyre_runtime_scheduler_cadence_assessment(
+			$cadenceObservations,$cycleCompletedAtMilliseconds,$interval*1000,
+		);
+		if($cadence['ok']!==true){
+			$cycleFailed=true;
+			$runtime['scheduler_cadence_failed']=true;
+			$cadenceReporter ??= static function(array $evidence): void {
+				$encoded=json_encode($evidence,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
+				fwrite(STDERR,'Scheduler cadence deadline missed: '.$encoded."\n");
+			};
+			$cadenceReporter($cadence);
+		}
+		$runtime['last_result']=$cycleFailed || ($runtime['scheduler_cadence_failed'] ?? false)===true
+			? 'failed'
+			: 'ok';
 	}catch(Throwable){
 		$runtime['last_result']='failed';
 	}finally{
@@ -755,6 +877,7 @@ try {
 		'scheduler_pid'=>$children[1]['pid'],
 		'realtime_pid'=>$children[0]['pid'],
 		'count'=>0,'last_at'=>null,'last_result'=>'never','request_counter'=>0,
+		'scheduler_cadence_failed'=>false,
 		'scheduler_cycle_in_progress'=>false,'scheduler_registration'=>null,
 		'scheduler_noop_probe'=>null,
 		'scheduler_state_identity_sha256'=>DataphyreApplicationRuntimeSchedulerState::identitySha256($identity),

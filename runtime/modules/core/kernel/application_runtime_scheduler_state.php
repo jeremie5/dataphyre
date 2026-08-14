@@ -56,22 +56,50 @@ final class DataphyreApplicationRuntimeSchedulerState
 	/** @param array<string,string> $identity @param list<array<string,mixed>> $definitions @return list<array<string,mixed>> */
 	public static function due(array $identity,array $definitions,int $now): array
 	{
-		return self::locked(static function() use ($identity,$definitions,$now): array {
+		if($now<1) throw new RuntimeException('Scheduler due time is invalid.');
+		return array_map(
+			static fn(array $scheduled): array=>$scheduled['definition'],
+			self::dueSchedule($identity,$definitions,$now*1000),
+		);
+	}
+
+	/**
+	 * Returns due definitions with the exact wall-clock instant each one became due.
+	 *
+	 * The supervisor needs this timestamp to distinguish a callback that eventually
+	 * returned from one that actually met its declared cadence. It remains root-only
+	 * runtime evidence and does not change the durable state-file contract.
+	 *
+	 * @param array<string,string> $identity
+	 * @param list<array<string,mixed>> $definitions
+	 * @return list<array{definition:array<string,mixed>,due_at_milliseconds:int,first_execution:bool}>
+	 */
+	public static function dueSchedule(array $identity,array $definitions,int $nowMilliseconds): array
+	{
+		if($nowMilliseconds<1000) throw new RuntimeException('Scheduler due time is invalid.');
+		return self::locked(static function() use ($identity,$definitions,$nowMilliseconds): array {
 			$state=self::read($identity);
-			$due=[];
+			$due=[];$nowSeconds=intdiv($nowMilliseconds,1000);
 			foreach($definitions as $definition){
 				self::assertDefinition($definition);
 				$name=$definition['name'];
 				$entry=$state['entries'][$name] ?? null;
 				$claimed=is_array($entry) && is_int($entry['claim_expires_at'] ?? null)
-					&& $entry['claim_expires_at']>=$now;
+					&& $entry['claim_expires_at']>=$nowSeconds;
 				$definitionSha=self::definitionSha256($definition);
 				$last=is_array($entry) && ($entry['definition_sha256'] ?? null)===$definitionSha
 					? ($entry['last_success_at'] ?? null)
 					: null;
-				$frequency=(int)$definition['frequency_milliseconds'];
-				if(!$claimed && (!is_int($last) || $last<1 || ($now*1000)-($last*1000)>=$frequency)){
-					$due[]=$definition;
+				$firstExecution=!is_int($last) || $last<1;
+				$dueAt=$firstExecution
+					? $nowMilliseconds
+					: ($last*1000)+(int)$definition['frequency_milliseconds'];
+				if(!$claimed && $nowMilliseconds>=$dueAt){
+					$due[]=[
+						'definition'=>$definition,
+						'due_at_milliseconds'=>$dueAt,
+						'first_execution'=>$firstExecution,
+					];
 				}
 			}
 			return $due;

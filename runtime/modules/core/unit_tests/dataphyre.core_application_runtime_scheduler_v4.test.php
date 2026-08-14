@@ -235,6 +235,9 @@ test('durable scheduler state executes its complete claim success reconciliation
 	$t->matches('/^sha256:[a-f0-9]{64}$/D',DataphyreApplicationRuntimeSchedulerState::identitySha256($identity));
 	$t->matches('/^sha256:[a-f0-9]{64}$/D',DataphyreApplicationRuntimeSchedulerState::stateSha256($identity));
 	$t->same([$task],DataphyreApplicationRuntimeSchedulerState::due($identity,[$task],$now));
+	$t->same([[
+		'definition'=>$task,'due_at_milliseconds'=>$now*1000,'first_execution'=>true,
+	]],DataphyreApplicationRuntimeSchedulerState::dueSchedule($identity,[$task],$now*1000));
 	$t->isTrue(DataphyreApplicationRuntimeSchedulerState::claim($identity,$task,$release,$generation,$nonce,$now));
 	$t->isFalse(DataphyreApplicationRuntimeSchedulerState::claim($identity,$task,$release,$generation,str_repeat('d',64),$now));
 	$t->same([],DataphyreApplicationRuntimeSchedulerState::due($identity,[$task],$now));
@@ -244,6 +247,13 @@ test('durable scheduler state executes its complete claim success reconciliation
 	DataphyreApplicationRuntimeSchedulerState::recordSuccess($identity,$task,$release,$generation,$now+1,$nonce);
 	$t->same([],DataphyreApplicationRuntimeSchedulerState::due($identity,[$task],$now+1));
 	$t->same([$task],DataphyreApplicationRuntimeSchedulerState::due($identity,[$task],$now+2));
+	$t->same([[
+		'definition'=>$task,'due_at_milliseconds'=>($now+2)*1000,'first_execution'=>false,
+	]],DataphyreApplicationRuntimeSchedulerState::dueSchedule($identity,[$task],($now+2)*1000));
+	$t->throws(
+		static fn()=>DataphyreApplicationRuntimeSchedulerState::dueSchedule($identity,[$task],999),
+		RuntimeException::class,
+	);
 	$secondNonce=str_repeat('e',64);
 	$t->isTrue(DataphyreApplicationRuntimeSchedulerState::claim(
 		$identity,$task,$release,$generation,$secondNonce,$now+2,
@@ -365,17 +375,104 @@ test('durable scheduler state executes its complete claim success reconciliation
 	$t->same(json_encode($empty,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n",$internals->invoke('canonical',$empty));
 })->tag('durable-state','claim','success','release','reconcile','corruption','exact-coverage');
 
+test('serial cold callbacks fail cadence even when every worker receipt succeeds',static function(Context $t): void {
+	$root=$t->tempDirectory('scheduler-cadence-timing');
+	if(!chmod($root,0700)) throw new RuntimeException('Scheduler cadence state root mode could not be prepared.');
+	define('DATAPHYRE_INTERNAL_SCHEDULER_STATE_TEST_ROOT',$root);
+	require_once dirname(__DIR__).'/kernel/application_runtime_supervisor.php';
+	$definition=static fn(string $name,int $frequency): array=>[
+		'name'=>$name,'task_sha256'=>'sha256:'.hash('sha256',$name),'dependency_sha256'=>[],
+		'frequency_milliseconds'=>$frequency,'timeout_milliseconds'=>300000,'memory_limit'=>'128M',
+	];
+	$registration=static function(array $definitions): array {
+		return [
+			'contract'=>'dataphyre.scheduler_registration.v1','ok'=>true,
+			'registration_attempt_count'=>count($definitions),'registration_accepted_count'=>count($definitions),
+			'registration_failure_count'=>0,'definition_count'=>count($definitions),
+			'definition_sha256'=>'sha256:'.hash(
+				'sha256',json_encode($definitions,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
+			),
+			'definitions'=>$definitions,
+		];
+	};
+	$runtime=static fn(array $schedulerRegistration): array=>[
+		'active'=>true,'count'=>0,'last_at'=>null,'last_result'=>'never','request_counter'=>0,
+		'scheduler_cadence_failed'=>false,'scheduler_cycle_in_progress'=>false,
+		'scheduler_registration'=>$schedulerRegistration,
+	];
+	$identity=[
+		'cloud_application'=>'fixture','framework_application'=>'Fixture','environment'=>'staging',
+		'release_id'=>'dep_'.str_repeat('a',40),'environment_fingerprint'=>'hmac-sha256:'.str_repeat('b',64),
+	];
+	$definitions=[
+		$definition('fixture.every-05-seconds',5000),
+		$definition('fixture.every-10-seconds',10000),
+		$definition('fixture.every-15-seconds',15000),
+	];
+	$slowRuntime=$runtime($registration($definitions));$pending=[];$activation=null;$nextTick=0.0;
+	$nowMilliseconds=1776073500000;$requests=0;$reports=[];
+	$clock=static function() use (&$nowMilliseconds): int {return $nowMilliseconds;};
+	$slowCallback=static function() use (&$nowMilliseconds,&$requests): array {
+		$requests++;$nowMilliseconds+=22000;
+		return ['contract'=>'dataphyre.scheduler_callback.v1','ok'=>true];
+	};
+	$reporter=static function(array $evidence) use (&$reports): void {$reports[]=$evidence;};
+	dataphyre_runtime_run_scheduler_cycle(
+		8081,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$slowRuntime,$pending,1,
+		$activation,$nextTick,$slowCallback,null,$clock,$reporter,
+	);
+	$t->same(3,$requests,'all three trusted callback receipts still completed');
+	$t->same('failed',$slowRuntime['last_result'],'eventual success cannot certify missed cadence');
+	$t->same(1,$slowRuntime['count']);
+	$t->count(1,$reports);
+	$t->same([
+		'ok'=>false,'observation_count'=>3,'late_start_count'=>2,'late_completion_count'=>3,
+		'overdue_again_count'=>2,'max_start_lateness_milliseconds'=>28000,
+		'max_completion_lateness_milliseconds'=>50000,'max_recurrence_lateness_milliseconds'=>38000,
+	],$reports[0]);
+	$t->same(true,$slowRuntime['scheduler_cadence_failed']);
+	$slowRuntime['scheduler_registration']=$registration([]);$reports=[];
+	dataphyre_runtime_run_scheduler_cycle(
+		8081,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$slowRuntime,$pending,1,
+		$activation,$nextTick,static fn(): never=>throw new RuntimeException('empty cycle dispatched'),
+		null,$clock,$reporter,
+	);
+	$t->same('failed',$slowRuntime['last_result'],'an empty cycle cannot erase measured topology failure');
+	$t->same(2,$slowRuntime['count']);
+	$t->same([],$reports);
+
+	$fastDefinitions=[
+		$definition('fixture.fast-05-seconds',5000),
+		$definition('fixture.fast-10-seconds',10000),
+		$definition('fixture.fast-15-seconds',15000),
+	];
+	$fastRuntime=$runtime($registration($fastDefinitions));$activation=null;$nextTick=0.0;
+	$nowMilliseconds=1776074000000;$requests=0;$reports=[];
+	$fastCallback=static function() use (&$nowMilliseconds,&$requests): array {
+		$requests++;$nowMilliseconds+=200;
+		return ['contract'=>'dataphyre.scheduler_callback.v1','ok'=>true];
+	};
+	dataphyre_runtime_run_scheduler_cycle(
+		8081,$identity,'gen_'.str_repeat('d',32),'secret','public',null,$fastRuntime,$pending,1,
+		$activation,$nextTick,$fastCallback,null,$clock,$reporter,
+	);
+	$t->same(3,$requests);
+	$t->same('ok',$fastRuntime['last_result']);
+	$t->same([],$reports);
+})->tag('scheduler','cadence','lateness','real-worker-topology','release','regression');
+
 test('one failed definition does not starve later due callbacks',static function(Context $t): void {
 	$source=(string)file_get_contents(dirname(__DIR__).'/kernel/application_runtime_supervisor.php');
 	$t->contains('$cycleFailed=false',$source);
 	$t->contains('$cycleFailed=true',$source);
-	$t->contains("\$runtime['last_result']=\$cycleFailed ? 'failed' : 'ok'",$source);
+	$t->contains("\$runtime['scheduler_cadence_failed']=true",$source);
+	$t->contains("\$runtime['last_result']=\$cycleFailed ||",$source);
 	$t->contains('releaseClaim(',$source);
 })->tag('callback-failure','continue','starvation','regression');
 
 test('deactivation stops claiming new definitions after one draining callback',static function(Context $t): void {
 	$source=(string)file_get_contents(dirname(__DIR__).'/kernel/application_runtime_supervisor.php');
-	$loop=strstr($source,'foreach($due as $definition){');
+	$loop=strstr($source,'foreach($due as $scheduled){');
 	$t->isTrue(is_string($loop));
 	$t->contains('dataphyre_runtime_apply_activation_request($runtime,$activationRequested,$nextTick,$activationPersister);',$loop);
 	$t->contains("if(\$runtime['active']!==true) break;",$loop);

@@ -7,170 +7,174 @@
  */
 declare(strict_types=1);
 
-require_once dirname(__DIR__).'/Framework/ApplicationEnvironmentIdentifier.php';
-require_once dirname(__DIR__,2).'/sql/Framework/RegisteredTableMaterializationCommand.php';
+require_once \dirname(__DIR__).'/Framework/ApplicationEnvironmentIdentifier.php';
+require_once \dirname(__DIR__,2).'/sql/Framework/RegisteredTableMaterializationCommand.php';
 
 const DATAPHYRE_REALTIME_PREFLIGHT_CONTRACT='dataphyre.application_realtime_registration.v1';
 
-function dataphyre_realtime_preflight_remove_tree(string $root): void {
-	if($root==='' || !is_dir($root) || is_link($root)) return;
-	$iterator=new RecursiveIteratorIterator(
-		new RecursiveDirectoryIterator($root,FilesystemIterator::SKIP_DOTS),
-		RecursiveIteratorIterator::CHILD_FIRST,
-	);
-	foreach($iterator as $entry){
-		$path=$entry->getPathname();
-		if($entry->isLink() || $entry->isFile()) @unlink($path);
-		elseif($entry->isDir()) @rmdir($path);
-	}
-	@rmdir($root);
-}
-
-/** @param array<string,mixed> $payload */
-function dataphyre_realtime_preflight_write(array $payload): void {
-	$encoded=json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
-	fwrite(STDOUT,$encoded."\n");
-}
-
-/** @return array{definition_count:int,definition_sha256:string} */
-function dataphyre_realtime_preflight_scheduler_evidence(string $stateRoot): array {
-	$root=rtrim($stateRoot,'/\\').'/cache/scheduling';
-	if(!is_dir($root)){
-		$encoded=json_encode([],JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
-		return ['definition_count'=>0,'definition_sha256'=>'sha256:'.hash('sha256',$encoded)];
-	}
-	$definitions=[];
-	$entries=scandir($root);
-	if(!is_array($entries)) throw new RuntimeException('Unable to inspect isolated scheduler definitions.');
-	if(count($entries)>258) throw new RuntimeException('Too many scheduler definitions were registered.');
-	foreach($entries as $name){
-		if($name==='.' || $name==='..') continue;
-		$directory=$root.'/'.$name;
-		$properties=$directory.'/properties.json';
-		if(!is_dir($directory) || is_link($directory) || !is_file($properties) || is_link($properties)){
-			throw new RuntimeException('Isolated scheduler state contains an invalid definition.');
+(static function(): void {
+	$write=static function(array $payload): void {
+		$line=\json_encode($payload,\JSON_UNESCAPED_SLASHES|\JSON_THROW_ON_ERROR)."\n";
+		if(\strlen($line)>\Dataphyre\Database\RegisteredTableMaterializationCommand::MAX_OUTPUT_BYTES){
+			throw new \RuntimeException('Realtime preflight evidence exceeds its fixed bound.');
 		}
-		$directoryEntries=array_values(array_diff(scandir($directory) ?: [],['.','..']));
-		if($directoryEntries!==['properties.json']){
-			throw new RuntimeException('Realtime registration preflight created executable scheduler state.');
+		$written=\fwrite(\STDOUT,$line);
+		if(!\is_int($written) || $written!==\strlen($line)){
+			throw new \RuntimeException('Realtime preflight evidence write failed.');
 		}
-		$decoded=json_decode((string)file_get_contents($properties),true,32,JSON_THROW_ON_ERROR);
-		if(!is_array($decoded) || array_keys($decoded)!==[
-			'name','file_path','frequency','dependencies','timeout','memory_limit','app_override',
-		] || ($decoded['name'] ?? null)!==$name || !is_string($decoded['file_path'] ?? null)
-			|| !is_file($decoded['file_path']) || is_link($decoded['file_path'])
-			|| !is_int($decoded['frequency']) && !is_float($decoded['frequency'])
-			|| !is_array($decoded['dependencies']) || !array_is_list($decoded['dependencies'])
-			|| !is_int($decoded['timeout']) && !is_float($decoded['timeout'])
-			|| !is_string($decoded['memory_limit']) || trim($decoded['memory_limit'])===''
-			|| !is_string($decoded['app_override'])){
-			throw new RuntimeException('Isolated scheduler definition is malformed.');
-		}
-		$dependencyHashes=[];
-		foreach($decoded['dependencies'] as $dependency){
-			if(!is_string($dependency) || !is_file($dependency) || is_link($dependency)){
-				throw new RuntimeException('Isolated scheduler dependency is unavailable.');
-			}
-			$dependencyHash=hash_file('sha256',$dependency) ?: throw new RuntimeException('Unable to hash an isolated scheduler dependency.');
-			$dependencyHashes[]='sha256:'.$dependencyHash;
-		}
-		sort($dependencyHashes,SORT_STRING);
-		$taskHash=hash_file('sha256',$decoded['file_path']) ?: throw new RuntimeException('Unable to hash an isolated scheduler task.');
-		$definitions[]=[
-			'name'=>$name,
-			'task_sha256'=>'sha256:'.$taskHash,
-			'dependency_sha256'=>$dependencyHashes,
-			'frequency'=>(float)$decoded['frequency'],
-			'timeout'=>(float)$decoded['timeout'],
-			'memory_limit'=>$decoded['memory_limit'],
-			'app_override'=>$decoded['app_override'],
-		];
-	}
-	usort($definitions,static fn(array $left,array $right): int=>$left['name']<=>$right['name']);
-	if(count($definitions)>256) throw new RuntimeException('Too many scheduler definitions were registered.');
-	$encoded=json_encode($definitions,JSON_UNESCAPED_SLASHES|JSON_PRESERVE_ZERO_FRACTION|JSON_THROW_ON_ERROR);
-	return [
-		'definition_count'=>count($definitions),
-		'definition_sha256'=>'sha256:'.hash('sha256',$encoded),
+	};
+	$failurePayload=static fn(): array=>[
+		'contract'=>DATAPHYRE_REALTIME_PREFLIGHT_CONTRACT,'ok'=>false,'route_count'=>0,
+		'registration_sha256'=>null,'registered_table_count'=>0,
+		'registered_table_materialization_contract'=>\Dataphyre\Database\RegisteredTableMaterializationCommand::CONTRACT,
+		'registered_table_set_sha256'=>null,'scheduler_definition_count'=>0,'scheduler_definition_sha256'=>null,
 	];
-}
+	$schedulerEvidence=static function(string $stateRoot): array {
+		$root=\rtrim($stateRoot,'/\\').'/cache/scheduling';
+		if(!\is_dir($root)){
+			$encoded=\json_encode([],\JSON_UNESCAPED_SLASHES|\JSON_THROW_ON_ERROR);
+			return ['definition_count'=>0,'definition_sha256'=>'sha256:'.\hash('sha256',$encoded)];
+		}
+		$definitions=[];$entries=\scandir($root);
+		if(!\is_array($entries) || \count($entries)>258) throw new \RuntimeException('Unable to inspect isolated scheduler definitions.');
+		foreach($entries as $name){
+			if($name==='.' || $name==='..') continue;
+			$directory=$root.'/'.$name;$properties=$directory.'/properties.json';
+			if(!\is_dir($directory) || \is_link($directory) || !\is_file($properties) || \is_link($properties)){
+				throw new \RuntimeException('Isolated scheduler state contains an invalid definition.');
+			}
+			$directoryEntries=\array_values(\array_diff(\scandir($directory) ?: [],['.','..']));
+			if($directoryEntries!==['properties.json']) throw new \RuntimeException('Realtime preflight created executable scheduler state.');
+			$decoded=\json_decode((string)\file_get_contents($properties),true,32,\JSON_THROW_ON_ERROR);
+			if(!\is_array($decoded) || \array_keys($decoded)!==[
+				'name','file_path','frequency','dependencies','timeout','memory_limit','app_override',
+			] || ($decoded['name'] ?? null)!==$name || !\is_string($decoded['file_path'] ?? null)
+				|| !\is_file($decoded['file_path']) || \is_link($decoded['file_path'])
+				|| (!\is_int($decoded['frequency']) && !\is_float($decoded['frequency']))
+				|| !\is_array($decoded['dependencies']) || !\array_is_list($decoded['dependencies'])
+				|| (!\is_int($decoded['timeout']) && !\is_float($decoded['timeout']))
+				|| !\is_string($decoded['memory_limit']) || \trim($decoded['memory_limit'])===''
+				|| !\is_string($decoded['app_override'])) throw new \RuntimeException('Isolated scheduler definition is malformed.');
+			$dependencyHashes=[];
+			foreach($decoded['dependencies'] as $dependency){
+				if(!\is_string($dependency) || !\is_file($dependency) || \is_link($dependency)){
+					throw new \RuntimeException('Isolated scheduler dependency is unavailable.');
+				}
+				$dependencyHash=\hash_file('sha256',$dependency) ?: throw new \RuntimeException('Unable to hash scheduler dependency.');
+				$dependencyHashes[]='sha256:'.$dependencyHash;
+			}
+			\sort($dependencyHashes,\SORT_STRING);
+			$taskHash=\hash_file('sha256',$decoded['file_path']) ?: throw new \RuntimeException('Unable to hash scheduler task.');
+			$definitions[]=['name'=>$name,'task_sha256'=>'sha256:'.$taskHash,'dependency_sha256'=>$dependencyHashes,
+				'frequency'=>(float)$decoded['frequency'],'timeout'=>(float)$decoded['timeout'],
+				'memory_limit'=>$decoded['memory_limit'],'app_override'=>$decoded['app_override']];
+		}
+		\usort($definitions,static fn(array $left,array $right): int=>$left['name']<=>$right['name']);
+		if(\count($definitions)>256) throw new \RuntimeException('Too many scheduler definitions were registered.');
+		$encoded=\json_encode($definitions,\JSON_UNESCAPED_SLASHES|\JSON_PRESERVE_ZERO_FRACTION|\JSON_THROW_ON_ERROR);
+		return ['definition_count'=>\count($definitions),'definition_sha256'=>'sha256:'.\hash('sha256',$encoded)];
+	};
 
-if(PHP_SAPI!=='cli' || ($argc ?? 0)!==4){
+$arguments=\is_array($_SERVER['argv'] ?? null) ? $_SERVER['argv'] : [];
+if(\PHP_SAPI!=='cli' || \count($arguments)!==4){
 	exit(64);
 }
-[$script,$projectArgument,$applicationArgument,$environmentArgument]=$argv;
-if(preg_match('/^--project-root=(.+)$/D',(string)$projectArgument,$projectMatch)!==1
-	|| preg_match('/^--application=(.+)$/D',(string)$applicationArgument,$applicationMatch)!==1
-	|| preg_match('/^--environment=(.+)$/D',(string)$environmentArgument,$environmentMatch)!==1){
+$script=(string)($_SERVER['SCRIPT_FILENAME'] ?? '');
+$serverArgument=(string)($arguments[0] ?? '');
+$globalArgument=(string)((\is_array($GLOBALS['argv'] ?? null) ? $GLOBALS['argv'] : [])[0] ?? '');
+$included=\get_included_files();$firstIncluded=(string)($included[0] ?? '');
+foreach([$script,$serverArgument,$globalArgument,$firstIncluded] as $path){
+	if($path==='' || \is_link($path) || \realpath($path)!==__FILE__) exit(64);
+}
+$_SERVER['SCRIPT_FILENAME']=__FILE__;
+$arguments[0]=__FILE__;$_SERVER['argv']=$arguments;$GLOBALS['argv']=$arguments;$GLOBALS['argc']=\count($arguments);
+[$script,$projectArgument,$applicationArgument,$environmentArgument]=$arguments;
+if(\preg_match('/^--project-root=(.+)$/D',(string)$projectArgument,$projectMatch)!==1
+	|| \preg_match('/^--application=(.+)$/D',(string)$applicationArgument,$applicationMatch)!==1
+	|| \preg_match('/^--environment=(.+)$/D',(string)$environmentArgument,$environmentMatch)!==1){
 	exit(64);
 }
-$projectRoot=realpath($projectMatch[1]);
-$application=trim($applicationMatch[1]);
-$environment=trim($environmentMatch[1]);
-if($projectRoot===false || !is_dir($projectRoot)
-	|| preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$application)!==1
+$projectRoot=\realpath($projectMatch[1]);
+$application=\trim($applicationMatch[1]);
+$environment=\trim($environmentMatch[1]);
+if($projectRoot===false || !\is_dir($projectRoot)
+	|| \preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$application)!==1
 	|| !\Dataphyre\ApplicationEnvironmentIdentifier::valid($environment)){
 	exit(64);
 }
-$stateRoot=null;
+$stateRoot=null;$terminalEvidencePending=false;
 try{
-	$stateRoot=rtrim(sys_get_temp_dir(),'/\\').'/dataphyre-realtime-preflight-'.bin2hex(random_bytes(16));
-	if(!mkdir($stateRoot,0700,true) || !is_dir($stateRoot) || is_link($stateRoot)){
+	if(!@\chdir($projectRoot) || \realpath((string)\getcwd())!==$projectRoot){
+		throw new \RuntimeException('Unable to select application project directory.');
+	}
+	$stateRoot=\rtrim(\sys_get_temp_dir(),'/\\').'/dataphyre-realtime-preflight-'.\bin2hex(\random_bytes(16));
+	if(!\mkdir($stateRoot,0700,true) || !\is_dir($stateRoot) || \is_link($stateRoot)){
 		throw new RuntimeException('Unable to create isolated realtime preflight state.');
 	}
-	putenv('DATAPHYRE_RUNTIME_POOL=realtime-preflight');
-	putenv('DATAPHYRE_RUNTIME_POOL_ROLE=realtime-preflight');
-	putenv('DATAPHYRE_SCHEDULER_ACTIVATION_MODE=record_only');
-	putenv('DATAPHYRE_SCHEDULER_STATE_ROOT='.$stateRoot);
-	putenv('DATAPHYRE_RUNTIME_PROJECT_ROOT='.$projectRoot);
-	putenv('DATAPHYRE_RUNTIME_APPLICATION='.$application);
-	putenv('DATAPHYRE_RUNTIME_ENVIRONMENT='.$environment);
+	foreach(['DATAPHYRE_RUNTIME_POOL=realtime-preflight','DATAPHYRE_RUNTIME_POOL_ROLE=realtime-preflight',
+		'DATAPHYRE_SCHEDULER_ACTIVATION_MODE=record_only','DATAPHYRE_SCHEDULER_STATE_ROOT='.$stateRoot,
+		'DATAPHYRE_RUNTIME_PROJECT_ROOT='.$projectRoot,'DATAPHYRE_RUNTIME_APPLICATION='.$application,
+		'DATAPHYRE_RUNTIME_ENVIRONMENT='.$environment] as $assignment){
+		if(!\putenv($assignment)) throw new \RuntimeException('Unable to establish realtime preflight environment.');
+	}
 	$GLOBALS['DATAPHYRE_INTERNAL_APPLICATION_RELEASE_PREFLIGHT']=[
 		'state_root'=>$stateRoot,
-		'private_key'=>bin2hex(random_bytes(32)),
+		'private_key'=>\bin2hex(\random_bytes(32)),
 		'project_root'=>$projectRoot,
-		'token'=>bin2hex(random_bytes(32)),
+		'token'=>\bin2hex(\random_bytes(32)),
 		'scheduler_attempt_count'=>0,
 		'scheduler_failure_count'=>0,
 	];
 	require_once __DIR__.'/application_runtime_realtime_bootstrap.php';
+	$terminalEvidencePending=true;
+	\register_shutdown_function(static function() use (&$terminalEvidencePending,$write,$failurePayload): void {
+		if(!$terminalEvidencePending) return;
+		try{DataphyreApplicationRuntimeRealtimeBootstrap::preservePreflightOutputBoundary();}catch(\Throwable){}
+		try{$write($failurePayload());$terminalEvidencePending=false;}catch(\Throwable){}
+		exit(70);
+	});
 	$routes=DataphyreApplicationRuntimeRealtimeBootstrap::load();
-	$paths=array_keys($routes);
-	$encoded=json_encode($paths,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
-	$schedulerEvidence=dataphyre_realtime_preflight_scheduler_evidence($stateRoot);
-	$tableEvidence=\Dataphyre\Database\RegisteredTableMaterializationCommand::registeredTableInventoryEvidence();
+	$tableEvidence=null;
+	for($drain=0;$drain<1024;$drain++){
+		$tableEvidence=\Dataphyre\Database\RegisteredTableMaterializationCommand::registeredTableInventoryEvidence();
+		$deferred=$GLOBALS['dataphyre_deferred_sql_table_definitions'] ?? [];
+		if($deferred===[]) break;
+		if(!\is_array($deferred)) throw new \RuntimeException('Deferred SQL table registry is invalid.');
+	}
+	if(!\is_array($tableEvidence) || ($GLOBALS['dataphyre_deferred_sql_table_definitions'] ?? [])!==[]){
+		throw new \RuntimeException('Deferred SQL table registry did not drain.');
+	}
+	\Dataphyre\InternalApplicationBootstrapOnly::context();
+	$routes=\dataphyre\realtime::runtimeRoutes();
+	$paths=\array_keys($routes);
+	$encoded=\json_encode($paths,\JSON_UNESCAPED_SLASHES|\JSON_THROW_ON_ERROR);
+	$schedulerEvidenceResult=$schedulerEvidence($stateRoot);
 	$attemptCount=$GLOBALS['DATAPHYRE_INTERNAL_APPLICATION_RELEASE_PREFLIGHT']['scheduler_attempt_count'] ?? null;
 	$failureCount=$GLOBALS['DATAPHYRE_INTERNAL_APPLICATION_RELEASE_PREFLIGHT']['scheduler_failure_count'] ?? null;
-	if(!is_int($attemptCount) || !is_int($failureCount) || $failureCount!==0
-		|| $attemptCount!==$schedulerEvidence['definition_count']){
-		throw new RuntimeException('Application scheduler registration was partial.');
+	if(!\is_int($attemptCount) || !\is_int($failureCount) || $failureCount!==0
+		|| $attemptCount!==$schedulerEvidenceResult['definition_count']){
+		throw new \RuntimeException('Application scheduler registration was partial.');
 	}
-	dataphyre_realtime_preflight_write([
+	$successPayload=[
 		'contract'=>DATAPHYRE_REALTIME_PREFLIGHT_CONTRACT,
 		'ok'=>true,
-		'route_count'=>count($paths),
-		'registration_sha256'=>'sha256:'.hash('sha256',$encoded),
+		'route_count'=>\count($paths),
+		'registration_sha256'=>'sha256:'.\hash('sha256',$encoded),
 		'registered_table_count'=>$tableEvidence['registered_count'],
 		'registered_table_materialization_contract'=>\Dataphyre\Database\RegisteredTableMaterializationCommand::CONTRACT,
 		'registered_table_set_sha256'=>'sha256:'.$tableEvidence['table_set_sha256'],
-		'scheduler_definition_count'=>$schedulerEvidence['definition_count'],
-		'scheduler_definition_sha256'=>$schedulerEvidence['definition_sha256'],
-	]);
-	dataphyre_realtime_preflight_remove_tree($stateRoot);
-	if(file_exists($stateRoot) || is_link($stateRoot)) throw new RuntimeException('Unable to remove isolated realtime preflight state.');
+		'scheduler_definition_count'=>$schedulerEvidenceResult['definition_count'],
+		'scheduler_definition_sha256'=>$schedulerEvidenceResult['definition_sha256'],
+	];
+	\Dataphyre\InternalApplicationBootstrapOnly::context();
+	DataphyreApplicationRuntimeRealtimeBootstrap::assertPreflightOutputBoundary();
+	$write($successPayload);$terminalEvidencePending=false;
 	exit(0);
-}catch(Throwable){
-	if(is_string($stateRoot)) dataphyre_realtime_preflight_remove_tree($stateRoot);
-	dataphyre_realtime_preflight_write([
-		'contract'=>DATAPHYRE_REALTIME_PREFLIGHT_CONTRACT,
-		'ok'=>false,
-		'route_count'=>0,
-		'registration_sha256'=>null,
-		'registered_table_count'=>0,
-		'registered_table_materialization_contract'=>\Dataphyre\Database\RegisteredTableMaterializationCommand::CONTRACT,
-		'registered_table_set_sha256'=>null,
-		'scheduler_definition_count'=>0,
-		'scheduler_definition_sha256'=>null,
-	]);
+}catch(\Throwable){
+	if(\class_exists(DataphyreApplicationRuntimeRealtimeBootstrap::class,false)){
+		try{DataphyreApplicationRuntimeRealtimeBootstrap::preservePreflightOutputBoundary();}catch(\Throwable){}
+	}
+	try{$write($failurePayload());$terminalEvidencePending=false;}catch(\Throwable){}
 	exit(70);
 }
+})();

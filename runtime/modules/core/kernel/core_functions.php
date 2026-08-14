@@ -1105,6 +1105,9 @@ class core {
 	 * @return never
 	 */
 	public static function unavailable(string $file, string $line, string $class, string $function, string $error_description='unknown', string $error_type='unknown', ?object $exception=null) : never {
+		if(\function_exists('dp_application_bootstrap_only_context') && \dp_application_bootstrap_only_context()!==null){
+			throw new \RuntimeException('Registration-only application bootstrap encountered service unavailability.');
+		}
 		if(function_exists('tracelog') && method_exists('dataphyre\tracelog', 'tracelog')){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call
 		}
