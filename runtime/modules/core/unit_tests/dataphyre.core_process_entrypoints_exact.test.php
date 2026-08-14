@@ -208,7 +208,7 @@ test('one-shot dispatcher resolves every fixed supported operation after the rea
 		'DATAPHYRE_TEST_COVERAGE_RESULT_ROOT'=>$frameworkRoot,
 		'XDEBUG_MODE'=>'coverage','PHP_INI_SCAN_DIR'=>(string)getenv('PHP_INI_SCAN_DIR'),
 	],'one-shot',[
-		'DATAPHYRE_APPLICATION_ID'=>'fixture-app','DATAPHYRE_FRAMEWORK_APPLICATION'=>'FixtureApp',
+		'DATAPHYRE_APPLICATION_ID'=>'Store:North_2-Beta','DATAPHYRE_FRAMEWORK_APPLICATION'=>'FixtureApp',
 		'DATAPHYRE_ENVIRONMENT'=>'production','DATAPHYRE_APPLICATION_RELEASE'=>'dep_'.str_repeat('a',40),
 		'DATAPHYRE_CACHE_MEMCACHED_HOST'=>'cache.internal','DATAPHYRE_CACHE_MEMCACHED_PORT'=>'11211',
 	],5000);
@@ -306,7 +306,7 @@ test('status and realtime probes accept one canonical supervisor roundtrip over 
 	$frameworkRoot=dirname(__DIR__,4);
 	$kernel=dirname(__DIR__).'/kernel';
 	$state=$t->workspace('core-process-entrypoint-status-server');
-	$cloudApplication='serve';
+	$cloudApplication='Store:North_2-Beta';
 	$frameworkApplication='Serve';
 	$environment='staging_blue';
 	$releaseId='dep_'.str_repeat('a',40);

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 use Dataphyre\Test\Context;
 use Dataphyre\ApplicationEnvironmentIdentifier;
+use Dataphyre\PublicApplicationIdentifier;
 use function Dataphyre\Test\suite;
 use function Dataphyre\Test\test;
 
@@ -71,6 +72,27 @@ test('one public environment grammar survives the child boundary and rejects tra
 	}
 })->tag('environment-identifier','projection','broad-grammar','negative','regression');
 
+test('one public application grammar survives the child boundary and rejects aliases or controls',static function(Context $t): void {
+	$t->same(120,PublicApplicationIdentifier::MAX_BYTES);
+	foreach(['A','Store:North_2-Beta',':','_','-',str_repeat('Z',120)] as $application){
+		$t->isTrue(PublicApplicationIdentifier::valid($application),$application);
+		$child=DataphyreApplicationRuntimeEnvironment::childEnvironment(
+			[],$application,'ExampleApp','production','dep_'.str_repeat('a',40),
+		);
+		$t->same($application,$child['DATAPHYRE_APPLICATION_ID'],$application);
+	}
+	foreach(['','app.name','app/name','app name','$app',"app\nname","app\0name",'é',str_repeat('a',121)] as $application){
+		$t->isFalse(PublicApplicationIdentifier::valid($application),bin2hex($application));
+		$t->throws(
+			static fn()=>DataphyreApplicationRuntimeEnvironment::childEnvironment(
+				[],$application,'ExampleApp','production','dep_'.str_repeat('a',40),
+			),
+			RuntimeException::class,
+			bin2hex($application),
+		);
+	}
+})->tag('public-application-identifier','projection','exact-grammar','negative','regression');
+
 test('every fixed release runtime and migration boundary delegates environment validation to one authority',static function(Context $t): void {
 	$core=dirname(__DIR__);$modules=dirname($core);
 	$files=[
@@ -83,6 +105,7 @@ test('every fixed release runtime and migration boundary delegates environment v
 		$core.'/kernel/application_runtime_scheduler_protocol.php',
 		$core.'/kernel/application_runtime_scheduler_state.php',
 		$core.'/kernel/application_runtime_status_probe.php',
+		$modules.'/cache/Framework/SharedCacheProbeCommand.php',
 		$modules.'/sql/Framework/Migrations/PostgreSqlMigrationCommand.php',
 		$modules.'/sql/Framework/Migrations/SqliteMigrationCommand.php',
 		$modules.'/sql/Framework/RegisteredTableMaterializationCommand.php',
@@ -91,6 +114,20 @@ test('every fixed release runtime and migration boundary delegates environment v
 		$source=(string)file_get_contents($file);
 		$t->contains('ApplicationEnvironmentIdentifier::valid',$source,$file);
 		$t->isFalse(str_contains($source,'^[a-z0-9][a-z0-9-]{0,79}$'),$file);
+	}
+	$publicApplicationFiles=[
+		$core.'/kernel/application_runtime_environment.php',
+		$core.'/kernel/application_runtime_one_shot.php',
+		$core.'/kernel/application_runtime_probe_state.php',
+		$core.'/kernel/application_runtime_scheduler_protocol.php',
+		$core.'/kernel/application_runtime_scheduler_state.php',
+		$core.'/kernel/application_runtime_status_probe.php',
+		$modules.'/cache/Framework/SharedCacheProbeCommand.php',
+	];
+	foreach($publicApplicationFiles as $file){
+		$source=(string)file_get_contents($file);
+		$t->contains('PublicApplicationIdentifier::valid',$source,$file);
+		$t->isFalse(str_contains($source,'^[a-z0-9][a-z0-9_-]{0,62}$'),$file);
 	}
 	$supervisor=(string)file_get_contents($core.'/kernel/application_runtime_supervisor.php');
 	$t->contains('DataphyreApplicationRuntimeEnvironment::consume(',$supervisor);
@@ -342,6 +379,8 @@ test('source freezes the root-only canonical channel and fixed one-shot allowlis
 	$t->isFalse(str_contains($oneShot,"in_array($"."operation,['dataphyre_postgresql_migrate'"));
 	$t->isFalse(str_contains($oneShot,"in_array($"."operation,['dataphyre_shared_cache_probe'"));
 	$t->contains('ApplicationReleasePreflightEvidence::COMMAND_TIMEOUT_MILLISECONDS',$oneShot);
+	$t->contains('dataphyre_one_shot_cloud_application()',$oneShot);
+	$t->contains('PublicApplicationIdentifier::valid',$oneShot);
 	$t->contains("@posix_kill(-$"."processGroup,SIGTERM)",$oneShot);
 	$t->contains("@posix_kill(-$"."processGroup,SIGKILL)",$oneShot);
 	$t->contains("$"."terminationReason==='timeout'",$oneShot);

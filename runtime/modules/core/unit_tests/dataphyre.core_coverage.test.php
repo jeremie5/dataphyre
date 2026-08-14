@@ -134,7 +134,7 @@ test('core filesystem locks dialbacks headers and request helpers cover bounded 
 	$t->notEmpty(\dataphyre\core::dialback_callbacks('unit_basic_event'));
 	$t->contains('unit_basic_event', \dataphyre\core::dialback_event_names());
 	$t->hasPath('unit_basic_event', \dataphyre\core::dialback_all());
-	$t->same(null, \dataphyre\core::dialback('missing_event'));
+	$t->same(null, \dataphyre\core::dialback('CALL_CORE_TEST_MISSING_EVENT'));
 
 	$color=\dataphyre\core::random_hex_color([1, 1], [2, 2], [3, 3]);
 	$t->same('#10203', $color);

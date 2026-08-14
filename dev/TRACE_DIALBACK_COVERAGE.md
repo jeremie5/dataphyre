@@ -17,8 +17,14 @@ New Framework-owned dialbacks use `CALL_<MODULE>_FRAMEWORK_<SURFACE_OR_CONCEPT>_
 ```powershell
 .\dev\tools\public\report_trace_dialback_coverage.ps1 -Root . -CandidatesOnly
 .\dev\tools\public\report_trace_dialback_coverage.ps1 -Root . -CandidatesOnly -Format Json -Output .\dev\trace_dialback_inventory.generated.json
-.\dev\tools\public\check_trace_dialback_usage.ps1 -Root .
+.\dev\tools\public\check_trace_dialback_usage.ps1 -Root . -SourceSet ReleaseOwned
+.\dev\tools\public\check_trace_dialback_usage.ps1 -Root . -SourceSet Filesystem
 ```
+
+`ReleaseOwned` is the release gate: it scans Git-tracked files plus nonignored
+untracked files that could enter the next commit. `Filesystem` is the explicit
+private audit and recursively includes ignored local source. Extracted trees
+without Git metadata use the complete recursive `Filesystem` gate.
 
 The generated JSON is a review artifact. Do not treat every candidate row as a required runtime edit.
 

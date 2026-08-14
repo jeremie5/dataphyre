@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__).'/Framework/ApplicationEnvironmentIdentifier.php';
+require_once dirname(__DIR__).'/Framework/PublicApplicationIdentifier.php';
 
 /** Domain-separated, one-time scheduler requests issued only by root PID 1. */
 final class DataphyreApplicationRuntimeSchedulerProtocol
@@ -114,7 +115,7 @@ final class DataphyreApplicationRuntimeSchedulerProtocol
 			|| !is_int($candidate['timestamp'] ?? null) || $candidate['timestamp']<1000000000
 			|| !is_string($candidate['nonce'] ?? null) || preg_match('/^[a-f0-9]{32}$/D',$candidate['nonce'])!==1
 			|| !is_string($candidate['cloud_application'] ?? null)
-			|| preg_match('/^[a-z0-9][a-z0-9_-]{0,62}$/D',$candidate['cloud_application'])!==1
+			|| !\Dataphyre\PublicApplicationIdentifier::valid($candidate['cloud_application'])
 			|| !is_string($candidate['framework_application'] ?? null)
 			|| preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$candidate['framework_application'])!==1
 			|| !is_string($candidate['environment'] ?? null)

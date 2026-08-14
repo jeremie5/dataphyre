@@ -165,9 +165,9 @@ namespace {
 		\dataphyre\core::$dialbacks[17]=[static fn(): string=>'ignored'];
 		$t->isFalse(array_key_exists(17, \dataphyre\core::dialback_all()));
 		unset(\dataphyre\core::$dialbacks[17]);
-		$t->isTrue(\dataphyre\core::register_dialback('deep.event', static fn(string $value): string=>'one-'.$value));
-		$t->isTrue(\dataphyre\core::register_dialback('deep.event', static fn(string $value): string=>'two-'.$value));
-		$t->same('two-value', \dataphyre\core::dialback('deep.event', 'value'));
+		$t->isTrue(\dataphyre\core::register_dialback('CALL_CORE_TEST_DEEP_EVENT', static fn(string $value): string=>'one-'.$value));
+		$t->isTrue(\dataphyre\core::register_dialback('CALL_CORE_TEST_DEEP_EVENT', static fn(string $value): string=>'two-'.$value));
+		$t->same('two-value', \dataphyre\core::dialback('CALL_CORE_TEST_DEEP_EVENT', 'value'));
 
 		\dataphyre\core::add_config('base_timezone', 'UTC');
 		\dataphyre\core::add_config('default_timezone', 'Invalid/Zone');

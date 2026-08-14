@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__).'/Framework/ApplicationEnvironmentIdentifier.php';
+require_once dirname(__DIR__).'/Framework/PublicApplicationIdentifier.php';
 
 if(PHP_SAPI!=='cli' || ($argc ?? 0)!==1) exit(64);
 $host='127.0.0.1';$port=8082;
@@ -105,7 +106,7 @@ $valid=is_array($decoded)
 	]
 	&& ($decoded['contract'] ?? null)==='dataphyre.application_runtime.v4'
 	&& is_string($decoded['cloud_application'] ?? null)
-	&& preg_match('/^[a-z0-9][a-z0-9_-]{0,62}$/D',$decoded['cloud_application'])===1
+	&& \Dataphyre\PublicApplicationIdentifier::valid($decoded['cloud_application'])
 	&& is_string($decoded['framework_application'] ?? null)
 	&& preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$decoded['framework_application'])===1
 	&& is_string($decoded['environment'] ?? null)

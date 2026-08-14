@@ -29,6 +29,18 @@ require_once dirname(__DIR__).'/kernel/plotter.php';
 require_once dirname(__DIR__).'/kernel/viewer.php';
 require_once dirname(__DIR__).'/kernel/tracelog.diagnostic.php';
 
+if(!function_exists('tracelog')){
+	/** Mirrors the runtime's global trace boundary inside isolated module workers. */
+	function tracelog(mixed ...$arguments): bool {
+		static $dispatch=null;
+		$dispatch??=\Closure::fromCallable([\dataphyre\tracelog::class, 'tracelog']);
+		if(array_key_exists(1, $arguments) && $arguments[1]!==null){
+			$arguments[1]=(string)$arguments[1];
+		}
+		return $dispatch(...$arguments);
+	}
+}
+
 /** Process-hook probe used only when the full framework bootstrap is absent. */
 final class DpTracelogSuppressionProbe {
 	public static bool $suppressed=false;
@@ -155,9 +167,9 @@ final class DpTracelogRuntimeScenario {
 		string $class='Example',
 		string $function='run'
 	): bool {
-		return \dataphyre\tracelog::tracelog(
-			'/srv/example.php', '42', $class, $function, $message, $type,
-			$arguments, $time, $memory, $plotFrame
+		return \tracelog(
+			'/srv/example.php', '42', $class, $function, $message, $type, $arguments,
+			$time, $memory, $plotFrame
 		);
 	}
 

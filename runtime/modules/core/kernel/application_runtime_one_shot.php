@@ -47,6 +47,16 @@ function dataphyre_one_shot_environment(): string
 	return $value;
 }
 
+/** Reads the opaque public application id through its shared authority. */
+function dataphyre_one_shot_cloud_application(): string
+{
+	$value=getenv('DATAPHYRE_APPLICATION_ID');
+	if(!is_string($value) || !\Dataphyre\PublicApplicationIdentifier::valid($value)){
+		throw new RuntimeException('One-shot public application identity is invalid.');
+	}
+	return $value;
+}
+
 /** Proves one immutable image-owned regular file at its exact public path. */
 function dataphyre_one_shot_file(string $path): string
 {
@@ -89,7 +99,7 @@ try{
 		'DATAPHYRE_ONE_SHOT_OPERATION',
 		'/^(?:database_identity|application_preflight|artisan_migrate|dataphyre_materialize_tables|dataphyre_postgresql_migrate|dataphyre_sqlite_migrate|dataphyre_shared_cache_probe)$/D',
 	);
-	$cloudApplication=dataphyre_one_shot_identity('DATAPHYRE_APPLICATION_ID','/^[a-z0-9][a-z0-9_-]{0,62}$/D');
+	$cloudApplication=dataphyre_one_shot_cloud_application();
 	$frameworkApplication=dataphyre_one_shot_identity('DATAPHYRE_FRAMEWORK_APPLICATION','/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D');
 	$environment=dataphyre_one_shot_environment();
 	$releaseId=dataphyre_one_shot_identity('DATAPHYRE_APPLICATION_RELEASE','/^dep_[a-f0-9]{40}$/D');

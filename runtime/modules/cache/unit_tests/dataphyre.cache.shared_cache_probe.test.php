@@ -18,7 +18,7 @@ function dp_shared_cache_probe_run(string $phase,array $runtime=[]): array {
 	$out='';$error='';
 	$defaults=[
 		'environment_values'=>[
-			'DATAPHYRE_APPLICATION_ID'=>'fixture-app',
+			'DATAPHYRE_APPLICATION_ID'=>'Store:North_2-Beta',
 			'DATAPHYRE_FRAMEWORK_APPLICATION'=>'FixtureApp',
 			'DATAPHYRE_ENVIRONMENT'=>'Staging.Blue',
 			'DATAPHYRE_APPLICATION_RELEASE'=>'dep_'.str_repeat('a',40),
@@ -113,12 +113,25 @@ test('shared cache probe accepts only fixed typed phases challenge and runtime i
 	$t->same(64,$web['status']);$t->same('invalid_runtime',$web['payload']['error']['code']);
 	foreach(['DATAPHYRE_APPLICATION_ID','DATAPHYRE_FRAMEWORK_APPLICATION','DATAPHYRE_ENVIRONMENT','DATAPHYRE_APPLICATION_RELEASE'] as $missing){
 		$values=[
-			'DATAPHYRE_APPLICATION_ID'=>'fixture-app','DATAPHYRE_FRAMEWORK_APPLICATION'=>'FixtureApp',
+			'DATAPHYRE_APPLICATION_ID'=>'Store:North_2-Beta','DATAPHYRE_FRAMEWORK_APPLICATION'=>'FixtureApp',
 			'DATAPHYRE_ENVIRONMENT'=>'production','DATAPHYRE_APPLICATION_RELEASE'=>'dep_'.str_repeat('a',40),
 		];
 		unset($values[$missing]);
 		$invalid=dp_shared_cache_probe_run('detect',['environment_values'=>$values]);
 		$t->same(78,$invalid['status']);$t->same('runtime_configuration_invalid',$invalid['payload']['error']['code']);
+	}
+	$maximum=dp_shared_cache_probe_run('detect',['environment_values'=>[
+		'DATAPHYRE_APPLICATION_ID'=>str_repeat('Z',120),'DATAPHYRE_FRAMEWORK_APPLICATION'=>'FixtureApp',
+		'DATAPHYRE_ENVIRONMENT'=>'production','DATAPHYRE_APPLICATION_RELEASE'=>'dep_'.str_repeat('a',40),
+	]]);
+	$t->same(0,$maximum['status']);$t->same(true,$maximum['payload']['ok']);
+	foreach(['','app.name','app/name',"app\nname","app\0name",str_repeat('a',121)] as $application){
+		$invalid=dp_shared_cache_probe_run('detect',['environment_values'=>[
+			'DATAPHYRE_APPLICATION_ID'=>$application,'DATAPHYRE_FRAMEWORK_APPLICATION'=>'FixtureApp',
+			'DATAPHYRE_ENVIRONMENT'=>'production','DATAPHYRE_APPLICATION_RELEASE'=>'dep_'.str_repeat('a',40),
+		]]);
+		$t->same(78,$invalid['status'],bin2hex($application));
+		$t->same('runtime_configuration_invalid',$invalid['payload']['error']['code'],bin2hex($application));
 	}
 	$extension=dp_shared_cache_probe_run('detect',['extension_version'=>static fn(): string=>'3.3.0']);
 	$t->same(69,$extension['status']);$t->same('shared_cache_unavailable',$extension['payload']['error']['code']);

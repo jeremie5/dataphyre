@@ -655,8 +655,10 @@ if (Test-Path $devDirectory -PathType Container) {
 	$verifyReleaseManifestTool = Join-Path $devDirectory 'tools/private/release/verify_release_manifest.ps1'
 	$lintPhpTool = Join-Path $devDirectory 'tools/public/lint_php.ps1'
 	$checkSourceCheckoutTool = Join-Path $devDirectory 'tools/private/release/check_source_checkout.ps1'
+	$checkTraceDialbackUsageTool = Join-Path $devDirectory 'tools/public/check_trace_dialback_usage.ps1'
+	$checkTraceDialbackUsageSelfTestTool = Join-Path $devDirectory 'tools/public/check_trace_dialback_usage_self_test.ps1'
 	$mcpConfigTool = Join-Path $devDirectory 'tools/public/mcp_config.php'
-	foreach ($requiredManifestFile in @($manifestDoc, $manifestSchema, $prepareExportTool, $checkPublicExportTool, $checkReleaseArchiveTool, $verifyReleaseManifestTool, $lintPhpTool, $checkSourceCheckoutTool, $mcpConfigTool)) {
+	foreach ($requiredManifestFile in @($manifestDoc, $manifestSchema, $prepareExportTool, $checkPublicExportTool, $checkReleaseArchiveTool, $verifyReleaseManifestTool, $lintPhpTool, $checkSourceCheckoutTool, $checkTraceDialbackUsageTool, $checkTraceDialbackUsageSelfTestTool, $mcpConfigTool)) {
 		if (-not (Test-Path $requiredManifestFile -PathType Leaf)) {
 			$relativeMissing = $requiredManifestFile.Substring($Root.TrimEnd('\', '/').Length).TrimStart('\', '/') -replace '\\', '/'
 			Add-Failure "Source checkout is missing release manifest contract file: $relativeMissing"
@@ -764,9 +766,25 @@ if (Test-Path $devDirectory -PathType Container) {
 			}
 			if (Test-Path $checkSourceCheckoutTool -PathType Leaf) {
 				$checkSourceCheckoutText = Get-Content -Raw $checkSourceCheckoutTool
-				foreach ($term in @('[string]$Php', 'DATAPHYRE_PHP', 'check_public_export.ps1', 'WarnOnly = $true', 'WarningLimit = $WarningLimit', 'mcp_live_validate.php', '--php')) {
+				foreach ($term in @('[string]$Php', 'DATAPHYRE_PHP', 'check_public_export.ps1', 'WarnOnly = $true', 'WarningLimit = $WarningLimit', 'check_trace_dialback_usage_self_test.ps1', '-SourceSet ReleaseOwned', 'mcp_live_validate.php', '--php')) {
 					if ($checkSourceCheckoutText -notmatch [regex]::Escape($term)) {
 						Add-Failure "check_source_checkout.ps1 is missing maintainer CI-equivalent term: $term"
+					}
+				}
+			}
+			if (Test-Path $checkTraceDialbackUsageTool -PathType Leaf) {
+				$checkTraceDialbackUsageText = Get-Content -Raw $checkTraceDialbackUsageTool
+				foreach ($term in @('ReleaseOwned', 'Filesystem', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', 'Split-NulDelimitedPaths', '[char]0', 'RedirectStandardOutput', 'Test-ExcludedSourcePath', 'Resolve-Path -LiteralPath', '[string](Get-Content -Raw -LiteralPath', '@(Get-Content -LiteralPath $file.FullName)')) {
+					if ($checkTraceDialbackUsageText -notmatch [regex]::Escape($term)) {
+						Add-Failure "check_trace_dialback_usage.ps1 is missing release-owned source-set term: $term"
+					}
+				}
+			}
+			if (Test-Path $checkTraceDialbackUsageSelfTestTool -PathType Leaf) {
+				$checkTraceDialbackUsageSelfTestText = Get-Content -Raw $checkTraceDialbackUsageSelfTestTool
+				foreach ($term in @('tracked.trap', 'newline.trap', 'nonignored.trap', 'ignored.private', 'archive.private', 'tracked [literal trap].php', 'vendor.excluded', 'empty.php', 'ReleaseOwned', 'Filesystem')) {
+					if ($checkTraceDialbackUsageSelfTestText -notmatch [regex]::Escape($term)) {
+						Add-Failure "check_trace_dialback_usage_self_test.ps1 is missing source-set fixture term: $term"
 					}
 				}
 			}

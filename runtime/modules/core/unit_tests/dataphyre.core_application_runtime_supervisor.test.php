@@ -300,7 +300,7 @@ test('supervisor helpers enforce their exact bounded environment private HTTP an
 		"HTTP/1.1 {$status} Fixture\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n".$body;
 	$keypair=sodium_crypto_sign_keypair();$secretKey=sodium_crypto_sign_secretkey($keypair);$publicKey=sodium_crypto_sign_publickey($keypair);
 	$identity=[
-		'cloud_application'=>'fixture','framework_application'=>'Fixture','environment'=>'staging',
+		'cloud_application'=>'Store:North_2-Beta','framework_application'=>'Fixture','environment'=>'staging',
 		'release_id'=>'dep_'.str_repeat('a',40),'environment_fingerprint'=>'hmac-sha256:'.str_repeat('b',64),
 	];
 	$generation='gen_'.str_repeat('c',32);$pending=[];$runtime=['active'=>true];$activation=null;$nextTick=0.0;
@@ -623,7 +623,7 @@ test('deactivation requested during a tick remains inactive and cannot trigger a
 	];
 	$pendingRequests=[];$activationRequested=null;$nextTick=0.0;
 	$identity=[
-		'cloud_application'=>'fixture','framework_application'=>'Fixture','environment'=>'staging',
+		'cloud_application'=>str_repeat('Z',120),'framework_application'=>'Fixture','environment'=>'staging',
 		'release_id'=>'dep_'.str_repeat('b',40),'environment_fingerprint'=>'hmac-sha256:'.str_repeat('d',64),
 	];
 	$requests=[];$persisted=[];

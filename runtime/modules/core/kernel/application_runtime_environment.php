@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__).'/Framework/ApplicationEnvironmentIdentifier.php';
+require_once dirname(__DIR__).'/Framework/PublicApplicationIdentifier.php';
 
 /** Reads the container-lifetime, root-only application environment channel used by PID 1. */
 final class DataphyreApplicationRuntimeEnvironment
@@ -34,7 +35,7 @@ final class DataphyreApplicationRuntimeEnvironment
 		if(getmypid()!==1 || !function_exists('posix_geteuid') || posix_geteuid()!==0){
 			throw new RuntimeException('Application environment may only be consumed by root PID 1.');
 		}
-		if(preg_match('/^[a-z0-9][a-z0-9_-]{0,62}$/D',$cloudApplication)!==1
+		if(!\Dataphyre\PublicApplicationIdentifier::valid($cloudApplication)
 			|| preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$frameworkApplication)!==1
 			|| !\Dataphyre\ApplicationEnvironmentIdentifier::valid($environment)){
 			throw new RuntimeException('Application environment identity is invalid.');
@@ -71,6 +72,9 @@ final class DataphyreApplicationRuntimeEnvironment
 		?string $applicationDataRoot=null,
 	): array
 	{
+		if(!\Dataphyre\PublicApplicationIdentifier::valid($cloudApplication)){
+			throw new RuntimeException('Public application identifier is invalid.');
+		}
 		if(!\Dataphyre\ApplicationEnvironmentIdentifier::valid($environment)){
 			throw new RuntimeException('Application environment identifier is invalid.');
 		}

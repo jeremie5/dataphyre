@@ -333,8 +333,10 @@ test('socket exhaustion and over-deep process ancestry fail closed with exact ev
 
 	$coverageBootstrap=$frameworkRoot.'/runtime/modules/testing/tooling/CoverageSubprocess.php';
 	$part=$t->workspace('core-child-environment-deep-ancestry')->path('coverage.json');
+	$scanDirectory=getenv('PHP_INI_SCAN_DIR');
+	$scanArgument=is_string($scanDirectory) && $scanDirectory!=='' ? $scanDirectory : '-';
 	$ancestry=$t->process([
-		PHP_BINARY,$fixture,'wrap','18',$coverageBootstrap,$part,$frameworkRoot,(string)getenv('PHP_INI_SCAN_DIR'),
+		PHP_BINARY,$fixture,'wrap','18',$coverageBootstrap,$part,$frameworkRoot,$scanArgument,
 	],working_directory:$frameworkRoot,timeout_millis:30000);
 	$t->processSucceeded($ancestry,json_encode($ancestry->diagnostic(),JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
 	$t->same('ancestry-rejected',$ancestry->stdout());

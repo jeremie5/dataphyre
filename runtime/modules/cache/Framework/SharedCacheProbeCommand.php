@@ -10,11 +10,13 @@ declare(strict_types=1);
 namespace Dataphyre\Cache;
 
 use Dataphyre\ApplicationEnvironmentIdentifier;
+use Dataphyre\PublicApplicationIdentifier;
 use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
 
 require_once dirname(__DIR__,2).'/core/Framework/ApplicationEnvironmentIdentifier.php';
+require_once dirname(__DIR__,2).'/core/Framework/PublicApplicationIdentifier.php';
 require_once dirname(__DIR__).'/kernel/cache.main.php';
 
 /** Fixed three-process proof for Dataphyre's optional shared cache backend. */
@@ -143,7 +145,7 @@ final class SharedCacheProbeCommand {
 			'release_id'=>$read('DATAPHYRE_APPLICATION_RELEASE'),
 		];
 		if(!is_string($identity['cloud_application'])
-			|| preg_match('/^[a-z0-9][a-z0-9_-]{0,62}$/D',$identity['cloud_application'])!==1
+			|| !PublicApplicationIdentifier::valid($identity['cloud_application'])
 			|| !is_string($identity['framework_application'])
 			|| preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$identity['framework_application'])!==1
 			|| !is_string($identity['environment']) || !ApplicationEnvironmentIdentifier::valid($identity['environment'])

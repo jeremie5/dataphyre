@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__).'/Framework/ApplicationEnvironmentIdentifier.php';
+require_once dirname(__DIR__).'/Framework/PublicApplicationIdentifier.php';
 
 /** Root-only durable cadence state; application pools never receive this path. */
 final class DataphyreApplicationRuntimeSchedulerState
@@ -298,7 +299,7 @@ final class DataphyreApplicationRuntimeSchedulerState
 		$cloud=$identity['cloud_application'] ?? '';
 		$framework=$identity['framework_application'] ?? '';
 		$environment=$identity['environment'] ?? '';
-		if(preg_match('/^[a-z0-9][a-z0-9_-]{0,62}$/D',$cloud)!==1
+		if(!is_string($cloud) || !\Dataphyre\PublicApplicationIdentifier::valid($cloud)
 			|| preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$framework)!==1
 			|| !\Dataphyre\ApplicationEnvironmentIdentifier::valid($environment)){
 			throw new RuntimeException('Scheduler state identity is invalid.');

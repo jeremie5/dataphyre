@@ -142,6 +142,12 @@ Common array keys:
 | `autoload` | Namespace prefix map for application code. |
 | `options.fallback_to_legacy_bootstrap` | Enables or disables legacy bootstrap fallback. |
 
+The public application identifier is an opaque deployment identity with the
+exact ASCII grammar `[A-Za-z0-9:_-]{1,120}`. It is distinct from the framework
+application name and must not be reused directly as a filesystem path, host
+name, or registry component; infrastructure adapters should derive their own
+bounded safe component when one is needed.
+
 If `app.php` is missing, Dataphyre falls back to conventions described in
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
@@ -214,4 +220,3 @@ Reusable public templates:
 
 Local equivalents without `.example` in the filename are install state and are
 excluded by `.gitignore` and `.distignore`.
-

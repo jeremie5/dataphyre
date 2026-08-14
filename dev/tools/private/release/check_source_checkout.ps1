@@ -75,6 +75,7 @@ $preparePublicExport = Join-Path $privateToolsDirectory 'prepare_public_export.p
 $checkComposerConsumer = Join-Path $privateToolsDirectory 'check_composer_consumer.ps1'
 $lintPhp = Join-Path $publicToolsDirectory 'lint_php.ps1'
 $checkTraceDialbackUsage = Join-Path $publicToolsDirectory 'check_trace_dialback_usage.ps1'
+$checkTraceDialbackUsageSelfTest = Join-Path $publicToolsDirectory 'check_trace_dialback_usage_self_test.ps1'
 $mcpSelfTest = Join-Path $publicToolsDirectory 'mcp_self_test.php'
 $mcpLiveValidate = Join-Path $publicToolsDirectory 'mcp_live_validate.php'
 
@@ -121,7 +122,8 @@ if (-not $SkipPreparedExport) {
 }
 
 Invoke-CheckedStep 'PHP lint' { & $lintPhp -Root $Root -Php $phpSource }
-Invoke-CheckedStep 'trace/dialback usage checks' { & $checkTraceDialbackUsage -Root $Root }
+Invoke-CheckedStep 'trace/dialback source-set self-test' { & $checkTraceDialbackUsageSelfTest -Root $Root }
+Invoke-CheckedStep 'trace/dialback release-owned usage checks' { & $checkTraceDialbackUsage -Root $Root -SourceSet ReleaseOwned }
 Invoke-CheckedStep 'MCP self-test' { & $phpSource $mcpSelfTest }
 Invoke-CheckedStep 'MCP live validation' { & $phpSource $mcpLiveValidate --php $phpSource }
 

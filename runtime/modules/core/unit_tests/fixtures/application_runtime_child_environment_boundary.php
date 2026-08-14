@@ -48,7 +48,9 @@ if($mode==='wrap' && ($argc ?? 0)===7){
 		$environment['DATAPHYRE_TEST_COVERAGE_PART']=$part;
 		$environment['DATAPHYRE_TEST_COVERAGE_FRAMEWORK_ROOT']=$frameworkRoot;
 		$environment['DATAPHYRE_TEST_COVERAGE_RESULT_ROOT']=$frameworkRoot;
-		$environment['XDEBUG_MODE']='coverage';$environment['PHP_INI_SCAN_DIR']=$scanDirectory;
+		$environment['XDEBUG_MODE']='coverage';
+		if($scanDirectory==='-') unset($environment['PHP_INI_SCAN_DIR']);
+		else $environment['PHP_INI_SCAN_DIR']=$scanDirectory;
 	}
 	$pipes=[];$process=proc_open( // dataphyre-test-architecture: exempt[raw-process-control] reason="Deep Linux ancestry proof requires a deterministic chain of waiting direct parents."
 		$command,[0=>['file','/dev/null','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes,$frameworkRoot,$environment,

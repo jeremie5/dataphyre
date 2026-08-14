@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
 	[string]$Root,
+	[ValidateSet('ReleaseOwned', 'Filesystem')]
+	[string]$SourceSet = 'Filesystem',
 	[switch]$Help
 )
 
@@ -10,11 +12,13 @@ $ErrorActionPreference = 'Stop'
 function Show-Usage {
 	@'
 Usage:
-  ./dev/tools/public/check_trace_dialback_usage.ps1 [-Root <repo>]
+  ./dev/tools/public/check_trace_dialback_usage.ps1 [-Root <repo>] [-SourceSet ReleaseOwned|Filesystem]
 
 Options:
-  -Root  Dataphyre Git worktree root. Defaults to the repository root.
-  -Help  Show this help text.
+  -Root       Dataphyre source root. Defaults to the repository root.
+  -SourceSet  ReleaseOwned scans Git tracked plus nonignored untracked files.
+             Filesystem recursively scans all source files, including ignored/private bytes.
+  -Help       Show this help text.
 
 Checks public source files for trace/dialback naming, documentation coverage,
 and hot-path logging patterns that should stay out of tight runtime loops.
@@ -33,9 +37,9 @@ if ([string]::IsNullOrWhiteSpace($Root)) {
 	else {
 		$PSScriptRoot
 	}
-	$Root = (Resolve-Path (Join-Path $scriptDirectory '..\..\..')).Path
+	$Root = (Resolve-Path -LiteralPath (Join-Path $scriptDirectory '..\..\..')).Path
 }
-$Root = (Resolve-Path $Root).Path
+$Root = (Resolve-Path -LiteralPath $Root).Path
 $failures = New-Object System.Collections.Generic.List[string]
 
 function Add-Failure {
@@ -46,7 +50,7 @@ function Add-Failure {
 
 function Get-RelativePath {
 	param([string]$Path)
-	$fullPath = (Resolve-Path $Path).Path
+	$fullPath = (Resolve-Path -LiteralPath $Path).Path
 	$rootPath = $script:Root.TrimEnd('\', '/')
 	if ($fullPath.StartsWith($rootPath, [System.StringComparison]::OrdinalIgnoreCase)) {
 		return $fullPath.Substring($rootPath.Length).TrimStart('\', '/') -replace '\\', '/'
@@ -54,25 +58,119 @@ function Get-RelativePath {
 	return $fullPath -replace '\\', '/'
 }
 
-function Get-SourceFiles {
-	Get-ChildItem -Path $script:Root -Recurse -File -Include '*.php', '*.md', '*.json' | Where-Object {
-		$relative = Get-RelativePath $_.FullName
-		-not (
-			$relative.StartsWith('.git/', [System.StringComparison]::OrdinalIgnoreCase) -or
-			$relative.StartsWith('cache/', [System.StringComparison]::OrdinalIgnoreCase) -or
-			$relative.StartsWith('vendor/', [System.StringComparison]::OrdinalIgnoreCase) -or
-			$relative.StartsWith('runtime/modules/stripe/src/', [System.StringComparison]::OrdinalIgnoreCase) -or
-			$relative.StartsWith('runtime/modules/sql/third_party/', [System.StringComparison]::OrdinalIgnoreCase)
-		)
+function Test-SourceExtension {
+	param([string]$Path)
+	$extension = [System.IO.Path]::GetExtension($Path)
+	return $extension -in @('.php', '.md', '.json')
+}
+
+function Test-ExcludedSourcePath {
+	param([string]$Path)
+	$relative = $Path -replace '\\', '/'
+	return (
+		$relative.StartsWith('.git/', [System.StringComparison]::OrdinalIgnoreCase) -or
+		$relative.StartsWith('cache/', [System.StringComparison]::OrdinalIgnoreCase) -or
+		$relative.StartsWith('vendor/', [System.StringComparison]::OrdinalIgnoreCase) -or
+		$relative.StartsWith('runtime/modules/stripe/src/', [System.StringComparison]::OrdinalIgnoreCase) -or
+		$relative.StartsWith('runtime/modules/sql/third_party/', [System.StringComparison]::OrdinalIgnoreCase)
+	)
+}
+
+function Invoke-GitCapture {
+	param([string[]]$Arguments)
+	$gitCommand = Get-Command git -ErrorAction Stop
+	$startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+	$startInfo.FileName = $gitCommand.Source
+	$startInfo.UseShellExecute = $false
+	$startInfo.RedirectStandardOutput = $true
+	$startInfo.RedirectStandardError = $true
+	foreach ($argument in $Arguments) {
+		$startInfo.ArgumentList.Add($argument)
+	}
+	$process = [System.Diagnostics.Process]::new()
+	$process.StartInfo = $startInfo
+	if (-not $process.Start()) {
+		throw 'Unable to start Git for release-owned source discovery.'
+	}
+	$stdout = $process.StandardOutput.ReadToEnd()
+	$stderr = $process.StandardError.ReadToEnd()
+	$process.WaitForExit()
+	if ($process.ExitCode -ne 0) {
+		throw "Git source discovery failed with exit code $($process.ExitCode): $($stderr.Trim())"
+	}
+	return $stdout
+}
+
+function Split-NulDelimitedPaths {
+	param([string]$Value)
+	if ([string]::IsNullOrEmpty($Value)) {
+		return @()
+	}
+	return @($Value.Split(@([char]0), [System.StringSplitOptions]::RemoveEmptyEntries))
+}
+
+function Get-ReleaseOwnedSourceFiles {
+	$gitRoot = (Invoke-GitCapture @('-C', $script:Root, 'rev-parse', '--show-toplevel')).Trim()
+	if ([string]::IsNullOrWhiteSpace($gitRoot)) {
+		throw 'ReleaseOwned source discovery requires a Git worktree root.'
+	}
+	$resolvedGitRoot = (Resolve-Path -LiteralPath $gitRoot).Path.TrimEnd('\', '/')
+	$resolvedRoot = $script:Root.TrimEnd('\', '/')
+	if (-not $resolvedGitRoot.Equals($resolvedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+		throw "ReleaseOwned source discovery requires -Root to be the Git worktree root: $resolvedGitRoot"
+	}
+	$rawPaths = Invoke-GitCapture @(
+		'-C', $script:Root,
+		'ls-files', '--cached', '--others', '--exclude-standard', '-z'
+	)
+	foreach ($relative in (Split-NulDelimitedPaths $rawPaths)) {
+		if (-not (Test-SourceExtension $relative) -or (Test-ExcludedSourcePath $relative)) {
+			continue
+		}
+		$path = Join-Path $script:Root ($relative -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+		if (Test-Path -LiteralPath $path -PathType Leaf) {
+			Get-Item -LiteralPath $path
+		}
 	}
 }
 
+function Get-IgnoredSourceFileCount {
+	$rawPaths = Invoke-GitCapture @(
+		'-C', $script:Root,
+		'ls-files', '--others', '--ignored', '--exclude-standard', '-z'
+	)
+	return @(Split-NulDelimitedPaths $rawPaths | Where-Object { Test-SourceExtension $_ }).Count
+}
+
+function Get-FilesystemSourceFiles {
+	Get-ChildItem -LiteralPath $script:Root -Recurse -File | Where-Object {
+		$relative = Get-RelativePath $_.FullName
+		(Test-SourceExtension $relative) -and -not (Test-ExcludedSourcePath $relative)
+	}
+}
+
+function Get-SourceFiles {
+	if ($script:SourceSet -eq 'ReleaseOwned') {
+		Get-ReleaseOwnedSourceFiles
+		return
+	}
+	Get-FilesystemSourceFiles
+}
+
 Write-Host "Checking Dataphyre tracelog and dialback usage at $Root"
+if ($SourceSet -eq 'ReleaseOwned') {
+	$ignoredSourceFileCount = Get-IgnoredSourceFileCount
+	Write-Host 'Source set: ReleaseOwned (Git tracked plus nonignored untracked source files).'
+	Write-Host "NOTICE: $ignoredSourceFileCount ignored/private source file(s) are outside this release gate; use -SourceSet Filesystem for the explicit private audit."
+}
+else {
+	Write-Host 'Source set: Filesystem (recursive source audit including ignored/private bytes).'
+}
 
 $files = @(Get-SourceFiles)
 $extensionPointsPath = Join-Path $Root 'docs/EXTENSION_POINTS.md'
-$extensionPointsText = if (Test-Path $extensionPointsPath) {
-	Get-Content -Raw $extensionPointsPath
+$extensionPointsText = if (Test-Path -LiteralPath $extensionPointsPath) {
+	[string](Get-Content -Raw -LiteralPath $extensionPointsPath)
 }
 else {
 	''
@@ -101,7 +199,7 @@ if ('DATAPHYRE_Vestra_EXAMPLE' -notmatch $mixedCaseDataphyreNamePattern) {
 
 foreach ($file in $files) {
 	$relative = Get-RelativePath $file.FullName
-	$text = Get-Content -Raw $file.FullName
+	$text = [string](Get-Content -Raw -LiteralPath $file.FullName)
 
 	if (
 		$relative -match '^runtime/modules/[^/]+/Framework/' -and
@@ -158,7 +256,7 @@ foreach ($file in $files) {
 		$relative.EndsWith('.php', [System.StringComparison]::OrdinalIgnoreCase) -and
 		$relative -notmatch '/unit_tests/'
 	) {
-		$lines = Get-Content $file.FullName
+		$lines = @(Get-Content -LiteralPath $file.FullName)
 		for ($lineIndex = 0; $lineIndex -lt $lines.Count; $lineIndex++) {
 			$lineText = $lines[$lineIndex]
 			if ($lineText -notmatch 'tracelog\s*\(' -or $lineText -notmatch 'function_call') {
@@ -314,7 +412,7 @@ foreach ($file in $files) {
 			'sqlite_insert',
 			'sqlite_delete'
 		)
-		$lines = Get-Content $file.FullName
+		$lines = @(Get-Content -LiteralPath $file.FullName)
 		$currentFunction = ''
 		for ($lineIndex = 0; $lineIndex -lt $lines.Count; $lineIndex++) {
 			$lineText = $lines[$lineIndex]

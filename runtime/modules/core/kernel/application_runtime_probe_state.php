@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__).'/Framework/ApplicationEnvironmentIdentifier.php';
+require_once dirname(__DIR__).'/Framework/PublicApplicationIdentifier.php';
 
 /** Release-local evidence for the fixed scheduler listener no-op roundtrip. */
 final class DataphyreApplicationRuntimeProbeState
@@ -52,7 +53,8 @@ final class DataphyreApplicationRuntimeProbeState
 			'release_id'=>$identity['release_id'] ?? '',
 			'environment_fingerprint'=>$identity['environment_fingerprint'] ?? '',
 		];
-		if(preg_match('/^[a-z0-9][a-z0-9_-]{0,62}$/D',$canonical['cloud_application'])!==1
+		if(!is_string($canonical['cloud_application'])
+			|| !\Dataphyre\PublicApplicationIdentifier::valid($canonical['cloud_application'])
 			|| preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$canonical['framework_application'])!==1
 			|| !\Dataphyre\ApplicationEnvironmentIdentifier::valid($canonical['environment'])
 			|| preg_match('/^dep_[a-f0-9]{40}$/D',$canonical['release_id'])!==1

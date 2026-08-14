@@ -22,7 +22,7 @@ test('signed scheduler requests are canonical and one-time',static function(Cont
 	$keypair=sodium_crypto_sign_keypair();
 	$secret=sodium_crypto_sign_secretkey($keypair);$public=sodium_crypto_sign_publickey($keypair);
 	$identity=[
-		'cloud_application'=>'serve_shop','framework_application'=>'Serve','environment'=>'Staging.Blue',
+		'cloud_application'=>'Store:North_2-Beta','framework_application'=>'Serve','environment'=>'Staging.Blue',
 		'release_id'=>'dep_'.str_repeat('a',40),
 	];
 	$request=DataphyreApplicationRuntimeSchedulerProtocol::issue(
@@ -52,16 +52,19 @@ test('signed scheduler requests are canonical and one-time',static function(Cont
 	$t->isFalse(DataphyreApplicationRuntimeSchedulerProtocol::consume($pending,$request,$public,1776073500));
 })->tag('protocol','canonical-json','replay','negative');
 
-test('broad environment identity crosses signed requests durable state and probe identity unchanged',static function(Context $t): void {
+test('public application and environment identities cross signed requests durable state and probe identity unchanged',static function(Context $t): void {
 	$kernel=dirname(__DIR__).'/kernel';
 	require_once $kernel.'/application_runtime_scheduler_protocol.php';
 	require_once $kernel.'/application_runtime_scheduler_state.php';
 	require_once $kernel.'/application_runtime_probe_state.php';
 	$keypair=sodium_crypto_sign_keypair();$secret=sodium_crypto_sign_secretkey($keypair);
 	$public=sodium_crypto_sign_publickey($keypair);
-	foreach(['staging_blue','Staging.Blue'] as $environment){
+	foreach([
+		['Store:North_2-Beta','Staging.Blue'],
+		[str_repeat('Z',120),'staging_blue'],
+	] as [$cloudApplication,$environment]){
 		$identity=[
-			'cloud_application'=>'serve_shop','framework_application'=>'Serve','environment'=>$environment,
+			'cloud_application'=>$cloudApplication,'framework_application'=>'Serve','environment'=>$environment,
 			'release_id'=>'dep_'.str_repeat('a',40),
 			'environment_fingerprint'=>'hmac-sha256:'.str_repeat('b',64),
 		];
@@ -75,6 +78,30 @@ test('broad environment identity crosses signed requests durable state and probe
 			'/^sha256:[a-f0-9]{64}$/D',
 			$t->nonPublic(DataphyreApplicationRuntimeProbeState::class)->invoke('identitySha256',$identity),
 			$environment,
+		);
+	}
+	foreach(['','app.name','app/name',"app\nname","app\0name",str_repeat('a',121)] as $cloudApplication){
+		$identity=[
+			'cloud_application'=>$cloudApplication,'framework_application'=>'Serve','environment'=>'Staging.Blue',
+			'release_id'=>'dep_'.str_repeat('a',40),
+			'environment_fingerprint'=>'hmac-sha256:'.str_repeat('b',64),
+		];
+		$t->throws(
+			static fn()=>DataphyreApplicationRuntimeSchedulerProtocol::issue(
+				'noop',$identity,'gen_'.str_repeat('c',32),1,$secret,null,null,null,1776073500,str_repeat('d',32),
+			),
+			InvalidArgumentException::class,
+			bin2hex($cloudApplication),
+		);
+		$t->throws(
+			static fn()=>DataphyreApplicationRuntimeSchedulerState::identitySha256($identity),
+			RuntimeException::class,
+			bin2hex($cloudApplication),
+		);
+		$t->throws(
+			static fn()=>$t->nonPublic(DataphyreApplicationRuntimeProbeState::class)->invoke('identitySha256',$identity),
+			RuntimeException::class,
+			bin2hex($cloudApplication),
 		);
 	}
 	foreach(['.','..',"staging\nblue","staging\0blue"] as $environment){
@@ -101,7 +128,7 @@ test('broad environment identity crosses signed requests durable state and probe
 			bin2hex($environment),
 		);
 	}
-})->tag('environment-identifier','scheduler','protocol','state','probe','negative','regression');
+})->tag('public-application-identifier','environment-identifier','scheduler','protocol','state','probe','negative','regression');
 
 test('scheduler state rejects an invalid explicit test root before filesystem access',static function(Context $t): void {
 	$missing=$t->tempDirectory('scheduler-state-missing-root');rmdir($missing);
