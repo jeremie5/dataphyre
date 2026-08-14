@@ -472,20 +472,64 @@ final class McpProtocolBoundaryHarness {
 			->inDirectory($workspace->root())
 			->withEnvironment(['DATAPHYRE_MCP_DEBUG_LOG'=>$explicitLog])
 			->exchange([McpScenario::request('debug-explicit','initialize')]);
-		$events=static function(string $path): array {
+		$records=static function(string $path): array {
 			$lines=file($path,FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES);
 			if(!is_array($lines)){return [];}
-			return array_map(static fn(string $line): mixed=>(json_decode($line,true)['event'] ?? null),$lines);
+			return array_values(array_filter(array_map(
+				static fn(string $line): mixed=>json_decode($line,true),
+				$lines
+			),'is_array'));
 		};
+		$fatalLog=$workspace->path('fatal-debug.log');
+		$moduleRoot=dirname(__DIR__);
+		$fatal=$this->context->phpFixture(
+			$moduleRoot.'/unit_tests/fixtures/mcp_fatal_shutdown_probe.php',
+			[$moduleRoot.'/kernel/dataphyre_mcp.php'],
+			'',
+			$workspace->root(),
+			['DATAPHYRE_MCP_DEBUG_LOG'=>$fatalLog]
+		);
+		$fatalRecords=$records($fatalLog);
 		$kernel=new McpKernelHarness($this->context);
+		$directLog=$workspace->path('direct-shutdown-debug.log');
+		$previousDebugLog=getenv('DATAPHYRE_MCP_DEBUG_LOG');
+		putenv('DATAPHYRE_MCP_DEBUG_LOG='.$directLog);
+		try{
+			\dataphyre_mcp_debug_shutdown([
+				'type'=>E_WARNING,
+				'message'=>'Nonfatal diagnostic must remain silent.',
+				'file'=>__FILE__,
+				'line'=>__LINE__,
+			]);
+			\dataphyre_mcp_debug_shutdown([
+				'type'=>E_USER_ERROR,
+				'message'=>'Direct fatal classification probe.',
+				'file'=>__FILE__,
+				'line'=>__LINE__,
+			]);
+		}finally{
+			putenv($previousDebugLog===false
+				? 'DATAPHYRE_MCP_DEBUG_LOG'
+				: 'DATAPHYRE_MCP_DEBUG_LOG='.$previousDebugLog);
+		}
+		$directRecords=$records($directLog);
+		$events=static fn(array $items): array=>array_map(
+			static fn(array $item): mixed=>$item['event'] ?? null,
+			$items
+		);
 		$valid=$kernel->invoke('mcp_json_response_body',['jsonrpc'=>'2.0','id'=>'contract','result'=>['ok'=>true]]);
 		$invalid=$kernel->invoke('mcp_json_response_body',['invalid_utf8'=>"\xB1\x31"]);
 		$resource=fopen('php://memory','rb');
 		$invalidToolJson=$kernel->invoke('json',$resource);
 		if(is_resource($resource)){fclose($resource);}
 		return [
-			'default_events'=>$events($defaultLog),
-			'explicit_events'=>$events($explicitLog),
+			'default_events'=>$events($records($defaultLog)),
+			'explicit_events'=>$events($records($explicitLog)),
+			'fatal_exit_code'=>$fatal->exitCode(),
+			'fatal_events'=>$events($fatalRecords),
+			'fatal_context'=>$fatalRecords[2]['context'] ?? [],
+			'direct_shutdown_events'=>$events($directRecords),
+			'direct_shutdown_context'=>$directRecords[0]['context'] ?? [],
 			'valid_body'=>json_decode($valid,true,512,JSON_THROW_ON_ERROR),
 			'invalid_body'=>json_decode($invalid,true,512,JSON_THROW_ON_ERROR),
 			'invalid_tool_json'=>$invalidToolJson,
@@ -1505,6 +1549,35 @@ final class McpInspectionBoundaryHarness {
 				'plan'=>$migrationPlan,
 			],
 		];
+		$sqliteMigrationChecks=$base['checks'];
+		$sqliteMigrationChecks[1]=[
+			'id'=>'database_migrations',
+			'status'=>'passed',
+			'evidence'=>[
+				'contract'=>'dataphyre.sqlite_migration_command.v1',
+				'declared'=>true,
+				'dry_run'=>false,
+				'engine'=>'sqlite',
+				'manifest'=>[
+					'algorithm'=>'sha256',
+					'migration_count'=>3,
+					'sha256'=>str_repeat('e',64),
+				],
+				'result'=>[
+					'applied_migrations'=>['001_initial','002_expand','003_index'],
+					'database_file'=>'tenant.sqlite',
+					'pending_migrations'=>[],
+				],
+				'write_scope'=>'isolated_application_data',
+			],
+		];
+		$sqlitePendingChecks=$sqliteMigrationChecks;
+		$sqlitePendingChecks[1]['evidence']['result']['applied_migrations']=['001_initial','002_expand'];
+		$sqlitePendingChecks[1]['evidence']['result']['pending_migrations']=['003_index'];
+		$sqliteUnsafeDatabaseFile=$sqliteMigrationChecks;
+		$sqliteUnsafeDatabaseFile[1]['evidence']['result']['database_file']='../tenant.sqlite';
+		$sqliteOutOfOrder=$sqliteMigrationChecks;
+		$sqliteOutOfOrder[1]['evidence']['result']['applied_migrations']=['001_initial','003_index','002_expand'];
 		$migrationFailurePlan=[
 			'mode'=>'rolling',
 			'eligible'=>false,
@@ -1714,6 +1787,9 @@ final class McpInspectionBoundaryHarness {
 			'too_many_missing_keys'=>['checks'=>$tooManyMissingKeys],
 			'unhealthy_passed_check'=>['checks'=>$unhealthyPassed],
 			'zero_attempt_pass'=>['checks'=>$zeroAttemptPass],
+			'sqlite_pending_migration'=>['checks'=>$sqlitePendingChecks],
+			'sqlite_unsafe_database_file'=>['checks'=>$sqliteUnsafeDatabaseFile],
+			'sqlite_out_of_order_journal'=>['checks'=>$sqliteOutOfOrder],
 			'raw_migration_evidence'=>[
 				'exit_status'=>70,
 				'ok'=>false,
@@ -1722,7 +1798,7 @@ final class McpInspectionBoundaryHarness {
 				'failures'=>[ [
 					'kind'=>'verification',
 					'code'=>'migration_plan_ineligible',
-					'message'=>'The PostgreSQL migration dry-run found drift or an ineligible migration plan.',
+					'message'=>'The database migration preflight found drift or an ineligible migration plan.',
 				] ],
 			],
 			'reordered_migration_plan'=>[
@@ -1733,7 +1809,7 @@ final class McpInspectionBoundaryHarness {
 				'failures'=>[ [
 					'kind'=>'verification',
 					'code'=>'migration_plan_ineligible',
-					'message'=>'The PostgreSQL migration dry-run found drift or an ineligible migration plan.',
+					'message'=>'The database migration preflight found drift or an ineligible migration plan.',
 				] ],
 			],
 			'unknown_migration_issue'=>[
@@ -1744,7 +1820,7 @@ final class McpInspectionBoundaryHarness {
 				'failures'=>[ [
 					'kind'=>'verification',
 					'code'=>'migration_plan_ineligible',
-					'message'=>'The PostgreSQL migration dry-run found drift or an ineligible migration plan.',
+					'message'=>'The database migration preflight found drift or an ineligible migration plan.',
 				] ],
 			],
 			'deferred_migration_issue'=>[
@@ -1755,7 +1831,7 @@ final class McpInspectionBoundaryHarness {
 				'failures'=>[ [
 					'kind'=>'verification',
 					'code'=>'migration_plan_ineligible',
-					'message'=>'The PostgreSQL migration dry-run found drift or an ineligible migration plan.',
+					'message'=>'The database migration preflight found drift or an ineligible migration plan.',
 				] ],
 			],
 			'mismatched_migration_code'=>[
@@ -1766,7 +1842,7 @@ final class McpInspectionBoundaryHarness {
 				'failures'=>[ [
 					'kind'=>'verification',
 					'code'=>'migration_plan_ineligible',
-					'message'=>'The PostgreSQL migration dry-run found drift or an ineligible migration plan.',
+					'message'=>'The database migration preflight found drift or an ineligible migration plan.',
 				] ],
 			],
 			'arbitrary_failure_message'=>[
@@ -1788,7 +1864,7 @@ final class McpInspectionBoundaryHarness {
 				'failures'=>[ [
 					'kind'=>'configuration',
 					'code'=>'application_definition_missing',
-					'message'=>'The PostgreSQL migration profile, manifest, or connection configuration is invalid.',
+					'message'=>'The database migration profile, manifest, or connection configuration is invalid.',
 				] ],
 			],
 			'wrong_type_migration_exit'=>[
@@ -1799,7 +1875,7 @@ final class McpInspectionBoundaryHarness {
 				'failures'=>[ [
 					'kind'=>'verification',
 					'code'=>'migration_plan_ineligible',
-					'message'=>'The PostgreSQL migration dry-run found drift or an ineligible migration plan.',
+					'message'=>'The database migration preflight found drift or an ineligible migration plan.',
 				] ],
 			],
 			'zero_migration_id'=>['checks'=>$zeroMigrationIdChecks],
@@ -1811,7 +1887,7 @@ final class McpInspectionBoundaryHarness {
 				'failures'=>[ [
 					'kind'=>'verification',
 					'code'=>'migration_plan_ineligible',
-					'message'=>'The PostgreSQL migration dry-run found drift or an ineligible migration plan.',
+					'message'=>'The database migration preflight found drift or an ineligible migration plan.',
 				] ],
 			],
 			'duplicate_migration_errors'=>[
@@ -1822,7 +1898,7 @@ final class McpInspectionBoundaryHarness {
 				'failures'=>[ [
 					'kind'=>'verification',
 					'code'=>'migration_plan_ineligible',
-					'message'=>'The PostgreSQL migration dry-run found drift or an ineligible migration plan.',
+					'message'=>'The database migration preflight found drift or an ineligible migration plan.',
 				] ],
 			],
 			'missing_rolling_error'=>[
@@ -1833,7 +1909,7 @@ final class McpInspectionBoundaryHarness {
 				'failures'=>[ [
 					'kind'=>'verification',
 					'code'=>'migration_plan_ineligible',
-					'message'=>'The PostgreSQL migration dry-run found drift or an ineligible migration plan.',
+					'message'=>'The database migration preflight found drift or an ineligible migration plan.',
 				] ],
 			],
 			'contractful_migration_fallback'=>[
@@ -1859,7 +1935,7 @@ final class McpInspectionBoundaryHarness {
 				'failures'=>[ [
 					'kind'=>'verification',
 					'code'=>'migration_preflight_failed',
-					'message'=>'The PostgreSQL migration dry-run found drift or an ineligible migration plan.',
+					'message'=>'The database migration preflight found drift or an ineligible migration plan.',
 				] ],
 			],
 			'impossible_migration_child_tuple'=>[
@@ -1885,7 +1961,7 @@ final class McpInspectionBoundaryHarness {
 				'failures'=>[ [
 					'kind'=>'configuration',
 					'code'=>'profile_invalid',
-					'message'=>'The PostgreSQL migration profile, manifest, or connection configuration is invalid.',
+					'message'=>'The database migration profile, manifest, or connection configuration is invalid.',
 				] ],
 			],
 			'impossible_health_null_status'=>[
@@ -2021,6 +2097,11 @@ final class McpInspectionBoundaryHarness {
 				$args,
 				$this->preflightPayloadRunner($this->preflightPayload(['checks'=>$migrationChecks]))
 			),
+			'sqlite_migration_success'=>$this->kernel->invoke(
+				'run_release_check',
+				$args,
+				$this->preflightPayloadRunner($this->preflightPayload(['checks'=>$sqliteMigrationChecks]))
+			),
 			'migration_failure'=>$this->kernel->invoke(
 				'run_release_check',
 				$args,
@@ -2032,7 +2113,7 @@ final class McpInspectionBoundaryHarness {
 					'failures'=>[ [
 						'kind'=>'verification',
 						'code'=>'migration_plan_ineligible',
-						'message'=>'The PostgreSQL migration dry-run found drift or an ineligible migration plan.',
+						'message'=>'The database migration preflight found drift or an ineligible migration plan.',
 					] ],
 				]))
 			),
@@ -2047,7 +2128,7 @@ final class McpInspectionBoundaryHarness {
 					'failures'=>[ [
 						'kind'=>'verification',
 						'code'=>'migration_plan_ineligible',
-						'message'=>'The PostgreSQL migration dry-run found drift or an ineligible migration plan.',
+						'message'=>'The database migration preflight found drift or an ineligible migration plan.',
 					] ],
 				]))
 			),
@@ -2062,7 +2143,7 @@ final class McpInspectionBoundaryHarness {
 					'failures'=>[ [
 						'kind'=>'verification',
 						'code'=>'migration_plan_ineligible',
-						'message'=>'The PostgreSQL migration dry-run found drift or an ineligible migration plan.',
+						'message'=>'The database migration preflight found drift or an ineligible migration plan.',
 					] ],
 				]))
 			),
@@ -2122,7 +2203,7 @@ final class McpInspectionBoundaryHarness {
 					'failures'=>[ [
 						'kind'=>'verification',
 						'code'=>'migration_preflight_failed',
-						'message'=>'The PostgreSQL migration dry-run found drift or an ineligible migration plan.',
+						'message'=>'The database migration preflight found drift or an ineligible migration plan.',
 					] ],
 				]))
 			),
@@ -2152,7 +2233,7 @@ final class McpInspectionBoundaryHarness {
 					'failures'=>[ [
 						'kind'=>'verification',
 						'code'=>'migration_preflight_failed',
-						'message'=>'The PostgreSQL migration dry-run found drift or an ineligible migration plan.',
+						'message'=>'The database migration preflight found drift or an ineligible migration plan.',
 					] ],
 				]))
 			),
@@ -2231,7 +2312,7 @@ final class McpInspectionBoundaryHarness {
 			'environment'=>'staging',
 			'execution'=>'completed',
 			'execution_boundary'=>'fixed_dataphyre_commands_and_loopback_application_boot',
-			'write_policy'=>'database_dry_run_and_ephemeral_application_boot',
+			'write_policy'=>'isolated_database_preflight_and_ephemeral_application_boot',
 			'checks'=>[
 				[
 					'id'=>'configuration_bootstrap',
@@ -2248,7 +2329,7 @@ final class McpInspectionBoundaryHarness {
 					'status'=>'not_applicable',
 					'evidence'=>[
 						'declared'=>false,
-						'reason'=>'no_postgresql_migration_profile',
+						'reason'=>'no_database_migration_profile',
 					],
 				],
 				[
@@ -2281,6 +2362,9 @@ final class McpInspectionBoundaryHarness {
 						'origin_required'=>true,
 						'private_web_port'=>8083,
 						'registration_sha256'=>'sha256:'.hash('sha256','[]'),
+						'registered_table_count'=>0,
+						'registered_table_materialization_contract'=>'dataphyre.registered_table_materialization.v1',
+						'registered_table_set_sha256'=>'sha256:'.hash('sha256','[]'),
 						'route_count'=>0,
 						'scheduler_definition_count'=>0,
 						'scheduler_definition_sha256'=>'sha256:'.hash('sha256','[]'),
@@ -2289,7 +2373,7 @@ final class McpInspectionBoundaryHarness {
 				],
 			],
 			'failures'=>[],
-			'claim_boundary'=>'This verdict covers local configuration bootstrap, the native PostgreSQL migration dry-run when declared, application startup, GET /health, and deterministic realtime callback and scheduler definition registration. A release platform must run this same command inside the exact candidate image and separately prove the three fixed process identities, scheduler callback execution, a framework listener roundtrip, execution and strict invalid-Origin rejection by every registered application authorization callback, WebSocket ping/pong and close, signal lifecycle, and source, image, environment, database, and traffic identity.',
+			'claim_boundary'=>'This verdict covers local configuration bootstrap, the native PostgreSQL migration dry-run or isolated SQL-only SQLite apply when declared, application startup against the same database state, GET /health, and deterministic realtime callback, scheduler definition, and registered table-definition inventories. A release platform must run this same command inside the exact candidate image and separately prove registered-table materialization before application migrations, the three fixed process identities, scheduler callback execution, a framework listener roundtrip, execution and strict invalid-Origin rejection by every registered application authorization callback, WebSocket ping/pong and close, signal lifecycle, persistent application-data binding, and source, image, environment, database, and traffic identity.',
 		], $overrides);
 	}
 
@@ -2305,12 +2389,12 @@ final class McpInspectionBoundaryHarness {
 
 	private function failedPreflightRunner(string $kind,string $code,int $exitStatus): \Closure {
 		$message=$code==='application_realtime_registration_failed'
-			? 'The application realtime callbacks or scheduler definitions did not load through the fixed framework bootstrap.'
+			? 'The application realtime callbacks, scheduler definitions, or registered table definitions did not load through the fixed framework bootstrap.'
 			: match($exitStatus){
 			64=>'Use only the documented typed application release preflight options.',
 			66=>'The selected application project root is unavailable.',
-			69=>'The configured PostgreSQL dependency could not be verified.',
-			70=>'The PostgreSQL migration dry-run found drift or an ineligible migration plan.',
+			69=>'The configured database dependency could not be verified.',
+			70=>'The database migration preflight found drift or an ineligible migration plan.',
 			75=>'The application did not become healthy through the fixed loopback probe.',
 			default=>'The application bootstrap configuration is incomplete or invalid.',
 		};

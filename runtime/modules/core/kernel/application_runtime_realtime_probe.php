@@ -13,6 +13,7 @@ $failure=[
 	'framework_listener_roundtrip'=>false,
 	'application_authorization_rejections'=>false,
 	'application_authorization_rejection_count'=>0,
+	'registration_sha256'=>null,
 	'ping_pong'=>false,
 	'close_handshake'=>false,
 ];
@@ -34,10 +35,7 @@ try{
 	$offset=0;
 	while($offset<strlen($request)){
 		$written=fwrite($socket,substr($request,$offset));
-		if(!is_int($written) || $written<1){
-			$write($failure);
-			exit(70);
-		}
+		if(!is_int($written) || $written<1) break;
 		$offset+=$written;
 	}
 	$response='';
@@ -59,7 +57,7 @@ $payload=json_decode($body,true);
 $valid=is_array($payload)
 	&& array_keys($payload)===[
 		'contract','ok','framework_listener_roundtrip','application_authorization_rejections',
-		'application_authorization_rejection_count','ping_pong','close_handshake',
+		'application_authorization_rejection_count','registration_sha256','ping_pong','close_handshake',
 	]
 	&& ($payload['contract'] ?? null)==='dataphyre.application_realtime_probe.v1'
 	&& is_bool($payload['ok'] ?? null)
@@ -68,6 +66,8 @@ $valid=is_array($payload)
 	&& is_int($payload['application_authorization_rejection_count'] ?? null)
 	&& $payload['application_authorization_rejection_count']>=0
 	&& $payload['application_authorization_rejection_count']<=128
+	&& is_string($payload['registration_sha256'] ?? null)
+	&& preg_match('/^sha256:[a-f0-9]{64}$/D',$payload['registration_sha256'])===1
 	&& is_bool($payload['ping_pong'] ?? null)
 	&& is_bool($payload['close_handshake'] ?? null);
 if(!$valid){

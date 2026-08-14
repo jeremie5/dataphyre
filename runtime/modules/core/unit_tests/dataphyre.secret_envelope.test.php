@@ -40,9 +40,11 @@ test('secret envelopes round trip strings and canonical JSON with purpose-bound 
 test('secret envelopes fail closed for context substitution tampering malformed input and unavailable key versions', static function(Context $t): void {
 	$vault=new SecretEnvelope(SecretKeyRing::fromSecrets(str_repeat('context-', 8)));
 	$sealed=$vault->sealString('private', 'serve.provider.key', ['tenant_id'=>10, 'store_id'=>66]);
+	$last=substr($sealed['ciphertext'], -1);
+	$tampered=substr($sealed['ciphertext'], 0, -1).($last==='A' ? 'B' : 'A');
 	foreach([
 		static fn()=>$vault->openString($sealed['ciphertext'], 'serve.provider.key', ['tenant_id'=>10, 'store_id'=>67]),
-		static fn()=>$vault->openString(substr($sealed['ciphertext'], 0, -1).'A', 'serve.provider.key', ['tenant_id'=>10, 'store_id'=>66]),
+		static fn()=>$vault->openString($tampered, 'serve.provider.key', ['tenant_id'=>10, 'store_id'=>66]),
 		static fn()=>$vault->openString('plaintext', 'serve.provider.key', []),
 		static fn()=>$vault->openString($sealed['ciphertext'], '../unsafe purpose', []),
 	] as $operation){
@@ -68,6 +70,64 @@ test('secret key rotation reads old envelopes and marks them for rewrites withou
 	$t->same(2, count($rotatedRing->keyIds()));
 	$t->same(false, str_contains(json_encode($rotatedRing->keyIds()) ?: '', 'old-secret'));
 })->tag('core', 'secrets', 'rotation', 'security')->maxMillis(1000);
+
+test('secret envelopes reject cross-type payloads malformed framing and non-canonical values', static function(Context $t): void {
+	$ring=SecretKeyRing::fromSecrets(str_repeat('boundary-', 8));
+	$vault=new SecretEnvelope($ring);
+	$string=$vault->sealString('string-value', 'serve.boundary', ['list'=>[1, ['nested'=>true]]]);
+	$json=$vault->sealJson(['json'=>'value'], 'serve.boundary');
+	$t->same($string['fingerprint'], $vault->fingerprintString('string-value', 'serve.boundary', ['list'=>[1, ['nested'=>true]]]));
+	$t->throws(static fn()=>$vault->openString($json['ciphertext'], 'serve.boundary'), SecretException::class);
+	$t->throws(static fn()=>$vault->openJson($string['ciphertext'], 'serve.boundary', ['list'=>[1, ['nested'=>true]]]), SecretException::class);
+	$t->isFalse($vault->matchesString('value', str_repeat('a', 64), 'plaintext', 'serve.boundary'));
+	$t->isTrue($vault->needsRotation('plaintext'));
+
+	$id=$ring->primaryId();
+	$encode=static fn(string $value): string=>rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
+	foreach([
+		'dpsecret:v1:'.str_repeat('f', 16).':'.$encode(str_repeat('x', 29)),
+		'dpsecret:v1:'.$id.':'.$encode('x'),
+		'dpsecret:v1:'.$id,
+		'dpsecret:v1:invalid-key-id:'.$encode(str_repeat('x', 29)),
+		'dpsecret:v1:'.$id.':',
+		'dpsecret:v1:'.$id.':A',
+	] as $malformed){
+		$t->throws(static fn()=>$vault->inspect($malformed), SecretException::class);
+	}
+	$t->throws(static fn()=>$vault->openString('dpsecret:v1:'.$id.':'.$encode('x'), 'serve.boundary'), SecretException::class);
+	$t->throws(static fn()=>$vault->sealJson(['invalid'=>INF], 'serve.boundary'), SecretException::class);
+	$t->throws(static fn()=>$vault->sealJson(['invalid'=>new stdClass()], 'serve.boundary'), SecretException::class);
+})->tag('core', 'secrets', 'boundary', 'fail-closed', 'exact-coverage')->maxMillis(1000);
+
+test('secret envelope cryptographic failure boundaries fail closed', static function(Context $t): void {
+	$root=dirname(__DIR__, 4);
+	$fixture=__DIR__.'/fixtures/secret_envelope_crypto_boundary.php';
+	$sources=[
+		dirname(__DIR__).'/Framework/Secrets/SecretException.php',
+		dirname(__DIR__).'/Framework/Secrets/SecretKeyRing.php',
+		dirname(__DIR__).'/Framework/Secrets/SecretEnvelope.php',
+	];
+	foreach(['encrypt-failure', 'malformed-decrypted-payload', 'derivation-failure'] as $mode){
+		$result=$t->processSucceeded($t->coveredPhpFixture($fixture, [$mode, ...$sources], framework_root:$root));
+		$t->same(true, $result->json()['rejected'] ?? false);
+	}
+	$unavailable=$t->processSucceeded($t->coveredPhpFixture(
+		$fixture,
+		['unavailable-crypto', ...$sources],
+		framework_root:$root,
+		php_ini:['disable_functions'=>'openssl_encrypt,openssl_decrypt'],
+	));
+	$t->same(true, $unavailable->json()['rejected'] ?? false);
+})->tag('core', 'secrets', 'crypto', 'fail-closed', 'exact-coverage')->maxMillis(5000);
+
+test('secret key rings validate external material and reject unavailable versions', static function(Context $t): void {
+	$t->throws(static fn()=>SecretKeyRing::fromSecrets('too-short'), SecretException::class);
+	$t->throws(static fn()=>SecretKeyRing::fromSecrets('base64:not-valid!'), SecretException::class);
+	$encoded='base64:'.base64_encode(str_repeat('encoded-root', 4));
+	$ring=SecretKeyRing::fromSecrets($encoded);
+	$t->same(1, count($ring->keyIds()));
+	$t->throws(static fn()=>$ring->key(str_repeat('f', 16)), SecretException::class);
+})->tag('core', 'secrets', 'key-ring', 'fail-closed', 'exact-coverage')->maxMillis(1000);
 
 test('secret redaction recursively protects API keys tokens credentials envelopes and fingerprints', static function(Context $t): void {
 	$redacted=SecretRedactor::redact([

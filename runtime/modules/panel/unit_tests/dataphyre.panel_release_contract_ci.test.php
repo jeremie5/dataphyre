@@ -146,9 +146,12 @@ test('public export boundary excludes generated trees while retaining the cache 
 	}
 	foreach([
 		'config/cache.example.php',
+		'runtime/modules/cache/Framework/SharedCacheProbeCommand.php',
 		'runtime/modules/cache/documentation/Dataphyre_Cache.md',
 		'runtime/modules/cache/kernel/cache.main.php',
+		'runtime/modules/cache/kernel/shared_cache_probe.php',
 		'runtime/modules/cache/unit_tests/dataphyre.cache.fail_open.test.php',
+		'runtime/modules/cache/unit_tests/dataphyre.cache.shared_cache_probe.test.php',
 		'runtime/modules/cache/version',
 	] as $cacheFile){
 		$t->isTrue(isset($releaseFiles[$cacheFile]), $cacheFile.' is represented in the public release manifest');

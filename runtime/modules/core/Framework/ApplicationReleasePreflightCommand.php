@@ -13,17 +13,20 @@ use JsonException;
 use RuntimeException;
 use Throwable;
 
+require_once __DIR__.'/../Release/ApplicationReleasePreflightEvidence.php';
+
 /**
  * Runs the application-neutral checks that can be reproduced before release.
  *
  * The command owns every executable path. A caller selects only an application
  * project, application id, and environment. PostgreSQL migrations use the
- * fixed Dataphyre dry-run command, and application boot uses the fixed
- * loopback router shipped with this class. No application release script or
- * caller-supplied command is accepted.
+ * fixed Dataphyre dry-run command; SQLite migrations use the fixed SQL-only
+ * command against a disposable application-data root; and application boot
+ * uses the fixed loopback router shipped with this class. No application
+ * release script or caller-supplied command is accepted.
  */
 final class ApplicationReleasePreflightCommand {
-	public const CONTRACT='dataphyre.application_release_preflight.v1';
+	public const CONTRACT=ApplicationReleasePreflightEvidence::CONTRACT;
 	public const EXIT_SUCCESS=0;
 	public const EXIT_USAGE=64;
 	public const EXIT_PROJECT=66;
@@ -41,8 +44,16 @@ final class ApplicationReleasePreflightCommand {
 	private const DATABASE_RUNTIME_TIMEOUT_MILLISECONDS=30000;
 	private const REALTIME_REGISTRATION_TIMEOUT_MILLISECONDS=30000;
 	private const MAX_PROCESS_OUTPUT_BYTES=262144;
-	private const DATABASE_RUNTIME_MARKER='DATAPHYRE_CLOUD_DATABASE_BINDING_PRIMARY_SHA256';
-	private const DATABASE_RUNTIME_CONTRACT='dataphyre.application_database_runtime.v1';
+	private const PROCESS_DRAIN_BYTES_PER_STREAM=65536;
+	private const PROCESS_GROUP_START_TIMEOUT_SECONDS=0.25;
+	private const PROCESS_TERMINATE_GRACE_SECONDS=0.5;
+	private const PROCESS_KILL_REAP_SECONDS=0.5;
+	private const PROCESS_POLL_MICROSECONDS=10000;
+	private const PROCESS_SIGNAL_KILL=9;
+	private const PROCESS_SIGNAL_TERM=15;
+	private const SETSID_EXECUTABLE='/usr/bin/setsid';
+	private const DATABASE_RUNTIME_MARKER='DATAPHYRE_DATABASE_BINDING_PRIMARY_SHA256';
+	private const DATABASE_RUNTIME_CONTRACT='dataphyre.database_connection_probe.v1';
 	private const REALTIME_REGISTRATION_CONTRACT='dataphyre.application_realtime_registration.v1';
 
 	/**
@@ -52,6 +63,8 @@ final class ApplicationReleasePreflightCommand {
 	 * @param array<string,mixed> $runtime Optional writers and fixed-stage runners.
 	 */
 	public static function main(array $arguments, array $runtime=[]): int {
+		$commandDeadline=microtime(true)
+			+(ApplicationReleasePreflightEvidence::COMMAND_TIMEOUT_MILLISECONDS/1000);
 		$write=$runtime['write_out'] ?? static fn(string $value): int|false=>fwrite(STDOUT, $value);
 		$sapi=(string)($runtime['sapi'] ?? PHP_SAPI);
 		if(!in_array($sapi, ['cli', 'phpdbg'], true)){
@@ -140,7 +153,7 @@ final class ApplicationReleasePreflightCommand {
 		}
 
 		$migrationFiles=self::migrationFiles($applicationContext['application_root']);
-		if($migrationFiles['valid']!==true || $migrationFiles['profile']!==$migrationFiles['manifest']){
+		if($migrationFiles['valid']!==true){
 			$checks[]=[
 				'id'=>'database_migrations',
 				'status'=>'failed',
@@ -154,18 +167,56 @@ final class ApplicationReleasePreflightCommand {
 				$checks,
 				'configuration',
 				'migration_configuration_incomplete',
-				'The application must provide both the PostgreSQL profile and immutable manifest.'
+				'The application must provide exactly one complete PostgreSQL or SQLite migration profile and immutable manifest.'
 			);
 		}
 
-		if($migrationFiles['profile']===true){
-			$migrationRunner=$runtime['migration_runner'] ?? [self::class, 'runMigration'];
-			$migration=$migrationRunner(
-				$applicationContext['application_root'],
-				$application,
-				$environment,
-				self::MIGRATION_TIMEOUT_MILLISECONDS
-			);
+		$applicationDataRoot=null;
+		if($migrationFiles['engine']==='sqlite'){
+			try{
+				$applicationDataRoot=self::createIsolatedStateRoot();
+			}catch(Throwable){
+				$checks[]=[
+					'id'=>'database_migrations',
+					'status'=>'failed',
+					'evidence'=>['declared'=>true],
+				];
+				return self::emitFailure(
+					$write,
+					self::EXIT_DEPENDENCY,
+					$application,
+					$environment,
+					$checks,
+					'dependency',
+					'application_data_root_unavailable',
+					'The isolated application data root could not be created.'
+				);
+			}
+		}
+
+		if($migrationFiles['engine']!=='none'){
+			try{
+				if($migrationFiles['engine']==='sqlite'){
+					$migrationRunner=$runtime['sqlite_migration_runner'] ?? [self::class, 'runSqliteMigration'];
+					$migration=$migrationRunner(
+						$applicationContext['application_root'],
+						$application,
+						$environment,
+						self::boundedTimeoutMilliseconds($commandDeadline, self::MIGRATION_TIMEOUT_MILLISECONDS),
+						$applicationDataRoot
+					);
+				}else{
+					$migrationRunner=$runtime['migration_runner'] ?? [self::class, 'runMigration'];
+					$migration=$migrationRunner(
+						$applicationContext['application_root'],
+						$application,
+						$environment,
+						self::boundedTimeoutMilliseconds($commandDeadline, self::MIGRATION_TIMEOUT_MILLISECONDS)
+					);
+				}
+			}catch(Throwable){
+				$migration=['exit_code'=>self::EXIT_DEPENDENCY, 'stdout'=>'', 'stderr'=>''];
+			}
 			$migration=self::normalizeProcessResult($migration);
 			$migrationPayload=self::decodeProcessPayload($migration);
 			if($migration['exit_code']!==0 || ($migrationPayload['ok'] ?? false)!==true){
@@ -177,13 +228,13 @@ final class ApplicationReleasePreflightCommand {
 				$checks[]=[
 					'id'=>'database_migrations',
 					'status'=>'failed',
-					'evidence'=>array_replace(self::migrationEvidence($migrationPayload), [
+					'evidence'=>array_replace(self::migrationEvidence($migrationPayload, $migrationFiles['engine']), [
 						'declared'=>true,
-						'dry_run'=>true,
 						'exit_status'=>$migration['exit_code'],
 						'error_code'=>$code,
 					]),
 				];
+				self::removeApplicationDataRoot($applicationDataRoot);
 				return self::emitFailure(
 					$write,
 					$classification['exit_status'],
@@ -198,7 +249,7 @@ final class ApplicationReleasePreflightCommand {
 			$checks[]=[
 				'id'=>'database_migrations',
 				'status'=>'passed',
-				'evidence'=>self::migrationEvidence($migrationPayload),
+				'evidence'=>self::migrationEvidence($migrationPayload, $migrationFiles['engine']),
 			];
 		}else{
 			$checks[]=[
@@ -206,7 +257,7 @@ final class ApplicationReleasePreflightCommand {
 				'status'=>'not_applicable',
 				'evidence'=>[
 					'declared'=>false,
-					'reason'=>'no_postgresql_migration_profile',
+					'reason'=>'no_database_migration_profile',
 				],
 			];
 		}
@@ -226,7 +277,8 @@ final class ApplicationReleasePreflightCommand {
 					$projectRoot,
 					$application,
 					$environment,
-					self::DATABASE_RUNTIME_TIMEOUT_MILLISECONDS
+					self::boundedTimeoutMilliseconds($commandDeadline, self::DATABASE_RUNTIME_TIMEOUT_MILLISECONDS),
+					$applicationDataRoot
 				));
 			}catch(Throwable){
 				$database=['exit_code'=>self::EXIT_DEPENDENCY, 'stdout'=>'', 'stderr'=>''];
@@ -235,9 +287,11 @@ final class ApplicationReleasePreflightCommand {
 			$connectionSha=$databasePayload['connection_sha256'] ?? null;
 			$databaseValid=preg_match('/^sha256:[0-9a-f]{64}$/D', $databaseMarker)===1
 				&& $database['exit_code']===0
-				&& ($databasePayload['ok'] ?? null)===true
 				&& ($databasePayload['contract'] ?? null)===self::DATABASE_RUNTIME_CONTRACT
 				&& ($databasePayload['purpose'] ?? null)==='primary'
+				&& ($databasePayload['binding_sha256'] ?? null)===$databaseMarker
+				&& ($databasePayload['connected'] ?? null)===true
+				&& ($databasePayload['identity_query'] ?? null)===true
 				&& is_string($connectionSha)
 				&& preg_match('/^sha256:[0-9a-f]{64}$/D', $connectionSha)===1;
 			if($databaseValid!==true){
@@ -246,6 +300,7 @@ final class ApplicationReleasePreflightCommand {
 					'status'=>'failed',
 					'evidence'=>self::databaseRuntimeEvidence(true),
 				];
+				self::removeApplicationDataRoot($applicationDataRoot);
 				return self::emitFailure(
 					$write,
 					self::EXIT_DEPENDENCY,
@@ -271,7 +326,8 @@ final class ApplicationReleasePreflightCommand {
 				$application,
 				$environment,
 				self::HEALTH_PATH,
-				self::HEALTH_TIMEOUT_SECONDS
+				self::boundedTimeoutSeconds($commandDeadline, self::HEALTH_TIMEOUT_SECONDS),
+				$applicationDataRoot
 			);
 		}catch(Throwable){
 			$health=[
@@ -283,12 +339,12 @@ final class ApplicationReleasePreflightCommand {
 		}
 		$health=is_array($health) ? $health : [];
 		$healthEvidence=self::healthEvidence($health);
-		if(($health['ok'] ?? false)===true && $healthEvidence['response_contract_valid']!==true){
-			$health['ok']=false;
-			$health['code']='application_health_evidence_invalid';
-		}elseif(($health['ok'] ?? false)===true && $healthEvidence['missing_environment_keys']!==[]){
+		if($healthEvidence['missing_environment_keys']!==[]){
 			$health['ok']=false;
 			$health['code']='application_environment_keys_missing';
+		}elseif(($health['ok'] ?? false)===true && $healthEvidence['response_contract_valid']!==true){
+			$health['ok']=false;
+			$health['code']='application_health_evidence_invalid';
 		}
 		if(($health['ok'] ?? false)!==true){
 			$code=self::safeCode((string)($health['code'] ?? ''), 'application_health_failed');
@@ -297,6 +353,7 @@ final class ApplicationReleasePreflightCommand {
 				'status'=>'failed',
 				'evidence'=>$healthEvidence,
 			];
+			self::removeApplicationDataRoot($applicationDataRoot);
 			return self::emitFailure(
 				$write,
 				self::EXIT_HEALTH,
@@ -320,7 +377,8 @@ final class ApplicationReleasePreflightCommand {
 				$projectRoot,
 				$application,
 				$environment,
-				self::REALTIME_REGISTRATION_TIMEOUT_MILLISECONDS
+				self::boundedTimeoutMilliseconds($commandDeadline, self::REALTIME_REGISTRATION_TIMEOUT_MILLISECONDS),
+				$applicationDataRoot
 			));
 		}catch(Throwable){
 			$realtime=['exit_code'=>self::EXIT_VERIFICATION, 'stdout'=>'', 'stderr'=>''];
@@ -330,6 +388,9 @@ final class ApplicationReleasePreflightCommand {
 		$registrationSha=$realtimePayload['registration_sha256'] ?? null;
 		$schedulerDefinitionCount=$realtimePayload['scheduler_definition_count'] ?? null;
 		$schedulerDefinitionSha=$realtimePayload['scheduler_definition_sha256'] ?? null;
+		$registeredTableCount=$realtimePayload['registered_table_count'] ?? null;
+		$registeredTableContract=$realtimePayload['registered_table_materialization_contract'] ?? null;
+		$registeredTableSha=$realtimePayload['registered_table_set_sha256'] ?? null;
 		$realtimeValid=$realtime['exit_code']===0
 			&& ($realtimePayload['ok'] ?? null)===true
 			&& ($realtimePayload['contract'] ?? null)===self::REALTIME_REGISTRATION_CONTRACT
@@ -338,12 +399,18 @@ final class ApplicationReleasePreflightCommand {
 			&& preg_match('/^sha256:[0-9a-f]{64}$/D',$registrationSha)===1
 			&& is_int($schedulerDefinitionCount) && $schedulerDefinitionCount>=0 && $schedulerDefinitionCount<=256
 			&& is_string($schedulerDefinitionSha)
-			&& preg_match('/^sha256:[0-9a-f]{64}$/D',$schedulerDefinitionSha)===1;
+			&& preg_match('/^sha256:[0-9a-f]{64}$/D',$schedulerDefinitionSha)===1
+			&& is_int($registeredTableCount) && $registeredTableCount>=0 && $registeredTableCount<=1024
+			&& $registeredTableContract==='dataphyre.registered_table_materialization.v1'
+			&& is_string($registeredTableSha)
+			&& preg_match('/^sha256:[0-9a-f]{64}$/D',$registeredTableSha)===1;
 		$realtimeEvidence=self::realtimeEvidence(
 			$realtimeValid ? $routeCount : 0,
 			$realtimeValid ? $registrationSha : null,
 			$realtimeValid ? $schedulerDefinitionCount : 0,
 			$realtimeValid ? $schedulerDefinitionSha : null,
+			$realtimeValid ? $registeredTableCount : 0,
+			$realtimeValid ? $registeredTableSha : null,
 		);
 		if(!$realtimeValid){
 			$checks[]=[
@@ -351,6 +418,7 @@ final class ApplicationReleasePreflightCommand {
 				'status'=>'failed',
 				'evidence'=>$realtimeEvidence,
 			];
+			self::removeApplicationDataRoot($applicationDataRoot);
 			return self::emitFailure(
 				$write,
 				self::EXIT_VERIFICATION,
@@ -359,7 +427,7 @@ final class ApplicationReleasePreflightCommand {
 				$checks,
 				'verification',
 				'application_realtime_registration_failed',
-				'The application realtime callbacks or scheduler definitions did not load through the fixed framework bootstrap.'
+				'The application realtime callbacks, scheduler definitions, or registered table definitions did not load through the fixed framework bootstrap.'
 			);
 		}
 		$checks[]=[
@@ -368,6 +436,7 @@ final class ApplicationReleasePreflightCommand {
 			'evidence'=>$realtimeEvidence,
 		];
 
+		self::removeApplicationDataRoot($applicationDataRoot);
 		self::writeJson($write, self::resultEnvelope(
 			self::EXIT_SUCCESS,
 			true,
@@ -435,13 +504,21 @@ final class ApplicationReleasePreflightCommand {
 	}
 
 	private static function validApplicationIdentifier(string $value): bool {
-		return !in_array($value, ['.', '..'], true)
-			&& preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D', $value)===1;
+		return ApplicationReleasePreflightEvidence::applicationIdentifier($value);
 	}
 
 	private static function validEnvironmentIdentifier(string $value): bool {
-		return !in_array($value, ['.', '..'], true)
-			&& preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/D', $value)===1;
+		return ApplicationReleasePreflightEvidence::environmentIdentifier($value);
+	}
+
+	private static function boundedTimeoutMilliseconds(float $deadline, int $stageMaximum): int {
+		$remaining=(int)floor(($deadline-microtime(true))*1000);
+		return max(1, min($stageMaximum, $remaining));
+	}
+
+	private static function boundedTimeoutSeconds(float $deadline, int $stageMaximum): int {
+		$remaining=(int)floor($deadline-microtime(true));
+		return max(1, min($stageMaximum, $remaining));
 	}
 
 	private static function projectRoot(string $path): string {
@@ -519,20 +596,28 @@ final class ApplicationReleasePreflightCommand {
 			&& hash_equals($application, $decoded['name']);
 	}
 
-	/** @return array{profile:bool,manifest:bool,valid:bool} */
+	/** @return array{engine:string,valid:bool} */
 	private static function migrationFiles(string $applicationRoot): array {
 		$databaseRoot=$applicationRoot.'/database';
-		$root=$databaseRoot.'/postgresql';
-		if(!self::migrationDirectoryIsUsable($databaseRoot) || !self::migrationDirectoryIsUsable($root)){
-			return ['profile'=>false, 'manifest'=>false, 'valid'=>false];
+		if(!self::migrationDirectoryIsUsable($databaseRoot)){
+			return ['engine'=>'none', 'valid'=>false];
 		}
-		$profile=self::migrationFileState($root.'/profile.json');
-		$manifest=self::migrationFileState($root.'/manifest.json');
-		return [
-			'profile'=>$profile==='regular',
-			'manifest'=>$manifest==='regular',
-			'valid'=>$profile!=='invalid' && $manifest!=='invalid',
-		];
+		$declared=[];
+		foreach(['postgresql','sqlite'] as $engine){
+			$root=$databaseRoot.'/'.$engine;
+			if(!self::migrationDirectoryIsUsable($root)){
+				return ['engine'=>'none', 'valid'=>false];
+			}
+			$profile=self::migrationFileState($root.'/profile.json');
+			$manifest=self::migrationFileState($root.'/manifest.json');
+			if($profile==='invalid' || $manifest==='invalid' || ($profile==='regular')!==($manifest==='regular')){
+				return ['engine'=>'none', 'valid'=>false];
+			}
+			if($profile==='regular') $declared[]=$engine;
+		}
+		return count($declared)<=1
+			? ['engine'=>$declared[0] ?? 'none', 'valid'=>true]
+			: ['engine'=>'none', 'valid'=>false];
 	}
 
 	private static function migrationDirectoryIsUsable(string $path): bool {
@@ -552,7 +637,13 @@ final class ApplicationReleasePreflightCommand {
 		if(!file_exists($path)){
 			return 'absent';
 		}
-		return is_file($path) && is_readable($path) ? 'regular' : 'invalid';
+		$permissions=fileperms($path);
+		return is_file($path)
+			&& is_readable($path)
+			&& is_int($permissions)
+			&& ($permissions & 0444)!==0
+			? 'regular'
+			: 'invalid';
 	}
 
 	/** @return array<string,mixed> */
@@ -578,23 +669,46 @@ final class ApplicationReleasePreflightCommand {
 	}
 
 	/** @return array<string,mixed> */
+	private static function runSqliteMigration(
+		string $applicationRoot,
+		string $application,
+		string $environment,
+		int $timeoutMilliseconds,
+		?string $applicationDataRoot
+	): array {
+		$command=dirname(__DIR__, 2).'/sql/kernel/sqlite_migrate.php';
+		if(!is_file($command) || !is_string($applicationDataRoot) || $applicationDataRoot===''){
+			return ['exit_code'=>self::EXIT_CONFIGURATION, 'stdout'=>'', 'stderr'=>''];
+		}
+		return self::runProcess([
+			self::phpBinary(),
+			$command,
+			'--project-root='.$applicationRoot,
+			'--app='.$application,
+			'--environment='.$environment,
+		], $applicationRoot, $timeoutMilliseconds, [
+			'DATAPHYRE_APPLICATION_DATA_ROOT'=>$applicationDataRoot,
+			'DATAPHYRE_ENVIRONMENT'=>$environment,
+		]);
+	}
+
+	/** @return array<string,mixed> */
 	private static function runDatabaseRuntime(
 		string $projectRoot,
 		string $application,
 		string $environment,
-		int $timeoutMilliseconds
+		int $timeoutMilliseconds,
+		?string $applicationDataRoot=null
 	): array {
-		$command=dirname(__DIR__).'/kernel/application_release_preflight_database.php';
+		$command=dirname(__DIR__).'/kernel/application_runtime_database_identity.php';
 		if(!is_file($command)){
 			return ['exit_code'=>self::EXIT_CONFIGURATION, 'stdout'=>'', 'stderr'=>''];
 		}
 		return self::runProcess([
 			self::phpBinary(),
 			$command,
-			'--project-root='.$projectRoot,
-			'--application='.$application,
-			'--environment='.$environment,
-		], $projectRoot, $timeoutMilliseconds);
+			'--purpose=primary',
+		], $projectRoot, $timeoutMilliseconds, self::applicationDataEnvironment($applicationDataRoot));
 	}
 
 	/** @return array<string,mixed> */
@@ -602,7 +716,8 @@ final class ApplicationReleasePreflightCommand {
 		string $projectRoot,
 		string $application,
 		string $environment,
-		int $timeoutMilliseconds
+		int $timeoutMilliseconds,
+		?string $applicationDataRoot=null
 	): array {
 		$command=dirname(__DIR__).'/kernel/application_release_preflight_realtime.php';
 		if(!is_file($command)){
@@ -614,7 +729,7 @@ final class ApplicationReleasePreflightCommand {
 			'--project-root='.$projectRoot,
 			'--application='.$application,
 			'--environment='.$environment,
-		], $projectRoot, $timeoutMilliseconds);
+		], $projectRoot, $timeoutMilliseconds, self::applicationDataEnvironment($applicationDataRoot));
 	}
 
 	/** @return array<string,mixed> */
@@ -623,7 +738,8 @@ final class ApplicationReleasePreflightCommand {
 		string $application,
 		string $environment,
 		string $path,
-		int $timeoutSeconds
+		int $timeoutSeconds,
+		?string $applicationDataRoot=null
 	): array {
 		$router=dirname(__DIR__).'/kernel/application_release_preflight_router.php';
 		if(!is_file($router)){
@@ -641,28 +757,27 @@ final class ApplicationReleasePreflightCommand {
 		$environmentValues['DATAPHYRE_RUNTIME_PROJECT_ROOT']=$projectRoot;
 		$environmentValues['DATAPHYRE_SCHEDULER_ACTIVATION_MODE']='record_only';
 		$environmentValues['DATAPHYRE_SCHEDULER_STATE_ROOT']=$stateRoot;
+		if(is_string($applicationDataRoot) && $applicationDataRoot!==''){
+			$environmentValues['DATAPHYRE_APPLICATION_DATA_ROOT']=$applicationDataRoot;
+		}
 		$descriptor=[
 			0=>['file', self::nullDevice(), 'r'],
 			1=>['pipe', 'w'],
 			2=>['pipe', 'w'],
 		];
-		$process=@proc_open([
+		$owned=self::openOwnedProcessGroup([
 			self::phpBinary(),
 			'-d',
 			'variables_order=EGPCS',
 			'-S',
 			'127.0.0.1:'.$port,
 			$router,
-		], $descriptor, $pipes, $projectRoot, $environmentValues);
-		if(!is_resource($process)){
+		], $descriptor, $projectRoot, $environmentValues);
+		if($owned===null){
 			self::removeIsolatedStateRoot($stateRoot);
 			return ['ok'=>false, 'code'=>'application_server_unavailable', 'attempts'=>0, 'http_status'=>null];
 		}
-		foreach($pipes as $pipe){
-			if(is_resource($pipe)){
-				stream_set_blocking($pipe, false);
-			}
-		}
+		$process=$owned['resource'];$pipes=$owned['pipes'];$processGroup=$owned['process_group'];
 		$deadline=microtime(true)+$timeoutSeconds;
 		$attempts=0;
 		$lastStatus=null;
@@ -723,7 +838,7 @@ final class ApplicationReleasePreflightCommand {
 				'missing_environment_keys'=>$lastMissingEnvironmentKeys,
 			];
 		}finally{
-			self::stopProcess($process, $pipes);
+			self::stopProcess($process, $pipes, $processGroup);
 			self::removeIsolatedStateRoot($stateRoot);
 		}
 	}
@@ -755,29 +870,47 @@ final class ApplicationReleasePreflightCommand {
 		@rmdir($real);
 	}
 
-	/** @param list<string> $command @return array{exit_code:int,stdout:string,stderr:string} */
-	private static function runProcess(array $command, string $workingDirectory, int $timeoutMilliseconds): array {
+	private static function removeApplicationDataRoot(?string $root): void {
+		if(is_string($root) && $root!=='') self::removeIsolatedStateRoot($root);
+	}
+
+	/** @return array<string,string> */
+	private static function applicationDataEnvironment(?string $root): array {
+		return is_string($root) && $root!==''
+			? ['DATAPHYRE_APPLICATION_DATA_ROOT'=>$root]
+			: [];
+	}
+
+	/** @param list<string> $command @param array<string,string> $environmentOverrides @return array{exit_code:int,stdout:string,stderr:string} */
+	private static function runProcess(
+		array $command,
+		string $workingDirectory,
+		int $timeoutMilliseconds,
+		array $environmentOverrides=[]
+	): array {
 		$descriptor=[
 			0=>['file', self::nullDevice(), 'r'],
 			1=>['pipe', 'w'],
 			2=>['pipe', 'w'],
 		];
-		$process=@proc_open($command, $descriptor, $pipes, $workingDirectory);
-		if(!is_resource($process)){
+		$processEnvironment=null;
+		if($environmentOverrides!==[]){
+			$processEnvironment=array_replace(self::processEnvironment(), $environmentOverrides);
+		}
+		$owned=self::openOwnedProcessGroup(
+			$command,$descriptor,$workingDirectory,$processEnvironment,
+		);
+		if($owned===null){
 			return ['exit_code'=>127, 'stdout'=>'', 'stderr'=>''];
 		}
-		foreach($pipes as $pipe){
-			if(is_resource($pipe)){
-				stream_set_blocking($pipe, false);
-			}
-		}
+		$process=$owned['resource'];$pipes=$owned['pipes'];$processGroup=$owned['process_group'];
 		$stdout='';
 		$stderr='';
 		$started=microtime(true);
 		$exitCode=null;
+		$timedOut=false;
 		while(true){
-			$stdout=self::appendBounded($stdout, is_resource($pipes[1] ?? null) ? stream_get_contents($pipes[1]) : '');
-			$stderr=self::appendBounded($stderr, is_resource($pipes[2] ?? null) ? stream_get_contents($pipes[2]) : '');
+			self::drainProcessOutput($pipes,$stdout,$stderr);
 			$status=proc_get_status($process);
 			if(($status['running'] ?? false)!==true){
 				$candidate=$status['exitcode'] ?? null;
@@ -785,23 +918,13 @@ final class ApplicationReleasePreflightCommand {
 				break;
 			}
 			if((microtime(true)-$started)*1000>$timeoutMilliseconds){
-				proc_terminate($process);
-				$exitCode=124;
+				$timedOut=true;
 				break;
 			}
-			usleep(10000);
+			usleep(self::PROCESS_POLL_MICROSECONDS);
 		}
-		$stdout=self::appendBounded($stdout, is_resource($pipes[1] ?? null) ? stream_get_contents($pipes[1]) : '');
-		$stderr=self::appendBounded($stderr, is_resource($pipes[2] ?? null) ? stream_get_contents($pipes[2]) : '');
-		foreach($pipes as $pipe){
-			if(is_resource($pipe)){
-				fclose($pipe);
-			}
-		}
-		$closed=proc_close($process);
-		if($exitCode===null || $exitCode===-1){
-			$exitCode=is_int($closed) ? $closed : 127;
-		}
+		$stopped=self::stopProcess($process,$pipes,$processGroup,$stdout,$stderr,$exitCode);
+		$exitCode=$timedOut ? 124 : $stopped;
 		return [
 			'exit_code'=>$exitCode,
 			'stdout'=>trim($stdout),
@@ -817,36 +940,168 @@ final class ApplicationReleasePreflightCommand {
 		return $remaining>0 ? $current.substr($addition, 0, $remaining) : $current;
 	}
 
+	/**
+	 * Opens one shell-free child in an immutable, process-owned POSIX session.
+	 *
+	 * `proc_open()` children inherit the caller's process group and therefore
+	 * cannot already be its leader. The fixed `setsid` exec retains that PID,
+	 * making the returned PID the immutable process-group id before the selected
+	 * command can run.
+	 *
+	 * @param list<string> $command
+	 * @param array<int,mixed> $descriptor
+	 * @param null|array<string,string> $environment
+	 * @return null|array{resource:resource,pipes:array<int,resource>,process_group:int}
+	 */
+	private static function openOwnedProcessGroup(
+		array $command,
+		array $descriptor,
+		string $workingDirectory,
+		?array $environment
+	): ?array {
+		$setsid=self::setsidExecutable();
+		if($setsid===null || $command===[]){
+			return null;
+		}
+		$process=@proc_open(
+			[$setsid,...$command],$descriptor,$pipes,$workingDirectory,$environment,
+			['bypass_shell'=>true,'suppress_errors'=>true],
+		);
+		if(!is_resource($process)){
+			return null;
+		}
+		foreach($pipes as $pipe){
+			if(is_resource($pipe)) stream_set_blocking($pipe,false);
+		}
+		$status=proc_get_status($process);$pid=(int)($status['pid'] ?? 0);
+		if(!is_array($status) || $pid<2){
+			self::closeProcessPipes($pipes);
+			@proc_close($process);
+			return null;
+		}
+		if(($status['running'] ?? false)===true){
+			$deadline=microtime(true)+self::PROCESS_GROUP_START_TIMEOUT_SECONDS;
+			do{
+				$group=@posix_getpgid($pid);
+				if($group===$pid) break;
+				usleep(1000);
+				$status=proc_get_status($process);
+			}while(($status['running'] ?? false)===true && microtime(true)<$deadline);
+			if(($status['running'] ?? false)===true && @posix_getpgid($pid)!==$pid){
+				@posix_kill($pid,self::PROCESS_SIGNAL_KILL);
+				self::closeProcessPipes($pipes);
+				@proc_close($process);
+				return null;
+			}
+		}
+		return ['resource'=>$process,'pipes'=>$pipes,'process_group'=>$pid];
+	}
+
+	private static function setsidExecutable(): ?string {
+		if(DIRECTORY_SEPARATOR==='\\' || !function_exists('posix_getpgid') || !function_exists('posix_kill')){
+			return null;
+		}
+		$path=self::SETSID_EXECUTABLE;
+		clearstatcache(true,$path);
+		$resolved=realpath($path);$stat=@lstat($path);
+		return is_string($resolved) && hash_equals($path,$resolved)
+			&& is_array($stat) && (($stat['mode'] ?? 0)&0170000)===0100000
+			&& (($stat['mode'] ?? 0)&0022)===0 && ($stat['uid'] ?? -1)===0
+			&& ($stat['gid'] ?? -1)===0 && ($stat['nlink'] ?? 0)===1 && is_executable($path)
+			? $resolved
+			: null;
+	}
+
 	/** @param array<int,resource> $pipes */
-	private static function discardProcessOutput(array $pipes): void {
+	private static function drainProcessOutput(
+		array $pipes,
+		?string &$stdout=null,
+		?string &$stderr=null
+	): void {
 		foreach([1,2] as $index){
-			if(is_resource($pipes[$index] ?? null)){
-				stream_get_contents($pipes[$index]);
+			$pipe=$pipes[$index] ?? null;
+			if(!is_resource($pipe)) continue;
+			$remaining=self::PROCESS_DRAIN_BYTES_PER_STREAM;
+			while($remaining>0){
+				$chunk=@fread($pipe,min(8192,$remaining));
+				if(!is_string($chunk) || $chunk==='') break;
+				$remaining-=strlen($chunk);
+				if($index===1 && $stdout!==null) $stdout=self::appendBounded($stdout,$chunk);
+				if($index===2 && $stderr!==null) $stderr=self::appendBounded($stderr,$chunk);
 			}
 		}
 	}
 
-	/** @param resource $process @param array<int,resource> $pipes */
-	private static function stopProcess($process, array $pipes): void {
-		$status=proc_get_status($process);
-		if(($status['running'] ?? false)===true){
-			proc_terminate($process);
-			$deadline=microtime(true)+0.5;
-			do{
-				usleep(10000);
-				$status=proc_get_status($process);
-			}while(($status['running'] ?? false)===true && microtime(true)<$deadline);
-			if(($status['running'] ?? false)===true){
-				proc_terminate($process, 9);
-			}
-		}
-		self::discardProcessOutput($pipes);
+	/** @param array<int,resource> $pipes */
+	private static function discardProcessOutput(array $pipes): void {
+		$stdout=null;$stderr=null;
+		self::drainProcessOutput($pipes,$stdout,$stderr);
+	}
+
+	/** @param array<int,resource> $pipes */
+	private static function closeProcessPipes(array $pipes): void {
 		foreach($pipes as $pipe){
-			if(is_resource($pipe)){
-				fclose($pipe);
-			}
+			if(is_resource($pipe)) @fclose($pipe);
 		}
-		proc_close($process);
+	}
+
+	/**
+	 * @param resource $process
+	 * @param array<int,resource> $pipes
+	 */
+	private static function stopProcess(
+		$process,
+		array $pipes,
+		int $processGroup,
+		?string &$stdout=null,
+		?string &$stderr=null,
+		?int $observedExitCode=null
+	): int {
+		$status=proc_get_status($process);
+		if(($status['running'] ?? false)!==true){
+			$candidate=$status['exitcode'] ?? null;
+			if($observedExitCode===null && is_int($candidate) && $candidate!==-1) $observedExitCode=$candidate;
+		}
+		@posix_kill(-$processGroup,self::PROCESS_SIGNAL_TERM);
+		$deadline=microtime(true)+self::PROCESS_TERMINATE_GRACE_SECONDS;
+		do{
+			self::drainProcessOutput($pipes,$stdout,$stderr);
+			$status=proc_get_status($process);
+			if(($status['running'] ?? false)!==true){
+				$candidate=$status['exitcode'] ?? null;
+				if($observedExitCode===null && is_int($candidate) && $candidate!==-1) $observedExitCode=$candidate;
+			}
+			$groupAlive=@posix_kill(-$processGroup,0);
+			if(($status['running'] ?? false)!==true && $groupAlive!==true) break;
+			usleep(self::PROCESS_POLL_MICROSECONDS);
+		}while(microtime(true)<$deadline);
+
+		if(($status['running'] ?? false)===true || $groupAlive===true){
+			@posix_kill(-$processGroup,self::PROCESS_SIGNAL_KILL);
+			if(($status['running'] ?? false)===true && @posix_getpgid($processGroup)!==$processGroup){
+				@posix_kill($processGroup,self::PROCESS_SIGNAL_KILL);
+			}
+			$deadline=microtime(true)+self::PROCESS_KILL_REAP_SECONDS;
+			do{
+				self::drainProcessOutput($pipes,$stdout,$stderr);
+				$status=proc_get_status($process);
+				if(($status['running'] ?? false)!==true){
+					$candidate=$status['exitcode'] ?? null;
+					if($observedExitCode===null && is_int($candidate) && $candidate!==-1) $observedExitCode=$candidate;
+				}
+				$groupAlive=@posix_kill(-$processGroup,0);
+				if(($status['running'] ?? false)!==true && $groupAlive!==true) break;
+				usleep(self::PROCESS_POLL_MICROSECONDS);
+			}while(microtime(true)<$deadline);
+		}
+
+		self::drainProcessOutput($pipes,$stdout,$stderr);
+		self::closeProcessPipes($pipes);
+		$closed=@proc_close($process);
+		if($observedExitCode===null || $observedExitCode===-1){
+			$observedExitCode=is_int($closed) && $closed>=0 ? $closed : 127;
+		}
+		return $observedExitCode;
 	}
 
 	private static function reserveLoopbackPort(): int {
@@ -924,20 +1179,9 @@ final class ApplicationReleasePreflightCommand {
 			return ['http_status'=>$status, 'response_contract_valid'=>false, 'missing_environment_keys'=>[]];
 		}
 
-		$body='';
-		while(!feof($stream)){
-			$remaining=(self::MAX_HEALTH_BODY_BYTES+1)-strlen($body);
-			if($remaining<1){
-				return ['http_status'=>$status, 'response_contract_valid'=>false, 'missing_environment_keys'=>[]];
-			}
-			$chunk=fread($stream, min(8192, $remaining));
-			if(!is_string($chunk) || $chunk===''){
-				break;
-			}
-			$body.=$chunk;
-			if(strlen($body)>self::MAX_HEALTH_BODY_BYTES){
-				return ['http_status'=>$status, 'response_contract_valid'=>false, 'missing_environment_keys'=>[]];
-			}
+		$body=stream_get_contents($stream,self::MAX_HEALTH_BODY_BYTES+1);
+		if(!is_string($body) || strlen($body)>self::MAX_HEALTH_BODY_BYTES){
+			return ['http_status'=>$status, 'response_contract_valid'=>false, 'missing_environment_keys'=>[]];
 		}
 		$missingEnvironmentKeys=self::missingEnvironmentKeysFromHealthBody($body);
 		return [
@@ -1035,27 +1279,42 @@ final class ApplicationReleasePreflightCommand {
 			return [
 				'exit_status'=>self::EXIT_CONFIGURATION,
 				'kind'=>'configuration',
-				'message'=>'The PostgreSQL migration profile, manifest, or connection configuration is invalid.',
+				'message'=>'The database migration profile, manifest, or connection configuration is invalid.',
 			];
 		}
 		if($exitStatus===69 || $exitStatus===124 || $exitStatus===127){
 			return [
 				'exit_status'=>self::EXIT_DEPENDENCY,
 				'kind'=>'dependency',
-				'message'=>'The configured PostgreSQL dependency could not be verified.',
+				'message'=>'The configured database dependency could not be verified.',
 			];
 		}
 		return [
 			'exit_status'=>self::EXIT_VERIFICATION,
 			'kind'=>'verification',
-			'message'=>'The PostgreSQL migration dry-run found drift or an ineligible migration plan.',
+			'message'=>'The database migration preflight found drift or an ineligible migration plan.',
 		];
 	}
 
 	/** @param array<string,mixed> $payload @return array<string,mixed> */
-	private static function migrationEvidence(array $payload): array {
+	private static function migrationEvidence(array $payload, string $engine): array {
 		$manifest=is_array($payload['manifest'] ?? null) ? $payload['manifest'] : [];
 		$result=is_array($payload['result'] ?? null) ? $payload['result'] : [];
+		if($engine==='sqlite'){
+			return [
+				'contract'=>(string)($payload['contract'] ?? ''),
+				'declared'=>true,
+				'dry_run'=>false,
+				'engine'=>'sqlite',
+				'manifest'=>array_intersect_key($manifest, array_fill_keys([
+					'algorithm','migration_count','sha256',
+				], true)),
+				'result'=>array_intersect_key($result, array_fill_keys([
+					'applied_migrations','database_file','pending_migrations',
+				], true)),
+				'write_scope'=>'isolated_application_data',
+			];
+		}
 		$pending=is_array($result['pending_validation'] ?? null) ? $result['pending_validation'] : [];
 		return [
 			'declared'=>true,
@@ -1106,7 +1365,9 @@ final class ApplicationReleasePreflightCommand {
 		int $routeCount,
 		?string $registrationSha256,
 		int $schedulerDefinitionCount,
-		?string $schedulerDefinitionSha256
+		?string $schedulerDefinitionSha256,
+		int $registeredTableCount,
+		?string $registeredTableSetSha256
 	): array {
 		return [
 			'authorization_before_upgrade'=>true,
@@ -1114,6 +1375,9 @@ final class ApplicationReleasePreflightCommand {
 			'origin_required'=>true,
 			'private_web_port'=>8083,
 			'registration_sha256'=>$registrationSha256,
+			'registered_table_count'=>$registeredTableCount,
+			'registered_table_materialization_contract'=>'dataphyre.registered_table_materialization.v1',
+			'registered_table_set_sha256'=>$registeredTableSetSha256,
 			'route_count'=>$routeCount,
 			'scheduler_definition_count'=>$schedulerDefinitionCount,
 			'scheduler_definition_sha256'=>$schedulerDefinitionSha256,
@@ -1171,17 +1435,27 @@ final class ApplicationReleasePreflightCommand {
 			'environment'=>$environment,
 			'execution'=>'completed',
 			'execution_boundary'=>'fixed_dataphyre_commands_and_loopback_application_boot',
-			'write_policy'=>'database_dry_run_and_ephemeral_application_boot',
+			'write_policy'=>'isolated_database_preflight_and_ephemeral_application_boot',
 			'checks'=>$checks,
 			'failures'=>$failures,
-			'claim_boundary'=>'This verdict covers local configuration bootstrap, the native PostgreSQL migration dry-run when declared, application startup, GET /health, and deterministic realtime callback and scheduler definition registration. A release platform must run this same command inside the exact candidate image and separately prove the three fixed process identities, scheduler callback execution, a framework listener roundtrip, execution and strict invalid-Origin rejection by every registered application authorization callback, WebSocket ping/pong and close, signal lifecycle, and source, image, environment, database, and traffic identity.',
+			'claim_boundary'=>ApplicationReleasePreflightEvidence::claimBoundary(),
 		];
 	}
 
 	/** @param callable(string):mixed $write */
 	private static function writeJson(callable $write, array $payload): void {
-		$encoded=json_encode($payload, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
-		$write((is_string($encoded) ? $encoded : '{"ok":false,"likely_to_deploy":false}')."\n");
+		if(($payload['execution'] ?? null)==='completed'){
+			$write(ApplicationReleasePreflightEvidence::encodeCompleted($payload));
+			return;
+		}
+		$encoded=json_encode(
+			$payload,
+			JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR
+		)."\n";
+		if(strlen($encoded)>ApplicationReleasePreflightEvidence::MAX_OUTPUT_BYTES){
+			throw new \LengthException('Application release preflight output exceeded its public bound.');
+		}
+		$write($encoded);
 	}
 
 	/** @return list<string> */

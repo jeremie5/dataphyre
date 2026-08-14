@@ -44,6 +44,21 @@ function dataphyre_internal_application_release_preflight_context(): ?array {
 	];
 }
 
+/**
+ * Returns non-secret proof established only by the fixed post-exec runtime
+ * broker. Environment variables, application globals, and public config cannot
+ * manufacture this process-private context.
+ *
+ * @return null|array{contract:string,role:string,project_root:string,sapi:string}
+ */
+function dataphyre_internal_managed_runtime_bootstrap_context(): ?array {
+	if(!class_exists('DataphyreApplicationRuntimeChildEnvironment', false)){
+		return null;
+	}
+	$context=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapAttestation();
+	return is_array($context) ? $context : null;
+}
+
 try{
 	bootstrap();
 }catch(\Throwable $exception){
@@ -69,6 +84,7 @@ function bootstrap(){
  
 	tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T='Let there be light');
 	$application_release_preflight=dataphyre_internal_application_release_preflight_context();
+	$managed_runtime_bootstrap=dataphyre_internal_managed_runtime_bootstrap_context();
  
 	ini_set('display_errors', 0);
  	set_error_handler(function(...$args){ return;}, E_ALL);
@@ -80,6 +96,14 @@ function bootstrap(){
 	$bootstrap_config=$bootstrap_state['bootstrap'];
 	$bootstrap_application_roots=$bootstrap_state['application_roots'];
 	$bootstrap_module_policy=$bootstrap_state['modules'];
+	if($managed_runtime_bootstrap!==null){
+		$managed_project_root=realpath((string)($managed_runtime_bootstrap['project_root'] ?? ''));
+		$resolved_project_root=realpath($project_root);
+		if(!is_string($managed_project_root) || !is_string($resolved_project_root)
+			|| !hash_equals($managed_project_root,$resolved_project_root)){
+			throw new RuntimeException('Managed runtime bootstrap project root does not match bootstrap resolution.');
+		}
+	}
 	$flightdeck_replay=flightdeck_replay_request($bootstrap_config, $project_root);
 	if(($flightdeck_replay['requested'] ?? false)===true){
 		if(!isset($bootstrap_config['flightdeck']) || !is_array($bootstrap_config['flightdeck'])){
@@ -165,7 +189,8 @@ function bootstrap(){
 		}
 		else
 		{
-		if($application_release_preflight===null && $bootstrap_config['prevent_keyless_direct_access']===true && DATAPHYRE_FLIGHTDECK_REPLAY!==true){
+		if($application_release_preflight===null && $managed_runtime_bootstrap===null
+			&& $bootstrap_config['prevent_keyless_direct_access']===true && DATAPHYRE_FLIGHTDECK_REPLAY!==true){
 			if(!file_exists($file=$project_root.'/direct_access_key')){
 				file_put_contents($file, bin2hex(openssl_random_pseudo_bytes(32)));
 			}
@@ -189,7 +214,7 @@ function bootstrap(){
 		}
 	}
 
-	if($application_release_preflight===null && $bootstrap_config['allow_app_override']===true){
+	if($application_release_preflight===null && $managed_runtime_bootstrap===null && $bootstrap_config['allow_app_override']===true){
 		if(!file_exists($file=$project_root.'/app_override_key')){
 			file_put_contents($file, bin2hex(openssl_random_pseudo_bytes(32)));
 		}
@@ -1089,6 +1114,9 @@ function bootstrap_log_directory(): string {
 	$application_release_preflight=dataphyre_internal_application_release_preflight_context();
 	if($application_release_preflight!==null){
 		return rtrim($application_release_preflight['state_root'], '/\\').'/logs/';
+	}
+	if(dataphyre_internal_managed_runtime_bootstrap_context()!==null){
+		return '/var/log/dataphyre/';
 	}
 	if(defined('ROOTPATH') && !empty(ROOTPATH['dataphyre'])){
 		return rtrim((string)ROOTPATH['dataphyre'], '/\\').'/logs/';

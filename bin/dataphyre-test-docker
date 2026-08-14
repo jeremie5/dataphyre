@@ -9,6 +9,12 @@ engine=${DATAPHYRE_TEST_ENGINE:-auto}
 coverage=0
 required_engine=''
 changed=0
+container_root=${DATAPHYRE_TEST_CONTAINER_ROOT:-0}
+
+case "$container_root" in
+	0|1) ;;
+	*) echo 'DATAPHYRE_TEST_CONTAINER_ROOT must be 0 or 1.' >&2; exit 2 ;;
+esac
 
 for argument in "$@"; do
 	case "$argument" in
@@ -30,10 +36,7 @@ fi
 
 if [ "$engine" = auto ]; then
 	case "$required_engine" in
-		xdebug)
-			echo 'The Docker test runtime provides phpdbg exact coverage, not Xdebug. Use --coverage-require=phpdbg or DATAPHYRE_TEST_ENGINE=php with a custom image.' >&2
-			exit 2
-			;;
+		xdebug) engine=xdebug ;;
 		included_files) engine=php ;;
 		phpdbg) engine=phpdbg ;;
 		'') if [ "$coverage" -eq 1 ]; then engine=phpdbg; else engine=php; fi ;;
@@ -42,8 +45,8 @@ if [ "$engine" = auto ]; then
 fi
 
 case "$engine" in
-	php|phpdbg) ;;
-	*) echo 'DATAPHYRE_TEST_ENGINE must be auto, php, or phpdbg.' >&2; exit 2 ;;
+	php|phpdbg|xdebug) ;;
+	*) echo 'DATAPHYRE_TEST_ENGINE must be auto, php, phpdbg, or xdebug.' >&2; exit 2 ;;
 esac
 
 if [ "${DATAPHYRE_TEST_SKIP_BUILD:-0}" != 1 ]; then
@@ -53,17 +56,31 @@ fi
 uid=$(id -u)
 gid=$(id -g)
 
-if [ "$engine" = phpdbg ]; then
+if [ "$engine" = xdebug ]; then
+	xdebug_mode=coverage
+	php_ini_scan_dir=/usr/local/etc/php/conf.d:/usr/local/etc/php-xdebug.d
+	set -- php -d "memory_limit=$parent_memory" bin/dataphyre-test "$@"
+elif [ "$engine" = phpdbg ]; then
+	xdebug_mode=off
+	php_ini_scan_dir=/usr/local/etc/php/conf.d
 	set -- phpdbg -d "memory_limit=$parent_memory" -qrr bin/dataphyre-test "$@"
 else
+	xdebug_mode=off
+	php_ini_scan_dir=/usr/local/etc/php/conf.d
 	set -- php -d "memory_limit=$parent_memory" bin/dataphyre-test "$@"
 fi
 
 if [ "${DATAPHYRE_TEST_WRITABLE_SOURCE:-0}" = 1 ]; then
+	if [ "$container_root" -eq 1 ]; then
+		echo 'DATAPHYRE_TEST_CONTAINER_ROOT requires the default read-only source mount.' >&2
+		exit 2
+	fi
 	if [ "$git_root" != "$root" ]; then
 		exec docker run --rm --init \
 			--user "$uid:$gid" \
 			--env HOME=/tmp/dataphyre-test-home \
+			--env "XDEBUG_MODE=$xdebug_mode" \
+			--env "PHP_INI_SCAN_DIR=$php_ini_scan_dir" \
 			--env DATAPHYRE_TEST_GIT_ROOT=/workspace/repository \
 			--env "DATAPHYRE_TEST_GIT_PREFIX=$git_prefix" \
 			--mount "type=bind,source=$git_root,target=/workspace/repository,readonly" \
@@ -74,11 +91,50 @@ if [ "${DATAPHYRE_TEST_WRITABLE_SOURCE:-0}" = 1 ]; then
 	exec docker run --rm --init \
 		--user "$uid:$gid" \
 		--env HOME=/tmp/dataphyre-test-home \
+		--env "XDEBUG_MODE=$xdebug_mode" \
+		--env "PHP_INI_SCAN_DIR=$php_ini_scan_dir" \
 		--mount "type=bind,source=$root,target=/workspace/dataphyre" \
 		--workdir /workspace/dataphyre \
 		"$image" "$@"
 fi
 
+if [ "$container_root" -eq 1 ]; then
+	if [ "$engine" = xdebug ]; then
+		mkdir -p "$root/cache"
+		root_cache_flag=--mount
+		root_cache_value="type=bind,source=$root/cache,target=/workspace/dataphyre/cache"
+	else
+		root_cache_flag=--tmpfs
+		root_cache_value=/workspace/dataphyre/cache:rw,nosuid,nodev
+	fi
+	if [ "$git_root" != "$root" ]; then
+		exec docker run --rm --init \
+			--user 0:0 \
+			--network none \
+			--env HOME=/tmp/dataphyre-test-home \
+			--env "XDEBUG_MODE=$xdebug_mode" \
+			--env "PHP_INI_SCAN_DIR=$php_ini_scan_dir" \
+			--env DATAPHYRE_TEST_CONTAINER_ROOT=1 \
+			--env DATAPHYRE_TEST_GIT_ROOT=/workspace/repository \
+			--env "DATAPHYRE_TEST_GIT_PREFIX=$git_prefix" \
+			--mount "type=bind,source=$git_root,target=/workspace/repository,readonly" \
+			--mount "type=bind,source=$root,target=/workspace/dataphyre,readonly" \
+			"$root_cache_flag" "$root_cache_value" \
+			--workdir /workspace/dataphyre \
+			"$image" "$@"
+	fi
+	exec docker run --rm --init \
+		--user 0:0 \
+		--network none \
+		--env HOME=/tmp/dataphyre-test-home \
+		--env "XDEBUG_MODE=$xdebug_mode" \
+		--env "PHP_INI_SCAN_DIR=$php_ini_scan_dir" \
+		--env DATAPHYRE_TEST_CONTAINER_ROOT=1 \
+		--mount "type=bind,source=$root,target=/workspace/dataphyre,readonly" \
+		"$root_cache_flag" "$root_cache_value" \
+		--workdir /workspace/dataphyre \
+		"$image" "$@"
+fi
 # Test source is immutable by default. Persistent runner indexes and reports
 # remain writable under cache/, while test-owned disposable files live in the
 # container's /tmp through TestKit workspaces and ROOTPATH sandboxes.
@@ -87,6 +143,8 @@ if [ "$git_root" != "$root" ]; then
 	exec docker run --rm --init \
 		--user "$uid:$gid" \
 		--env HOME=/tmp/dataphyre-test-home \
+		--env "XDEBUG_MODE=$xdebug_mode" \
+		--env "PHP_INI_SCAN_DIR=$php_ini_scan_dir" \
 		--env DATAPHYRE_TEST_GIT_ROOT=/workspace/repository \
 		--env "DATAPHYRE_TEST_GIT_PREFIX=$git_prefix" \
 		--mount "type=bind,source=$git_root,target=/workspace/repository,readonly" \
@@ -98,6 +156,8 @@ fi
 exec docker run --rm --init \
 	--user "$uid:$gid" \
 	--env HOME=/tmp/dataphyre-test-home \
+	--env "XDEBUG_MODE=$xdebug_mode" \
+	--env "PHP_INI_SCAN_DIR=$php_ini_scan_dir" \
 	--mount "type=bind,source=$root,target=/workspace/dataphyre,readonly" \
 	--mount "type=bind,source=$root/cache,target=/workspace/dataphyre/cache" \
 	--workdir /workspace/dataphyre \

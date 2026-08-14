@@ -88,6 +88,27 @@ function dp_postgresql_command_run(array $arguments, array $runtime=[]): array {
 	return ['status'=>$status, 'out'=>$out, 'error'=>$error, 'payload'=>$payload];
 }
 
+test('PostgreSQL migration command shares the broad public deployment environment grammar',static function(Context $t): void {
+	$command=$t->nonPublic(PostgreSqlMigrationCommand::class);
+	foreach(['staging_blue','Staging.Blue'] as $environment){
+		$options=$command->invoke('options',[
+			'postgresql_migrate.php','--project-root=/tmp','--app=fixture',
+			'--environment='.$environment,'--mode=automatic','--dry-run',
+		]);
+		$t->same($environment,$options['environment'],$environment);
+	}
+	foreach(['.','..',"staging\nblue","staging\0blue",str_repeat('a',129)] as $environment){
+		$t->throws(
+			static fn()=>$command->invoke('options',[
+				'postgresql_migrate.php','--project-root=/tmp','--app=fixture',
+				'--environment='.$environment,'--mode=automatic','--dry-run',
+			]),
+			InvalidArgumentException::class,
+			bin2hex($environment),
+		);
+	}
+})->tag('sql','postgresql','migration','environment-identifier','broad-grammar','negative');
+
 test('PostgreSQL migration command applies the native manifest with typed context and canonical secret-safe JSON', static function(Context $t): void {
 	$workspace=dp_postgresql_command_fixture($t, 'success');
 	$connection=[];

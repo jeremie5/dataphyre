@@ -26,13 +26,22 @@ final class PostgreSqlSchemaInspector {
 	 * @param list<array{name:string,sql:string}> $entries
 	 * @return array<string,array<string,mixed>>
 	 */
-	public function expectedSchema(array $entries): array {
+	public function expectedSchema(
+		array $entries,
+		string $databaseDialect='postgresql'
+	): array {
+		if(!in_array($databaseDialect, ['postgresql', 'yugabyte'], true)){
+			throw new RuntimeException('PostgreSQL schema inspection dialect is invalid.');
+		}
 		$expected=['tables'=>[], 'indexes'=>[], 'foreign_keys'=>[], 'checks'=>[]];
 		$identifier='(?:"(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)';
 		$qualified='('.$identifier.')\\s*\\.\\s*('.$identifier.')';
 		$scope=$this->profile->schema().'.';
 		foreach($entries as $entry){
-			$sql=(string)($entry['sql'] ?? '');
+			$sql=self::migrationSchemaSql(
+				(string)($entry['sql'] ?? ''),
+				$databaseDialect
+			);
 			if(preg_match_all(
 				'/\\bCREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?'.$qualified.
 				'\\s*\\((.*?)\\)\\s*(?:;|\\z)/is',
@@ -45,14 +54,22 @@ final class PostgreSqlSchemaInspector {
 					if(!str_starts_with($table, $scope)){
 						continue;
 					}
-					$expected['tables'][$table] ??=['columns'=>[], 'primary_key'=>null];
+					$expected['tables'][$table] ??=[
+						'columns'=>[],
+						'primary_key'=>null,
+						'primary_key_name'=>null,
+					];
 					foreach(self::splitDefinitions($match[3]) as $definition){
 						if(preg_match(
-							'/^(?:CONSTRAINT\\s+'.$identifier.'\\s+)?PRIMARY\\s+KEY\\s*\\(([^)]*)\\)/i',
+							'/^(?:CONSTRAINT\\s+('.$identifier.')\\s+)?PRIMARY\\s+KEY\\s*\\(([^)]*)\\)/i',
 							$definition,
 							$primaryMatch
 						)===1){
-							$expected['tables'][$table]['primary_key']=self::columnList($primaryMatch[1]);
+							$expected['tables'][$table]['primary_key']=self::columnList($primaryMatch[2]);
+							$expected['tables'][$table]['primary_key_name']=
+								isset($primaryMatch[1]) && trim((string)$primaryMatch[1])!==''
+									? self::identifier($primaryMatch[1])
+									: self::defaultPrimaryKeyName($table);
 							self::registerExpectedCheck($expected, $table, $definition, $identifier);
 							continue;
 						}
@@ -77,6 +94,7 @@ final class PostgreSqlSchemaInspector {
 						];
 						if($inlinePrimary){
 							$expected['tables'][$table]['primary_key']=[$column];
+							$expected['tables'][$table]['primary_key_name']=self::defaultPrimaryKeyName($table);
 						}
 						self::registerExpectedCheck($expected, $table, $definition, $identifier);
 					}
@@ -95,8 +113,8 @@ final class PostgreSqlSchemaInspector {
 			);
 			if(preg_match_all(
 				'/\\bALTER\\s+TABLE\\s+(?:ONLY\\s+)?'.$qualified.
-				'\\s+ADD\\s+(?:CONSTRAINT\\s+'.$identifier.
-				'\\s+)?PRIMARY\\s+KEY\\s*\\(([^)]*)\\)\\s*(?:;|\\z)/is',
+				'\\s+ADD\\s+(?:CONSTRAINT\\s+('.$identifier.
+				')\\s+)?PRIMARY\\s+KEY\\s*\\(([^)]*)\\)\\s*(?:;|\\z)/is',
 				$sql,
 				$primaryMatches,
 				PREG_SET_ORDER
@@ -106,8 +124,16 @@ final class PostgreSqlSchemaInspector {
 					if(!str_starts_with($table, $scope)){
 						continue;
 					}
-					$expected['tables'][$table] ??=['columns'=>[], 'primary_key'=>null];
-					$expected['tables'][$table]['primary_key']=self::columnList($match[3]);
+					$expected['tables'][$table] ??=[
+						'columns'=>[],
+						'primary_key'=>null,
+						'primary_key_name'=>null,
+					];
+					$expected['tables'][$table]['primary_key']=self::columnList($match[4]);
+					$expected['tables'][$table]['primary_key_name']=
+						isset($match[3]) && trim((string)$match[3])!==''
+							? self::identifier($match[3])
+							: self::defaultPrimaryKeyName($table);
 					foreach($expected['tables'][$table]['primary_key'] as $column){
 						if(isset($expected['tables'][$table]['columns'][$column])){
 							$expected['tables'][$table]['columns'][$column]['nullable']=false;
@@ -320,7 +346,7 @@ final class PostgreSqlSchemaInspector {
 				'unique'=>self::postgresqlBoolean($row['is_unique'] ?? false),
 				'keys'=>$parsedDefinition['keys'],
 				'predicate'=>isset($row['predicate']) && trim((string)$row['predicate'])!==''
-					? self::normalizeIndexExpression((string)$row['predicate'])
+					? self::normalizeIndexPredicate((string)$row['predicate'])
 					: null,
 				'valid'=>self::postgresqlBoolean($row['is_valid'] ?? false)
 					&& self::postgresqlBoolean($row['is_ready'] ?? false),
@@ -396,7 +422,7 @@ final class PostgreSqlSchemaInspector {
 					'actual'=>$actual['unique'],
 				];
 			}
-			if($actual['keys']!==$definition['keys']){
+			if(!self::indexKeysEquivalent($definition['keys'], $actual['keys'])){
 				$issues[]=[
 					'kind'=>'index_keys_mismatch',
 					'object'=>$index,
@@ -404,7 +430,7 @@ final class PostgreSqlSchemaInspector {
 					'actual'=>$actual['keys'],
 				];
 			}
-			if($actual['predicate']!==$definition['predicate']){
+			if(!self::expressionValuesEquivalent($definition['predicate'], $actual['predicate'])){
 				$issues[]=[
 					'kind'=>'index_predicate_mismatch',
 					'object'=>$index,
@@ -455,7 +481,10 @@ final class PostgreSqlSchemaInspector {
 				foreach($checks as $candidate){
 					if(
 						$candidate['table']===$definition['table']
-						&& $candidate['expression']===$definition['expression']
+						&& self::expressionsEquivalent(
+							$definition['expression'],
+							$candidate['expression']
+						)
 					){
 						$actual=$candidate;
 						break;
@@ -478,7 +507,7 @@ final class PostgreSqlSchemaInspector {
 					'table'=>$definition['table'],
 				];
 			}
-			if($actual['expression']!==$definition['expression']){
+			if(!self::expressionsEquivalent($definition['expression'], $actual['expression'])){
 				$issues[]=[
 					'kind'=>'check_constraint_expression_mismatch',
 					'object'=>$constraint,
@@ -773,6 +802,7 @@ final class PostgreSqlSchemaInspector {
 					true
 				)){
 					$expected['tables'][$table]['primary_key']=null;
+					$expected['tables'][$table]['primary_key_name']=null;
 				}
 				foreach($expected['indexes'] as $index=>$definition){
 					if(
@@ -804,6 +834,28 @@ final class PostgreSqlSchemaInspector {
 					){
 						unset($expected['checks'][$constraint]);
 					}
+				}
+			}
+		}
+		if(preg_match_all(
+			'/\bALTER\s+TABLE\s+(?:ONLY\s+)?'.$qualified.
+			'\s+DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?('.$identifier.
+			')(?:\s+(?:CASCADE|RESTRICT))?\s*(?:;|\z)/is',
+			$sql,
+			$droppedConstraints,
+			PREG_SET_ORDER
+		)!==false){
+			foreach($droppedConstraints as $match){
+				$table=self::qualifiedName($match[1], $match[2]);
+				$constraint=self::identifier($match[3]);
+				$key=$table.'.'.$constraint;
+				unset($expected['checks'][$key], $expected['foreign_keys'][$key]);
+				if(
+					($expected['tables'][$table]['primary_key_name'] ?? null)
+					===$constraint
+				){
+					$expected['tables'][$table]['primary_key']=null;
+					$expected['tables'][$table]['primary_key_name']=null;
 				}
 			}
 		}
@@ -909,19 +961,6 @@ final class PostgreSqlSchemaInspector {
 				'expression'=>$expression,
 			];
 		}
-		if(preg_match_all(
-			'/\\bALTER\\s+TABLE\\s+(?:ONLY\\s+)?'.$qualified.
-			'\\s+DROP\\s+CONSTRAINT\\s+(?:IF\\s+EXISTS\\s+)?('.$identifier.')'.
-			'(?:\\s+(?:CASCADE|RESTRICT))?\\s*(?:;|\\z)/is',
-			$sql,
-			$drops,
-			PREG_SET_ORDER
-		)!==false){
-			foreach($drops as $match){
-				$table=self::qualifiedName($match[1], $match[2]);
-				unset($expected['checks'][$table.'.'.self::identifier($match[3])]);
-			}
-		}
 	}
 
 	/** @param list<string> $keys */
@@ -972,7 +1011,11 @@ final class PostgreSqlSchemaInspector {
 					$definition=$addMatch[2];
 					$serial=self::serialColumnBaseType($definition)!==null;
 					$inlinePrimary=preg_match('/\\bPRIMARY\\s+KEY\\b/i', $definition)===1;
-					$expected['tables'][$table] ??=['columns'=>[], 'primary_key'=>null];
+					$expected['tables'][$table] ??=[
+						'columns'=>[],
+						'primary_key'=>null,
+						'primary_key_name'=>null,
+					];
 					$expected['tables'][$table]['columns'][$column]=[
 						'type'=>self::columnType($definition),
 						'nullable'=>!$serial
@@ -981,6 +1024,7 @@ final class PostgreSqlSchemaInspector {
 					];
 					if($inlinePrimary){
 						$expected['tables'][$table]['primary_key']=[$column];
+						$expected['tables'][$table]['primary_key_name']=self::defaultPrimaryKeyName($table);
 					}
 					self::registerExpectedCheck($expected, $table, $action, $identifier);
 					continue;
@@ -1117,11 +1161,12 @@ final class PostgreSqlSchemaInspector {
 	 * @return array<string,array{table:string,unique:bool,keys:list<string>,predicate:?string}>
 	 */
 	private static function indexDefinitions(string $sql, string $identifier): array {
+		$sql=self::migrationSchemaSql($sql, 'postgresql');
 		$pattern='/\\bCREATE\\s+(?<unique>UNIQUE\\s+)?INDEX\\s+(?:CONCURRENTLY\\s+)?'.
 			'(?:IF\\s+NOT\\s+EXISTS\\s+)?'.
 			'(?:(?<index_schema>'.$identifier.')\\s*\\.\\s*)?(?<index_name>'.$identifier.')\\s+'.
 			'ON\\s+(?:ONLY\\s+)?(?<table_schema>'.$identifier.')\\s*\\.\\s*'.
-			'(?<table_name>'.$identifier.')(?=\\s|\\()/is';
+			'(?<table_name>'.$identifier.')(?=\\s|\\(|;|\\z)/is';
 		$result=preg_match_all($pattern, $sql, $matches, PREG_SET_ORDER|PREG_OFFSET_CAPTURE);
 		$indexes=[];
 		foreach($matches as $match){
@@ -1143,7 +1188,7 @@ final class PostgreSqlSchemaInspector {
 			}
 			$tail=substr($sql, $closing+1, $statementEnd-$closing-1);
 			$predicateSql=self::topLevelKeywordTail($tail, 'where');
-			$predicate=$predicateSql===null ? null : self::normalizeIndexExpression($predicateSql);
+			$predicate=$predicateSql===null ? null : self::normalizeIndexPredicate($predicateSql);
 			$tableSchema=self::identifier($match['table_schema'][0]);
 			$table=self::qualifiedName($match['table_schema'][0], $match['table_name'][0]);
 			$indexSchema=isset($match['index_schema'][0]) && $match['index_schema'][0]!==''
@@ -1161,11 +1206,8 @@ final class PostgreSqlSchemaInspector {
 	}
 
 	public static function normalizeCheckExpression(string $expression): string {
-		$normalized=self::normalizeSqlExpression($expression);
-		$normalized=(string)preg_replace(
-			"/('(?:''|[^'])*')::(?:text|character varying)\\b/i",
-			'$1',
-			$normalized
+		$normalized=self::normalizeCatalogExpressionArtifacts(
+			self::normalizeSqlExpression($expression)
 		);
 		$normalized=self::normalizeRedundantConcatenationParentheses($normalized);
 		return self::normalizeBooleanCheckExpression($normalized);
@@ -1183,6 +1225,182 @@ final class PostgreSqlSchemaInspector {
 			'$1',
 			$expression
 		);
+	}
+
+	/**
+	 * PostgreSQL's catalog renderer adds grouping around JSON operator chains.
+	 * Only exact chains are collapsed here. Literal casts are source-sensitive:
+	 * they are retained in the canonical value and considered separately during
+	 * expected-versus-catalog comparison so an explicit source cast cannot be
+	 * mistaken for a renderer artifact.
+	 */
+	private static function normalizeCatalogExpressionArtifacts(string $expression): string {
+		$identifier='(?:"(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)'.
+			'(?:\\.(?:"(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*))*';
+		$literal="'(?:''|[^'])*'";
+		$jsonValue=$identifier.'(?:(?:->|#>)'.$literal.')+';
+		do{
+			$before=$expression;
+			$expression=(string)preg_replace(
+				'/\\(('.$jsonValue.')\\)(?=(?:->>|#>>|->|#>))/',
+				'$1',
+				$expression
+			);
+		}while($expression!==$before);
+		$expression=(string)preg_replace(
+			'/\\(('.$identifier.'(?:(?:->|#>)'.$literal.')*(?:->>|#>>)'.$literal.')\\)'.
+			'(?=\\s*(?:=|<>|!=|<=|>=|<|>|~~|!~~|~|!~|'.
+			'is(?:\\s+not)?\\s+(?:null|true|false)\\b))/i',
+			'$1',
+			$expression
+		);
+		return self::normalizeSqlExpression($expression);
+	}
+
+	/** @param list<string> $expected @param list<string> $actual */
+	private static function indexKeysEquivalent(array $expected, array $actual): bool {
+		if(count($expected)!==count($actual)){
+			return false;
+		}
+		foreach($expected as $index=>$expression){
+			if(!isset($actual[$index]) || !self::expressionsEquivalent($expression, $actual[$index])){
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static function expressionValuesEquivalent(?string $expected, ?string $actual): bool {
+		if($expected===null || $actual===null){
+			return $expected===$actual;
+		}
+		return self::expressionsEquivalent($expected, $actual);
+	}
+
+	/**
+	 * Raw canonical equality wins. The fallback removes only catalog casts whose
+	 * type is already fixed by an exact operator context. It is deliberately
+	 * applied to the catalog side only; an explicit source cast remains visible.
+	 */
+	private static function expressionsEquivalent(string $expected, string $actual): bool {
+		if($expected===$actual){
+			return true;
+		}
+		if(!self::expectedTextCastsPresent($expected, $actual)){
+			return false;
+		}
+		$expected=self::stripCatalogTextCasts($expected);
+		$catalog=self::stripContextBoundCatalogCasts($actual);
+		$expected=self::normalizeCatalogExpressionArtifacts($expected);
+		$catalog=self::normalizeCatalogExpressionArtifacts($catalog);
+		return $expected===$catalog;
+	}
+
+	private static function expectedTextCastsPresent(string $expected, string $actual): bool {
+		$required=self::textCastCounts($expected);
+		if($required===[]){
+			return true;
+		}
+		$available=self::textCastCounts($actual);
+		foreach($required as $cast=>$count){
+			if(($available[$cast] ?? 0)<$count){
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** @return array<string,int> */
+	private static function textCastCounts(string $expression): array {
+		$literal="'(?:''|[^'])*'";
+		preg_match_all(
+			'/('.$literal.')::(text|character varying)\\b(\\s*\\[\\])?/i',
+			$expression,
+			$matches,
+			PREG_SET_ORDER
+		);
+		$counts=[];
+		foreach($matches as $match){
+			$key=$match[1].'::'.strtolower($match[2]).
+				(isset($match[3]) && trim($match[3])!=='' ? '[]' : '');
+			$counts[$key]=($counts[$key] ?? 0)+1;
+		}
+		return $counts;
+	}
+
+	private static function stripCatalogTextCasts(string $expression): string {
+		$literal="'(?:''|[^'])*'";
+		return self::normalizeSqlExpression((string)preg_replace(
+			'/('.$literal.')::(?:text|character varying)\\b(?:\\s*\\[\\])?/i',
+			'$1',
+			$expression
+		));
+	}
+
+	private static function stripContextBoundCatalogCasts(string $expression): string {
+		$identifier='(?:"(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)'.
+			'(?:\\.(?:"(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*))*';
+		$literal="'(?:''|[^'])*'";
+		$type='(?:text|character varying)';
+
+		// mod(column, literal) resolves the literal to the exact built-in column
+		// overload. A casted first operand is intentionally outside this rule.
+		$expression=(string)preg_replace(
+			'/\\bmod\\(('.$identifier.'),\\((-?[0-9]+)\\)::'.
+			'(?:smallint|integer|bigint)\\)/i',
+			'mod($1, $2)',
+			$expression
+		);
+
+		// JSON operators fix their literal operand type (text or text[]).
+		$expression=(string)preg_replace(
+			'/((?:->|->>)'.$literal.')::'.$type.'\\b/i',
+			'$1',
+			$expression
+		);
+		$expression=(string)preg_replace(
+			'/((?:#>|#>>)'.$literal.')::'.$type.'\\s*\\[\\](?![A-Za-z0-9_$])/i',
+			'$1',
+			$expression
+		);
+		// Unknown string literals are rendered with their resolved text cast.
+		// Strip that annotation only from the catalog side; explicit migration
+		// casts therefore remain visible and contract-significant.
+		$expression=(string)preg_replace(
+			'/('.$literal.')::'.$type.'\\b(?!\\s*\\[)/i',
+			'$1',
+			$expression
+		);
+
+		// Membership leaves have already been isolated by the Boolean parser.
+		$expression=(string)preg_replace_callback(
+			'/\\b((?:not\\s+)?in)\\(([^()]*)\\)/i',
+			static function(array $match) use ($literal, $type): string {
+				$members=(string)preg_replace(
+					'/('.$literal.')::'.$type.'\\b/i',
+					'$1',
+					$match[2]
+				);
+				return $match[1].'('.$members.')';
+			},
+			$expression
+		);
+
+		// A simple column/JSON value fixes the comparison literal type. Function
+		// arguments are excluded so overload-selecting casts remain significant.
+		$value=$identifier.'(?:(?:->|->>|#>|#>>)'.$literal.')*';
+		$comparison='(?:=|<>|!=|<=|>=|<|>)';
+		$expression=(string)preg_replace(
+			'/('.$value.$comparison.')('.$literal.')::'.$type.'\\b/i',
+			'$1$2',
+			$expression
+		);
+		$expression=(string)preg_replace(
+			'/('.$literal.')::'.$type.'('.$comparison.$value.')\\b/i',
+			'$1$2',
+			$expression
+		);
+		return self::normalizeSqlExpression($expression);
 	}
 
 	public static function normalizeSqlExpression(string $expression): string {
@@ -1259,6 +1477,20 @@ final class PostgreSqlSchemaInspector {
 		$previous=null;
 		foreach($tokens as $token){
 			$value=$token['value'];
+			if($token['kind']==='identifier'){
+				$identifier=str_replace('""', '"', substr($value, 1, -1));
+				if(
+					preg_match('/^[a-z_][a-z0-9_$]*$/', $identifier)===1
+					&& !in_array($identifier, [
+						'true', 'false', 'null', 'current_user', 'current_role',
+						'current_date', 'current_time', 'current_timestamp',
+						'localtime', 'localtimestamp', 'session_user', 'system_user',
+						'user', 'current_catalog', 'current_schema',
+					], true)
+				){
+					$value=$identifier;
+				}
+			}
 			$space=$previous!==null;
 			if(
 				in_array($value, [')', ']', ',', '.', '::'], true)
@@ -1534,11 +1766,8 @@ final class PostgreSqlSchemaInspector {
 	}
 
 	private static function normalizeIndexExpression(string $expression): string {
-		$normalized=self::normalizeSqlExpression($expression);
-		$normalized=(string)preg_replace(
-			"/('(?:''|[^'])*')::(?:text|character varying)\\b/i",
-			'$1',
-			$normalized
+		$normalized=self::normalizeCatalogExpressionArtifacts(
+			self::normalizeSqlExpression($expression)
 		);
 		$normalized=(string)preg_replace_callback(
 			'/\\b([A-Za-z_][A-Za-z0-9_$.\"]*)=any\\(array\\s*\\[([^\\[\\]]*)\\]\\)/i',
@@ -1556,27 +1785,796 @@ final class PostgreSqlSchemaInspector {
 		return self::stripOuterParentheses(trim($normalized));
 	}
 
+	private static function normalizeIndexPredicate(string $expression): string {
+		return self::normalizeBooleanCheckExpression(
+			self::normalizeIndexExpression($expression)
+		);
+	}
+
+	/**
+	 * Project a migration into DDL that executes while the migration is applied.
+	 * Stored routine bodies and inert literals are never schema declarations.
+	 * The one supported conditional is the framework's PostgreSQL/YugabyteDB
+	 * product split; every other conditional index expression fails closed.
+	 */
+	private static function migrationSchemaSql(
+		string $sql,
+		string $databaseDialect
+	): string {
+		$projected=[];
+		foreach(self::topLevelSqlStatements($sql) as $statement){
+			$shape=ltrim(self::maskSqlLiteralsAndComments($statement));
+			if(preg_match('/^DO\b/i', $shape)===1){
+				$body=self::doBody($statement);
+				if($body!==null){
+					$ddl=self::projectDoSchemaSql($body, $databaseDialect);
+					if(trim($ddl)!==''){
+						$projected[]=$ddl;
+					}
+				}
+				continue;
+			}
+			if(preg_match(
+				'/^(?:CREATE\s+(?:UNIQUE\s+)?INDEX|CREATE\s+TABLE|'.
+					'ALTER\s+TABLE|DROP\s+(?:INDEX|TABLE))\b/i',
+				$shape
+			)===1){
+				$projected[]=rtrim(self::stripSqlComments($statement), "; \t\r\n").';';
+			}
+		}
+		return implode("\n", $projected);
+	}
+
+	/** @return list<string> */
+	private static function topLevelSqlStatements(string $sql): array {
+		$statements=[];
+		$start=0;
+		$lineComment=false;
+		$blockDepth=0;
+		$quote=null;
+		$dollar=null;
+		$escape=false;
+		$length=strlen($sql);
+		for($index=0; $index<$length; $index++){
+			$character=$sql[$index];
+			if($lineComment){
+				if($character==="\n" || $character==="\r"){
+					$lineComment=false;
+				}
+				continue;
+			}
+			if($blockDepth>0){
+				if($character==='/' && ($sql[$index+1] ?? null)==='*'){
+					$blockDepth++;
+					$index++;
+				}elseif($character==='*' && ($sql[$index+1] ?? null)==='/'){
+					$blockDepth--;
+					$index++;
+				}
+				continue;
+			}
+			if($quote!==null){
+				if($escape && $character==='\\'){
+					$index++;
+					continue;
+				}
+				if($character===$quote){
+					if(($sql[$index+1] ?? null)===$quote){
+						$index++;
+					}else{
+						$quote=null;
+						$escape=false;
+					}
+				}
+				continue;
+			}
+			if($dollar!==null){
+				if(substr($sql, $index, strlen($dollar))===$dollar){
+					$index+=strlen($dollar)-1;
+					$dollar=null;
+				}
+				continue;
+			}
+			if($character==='-' && ($sql[$index+1] ?? null)==='-'){
+				$lineComment=true;
+				$index++;
+				continue;
+			}
+			if($character==='/' && ($sql[$index+1] ?? null)==='*'){
+				$blockDepth=1;
+				$index++;
+				continue;
+			}
+			if($character==="'" || $character==='"'){
+				$quote=$character;
+				$escape=$character==="'"
+					&& $index>0
+					&& in_array($sql[$index-1], ['e', 'E'], true)
+					&& ($index<2 || preg_match('/[A-Za-z0-9_$]/', $sql[$index-2])!==1);
+				continue;
+			}
+			$delimiter=self::dollarQuoteDelimiterAt($sql, $index);
+			if($delimiter!==null){
+				$dollar=$delimiter;
+				$index+=strlen($delimiter)-1;
+				continue;
+			}
+			if($character===';'){
+				$statement=trim(substr($sql, $start, $index-$start));
+				if($statement!==''){
+					$statements[]=$statement;
+				}
+				$start=$index+1;
+			}
+		}
+		$statement=trim(substr($sql, $start));
+		if($statement!==''){
+			$statements[]=$statement;
+		}
+		return $statements;
+	}
+
+	private static function maskSqlLiteralsAndComments(string $sql): string {
+		$masked=$sql;
+		$lineComment=false;
+		$blockDepth=0;
+		$quote=null;
+		$dollar=null;
+		$escape=false;
+		$length=strlen($sql);
+		for($index=0; $index<$length; $index++){
+			$character=$sql[$index];
+			if($lineComment){
+				if($character==="\n" || $character==="\r"){
+					$lineComment=false;
+				}else{
+					$masked[$index]=' ';
+				}
+				continue;
+			}
+			if($blockDepth>0){
+				$masked[$index]=ctype_space($character) ? $character : ' ';
+				if($character==='/' && ($sql[$index+1] ?? null)==='*'){
+					$masked[++$index]=' ';
+					$blockDepth++;
+				}elseif($character==='*' && ($sql[$index+1] ?? null)==='/'){
+					$masked[++$index]=' ';
+					$blockDepth--;
+				}
+				continue;
+			}
+			if($quote!==null){
+				$masked[$index]=ctype_space($character) ? $character : ' ';
+				if($escape && $character==='\\'){
+					if($index+1<$length){
+						$masked[++$index]=' ';
+					}
+					continue;
+				}
+				if($character===$quote){
+					if(($sql[$index+1] ?? null)===$quote){
+						$masked[++$index]=' ';
+					}else{
+						$quote=null;
+						$escape=false;
+					}
+				}
+				continue;
+			}
+			if($dollar!==null){
+				$masked[$index]=ctype_space($character) ? $character : ' ';
+				if(substr($sql, $index, strlen($dollar))===$dollar){
+					for($offset=1; $offset<strlen($dollar); $offset++){
+						$masked[$index+$offset]=' ';
+					}
+					$index+=strlen($dollar)-1;
+					$dollar=null;
+				}
+				continue;
+			}
+			if($character==='-' && ($sql[$index+1] ?? null)==='-'){
+				$masked[$index]=' ';
+				$index++;
+				$masked[$index]=' ';
+				$lineComment=true;
+				continue;
+			}
+			if($character==='/' && ($sql[$index+1] ?? null)==='*'){
+				$masked[$index]=' ';
+				$index++;
+				$masked[$index]=' ';
+				$blockDepth=1;
+				continue;
+			}
+			if($character==="'" || $character==='"'){
+				$masked[$index]=' ';
+				$quote=$character;
+				$escape=$character==="'"
+					&& $index>0
+					&& in_array($sql[$index-1], ['e', 'E'], true)
+					&& ($index<2 || preg_match('/[A-Za-z0-9_$]/', $sql[$index-2])!==1);
+				continue;
+			}
+			$delimiter=self::dollarQuoteDelimiterAt($sql, $index);
+			if($delimiter!==null){
+				for($offset=0; $offset<strlen($delimiter); $offset++){
+					$masked[$index+$offset]=' ';
+				}
+				$dollar=$delimiter;
+				$index+=strlen($delimiter)-1;
+			}
+		}
+		return $masked;
+	}
+
+	private static function doBody(string $statement): ?string {
+		$shape=self::maskSqlLiteralsAndComments($statement);
+		if(preg_match('/^\s*DO\b/i', $shape, $do, PREG_OFFSET_CAPTURE)!==1){
+			return null;
+		}
+		$searchOffset=$do[0][1]+strlen($do[0][0]);
+		$lineComment=false;
+		$blockDepth=0;
+		$quote=null;
+		$escape=false;
+		$length=strlen($statement);
+		for($index=$searchOffset; $index<$length; $index++){
+			$character=$statement[$index];
+			if($lineComment){
+				if($character==="\n" || $character==="\r"){
+					$lineComment=false;
+				}
+				continue;
+			}
+			if($blockDepth>0){
+				if($character==='/' && ($statement[$index+1] ?? null)==='*'){
+					$blockDepth++;
+					$index++;
+				}elseif($character==='*' && ($statement[$index+1] ?? null)==='/'){
+					$blockDepth--;
+					$index++;
+				}
+				continue;
+			}
+			if($quote!==null){
+				if($escape && $character==='\\'){
+					$index++;
+					continue;
+				}
+				if($character===$quote){
+					if(($statement[$index+1] ?? null)===$quote){
+						$index++;
+					}else{
+						$quote=null;
+						$escape=false;
+					}
+				}
+				continue;
+			}
+			if($character==='-' && ($statement[$index+1] ?? null)==='-'){
+				$lineComment=true;
+				$index++;
+				continue;
+			}
+			if($character==='/' && ($statement[$index+1] ?? null)==='*'){
+				$blockDepth=1;
+				$index++;
+				continue;
+			}
+			if($character==="'" || $character==='"'){
+				$quote=$character;
+				$escape=$character==="'"
+					&& $index>0
+					&& in_array($statement[$index-1], ['e', 'E'], true)
+					&& ($index<2 || preg_match('/[A-Za-z0-9_$]/', $statement[$index-2])!==1);
+				continue;
+			}
+			$delimiter=self::dollarQuoteDelimiterAt($statement, $index);
+			if($delimiter===null){
+				continue;
+			}
+			$end=strpos($statement, $delimiter, $index+strlen($delimiter));
+			if($end===false){
+				throw new RuntimeException('Unclosed DO body in applied migration definition.');
+			}
+			return substr(
+				$statement,
+				$index+strlen($delimiter),
+				$end-$index-strlen($delimiter)
+			);
+		}
+		throw new RuntimeException('Cannot inspect a DO statement without one fixed dollar-quoted body.');
+	}
+
+	private static function projectDoSchemaSql(
+		string $body,
+		string $databaseDialect
+	): string {
+		$productPrefix='/\A\s*BEGIN\s+IF\s+position\s*\(\s*'.
+			"'YugabyteDB'\\s+IN\\s+version\\s*\\(\\s*\\)\\s*\\)".
+			'\s*>\s*0\s+THEN\b/is';
+		if(preg_match($productPrefix, $body, $prefix, PREG_OFFSET_CAPTURE)===1){
+			$thenStart=$prefix[0][1]+strlen($prefix[0][0]);
+			$mask=self::maskSqlLiteralsAndComments($body);
+			if(
+				preg_match('/\bELSE\b/i', $mask, $else, PREG_OFFSET_CAPTURE, $thenStart)!==1
+				|| preg_match(
+					'/\bEND\s+IF\s*;/i',
+					$mask,
+					$endIf,
+					PREG_OFFSET_CAPTURE,
+					$else[0][1]+strlen($else[0][0])
+				)!==1
+			){
+				throw new RuntimeException('Cannot inspect the database-product migration branch.');
+			}
+			$tail=substr($mask, $endIf[0][1]+strlen($endIf[0][0]));
+			if(preg_match('/^\s*END\s*;?\s*$/i', $tail)!==1){
+				throw new RuntimeException('Database-product migration branch has unsupported control flow.');
+			}
+			$selected=$databaseDialect==='yugabyte'
+				? substr($body, $thenStart, $else[0][1]-$thenStart)
+				: substr(
+					$body,
+					$else[0][1]+strlen($else[0][0]),
+					$endIf[0][1]-$else[0][1]-strlen($else[0][0])
+				);
+			return self::projectPlpgsqlSchemaSql($selected, $databaseDialect, true);
+		}
+
+		$mask=self::maskSqlLiteralsAndComments($body);
+		if(
+			preg_match('/\bBEGIN\b/i', $mask, $begin, PREG_OFFSET_CAPTURE)!==1
+			|| preg_match('/\bEND\s*;?\s*$/i', $mask, $end, PREG_OFFSET_CAPTURE)!==1
+		){
+			throw new RuntimeException('Cannot inspect the applied migration DO body.');
+		}
+		$content=substr(
+			$body,
+			$begin[0][1]+strlen($begin[0][0]),
+			$end[0][1]-$begin[0][1]-strlen($begin[0][0])
+		);
+		return self::projectPlpgsqlSchemaSql($content, $databaseDialect, false);
+	}
+
+	private static function projectPlpgsqlSchemaSql(
+		string $sql,
+		string $databaseDialect,
+		bool $controlResolved
+	): string {
+		if(
+			!$controlResolved
+			&& self::hasUnsupportedPlpgsqlControl($sql)
+			&& self::containsIndexDdlEvidence($sql)
+		){
+			throw new RuntimeException(
+				'Cannot certify index DDL behind unsupported migration control flow.'
+			);
+		}
+		$projected=[];
+		foreach(self::topLevelSqlStatements($sql) as $statement){
+			$statementShape=ltrim(self::maskSqlLiteralsAndComments($statement));
+			if(preg_match('/^EXECUTE\b(?!\s+(?:FUNCTION|PROCEDURE)\b)/i', $statementShape)===1){
+				$fixed=self::fixedExecutedSql($statement);
+				if($fixed===null){
+					if(self::containsIndexDdlEvidence($statement)){
+						throw new RuntimeException(
+							'Cannot certify index DDL from a non-fixed EXECUTE expression.'
+						);
+					}
+					continue;
+				}
+				if($fixed['escape'] && str_contains($fixed['sql'], '\\')){
+					throw new RuntimeException(
+						'Cannot certify a PostgreSQL escape-string EXECUTE containing backslash escapes.'
+					);
+				}
+				$ddl=self::migrationSchemaSql($fixed['sql'], $databaseDialect);
+				if(trim($ddl)!==''){
+					$projected[]=$ddl;
+				}
+				continue;
+			}
+			if(preg_match(
+				'/^(?:CREATE\s+(?:UNIQUE\s+)?INDEX|CREATE\s+TABLE|'.
+					'ALTER\s+TABLE|DROP\s+(?:INDEX|TABLE))\b/i',
+				$statementShape
+			)===1){
+				$projected[]=rtrim(self::stripSqlComments($statement), "; \t\r\n").';';
+			}
+		}
+		return implode("\n", $projected);
+	}
+
+	private static function hasUnsupportedPlpgsqlControl(string $sql): bool {
+		foreach(self::topLevelSqlStatements($sql) as $statement){
+			$shape=ltrim(self::maskSqlLiteralsAndComments($statement));
+			if(preg_match(
+				'/^(?:<<[A-Za-z_][A-Za-z0-9_$]*>>\s*)?'.
+					'(?:BEGIN|IF|CASE|LOOP|WHILE|FOR|FOREACH|EXCEPTION)\b/i',
+				$shape
+			)===1){
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** @return ?array{sql:string,escape:bool} */
+	private static function fixedExecutedSql(string $statement): ?array {
+		$shape=self::maskSqlLiteralsAndComments($statement);
+		if(preg_match('/^\s*EXECUTE\b/i', $shape, $execute, PREG_OFFSET_CAPTURE)!==1){
+			return null;
+		}
+		$offset=self::skipSqlTrivia(
+			$statement,
+			$execute[0][1]+strlen($execute[0][0])
+		);
+		$escape=false;
+		if(
+			in_array($statement[$offset] ?? null, ['e', 'E'], true)
+			&& ($statement[$offset+1] ?? null)==="'"
+		){
+			$escape=true;
+			$offset++;
+		}
+		$delimiter=null;
+		if(($statement[$offset] ?? null)==="'"){
+			$delimiter="'";
+		}elseif(($statement[$offset] ?? null)==='$'){
+			$delimiter=self::dollarQuoteDelimiterAt($statement, $offset);
+		}
+		if($delimiter===null){
+			return null;
+		}
+		$context=[
+			'type'=>$delimiter==="'" ? 'single' : 'dollar',
+			'start'=>$offset,
+			'content_start'=>$offset+strlen($delimiter),
+			'parent_content_start'=>0,
+			'delimiter'=>$delimiter,
+			'escape'=>$escape,
+		];
+		$end=self::sqlLiteralEnd($statement, $context);
+		$closingEnd=$end+strlen($delimiter);
+		if(trim(self::stripSqlComments(substr($statement, $closingEnd)))!==''){
+			return null;
+		}
+		$sql=substr($statement, $context['content_start'], $end-$context['content_start']);
+		if($delimiter==="'"){
+			$sql=str_replace("''", "'", $sql);
+		}
+		return ['sql'=>$sql, 'escape'=>$escape];
+	}
+
+	private static function skipSqlTrivia(string $sql, int $offset): int {
+		$length=strlen($sql);
+		while($offset<$length){
+			if(ctype_space($sql[$offset])){
+				$offset++;
+				continue;
+			}
+			if(substr($sql, $offset, 2)==='--'){
+				$newline=strcspn($sql, "\r\n", $offset+2)+$offset+2;
+				$offset=min($length, $newline);
+				continue;
+			}
+			if(substr($sql, $offset, 2)==='/*'){
+				$depth=1;
+				$offset+=2;
+				while($offset<$length && $depth>0){
+					if(substr($sql, $offset, 2)==='/*'){
+						$depth++;
+						$offset+=2;
+					}elseif(substr($sql, $offset, 2)==='*/'){
+						$depth--;
+						$offset+=2;
+					}else{
+						$offset++;
+					}
+				}
+				continue;
+			}
+			break;
+		}
+		return $offset;
+	}
+
+	private static function containsIndexDdlEvidence(string $sql): bool {
+		$evidence=self::maskSqlLiteralsAndComments($sql);
+		foreach(self::sqlLiteralFragments($sql) as $fragment){
+			$evidence.=' '.$fragment;
+		}
+		if(preg_match('/\bCREATE\b.{0,8192}\bINDEX\b/is', $evidence)===1){
+			return true;
+		}
+		return preg_match('/\bCREATE\b/i', $evidence)===1
+			&& preg_match('/\\\\(?:u|U|x|[0-7])/i', $evidence)===1;
+	}
+
+	/** @return list<string> */
+	private static function sqlLiteralFragments(string $sql): array {
+		$fragments=[];
+		$lineComment=false;
+		$blockDepth=0;
+		$doubleQuoted=false;
+		$length=strlen($sql);
+		for($index=0; $index<$length; $index++){
+			$character=$sql[$index];
+			if($lineComment){
+				if($character==="\n" || $character==="\r"){
+					$lineComment=false;
+				}
+				continue;
+			}
+			if($blockDepth>0){
+				if($character==='/' && ($sql[$index+1] ?? null)==='*'){
+					$blockDepth++;
+					$index++;
+				}elseif($character==='*' && ($sql[$index+1] ?? null)==='/'){
+					$blockDepth--;
+					$index++;
+				}
+				continue;
+			}
+			if($doubleQuoted){
+				if($character==='"'){
+					if(($sql[$index+1] ?? null)==='"'){
+						$index++;
+					}else{
+						$doubleQuoted=false;
+					}
+				}
+				continue;
+			}
+			if($character==='-' && ($sql[$index+1] ?? null)==='-'){
+				$lineComment=true;
+				$index++;
+				continue;
+			}
+			if($character==='/' && ($sql[$index+1] ?? null)==='*'){
+				$blockDepth=1;
+				$index++;
+				continue;
+			}
+			if($character==='"'){
+				$doubleQuoted=true;
+				continue;
+			}
+			if($character==="'"){
+				$escape=$index>0
+					&& in_array($sql[$index-1], ['e', 'E'], true)
+					&& ($index<2 || preg_match('/[A-Za-z0-9_$]/', $sql[$index-2])!==1);
+				$context=[
+					'type'=>'single',
+					'start'=>$index,
+					'content_start'=>$index+1,
+					'parent_content_start'=>0,
+					'delimiter'=>"'",
+					'escape'=>$escape,
+				];
+				$end=self::sqlLiteralEnd($sql, $context);
+				$fragments[]=str_replace("''", "'", substr($sql, $index+1, $end-$index-1));
+				$index=$end;
+				continue;
+			}
+			$delimiter=self::dollarQuoteDelimiterAt($sql, $index);
+			if($delimiter!==null){
+				$end=strpos($sql, $delimiter, $index+strlen($delimiter));
+				if($end===false){
+					throw new RuntimeException('Unclosed dollar-quoted SQL literal in applied migration definition.');
+				}
+				$fragments[]=substr(
+					$sql,
+					$index+strlen($delimiter),
+					$end-$index-strlen($delimiter)
+				);
+				$index=$end+strlen($delimiter)-1;
+			}
+		}
+		return $fragments;
+	}
+
+	private static function dollarQuoteDelimiterAt(string $sql, int $offset): ?string {
+		if(($sql[$offset] ?? null)!=='$'){
+			return null;
+		}
+		return preg_match('/\\A\\$(?:[A-Za-z_][A-Za-z0-9_]*)?\\$/', substr($sql, $offset), $match)===1
+			? $match[0]
+			: null;
+	}
+
+	/** @param array{type:string,start:int,content_start:int,parent_content_start:int,delimiter:string,escape:bool} $context */
+	private static function sqlLiteralEnd(string $sql, array $context): int {
+		$length=strlen($sql);
+		if($context['type']==='dollar'){
+			$end=strpos($sql, $context['delimiter'], $context['content_start']);
+			if($end===false){
+				throw new RuntimeException('Unclosed dollar-quoted SQL literal in applied migration definition.');
+			}
+			return $end;
+		}
+		for($index=$context['content_start']; $index<$length; $index++){
+			if($context['escape'] && $sql[$index]==='\\'){
+				$index++;
+				continue;
+			}
+			if($sql[$index]!=="'"){
+				continue;
+			}
+			if(($sql[$index+1] ?? null)==="'"){
+				$index++;
+				continue;
+			}
+			return $index;
+		}
+		throw new RuntimeException('Unclosed fixed SQL literal in applied migration definition.');
+	}
+
+	private static function stripSqlComments(string $sql): string {
+		$result='';
+		$lineComment=false;
+		$blockDepth=0;
+		$quote=null;
+		$dollar=null;
+		$escape=false;
+		$length=strlen($sql);
+		for($index=0; $index<$length; $index++){
+			$character=$sql[$index];
+			if($lineComment){
+				if($character==="\n" || $character==="\r"){
+					$lineComment=false;
+					$result.=$character;
+				}else{
+					$result.=' ';
+				}
+				continue;
+			}
+			if($blockDepth>0){
+				if($character==='/' && ($sql[$index+1] ?? null)==='*'){
+					$blockDepth++;
+					$result.='  ';
+					$index++;
+				}elseif($character==='*' && ($sql[$index+1] ?? null)==='/'){
+					$blockDepth--;
+					$result.='  ';
+					$index++;
+				}else{
+					$result.=' ';
+				}
+				continue;
+			}
+			if($quote!==null){
+				$result.=$character;
+				if($escape && $character==='\\'){
+					if($index+1<$length){
+						$result.=$sql[++$index];
+					}
+					continue;
+				}
+				if($character===$quote){
+					if(($sql[$index+1] ?? null)===$quote){
+						$result.=$sql[++$index];
+					}else{
+						$quote=null;
+						$escape=false;
+					}
+				}
+				continue;
+			}
+			if($dollar!==null){
+				if(substr($sql, $index, strlen($dollar))===$dollar){
+					$result.=$dollar;
+					$index+=strlen($dollar)-1;
+					$dollar=null;
+				}else{
+					$result.=$character;
+				}
+				continue;
+			}
+			if($character==='-' && ($sql[$index+1] ?? null)==='-'){
+				$lineComment=true;
+				$result.='  ';
+				$index++;
+				continue;
+			}
+			if($character==='/' && ($sql[$index+1] ?? null)==='*'){
+				$blockDepth=1;
+				$result.='  ';
+				$index++;
+				continue;
+			}
+			if($character==="'" || $character==='"'){
+				$quote=$character;
+				$escape=$character==="'"
+					&& $index>0
+					&& in_array($sql[$index-1], ['e', 'E'], true)
+					&& ($index<2 || preg_match('/[A-Za-z0-9_$]/', $sql[$index-2])!==1);
+				$result.=$character;
+				continue;
+			}
+			$delimiter=self::dollarQuoteDelimiterAt($sql, $index);
+			if($delimiter!==null){
+				$dollar=$delimiter;
+				$result.=$delimiter;
+				$index+=strlen($delimiter)-1;
+				continue;
+			}
+			$result.=$character;
+		}
+		return $result;
+	}
+
 	private static function matchingParenthesis(string $sql, int $opening): int {
 		if(($sql[$opening] ?? null)!=='('){
 			throw new RuntimeException('Cannot parse migration parenthesis boundary.');
 		}
 		$depth=0;
+		$lineComment=false;
+		$blockDepth=0;
 		$quote=null;
+		$dollar=null;
+		$escape=false;
 		$length=strlen($sql);
 		for($index=$opening; $index<$length; $index++){
 			$character=$sql[$index];
+			if($lineComment){
+				if($character==="\n" || $character==="\r"){
+					$lineComment=false;
+				}
+				continue;
+			}
+			if($blockDepth>0){
+				if($character==='/' && ($sql[$index+1] ?? null)==='*'){
+					$blockDepth++;
+					$index++;
+				}elseif($character==='*' && ($sql[$index+1] ?? null)==='/'){
+					$blockDepth--;
+					$index++;
+				}
+				continue;
+			}
 			if($quote!==null){
+				if($escape && $character==='\\'){
+					$index++;
+					continue;
+				}
 				if($character===$quote){
 					if($index+1<$length && $sql[$index+1]===$quote){
 						$index++;
 						continue;
 					}
 					$quote=null;
+					$escape=false;
 				}
+				continue;
+			}
+			if($dollar!==null){
+				if(substr($sql, $index, strlen($dollar))===$dollar){
+					$index+=strlen($dollar)-1;
+					$dollar=null;
+				}
+				continue;
+			}
+			if($character==='-' && ($sql[$index+1] ?? null)==='-'){
+				$lineComment=true;
+				$index++;
+				continue;
+			}
+			if($character==='/' && ($sql[$index+1] ?? null)==='*'){
+				$blockDepth=1;
+				$index++;
 				continue;
 			}
 			if($character==="'" || $character==='"'){
 				$quote=$character;
+				$escape=$character==="'"
+					&& $index>0
+					&& in_array($sql[$index-1], ['e', 'E'], true)
+					&& ($index<2 || preg_match('/[A-Za-z0-9_$]/', $sql[$index-2])!==1);
+			}elseif(($delimiter=self::dollarQuoteDelimiterAt($sql, $index))!==null){
+				$dollar=$delimiter;
+				$index+=strlen($delimiter)-1;
 			}elseif($character==='('){
 				$depth++;
 			}elseif($character===')' && --$depth===0){
@@ -1588,22 +2586,71 @@ final class PostgreSqlSchemaInspector {
 
 	private static function statementEnd(string $sql, int $start): int {
 		$quote=null;
+		$dollar=null;
+		$escape=false;
+		$lineComment=false;
+		$blockDepth=0;
 		$depth=0;
 		$length=strlen($sql);
 		for($index=$start; $index<$length; $index++){
 			$character=$sql[$index];
+			if($lineComment){
+				if($character==="\n" || $character==="\r"){
+					$lineComment=false;
+				}
+				continue;
+			}
+			if($blockDepth>0){
+				if($character==='/' && ($sql[$index+1] ?? null)==='*'){
+					$blockDepth++;
+					$index++;
+				}elseif($character==='*' && ($sql[$index+1] ?? null)==='/'){
+					$blockDepth--;
+					$index++;
+				}
+				continue;
+			}
 			if($quote!==null){
+				if($escape && $character==='\\'){
+					$index++;
+					continue;
+				}
 				if($character===$quote){
 					if($index+1<$length && $sql[$index+1]===$quote){
 						$index++;
 						continue;
 					}
 					$quote=null;
+					$escape=false;
 				}
+				continue;
+			}
+			if($dollar!==null){
+				if(substr($sql, $index, strlen($dollar))===$dollar){
+					$index+=strlen($dollar)-1;
+					$dollar=null;
+				}
+				continue;
+			}
+			if($character==='-' && ($sql[$index+1] ?? null)==='-'){
+				$lineComment=true;
+				$index++;
+				continue;
+			}
+			if($character==='/' && ($sql[$index+1] ?? null)==='*'){
+				$blockDepth=1;
+				$index++;
 				continue;
 			}
 			if($character==="'" || $character==='"'){
 				$quote=$character;
+				$escape=$character==="'"
+					&& $index>0
+					&& in_array($sql[$index-1], ['e', 'E'], true)
+					&& ($index<2 || preg_match('/[A-Za-z0-9_$]/', $sql[$index-2])!==1);
+			}elseif(($delimiter=self::dollarQuoteDelimiterAt($sql, $index))!==null){
+				$dollar=$delimiter;
+				$index+=strlen($delimiter)-1;
 			}elseif($character==='('){
 				$depth++;
 			}elseif($character===')'){
@@ -1755,6 +2802,14 @@ final class PostgreSqlSchemaInspector {
 			return str_replace('""', '"', substr($identifier, 1, -1));
 		}
 		return strtolower(substr($identifier, 0, self::POSTGRESQL_IDENTIFIER_MAX_BYTES));
+	}
+
+	private static function defaultPrimaryKeyName(string $qualifiedTable): string {
+		$separator=strrpos($qualifiedTable, '.');
+		$table=$separator===false
+			? $qualifiedTable
+			: substr($qualifiedTable, $separator+1);
+		return substr($table.'_pkey', 0, self::POSTGRESQL_IDENTIFIER_MAX_BYTES);
 	}
 
 	private static function qualifiedName(string $schema, string $object): string {

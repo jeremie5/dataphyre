@@ -114,6 +114,7 @@ test('verification run-mode key and configured-memory decisions are deterministi
 	$t->same('request', CoreKernelBootstrap::resolveRunMode(null, true, null, $fail));
 	$t->same('diagnostic', CoreKernelBootstrap::resolveRunMode(null, false, 'write denied', $fail));
 	$t->same('request', CoreKernelBootstrap::resolveRunMode('request', false, null, $fail));
+	$t->same('scheduler-task', CoreKernelBootstrap::resolveRunMode('scheduler-task', false, null, $fail));
 	$t->same('unit_test', CoreKernelBootstrap::resolveRunMode('unit_test', false, null, $fail));
 	$fail->assertCalledWith($t, ['Dataphyre install must be verified or installed from the configured flight sheet. write denied']);
 	$fail->assertCalledWith($t, ['Dataphyre install must be verified or installed from the configured flight sheet.']);
@@ -290,7 +291,7 @@ test('execution module request and diagnostic lifecycle methods expose ordered s
 	$disabledUnavailable=$t->spy();
 	CoreKernelBootstrap::prepareRequest('request', $disabledLoad, $disabledLock, static fn(): int=>PHP_SESSION_NONE, static fn(): int=>5, $disabledUnavailable, false);
 	$disabledLoad->assertCalledTimes($t, 0);
-	$disabledLock->assertCalledTimes($t, 1);
+	$disabledLock->assertCalledTimes($t, 0);
 	$disabledUnavailable->assertCalledTimes($t, 0);
 	$t->same(true, CoreKernelBootstrap::loadSheddingEnabled([]));
 	$t->same(true, CoreKernelBootstrap::loadSheddingEnabled(['core'=>['load_shedding'=>['enabled'=>true]]]));

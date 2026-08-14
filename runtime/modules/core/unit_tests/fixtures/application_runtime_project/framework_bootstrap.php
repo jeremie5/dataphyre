@@ -54,21 +54,65 @@ if ((string) ($_SERVER['DATAPHYRE_RUNTIME_REALTIME_BOOTSTRAP'] ?? '') === '1') {
 			'',
 		);
 	}
+	$stateMutation=(string)getenv('DATAPHYRE_RUNTIME_TEST_SCHEDULER_STATE_MUTATION');
+	if($stateMutation!==''){
+		$schedulerRoot=rtrim((string)getenv('DATAPHYRE_SCHEDULER_STATE_ROOT'),'/\\').'/cache/scheduling';
+		$definitionRoot=$schedulerRoot.'/runtime.realtime.preflight';
+		$properties=$definitionRoot.'/properties.json';
+		if($stateMutation==='missing-root'){
+			@unlink($properties);
+			@rmdir($definitionRoot);
+			@rmdir($schedulerRoot);
+		}elseif($stateMutation==='invalid-entry'){
+			@mkdir($schedulerRoot.'/invalid-entry',0700,true);
+		}elseif($stateMutation==='extra-state'){
+			file_put_contents($definitionRoot.'/running_lock','forbidden',LOCK_EX);
+		}elseif($stateMutation==='malformed-definition'){
+			file_put_contents($properties,"[]\n",LOCK_EX);
+		}elseif($stateMutation==='missing-dependency'){
+			$definition=json_decode((string)file_get_contents($properties),true,32,JSON_THROW_ON_ERROR);
+			$definition['dependencies']=[$schedulerRoot.'/missing-dependency.php'];
+			file_put_contents($properties,json_encode($definition,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),LOCK_EX);
+		}elseif($stateMutation==='valid-dependency'){
+			$definition=json_decode((string)file_get_contents($properties),true,32,JSON_THROW_ON_ERROR);
+			$definition['dependencies']=[__DIR__.'/scheduled_task.php'];
+			file_put_contents($properties,json_encode($definition,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),LOCK_EX);
+		}
+	}
     \dataphyre\realtime::register(
         '/runtime/realtime',
-        static function(array $handshake): array|false {
-            $expectedToken=(string)(getenv('DATAPHYRE_RUNTIME_TEST_REALTIME_TOKEN') ?: 'runtime-fixture-token');
-            return ($handshake['origin'] ?? null)==='https://runtime.test'
-                && ($handshake['query']['token'] ?? null)===$expectedToken
-                ? ['fixture'=>'authorized']
-                : false;
+		static function(array $handshake): array|false {
+			$expectedToken=(string)(getenv('DATAPHYRE_RUNTIME_TEST_REALTIME_TOKEN') ?: 'runtime-fixture-token');
+			$mode=(string)($handshake['query']['mode'] ?? 'valid');
+			if(($handshake['origin'] ?? null)!=='https://runtime.test'
+				|| ($handshake['query']['token'] ?? null)!==$expectedToken){
+				return false;
+			}
+			return match($mode){
+				'authorize_throw'=>throw new RuntimeException('fixture realtime authorization failure'),
+				'authorize_unencodable'=>['fixture'=>'authorized','value'=>NAN],
+				'authorize_oversized'=>['fixture'=>'authorized','value'=>str_repeat('x',8192)],
+				'authorize_list'=>['authorized'],
+				'valid','throw','invalid','too_many','invalid_cursor','unencodable','oversized'=>[
+					'fixture'=>'authorized','mode'=>$mode,
+				],
+				default=>false,
+			};
         },
-        static fn(array $authorization, ?string $cursor): array=>[
-            'cursor'=>$cursor ?? 'delivered',
-            'events'=>$cursor===null && ($authorization['fixture'] ?? null)==='authorized'
-                ? [['type'=>'runtime.ready','pool'=>'realtime']]
-                : [],
-        ],
+		static function(array $authorization,?string $cursor): array {
+			if($cursor!==null || ($authorization['fixture'] ?? null)!=='authorized'){
+				return ['cursor'=>$cursor ?? 'delivered','events'=>[]];
+			}
+			return match($authorization['mode'] ?? 'valid'){
+				'throw'=>throw new RuntimeException('fixture realtime event failure'),
+				'invalid'=>['cursor'=>'invalid'],
+				'too_many'=>['cursor'=>'overflow','events'=>array_fill(0,65,['type'=>'overflow'])],
+				'invalid_cursor'=>['cursor'=>str_repeat('c',257),'events'=>[]],
+				'unencodable'=>['cursor'=>'unencodable','events'=>[['value'=>NAN]]],
+				'oversized'=>['cursor'=>'oversized','events'=>[['value'=>str_repeat('x',65536)]]],
+				default=>['cursor'=>'delivered','events'=>[['type'=>'runtime.ready','pool'=>'realtime']]],
+			};
+		},
     );
 }
 

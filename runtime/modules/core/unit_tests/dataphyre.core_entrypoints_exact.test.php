@@ -48,3 +48,38 @@ test('kernel bootstrap publishes the complete application runtime surface', stat
 		'runtime'=>true,
 	], $result);
 });
+
+test('core main executes the diagnostic lifecycle through its real bootstrap entrypoint', static function(Context $t): void {
+	$root=dirname(__DIR__, 4);
+	$result=$t->processSucceeded($t->coveredPhpFixture(
+		__DIR__.'/fixtures/core_main_diagnostic_probe.php',
+		[dirname(__DIR__).'/kernel/core.main.php'],
+		framework_root:$root,
+	));
+	$t->hasPathValues([
+		'core_loaded'=>true,
+		'diagnostic_loaded'=>true,
+		'run_mode'=>'diagnostic',
+	], $result->json());
+});
+
+test('core config tracing executes only through the configured trace boundary', static function(Context $t): void {
+	$root=dirname(__DIR__, 4);
+	$result=$t->processSucceeded($t->coveredPhpFixture(
+		__DIR__.'/fixtures/core_functions_trace_config_probe.php',
+		[dirname(__DIR__).'/kernel/core_functions.php'],
+		framework_root:$root,
+	))->json();
+	$t->same('traced-value', $result['value']);
+	$t->greaterThan(0, $result['trace_calls']);
+});
+
+test('flight-sheet default path resolves from the framework install root without process constants', static function(Context $t): void {
+	$root=dirname(__DIR__, 4);
+	$result=$t->processSucceeded($t->coveredPhpFixture(
+		__DIR__.'/fixtures/flight_sheet_default_path_probe.php',
+		[dirname(__DIR__).'/kernel/flight_sheet.php'],
+		framework_root:$root,
+	))->json();
+	$t->same(true, str_ends_with((string)$result['path'], '/flight_sheet.php'));
+});

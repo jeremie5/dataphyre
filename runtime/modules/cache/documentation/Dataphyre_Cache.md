@@ -75,3 +75,33 @@ or a policy named `shared_cache`; it performs lazy backend selection and returns
 
 Memcached's native serializer is used so scalar counters remain compatible with
 its atomic increment and decrement operations.
+
+## Fixed cross-process release probe
+
+Cloud verifies shared cache without inline PHP or environment files through the
+fixed one-shot operation `dataphyre_shared_cache_probe`. Its image-owned target
+is `runtime/modules/cache/kernel/shared_cache_probe.php`; PID 1 accepts only
+`DATAPHYRE_ONE_SHOT_CACHE_PHASE=detect|write|read-delete` and one 64-character
+lowercase hexadecimal `DATAPHYRE_ONE_SHOT_CACHE_CHALLENGE`. The child accepts
+only the corresponding `--phase` and `--challenge` arguments. It derives a
+namespaced key and opaque value from the application, environment, release, and
+challenge; no caller can provide a key, value, host, port, TTL, path, script, or
+command.
+
+`detect` requires the Memcached PHP extension at version 3.4.0 or newer and
+reports whether a non-loopback shared endpoint is declared by the platform
+cache environment aliases. It performs no network operation and is safe under
+`--network none`. This fixed probe deliberately does not bootstrap application
+configuration: Cloud must project its deployment-owned Memcached endpoint as
+`DATAPHYRE_CACHE_MEMCACHED_HOST` and optionally
+`DATAPHYRE_CACHE_MEMCACHED_PORT` through the root-only environment envelope.
+
+Cloud then runs `write` and `read-delete` in two separate network-enabled
+one-shot processes with the same challenge. `write` stores the internally
+derived value for exactly 120 seconds and verifies the facade remains shared.
+`read-delete` matches that value, deletes it, verifies the subsequent miss, and
+checks shared state after every operation. A one-process set/get is not proof:
+the fail-open request-local backend can satisfy both. Only the separate writer
+and reader prove process sharing. Each phase emits one canonical JSON line no
+larger than 4 KiB; success exits `0`, typed misuse exits `64`, unavailable or
+failed shared proof exits `69`, and invalid fixed runtime identity exits `78`.

@@ -8,66 +8,48 @@
 declare(strict_types=1);
 
 use Dataphyre\Test\Context;
-use dataphyre\application_definition;
-use dataphyre\runtime;
 use function Dataphyre\Test\test;
 
-require_once dirname(__DIR__).'/kernel/application_definition.php';
-require_once dirname(__DIR__).'/kernel/runtime.php';
+require_once dirname(__DIR__).'/kernel/application_runtime_scheduler_protocol.php';
 
-test('framework runtime intercepts only an exact claimed and signed scheduler callback',static function(Context $t): void {
-	$runtime=$t->nonPublic(runtime::class);
-	$definition=new application_definition('scheduler-probe',$t->tempDirectory('scheduler-runtime'));
-	$claim=str_repeat('c',64);
-	$server=[
-		'REQUEST_URI'=>'/dataphyre/scheduler/tenant-beta.lifecycle?ignored=1',
-		'REQUEST_METHOD'=>'GET',
-		'HTTP_X_TRAFFIC_SOURCE'=>'internal_traffic',
-		'HTTP_X_DATAPHYRE_SCHEDULER_CLAIM'=>$claim,
-		'HTTP_X_DATAPHYRE_SCHEDULER_KEY'=>'signed-request',
+test('managed scheduler accepts only the canonical signed and claim-bound CGI route',static function(Context $t): void {
+	$keypair=sodium_crypto_sign_keypair();
+	$secret=sodium_crypto_sign_secretkey($keypair);
+	$public=sodium_crypto_sign_publickey($keypair);
+	$identity=[
+		'cloud_application'=>'serve',
+		'framework_application'=>'Serve',
+		'environment'=>'production',
+		'release_id'=>'dep_'.str_repeat('a',40),
 	];
-	$t->same('tenant-beta.lifecycle',$runtime->invoke('scheduler_route_name',$server));
-	$t->isNull($runtime->invoke('scheduler_route_name',['REQUEST_URI'=>'/dataphyre/scheduler/..']));
-	$t->isNull($runtime->invoke('scheduler_route_name',['REQUEST_URI'=>'/dataphyre/scheduler/'.str_repeat('a',129)]));
-	$t->isNull($runtime->invoke('scheduler_route_name',['REQUEST_URI'=>'/dataphyre/scheduler/name%2Fother']));
+	$request=DataphyreApplicationRuntimeSchedulerProtocol::issue(
+		'callback',$identity,'gen_'.str_repeat('b',32),7,$secret,
+		'tenant-beta.lifecycle','sha256:'.str_repeat('c',64),30000,
+		1776073500,str_repeat('d',32),
+	);
+	$raw=json_encode($request,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+	$t->isTrue(DataphyreApplicationRuntimeSchedulerProtocol::matchesCanonicalJson($request,$raw));
+	$t->isTrue(DataphyreApplicationRuntimeSchedulerProtocol::verify($request,$public,1776073500));
+	$pending=['callback:7'=>$request];
+	$t->isTrue(DataphyreApplicationRuntimeSchedulerProtocol::consume($pending,$request,$public,1776073500));
+	$t->same([],$pending);
+	$t->isFalse(DataphyreApplicationRuntimeSchedulerProtocol::consume($pending,$request,$public,1776073500));
 
-	$verified=[];
-	$loaded=[];
-	$executed=[];
-	$responses=[];
-	$handled=$runtime->invoke('boot_internal_runtime_route',$definition,[
-		'server'=>$server,
-		'verify'=>static function(string $token,string $name,string $candidateClaim)use(&$verified): bool {
-			$verified[]=[$token,$name,$candidateClaim];
-			return $token==='signed-request' && $name==='tenant-beta.lifecycle';
-		},
-		'core_loader'=>static fn(): bool=>true,
-		'module_loader'=>static function(string $module)use(&$loaded): bool {$loaded[]=$module; return true;},
-		'task_runner'=>static function(string $name,string $candidateClaim)use(&$executed): void {$executed[]=[$name,$candidateClaim];},
-		'respond'=>static function(int $status,string $body)use(&$responses): void {$responses[]=[$status,$body];},
-	]);
-	$t->isTrue($handled);
-	$t->same([['signed-request','tenant-beta.lifecycle',$claim]],$verified);
-	$t->same(['scheduling'],$loaded);
-	$t->same([['tenant-beta.lifecycle',$claim]],$executed);
-	$t->same([],$responses);
-
-	$missingClaim=$server;
-	unset($missingClaim['HTTP_X_DATAPHYRE_SCHEDULER_CLAIM']);
-	$t->isTrue($runtime->invoke('boot_internal_runtime_route',$definition,[
-		'server'=>$missingClaim,
-		'verify'=>static fn(): bool=>true,
-		'respond'=>static function(int $status,string $body)use(&$responses): void {$responses[]=[$status,$body];},
-	]));
-	$post=$server;
-	$post['REQUEST_METHOD']='POST';
-	$t->isTrue($runtime->invoke('boot_internal_runtime_route',$definition,[
-		'server'=>$post,
-		'verify'=>static fn(): bool=>true,
-		'respond'=>static function(int $status,string $body)use(&$responses): void {$responses[]=[$status,$body];},
-	]));
-	$t->same([[404,'Not found'],[404,'Not found']],$responses);
-	$t->isFalse($runtime->invoke('boot_internal_runtime_route',$definition,[
-		'server'=>['REQUEST_URI'=>'/ordinary-route'],
-	]));
-});
+	$runtime=(string)file_get_contents(dirname(__DIR__).'/kernel/runtime.php');
+	$router=(string)file_get_contents(dirname(__DIR__).'/kernel/application_runtime_router.php');
+	$gateway=(string)file_get_contents(dirname(__DIR__).'/kernel/application_runtime_cgi_gateway.php');
+	$t->isFalse(str_contains($runtime,'boot_internal_runtime_route'));
+	$t->isFalse(str_contains($runtime,'scheduler_route_name'));
+	$t->isFalse(str_contains($runtime,'/dataphyre/scheduler/'));
+	$t->contains("(\$_SERVER['REQUEST_METHOD'] ?? '')!=='POST'",$router);
+	$t->contains("'/dataphyre/runtime/scheduler/register'",$router);
+	$t->contains("'/dataphyre/runtime/scheduler/callback'",$router);
+	$t->contains("'/dataphyre/runtime/scheduler/noop'",$router);
+	$t->contains('DataphyreApplicationRuntimeSchedulerProtocol::matchesCanonicalJson',$router);
+	$t->contains('DataphyreApplicationRuntimeSchedulerProtocol::verify',$router);
+	$t->contains("'http://127.0.0.1:8082/dataphyre/runtime/scheduler/claim'",$gateway);
+	$t->isTrue(strpos($gateway,'claimSchedulerRequest($request,$body')<strpos($gateway,'DataphyreApplicationRuntimeProcessBroker::spawn'));
+	$t->isFalse(str_contains($router,'/dataphyre/runtime/scheduler/claim'));
+	$t->contains('writeCompletedResponse($connection,$schedulerKind,$output',$gateway);
+	$t->isFalse(str_contains($router,'HTTP_X_DATAPHYRE_SCHEDULER_KEY'));
+})->tag('core','runtime','scheduler','cgi','signature','claim','replay','security');

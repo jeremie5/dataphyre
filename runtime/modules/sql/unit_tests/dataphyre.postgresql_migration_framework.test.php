@@ -2524,6 +2524,7 @@ test('PostgreSQL migration runner rejects invalid drifted and inexact rollback o
 
 test('PostgreSQL schema inspection derives stable table constraint and index contracts', static function(Context $t): void {
 	$inspector=new PostgreSqlSchemaInspector(dp_postgresql_migration_profile());
+	$access=$t->nonPublic($inspector);
 	$sql=<<<'SQL'
 CREATE TABLE fixture.parent (
 	parent_id TEXT PRIMARY KEY
@@ -2575,11 +2576,15 @@ SQL;
 		'parent_id is not null',
 		$expected['indexes']['fixture.items_parent_idx']['predicate']
 	);
-	$t->same(
-		"state in('ready', 'done')",
-		PostgreSqlSchemaInspector::normalizeCheckExpression(
-			"(state = ANY (ARRAY['ready'::text, 'done'::text]))"
-		)
+	$t->isTrue(
+		$access->invoke(
+			'expressionsEquivalent',
+			"state in('ready', 'done')",
+			PostgreSqlSchemaInspector::normalizeCheckExpression(
+				"(state = ANY (ARRAY['ready'::text, 'done'::text]))"
+			)
+		),
+		'Catalog-only membership casts must compare equal without erasing the source contract.'
 	);
 	foreach([
 		[
@@ -2611,9 +2616,12 @@ SQL;
 				"(ARRAY['retired'::text, 'deleted'::text])",
 		],
 	] as [$migrationExpression, $catalogExpression]){
-		$t->same(
-			PostgreSqlSchemaInspector::normalizeCheckExpression($migrationExpression),
-			PostgreSqlSchemaInspector::normalizeCheckExpression($catalogExpression),
+		$t->isTrue(
+			$access->invoke(
+				'expressionsEquivalent',
+				PostgreSqlSchemaInspector::normalizeCheckExpression($migrationExpression),
+				PostgreSqlSchemaInspector::normalizeCheckExpression($catalogExpression)
+			),
 			$migrationExpression
 		);
 	}
@@ -3626,7 +3634,8 @@ test('PostgreSQL schema inspector query and certification failures stay fail clo
 })->tag('sql', 'migration', 'postgresql', 'schema', 'fail-closed')->group('framework-coverage')->maxMillis(10000);
 
 test('PostgreSQL schema inspector lexical seams preserve quoted and nested SQL', static function(Context $t): void {
-	$access=$t->nonPublic(new PostgreSqlSchemaInspector(dp_postgresql_migration_profile()));
+	$inspector=new PostgreSqlSchemaInspector(dp_postgresql_migration_profile());
+	$access=$t->nonPublic($inspector);
 	$t->throws(
 		static fn()=>$access->invoke('matchingParenthesis', 'not-parenthesized', 0),
 		RuntimeException::class,
@@ -3641,10 +3650,20 @@ test('PostgreSQL schema inspector lexical seams preserve quoted and nested SQL',
 		18,
 		$access->invoke('matchingParenthesis', "(name = 'it''s ok') trailing", 0)
 	);
-		$t->same(
-			29,
-			$access->invoke('statementEnd', " WHERE value = 'semi;''colon'; tail", 0)
-		);
+	$t->same(
+		29,
+		$access->invoke('statementEnd', " WHERE value = 'semi;''colon'; tail", 0)
+	);
+	$commentedStatement=' WHERE value = 1 /* an inert ; boundary */; tail';
+	$t->same(
+		strpos($commentedStatement, '; tail'),
+		$access->invoke('statementEnd', $commentedStatement, 0)
+	);
+	$commentedParenthesis='(value /* an inert ) boundary */ + $tag$)$tag$) tail';
+	$t->same(
+		strrpos($commentedParenthesis, ') tail'),
+		$access->invoke('matchingParenthesis', $commentedParenthesis, 0)
+	);
 	$t->same(
 		strlen(' nested(function(1))'),
 		$access->invoke('statementEnd', ' nested(function(1))', 0)
@@ -3680,4 +3699,330 @@ test('PostgreSQL schema inspector lexical seams preserve quoted and nested SQL',
 			" amount >= 1.2e+3 AND name = 'it''s' "
 		)
 	);
+	$t->same('position', $access->invoke('normalizeIndexExpression', '"position"'));
+	$t->same(
+		'mod(id,(4)::bigint)',
+		$access->invoke('normalizeIndexExpression', 'mod(id, (4)::bigint)')
+	);
+	$t->isTrue($access->invoke('expressionsEquivalent', 'mod(id, 4)', 'mod(id,(4)::bigint)'));
+	$t->isFalse($access->invoke('expressionsEquivalent', 'f(1)', 'f((1)::bigint)'));
+	$t->isTrue($access->invoke('expressionsEquivalent', "f('x')", "f('x'::text)"));
+	$t->isFalse($access->invoke('expressionsEquivalent', "f('x'::text)", "f('x')"));
+	foreach(['true', 'false', 'null'] as $constant){
+		$t->notSame(
+			$access->invoke('normalizeIndexExpression', '"'.$constant.'"'),
+			$access->invoke('normalizeIndexExpression', strtoupper($constant))
+		);
+	}
+	$t->same(
+		"line_evidence->'correction'->>'replaces_sha256'",
+		$access->invoke(
+			'normalizeIndexExpression',
+			"(line_evidence->'correction')->>'replaces_sha256'"
+		)
+	);
+	$t->isTrue(
+		$access->invoke(
+			'expressionsEquivalent',
+			"evidence#>>'{authority_evidence,commercial_selection,selection_sha256}'",
+			$access->invoke(
+				'normalizeIndexExpression',
+				"evidence #>> '{authority_evidence,commercial_selection,selection_sha256}'::text[]"
+			)
+		)
+	);
+	$t->isTrue(
+		$access->invoke(
+			'expressionsEquivalent',
+		$access->invoke(
+			'normalizeIndexPredicate',
+			"deleted_at IS NULL AND status NOT IN ('completed', 'duplicate')"
+		),
+		$access->invoke(
+			'normalizeIndexPredicate',
+			"deleted_at IS NULL AND (status <> ALL (ARRAY['completed'::text, 'duplicate'::text]))"
+		)
+		)
+	);
+	$t->same(
+		$access->invoke(
+			'normalizeIndexPredicate',
+			"deleted_at IS NULL AND (status='completed' OR (status='superseded' AND completed_at IS NOT NULL))"
+		),
+		$access->invoke(
+			'normalizeIndexPredicate',
+			"deleted_at IS NULL AND (status='completed' OR status='superseded' AND completed_at IS NOT NULL)"
+		)
+	);
+	$t->notSame(
+		$access->invoke('normalizeIndexExpression', 'value::text'),
+		$access->invoke('normalizeIndexExpression', 'value')
+	);
+	$t->isFalse($access->invoke(
+		'expressionsEquivalent',
+		$access->invoke(
+			'normalizeIndexPredicate',
+			"(payload->>'flag'='yes' OR enabled) IS TRUE"
+		),
+		$access->invoke(
+			'normalizeIndexPredicate',
+			"payload->>'flag'='yes' OR enabled IS TRUE"
+		)
+	));
+
+	$dynamic=$inspector->expectedSchema([[
+		'name'=>'dynamic_indexes',
+		'sql'=><<<'SQL'
+DO $migration$
+BEGIN
+	EXECUTE '
+		CREATE INDEX dynamic_first_idx ON fixture.jobs (id)
+		WHERE deleted_at IS NULL
+	';
+	EXECUTE '
+		CREATE INDEX dynamic_second_idx ON fixture.jobs (created_at, id)
+		WHERE created_at IS NOT NULL
+	';
+	PERFORM 'CREATE INDEX not_executed_idx ON fixture.jobs (id) WHERE id IS NOT NULL';
+END
+$migration$;
+SQL
+	]]);
+	$t->same(
+		'deleted_at is null',
+		$dynamic['indexes']['fixture.dynamic_first_idx']['predicate']
+	);
+	$t->same(
+		'created_at is not null',
+		$dynamic['indexes']['fixture.dynamic_second_idx']['predicate']
+	);
+	$t->isFalse(isset($dynamic['indexes']['fixture.not_executed_idx']));
+
+	$fixedQuoted=$inspector->expectedSchema([[
+		'name'=>'fixed_quoted_indexes',
+		'sql'=><<<'SQL'
+DO $body$
+BEGIN
+	EXECUTE /* fixed literal */ 'CREATE INDEX dynamic_quoted_idx
+		ON fixture.jobs (id) WHERE status=''ready''';
+	EXECUTE -- fixed dollar literal
+		$ysql$CREATE INDEX dynamic_dollar_idx
+		ON fixture.jobs (created_at) WHERE status='ready'$ysql$;
+	PERFORM $ddl$CREATE INDEX dollar_decoy_idx
+		ON fixture.jobs (id) WHERE id IS NOT NULL$ddl$;
+END
+$body$;
+SQL
+	]]);
+	$t->same(
+		"status='ready'",
+		$fixedQuoted['indexes']['fixture.dynamic_quoted_idx']['predicate']
+	);
+	$t->same(
+		"status='ready'",
+		$fixedQuoted['indexes']['fixture.dynamic_dollar_idx']['predicate']
+	);
+	$t->isFalse(isset($fixedQuoted['indexes']['fixture.dollar_decoy_idx']));
+
+	$t->throws(
+		static fn()=>$inspector->expectedSchema([[
+			'name'=>'unsupported_dynamic_index',
+			'sql'=><<<'SQL'
+DO $body$
+BEGIN
+	EXECUTE format('CREATE INDEX formatted_idx ON fixture.jobs (%I)', 'id');
+END
+$body$;
+SQL
+		]]),
+		RuntimeException::class,
+		'non-fixed EXECUTE expression'
+	);
+	$t->throws(
+		static fn()=>$inspector->expectedSchema([[
+			'name'=>'concatenated_dynamic_index',
+			'sql'=><<<'SQL'
+DO $body$
+BEGIN
+	EXECUTE 'CREATE INDEX concatenated_idx ON fixture.jobs (id)' ||
+		' WHERE deleted_at IS NULL';
+END
+$body$;
+SQL
+		]]),
+		RuntimeException::class,
+		'non-fixed EXECUTE expression'
+	);
 })->tag('sql', 'migration', 'postgresql', 'schema', 'lexical')->group('framework-coverage');
+
+test('PostgreSQL schema inspector projects executable migration DDL fail closed', static function(Context $t): void {
+	$inspector=new PostgreSqlSchemaInspector(dp_postgresql_migration_profile());
+	$schema=$inspector->expectedSchema([[
+		'name'=>'executable_projection',
+		'sql'=><<<'SQL'
+/* A leading comment must not hide the following tracked statement. */
+CREATE TABLE fixture.parents (
+	id BIGINT PRIMARY KEY
+);
+/* CREATE INDEX comment_decoy_idx ON fixture.parents (id); */
+CREATE TABLE fixture.jobs (
+	id BIGINT PRIMARY KEY,
+	parent_id BIGINT,
+	state TEXT,
+	deleted_at TIMESTAMPTZ
+);
+-- The semicolon in this comment is not the statement boundary.
+CREATE INDEX comment_semicolon_idx ON fixture.jobs (id) /* ; */ WHERE deleted_at IS NULL;
+ALTER TABLE fixture.jobs ADD CONSTRAINT jobs_parent_fkey
+	FOREIGN KEY (parent_id) REFERENCES fixture.parents (id);
+ALTER TABLE fixture.jobs ADD CONSTRAINT jobs_state_check CHECK (state <> '');
+/* Drops must remove every previously derived named constraint kind. */
+ALTER TABLE fixture.jobs DROP CONSTRAINT jobs_state_check;
+-- This line comment must be fully masked too.
+ALTER TABLE fixture.jobs DROP CONSTRAINT jobs_parent_fkey;
+ALTER TABLE fixture.jobs DROP CONSTRAINT jobs_pkey;
+
+CREATE FUNCTION fixture.stored_definition_only() RETURNS void
+LANGUAGE plpgsql
+AS $function$
+BEGIN
+	EXECUTE 'CREATE INDEX stored_definition_idx ON fixture.jobs (parent_id)';
+END
+$function$;
+
+DO /* $comment_delimiter_must_be_inert$ */ $body$
+BEGIN
+	CREATE INDEX direct_do_idx ON fixture.jobs (parent_id);
+	PERFORM 'CREATE INDEX perform_decoy_idx ON fixture.jobs (state)';
+	CREATE TRIGGER trigger_decoy BEFORE INSERT ON fixture.jobs
+		FOR EACH ROW EXECUTE FUNCTION fixture.trigger_handler();
+END
+$body$;
+SQL
+	]]);
+	$t->same(null, $schema['tables']['fixture.jobs']['primary_key']);
+	$t->same([], $schema['foreign_keys']);
+	$t->same([], $schema['checks']);
+	$t->same(
+		['fixture.comment_semicolon_idx', 'fixture.direct_do_idx'],
+		array_keys($schema['indexes'])
+	);
+	$t->same(
+		'deleted_at is null',
+		$schema['indexes']['fixture.comment_semicolon_idx']['predicate']
+	);
+	foreach([
+		'fixture.comment_decoy_idx',
+		'fixture.stored_definition_idx',
+		'fixture.perform_decoy_idx',
+	] as $absent){
+		$t->isFalse(isset($schema['indexes'][$absent]), $absent);
+	}
+
+	$productSql=<<<'SQL'
+DO $body$
+BEGIN
+	IF position('YugabyteDB' IN version())>0 THEN
+		EXECUTE 'CREATE INDEX dialect_idx ON fixture.jobs (id HASH)';
+	ELSE
+		CREATE INDEX dialect_idx ON fixture.jobs (id DESC);
+	END IF;
+END
+$body$;
+SQL;
+	$postgresql=$inspector->expectedSchema([
+		['name'=>'product_branch', 'sql'=>$productSql],
+	], 'postgresql');
+	$yugabyte=$inspector->expectedSchema([
+		['name'=>'product_branch', 'sql'=>$productSql],
+	], 'yugabyte');
+	$t->same(['id desc'], $postgresql['indexes']['fixture.dialect_idx']['keys']);
+	$t->same(['id hash'], $yugabyte['indexes']['fixture.dialect_idx']['keys']);
+	$yugabytePdo=new class extends PDO {
+		public function __construct() {}
+		public function getAttribute(int $attribute): mixed {
+			if($attribute===PDO::ATTR_DRIVER_NAME){
+				return 'pgsql';
+			}
+			return $attribute===PDO::ATTR_SERVER_VERSION
+				? '11.2-YB-2025.1.0.0-b0'
+				: null;
+		}
+	};
+	$postgresPdo=new class extends PDO {
+		public function __construct() {}
+		public function getAttribute(int $attribute): mixed {
+			if($attribute===PDO::ATTR_DRIVER_NAME){
+				return 'pgsql';
+			}
+			if($attribute===PDO::ATTR_SERVER_VERSION){
+				throw new RuntimeException('version unavailable');
+			}
+			return null;
+		}
+	};
+	$t->same(
+		'yugabyte',
+		$t->nonPublic(new PostgreSqlMigrationRunner(
+			$yugabytePdo,
+			dp_postgresql_migration_profile()
+		))->invoke('databaseDialect')
+	);
+	$t->same(
+		'postgresql',
+		$t->nonPublic(new PostgreSqlMigrationRunner(
+			$postgresPdo,
+			dp_postgresql_migration_profile()
+		))->invoke('databaseDialect')
+	);
+
+	$t->throws(
+		static fn()=>$inspector->expectedSchema([], 'unknown'),
+		RuntimeException::class,
+		'dialect is invalid'
+	);
+	$t->throws(
+		static fn()=>$inspector->expectedSchema([[
+			'name'=>'unresolved_control',
+			'sql'=><<<'SQL'
+DO $body$
+BEGIN
+	IF false THEN
+		EXECUTE 'CREATE INDEX unreachable_idx ON fixture.jobs (id)';
+	END IF;
+END
+$body$;
+SQL
+		]]),
+		RuntimeException::class,
+		'unsupported migration control flow'
+	);
+	$t->throws(
+		static fn()=>$inspector->expectedSchema([[
+			'name'=>'split_format',
+			'sql'=><<<'SQL'
+DO $body$
+BEGIN
+	EXECUTE format('CREATE %s split_format_idx ON fixture.jobs (id)', 'INDEX');
+END
+$body$;
+SQL
+		]]),
+		RuntimeException::class,
+		'non-fixed EXECUTE expression'
+	);
+	$t->throws(
+		static fn()=>$inspector->expectedSchema([[
+			'name'=>'escaped_keyword',
+			'sql'=><<<'SQL'
+DO $body$
+BEGIN
+	EXECUTE E'CR\u0045ATE INDEX escaped_idx ON fixture.jobs (id)';
+END
+$body$;
+SQL
+		]]),
+		RuntimeException::class,
+		'escape-string EXECUTE'
+	);
+})->tag('sql', 'migration', 'postgresql', 'schema', 'projection')->group('framework-coverage');

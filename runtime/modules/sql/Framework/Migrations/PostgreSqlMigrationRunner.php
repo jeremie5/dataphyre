@@ -167,7 +167,8 @@ final class PostgreSqlMigrationRunner {
 		$schemaIssues=$this->inspector->schemaIssues(
 			$this->pdo,
 			$this->inspector->expectedSchema(
-				self::journalNativeSchemaEntries($appliedEntries)
+				self::journalNativeSchemaEntries($appliedEntries),
+				$this->databaseDialect()
 			)
 		);
 		$schemaDrift=count($schemaIssues);
@@ -209,6 +210,17 @@ final class PostgreSqlMigrationRunner {
 			];
 		}
 		return $contract;
+	}
+
+	private function databaseDialect(): string {
+		try{
+			$serverVersion=(string)$this->pdo->getAttribute(PDO::ATTR_SERVER_VERSION);
+		}catch(Throwable){
+			$serverVersion='';
+		}
+		return preg_match('/(?:Yugabyte|(?:^|[^A-Za-z])YB[-\s])/i', $serverVersion)===1
+			? 'yugabyte'
+			: 'postgresql';
 	}
 
 	/**

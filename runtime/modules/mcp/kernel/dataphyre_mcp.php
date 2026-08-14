@@ -9,10 +9,7 @@ declare(strict_types=1);
 
 dataphyre_mcp_debug_bootstrap('start', ['sapi'=>PHP_SAPI, 'cwd'=>getcwd() ?: '', 'argv'=>$argv ?? []]);
 register_shutdown_function(static function(): void {
-	$error=error_get_last();
-	if(is_array($error)){
-		dataphyre_mcp_debug_bootstrap('shutdown_error', $error);
-	}
+	dataphyre_mcp_debug_shutdown(error_get_last());
 });
 
 if(!dataphyre_mcp_enforce_cli(PHP_SAPI)){exit(2);}
@@ -580,4 +577,12 @@ function dataphyre_mcp_debug_bootstrap(string $event, array $context=[]): void {
 		'event'=>$event,
 		'context'=>$context,
 	], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE).PHP_EOL, FILE_APPEND | LOCK_EX);
+}
+
+/** Report only errors that actually made PHP terminate abnormally. */
+function dataphyre_mcp_debug_shutdown(?array $error): void {
+	$fatalTypes=[E_ERROR,E_PARSE,E_CORE_ERROR,E_COMPILE_ERROR,E_USER_ERROR,E_RECOVERABLE_ERROR];
+	if(is_array($error) && in_array($error['type'] ?? null,$fatalTypes,true)){
+		dataphyre_mcp_debug_bootstrap('shutdown_error', $error);
+	}
 }

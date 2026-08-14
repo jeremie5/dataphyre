@@ -768,6 +768,24 @@ class sql {
 	}
 
 	/**
+	 * Lists every table definition registered by the active application bootstrap.
+	 *
+	 * Deferred module registrations are drained before the immutable, sorted table
+	 * list is returned. The list exposes locations only; definition files and
+	 * executable factories remain private to the SQL kernel.
+	 *
+	 * @return list<string> Sorted registered table locations.
+	 */
+	public static function registered_table_definitions(): array {
+		if(\function_exists('dp_sql_run_deferred_table_definitions')){
+			\dp_sql_run_deferred_table_definitions();
+		}
+		$locations=array_keys(self::$table_definition_registry);
+		sort($locations, SORT_STRING);
+		return array_values($locations);
+	}
+
+	/**
 	 * Registers, loads, resolves, or hydrates SQL table definitions and missing schema structures.
 	 *
 	 * Prepared values remain separate from SQL text, write operations can invalidate caches, missing schema can hydrate from definitions, and failures are recorded through last_query_error().

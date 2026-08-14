@@ -228,6 +228,17 @@ function sql_table_definition($a=null){ return dataphyre\sql::table_definition($
 function sql_table_schema($a=null){ return dataphyre\sql::table_schema($a); }
 
 /**
+ * Lists table locations registered by the active application and framework bootstrap.
+ *
+ * The returned locations are sorted and contain no definition-file or callable
+ * metadata. Deployment tooling can use this inventory before invoking the fixed
+ * registered-table materialization command.
+ *
+ * @return list<string> Sorted registered table locations.
+ */
+function sql_registered_table_definitions(): array { return dataphyre\sql::registered_table_definitions(); }
+
+/**
  * Drains deferred SQL table definition callbacks registered during bootstrap.
  *
  * Modules may defer definition registration until the global SQL facade exists. This bootstrap hook invokes each callable exactly once, removes it from the global queue, and ignores non-callable entries so a malformed registration cannot block later definitions in the same queue.

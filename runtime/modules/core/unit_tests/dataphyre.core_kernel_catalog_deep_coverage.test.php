@@ -135,6 +135,17 @@ namespace {
 			$t->same(realpath($projectApplications.'/alpha'),app_locator::locate($project,'alpha'));
 			$t->same(realpath($environmentApplications.'/environment'),app_locator::locate($project,'environment'));
 			$t->same(null,app_locator::locate($project,'missing',[$extraApplications]));
+			$missingManifest=$workspace->directory('standalone-missing-manifest');
+			$workspace->file('standalone-missing-manifest/app.php', "<?php return [];\n");
+			$t->same(null, app_locator::locate($missingManifest, 'standalone-missing-manifest'));
+			$oversizedManifest=$workspace->directory('standalone-oversized-manifest');
+			$workspace->file('standalone-oversized-manifest/app.php', "<?php return [];\n");
+			$workspace->file('standalone-oversized-manifest/dataphyre.app.json', str_repeat('x', 65537));
+			$t->same(null, app_locator::locate($oversizedManifest, 'standalone-oversized-manifest'));
+			$invalidManifest=$workspace->directory('standalone-invalid-manifest');
+			$workspace->file('standalone-invalid-manifest/app.php', "<?php return [];\n");
+			$workspace->file('standalone-invalid-manifest/dataphyre.app.json', '{not-json');
+			$t->same(null, app_locator::locate($invalidManifest, 'standalone-invalid-manifest'));
 			$t->same(
 				str_replace('\\','/',(string)realpath($projectApplications.'/alpha/framework')),
 				str_replace('\\','/',application_definition::from_conventions('alpha',$projectApplications.'/alpha')->autoload['alpha\\framework\\'])
@@ -464,45 +475,6 @@ namespace {
 			$t->isFalse($runtimeInternals->invoke('boot_framework_application',$noneDefinition));
 			$t->isTrue($runtimeInternals->invoke('boot_framework_application',$frameworkDefinition));
 
-			$t->same('orders.daily',$runtimeInternals->invoke('scheduler_route_name',[
-				'REQUEST_URI'=>'/dataphyre/scheduler/orders.daily?ignored=1',
-			]));
-			$t->isNull($runtimeInternals->invoke('scheduler_route_name',['REQUEST_URI'=>'/dataphyre/scheduler/orders/']));
-			$t->isNull($runtimeInternals->invoke('scheduler_route_name',['REQUEST_URI'=>'/dataphyre/scheduler/orders%2Fother']));
-			$t->isNull($runtimeInternals->invoke('scheduler_route_name',['REQUEST_URI'=>'/dataphyre/scheduler/..']));
-			$t->isNull($runtimeInternals->invoke('scheduler_route_name',['REQUEST_URI'=>'/dataphyre/scheduler/'.str_repeat('a',129)]));
-			$t->isNull($runtimeInternals->invoke('scheduler_route_name',['REQUEST_URI'=>'/api/orders']));
-			$t->isNull($runtimeInternals->invoke('scheduler_route_name',['REQUEST_URI'=>'http://[']));
-
-			$dispatchClaim=str_repeat('c',64);
-			$server=[
-				'REQUEST_URI'=>'/dataphyre/scheduler/orders.daily',
-				'REQUEST_METHOD'=>'GET',
-				'HTTP_X_TRAFFIC_SOURCE'=>'internal_traffic',
-				'HTTP_X_DATAPHYRE_SCHEDULER_CLAIM'=>$dispatchClaim,
-				'HTTP_X_DATAPHYRE_SCHEDULER_KEY'=>'signed-request',
-			];
-			$responses=[];
-			$loaded=[];
-			$executed=[];
-			$respond=static function(int $status,string $body)use(&$responses): void {$responses[]=[$status,$body];};
-			$t->isTrue($runtimeInternals->invoke('boot_internal_runtime_route',$noneDefinition,[
-				'server'=>$server,
-				'verify'=>static fn(string $token,string $name,string $claim): bool=>$token==='signed-request' && $name==='orders.daily' && $claim===$dispatchClaim,
-				'core_loader'=>static fn(): bool=>true,
-				'module_loader'=>static function(string $module)use(&$loaded): bool {$loaded[]=$module; return true;},
-				'task_runner'=>static function(string $name,string $claim)use(&$executed): void {$executed[]=[$name,$claim];},
-				'respond'=>$respond,
-			]));
-			$t->same(['scheduling'],$loaded);
-			$t->same([['orders.daily',$dispatchClaim]],$executed);
-			$t->same([],$responses);
-
-			$internalBoot=$t->globalMap('_SERVER')->withValue($server,static fn()=>$t->captureOutput(
-				static fn()=>runtime::boot($project,'no-path')
-			));
-			$t->same('Not found',$internalBoot->output());
-
 			$runtimeRoot=$t->rootpathWorkspace('dataphyre')->reset();
 			$runtimeRoot->file('cache/verified','verified');
 			$runtimeRoot->file('config/static/dpvk',str_repeat('k',64));
@@ -520,69 +492,6 @@ namespace {
 				\Dataphyre\Test\define_test_symbols(implode("\n",$bootstrapSymbols));
 			}
 			dp_core_kernel_registry($t,['core'=>true]);
-			$responses=[];
-			$t->isTrue($runtimeInternals->invoke('boot_internal_runtime_route',$noneDefinition,[
-				'server'=>$server,
-				'verify'=>static fn(): bool=>true,
-				'module_loader'=>static fn(): bool=>false,
-				'scheduling_available'=>false,
-				'respond'=>$respond,
-			]));
-			$t->same([[503,'Scheduler unavailable']],$responses);
-
-			if(!class_exists('dataphyre_scheduling_task_runner',false)){
-				class_alias(DpCoreSchedulingTaskRunnerProbe::class,'dataphyre_scheduling_task_runner');
-			}
-			$t->isTrue($runtimeInternals->invoke('boot_internal_runtime_route',$noneDefinition,[
-				'server'=>$server,
-				'verify'=>static fn(): bool=>true,
-				'core_loader'=>static fn(): bool=>true,
-				'module_loader'=>static fn(): bool=>true,
-				'scheduling_available'=>true,
-			]));
-			$t->same([['orders.daily',$dispatchClaim]],$state->get('task_runner_dispatches'));
-
-			$responses=[];
-			$t->isTrue($runtimeInternals->invoke('boot_internal_runtime_route',$noneDefinition,[
-				'server'=>$server,
-				'verify'=>static fn(): bool=>true,
-				'core_loader'=>static fn(): bool=>true,
-				'scheduling_available'=>false,
-				'respond'=>$respond,
-			]));
-
-			$t->isFalse($runtimeInternals->invoke('boot_internal_runtime_route',$noneDefinition,[
-				'server'=>['REQUEST_URI'=>'/api/orders'],
-			]));
-			$unauthorized=$server;
-			$unauthorized['REQUEST_METHOD']='POST';
-			$t->isTrue($runtimeInternals->invoke('boot_internal_runtime_route',$noneDefinition,[
-				'server'=>$unauthorized,
-				'verify'=>static fn(): bool=>true,
-				'respond'=>$respond,
-			]));
-			$t->containsRows([[404,'Not found']],$responses);
-
-			$responses=[];
-			$t->isTrue($runtimeInternals->invoke('boot_internal_runtime_route',$noneDefinition,[
-				'server'=>$server,
-				'verify'=>static fn(): bool=>true,
-				'core_loader'=>static fn(): bool=>false,
-				'respond'=>$respond,
-			]));
-			$t->same([[503,'Scheduler unavailable']],$responses);
-
-			$responses=[];
-			$t->isTrue($runtimeInternals->invoke('boot_internal_runtime_route',$noneDefinition,[
-				'server'=>$server,
-				'verify'=>static fn(): bool=>true,
-				'core_loader'=>static fn(): bool=>true,
-				'module_loader'=>static fn(): bool=>false,
-				'scheduling_available'=>false,
-				'respond'=>$respond,
-			]));
-			$t->same([[503,'Scheduler unavailable']],$responses);
-
 			$state->put('force_rootpath_undefined',true);
 			$runtimeInternals->invoke('prime_rootpaths',$compiledDefinition);
 			$state->put('force_rootpath_undefined',false);

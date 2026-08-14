@@ -538,6 +538,9 @@ test('sql kernel main core deep coverage resolves definitions deferred manifests
 	]);
 	$t->instanceOf(Dataphyre\Database\TableDefinition::class,\dataphyre\sql::table_definition('deferred_table'));
 	$t->same([],array_values($deferredDefinitions->map()));
+	$t->same([
+		'callable_table','candidate_table','deferred_table','empty_table','missing_file','scalar_table','users',
+	],\dataphyre\sql::registered_table_definitions());
 	$t->isTrue($sql->invokeWithArguments('register_runtime_table_definition',['dataphyre.sessions']));
 	$t->isTrue($sql->invokeWithArguments('register_runtime_table_definition',['dataphyre.sessions']));
 	$t->isFalse($sql->invokeWithArguments('register_runtime_table_definition',['not.in.manifest']));

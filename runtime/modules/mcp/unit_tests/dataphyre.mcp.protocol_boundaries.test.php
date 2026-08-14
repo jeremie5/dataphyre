@@ -87,6 +87,13 @@ test('each protocol boundary produces named transport evidence without inline pr
 
 	$t->same(['start','stop'],$contract['default_events']);
 	$t->same(['start','stop'],$contract['explicit_events']);
+	$t->notSame(0,$contract['fatal_exit_code']);
+	$t->same(['start','stop','shutdown_error'],$contract['fatal_events']);
+	$t->same(E_USER_ERROR,$contract['fatal_context']['type']);
+	$t->same('Deliberate MCP fatal shutdown probe.',$contract['fatal_context']['message']);
+	$t->same(['shutdown_error'],$contract['direct_shutdown_events']);
+	$t->same(E_USER_ERROR,$contract['direct_shutdown_context']['type']);
+	$t->same('Direct fatal classification probe.',$contract['direct_shutdown_context']['message']);
 	$t->same('2.0',$contract['valid_body']['jsonrpc']);
 	$t->same('contract',$contract['valid_body']['id']);
 	$t->isTrue($contract['valid_body']['result']['ok']);

@@ -39,6 +39,7 @@ namespace dataphyre {
 		public static function define_table(mixed ...$arguments): mixed { return self::result('define_table', $arguments); }
 		public static function table_definition(mixed ...$arguments): mixed { return self::result('table_definition', $arguments, 'definition'); }
 		public static function table_schema(mixed ...$arguments): mixed { return self::result('table_schema', $arguments, 'schema'); }
+		public static function registered_table_definitions(): array { return ['orders','users']; }
 	}
 }
 
@@ -89,6 +90,7 @@ namespace {
 		$t->isTrue(sql_define_table('orders', 'definition.php', 'id'));
 		$t->same('definition', sql_table_definition('orders'));
 		$t->same('schema', sql_table_schema('orders'));
+		$t->same(['orders','users'],sql_registered_table_definitions());
 		$t->same(1,$deferredRuns->value());
 		$t->same([],$deferredDefinitions->map());
 

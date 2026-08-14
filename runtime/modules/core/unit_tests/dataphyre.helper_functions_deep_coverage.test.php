@@ -23,7 +23,7 @@ namespace {
 	$dp_helper_kernel=rtrim((string)(ROOTPATH['common_dataphyre_runtime'] ?? ''), '/\\').'/modules/core/kernel';
 	require_once $dp_helper_kernel.'/helper_functions.php';
 
-	test('helper functions cover isolated roots module dependencies and config lifecycle', static function(Context $t): void {
+		test('helper functions cover isolated roots module dependencies and config lifecycle', static function(Context $t): void {
 		$state=$t->state('helper.deep',['diagnosed'=>[]]);
 		$workspace=$t->workspace('helper-functions');
 		$base=$workspace->root();
@@ -156,5 +156,15 @@ namespace {
 		$rootOverride->replace($roots);
 		$workspace->directory('app/config/write_failure.php');
 		$t->isFalse(dp_write_module_config_defaults('write_failure', ['value'=>1]));
-	})->tag('core', 'helper-functions', 'coverage')->group('framework-coverage');
-}
+		})->tag('core', 'helper-functions', 'coverage')->group('framework-coverage');
+
+		test('managed runtime helpers suppress source writes and reject unavailable private-key providers', static function(Context $t): void {
+			$root=dirname(__DIR__, 4);
+			$fixture=__DIR__.'/fixtures/helper_functions_managed_boundary.php';
+			$source=dirname(__DIR__).'/kernel/helper_functions.php';
+			foreach(['write-suppression', 'missing-provider', 'invalid-provider'] as $mode){
+				$result=$t->processSucceeded($t->coveredPhpFixture($fixture, [$mode, $source], framework_root:$root));
+				$t->same(true, $result->json()['rejected_or_suppressed'] ?? false);
+			}
+		})->tag('core', 'helper-functions', 'managed-runtime', 'exact-coverage')->group('framework-coverage');
+	}

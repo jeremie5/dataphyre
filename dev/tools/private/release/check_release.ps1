@@ -269,6 +269,8 @@ if (Test-Path $devDirectory -PathType Container) {
 						'php bin/dataphyre-test --help',
 						'docker build --file docker/testing/Dockerfile --tag dataphyre-test:php8.4 .',
 						'DATAPHYRE_TEST_SKIP_BUILD=1 sh bin/dataphyre-test-docker --help',
+						'DATAPHYRE_TEST_CONTAINER_ROOT=1',
+						'--path=dataphyre.core_application_runtime_secret_broker.test.php',
 						'--owner=testing --path=runner',
 						'check_release_archive.ps1',
 						'-Ref $env:GITHUB_SHA'
@@ -287,8 +289,10 @@ if (Test-Path $devDirectory -PathType Container) {
 					else {
 						$frameworkCoverageJob = $frameworkCoverageMatch.Groups['job'].Value
 						foreach ($requiredCoverageTerm in @(
-							'coverage: xdebug',
-							'XDEBUG_MODE: coverage',
+							'Build the canonical PHP runtime with native descriptor support and Xdebug',
+							'DATAPHYRE_TEST_CONTAINER_ROOT=1',
+							'DATAPHYRE_TEST_ENGINE=xdebug',
+							'sh bin/dataphyre-test-docker run',
 							'--scope=framework',
 							'--kind=code',
 							'--fail-skipped',

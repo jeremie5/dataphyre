@@ -7,6 +7,8 @@
  */
 declare(strict_types=1);
 
+require_once dirname(__DIR__).'/Framework/ApplicationEnvironmentIdentifier.php';
+
 /** Loads application realtime registrations through its ordinary framework bootstrap. */
 final class DataphyreApplicationRuntimeRealtimeBootstrap {
 	/** @return array<string,array{authorize:callable,events:callable}> */
@@ -16,16 +18,14 @@ final class DataphyreApplicationRuntimeRealtimeBootstrap {
 		$environment=trim((string)(getenv('DATAPHYRE_RUNTIME_ENVIRONMENT') ?: ''));
 		if($projectRoot===false || !is_dir($projectRoot)
 			|| preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D', $application)!==1
-			|| preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/D', $environment)!==1){
+			|| !\Dataphyre\ApplicationEnvironmentIdentifier::valid($environment)){
 			throw new RuntimeException('Realtime application context is invalid.');
 		}
 		$runtimeRoot=dirname(__DIR__, 3);
 		$bootstrap=$runtimeRoot.'/bootstrap.php';
 		$realtime=__DIR__.'/realtime.php';
-		if(!is_file($bootstrap) || !is_file($realtime)){
-			throw new RuntimeException('Realtime framework bootstrap is unavailable.');
-		}
 		require_once $realtime;
+		$projectedServer=$_SERVER;
 		$_SERVER=[
 			'REQUEST_METHOD'=>'GET',
 			'REQUEST_URI'=>'/dataphyre/runtime/realtime/bootstrap',
@@ -41,7 +41,7 @@ final class DataphyreApplicationRuntimeRealtimeBootstrap {
 			'HTTP_X_DATAPHYRE_APPLICATION'=>$application,
 			'HTTP_X_DATAPHYRE_ENVIRONMENT'=>$environment,
 			'HTTP_X_TRAFFIC_SOURCE'=>'internal_traffic',
-		];
+		]+$projectedServer;
 		$_GET=[];
 		$_POST=[];
 		$_COOKIE=[];

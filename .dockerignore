@@ -4,3 +4,11 @@
 !docker/testing/Dockerfile
 !docker/testing/browser/
 !docker/testing/browser/package.json
+!runtime/
+runtime/*
+!runtime/native/
+runtime/native/*
+!runtime/native/environment_fd/
+runtime/native/environment_fd/*
+!runtime/native/environment_fd/config.m4
+!runtime/native/environment_fd/dataphyre_environment_fd.c

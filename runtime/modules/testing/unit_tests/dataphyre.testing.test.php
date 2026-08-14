@@ -91,6 +91,7 @@ final class DpTestKitGlobalContract {
 }
 
 final class DpTestKitNonPublicFixture {
+	private const PRIVATE_LABEL='private-constant';
 	private static string $staticValue='original';
 
 	public function __construct(private string $value='instance') {}
@@ -677,6 +678,8 @@ test('non-public access states exactly which internal seam is under test', stati
 	$t->throws(static fn()=>$captured->argument(9), OutOfBoundsException::class);
 	$t->throws(static fn()=>$internal->capture('describe', unknown: 'method'), Error::class);
 	$t->same('private', $internal->readProperty('value'));
+	$t->same('private-constant', $internal->readConstant('PRIVATE_LABEL'));
+	$t->throws(static fn()=>$internal->readConstant('MISSING'), OutOfBoundsException::class);
 	$internal->writeProperty('value', 'changed');
 	$t->same('changed-method', $internal->invoke('describe', 'method'));
 

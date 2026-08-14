@@ -115,7 +115,7 @@ final class CoreKernelBootstrap {
 			$fail(self::verificationFailure($installError));
 			return 'diagnostic';
 		}
-		if($currentMode==='request' && !$verified){
+		if(in_array($currentMode,['request','scheduler-task'],true) && !$verified){
 			$fail(self::verificationFailure($installError));
 		}
 		return $currentMode;
@@ -316,8 +316,8 @@ final class CoreKernelBootstrap {
 		}
 		if($loadSheddingEnabled){
 			$getServerLoad();
+			$checkDelayedLock();
 		}
-		$checkDelayedLock();
 		if($loadSheddingEnabled && $sessionStatus()!==PHP_SESSION_ACTIVE && $serverLoadLevel()===5){
 			$unavailable('Load shedding as visitor had no session and server load level is above 5', 'loadlevel');
 		}

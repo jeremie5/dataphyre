@@ -7,10 +7,6 @@
  */
 namespace dataphyre\core;
 
-if(class_exists(__NAMESPACE__.'\\diagnostic', false)){
-	return;
-}
-
 /** Collects and publishes early and late runtime findings for the core module. */
 class diagnostic {
 

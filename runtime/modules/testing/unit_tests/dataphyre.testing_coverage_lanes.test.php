@@ -151,9 +151,14 @@ test('generic framework CI jobs pin the closed-world exact coverage contract', s
 	foreach($workflows as $contract){
 		$workflow=(string)file_get_contents($contract['path']);
 		$job=dp_testing_exact_ci_job($workflow,$contract['job']);
-		foreach([
-			'coverage: xdebug',
-			'XDEBUG_MODE: coverage',
+		$runtimeMarkers=$contract['embedded'] ? [
+			'coverage: xdebug','XDEBUG_MODE: coverage',
+		] : [
+			'Build the canonical PHP runtime with native descriptor support and Xdebug',
+			'DATAPHYRE_TEST_CONTAINER_ROOT=1','DATAPHYRE_TEST_ENGINE=xdebug',
+			'sh bin/dataphyre-test-docker run',
+		];
+		foreach(array_merge($runtimeMarkers,[
 			'--scope=framework',
 			'--kind=code',
 			'--fail-skipped',
@@ -171,7 +176,7 @@ test('generic framework CI jobs pin the closed-world exact coverage contract', s
 			'framework.profile.json',
 			'framework.summary.json',
 			'if-no-files-found: error',
-		] as $marker){
+		]) as $marker){
 			$t->contains($marker,$job,$contract['job'].' must pin '.$marker.'.');
 		}
 		if($contract['embedded']){

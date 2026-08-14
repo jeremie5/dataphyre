@@ -31,6 +31,7 @@ final class CoveredPhpProcessProbe {
 		$plan=self::plan($arguments,$bootstrap,phpIni:$phpIni);
 		if($plan['instrumented']){
 			$part=$workspace->path('coverage-part.json');
+			@unlink($part);@unlink($part.'.error');
 			$environment+=[
 				'DATAPHYRE_TEST_COVERAGE_PART'=>$part,
 				'DATAPHYRE_TEST_COVERAGE_FRAMEWORK_ROOT'=>$frameworkRoot,

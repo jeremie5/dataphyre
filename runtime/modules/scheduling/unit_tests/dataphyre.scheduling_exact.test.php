@@ -23,6 +23,7 @@ final class SchedulingRuntimeProbe {
 	public static bool $curl_throws=false;
 	public static string|false $curl_result='';
 	public static int $curl_status=204;
+	public static int $curl_delay_microseconds=0;
 	public static array $shutdown=[];
 	public static mixed $app_override='';
 	public static array $modules=[];
@@ -31,6 +32,7 @@ final class SchedulingRuntimeProbe {
 	public static function reset(): void {
 		self::$traces=[]; self::$writes=[]; self::$write_results=[]; self::$curl=[];
 		self::$curl_throws=false; self::$curl_result=''; self::$curl_status=204;
+		self::$curl_delay_microseconds=0;
 		self::$shutdown=[]; self::$app_override='';
 		self::$modules=[]; self::$pre_init=[]; self::$sql_config=[];
 	}
@@ -41,7 +43,11 @@ function curl_init(): object {
 	SchedulingRuntimeProbe::$curl[]=['init']; return (object)[];
 }
 function curl_setopt(object $handle,int $option,mixed $value): bool { SchedulingRuntimeProbe::$curl[]=['setopt',$option,$value]; return true; }
-function curl_exec(object $handle): string|false { SchedulingRuntimeProbe::$curl[]=['exec']; return SchedulingRuntimeProbe::$curl_result; }
+function curl_exec(object $handle): string|false {
+	SchedulingRuntimeProbe::$curl[]=['exec'];
+	if(SchedulingRuntimeProbe::$curl_delay_microseconds>0){usleep(SchedulingRuntimeProbe::$curl_delay_microseconds);}
+	return SchedulingRuntimeProbe::$curl_result;
+}
 function curl_getinfo(object $handle,int $option): int { SchedulingRuntimeProbe::$curl[]=['getinfo',$option]; return SchedulingRuntimeProbe::$curl_status; }
 function curl_close(object $handle): void { SchedulingRuntimeProbe::$curl[]=['close']; }
 if(!class_exists(core::class,false)){
@@ -104,7 +110,7 @@ test('fixed managed pool role alone owns scheduler activation and ordinary boots
 		'DATAPHYRE_SCHEDULER_ACTIVATION_MODE'=>null,
 		'DATAPHYRE_RUNTIME_POOL_ROLE'=>'web',
 	]);
-	$t->same('supervisor',\dataphyre\scheduling::activation_mode());
+	$t->same('record_only',\dataphyre\scheduling::activation_mode());
 	$t->isFalse(\dataphyre\scheduling::dispatch_enabled());
 	$workspace=$t->workspace('managed-web-registration');
 	\dataphyre\scheduling::use_state_root($workspace->root());
@@ -119,11 +125,11 @@ test('fixed managed pool role alone owns scheduler activation and ordinary boots
 	$t->isFalse(is_file(\dataphyre\scheduling::running_lock_file('managed.web')));
 	$t->isFalse(is_file(\dataphyre\scheduling::last_run_file('managed.web')));
 	$t->environment(['DATAPHYRE_RUNTIME_POOL_ROLE'=>'realtime']);
-	$t->same('supervisor',\dataphyre\scheduling::activation_mode());
+	$t->same('record_only',\dataphyre\scheduling::activation_mode());
 	$t->isFalse(\dataphyre\scheduling::dispatch_enabled());
 	$t->environment(['DATAPHYRE_RUNTIME_POOL_ROLE'=>'scheduler']);
-	$t->same('supervisor',\dataphyre\scheduling::activation_mode());
-	$t->isTrue(\dataphyre\scheduling::dispatch_enabled());
+	$t->same('record_only',\dataphyre\scheduling::activation_mode());
+	$t->isFalse(\dataphyre\scheduling::dispatch_enabled());
 	$t->environment(['DATAPHYRE_RUNTIME_POOL_ROLE'=>null]);
 	$t->same('default',\dataphyre\scheduling::activation_mode());
 	$t->isTrue(\dataphyre\scheduling::dispatch_enabled());
@@ -147,6 +153,7 @@ test('scheduler names paths and persisted definitions have a closed normalized s
 	$t->endsWith('/cache/scheduling/orders/properties.json',\dataphyre\scheduling::scheduler_properties_file('orders'));
 	$t->endsWith('/cache/scheduling/orders/running_lock',\dataphyre\scheduling::running_lock_file('orders'));
 	$t->endsWith('/cache/scheduling/orders/last_run',\dataphyre\scheduling::last_run_file('orders'));
+	$t->endsWith('/cache/scheduling/orders/last_success',\dataphyre\scheduling::last_success_file('orders'));
 
 	$t->isFalse(\dataphyre\scheduling::in_task_runner());
 	\dataphyre\scheduling::begin_task_runner('orders');
@@ -189,24 +196,33 @@ test('registration persists once and lock frequency timeout and load decisions a
 	$definition=$internals->invoke('normalize_scheduler_definition','orders',$task,-2,0,'',[$dependency,$dependency],'shop');
 	$t->hasPathValues(['frequency'=>0.0,'timeout'=>1.0,'memory_limit'=>'128M','dependencies'=>[$dependency]],$definition);
 	\dataphyre\core::$server_load_level=3;
-	$t->isFalse($internals->invoke('can_run',$definition));
+	$t->isNull($internals->invoke('can_run',$definition));
 	\dataphyre\core::$server_load_level=0;
 	$t->isTrue($internals->invoke('can_run',$definition));
 
 	$lastRun=\dataphyre\scheduling::last_run_file('orders');
 	$lock=\dataphyre\scheduling::running_lock_file('orders');
 	$workspace->file('cache/scheduling/orders/last_run',(string)(time()-10));
-	$workspace->file('cache/scheduling/orders/running_lock','');
+	$workspace->file('cache/scheduling/orders/running_lock',str_repeat('a',64));
+	touch($lock,time()-10);
 	$definition['timeout']=5.0;
 	$t->isTrue($internals->invoke('can_run',$definition));
 	$t->isFalse(is_file($lock));
 	$workspace->file('cache/scheduling/orders/last_run',(string)time());
-	$workspace->file('cache/scheduling/orders/running_lock','');
+	$workspace->file('cache/scheduling/orders/running_lock',str_repeat('b',64));
 	$definition['timeout']=60.0;
-	$t->isFalse($internals->invoke('can_run',$definition));
+	$t->isNull($internals->invoke('can_run',$definition));
 	@unlink($lock);
 	$definition['frequency']=60.0;
+	$workspace->file('cache/scheduling/orders/last_success',str_repeat('c',64));
 	$t->isFalse($internals->invoke('can_run',$definition));
+	$workspace->file('cache/scheduling/orders/running_lock',str_repeat('d',64));
+	touch($lock,time()-120);
+	$held=fopen($lock,'r+');
+	$t->isTrue(is_resource($held) && flock($held,LOCK_EX|LOCK_NB));
+	$t->isNull($internals->invoke('can_run',$definition));
+	$t->isTrue(is_file($lock));
+	flock($held,LOCK_UN);fclose($held);@unlink($lock);
 	$workspace->file('cache/scheduling/orders/last_run','invalid');
 	$t->isTrue($internals->invoke('can_run',$definition));
 	$t->isNull($internals->invoke('read_last_run_timestamp',$workspace->path('missing')));
@@ -232,9 +248,12 @@ test('registration persists once and lock frequency timeout and load decisions a
 	$t->isTrue($internals->invoke('acquire_running_lock','atomic-lock',$claimOne));
 	$t->isFalse($internals->invoke('acquire_running_lock','atomic-lock',$claimTwo));
 	$t->same($claimOne,trim((string)file_get_contents(\dataphyre\scheduling::running_lock_file('atomic-lock'))));
-	\dataphyre\SchedulingRuntimeProbe::$write_results=[true,false];
+	$unsafeState=$workspace->file('unsafe-state','123');
+	$workspace->directory('cache/scheduling/lock-failure');
+	symlink($unsafeState,$workspace->path('cache/scheduling/lock-failure/last_run'));
 	$t->isFalse(\dataphyre\scheduling::run('lock-failure',$task,0,30,'128M',[],'shop',$registrar));
 	$t->isFalse(is_file(\dataphyre\scheduling::running_lock_file('lock-failure')));
+	$t->isTrue(is_link(\dataphyre\scheduling::last_run_file('lock-failure')));
 	$before=count(\dataphyre\SchedulingRuntimeProbe::$writes);
 	$internals->invoke('persist_scheduler_definition',$definition);
 	$internals->invoke('persist_scheduler_definition',$definition);
@@ -248,6 +267,13 @@ test('dispatch URLs and both internal HTTP transports stay local bounded and fai
 	\dataphyre\SchedulingRuntimeProbe::reset();
 	$internals=$t->nonPublic(\dataphyre\scheduling::class);
 	$server=$t->globalMap('_SERVER')->replace([]);
+	$workspace=$t->workspace('scheduling-dispatch-failure');
+	\dataphyre\scheduling::use_state_root($workspace->root());
+	$task=$workspace->file('tasks/run.php','<?php return true;');
+	$workspace->file('cache/scheduling/orders/properties.json',json_encode([
+		'name'=>'orders','file_path'=>$task,'frequency'=>0,'dependencies'=>[],
+		'timeout'=>30,'memory_limit'=>'128M','app_override'=>'',
+	],JSON_THROW_ON_ERROR));
 	$t->isNull($internals->invoke('scheduler_dispatch_url','orders','shop'));
 	$server->replace(['SELF_ADDR'=>'127.0.0.1:1']);
 	\dataphyre\SchedulingRuntimeProbe::$app_override='tenant-one';
@@ -261,25 +287,37 @@ test('dispatch URLs and both internal HTTP transports stay local bounded and fai
 	$t->same('https://127.0.0.1:1/dataphyre/scheduler/orders',$internals->invoke('scheduler_dispatch_url','orders',''));
 	$signature=str_repeat('a',64);
 	$claim=str_repeat('c',64);
-	$signer=static fn(string $scheduler,string $dispatchClaim): string=>$scheduler==='orders' && $dispatchClaim===$claim ? $signature : '';
+	$complete=static function() use ($workspace,$claim): void {
+		$workspace->file('cache/scheduling/orders/last_run',(string)time());
+		$workspace->file('cache/scheduling/orders/last_success',$claim);
+		@unlink($workspace->path('cache/scheduling/orders/running_lock'));
+	};
+	$signed=[];
+	$signer=static function(string $context,int $issuedAt) use (&$signed,$signature): string {
+		$signed=[$context,$issuedAt];
+		return $signature;
+	};
 
 	$server->replace([]);
 	$internals->invoke('dispatch_registered_scheduler','orders','shop',$claim,true,$signer);
 	$server->replace(['SELF_ADDR'=>'127.0.0.1:1']);
+	$complete();
 	$internals->invoke('dispatch_registered_scheduler','orders','',$claim,true,$signer);
 	$t->containsRows([['init'],['exec'],['getinfo',CURLINFO_RESPONSE_CODE],['close']],\dataphyre\SchedulingRuntimeProbe::$curl);
-	$t->containsRows([
-		['setopt',CURLOPT_HTTPHEADER,[
-			'X-Traffic-Source: internal_traffic',
-			'X-Dataphyre-Scheduler-Claim: '.$claim,
-			'X-Dataphyre-Scheduler-Key: '.$signature,
-		]],
-	],\dataphyre\SchedulingRuntimeProbe::$curl);
+	$t->same('orders|'.$claim.'|30000|'.$signed[1],$signed[0]);
+	$t->containsRows([['setopt',CURLOPT_HTTPHEADER,[
+		'X-Traffic-Source: internal_traffic',
+		'X-Dataphyre-Scheduler-Claim: '.$claim,
+		'X-Dataphyre-Scheduler-Budget-Ms: 30000',
+		'X-Dataphyre-Scheduler-Issued-At: '.$signed[1],
+		'X-Dataphyre-Scheduler-Key: '.$signature,
+	]]],\dataphyre\SchedulingRuntimeProbe::$curl);
+	$complete();
 	$internals->invoke('dispatch_registered_scheduler','orders','',$claim,false,$signer);
 	$before=count(\dataphyre\SchedulingRuntimeProbe::$curl);
 	$internals->invoke('dispatch_registered_scheduler','orders','',str_repeat('x',64),true,$signer);
 	$t->same($before,count(\dataphyre\SchedulingRuntimeProbe::$curl));
-	$internals->invoke('dispatch_registered_scheduler','orders','',$claim,true,static fn(string $scheduler,string $dispatchClaim): false=>false);
+	$internals->invoke('dispatch_registered_scheduler','orders','',$claim,true,static fn(string $context,int $issuedAt): false=>false);
 	$t->same($before,count(\dataphyre\SchedulingRuntimeProbe::$curl));
 	$t->isFalse(function_exists('dp_shared_request_key'));
 	$internals->invoke('dispatch_registered_scheduler','orders','',$claim,true);
@@ -292,8 +330,6 @@ test('dispatch URLs and both internal HTTP transports stay local bounded and fai
 	$t->containsRows([['Fatal error on Dataphyre Scheduling shutdown callback','curl failed']],\dataphyre\SchedulingRuntimeProbe::$shutdown);
 	\dataphyre\SchedulingRuntimeProbe::$curl_throws=false;
 	\dataphyre\SchedulingRuntimeProbe::$curl_status=503;
-	$workspace=$t->workspace('scheduling-dispatch-failure');
-	\dataphyre\scheduling::use_state_root($workspace->root());
 	$workspace->file('cache/scheduling/orders/running_lock',$claim);
 	$internals->invoke('dispatch_registered_scheduler','orders','',$claim,true,$signer);
 	$t->isFalse(is_file(\dataphyre\scheduling::running_lock_file('orders')));
@@ -304,6 +340,68 @@ test('dispatch URLs and both internal HTTP transports stay local bounded and fai
 	$t->same($differentClaim,trim((string)file_get_contents(\dataphyre\scheduling::running_lock_file('orders'))));
 	\dataphyre\scheduling::use_state_root(null);
 });
+
+test('managed callback waits beyond the legacy 150ms window using the bounded scheduler timeout',static function(Context $t): void {
+	\dataphyre\SchedulingRuntimeProbe::reset();
+	$workspace=$t->workspace('scheduling-managed-slow-callback');
+	\dataphyre\scheduling::use_state_root($workspace->root());
+	$task=$workspace->file('tasks/slow.php','<?php return true;');
+	$workspace->file('cache/scheduling/orders/properties.json',json_encode([
+		'name'=>'orders','file_path'=>$task,'frequency'=>0,'dependencies'=>[],
+		'timeout'=>2,'memory_limit'=>'128M','app_override'=>'',
+	],JSON_THROW_ON_ERROR));
+	$claim=str_repeat('c',64);
+	$workspace->file('cache/scheduling/orders/last_run',(string)time());
+	$workspace->file('cache/scheduling/orders/last_success',$claim);
+	$t->globalMap('_SERVER')->replace(['SELF_ADDR'=>'127.0.0.1:8081']);
+	\dataphyre\SchedulingRuntimeProbe::$curl_delay_microseconds=250000;
+	$internals=$t->nonPublic(\dataphyre\scheduling::class);
+	$started=microtime(true);
+	$t->isTrue($internals->invoke(
+		'dispatch_registered_scheduler','orders','',$claim,true,
+		static fn(string $context,int $issuedAt): string=>str_repeat('b',64),
+	));
+	$t->greaterThan(0.2,microtime(true)-$started);
+	$t->containsRows([
+		['setopt',CURLOPT_TIMEOUT_MS,3000],
+		['setopt',CURLOPT_CONNECTTIMEOUT_MS,150],
+	],\dataphyre\SchedulingRuntimeProbe::$curl);
+	$workspace->file('cache/scheduling/orders/properties.json',json_encode([
+		'name'=>'orders','file_path'=>$task,'frequency'=>0,'dependencies'=>[],
+		'timeout'=>900,'memory_limit'=>'128M','app_override'=>'',
+	],JSON_THROW_ON_ERROR));
+	\dataphyre\SchedulingRuntimeProbe::$curl_delay_microseconds=0;
+	$workspace->file('cache/scheduling/orders/last_run',(string)time());
+	$workspace->file('cache/scheduling/orders/last_success',$claim);
+	$t->isTrue($internals->invoke(
+		'dispatch_registered_scheduler','orders','',$claim,true,
+		static fn(string $context,int $issuedAt): string=>str_repeat('b',64),
+	));
+	$t->containsRows([
+		['setopt',CURLOPT_TIMEOUT_MS,296000],
+	],\dataphyre\SchedulingRuntimeProbe::$curl);
+	\dataphyre\scheduling::use_state_root(null);
+})->tag('signed-cadence','lifecycle','slow-callback','timeout');
+
+test('managed callback runs only in the fresh scheduler CGI with an outer signed wall-clock bound',static function(Context $t): void {
+	$core=dirname(__DIR__,2).'/core/kernel';
+	$runner=(string)file_get_contents(dirname(__DIR__).'/kernel/task_runner.php');
+	$router=(string)file_get_contents($core.'/application_runtime_router.php');
+	$gateway=(string)file_get_contents($core.'/application_runtime_cgi_gateway.php');
+	$t->isFalse(file_exists(dirname(__DIR__).'/kernel/managed_task_worker.php'));
+	$t->isFalse(str_contains($runner,'executeManagedTask'));
+	$t->isFalse(str_contains($runner,'proc_open('));
+	$t->contains('managedBootstrapAttestation()',$runner);
+	$t->contains('runtime_definition($scheduler_name)',$runner);
+	$t->contains("'sha256:'.hash('sha256',json_encode(\$evidence",$runner);
+	$t->contains('executeTask($definition',$runner);
+	$t->contains('DataphyreApplicationRuntimeSchedulerProtocol::verify',$router);
+	$t->contains('/dataphyre/runtime/scheduler/claim',$gateway);
+	$t->isTrue(strpos($gateway,'claimSchedulerRequest($request,$body')<strpos($gateway,'DataphyreApplicationRuntimeProcessBroker::spawn'));
+	$t->contains("'/dataphyre/runtime/scheduler/callback'",$gateway);
+	$t->contains("? \$candidate['budget_milliseconds']",$gateway);
+	$t->contains('SCHEDULER_TRANSPORT_MARGIN_MILLISECONDS',$gateway);
+})->tag('fresh-cgi','process-boundary','claim','signed-budget','security','deletion');
 
 test('task runner rejects unavailable invalid and missing scheduler requests before execution',static function(Context $t): void {
 	\dataphyre\SchedulingRuntimeProbe::reset();
@@ -391,6 +489,7 @@ test('task runner executes dependencies modules task files and registered cleanu
 	$t->isFalse(\dataphyre\scheduling::in_task_runner());
 	$t->isFalse(is_file(\dataphyre\scheduling::running_lock_file('orders')));
 	$t->same((string)time(),trim((string)file_get_contents(\dataphyre\scheduling::last_run_file('orders'))));
+	$t->same($claim,trim((string)file_get_contents(\dataphyre\scheduling::last_success_file('orders'))));
 	$t->contains('<trace>scheduler</trace>',(string)file_get_contents($workspace->path('cache/scheduling/orders/tracelog.html')));
 	$t->same('shared_cache',DP_SQL_DEFAULT_CACHE_POLICY_OVERRIDE['type']);
 	dataphyre_scheduling_task_runner::dispatch_entrypoint(true);
@@ -473,6 +572,7 @@ test('task runner reports dependency task and cleanup failures without leaking a
 	$t->contains('Scheduler dependency does not exist',$errors[0][1]);
 	$t->count(1,$callbacks);
 	$callbacks[0]();
+	$t->isFalse(is_file(\dataphyre\scheduling::last_success_file('orders')));
 
 	$scheduler['dependencies']=[];
 	$scheduler['file_path']='';
@@ -490,12 +590,34 @@ test('task runner reports dependency task and cleanup failures without leaking a
 	))->output());
 	$t->contains('Scheduler file does not exist',$errors[0][1]);
 
+	$failingTask=$workspace->file('tasks/throws.php','<?php throw new RuntimeException("task failed");');
+	$scheduler['file_path']=$failingTask;
+	$workspace->file('cache/scheduling/orders/properties.json',json_encode($scheduler,JSON_THROW_ON_ERROR));
+	$claim=str_repeat('e',64);
+	$workspace->file('cache/scheduling/orders/running_lock',$claim);
+	$errors=[];
+	$callbacks=[];
+	$t->contains('Execution error',$t->captureOutput(static fn()=>dataphyre_scheduling_task_runner::dispatch(
+		static fn()=>null,
+		$registrar,
+		['pre_init_error'=>$preInitHandler,'scheduler_claim'=>$claim],
+	))->output());
+	$t->contains('task failed',$errors[0][1]);
+	$t->count(1,$callbacks);
+	$callbacks[0]();
+	$t->isFalse(is_file(\dataphyre\scheduling::last_success_file('orders')));
+	$t->isFalse(is_file(\dataphyre\scheduling::running_lock_file('orders')));
+
 	\dataphyre\scheduling::begin_task_runner('orders');
 	$shutdown=[];
+	$claim=str_repeat('f',64);
+	$workspace->file('cache/scheduling/orders/running_lock',$claim);
+	$runnerInternals=$t->nonPublic(dataphyre_scheduling_task_runner::class);
+	$handle=$runnerInternals->invoke('claimRunningLock',\dataphyre\scheduling::running_lock_file('orders'),$claim,[]);
 	dataphyre_scheduling_task_runner::finalize($workspace->path('cache/scheduling/orders'),'orders',[
 		'writer'=>static fn()=>throw new RuntimeException('write failed'),
 		'shutdown_logger'=>static function(string $message,Throwable $failure)use(&$shutdown): void {$shutdown[]=[$message,$failure->getMessage()];},
-	]);
+	],$handle,$claim,true);
 	$t->containsRows([['Fatal error on Dataphyre Scheduling (task runner) shutdown callback','write failed']],$shutdown);
 
 	$workspace->file('cache/scheduling/orders/running_lock','locked');

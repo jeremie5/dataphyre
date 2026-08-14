@@ -52,7 +52,7 @@ test('each inspection boundary reads as a release diagnostic contract',static fu
 			'execution_boundary','exit_status','failures','likely_to_deploy','ok','write_policy',
 		],$preflightFields);
 		$t->same('fixed_dataphyre_commands_and_loopback_application_boot',$release['preflight']['execution_boundary']);
-		$t->same('database_dry_run_and_ephemeral_application_boot',$release['preflight']['write_policy']);
+		$t->same('isolated_database_preflight_and_ephemeral_application_boot',$release['preflight']['write_policy']);
 		$t->same([
 			'configuration_bootstrap','database_migrations','database_runtime','application_health','realtime_registration',
 		],array_column($release['preflight']['checks'],'id'));
@@ -102,6 +102,9 @@ test('each inspection boundary reads as a release diagnostic contract',static fu
 			'too_many_missing_keys',
 			'unhealthy_passed_check',
 			'zero_attempt_pass',
+			'sqlite_pending_migration',
+			'sqlite_unsafe_database_file',
+			'sqlite_out_of_order_journal',
 			'raw_migration_evidence',
 			'reordered_migration_plan',
 			'unknown_migration_issue',
@@ -155,6 +158,9 @@ test('each inspection boundary reads as a release diagnostic contract',static fu
 		$t->isTrue($contract['migration_success']['prediction']['likely_to_deploy']);
 		$t->same('sha256',$contract['migration_success']['preflight']['checks'][1]['evidence']['manifest']['algorithm']);
 		$t->same(true,$contract['migration_success']['preflight']['checks'][1]['evidence']['plan']['eligible']);
+		$t->isTrue($contract['sqlite_migration_success']['prediction']['likely_to_deploy']);
+		$t->same('sqlite',$contract['sqlite_migration_success']['preflight']['checks'][1]['evidence']['engine']);
+		$t->same([],$contract['sqlite_migration_success']['preflight']['checks'][1]['evidence']['result']['pending_migrations']);
 		$t->isFalse($contract['migration_failure']['prediction']['likely_to_deploy']);
 		$t->same('migration_plan_ineligible',$contract['migration_failure']['prediction']['reason_code']);
 		$t->same(

@@ -1,0 +1,1 @@
+{"contract":"dataphyre.application_environment.v1","cloud_application":"runtime-probe","framework_application":"_Runtime$Probe","environment":"staging_blue","release_id":"dep_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","environment_fingerprint":"hmac-sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","values":{"ONE_SHOT_ARTISAN_MODE":"orphan"}}

@@ -8,6 +8,8 @@ RUN cd /opt/dataphyre-browser \
 
 FROM php:8.4-cli-bookworm
 
+ARG XDEBUG_VERSION=3.5.3
+
 LABEL org.opencontainers.image.title="Dataphyre testing runtime" \
       org.opencontainers.image.description="Hermetic PHP 8.4 CLI/phpdbg runtime for the first-party Dataphyre test runner"
 
@@ -32,6 +34,8 @@ RUN apt-get update \
         libsqlite3-dev \
         libxml2-dev \
         libzip-dev \
+		util-linux \
+		$PHPIZE_DEPS \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j"$(nproc)" \
         bcmath \
@@ -48,7 +52,29 @@ RUN apt-get update \
         sockets \
         xml \
         zip \
+	&& pecl install "xdebug-${XDEBUG_VERSION}" \
+	&& extension_dir="$(php-config --extension-dir)" \
+	&& test -f "$extension_dir/xdebug.so" \
+	&& install -d -o root -g root -m 0755 /usr/local/etc/php-xdebug.d \
+	&& printf 'zend_extension=%s/xdebug.so\nxdebug.mode=off\n' "$extension_dir" \
+		> /usr/local/etc/php-xdebug.d/99-xdebug.ini \
     && rm -rf /var/lib/apt/lists/*
+
+# The test runtime exercises the same post-exec inherited-descriptor boundary
+# as Cloud's fixed PHP image. Build only the framework-owned native extension;
+# application code and caller-selected build input never participate.
+COPY runtime/native/environment_fd /tmp/dataphyre-environment-fd
+
+RUN set -eux; \
+	cd /tmp/dataphyre-environment-fd; \
+	phpize; \
+	./configure --enable-dataphyre-environment-fd; \
+	make -j"$(nproc)"; \
+	make install; \
+	docker-php-ext-enable dataphyre_environment_fd; \
+	cd /; \
+	rm -rf /tmp/dataphyre-environment-fd; \
+	php -r 'exit(extension_loaded("dataphyre_environment_fd") && phpversion("dataphyre_environment_fd") === "1.1.0" && function_exists("dataphyre_open_inherited_environment_fd") && function_exists("dataphyre_close_inherited_fd") && function_exists("dataphyre_close_unlisted_inherited_fds") ? 0 : 1);'
 
 COPY --from=browser-dependencies /usr/local/bin/node /usr/local/bin/node
 COPY --from=browser-dependencies /opt/dataphyre-browser /opt/dataphyre-browser
@@ -64,7 +90,8 @@ RUN { \
       echo 'error_reporting=E_ALL'; \
       echo 'opcache.enable_cli=0'; \
     } > /usr/local/etc/php/conf.d/dataphyre-testing.ini \
-    && php -r 'foreach(["bcmath","curl","gd","intl","mbstring","pdo_sqlite","sodium","zip"] as $extension){if(!extension_loaded($extension)){fwrite(STDERR,"Missing extension: $extension\n");exit(1);}}' \
+	&& php -r 'foreach(["bcmath","curl","dataphyre_environment_fd","gd","intl","mbstring","pdo_sqlite","sodium","zip"] as $extension){if(!extension_loaded($extension)){fwrite(STDERR,"Missing extension: $extension\n");exit(1);}} if(extension_loaded("xdebug")){fwrite(STDERR,"Xdebug must be opt-in.\n");exit(1);}' \
+	&& PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d:/usr/local/etc/php-xdebug.d XDEBUG_MODE=off php -r 'exit(extension_loaded("xdebug")&&phpversion("xdebug")==="3.5.3"?0:1);' \
     && command -v phpdbg >/dev/null
 
 WORKDIR /workspace/dataphyre

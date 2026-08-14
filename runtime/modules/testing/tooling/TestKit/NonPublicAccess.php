@@ -87,6 +87,15 @@ final class NonPublicAccess {
 		return $reflection->getValue(is_object($this->target) ? $this->target : null);
 	}
 
+	public function readConstant(string $constant): mixed {
+		$class=is_object($this->target) ? $this->target::class : $this->target;
+		$reflection=(new \ReflectionClass($class))->getReflectionConstant($constant);
+		if(!$reflection instanceof \ReflectionClassConstant){
+			throw new \OutOfBoundsException('Non-public constant is unavailable: '.$constant);
+		}
+		return $reflection->getValue();
+	}
+
 	public function writeProperty(string $property, mixed $value): self {
 		$reflection=$this->property($property);
 		$reflection->setValue(is_object($this->target) ? $this->target : null, $value);

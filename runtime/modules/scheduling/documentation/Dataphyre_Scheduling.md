@@ -10,9 +10,14 @@ The module is intentionally small, but now has two surfaces:
 - persist the task definition under Dataphyre cache
 - trigger the internal scheduler route on shutdown when the task is due
 - run the task file once the scheduler request reaches `task_runner.php`
-- continue task execution after the short-lived internal dispatcher disconnects
+- execute managed application work only in a fresh fixed framework CGI child, never
+  in the long-lived scheduler server process
+- wait within the smaller of the validated task timeout and the remaining
+  aggregate runtime-tick budget
 - load the policy-enabled Core and Scheduling lifecycles at Dataphyre's internal runtime boundary
 - authenticate each callback with internal-traffic provenance, a one-time claim, and a short-lived purpose-bound signature
+- let the root gateway publish the fixed success receipt only after the callback
+  child exits successfully; application output is never a receipt
 
 ---
 
@@ -131,9 +136,14 @@ Parameters:
 Behavior:
 
 - the task definition is persisted to `cache/scheduling/<name>/properties.json`
-- `last_run` is updated when the task is dispatched
+- a successful task publishes the `last_run` timestamp and exact
+  `last_success` claim, which are accepted only as one complete state pair
 - `running_lock` prevents overlapping runs
-- stale locks are treated as timed out once `timeout` is exceeded
+- an expired lock is reclaimed only after a non-blocking exclusive lock proves
+  the same regular, single-link inode and exact claim
+- managed callbacks use a per-task signed wall-clock budget inside one
+  295-second aggregate application-work ceiling, whose monotonic deadline is
+  fixed when the signed tick is accepted, before application bootstrap
 
 ##### `valid_scheduler_name(string $name): bool`
 
@@ -182,7 +192,13 @@ register_shutdown_function(function(){
 
 ##### Task runner pattern
 
-Scheduler requests enter Dataphyre's internal runtime route before compiled or application MVC routes. The runtime initializes the policy-enabled Core and Scheduling lifecycles, and the scheduling module exposes an explicit runner context:
+Managed scheduler requests never enter application MVC routing. PID 1 sends one
+canonical signed request to the private scheduler gateway, the gateway creates
+one fresh UID/GID `10001` PHP CGI only after the gateway has consumed PID 1's
+one-time claim. The CGI must consume its bound managed context before application
+bootstrap. The CGI
+uses the fixed `scheduler-task` run mode and does not start visitor sessions,
+request-only modules, or load shedding.
 
 ```php
 if(\dataphyre\scheduling::in_task_runner()){
@@ -194,14 +210,31 @@ if(\dataphyre\scheduling::in_task_runner()){
 
 #### Execution Model
 
-1. A normal request calls `\dataphyre\scheduling::run(...)`.
-2. The scheduler definition is written to `cache/scheduling/<name>/properties.json`.
-3. If the task is due and not actively locked, the module atomically creates `running_lock` with a cryptographically random one-time claim and records `last_run`.
-4. On shutdown, Dataphyre binds that claim and scheduler name into a short-lived signature and dispatches an internal HTTP request to `/dataphyre/scheduler/<name>`.
-5. The common runtime accepts only the exact GET route with internal-traffic provenance, the exact claim, and a valid purpose-bound signature.
-6. The runtime initializes Core and the policy-enabled Scheduling module before application routing can take over.
-7. `task_runner.php` verifies the pending claim and holds a non-blocking exclusive lock while it loads dependencies and executes the task, so a captured callback cannot run concurrently.
-8. On shutdown, the runner writes `last_run`, clears the claim lock, and persists tracelog output when available.
+1. PID 1 obtains complete definitions through a signed, one-time registration
+   POST to `/dataphyre/runtime/scheduler/register`.
+2. When one definition is due, PID 1 creates a generation- and release-bound
+   durable claim and sends its name, definition digest, and wall-clock budget in
+   a canonical Ed25519-signed POST to `/dataphyre/runtime/scheduler/callback`.
+3. The root gateway accepts loopback traffic only, verifies the exact canonical
+   request and public key, and asks PID 1 to consume that request once. Replay or
+   any mismatch returns `404` before application PHP exists.
+4. After the claim succeeds, the gateway creates one fresh capability-free
+   scheduler CGI. The signed budget also bounds that process from the gateway,
+   outside application PHP.
+5. The claimed CGI boots the ordinary application once in record-only mode,
+   re-derives the complete registration, and requires the named definition's
+   digest to match before loading dependencies and task code. Task output and
+   headers are discarded.
+6. The CGI communicates success only with its process exit. After it is reaped,
+   the root gateway discards every application byte and constructs the fixed
+   bounded receipt itself. PID 1 records cadence only for that trusted receipt
+   and completed claim; failure releases the claim and cannot starve later
+   definitions.
+
+There is no second scheduler worker, runtime environment file, reusable
+dispatch secret, shell, or application-selectable process. Outside the managed
+Cloud pool, the request-driven scheduling API remains available for compatible
+self-hosted applications.
 
 ---
 
@@ -216,7 +249,8 @@ dataphyre/cache/scheduling/<name>/
 Files:
 
 - `properties.json`: persisted task definition
-- `last_run`: last dispatch timestamp
+- `last_run`: latest successful completion timestamp
+- `last_success`: exact claim completed by the latest successful task
 - `running_lock`: overlap-prevention lock
 - `tracelog.html`: optional tracelog output from the runner
 
@@ -227,8 +261,11 @@ Files:
 - Scheduler names are validated before they touch the filesystem.
 - Internal callback signatures are purpose-, scheduler-name-, and one-time-claim-bound, time limited, and transported in request headers rather than the URL.
 - Pending dispatch creation is atomic across PHP workers, and the task runner holds the claim lock through execution to reject concurrent replay.
+- Managed signed ticks fail closed unless every unique registration is due or suppressed, every due claim completes, each completion receipt matches its claim, and every accepted definition is lock-free at report time.
 - Framework-only and legacy applications share the same authenticated runtime route, so application routing cannot accidentally shadow scheduler execution.
 - Task definitions are rewritten when their configuration changes; the cache is not write-once.
 - The internal runner validates dependency and task-file paths before requiring them.
-- Stale locks are treated as timed out instead of blocking the task forever.
+- Stale locks are reclaimed only while the framework holds the exact expired
+  claim inode exclusively; a live, changed, linked, malformed, or contended lock
+  defers dispatch.
 - The module is request-driven. It is meant for low-friction background maintenance, not a full external worker system.

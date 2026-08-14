@@ -1,5 +1,9 @@
 # Changelog
 
+- Added a fixed, brokered three-process shared-cache release probe so platforms
+  can prove Memcached capability and cross-process write/read/delete behavior
+  without inline PHP, arbitrary cache keys, or secret-bearing environment files.
+
 All notable Dataphyre changes are tracked here.
 
 ## Unreleased
@@ -41,6 +45,10 @@ All notable Dataphyre changes are tracked here.
   Migration discovery now distinguishes true absence from symbolic links and
   other non-regular entries, so invalid profile/manifest pairs cannot collapse
   into a false not-applicable result.
+- Release preflight now records a bounded count and sorted-set digest of the
+  registered table definitions through the fixed materializer authority without
+  hydrating schema. Release platforms can match that evidence and run the
+  shell-free materializer before application migrations.
 - Added a fixed, shell-free PostgreSQL migration command that accepts only
   typed project, application, environment, and deployment-mode argv; loads the
   existing immutable migration profile and manifest from conventional paths;

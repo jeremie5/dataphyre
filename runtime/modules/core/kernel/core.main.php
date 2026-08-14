@@ -25,6 +25,7 @@ $bootstrapFail=static fn(string $message)=>pre_init_error($message);
 );
 $rootpaths=\Dataphyre\CoreKernelBootstrap::requireRootpaths(defined('ROOTPATH') ? ROOTPATH : null, $bootstrapFail);
 $applicationReleasePreflight=dp_application_release_preflight_context();
+$managedRuntimeBootstrap=dp_managed_runtime_bootstrap_context();
 
 dp_define_core_config('DP_CORE_CFG');
 \dataphyre\core::load_plugins('pre_init');
@@ -43,7 +44,7 @@ dp_define_core_config('DP_CORE_CFG');
 
 \Dataphyre\CoreKernelBootstrap::ensureConstant('ALLOW_OUTPUT_POSTPROCESSING', true, 'defined', 'define', $bootstrapFail);
 
-$filesystemVerified=$applicationReleasePreflight!==null ? true : \Dataphyre\CoreKernelBootstrap::ensureVerified(
+$filesystemVerified=$applicationReleasePreflight!==null || $managedRuntimeBootstrap!==null ? true : \Dataphyre\CoreKernelBootstrap::ensureVerified(
 	(string)$rootpaths['dataphyre'],
 	defined('APP') ? (string)APP : null,
 	static fn(string $path): bool=>file_exists($path),
@@ -92,7 +93,8 @@ tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Run mode is '.$runMode
 	'session_status',
 	static fn(): int=>\dataphyre\core::$server_load_level,
 	static fn(string $message, string $mode)=>\dataphyre\core::unavailable(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $message, $mode),
-	$applicationReleasePreflight===null && \Dataphyre\CoreKernelBootstrap::loadSheddingEnabled(DP_CORE_CFG)
+	$applicationReleasePreflight===null && $managedRuntimeBootstrap===null
+		&& \Dataphyre\CoreKernelBootstrap::loadSheddingEnabled(DP_CORE_CFG)
 );
 
 \Dataphyre\CoreKernelBootstrap::ensureConstant('REQUEST_IP_ADDRESS', \dataphyre\core::get_client_ip(), 'defined', 'define', $bootstrapFail);
@@ -138,17 +140,13 @@ if(!defined('DP_MAX_EXECUTION_TIME_INITIALIZED')){
 	$bootstrapFail
 );
 
-\Dataphyre\CoreKernelBootstrap::loadModules(
-	$runMode,
-	'dp_module_present',
-	static function(string $path, bool $once): void {
-		if($once){
+	\Dataphyre\CoreKernelBootstrap::loadModules(
+		$runMode,
+		'dp_module_present',
+		static function(string $path, bool $_once): void {
 			require_once $path;
-		}else{
-			require $path;
 		}
-	}
-);
+	);
 
 \dataphyre\core::load_plugins('post_init');
 \Dataphyre\CoreKernelBootstrap::finishRequest($runMode, static fn()=>\dataphyre\core::set_http_headers());
@@ -163,5 +161,5 @@ if(!defined('DP_MAX_EXECUTION_TIME_INITIALIZED')){
 	}
 );
 
-unset($applicationReleasePreflight, $bootstrapFail, $file, $filesystemVerified, $installError, $memoryLimit, $memoryOverride, $rootpaths, $runMode, $T, $S);
+unset($applicationReleasePreflight, $managedRuntimeBootstrap, $bootstrapFail, $file, $filesystemVerified, $installError, $memoryLimit, $memoryOverride, $rootpaths, $runMode, $T, $S);
 tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Dataphyre has finished initializing, '.(DP_CORE_CFG['public_app_name'] ?? 'the application').' will now take over');

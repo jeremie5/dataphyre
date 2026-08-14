@@ -34,6 +34,7 @@ if(!defined('DATAPHYRE_SCHEDULING_TASK_RUNNER_NO_DISPATCH')){
 }
 require_once __DIR__.'/../../scheduling/kernel/task_runner.php';
 require_once __DIR__.'/../kernel/runtime.php';
+require_once __DIR__.'/../kernel/application_runtime_scheduler_protocol.php';
 
 test('runtime capability contracts expose application-neutral framework surfaces', static function(Context $t): void {
 	$required=[
@@ -41,7 +42,7 @@ test('runtime capability contracts expose application-neutral framework surfaces
 		'Dataphyre\\Mvc\\RouteDefinition'=>['api','apiMetadata'],
 		'Dataphyre\\Mvc\\MvcDispatcher'=>['authorizeApiRoute','executeApiRoute'],
 		'dataphyre\\stripe_account_client'=>['readiness','construct_webhook_event'],
-		'dataphyre\\runtime'=>['boot_internal_runtime_route','scheduler_route_name'],
+		'DataphyreApplicationRuntimeSchedulerProtocol'=>['issue','verify','matchesCanonicalJson','consume'],
 		'dataphyre\\scheduling'=>['use_state_root','acquire_running_lock'],
 		'dataphyre_scheduling_task_runner'=>['claimRunningLock'],
 	];

@@ -7,6 +7,9 @@
  */
 declare(strict_types=1);
 
+require_once dirname(__DIR__).'/Framework/ApplicationEnvironmentIdentifier.php';
+require_once dirname(__DIR__,2).'/sql/Framework/RegisteredTableMaterializationCommand.php';
+
 const DATAPHYRE_REALTIME_PREFLIGHT_CONTRACT='dataphyre.application_realtime_registration.v1';
 
 function dataphyre_realtime_preflight_remove_tree(string $root): void {
@@ -68,17 +71,11 @@ function dataphyre_realtime_preflight_scheduler_evidence(string $stateRoot): arr
 			if(!is_string($dependency) || !is_file($dependency) || is_link($dependency)){
 				throw new RuntimeException('Isolated scheduler dependency is unavailable.');
 			}
-			$dependencyHash=hash_file('sha256',$dependency);
-			if(!is_string($dependencyHash) || preg_match('/^[a-f0-9]{64}$/D',$dependencyHash)!==1){
-				throw new RuntimeException('Unable to hash an isolated scheduler dependency.');
-			}
+			$dependencyHash=hash_file('sha256',$dependency) ?: throw new RuntimeException('Unable to hash an isolated scheduler dependency.');
 			$dependencyHashes[]='sha256:'.$dependencyHash;
 		}
 		sort($dependencyHashes,SORT_STRING);
-		$taskHash=hash_file('sha256',$decoded['file_path']);
-		if(!is_string($taskHash) || preg_match('/^[a-f0-9]{64}$/D',$taskHash)!==1){
-			throw new RuntimeException('Unable to hash an isolated scheduler task.');
-		}
+		$taskHash=hash_file('sha256',$decoded['file_path']) ?: throw new RuntimeException('Unable to hash an isolated scheduler task.');
 		$definitions[]=[
 			'name'=>$name,
 			'task_sha256'=>'sha256:'.$taskHash,
@@ -112,16 +109,10 @@ $application=trim($applicationMatch[1]);
 $environment=trim($environmentMatch[1]);
 if($projectRoot===false || !is_dir($projectRoot)
 	|| preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$application)!==1
-	|| preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/D',$environment)!==1){
+	|| !\Dataphyre\ApplicationEnvironmentIdentifier::valid($environment)){
 	exit(64);
 }
 $stateRoot=null;
-$stateCleanupComplete=false;
-register_shutdown_function(static function() use (&$stateRoot,&$stateCleanupComplete): void {
-	if($stateCleanupComplete!==true && is_string($stateRoot)){
-		dataphyre_realtime_preflight_remove_tree($stateRoot);
-	}
-});
 try{
 	$stateRoot=rtrim(sys_get_temp_dir(),'/\\').'/dataphyre-realtime-preflight-'.bin2hex(random_bytes(16));
 	if(!mkdir($stateRoot,0700,true) || !is_dir($stateRoot) || is_link($stateRoot)){
@@ -147,6 +138,7 @@ try{
 	$paths=array_keys($routes);
 	$encoded=json_encode($paths,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
 	$schedulerEvidence=dataphyre_realtime_preflight_scheduler_evidence($stateRoot);
+	$tableEvidence=\Dataphyre\Database\RegisteredTableMaterializationCommand::registeredTableInventoryEvidence();
 	$attemptCount=$GLOBALS['DATAPHYRE_INTERNAL_APPLICATION_RELEASE_PREFLIGHT']['scheduler_attempt_count'] ?? null;
 	$failureCount=$GLOBALS['DATAPHYRE_INTERNAL_APPLICATION_RELEASE_PREFLIGHT']['scheduler_failure_count'] ?? null;
 	if(!is_int($attemptCount) || !is_int($failureCount) || $failureCount!==0
@@ -158,21 +150,25 @@ try{
 		'ok'=>true,
 		'route_count'=>count($paths),
 		'registration_sha256'=>'sha256:'.hash('sha256',$encoded),
+		'registered_table_count'=>$tableEvidence['registered_count'],
+		'registered_table_materialization_contract'=>\Dataphyre\Database\RegisteredTableMaterializationCommand::CONTRACT,
+		'registered_table_set_sha256'=>'sha256:'.$tableEvidence['table_set_sha256'],
 		'scheduler_definition_count'=>$schedulerEvidence['definition_count'],
 		'scheduler_definition_sha256'=>$schedulerEvidence['definition_sha256'],
 	]);
 	dataphyre_realtime_preflight_remove_tree($stateRoot);
 	if(file_exists($stateRoot) || is_link($stateRoot)) throw new RuntimeException('Unable to remove isolated realtime preflight state.');
-	$stateCleanupComplete=true;
 	exit(0);
 }catch(Throwable){
 	if(is_string($stateRoot)) dataphyre_realtime_preflight_remove_tree($stateRoot);
-	$stateCleanupComplete=!is_string($stateRoot) || (!file_exists($stateRoot) && !is_link($stateRoot));
 	dataphyre_realtime_preflight_write([
 		'contract'=>DATAPHYRE_REALTIME_PREFLIGHT_CONTRACT,
 		'ok'=>false,
 		'route_count'=>0,
 		'registration_sha256'=>null,
+		'registered_table_count'=>0,
+		'registered_table_materialization_contract'=>\Dataphyre\Database\RegisteredTableMaterializationCommand::CONTRACT,
+		'registered_table_set_sha256'=>null,
 		'scheduler_definition_count'=>0,
 		'scheduler_definition_sha256'=>null,
 	]);

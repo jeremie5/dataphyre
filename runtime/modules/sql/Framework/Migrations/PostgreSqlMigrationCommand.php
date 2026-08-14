@@ -9,10 +9,13 @@ declare(strict_types=1);
 
 namespace Dataphyre\Database\Migrations;
 
+use Dataphyre\ApplicationEnvironmentIdentifier;
 use InvalidArgumentException;
 use JsonException;
 use PDO;
 use Throwable;
+
+require_once dirname(__DIR__,3).'/core/Framework/ApplicationEnvironmentIdentifier.php';
 
 /**
  * Fixed, application-neutral CLI boundary for upward PostgreSQL migrations.
@@ -309,7 +312,7 @@ final class PostgreSqlMigrationCommand {
 		if(preg_match('/^[A-Za-z_][A-Za-z0-9_$]{0,62}$/D', $options['app'])!==1){
 			throw new InvalidArgumentException('PostgreSQL migration application id is invalid.');
 		}
-		if(preg_match('/^[a-z][a-z0-9_-]{0,62}$/D', $options['environment'])!==1){
+		if(!ApplicationEnvironmentIdentifier::valid($options['environment'])){
 			throw new InvalidArgumentException('PostgreSQL migration environment id is invalid.');
 		}
 		if(!in_array($options['mode'], ['automatic', 'bootstrap', 'rolling', 'maintenance'], true)){

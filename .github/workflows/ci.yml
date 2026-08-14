@@ -49,6 +49,7 @@ jobs:
           DATAPHYRE_TEST_SKIP_BUILD=1 sh bin/dataphyre-test-docker --help > /dev/null
           DATAPHYRE_TEST_SKIP_BUILD=1 sh bin/dataphyre-test-docker list --scope=framework --owner=testing --path=runner --kind=code --cases --no-test-cache --json > cache/ci/testing-cli-docker.json
           php -r '$report=json_decode((string) file_get_contents("cache/ci/testing-cli-docker.json"), true); $cases=array_sum(array_map(static fn(array $test): int=>(int) ($test["cases"] ?? 0), $report["tests"] ?? [])); if (!is_array($report) || (int) ($report["matched"] ?? 0) < 1 || $cases < 1) { fwrite(STDERR, "Docker testing CLI inventory is empty or invalid.\n"); exit(1); }'
+          DATAPHYRE_TEST_SKIP_BUILD=1 DATAPHYRE_TEST_CONTAINER_ROOT=1 sh bin/dataphyre-test-docker run --path=dataphyre.core_application_runtime_secret_broker.test.php --parallel=1 --source-epoch --no-test-cache
 
       - name: Verify immutable Git archive surface
         shell: pwsh
@@ -817,7 +818,7 @@ jobs:
           if-no-files-found: warn
 
   framework-exact-coverage:
-    name: Framework exact source coverage
+    name: Framework exact source coverage in the canonical runtime
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -825,20 +826,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up PHP with Xdebug
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: "8.4"
-          extensions: openssl, sodium, fileinfo, mbstring, intl, gd, sqlite3, pdo_sqlite, zip, curl
-          coverage: xdebug
+      - name: Build the canonical PHP runtime with native descriptor support and Xdebug
+        run: docker build --file docker/testing/Dockerfile --tag dataphyre-test:php8.4 .
 
       - name: Run the complete framework exact-coverage gate
-        env:
-          XDEBUG_MODE: coverage
         shell: bash
         run: |
           mkdir -p cache/ci
-          php -d memory_limit=1G bin/dataphyre-test run \
+          DATAPHYRE_TEST_SKIP_BUILD=1 \
+          DATAPHYRE_TEST_CONTAINER_ROOT=1 \
+          DATAPHYRE_TEST_ENGINE=xdebug \
+          sh bin/dataphyre-test-docker run \
             --scope=framework \
             --kind=code \
             --no-test-cache \

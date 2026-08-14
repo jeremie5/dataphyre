@@ -49,6 +49,15 @@ function dataphyre_test_coverage_subprocess_bootstrap(?array $environment=null):
 		}
 	};
 	register_shutdown_function($write);
+	if((string)(getenv('DATAPHYRE_TEST_COVERAGE_SANITIZE_ENVIRONMENT') ?: '')==='1'){
+		foreach([
+			'DATAPHYRE_TEST_COVERAGE_PART','DATAPHYRE_TEST_COVERAGE_FRAMEWORK_ROOT',
+			'DATAPHYRE_TEST_COVERAGE_RESULT_ROOT','DATAPHYRE_TEST_COVERAGE_SANITIZE_ENVIRONMENT',
+			'XDEBUG_MODE','PHP_INI_SCAN_DIR',
+		] as $name){
+			@putenv($name);unset($_ENV[$name],$_SERVER[$name]);
+		}
+	}
 	return true;
 }
 

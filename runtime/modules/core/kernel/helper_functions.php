@@ -17,6 +17,21 @@ function dp_application_release_preflight_context(): ?array {
 	return is_array($context) ? $context : null;
 }
 
+/** @return null|array{contract:string,role:string,project_root:string,sapi:string} */
+function dp_managed_runtime_bootstrap_context(): ?array {
+	if(!function_exists('dataphyre_internal_managed_runtime_bootstrap_context')){
+		return null;
+	}
+	$context=dataphyre_internal_managed_runtime_bootstrap_context();
+	return is_array($context) ? $context : null;
+}
+
+/** Source-local generated state belongs only to ordinary self-hosted installs. */
+function dp_source_local_runtime_writes_allowed(): bool {
+	return dp_application_release_preflight_context()===null
+		&& dp_managed_runtime_bootstrap_context()===null;
+}
+
 /**
  * Returns the root-path map used by bootstrap helpers.
  *
@@ -83,7 +98,7 @@ function dp_helper_config_all(): array {
  * @return void
  */
 function dp_modcache_save_if_changed(array $modcache): void {
-	if(dp_application_release_preflight_context()!==null){
+	if(!dp_source_local_runtime_writes_allowed()){
 		return;
 	}
 	$rootpath=dp_helper_rootpath();
@@ -335,7 +350,7 @@ function dp_module_config_template(string $module, array $defaults): string {
  * @return bool True when a new defaults file was written.
  */
 function dp_write_module_config_defaults(string $module, array $defaults): bool {
-	if(dp_application_release_preflight_context()!==null){
+	if(!dp_source_local_runtime_writes_allowed()){
 		return false;
 	}
 	if($defaults===[]){
@@ -422,6 +437,16 @@ function dpvks(): array {
 	$application_release_preflight=dp_application_release_preflight_context();
 	if($application_release_preflight!==null){
 		return [$application_release_preflight['private_key']];
+	}
+	if(dp_managed_runtime_bootstrap_context()!==null){
+		if(!class_exists('DataphyreApplicationRuntimeChildEnvironment', false)){
+			throw new RuntimeException('Managed runtime private key provider is unavailable.');
+		}
+		$key=\DataphyreApplicationRuntimeChildEnvironment::managedBootstrapPrivateKeyForCore();
+		if(!is_string($key) || strlen($key)!==32){
+			throw new RuntimeException('Managed runtime private key is unavailable.');
+		}
+		return [$key];
 	}
 	$rootpath=dp_helper_rootpath();
 	if(!defined('DP_CORE_CFG') && $rootpath!==null){

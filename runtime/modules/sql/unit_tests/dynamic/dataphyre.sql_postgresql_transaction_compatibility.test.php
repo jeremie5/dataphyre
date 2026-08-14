@@ -7,6 +7,8 @@
  */
 declare(strict_types=1);
 
+// Dynamic integration: requires two caller-provided disposable PostgreSQL databases.
+
 use Dataphyre\Database\DataEnvironment;
 use Dataphyre\Database\DB;
 use Dataphyre\Database\TableDefinition;

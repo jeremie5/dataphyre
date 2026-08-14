@@ -1,0 +1,31 @@
+<?php
+/*************************************************************************
+ * Dataphyre
+ *
+ * Copyright (c) 2026 Shopiro Ltd.
+ * SPDX-License-Identifier: MIT
+ */
+declare(strict_types=1);
+
+if(($argv ?? null)!==[__FILE__,'migrate','--force','--no-interaction']) exit(64);
+$mode=(string)(getenv('ONE_SHOT_ARTISAN_MODE') ?: 'success');
+if($mode==='success'){
+	echo "artisan-migrate-ok\n";
+	return;
+}
+if($mode==='stall'){
+	pcntl_async_signals(true);
+	pcntl_signal(SIGTERM,SIG_IGN);
+	pcntl_signal(SIGINT,SIG_IGN);
+	while(true) usleep(100000);
+}
+if($mode==='orphan'){
+	$pid=pcntl_fork();
+	if($pid===-1) exit(70);
+	if($pid===0){
+		if(posix_setsid()===-1) exit(70);
+		while(true) usleep(100000);
+	}
+	return;
+}
+exit(70);

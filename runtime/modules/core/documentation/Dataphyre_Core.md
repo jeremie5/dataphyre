@@ -39,44 +39,65 @@ php runtime/modules/core/kernel/application_release_preflight.php --project-root
 The command validates the existing flight sheet and application definition,
 uses the existing `dataphyre.app.json` name to bind a standalone application
 repository to its Dataphyre application id, runs the native PostgreSQL
-migration command in automatic dry-run mode when a profile and immutable
-manifest are declared, verifies the application-resolved primary PostgreSQL
+migration command in automatic dry-run mode or applies a declarative SQL-only
+SQLite manifest inside one disposable application-data root when exactly one
+complete profile and immutable manifest are declared, verifies the
+application-resolved primary PostgreSQL
 identity when the release platform declares a managed primary binding, boots
 through a fixed loopback router, and probes only `GET /health`. It does not
-accept an application release script, command,
-executable path, health path, or migration mode.
+accept an application release script, command, executable path, health path,
+database path, or migration mode. SQLite health and realtime-registration
+checks receive the same disposable migrated state, which is removed before the
+preflight returns.
+
+Every fixed preflight child runs without a shell in its own immutable POSIX
+session. Stdout and stderr are drained together into separate 256 KiB maxima.
+A stage timeout sends `SIGTERM` once to the whole owned process group, waits
+500 ms, then sends `SIGKILL`, closes both pipes, and reaps the direct child
+within a second fixed deadline. An application descendant cannot extend the
+preflight by ignoring `SIGTERM` or retaining an inherited output pipe; timeout
+remains exit `124` for the fixed child contract.
 
 After health succeeds, the same preflight loads the application's ordinary
 Framework bootstrap in the fixed realtime-registration context. Evidence
-contains the route count and a SHA-256 of the sorted paths plus the scheduler
+contains the route count and a SHA-256 of the sorted paths, the scheduler
 definition count and a path-independent SHA-256 over task/dependency contents
-and scheduling semantics. Scheduling runs in `record_only` mode under a private
+and scheduling semantics, and the bounded registered table-definition count
+and sorted-set SHA-256 produced by the fixed materializer authority. The table
+inventory is read-only: preflight does not hydrate tables or write schema.
+Cloud must match that inventory and run the fixed registered-table materializer
+before application migrations. Scheduling runs in `record_only` mode under a private
 temporary state root; application cache/config/log bytes are unchanged, no
 lock, cadence timestamp, task, or shutdown callback can be created, and an
 ignored invalid, duplicate, or unpersisted registration fails the preflight.
-Callbacks, credentials, headers, task paths, and event payloads never enter the
+Table names, callbacks, credentials, headers, task paths, and event payloads never enter the
 report. Cloud must add exact-image proof of the three fixed child identities,
-scheduler callback execution, a framework listener roundtrip, execution and
+scheduler callback execution with claim-bound success receipts and lock
+cleanup, a framework listener roundtrip, execution and
 strict invalid-Origin rejection by every registered application authorization
 callback, and WebSocket ping/pong and close
 before promotion.
 
-The conventional PostgreSQL profile and manifest are executable migration
-inputs, so they must be present together as readable regular files beneath
-non-symbolic-link directories. One-sided pairs, symbolic links, broken links,
-directories, pipes, and unreadable entries fail closed as invalid migration
-configuration; two absent files mean the migration check is not applicable.
+The conventional PostgreSQL or SQLite profile and manifest are executable
+migration inputs, so exactly one engine's pair may be present as readable
+regular files beneath non-symbolic-link directories. One-sided pairs, two
+declared engines, symbolic links, broken links, directories, pipes, and
+unreadable entries fail closed as invalid migration configuration; both
+engines absent means the migration check is not applicable.
 
-When `DATAPHYRE_CLOUD_DATABASE_BINDING_PRIMARY_SHA256` is present, the fixed
-preflight database child loads the application's ordinary core and SQL config,
-opens its configured default PostgreSQL-compatible cluster, and returns only a
-purpose-bound connection hash derived from the binding marker plus
-`current_database()` and `current_user`. It never returns a DSN, host, user,
-password, config path, or database error. Cloud compares that opaque hash with
-its independent exact-image connection proof before migration and promotion.
-An absent marker makes `database_runtime` not applicable; an invalid marker,
-application config, engine, connection, or response fails closed with exit 69
-and `application_database_identity_failed`.
+When `DATAPHYRE_DATABASE_BINDING_PRIMARY_SHA256` is present, release preflight
+invokes the same fixed `application_runtime_database_identity.php
+--purpose=primary` probe used by the one-shot runtime. The probe accepts only
+the Cloud-projected primary binding, opens its PostgreSQL connection, and
+returns a purpose- and binding-bound connection hash derived from the binding
+marker plus `current_database()` and `current_user`. The public preflight
+evidence contains only that opaque connection hash, declaration state, and
+purpose; it never contains a DSN, host, user, password, config path, query
+output, or database error. Cloud compares the hash with its independent
+exact-image connection proof before migration and promotion. An absent marker
+makes `database_runtime` not applicable; an invalid marker, driver, connection,
+identity query, binding mismatch, or response fails closed with exit 69 and
+`application_database_identity_failed`.
 
 The application-owned `/health` response must be a JSON object with a top-level
 `missing_environment_keys` list. The list is canonical: sorted, unique, no more
@@ -107,6 +128,60 @@ public realtime ingress on `0.0.0.0:8080`. The realtime ingress handles
 authenticated WebSocket upgrades and safely forwards ordinary HTTP to the
 private web child. Status remains private on `127.0.0.1:8082`. Applications do
 not declare processes, commands, listeners, ports, or sidecars.
+
+Web and scheduler listeners are fixed Cloud gateways, not PHP application
+servers. Each accepted HTTP request is executed by one fresh `php-cgi` process
+and that process exits after its response. The gateway never loads an
+application bootstrap. It retains only `CAP_SETUID` and `CAP_SETGID`, runs with
+`NoNewPrivs`, and uses those capabilities solely to create a UID/GID `10001`
+request child with an empty capability set and `NoNewPrivs`. The realtime role
+is also UID/GID `10001`, capability-free, and `NoNewPrivs`. Normal image PHP
+configuration and extensions remain active; Cloud must not launch any role
+with `-n`.
+
+PID 1 is the only process that consumes the root-only, read-only application
+environment mount. Secret-bearing child environments are never published to a
+path and never enter `argv`, `envp`, or `/proc/<pid>/environ`. Immediately
+before each final exec, the trusted launcher creates one unnamed Unix
+socketpair and maps only its child endpoint to fixed descriptor `198`. The
+canonical envelope is bounded to 524,288 bytes, one role, one nonce, the exact
+child PID and Linux start-time tick, and every ancestor PID/start-time pair
+through PID 1. The child validates that identity after exec, projects values,
+returns one canonical acknowledgement, zeroizes the transport bytes, and
+closes both the PHP stream and native descriptor. The broker then closes its
+endpoint. There is no refetch, replay, same-process second read, sibling claim,
+PID-reuse acceptance, or tenant-readable fallback file.
+
+PHP CGI cannot safely reopen an anonymous socket through `php://fd`; the public
+runtime therefore includes the tiny `dataphyre_environment_fd` extension. Its
+entire callable surface duplicates only descriptor `198` into a PHP stream,
+closes only descriptor `198`, and closes every non-stdio inherited descriptor
+except `198` in the fixed pre-exec process; callers cannot select descriptors.
+Image
+construction must compile and enable that extension for both CLI and CGI and
+fail closed if either callable is unavailable. One-shot database identity,
+release preflight, supported migration commands, and `php artisan migrate`
+use the same one-child broker. Arbitrary application shell or release scripts
+remain unsupported.
+The one-shot PID 1 starts that child through the immutable `/usr/bin/setsid`
+and owns its process group. Each operation is bounded by its fixed identity,
+migration, or public release-preflight maximum. `SIGTERM` and `SIGINT` are
+converted to one group-wide `SIGTERM`; after 500 ms PID 1 escalates to
+group-wide `SIGKILL`, reaps adopted descendants, and exits without waiting on
+tenant-controlled descendants.
+The fixed registered-table materialization operation accepts the private
+`/var/lib/dataphyre/application` mount only when the root launcher proves that
+it is one distinct read-write directory owned by UID/GID `10001`. That mount is
+optional for materialization so PostgreSQL-backed applications remain
+mountless; it is required only by the fixed SQLite migration operation. The
+verified path is projected through the root-only environment envelope and is
+never accepted from an application argument or container environment entry.
+The same broker exposes one fixed `dataphyre_shared_cache_probe` operation with
+a 10-second inner deadline. Root accepts only a detect/write/read-delete phase
+and a 64-character lowercase hexadecimal challenge, then dispatches the
+image-owned cache probe. Detect is networkless; write and read-delete must run
+as separate network-enabled one-shots. Keys, values, endpoints, TTLs, scripts,
+commands, and environment files are never selectable through this boundary.
 
 Applications register realtime code while their normal `framework_bootstrap.php`
 is loaded with `$_SERVER['DATAPHYRE_RUNTIME_REALTIME_BOOTSTRAP'] === '1'`:
@@ -151,10 +226,43 @@ separates `framework_listener_roundtrip` from
 `application_authorization_rejections`; neither is a claim that a production
 application credential was accepted. Applications requiring a successful-auth
 release assertion must supply that application-owned proof separately.
+The evidence also reports the sealed application registration count and
+`registration_sha256`; the exact-image probe must match the registration digest
+recorded by release preflight.
 
 TLS terminates at the Dataphyre Cloud edge. The fixed container ingress accepts
 the edge's plain HTTP connection and must never be published directly without
 that platform TLS and traffic-identity boundary.
+
+PID 1 owns scheduler registration, durable cadence state, and one ephemeral
+Ed25519 keypair per container generation. It issues canonical, one-time signed
+`registration`, `noop`, and `callback` requests to the private scheduler CGI
+gateway. The gateway must claim the exact request from PID 1 before loading the
+ordinary application bootstrap. The private key never enters a child; the
+public key alone is provided through that child's single-use environment.
+
+Registration must produce a complete, unique, immutable definition set. PID 1
+retains the full definitions privately and exposes only their count and digest.
+For each due definition, PID 1 obtains one durable generation- and
+release-bound claim before dispatch. Success is recorded only after the exact
+callback process exits successfully and is reaped; the root gateway discards
+all child output and constructs the fixed callback receipt itself. A failure
+releases that claim and marks the cycle failed without starving later
+definitions. Deactivation stops new claims after the current callback drains.
+Task paths, claims, callback output, signing keys, and credentials never enter
+status evidence.
+
+The private status contract `dataphyre.application_runtime.v4` exposes the
+supervisor identity, immutable application/release identity, activation mode,
+active state, `scheduler_cycle_in_progress`, exact web/scheduler/realtime pool
+identities and execution models, bounded scheduler registration and noop proof,
+durable scheduler-state identity, and business cadence. In signal mode,
+`SIGUSR1` activates dispatch and `SIGUSR2` deactivates it. The decision is
+persisted at the fixed framework path
+`/var/lib/dataphyre/runtime-control/activation` as an atomic root-owned
+`0600` file inside a root-owned `0700` directory before the in-memory state
+changes. A restart of the same container therefore preserves activation;
+recreating a container starts inactive because the image has no latch file.
 
 ## Kernel Config Topology
 

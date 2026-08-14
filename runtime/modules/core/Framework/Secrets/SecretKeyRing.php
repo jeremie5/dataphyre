@@ -25,9 +25,6 @@ final class SecretKeyRing {
 	 * @param array<string,string> $keys Binary 32-byte key roots.
 	 */
 	private function __construct(array $keys, string $primary_key_id) {
-		if(!isset($keys[$primary_key_id]) || strlen($keys[$primary_key_id])!==32){
-			throw new SecretException('The primary secret key is unavailable.');
-		}
 		$this->keys=$keys;
 		$this->primary_key_id=$primary_key_id;
 	}

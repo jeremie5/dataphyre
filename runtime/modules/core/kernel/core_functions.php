@@ -1110,17 +1110,19 @@ class core {
 		}
 		log_error("Service unavailability: ".$error_description, $exception ?? new \Exception(json_encode(func_get_args())));
 		$error_code=substr(strtoupper(md5($error_description.$error_type.$file.$class.$function)), 0, 8);
-		$known_error_conditions=json_decode(file_get_contents($known_error_conditions_file=ROOTPATH['dataphyre']."cache/known_error_conditions.json"),true);
-		$known_error_conditions??=[];
-		if(!isset($known_error_conditions[$error_code])){
-			$known_error_conditions[$error_code]=array(
-				"file"=>$file, 
-				"class"=>$class, 
-				"function"=>$function, 
-				"type"=>$error_type, 
-				"description"=>$error_description
-			);
-			core::file_put_contents_forced($known_error_conditions_file, json_encode($known_error_conditions));
+		if(!function_exists('dp_source_local_runtime_writes_allowed') || dp_source_local_runtime_writes_allowed()){
+			$known_error_conditions=json_decode(file_get_contents($known_error_conditions_file=ROOTPATH['dataphyre']."cache/known_error_conditions.json"),true);
+			$known_error_conditions??=[];
+			if(!isset($known_error_conditions[$error_code])){
+				$known_error_conditions[$error_code]=array(
+					"file"=>$file,
+					"class"=>$class,
+					"function"=>$function,
+					"type"=>$error_type,
+					"description"=>$error_description
+				);
+				core::file_put_contents_forced($known_error_conditions_file, json_encode($known_error_conditions));
+			}
 		}
 		if(RUN_MODE==='diagnostic'){
 			if(class_exists('dataphyre\tracelog')){

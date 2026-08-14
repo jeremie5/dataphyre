@@ -303,6 +303,17 @@ Hydration creates missing tables and expected indexes from registered definition
 
 `TableSchema` participates in the same contract. Repositories and `DB::table(...)->usingSchema(...)` use `TableSchema` for validating columns, projections, and primary-key metadata, but `TableSchema::hydrateTable()` delegates creation to the registered table definition. This keeps validation and DDL aligned around module-owned definitions instead of allowing ad hoc table creation.
 
+Release preparation must materialize registered framework/application table definitions before application migrations that add foreign keys, indexes, or constraints against those tables. Dataphyre exposes one fixed, shell-free command for that stage:
+
+```bash
+php runtime/modules/sql/kernel/materialize_registered_tables.php \
+  --project-root=/app \
+  --application=example_app \
+  --environment=production
+```
+
+The command owns the runtime bootstrap and SQL hydration method. Callers cannot supply a script, callback, SQL statement, definition file, executable path, or data path. It drains deferred registrations, sorts and caps the registry, materializes each definition idempotently, and emits the `dataphyre.registered_table_materialization.v1` canonical JSON contract with counts and a SHA-256 of the sorted table set. Release preflight reads that inventory through the same producer class after ordinary application bootstrap, but does not hydrate or write; Cloud must run the fixed materializer before application migrations and enforce the producer-defined cross-stage equality: materializer `registered_count` equals preflight `realtime_registration.evidence.registered_table_count`, and `sha256:` plus materializer `table_set_sha256` equals preflight `realtime_registration.evidence.registered_table_set_sha256`. Both contract fields must equal `dataphyre.registered_table_materialization.v1`; Cloud must not independently reproduce table sorting or normalization. Output is one canonical JSON line capped at 8 KiB. Any invalid registry, bootstrap termination, environment mismatch, or failed definition returns non-zero. In Cloud's fixed one-shot image the operation is `DATAPHYRE_ONE_SHOT_OPERATION=dataphyre_materialize_tables`; its exact child argv is `php runtime/modules/sql/kernel/materialize_registered_tables.php --project-root=/app --application=<framework-application> --environment=<environment>`. PID 1 optionally projects `DATAPHYRE_APPLICATION_DATA_ROOT=/var/lib/dataphyre/application` through the root-only envelope after proving that fixed mount is one private read-write directory owned by the application pool. Its absence is valid for PostgreSQL-backed materialization; the PostgreSQL migration operation never receives that mount.
+
 `DB::table('registered_table')` automatically uses the registered definition's generated `TableSchema` when one exists. This means ad hoc table queries can get the same field validation, primary-key metadata, projections, and casts as repositories without manually passing `usingSchema(...)`.
 
 `TableDefinition` supports the core portable DDL surface:
@@ -833,6 +844,7 @@ down-migration certification into their own release tools.
 The complete public contract, manifest-v3 example, expand/contract workflow,
 release-provenance rules, and rollback boundary are documented in
 [`Dataphyre_PostgreSQL_Migrations.md`](Dataphyre_PostgreSQL_Migrations.md).
+
 The normative machine-readable shape is
 [`postgresql-migration-manifest-v3.schema.json`](postgresql-migration-manifest-v3.schema.json).
 
@@ -955,6 +967,75 @@ requires a separate autocommit protocol.
 Schema drift inspection covers supported table, column, primary/foreign-key,
 check-constraint, and index syntax; it does not claim semantic inspection of
 views, routines, triggers, extensions, privileges, or application invariants.
+The inspector projects only DDL that executes while a migration is applied:
+ordinary top-level statements, direct schema statements in a DO body, and
+fixed SQL literals consumed by PL/pgSQL EXECUTE. Stored routine definitions,
+comments, PERFORM literals, and trigger EXECUTE FUNCTION clauses are inert.
+Formatted or concatenated execution, backslash-bearing PostgreSQL escape
+strings, and schema DDL behind unresolved PL/pgSQL control flow fail closed
+instead of disappearing from the expected schema.
+
+An exact PostgreSQL/YugabyteDB product branch may use
+position('YugabyteDB' IN version())>0; the runner selects that branch from
+the connected server identity. Index and CHECK comparison is directional:
+catalog-only casts and exact catalog JSON grouping may normalize away, while an
+explicit cast in migration source remains required. This prevents catalog
+pretty-printing from becoming false drift without treating a changed expression
+or overload as equivalent.
+
+Framework-owned table definitions required by an application migration must be
+materialized through Dataphyre before the application runner starts. This is a
+platform ordering rule, not permission for an application to duplicate those
+tables in migration SQL. A missing prerequisite remains a migration failure and
+the runner-owned deployment transaction rolls back.
+
+## SQLite application release migrations
+
+Dataphyre also provides a deliberately smaller SQLite release boundary for
+single-file application state. It is not an adapter for application migration
+scripts. The platform owns an absolute writable
+`DATAPHYRE_APPLICATION_DATA_ROOT`; the application contributes only:
+
+- `database/sqlite/profile.json`, with format `1`, the exact application id, a
+  basename ending in `.sqlite`, and a dedicated journal table;
+- `database/sqlite/manifest.json`, with schema version `1`, `sha256`, and a
+  contiguous ordered list such as `001_initial`;
+- regular `database/sqlite/NNN_name.sql` files whose hashes match the manifest.
+
+Run the fixed command:
+
+```console
+php runtime/modules/sql/kernel/sqlite_migrate.php \
+  --project-root=/app \
+  --app=example \
+  --environment=production
+```
+
+`--dry-run` validates a fresh manifest without creating a database and checks
+an existing journal read-only. A real apply uses one `BEGIN IMMEDIATE`
+transaction, a Dataphyre-owned journal, foreign-key validation, and SQLite
+integrity validation. Re-running an applied manifest is idempotent.
+
+The boundary rejects symlinks and hard links, path escape, non-regular and
+unlisted SQL files, manifest or journal drift, `ATTACH`/`DETACH`, pragmas,
+`VACUUM`, extension/file functions, virtual tables, transaction control, and
+writes to the Dataphyre journal. It never boots application PHP. An existing
+unjournaled database is not silently adopted, because safely translating
+historical callback-driven state is application data migration work; the
+command returns `legacy_database_requires_one_time_migration` without changing
+that database.
+
+The manifest is bounded to 999 migrations, 2 MiB per SQL file, and 8 MiB
+across the complete migration set. Lexing is bounded to 250,000 tokens and 4,096
+statements per file, including comments, quoted identifiers, and literals, so
+forbidden words cannot hide in an uncounted lexical form. The runner hashes the
+exact manifest bytes it already validated.
+
+After opening SQLite, the runner requires `PRAGMA database_list` to report
+exactly one `main` database whose canonical path is the host-selected file, and
+rechecks file identity. It repeats the existing-database and journal-adoption
+decision after `BEGIN IMMEDIATE`, closing the race in which an unjournaled
+legacy database appears between preflight and the write transaction.
 
 ## Native SQL seeding
 

@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/application_runtime_realtime_bootstrap.php';
+require_once __DIR__.'/application_runtime_child_environment.php';
 
 /** Fixed public HTTP ingress and authenticated WebSocket runtime. */
 final class DataphyreApplicationRuntimeRealtimeServer {
@@ -39,16 +40,18 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 	private mixed $listener=null;
 	private bool $stopping=false;
 	private int $applicationRejectionCount=0;
+	private string $registrationSha256;
 
 	/** @param array<string,array{authorize:callable,events:callable}> $routes */
 	public function __construct(array $routes) {
-		$probeSecret=trim((string)(getenv('DATAPHYRE_RUNTIME_REALTIME_PROBE_SECRET') ?: ''));
-		if(preg_match('/^[a-f0-9]{64}$/D',$probeSecret)!==1){
-			throw new RuntimeException('Realtime runtime probe secret is unavailable.');
-		}
 		if(isset($routes[self::PROBE_PATH])){
 			throw new RuntimeException('Application realtime path conflicts with the fixed framework probe.');
 		}
+		$registeredPaths=array_keys($routes);
+		sort($registeredPaths,SORT_STRING);
+		$this->registrationSha256='sha256:'.hash(
+			'sha256',json_encode($registeredPaths,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
+		);
 		foreach($routes as $path=>$route){
 			$rejected=self::runBoundedCallback($route['authorize'], [[
 				'path'=>$path,
@@ -66,7 +69,7 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 			'authorize'=>static fn(array $handshake): array|false=>(
 				($handshake['remote_address'] ?? null)==='127.0.0.1'
 				&& ($handshake['origin'] ?? null)==='https://dataphyre.invalid'
-				&& hash_equals($probeSecret,(string)($handshake['headers']['x-dataphyre-runtime-probe'] ?? ''))
+				&& ($handshake['headers']['host'] ?? null)==='127.0.0.1:8080'
 			) ? ['framework_probe'=>true] : false,
 			'events'=>fn(array $authorization,?string $cursor): array=>[
 				'cursor'=>'complete',
@@ -77,6 +80,7 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 						'framework_listener_roundtrip'=>true,
 						'application_authorization_rejections'=>true,
 						'application_authorization_rejection_count'=>$this->applicationRejectionCount,
+						'registration_sha256'=>$this->registrationSha256,
 					]]
 					: [],
 			],
@@ -95,7 +99,7 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 			fwrite(STDERR, "Fixed realtime runtime addresses are unavailable.\n");
 			return 64;
 		}
-		foreach(['pcntl_alarm','pcntl_async_signals','pcntl_signal','pcntl_signal_get_handler','stream_select','stream_socket_server'] as $function){
+		foreach(['pcntl_alarm','pcntl_async_signals','pcntl_signal','stream_select','stream_socket_server'] as $function){
 			if(!function_exists($function)){
 				fwrite(STDERR, "Realtime runtime dependency is unavailable.\n");
 				return 70;
@@ -173,12 +177,7 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 		}
 		$except=[];
 		$selected=@stream_select($read, $write, $except, 0, 50000);
-		if($selected===false){
-			if(!$this->stopping){
-				usleep(10000);
-			}
-			return;
-		}
+		if($selected<1) return;
 		foreach($read as $stream){
 			if($stream===$this->listener){
 				$this->acceptClients();
@@ -611,11 +610,19 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 	}
 
 	private static function runBoundedCallback(callable $callback, array $arguments, float $timeout): mixed {
-		$previous=pcntl_signal_get_handler(SIGALRM);
+		if(!function_exists('pcntl_signal') || !function_exists('pcntl_alarm') || !defined('SIGALRM')){
+			$started=microtime(true);
+			$result=$callback(...$arguments);
+			if(microtime(true)-$started>$timeout){
+				throw new RuntimeException('Realtime application callback exceeded its fixed deadline.');
+			}
+			return $result;
+		}
+		$previous=function_exists('pcntl_signal_get_handler')
+			? pcntl_signal_get_handler(SIGALRM)
+			: (defined('SIG_DFL') ? constant('SIG_DFL') : 0);
 		$started=microtime(true);
-		pcntl_signal(SIGALRM,static function(): never {
-			throw new RuntimeException('Realtime application callback exceeded its fixed deadline.');
-		});
+		pcntl_signal(SIGALRM,[self::class,'callbackDeadlineExceeded']);
 		pcntl_alarm(max(1,(int)ceil($timeout)));
 		try{
 			$result=$callback(...$arguments);
@@ -627,6 +634,10 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 			pcntl_alarm(0);
 			pcntl_signal(SIGALRM,$previous);
 		}
+	}
+
+	private static function callbackDeadlineExceeded(): never {
+		throw new RuntimeException('Realtime application callback exceeded its fixed deadline.');
 	}
 
 	/** @return null|array{method:string,target:string,protocol:string,headers:array<string,string>} */
@@ -710,5 +721,12 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 }
 
 if(realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? ''))===__FILE__){
+	if(($argc ?? 0)!==5 || ($argv[1] ?? null)!=='realtime' || ($argv[2] ?? null)!=='0.0.0.0'
+		|| ($argv[3] ?? null)!=='8080' || !is_string(realpath((string)($argv[4] ?? '')))
+		|| !hash_equals((string)$argv[4],(string)realpath((string)$argv[4]))){
+		exit(64);
+	}
+	try{DataphyreApplicationRuntimeChildEnvironment::consumeInherited('realtime');}
+	catch(Throwable){exit(78);}
 	exit(DataphyreApplicationRuntimeRealtimeServer::main());
 }

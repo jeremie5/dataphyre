@@ -59,9 +59,6 @@ final class runtime {
 		self::$current_application_definition=$definition;
 		self::$current_project_root=rtrim($project_root, '/\\');
 		self::register_application_autoload($definition);
-		if(self::boot_internal_runtime_route($definition)===true){
-			return;
-		}
 		if(self::boot_compiled_routes($definition)===true){
 			return;
 		}
@@ -132,124 +129,6 @@ final class runtime {
 			return $conventional_definition->with_overrides($definition);
 		}
 		throw new \RuntimeException("Application definition must return an array or application_definition: {$definition_file}");
-	}
-
-	/**
-	 * Dispatches Dataphyre-owned routes before application route stacks take over.
-	 *
-	 * Framework-only applications do not load the legacy global routing config, so internal
-	 * scheduler callbacks must be recognized at the common runtime boundary. The route is
-	 * intentionally exact, GET-only, internal-traffic-only, and protected by a short-lived
-	 * purpose-bound signature before the scheduling kernel or task file can execute.
-	 *
-	 * @param application_definition $definition Loaded application definition.
-	 * @param array<string,mixed> $runtime Optional deterministic request, verifier, loader, response, and runner seams.
-	 * @return bool `true` when the request belonged to a Dataphyre internal route.
-	 */
-	private static function boot_internal_runtime_route(application_definition $definition, array $runtime=[]): bool {
-		$server=is_array($runtime['server'] ?? null) ? $runtime['server'] : $_SERVER;
-		$scheduler_name=self::scheduler_route_name($server);
-		if($scheduler_name===null){
-			return false;
-		}
-
-		self::prime_rootpaths($definition);
-		$respond=$runtime['respond'] ?? static function(int $status, string $body): void {
-			http_response_code($status);
-			if(!headers_sent()){
-				header('Content-Type: text/plain; charset=utf-8');
-				header('Cache-Control: no-store');
-			}
-			echo $body;
-		};
-		$token=trim((string)($server['HTTP_X_DATAPHYRE_SCHEDULER_KEY'] ?? ''));
-		$dispatch_claim=trim((string)($server['HTTP_X_DATAPHYRE_SCHEDULER_CLAIM'] ?? ''));
-		$dispatchSecret=self::scheduler_dispatch_secret_file();
-		$verify=$runtime['verify'] ?? static fn(string $candidate, string $name, string $claim): bool =>
-			function_exists('dp_verify_shared_request_key')
-			&& dp_verify_shared_request_key($candidate, $dispatchSecret, 'scheduler_dispatch', $name.'|'.$claim, 1);
-		$authorized=strtoupper((string)($server['REQUEST_METHOD'] ?? 'GET'))==='GET'
-			&& (string)($server['HTTP_X_TRAFFIC_SOURCE'] ?? '')==='internal_traffic'
-			&& preg_match('/^[a-f0-9]{64}$/D', $dispatch_claim)===1
-			&& $token!==''
-			&& is_callable($verify)
-			&& $verify($token, $scheduler_name, $dispatch_claim)===true;
-		if($authorized!==true){
-			$respond(404, 'Not found');
-			return true;
-		}
-
-		$core_loader=$runtime['core_loader'] ?? static function(): bool {
-			$core_entry=__DIR__.'/core.main.php';
-			if(!is_file($core_entry)){
-				return false;
-			}
-			require_once $core_entry;
-			return class_exists('dataphyre\\core', false);
-		};
-		if(!is_callable($core_loader) || $core_loader()!==true){
-			$respond(503, 'Scheduler unavailable');
-			return true;
-		}
-
-		$loader=$runtime['module_loader'] ?? static fn(string $module): bool =>
-			method_exists('dataphyre\\core', 'load_framework_module')
-			&& \dataphyre\core::load_framework_module($module);
-		$loaded=is_callable($loader) && $loader('scheduling')===true;
-		$scheduling_available=array_key_exists('scheduling_available', $runtime)
-			? (bool)$runtime['scheduling_available']
-			: class_exists('dataphyre\\scheduling', false);
-		if($loaded!==true && $scheduling_available!==true){
-			$respond(503, 'Scheduler unavailable');
-			return true;
-		}
-
-		$runner=$runtime['task_runner'] ?? static function(string $name, string $claim): void {
-			if(!class_exists('dataphyre_scheduling_task_runner', false)){
-				if(!defined('DATAPHYRE_SCHEDULING_TASK_RUNNER_NO_DISPATCH')){
-					define('DATAPHYRE_SCHEDULING_TASK_RUNNER_NO_DISPATCH', true);
-				}
-				require dirname(__DIR__, 2).'/scheduling/kernel/task_runner.php';
-			}
-			\dataphyre_scheduling_task_runner::dispatch(null, null, [
-				'scheduler_name'=>$name,
-				'scheduler_claim'=>$claim,
-			]);
-		};
-		$runner($scheduler_name, $dispatch_claim);
-		return true;
-	}
-
-	/**
-	 * Extracts one exact path-safe scheduler name from the current request URI.
-	 *
-	 * @param array<string,mixed> $server Request server values.
-	 * @return ?string Scheduler name, or null when this is not the internal scheduler route.
-	 */
-	private static function scheduler_route_name(array $server): ?string {
-		$path=parse_url((string)($server['REQUEST_URI'] ?? '/'), PHP_URL_PATH);
-		if(!is_string($path)){
-			return null;
-		}
-		$path=rawurldecode($path);
-		if(preg_match('#^/dataphyre/scheduler/([A-Za-z0-9._-]{1,128})$#D', $path, $matches)!==1){
-			return null;
-		}
-		$name=(string)$matches[1];
-		return in_array($name, ['.', '..'], true) ? null : $name;
-	}
-
-	/** Resolves the same host-owned scheduler signature file as the scheduling kernel. */
-	private static function scheduler_dispatch_secret_file(): string {
-		$value=getenv('DATAPHYRE_SCHEDULER_DISPATCH_SECRET_FILE');
-		if(!is_string($value) || trim($value)===''){
-			return 'app_override_key';
-		}
-		$value=trim($value);
-		$absolute=$value[0]==='/' || $value[0]==='\\' || preg_match('/^[A-Za-z]:[\\\/]/D', $value)===1;
-		return $absolute && !is_link($value) && is_file($value) && is_readable($value)
-			? $value
-			: 'app_override_key';
 	}
 
 	/**
