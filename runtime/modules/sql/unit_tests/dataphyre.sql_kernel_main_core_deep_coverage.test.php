@@ -681,3 +681,59 @@ test('sql kernel defers invalidation and bypasses read caching while a framework
 	$t->nonPublic(Transaction::class)->replacePropertyForTest('activeTransactions',[]);
 	$t->same(['orders.summary'],$scenario->sql->invokeWithArguments('transaction_read_caching',[['orders.summary']]));
 })->tag('sql','kernel','transaction','cache','invalidation','regression')->group('framework-coverage');
+
+test('transaction commit safely invalidates mixed cached and uncached registered tables',static function(Context $t): void {
+	$scenario=dp_sql_kernel_scenario($t);
+	$state=$scenario->fixture;
+	$session=$scenario->session;
+	dp_sql_kernel_dialback($state,'CALL_SQL_DB_SELECT',static fn(): bool=>true);
+
+	\dataphyre\cache::$values['table_version_shared_override']=8;
+	$session->put('db_cache_count',2);
+	dp_sql_kernel_cache_entry($session,'named_cached','cached-hash',['id'=>1]);
+	dp_sql_kernel_cache_entry($session,'named_uncached','uncached-hash',['id'=>2]);
+	$session->put('db_cache_invalidation_index',[
+		'shared_override'=>[['session','named_cached','cached-hash']],
+		'no_cache'=>[['session','named_uncached','uncached-hash']],
+	]);
+
+	$warnings=[];
+	set_error_handler(static function(int $severity,string $message)use(&$warnings): bool {
+		if(($severity & (E_WARNING|E_NOTICE|E_USER_WARNING|E_USER_NOTICE))===0){
+			return false;
+		}
+		$warnings[]=$message;
+		return true;
+	});
+	$transaction=new Transaction('primary');
+	try{
+		$transaction->begin();
+		$t->isTrue(\dataphyre\sql::invalidate_cache(['shared_override','no_cache']));
+		$t->same(8,\dataphyre\cache::$values['table_version_shared_override']);
+		$t->isTrue(dp_sql_kernel_has_cache_entry($session,'named_cached','cached-hash'));
+		$t->isTrue(dp_sql_kernel_has_cache_entry($session,'named_uncached','uncached-hash'));
+		$transaction->commit();
+
+		$t->same(9,\dataphyre\cache::$values['table_version_shared_override']);
+		$t->isFalse(dp_sql_kernel_has_cache_entry($session,'named_cached','cached-hash'));
+		$t->isFalse(dp_sql_kernel_has_cache_entry($session,'named_uncached','uncached-hash'));
+		$t->same([],$session->get('db_cache_invalidation_index',[]));
+		$t->same(0,$session->get('db_cache_count'));
+
+		$session->put('db_cache_count',1);
+		dp_sql_kernel_cache_entry($session,'named_uncached','direct-hash',['id'=>3]);
+		$session->put('db_cache_invalidation_index',[
+			'no_cache'=>[['session','named_uncached','direct-hash']],
+		]);
+		$t->isTrue(\dataphyre\sql::invalidate_cache('no_cache',false));
+		$t->isFalse(dp_sql_kernel_has_cache_entry($session,'named_uncached','direct-hash'));
+		$t->same([],$session->get('db_cache_invalidation_index',[]));
+		$t->same(0,$session->get('db_cache_count'));
+	}finally{
+		if($transaction->isActive()){
+			$transaction->rollback();
+		}
+		restore_error_handler();
+	}
+	$t->same([],$warnings);
+})->tag('sql','kernel','transaction','cache','invalidation','uncached','regression')->group('framework-coverage');

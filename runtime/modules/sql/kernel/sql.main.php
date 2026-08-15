@@ -1947,10 +1947,11 @@ class sql {
 		else
 		{
 			$all_invalidated=true;
-			foreach($clear_cache_for as $logical_cache_index){
+			$logical_cache_indexes=is_array($clear_cache_for) ? $clear_cache_for : [$clear_cache_for];
+			foreach($logical_cache_indexes as $logical_cache_index){
 				$logical_cache_index=(string)$logical_cache_index;
 				$registered_policy=self::registered_table_cache_policy($logical_cache_index);
-				if($registered_policy!==null && !self::invalidate_cache($logical_cache_index, $registered_policy)){
+				if(is_array($registered_policy) && !self::invalidate_cache($logical_cache_index, $registered_policy)){
 					$all_invalidated=false;
 				}
 				$clear_cache_index=self::environment_cache_key((string)$logical_cache_index);

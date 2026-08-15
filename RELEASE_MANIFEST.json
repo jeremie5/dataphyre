@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-08-14T22:05:00Z",
+  "generated_at_utc": "2026-08-15T03:13:44Z",
   "copied_source_files": 3671,
-  "skipped_source_files": 19047,
+  "skipped_source_files": 19085,
   "export_file_count": 3671,
-  "export_tree_sha256": "92d6ec1f418f8a136e97fbc61146c59d6f824d7e26a276c35388cabd113ba6b8",
+  "export_tree_sha256": "62df0689cb2b421c45ead4b5c48bba93336f5191a1b70eb3b658cd04c011e4e4",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -14949,8 +14949,8 @@
     },
     {
       "path": "runtime/modules/sql/documentation/Dataphyre_SQL.md",
-      "bytes": 115115,
-      "sha256": "c73ae47b230f23b57f2df3af1fbf6a7a7eda21b90450d1f8f9b75de2e23ba93d"
+      "bytes": 115321,
+      "sha256": "d90bec3c1cdf19b58e2a7c644953510aa3f993208937db0531bf80516f9f6742"
     },
     {
       "path": "runtime/modules/sql/documentation/postgresql-migration-manifest-v3.schema.json",
@@ -15244,8 +15244,8 @@
     },
     {
       "path": "runtime/modules/sql/kernel/sql.main.php",
-      "bytes": 143720,
-      "sha256": "74c17e8c0125d3313508b769dc44699be75f17b85f1f9ee2310299eae1623db3"
+      "bytes": 143823,
+      "sha256": "2b0d897f63153b7e2a13b72be9df5d27eea180b3c86878e94fd9c4f44aef6532"
     },
     {
       "path": "runtime/modules/sql/kernel/sqlite_migrate.php",
@@ -15389,8 +15389,8 @@
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.sql_kernel_main_core_deep_coverage.test.php",
-      "bytes": 39431,
-      "sha256": "7500bbb388dc1aa3ff41b1642ed3a7fc472f663b7f487c0685f3e0aac50b47b3"
+      "bytes": 41942,
+      "sha256": "a56e18951c8599bedfdde99bea0d924f2411a0feb56099799e9be3f3f028e0bc"
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.sql_kernel_main_mysql_deep_coverage.test.php",
