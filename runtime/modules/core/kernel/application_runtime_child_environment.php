@@ -23,6 +23,7 @@ final class DataphyreApplicationRuntimeChildEnvironment
 	public const ACK_CONTRACT='dataphyre.application_child_environment_ack.v1';
 	public const MANAGED_BOOTSTRAP_CONTRACT='dataphyre.managed_runtime_bootstrap.v1';
 	public const ONE_SHOT_MATERIALIZER_BOOTSTRAP_CONTRACT='dataphyre.one_shot_materializer_bootstrap.v1';
+	public const ONE_SHOT_MATERIALIZER_DATABASE_PURPOSE='DATAPHYRE_INTERNAL_MATERIALIZER_DATABASE_PURPOSE';
 	public const INHERITED_FD=198;
 	public const MAX_BYTES=524288;
 	public const MAX_ENTRIES=576;
@@ -183,6 +184,8 @@ final class DataphyreApplicationRuntimeChildEnvironment
 		$resolved=\realpath($target);$projectPath=(string)(\getenv('DATAPHYRE_RUNTIME_PROJECT_ROOT') ?: '');$projectRoot=\realpath($projectPath);
 		$application=(string)(\getenv('DATAPHYRE_FRAMEWORK_APPLICATION') ?: '');$environment=(string)(\getenv('DATAPHYRE_ENVIRONMENT') ?: '');
 		$release=(string)(\getenv('DATAPHYRE_APPLICATION_RELEASE') ?: '');
+		$purposeValue=\getenv(self::ONE_SHOT_MATERIALIZER_DATABASE_PURPOSE);
+		$databasePurpose=$purposeValue===false ? null : $purposeValue;
 		$serverArgument=(string)((\is_array($_SERVER['argv'] ?? null) ? $_SERVER['argv'] : [])[0] ?? '');
 		$globalArgument=(string)((\is_array($GLOBALS['argv'] ?? null) ? $GLOBALS['argv'] : [])[0] ?? '');
 		if(!\is_string($caller) || !\is_string($worker) || !\hash_equals($worker,$caller)
@@ -195,6 +198,7 @@ final class DataphyreApplicationRuntimeChildEnvironment
 			|| \preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$application)!==1
 			|| !\Dataphyre\ApplicationEnvironmentIdentifier::valid($environment)
 			|| \preg_match('/^dep_[a-f0-9]{40}$/D',$release)!==1
+			|| ($databasePurpose!==null && \preg_match('/^[a-z][a-z0-9_]{0,31}$/D',$databasePurpose)!==1)
 			|| !self::privilegeBoundary(\getmypid(),'one-shot')
 			|| !\in_array(PHP_SAPI,['cli','phpdbg'],true)
 			|| (string)(\getenv('DATAPHYRE_RUNTIME_POOL') ?: '')!=='one-shot'
@@ -203,7 +207,8 @@ final class DataphyreApplicationRuntimeChildEnvironment
 		}
 		self::$oneShotMaterializerBootstrap=['contract'=>self::ONE_SHOT_MATERIALIZER_BOOTSTRAP_CONTRACT,
 			'role'=>'one-shot','operation'=>$operation,'target'=>$resolved,'project_root_raw'=>$projectPath,'project_root'=>$projectRoot,
-			'application'=>$application,'environment'=>$environment,'release_id'=>$release,'argv0'=>$serverArgument,'sapi'=>PHP_SAPI,
+			'application'=>$application,'environment'=>$environment,'database_purpose'=>$databasePurpose,
+			'release_id'=>$release,'argv0'=>$serverArgument,'sapi'=>PHP_SAPI,
 		];
 	}
 	/** Returns non-secret proof of the root-brokered, worker-bound materializer operation. */
@@ -217,13 +222,20 @@ final class DataphyreApplicationRuntimeChildEnvironment
 		$argument=(string)((\is_array($_SERVER['argv'] ?? null) ? $_SERVER['argv'] : [])[0] ?? '');
 		$globalArgument=(string)((\is_array($GLOBALS['argv'] ?? null) ? $GLOBALS['argv'] : [])[0] ?? '');
 		$projectPath=(string)(\getenv('DATAPHYRE_RUNTIME_PROJECT_ROOT') ?: '');
-		if(!\is_array($proof) || !\hash_equals($proof['target'],$script) || !\hash_equals($proof['target'],$argument)
+		$purposeValue=\getenv(self::ONE_SHOT_MATERIALIZER_DATABASE_PURPOSE);
+		if(!\is_array($proof) || \array_keys($proof)!==[
+			'contract','role','operation','target','project_root_raw','project_root','application','environment','database_purpose',
+			'release_id','argv0','sapi',
+		] || !\hash_equals($proof['target'],$script) || !\hash_equals($proof['target'],$argument)
 			|| !\hash_equals($proof['target'],$globalArgument) || !\hash_equals($proof['target'],(string)(\realpath($script) ?: ''))
 			|| !\hash_equals($proof['argv0'],$argument) || !\hash_equals($proof['project_root_raw'],$projectPath)
 			|| !\hash_equals($proof['project_root'],(string)(\realpath($projectPath) ?: ''))
 			|| !\hash_equals($proof['application'],(string)(\getenv('DATAPHYRE_FRAMEWORK_APPLICATION') ?: ''))
 			|| !\hash_equals($proof['environment'],(string)(\getenv('DATAPHYRE_ENVIRONMENT') ?: ''))
 			|| !\hash_equals($proof['release_id'],(string)(\getenv('DATAPHYRE_APPLICATION_RELEASE') ?: ''))
+			|| ($proof['database_purpose']===null
+				? $purposeValue!==false
+				: (!\is_string($purposeValue) || !\hash_equals($proof['database_purpose'],$purposeValue)))
 			|| (string)(\getenv('DATAPHYRE_RUNTIME_POOL') ?: '')!=='one-shot'
 			|| (string)(\getenv('DATAPHYRE_RUNTIME_POOL_ROLE') ?: '')!=='one-shot'
 			|| !self::privilegeBoundary(\getmypid(),'one-shot')) throw new RuntimeException('One-shot materializer attestation is invalid.');

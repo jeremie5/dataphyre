@@ -122,8 +122,19 @@ try{
 	$cachePhase=null;$cacheChallenge=null;
 	if($operation==='database_identity'){
 		$purpose=dataphyre_one_shot_identity('DATAPHYRE_ONE_SHOT_DATABASE_PURPOSE','/^[a-z][a-z0-9_]{0,31}$/D');
+	}elseif(in_array($operation,['dataphyre_materialize_tables','dataphyre_postgresql_migrate'],true)){
+		if(getenv('DATAPHYRE_ONE_SHOT_DATABASE_PURPOSE')!==false){
+			$purpose=dataphyre_one_shot_identity('DATAPHYRE_ONE_SHOT_DATABASE_PURPOSE','/^[a-z][a-z0-9_]{0,31}$/D');
+		}
 	}elseif(getenv('DATAPHYRE_ONE_SHOT_DATABASE_PURPOSE')!==false){
 		throw new RuntimeException('One-shot database purpose is not allowed for this operation.');
+	}
+	if($purpose!==null && $operation!=='database_identity'){
+		$child=DataphyreApplicationRuntimeEnvironment::projectManagedDatabasePurpose($child,$purpose);
+		if($operation==='dataphyre_materialize_tables'){
+			$child[DataphyreApplicationRuntimeChildEnvironment::ONE_SHOT_MATERIALIZER_DATABASE_PURPOSE]=$purpose;
+			ksort($child,SORT_STRING);
+		}
 	}
 	if($operation==='dataphyre_shared_cache_probe'){
 		$cachePhase=dataphyre_one_shot_identity('DATAPHYRE_ONE_SHOT_CACHE_PHASE','/^(?:detect|write|read-delete)$/D');

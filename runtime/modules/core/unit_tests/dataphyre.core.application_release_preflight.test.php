@@ -171,6 +171,10 @@ test('application release preflight returns one deterministic boolean verdict wi
 		'tls_termination'=>'platform_edge',
 	],$run['payload']['checks'][4]['evidence']);
 	$t->contains('exact candidate image', $run['payload']['claim_boundary']);
+	$t->contains(
+		'declared application migrations first, then fixed registered-table materialization',
+		$run['payload']['claim_boundary'],
+	);
 	$t->isFalse(str_contains($run['output'], $workspace->root()));
 })->tag('core','release','preflight','health','cli','security')->group('framework-coverage');
 

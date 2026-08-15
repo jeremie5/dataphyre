@@ -218,6 +218,14 @@ belong in argv, the profile, the manifest, success output, or failure output.
 When `DATAPHYRE_ENVIRONMENT` is present, it must exactly match the typed
 `--environment` value.
 
+The fixed root one-shot launcher may optionally receive
+`DATAPHYRE_ONE_SHOT_DATABASE_PURPOSE`. When present, root validates its typed
+grammar, opaque binding marker, and complete six-field managed PostgreSQL
+binding, then reprojects that binding onto the canonical connection names
+before dropping privileges. When absent, the command continues to consume the
+existing canonical/default configuration. The purpose and credentials never
+enter child argv or command evidence.
+
 Every invocation emits one canonical JSON envelope with a stable key order and
 field allowlist. Success is written to stdout; failure is written to stderr.
 Failure messages are fixed and never include PDO, SQL, environment-variable,

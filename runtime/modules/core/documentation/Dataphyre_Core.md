@@ -65,10 +65,14 @@ definition count and a path-independent SHA-256 over task/dependency contents
 and scheduling semantics, and the bounded registered table-definition count
 and sorted-set SHA-256 produced by the fixed materializer authority. The table
 inventory is read-only: preflight does not hydrate tables or write schema.
-Cloud must match that inventory and run the fixed registered-table materializer
-before application migrations. Scheduling runs in `record_only` mode under a private
-temporary state root; application cache/config/log bytes are unchanged, no
-lock, cadence timestamp, task, or shutdown callback can be created, and an
+Cloud must match that inventory, run declared application migrations to
+completion, and only then run the fixed registered-table materializer. The
+immutable migration manifest owns ordered bootstrap replay; current registered
+definitions describe the resulting schema and must not precreate future tables
+or indexes ahead of that history. When no migrations are declared, the
+materializer is the first schema stage. Scheduling runs in `record_only` mode
+under a private temporary state root; application cache/config/log bytes are
+unchanged, no lock, cadence timestamp, task, or shutdown callback can be created, and an
 ignored invalid, duplicate, or unpersisted registration fails the preflight.
 Table names, callbacks, credentials, headers, task paths, and event payloads never enter the
 report. Cloud must add exact-image proof of the three fixed child identities,
@@ -98,6 +102,20 @@ exact-image connection proof before migration and promotion. An absent marker
 makes `database_runtime` not applicable; an invalid marker, driver, connection,
 identity query, binding mismatch, or response fails closed with exit 69 and
 `application_database_identity_failed`.
+
+The fixed one-shot PostgreSQL migration and registered-table materializer may
+receive the same optional typed purpose. Root accepts only
+`[a-z][a-z0-9_]{0,31}`, requires its opaque binding marker and all six fixed
+`DSN`, `HOST`, `PORT`, `NAME`, `USER`, and `PASSWORD` values, and reprojects
+that binding onto the canonical `DATAPHYRE_DATABASE_*` names plus the primary
+marker before privilege drop. An absent purpose preserves the existing
+canonical/default environment. SQLite migration, Artisan, and unrelated
+one-shot operations do not accept this control. For materialization, the root
+broker seals the purpose into its private child attestation rather than argv.
+A non-primary purpose runs hydration inside the existing SQL `DataEnvironment`
+of the same name and requires that environment to configure a cluster override;
+the context is restored on success or failure. Primary and omitted purposes
+retain ordinary live hydration behavior.
 
 The application-owned `/health` response must be a JSON object with a top-level
 `missing_environment_keys` list. The list is canonical: sorted, unique, no more

@@ -47,8 +47,9 @@ All notable Dataphyre changes are tracked here.
   into a false not-applicable result.
 - Release preflight now records a bounded count and sorted-set digest of the
   registered table definitions through the fixed materializer authority without
-  hydrating schema. Release platforms can match that evidence and run the
-  shell-free materializer before application migrations.
+  hydrating schema. Release platforms can match that evidence, complete declared
+  application migrations, and only then run the shell-free materializer so the
+  current registry cannot precreate schema ahead of immutable bootstrap replay.
 - Added a fixed, shell-free PostgreSQL migration command that accepts only
   typed project, application, environment, and deployment-mode argv; loads the
   existing immutable migration profile and manifest from conventional paths;
@@ -57,6 +58,13 @@ All notable Dataphyre changes are tracked here.
   stable exit statuses. It never boots application PHP or accepts scripts,
   executable paths, arbitrary commands, rollback, or caller-selected migration
   files.
+- Fixed one-shot PostgreSQL migration and registered-table materialization to
+  optionally select a typed managed-database purpose. Root validates the
+  complete six-field binding and opaque marker, then projects only that fixed
+  binding onto the canonical database environment before privilege drop;
+  omitting the purpose preserves existing external/default configuration. A
+  non-primary materializer also runs inside the purpose's configured SQL data
+  environment and fails closed when it has no cluster override.
 - Added Datadoc's producer-neutral static documentation engine, integrity-
   checked build and publication values, dependency-free responsive portal,
   local search and version protocols, preview-first universal CLI, exact-tree

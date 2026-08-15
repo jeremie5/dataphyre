@@ -78,6 +78,19 @@ final class InternalApplicationBootstrapOnly
 
 	public static function materializer(): bool {return (self::context()['purpose'] ?? null)===self::MATERIALIZER;}
 
+	/** Returns the root-brokered managed database purpose; direct CLI has none. */
+	public static function materializerDatabasePurpose(): ?string {
+		self::assertCaller(self::sqlCommand());
+		$context=self::context();
+		if(!\is_array($context) || ($context['purpose'] ?? null)!==self::MATERIALIZER){
+			throw new RuntimeException('Materializer database purpose is unavailable.');
+		}
+		if(($context['transport'] ?? null)==='direct-cli-entrypoint') return null;
+		$proof=self::assertBrokeredMaterializer($context,(string)($context['entrypoint'] ?? ''));
+		$purpose=$proof['database_purpose'];
+		return \is_string($purpose) ? $purpose : null;
+	}
+
 	public static function privateKey(): string {
 		self::assertCaller(self::fixed(\dirname(__DIR__).'/kernel/helper_functions.php'));
 		if(self::context()===null || !\is_string(self::$privateKey) || \strlen(self::$privateKey)!==32){
@@ -185,7 +198,8 @@ final class InternalApplicationBootstrapOnly
 		if(!\class_exists('DataphyreApplicationRuntimeChildEnvironment',false)) throw new RuntimeException('Materializer attestation is unavailable.');
 		$proof=\DataphyreApplicationRuntimeChildEnvironment::oneShotMaterializerBootstrapAttestation();
 		if(!\is_array($proof) || \array_keys($proof)!==[
-			'contract','role','operation','target','project_root_raw','project_root','application','environment','release_id','argv0','sapi',
+			'contract','role','operation','target','project_root_raw','project_root','application','environment','database_purpose',
+			'release_id','argv0','sapi',
 		] || ($proof['contract'] ?? null)!=='dataphyre.one_shot_materializer_bootstrap.v1'
 			|| ($proof['role'] ?? null)!=='one-shot' || ($proof['operation'] ?? null)!=='dataphyre_materialize_tables'
 			|| !\hash_equals($entrypoint,(string)($proof['target'] ?? ''))
@@ -194,6 +208,9 @@ final class InternalApplicationBootstrapOnly
 			|| !\hash_equals($identity['project_root'],(string)($proof['project_root'] ?? ''))
 			|| !\hash_equals($identity['application'],(string)($proof['application'] ?? ''))
 			|| !\hash_equals($identity['environment'],(string)($proof['environment'] ?? ''))
+			|| !(($proof['database_purpose'] ?? null)===null
+				|| (\is_string($proof['database_purpose'])
+					&& \preg_match('/^[a-z][a-z0-9_]{0,31}$/D',$proof['database_purpose'])===1))
 			|| ($proof['sapi'] ?? null)!==\PHP_SAPI
 			|| \preg_match('/^dep_[a-f0-9]{40}$/D',(string)($proof['release_id'] ?? ''))!==1){
 			throw new RuntimeException('Materializer attestation does not match its application.');

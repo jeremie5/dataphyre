@@ -65,6 +65,10 @@ test('each inspection boundary reads as a release diagnostic contract',static fu
 		$t->same(true,$release['preflight']['checks'][3]['evidence']['response_contract_valid']);
 		$t->same([],$release['preflight']['checks'][3]['evidence']['missing_environment_keys']);
 		$t->contains('exact candidate image',$release['maintainer_tool_boundary']['claim_boundary']);
+		$t->contains(
+			'declared application migrations first, then fixed registered-table materialization',
+			$release['maintainer_tool_boundary']['claim_boundary'],
+		);
 		$t->contains('a framework listener roundtrip',$release['maintainer_tool_boundary']['claim_boundary']);
 		$t->contains('strict invalid-Origin rejection by every registered application authorization callback',$release['maintainer_tool_boundary']['claim_boundary']);
 		$t->contains('WebSocket ping/pong and close',$release['maintainer_tool_boundary']['claim_boundary']);

@@ -40,7 +40,7 @@ final class RegisteredTableMaterializationCommand {
 	 * Executes through native bootstrap/SQL functions or explicit test seams.
 	 *
 	 * @param list<string> $arguments Full PHP argument vector.
-	 * @param array<string,mixed> $runtime Optional stream, environment, bootstrap, registry, and hydration seams.
+	 * @param array<string,mixed> $runtime Optional stream, environment, bootstrap, registry, hydration, and managed-purpose test seams.
 	 */
 	public static function main(array $arguments, array $runtime=[]): int {
 		$rawOut=$runtime['write_out'] ?? static fn(string $value): int|false=>\fwrite(\STDOUT,$value);
@@ -174,23 +174,52 @@ final class RegisteredTableMaterializationCommand {
 					...$context,...self::inventoryEvidence($tables),
 				]);
 		}
-		$materialized=0;$failed=[];
-		foreach($tables as $table){
-			try{$ok=$materialize($table)===true;}
-			catch(\Throwable){$ok=false;}
-			if($defaultBootstrap){
-				if(!self::preserveApplicationOutputBoundary((int)$outputGuardLevel)){
-					return self::failure($writeError,self::EXIT_MATERIALIZATION,'bootstrap_failed',
-						'The application bootstrap could not register its SQL table definitions.',$context);
+		try{$databasePurpose=self::managedDatabasePurpose($runtime,$defaultBootstrap);}
+		catch(\Throwable){
+			return self::failure($writeError,self::EXIT_CONFIGURATION,'managed_database_purpose_invalid',
+				'The managed database purpose is unavailable or invalid.',[
+					...$context,...self::inventoryEvidence($tables),
+				]);
+		}
+		$materialized=0;$failed=[];$bootstrapContextFailed=false;
+		$runMaterialization=static function() use (
+			$tables,$materialize,$defaultBootstrap,$outputGuardLevel,$projectRoot,
+			&$materialized,&$failed,&$bootstrapContextFailed,
+		): void {
+			foreach($tables as $table){
+				try{$ok=$materialize($table)===true;}
+				catch(\Throwable){$ok=false;}
+				if($defaultBootstrap){
+					if(!self::preserveApplicationOutputBoundary((int)$outputGuardLevel)){
+						$bootstrapContextFailed=true;return;
+					}
+					try{self::assertMaterializerContext($projectRoot);}
+					catch(\Throwable){$bootstrapContextFailed=true;return;}
 				}
-				try{self::assertMaterializerContext($projectRoot);}
-				catch(\Throwable){
-					return self::failure($writeError,self::EXIT_MATERIALIZATION,'bootstrap_failed',
-						'The application bootstrap could not register its SQL table definitions.',$context);
-				}
+				if($ok){$materialized++;continue;}
+				if(\count($failed)<self::MAX_REPORTED_FAILURES) $failed[]=$table;
 			}
-			if($ok){$materialized++;continue;}
-			if(\count($failed)<self::MAX_REPORTED_FAILURES) $failed[]=$table;
+		};
+		try{
+			if($databasePurpose!==null && $databasePurpose!=='primary'){
+				if(!\class_exists(DataEnvironment::class)) throw new \RuntimeException('Data environment authority is unavailable.');
+				DataEnvironment::run($databasePurpose,static function(array $selected) use ($databasePurpose,$runMaterialization): void {
+					$cluster=$selected['cluster'] ?? null;
+					if(($selected['name'] ?? null)!==$databasePurpose || !\is_string($cluster) || \trim($cluster)===''){
+						throw new \RuntimeException('Managed database purpose has no configured SQL cluster.');
+					}
+					$runMaterialization();
+				});
+			}else $runMaterialization();
+		}catch(\Throwable){
+			return self::failure($writeError,self::EXIT_CONFIGURATION,'managed_database_environment_unavailable',
+				'The managed database purpose has no configured SQL data environment.',[
+					...$context,...self::inventoryEvidence($tables),
+				]);
+		}
+		if($bootstrapContextFailed){
+			return self::failure($writeError,self::EXIT_MATERIALIZATION,'bootstrap_failed',
+				'The application bootstrap could not register its SQL table definitions.',$context);
 		}
 		if($materialized!==\count($tables)){
 			return self::failure($writeError,self::EXIT_MATERIALIZATION,'table_materialization_failed',
@@ -280,6 +309,19 @@ final class RegisteredTableMaterializationCommand {
 		if(\is_string($configured) && \trim($configured)!=='' && !\hash_equals($environment,\trim($configured))){
 			throw new \InvalidArgumentException('Deployment environment does not match.');
 		}
+	}
+
+	/** @param array<string,mixed> $runtime */
+	private static function managedDatabasePurpose(array $runtime,bool $defaultBootstrap): ?string {
+		if($defaultBootstrap){
+			return \Dataphyre\InternalApplicationBootstrapOnly::materializerDatabasePurpose();
+		}
+		$purpose=$runtime['managed_database_purpose'] ?? null;
+		if($purpose===null) return null;
+		if(!\is_string($purpose) || \preg_match('/^[a-z][a-z0-9_]{0,31}$/D',$purpose)!==1){
+			throw new \InvalidArgumentException('Managed database purpose test seam is invalid.');
+		}
+		return $purpose;
 	}
 
 	/** Boots only the fixed Dataphyre runtime path for the selected application. */

@@ -23,6 +23,7 @@ final class DataphyreApplicationRuntimeEnvironment
 	private const FIXED_LOG_DRIVER='jsonl';
 	private const FIXED_LOG_FORMAT='dataphyre.application-log.v1';
 	private const FIXED_LOG_PATH='/var/log/dataphyre/application.jsonl';
+	private const DATABASE_BINDING_FIELDS=['DSN','HOST','PORT','NAME','USER','PASSWORD'];
 
 	/** @return array{release_id:string,environment_fingerprint:string,values:array<string,string>} */
 	public static function consume(
@@ -98,6 +99,38 @@ final class DataphyreApplicationRuntimeEnvironment
 		return $result;
 	}
 
+	/**
+	 * Projects one complete typed managed PostgreSQL binding onto the canonical
+	 * database environment consumed by fixed framework migration operations.
+	 *
+	 * @param array<string,mixed> $values
+	 * @return array<string,mixed>
+	 */
+	public static function projectManagedDatabasePurpose(array $values,string $purpose): array
+	{
+		if(preg_match('/^[a-z][a-z0-9_]{0,31}$/D',$purpose)!==1){
+			throw new RuntimeException('Managed database purpose is invalid.');
+		}
+		$token=strtoupper($purpose);
+		$prefix=$purpose==='primary' ? 'DATAPHYRE_DATABASE' : 'DATAPHYRE_DATABASE_'.$token;
+		$markerName='DATAPHYRE_DATABASE_BINDING_'.$token.'_SHA256';
+		$marker=$values[$markerName] ?? null;
+		if(!is_string($marker) || preg_match('/^sha256:[a-f0-9]{64}$/D',$marker)!==1){
+			throw new RuntimeException('Managed database purpose marker is invalid.');
+		}
+		foreach(self::DATABASE_BINDING_FIELDS as $field){
+			$value=$values[$prefix.'_'.$field] ?? null;
+			if(!is_string($value) || $value==='' || strlen($value)>65536
+				|| preg_match('/[\x00-\x1f\x7f]/D',$value)===1){
+				throw new RuntimeException('Managed database purpose binding is incomplete.');
+			}
+			$values['DATAPHYRE_DATABASE_'.$field]=$value;
+		}
+		$values['DATAPHYRE_DATABASE_BINDING_PRIMARY_SHA256']=$marker;
+		ksort($values,SORT_STRING);
+		return $values;
+	}
+
 	/** Proves the native root process did not start with tenant-selected loader controls. */
 	/** @param null|array<string,string> $environment Test-only exact process-environment seam. */
 	public static function assertCleanRootEnvironment(?array $environment=null): void
@@ -109,6 +142,10 @@ final class DataphyreApplicationRuntimeEnvironment
 			'DATAPHYRE_ONE_SHOT_CACHE_PHASE','DATAPHYRE_ONE_SHOT_CACHE_CHALLENGE',
 				'DATAPHYRE_RUNTIME_ACTIVATION_MODE',
 			'DATAPHYRE_RUNTIME_SCHEDULER_INTERVAL_SECONDS',
+			'DATAPHYRE_RUNTIME_WEB_HOST','DATAPHYRE_RUNTIME_WEB_PORT',
+			'DATAPHYRE_RUNTIME_SCHEDULER_HOST','DATAPHYRE_RUNTIME_SCHEDULER_PORT',
+			'DATAPHYRE_RUNTIME_STATUS_HOST','DATAPHYRE_RUNTIME_STATUS_PORT',
+			'DATAPHYRE_RUNTIME_REALTIME_HOST','DATAPHYRE_RUNTIME_REALTIME_PORT',
 			'DATAPHYRE_RUNTIME_PROJECT_ROOT','PATH','LANG','LC_ALL','TZ','HOSTNAME','TERM',
 			'PHPIZE_DEPS','PHP_INI_DIR','PHP_CFLAGS','PHP_CPPFLAGS','PHP_LDFLAGS','GPG_KEYS','PHP_VERSION',
 			'DEBIAN_FRONTEND','DATAPHYRE_RUNTIME_ROOT','DATAPHYRE_PROJECT_ROOT','DATAPHYRE_APPLICATION_ROOT',

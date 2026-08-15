@@ -51,6 +51,66 @@ test('child environment re-adds only fixed platform identity log and data values
 	);
 })->tag('projection','fixed-values');
 
+test('typed managed database purpose projects one complete binding onto the canonical child contract',static function(Context $t): void {
+	$marker='sha256:'.str_repeat('b',64);
+	$values=[
+		'APP_TOKEN'=>'preserved',
+		'DATAPHYRE_DATABASE_BINDING_PRIMARY_SHA256'=>'sha256:'.str_repeat('a',64),
+		'DATAPHYRE_DATABASE_DSN'=>'pgsql:host=primary.database.internal;port=5432;dbname=primary',
+		'DATAPHYRE_DATABASE_HOST'=>'primary.database.internal',
+		'DATAPHYRE_DATABASE_PORT'=>'5432',
+		'DATAPHYRE_DATABASE_NAME'=>'primary',
+		'DATAPHYRE_DATABASE_USER'=>'primary_role',
+		'DATAPHYRE_DATABASE_PASSWORD'=>'primary_password',
+		'DATAPHYRE_DATABASE_BINDING_SANDBOX_SHA256'=>$marker,
+		'DATAPHYRE_DATABASE_SANDBOX_DSN'=>'pgsql:host=sandbox.database.internal;port=5433;dbname=sandbox',
+		'DATAPHYRE_DATABASE_SANDBOX_HOST'=>'sandbox.database.internal',
+		'DATAPHYRE_DATABASE_SANDBOX_PORT'=>'5433',
+		'DATAPHYRE_DATABASE_SANDBOX_NAME'=>'sandbox',
+		'DATAPHYRE_DATABASE_SANDBOX_USER'=>'sandbox_role',
+		'DATAPHYRE_DATABASE_SANDBOX_PASSWORD'=>'sandbox_password',
+	];
+	$projected=DataphyreApplicationRuntimeEnvironment::projectManagedDatabasePurpose($values,'sandbox');
+	$t->same('preserved',$projected['APP_TOKEN']);
+	$t->same($marker,$projected['DATAPHYRE_DATABASE_BINDING_PRIMARY_SHA256']);
+	foreach(['DSN','HOST','PORT','NAME','USER','PASSWORD'] as $field){
+		$t->same($values['DATAPHYRE_DATABASE_SANDBOX_'.$field],$projected['DATAPHYRE_DATABASE_'.$field],$field);
+	}
+	$keys=array_keys($projected);$sorted=$keys;sort($sorted,SORT_STRING);$t->same($sorted,$keys);
+	$t->same(
+		$values['DATAPHYRE_DATABASE_DSN'],
+		DataphyreApplicationRuntimeEnvironment::projectManagedDatabasePurpose($values,'primary')['DATAPHYRE_DATABASE_DSN'],
+	);
+	foreach(['','Primary','sandbox-blue','sandbox.',str_repeat('a',33)] as $purpose){
+		$t->throws(
+			static fn()=>DataphyreApplicationRuntimeEnvironment::projectManagedDatabasePurpose($values,$purpose),
+			RuntimeException::class,$purpose,
+		);
+	}
+	foreach(['missing','sha256:'.str_repeat('A',64),'sha256:'.str_repeat('c',63)] as $invalidMarker){
+		$invalid=$values;
+		if($invalidMarker==='missing') unset($invalid['DATAPHYRE_DATABASE_BINDING_SANDBOX_SHA256']);
+		else $invalid['DATAPHYRE_DATABASE_BINDING_SANDBOX_SHA256']=$invalidMarker;
+		$t->throws(
+			static fn()=>DataphyreApplicationRuntimeEnvironment::projectManagedDatabasePurpose($invalid,'sandbox'),
+			RuntimeException::class,$invalidMarker,
+		);
+	}
+	foreach(['DSN','HOST','PORT','NAME','USER','PASSWORD'] as $field){
+		$key='DATAPHYRE_DATABASE_SANDBOX_'.$field;
+		$missing=$values;unset($missing[$key]);
+		$t->throws(
+			static fn()=>DataphyreApplicationRuntimeEnvironment::projectManagedDatabasePurpose($missing,'sandbox'),
+			RuntimeException::class,'missing '.$field,
+		);
+		$blank=$values;$blank[$key]='';
+		$t->throws(
+			static fn()=>DataphyreApplicationRuntimeEnvironment::projectManagedDatabasePurpose($blank,'sandbox'),
+			RuntimeException::class,'blank '.$field,
+		);
+	}
+})->tag('database','purpose','projection','complete-binding','positive','negative');
+
 test('one public environment grammar survives the child boundary and rejects traversal or controls',static function(Context $t): void {
 	foreach(['staging_blue','Staging.Blue','9-preview',str_repeat('a',128)] as $environment){
 		$t->isTrue(ApplicationEnvironmentIdentifier::valid($environment),$environment);
@@ -327,6 +387,30 @@ test('root process accepts only the image-owned root home value',static function
 	$t->isFalse(str_contains($source,"'TERM','HOME'"));
 })->tag('root-environment','home','fixed-value','positive','negative');
 
+test('root process accepts every fixed runtime endpoint without admitting tenant endpoint controls',static function(Context $t): void {
+	$base=['HOME'=>'/root'];
+	$fixedEndpoints=[
+		'DATAPHYRE_RUNTIME_WEB_HOST'=>'127.0.0.1',
+		'DATAPHYRE_RUNTIME_WEB_PORT'=>'8083',
+		'DATAPHYRE_RUNTIME_SCHEDULER_HOST'=>'127.0.0.1',
+		'DATAPHYRE_RUNTIME_SCHEDULER_PORT'=>'8081',
+		'DATAPHYRE_RUNTIME_STATUS_HOST'=>'127.0.0.1',
+		'DATAPHYRE_RUNTIME_STATUS_PORT'=>'8082',
+		'DATAPHYRE_RUNTIME_REALTIME_HOST'=>'0.0.0.0',
+		'DATAPHYRE_RUNTIME_REALTIME_PORT'=>'8080',
+	];
+	foreach($fixedEndpoints as $name=>$value){
+		DataphyreApplicationRuntimeEnvironment::assertCleanRootEnvironment($base+[$name=>$value]);
+		$t->same($value,($base+[$name=>$value])[$name],$name);
+	}
+	DataphyreApplicationRuntimeEnvironment::assertCleanRootEnvironment($base+$fixedEndpoints);
+	$tenantEndpointControl=$base+$fixedEndpoints+['DATAPHYRE_RUNTIME_WEB_HOST_OVERRIDE'=>'tenant.example'];
+	$t->throws(
+		static fn()=>DataphyreApplicationRuntimeEnvironment::assertCleanRootEnvironment($tenantEndpointControl),
+		RuntimeException::class,
+	);
+})->tag('root-environment','fixed-endpoints','positive','negative','regression');
+
 test('fixed root directory accepts overlay nlink one but rejects an impossible zero count',static function(Context $t): void {
 	$internals=$t->nonPublic(DataphyreApplicationRuntimeEnvironment::class);
 	$path='/run/dataphyre';
@@ -376,6 +460,11 @@ test('source freezes the root-only canonical channel and fixed one-shot allowlis
 	$t->contains("['migrate','--force','--no-interaction']",$oneShot);
 	$t->contains("in_array($"."operation,['dataphyre_materialize_tables','dataphyre_sqlite_migrate'],true)",$oneShot);
 	$t->contains("$"."operation==='dataphyre_sqlite_migrate' && $"."applicationDataRoot===null",$oneShot);
+	$t->contains("in_array($"."operation,['dataphyre_materialize_tables','dataphyre_postgresql_migrate'],true)",$oneShot);
+	$t->contains('projectManagedDatabasePurpose($child,$purpose)',$oneShot);
+	$t->contains("$"."purpose!==null && $"."operation!=='database_identity'",$oneShot);
+	$t->contains('DataphyreApplicationRuntimeChildEnvironment::ONE_SHOT_MATERIALIZER_DATABASE_PURPOSE]=$purpose',$oneShot);
+	$t->contains("$"."operation==='dataphyre_materialize_tables'",$oneShot);
 	$t->isFalse(str_contains($oneShot,"in_array($"."operation,['dataphyre_postgresql_migrate'"));
 	$t->isFalse(str_contains($oneShot,"in_array($"."operation,['dataphyre_shared_cache_probe'"));
 	$t->contains('ApplicationReleasePreflightEvidence::COMMAND_TIMEOUT_MILLISECONDS',$oneShot);

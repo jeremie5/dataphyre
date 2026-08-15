@@ -200,6 +200,39 @@ test('registered table materialization fails closed on bootstrap registry and hy
 	$t->isFalse(str_contains($failed['error'],'secret-hydration-detail'));
 })->tag('sql','table-definition','materialization','cli','release','fail-closed','negative')->group('framework-coverage');
 
+test('brokered managed purpose scopes materialization to its configured cluster and restores context',static function(Context $t): void {
+	$payload=$t->processSucceeded($t->phpFixture(
+		__DIR__.'/fixtures/registered_table_materialization_data_environment_probe.php'
+	))->json();
+	foreach(['absent','primary'] as $ordinary){
+		$t->same(RegisteredTableMaterializationCommand::EXIT_SUCCESS,$payload[$ordinary]['status'],$ordinary);
+		$t->same('live',$payload[$ordinary]['observed'][0]['name'],$ordinary);
+		$t->same(null,$payload[$ordinary]['observed'][0]['cluster'],$ordinary);
+		$t->same(['name'=>'live','cluster'=>null,'cache_namespace'=>null],$payload[$ordinary]['after'],$ordinary);
+	}
+	$t->same(RegisteredTableMaterializationCommand::EXIT_SUCCESS,$payload['sandbox_success']['status']);
+	$t->hasPathValues([
+		'observed.0.name'=>'sandbox',
+		'observed.0.cluster'=>'SandboxCluster',
+		'observed.0.cache_namespace'=>'fixture-sandbox',
+		'payload.ok'=>true,
+	],$payload['sandbox_success']);
+	$t->same(['name'=>'live','cluster'=>null,'cache_namespace'=>null],$payload['sandbox_success']['after']);
+
+	$t->same(RegisteredTableMaterializationCommand::EXIT_MATERIALIZATION,$payload['sandbox_failure']['status']);
+	$t->same('table_materialization_failed',$payload['sandbox_failure']['payload']['error']['code']);
+	$t->same('sandbox',$payload['sandbox_failure']['observed'][0]['name']);
+	$t->same('SandboxCluster',$payload['sandbox_failure']['observed'][0]['cluster']);
+	$t->same(['name'=>'live','cluster'=>null,'cache_namespace'=>null],$payload['sandbox_failure']['after']);
+
+	$t->same(RegisteredTableMaterializationCommand::EXIT_CONFIGURATION,$payload['unbound']['status']);
+	$t->same('managed_database_environment_unavailable',$payload['unbound']['payload']['error']['code']);
+	$t->same(0,$payload['unbound']['attempted']);
+	$t->same([],$payload['unbound']['observed']);
+	$t->same(['name'=>'live','cluster'=>null,'cache_namespace'=>null],$payload['unbound']['after']);
+})->tag('sql','table-definition','materialization','managed-database','data-environment','cluster','restoration','positive','negative')
+	->group('framework-coverage');
+
 test('registered table materialization accepts only typed identities and fixed paths',static function(Context $t): void {
 	$workspace=$t->workspace('registered-table-materialization-options');
 	$valid=[
@@ -211,6 +244,7 @@ test('registered table materialization accepts only typed identities and fixed p
 		['materialize_registered_tables.php','run'],
 		['materialize_registered_tables.php','--script=release.sh'],
 		['materialize_registered_tables.php','--command=php artisan migrate'],
+		['materialize_registered_tables.php','--purpose=sandbox'],
 		[...$valid,'--environment=production'],
 		['materialize_registered_tables.php','--project-root='.$workspace->root(),'--application=../../tenant','--environment=production'],
 		['materialize_registered_tables.php','--project-root='.$workspace->root(),'--application=fixture','--environment=..'],
@@ -269,6 +303,9 @@ test('registered table materialization source owns bootstrap hydration and one-s
 	$t->contains("'--project-root=/app','--application='.$".'frameworkApplication', $oneShot);
 	$t->contains("'--environment='.$".'environment', $oneShot);
 	$t->contains("'dataphyre_materialize_tables'=>dirname(__DIR__,3).'/modules/sql/kernel/materialize_registered_tables.php'",$worker);
+	$t->contains('InternalApplicationBootstrapOnly::materializerDatabasePurpose()',$command);
+	$t->contains('DataEnvironment::run($databasePurpose',$command);
+	$t->isFalse(str_contains($command,"'purpose'=>'"));
 })->tag('sql','table-definition','materialization','one-shot','source','security')->group('framework-coverage');
 
 test('registered table materialization ignores late namespaced builtin and class overrides',static function(Context $t): void {
