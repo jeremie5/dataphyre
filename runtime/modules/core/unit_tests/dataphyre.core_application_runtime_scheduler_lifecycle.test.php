@@ -518,6 +518,84 @@ test('serial cold callbacks fail cadence even when every worker receipt succeeds
 	$t->same([],$reports);
 })->tag('scheduler','cadence','lateness','real-worker-topology','release','regression');
 
+test('preclaimed due work cannot certify a claimed-only or partially observed cycle',static function(Context $t): void {
+	$root=$t->tempDirectory('scheduler-preclaimed-due-inventory');
+	if(!chmod($root,0700)) throw new RuntimeException('Scheduler preclaimed state root mode could not be prepared.');
+	define('DATAPHYRE_INTERNAL_SCHEDULER_STATE_TEST_ROOT',$root);
+	require_once dirname(__DIR__).'/kernel/application_runtime_supervisor.php';
+	$identity=[
+		'cloud_application'=>'fixture','framework_application'=>'Fixture','environment'=>'staging',
+		'release_id'=>'dep_'.str_repeat('a',40),'environment_fingerprint'=>'hmac-sha256:'.str_repeat('b',64),
+	];
+	$generation='gen_'.str_repeat('c',32);$nowSeconds=1776073500;$nowMilliseconds=$nowSeconds*1000;
+	$definition=static fn(string $name): array=>[
+		'name'=>$name,'task_sha256'=>'sha256:'.hash('sha256',$name),'dependency_sha256'=>[],
+		'frequency_milliseconds'=>1000,'timeout_milliseconds'=>2000,'memory_limit'=>'128M',
+	];
+	$registration=static function(array $definitions): array {
+		$count=count($definitions);
+		return [
+			'contract'=>'dataphyre.scheduler_registration.v1','ok'=>true,
+			'registration_attempt_count'=>$count,'registration_accepted_count'=>$count,
+			'registration_failure_count'=>0,'definition_count'=>$count,
+			'definition_sha256'=>'sha256:'.hash(
+				'sha256',json_encode($definitions,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
+			),'definitions'=>$definitions,
+		];
+	};
+	$runtime=static fn(array $definitions,string $lastResult): array=>[
+		'active'=>true,'count'=>0,'last_at'=>null,'last_result'=>$lastResult,'request_counter'=>0,
+		'scheduler_active_since_milliseconds'=>null,'scheduler_cycle_in_progress'=>false,
+		'scheduler_registration'=>$registration($definitions),
+	];
+	$clock=static fn(): int=>$nowMilliseconds;
+
+	$claimedOnly=$definition('fixture.preclaimed-only');$claimedOnlyNonce=str_repeat('d',64);
+	$t->isTrue(DataphyreApplicationRuntimeSchedulerState::claim(
+		$identity,$claimedOnly,$identity['release_id'],$generation,$claimedOnlyNonce,$nowSeconds,
+	));
+	$t->same([
+		'schedule'=>[],'due_count'=>1,
+	],DataphyreApplicationRuntimeSchedulerState::dueScheduleInventory(
+		$identity,[$claimedOnly],$nowMilliseconds,
+	));
+	$claimedOnlyRuntime=$runtime([$claimedOnly],'never');$pending=[];$activation=null;$nextTick=0.0;$calls=0;
+	dataphyre_runtime_run_scheduler_cycle(
+		DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,$generation,'secret','public',null,
+		$claimedOnlyRuntime,$pending,1,$activation,$nextTick,static function() use (&$calls): never {
+			$calls++;throw new RuntimeException('A preclaimed callback was dispatched.');
+		},null,$clock,
+	);
+	$t->same(0,$calls);
+	$t->same('never',$claimedOnlyRuntime['last_result'],'claimed-only work remains unmeasured');
+	DataphyreApplicationRuntimeSchedulerState::releaseClaim(
+		$identity,$claimedOnly,$identity['release_id'],$generation,$claimedOnlyNonce,
+	);
+
+	$available=$definition('fixture.preclaimed-partial.available');
+	$preclaimed=$definition('fixture.preclaimed-partial.owned');$preclaimedNonce=str_repeat('e',64);
+	$t->isTrue(DataphyreApplicationRuntimeSchedulerState::claim(
+		$identity,$preclaimed,$identity['release_id'],$generation,$preclaimedNonce,$nowSeconds,
+	));
+	$partialInventory=DataphyreApplicationRuntimeSchedulerState::dueScheduleInventory(
+		$identity,[$available,$preclaimed],$nowMilliseconds,
+	);
+	$t->same(2,$partialInventory['due_count']);
+	$t->same([$available],array_column($partialInventory['schedule'],'definition'));
+	$partialRuntime=$runtime([$available,$preclaimed],'failed');$activation=null;$nextTick=0.0;$calls=0;
+	dataphyre_runtime_run_scheduler_cycle(
+		DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,$generation,'secret','public',null,
+		$partialRuntime,$pending,1,$activation,$nextTick,static function() use (&$calls): array {
+			$calls++;return ['contract'=>'dataphyre.scheduler_callback.v1','ok'=>true];
+		},null,$clock,
+	);
+	$t->same(1,$calls);
+	$t->same('failed',$partialRuntime['last_result'],'one green callback cannot recover an unmeasured due peer');
+	DataphyreApplicationRuntimeSchedulerState::releaseClaim(
+		$identity,$preclaimed,$identity['release_id'],$generation,$preclaimedNonce,
+	);
+})->tag('scheduler','cadence','preclaimed','claimed-only','partial-cycle','regression');
+
 test('activation resumes with an internal eligibility floor shared by dispatch and assessment',static function(Context $t): void {
 	require_once dirname(__DIR__).'/kernel/application_runtime_supervisor.php';
 	$runtime=['active'=>false,'scheduler_active_since_milliseconds'=>null];$requested=true;$nextTick=0.0;$persisted=[];
@@ -603,7 +681,7 @@ test('one failed definition does not starve later due callbacks',static function
 	$t->contains('$cycleFailed=false',$source);
 	$t->contains('$cycleFailed=true',$source);
 	$t->contains('$fullGreenCycle=!$cycleFailed',$source);
-	$t->contains("\$cadence['observation_count']===count(\$due)",$source);
+	$t->contains("\$cadence['observation_count']===\$dueCount",$source);
 	$t->contains("\$runtime['last_result']=\$priorResult",$source);
 	$t->contains('releaseClaim(',$source);
 })->tag('callback-failure','continue','starvation','regression');

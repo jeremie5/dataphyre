@@ -1674,11 +1674,12 @@ function dataphyre_runtime_run_scheduler_cycle(
 			throw new RuntimeException('Scheduler registration evidence is invalid.');
 		}
 		DataphyreApplicationRuntimeSchedulerState::reconcile($identity,$registration['definitions']);
-		$due=DataphyreApplicationRuntimeSchedulerState::dueSchedule(
+		$dueInventory=DataphyreApplicationRuntimeSchedulerState::dueScheduleInventory(
 			$identity,$registration['definitions'],$cycleStartedAtMilliseconds,
 			is_int($runtime['scheduler_active_since_milliseconds'] ?? null)
 				? $runtime['scheduler_active_since_milliseconds'] : null,
 			);
+		$due=$dueInventory['schedule'];$dueCount=$dueInventory['due_count'];
 		if($requestRunner===null){
 			$multiplexed=dataphyre_runtime_run_scheduler_multiplexed_callbacks(
 				$socketPath,$identity,$generation,$secretKey,$publicKey,$statusListener,$runtime,$pendingRequests,
@@ -1786,11 +1787,11 @@ function dataphyre_runtime_run_scheduler_cycle(
 			$cadenceReporter($cadence);
 		}
 		$priorResult=$runtime['last_result'] ?? 'never';
-		$fullGreenCycle=!$cycleFailed && $due!==[]
-			&& $cadence['observation_count']===count($due) && $cadence['ok']===true;
+		$fullGreenCycle=!$cycleFailed && $dueCount>0
+			&& $cadence['observation_count']===$dueCount && $cadence['ok']===true;
 		if($cycleFailed) $runtime['last_result']='failed';
 		elseif($fullGreenCycle) $runtime['last_result']='ok';
-		elseif($due===[] && !in_array($priorResult,['ok','failed'],true)) $runtime['last_result']='ok';
+		elseif($dueCount===0 && !in_array($priorResult,['ok','failed'],true)) $runtime['last_result']='ok';
 		else $runtime['last_result']=$priorResult;
 	}catch(DataphyreManagedRuntimeGracefulShutdown $failure){throw $failure;}
 	catch(DataphyreManagedRuntimeGenerationUnavailable $failure){throw $failure;}

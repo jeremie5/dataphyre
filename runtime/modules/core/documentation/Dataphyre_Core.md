@@ -283,9 +283,11 @@ times, measures 20 dynamic requests against a fixed 750 ms p95 budget, requires
 eight concurrent dynamic requests to complete within 3000 ms, and reads the
 private supervisor cadence evidence. Promotion requires at least one completed
 successful cadence cycle; any measured per-definition start, completion, or
-recurrence deadline breach remains sticky for the generation and fails the
-probe. Its canonical evidence is bounded to 2048 bytes and its fixed command
-budget is 30 seconds.
+recurrence deadline breach makes the measured result fail. Empty, claimed-only,
+and partially observed cycles preserve that result; only a later nonempty cycle
+that observes every due definition within its cadence returns it to `ok`. Its
+canonical evidence is bounded to 2048 bytes and its fixed command budget is 30
+seconds.
 
 TLS terminates at the Dataphyre Cloud edge. The fixed container ingress accepts
 the edge's plain HTTP connection and must never be published directly without
@@ -300,14 +302,17 @@ public key alone is provided through that child's single-use environment.
 
 Registration must produce a complete, unique, immutable definition set. PID 1
 retains the full definitions privately and exposes only their count and digest.
-For each due definition, PID 1 obtains one durable generation- and
-release-bound claim before dispatch. Success is recorded only after the exact
-callback process exits successfully and is reaped; the root gateway discards
-all child output and constructs the fixed callback receipt itself. A failure
-releases that claim and marks the cycle failed without starving later
-definitions. Deactivation stops new claims after the current callback drains.
-Task paths, claims, callback output, signing keys, and credentials never enter
-status evidence.
+The cadence snapshot counts every due definition, including work already
+claimed by another cycle, while dispatch receives only the currently claimable
+subset. A claimed definition therefore remains unmeasured and cannot make a
+partial cycle look complete. For each claimable definition, PID 1 obtains one
+durable generation- and release-bound claim before dispatch. Success is
+recorded only after the exact callback process exits successfully and is reaped;
+the root gateway discards all child output and constructs the fixed callback
+receipt itself. A failure releases that claim and marks the cycle failed without
+starving later definitions. Deactivation stops new claims after the current
+callback drains. Task paths, claims, callback output, signing keys, and
+credentials never enter status evidence.
 
 The private status contract `dataphyre.application_runtime.v6` exposes the
 supervisor identity, immutable application/release identity, activation mode,

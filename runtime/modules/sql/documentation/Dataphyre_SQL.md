@@ -176,6 +176,13 @@ through the same compatibility layer while preserving ordinary prepared-query
 binding. The rule belongs in the framework because JSONB operator syntax is a
 PostgreSQL language contract, not an application-specific migration exception.
 
+Prepared PostgreSQL parameters also normalize PHP booleans at the kernel
+boundary: `true` is sent as the literal `true` and `false` as `false`. This is
+applied consistently to immediate helpers and queued prepared statements.
+Without that normalization ext-pgsql stringifies PHP `false` as an empty
+string, which PostgreSQL correctly rejects for a boolean parameter. Other
+bound values, positional order, and `null` are preserved unchanged.
+
 ## Optional Framework Layer
 
 Load it explicitly:

@@ -100,13 +100,35 @@ final class DataphyreApplicationRuntimeSchedulerState
 		array $identity,array $definitions,int $nowMilliseconds,?int $eligibilityFloorMilliseconds=null,
 	): array
 	{
+		return self::dueScheduleInventory(
+			$identity,$definitions,$nowMilliseconds,$eligibilityFloorMilliseconds,
+		)['schedule'];
+	}
+
+	/**
+	 * Snapshots the complete due inventory and the subset currently available to claim.
+	 *
+	 * A definition already claimed by another cycle is still due and therefore cannot
+	 * disappear from cadence evidence. Keeping the count and dispatchable schedule in
+	 * one locked snapshot prevents a claimed-only or partially preclaimed cycle from
+	 * being certified as a complete green cycle.
+	 *
+	 * @param array<string,string> $identity
+	 * @param list<array<string,mixed>> $definitions
+	 * @param null|int $eligibilityFloorMilliseconds A resume floor shared by dispatch and cadence evidence.
+	 * @return array{schedule:list<array{definition:array<string,mixed>,due_at_milliseconds:int,first_execution:bool}>,due_count:int}
+	 */
+	public static function dueScheduleInventory(
+		array $identity,array $definitions,int $nowMilliseconds,?int $eligibilityFloorMilliseconds=null,
+	): array
+	{
 		if($nowMilliseconds<1000) throw new RuntimeException('Scheduler due time is invalid.');
 		if($eligibilityFloorMilliseconds!==null && $eligibilityFloorMilliseconds<1000){
 			throw new RuntimeException('Scheduler eligibility floor is invalid.');
 		}
 		return self::locked(static function() use ($identity,$definitions,$nowMilliseconds,$eligibilityFloorMilliseconds): array {
 			$state=self::read($identity);
-			$due=[];$nowSeconds=intdiv($nowMilliseconds,1000);
+			$schedule=[];$dueCount=0;$nowSeconds=intdiv($nowMilliseconds,1000);
 			foreach($definitions as $definition){
 				self::assertDefinition($definition);
 				$name=$definition['name'];
@@ -122,15 +144,16 @@ final class DataphyreApplicationRuntimeSchedulerState
 					? $nowMilliseconds
 					: ($last*1000)+(int)$definition['frequency_milliseconds'];
 				if($eligibilityFloorMilliseconds!==null) $dueAt=max($dueAt,$eligibilityFloorMilliseconds);
-				if(!$claimed && $nowMilliseconds>=$dueAt){
-					$due[]=[
+				if($nowMilliseconds>=$dueAt){
+					$dueCount++;
+					if(!$claimed) $schedule[]=[
 						'definition'=>$definition,
 						'due_at_milliseconds'=>$dueAt,
 						'first_execution'=>$firstExecution,
 					];
 				}
 			}
-			return $due;
+			return ['schedule'=>$schedule,'due_count'=>$dueCount];
 		});
 	}
 

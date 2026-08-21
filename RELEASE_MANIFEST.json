@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-08-21T17:00:48Z",
+  "generated_at_utc": "2026-08-21T18:15:42Z",
   "copied_source_files": 3688,
-  "skipped_source_files": 47,
+  "skipped_source_files": 46,
   "export_file_count": 3688,
-  "export_tree_sha256": "44ef66fcc81e8d2555dd4a37627bd263fe89cecbdd0a23d83a0ea17b2bf714fc",
+  "export_tree_sha256": "74e928cfe09b2b33f85e24edd434d12854edfbb28f4bfc65f2bdc9fe4a485934",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -2729,13 +2729,13 @@
     },
     {
       "path": "runtime/modules/core/documentation/Dataphyre_Core.md",
-      "bytes": 64531,
-      "sha256": "4d32df38751fe2a32f9a2c30bca562a2dd381884fb59c9219cdee8fbd46a5075"
+      "bytes": 64946,
+      "sha256": "fa4a685753b128ddac8c3596003b0b24038bd032b1a724bc130a839770ecef56"
     },
     {
       "path": "runtime/modules/core/documentation/Dataphyre_Managed_PHP_Web_Pool.md",
-      "bytes": 17629,
-      "sha256": "86f8deb5ad9c4e51bdaf091d1bf4fefcc8bc12b29f8a111aa3574e87a8631174"
+      "bytes": 17779,
+      "sha256": "47560e6f63d0c23ade779390bbd4b21a2e9b5de4d0481b1301cc47f6314fb79d"
     },
     {
       "path": "runtime/modules/core/Framework/App.php",
@@ -3044,8 +3044,8 @@
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_scheduler_state.php",
-      "bytes": 20197,
-      "sha256": "0ac1865280399175d75a1874c2ad1fd4920a3f29ba85d253bfeb7a4ac1691fca"
+      "bytes": 21301,
+      "sha256": "8011159211886104a1606738b35846436834126726091c3a875f6b883f319c23"
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_status_probe.php",
@@ -3054,8 +3054,8 @@
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_supervisor.php",
-      "bytes": 104174,
-      "sha256": "2fcda216962af3a17045fba83b2a1bd5e8188766995a8ac0ede373e94030e1eb"
+      "bytes": 104267,
+      "sha256": "c220c862d4f8b6c96cb39a5dcf53a261fba02312e04ea721feddd708ed8ca334"
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_web_gateway.php",
@@ -3149,8 +3149,8 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_scheduler_lifecycle.test.php",
-      "bytes": 36174,
-      "sha256": "93139129b462885a2fa99232e05b9c8945c2738a89ac35fe2fd9a2d556d380da"
+      "bytes": 40476,
+      "sha256": "ddef67cbc84e2498c07c12f787d7f8f921ce88ff0d52913f6894400e9413c26d"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_scheduler_multiplex.test.php",
@@ -15019,8 +15019,8 @@
     },
     {
       "path": "runtime/modules/sql/documentation/Dataphyre_SQL.md",
-      "bytes": 119305,
-      "sha256": "b3f109cf1950e4c4076f13f73cf283303f222782b8c8e3fd39fbd64b9452af74"
+      "bytes": 119747,
+      "sha256": "36cc3ae59eff345c7c902f57e5a4956d3038a89478829d712b8c1f4bd174c12e"
     },
     {
       "path": "runtime/modules/sql/documentation/postgresql-migration-manifest-v3.schema.json",
@@ -15294,8 +15294,8 @@
     },
     {
       "path": "runtime/modules/sql/kernel/postgresql_query.php",
-      "bytes": 42894,
-      "sha256": "beac37bb691fa464d9e1ce94ffd78316a8c472f93e456d5d35492465b87511ae"
+      "bytes": 44094,
+      "sha256": "086b4f74fd898bef1fd4ec35d89ad8723da91f456fc25930fd67c797fcc8acc9"
     },
     {
       "path": "runtime/modules/sql/kernel/scaffold_table_artifacts.php",
@@ -15504,8 +15504,8 @@
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.sql_kernel_query_builders_deep_coverage.test.php",
-      "bytes": 48974,
-      "sha256": "92eaa1691eb26890cd286f74312225e653ff29b943bed14218cac9befa03ebf0"
+      "bytes": 50428,
+      "sha256": "af50d81132b7ce751496bab171c8aca9d543330cc36537e7edabc965ae41b781"
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.sql_migration_deep_coverage.test.php",

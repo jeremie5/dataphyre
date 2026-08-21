@@ -323,9 +323,11 @@ Gate 12 is the private, argument-free
 `application_runtime_release_probe.php`. It warms `GET /health` three times,
 measures 20 requests with a fixed 750 ms p95 budget, requires eight concurrent
 requests to complete within 3000 ms, and requires at least one successful
-business-cadence cycle. The supervisor's cadence result is sticky after any
-per-definition start, completion, or recurrence deadline breach. The probe has
-a 25-second internal deadline, a 30-second process budget, and a 2048-byte
+business-cadence cycle. A per-definition start, completion, or recurrence
+deadline breach makes the cadence result fail. Empty, claimed-only, and partial
+cycles preserve the prior measured result; only a later nonempty cycle that
+observes every due definition within cadence can recover it. The probe has a
+25-second internal deadline, a 30-second process budget, and a 2048-byte
 canonical evidence bound. These are platform constants, not application
 settings.
 
