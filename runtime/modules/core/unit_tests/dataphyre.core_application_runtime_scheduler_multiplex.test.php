@@ -108,6 +108,11 @@ test('bounded callback state keeps failures and TERM cleanup claim-local',static
 
 test('multiplexed receipts remain strict and lifecycle cleanup is explicit',static function(Context $t): void {
 	require_once dirname(__DIR__).'/kernel/application_runtime_supervisor.php';
+	$gatewaySource=(string)file_get_contents(dirname(__DIR__).'/kernel/application_runtime_scheduler_gateway.php');
+	$supervisorSource=(string)file_get_contents(dirname(__DIR__).'/kernel/application_runtime_supervisor.php');
+	$t->contains('if(is_resource($socket)){fclose($socket);$socket=null;}',$gatewaySource);
+	$t->contains('if(is_resource($connection)){fclose($connection);$connection=null;}',$gatewaySource);
+	$t->contains('if(is_resource($socket)){fclose($socket);$socket=null;}',$supervisorSource);
 	$body=json_encode(['contract'=>'dataphyre.scheduler_callback.v1','ok'=>true],JSON_THROW_ON_ERROR);
 	$t->same(
 		['contract'=>'dataphyre.scheduler_callback.v1','ok'=>true],
@@ -184,7 +189,7 @@ test('real multiplex transport isolates failure, USR2 drain, and TERM claim clea
 		}
 		fclose($listener);return $server;
 	};
-	$run=static function(string $prefix,int $count,?string $failedName=null,?int $activationAt=null,?int $stopAt=null) use (
+	$run=static function(string $prefix,int $count,?string $failedName=null,?int $activationAt=null,?int $stopAt=null,?array &$warningSink=null) use (
 		$stateRoot,$socketPath,$identity,$fakeGateway,
 	): array {
 		$definitions=[];$due=[];$now=(int)floor(microtime(true)*1000);
@@ -203,7 +208,8 @@ test('real multiplex transport isolates failure, USR2 drain, and TERM claim clea
 		if(!is_resource($controlListener)) throw new RuntimeException('Fake control listener could not bind: '.$controlError);
 		stream_set_blocking($controlListener,false);
 		$server=$fakeGateway($count,$controlPath,$public,$failedName,$stopAt===null ? 5 : 500);
-		$runtime=['active'=>true,'count'=>0,'last_at'=>null,'last_result'=>'never','request_counter'=>0,'scheduler_cadence_failed'=>false];
+		$runtime=['active'=>true,'count'=>0,'last_at'=>null,'last_result'=>'never','request_counter'=>0,
+			'scheduler_active_since_milliseconds'=>null];
 		$pending=[];$activation=null;$nextTick=0.0;$stopRequested=false;$clockCalls=0;
 		$clock=static function() use (&$clockCalls,&$activation,&$stopRequested,$activationAt,$stopAt,$now): int {
 			$clockCalls++;
@@ -211,7 +217,16 @@ test('real multiplex transport isolates failure, USR2 drain, and TERM claim clea
 			if($stopAt!==null && $clockCalls>=$stopAt) $stopRequested=true;
 			return $now+$clockCalls;
 		};
-		$result=null;$failure=null;
+		$result=null;$failure=null;$warningHandlerInstalled=false;
+		if($warningSink!==null){
+			set_error_handler(static function(int $severity,string $message) use (&$warningSink): bool {
+				// Nonblocking status polling intentionally suppresses accept-time warnings;
+				// this regression captures teardown/transport warnings from the callback path.
+				if(($severity&E_WARNING)!==0 && !str_starts_with($message,'stream_socket_accept()')) $warningSink[]=$message;
+				return true;
+			});
+			$warningHandlerInstalled=true;
+		}
 		try{
 			try{
 				$result=dataphyre_runtime_run_scheduler_multiplexed_callbacks(
@@ -220,6 +235,7 @@ test('real multiplex transport isolates failure, USR2 drain, and TERM claim clea
 				);
 			}catch(Throwable $caught){$failure=$caught;}
 		}finally{
+			if($warningHandlerInstalled) restore_error_handler();
 			$deadline=microtime(true)+3.0;
 			do{$status=null;$wait=pcntl_waitpid($server,$status,WNOHANG);if($wait===$server) break;usleep(10000);}while(microtime(true)<$deadline);
 			if(!isset($wait) || $wait!==$server){@posix_kill($server,SIGKILL);pcntl_waitpid($server,$status);}
@@ -240,7 +256,9 @@ test('real multiplex transport isolates failure, USR2 drain, and TERM claim clea
 	$t->same(7,count($partial['result']['observations']));$t->same([],$partial['pending']);
 	foreach($partial['entries'] as $entry) $t->same(null,$entry['claim_nonce']);
 
-	$drain=$run('fixture-usr2',91,null,32);
+	$warnings=[];
+	$drain=$run('fixture-usr2',91,null,32,null,$warnings);
+	$t->same([],$warnings,'the 32-callback USR2 drain is warning-free after idempotent socket teardown');
 	$t->isNull($drain['failure']);$t->same(false,$drain['runtime']['active']);
 	$t->same(32,count($drain['result']['observations']),'USR2 drains only already-dispatched callbacks');
 	$t->same(32,count($drain['entries']));

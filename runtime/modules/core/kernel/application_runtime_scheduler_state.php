@@ -93,12 +93,18 @@ final class DataphyreApplicationRuntimeSchedulerState
 	 *
 	 * @param array<string,string> $identity
 	 * @param list<array<string,mixed>> $definitions
+	 * @param null|int $eligibilityFloorMilliseconds A resume floor shared by dispatch and cadence evidence.
 	 * @return list<array{definition:array<string,mixed>,due_at_milliseconds:int,first_execution:bool}>
 	 */
-	public static function dueSchedule(array $identity,array $definitions,int $nowMilliseconds): array
+	public static function dueSchedule(
+		array $identity,array $definitions,int $nowMilliseconds,?int $eligibilityFloorMilliseconds=null,
+	): array
 	{
 		if($nowMilliseconds<1000) throw new RuntimeException('Scheduler due time is invalid.');
-		return self::locked(static function() use ($identity,$definitions,$nowMilliseconds): array {
+		if($eligibilityFloorMilliseconds!==null && $eligibilityFloorMilliseconds<1000){
+			throw new RuntimeException('Scheduler eligibility floor is invalid.');
+		}
+		return self::locked(static function() use ($identity,$definitions,$nowMilliseconds,$eligibilityFloorMilliseconds): array {
 			$state=self::read($identity);
 			$due=[];$nowSeconds=intdiv($nowMilliseconds,1000);
 			foreach($definitions as $definition){
@@ -115,6 +121,7 @@ final class DataphyreApplicationRuntimeSchedulerState
 				$dueAt=$firstExecution
 					? $nowMilliseconds
 					: ($last*1000)+(int)$definition['frequency_milliseconds'];
+				if($eligibilityFloorMilliseconds!==null) $dueAt=max($dueAt,$eligibilityFloorMilliseconds);
 				if(!$claimed && $nowMilliseconds>=$dueAt){
 					$due[]=[
 						'definition'=>$definition,

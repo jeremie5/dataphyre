@@ -864,7 +864,7 @@ test('deactivation requested during a tick remains inactive and cannot trigger a
 	$t->same(false,$runtime['active']);
 	$t->same(false,$runtime['scheduler_cycle_in_progress']);
 	$t->same(1,$runtime['count']);
-	$t->same('ok',$runtime['last_result']);
+	$t->same('never',$runtime['last_result'],'a resumed cycle must not certify a partial drain');
 	$t->greaterThan(0.5,$remaining);
 
 	$registrationFor=static function(array $cycleDefinitions): array {
@@ -943,7 +943,7 @@ test('deactivation requested during a tick remains inactive and cannot trigger a
 		DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,$raceGeneration,'secret','public',null,$raceRuntime,$pendingRequests,3,
 		$raceActivation,$raceNextTick,$predecessorClaim,$persist,
 	);
-	$t->same(1,$raceRequests);$t->same('ok',$raceRuntime['last_result']);
+	$t->same(1,$raceRequests);$t->same('never',$raceRuntime['last_result'],'a concurrent claim leaves the cycle unmeasured');
 	DataphyreApplicationRuntimeSchedulerState::releaseClaim(
 		$identity,$raceSecond,$identity['release_id'],$raceGeneration,$raceNonce,
 	);
@@ -1060,7 +1060,9 @@ test('deactivation requested during a tick remains inactive and cannot trigger a
 
 	$deactivateDefinition=$failedDefinition;$deactivateDefinition['name']='fixture.deactivate-at-cycle-end';
 	$deactivateRuntime=$cycleRuntime($registrationFor([$deactivateDefinition]));$deactivateActivation=null;$deactivateNextTick=0.0;
-	$deactivate=static function() use (&$deactivateActivation): array {
+	$deactivateCalls=0;
+	$deactivate=static function() use (&$deactivateActivation,&$deactivateCalls): array {
+		$deactivateCalls++;
 		$deactivateActivation=false;
 		return ['contract'=>'dataphyre.scheduler_callback.v1','ok'=>true];
 	};
@@ -1068,6 +1070,7 @@ test('deactivation requested during a tick remains inactive and cannot trigger a
 		DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$deactivateRuntime,$pendingRequests,3,
 		$deactivateActivation,$deactivateNextTick,$deactivate,$persist,
 	);
+	$t->same(1,$deactivateCalls);
 	$t->same(false,$deactivateRuntime['active']);$t->same('ok',$deactivateRuntime['last_result']);
 	$t->greaterThan(0.5,max(0.0,$deactivateNextTick-microtime(true)));
 })->tag('signed-cadence','signal','deactivation','lifecycle','regression');

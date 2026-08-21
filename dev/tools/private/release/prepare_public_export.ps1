@@ -150,7 +150,8 @@ function Test-DistIgnored {
 		[string]$RelativePath,
 		[object[]]$Rules
 	)
-	if ($RelativePath.StartsWith('.git/', [System.StringComparison]::OrdinalIgnoreCase)) {
+	if ($RelativePath.Equals('.git', [System.StringComparison]::OrdinalIgnoreCase) -or
+		$RelativePath.StartsWith('.git/', [System.StringComparison]::OrdinalIgnoreCase)) {
 		return $true
 	}
 	$ignored = $false

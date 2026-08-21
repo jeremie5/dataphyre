@@ -82,7 +82,8 @@ final class DataphyreApplicationRuntimeSchedulerGateway
 					);
 				}catch(DataphyreApplicationRuntimeSchedulerGatewayInterrupted){}
 				catch(Throwable){DataphyreApplicationRuntimeWebGateway::respond($connection,502,'Bad Gateway');}
-				fclose($connection);exit(0);
+				if(is_resource($connection)){fclose($connection);$connection=null;}
+				exit(0);
 			}
 		}finally{
 			fclose($listener);
@@ -347,7 +348,7 @@ final class DataphyreApplicationRuntimeSchedulerGateway
 				$chunk=@fread($socket,8192);if($chunk===false) return null;
 				$wire.=$chunk;if(strlen($wire)>8192) return null;
 			}
-		}finally{fclose($socket);}
+		}finally{if(is_resource($socket)){fclose($socket);$socket=null;}}
 		[$head,$response]=array_pad(explode("\r\n\r\n",$wire,2),2,'');
 		$status=preg_match('/^HTTP\/1\.[01]\s+(\d{3})\b/D',$head,$match)===1 ? (int)$match[1] : null;
 		$decoded=strlen($response)<=DataphyreApplicationRuntimeSchedulerProtocol::MAX_TRANSPORT_BYTES

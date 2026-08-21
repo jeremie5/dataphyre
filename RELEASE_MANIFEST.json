@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-08-21T01:05:50Z",
-  "copied_source_files": 3686,
-  "skipped_source_files": 19143,
-  "export_file_count": 3686,
-  "export_tree_sha256": "be74a9fa4a39d0676235b9bb68d1abb5fc7627d72ac46807c44134cac52a6362",
+  "generated_at_utc": "2026-08-21T17:00:48Z",
+  "copied_source_files": 3688,
+  "skipped_source_files": 47,
+  "export_file_count": 3688,
+  "export_tree_sha256": "44ef66fcc81e8d2555dd4a37627bd263fe89cecbdd0a23d83a0ea17b2bf714fc",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -3034,8 +3034,8 @@
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_scheduler_gateway.php",
-      "bytes": 22612,
-      "sha256": "a0b310951c76a4502d4285a81f81415ba9a1d4a20a07310def261c90fcafa9bc"
+      "bytes": 22982,
+      "sha256": "2e4d310dac50910ad938f1162e3cefb42a575c78c172bcb9099c1524d513e4b5"
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_scheduler_protocol.php",
@@ -3044,8 +3044,8 @@
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_scheduler_state.php",
-      "bytes": 18511,
-      "sha256": "a8324ff980be744714e49c2eece4a2aa38ce0addd0e3ef135198af333a68f14c"
+      "bytes": 20197,
+      "sha256": "0ac1865280399175d75a1874c2ad1fd4920a3f29ba85d253bfeb7a4ac1691fca"
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_status_probe.php",
@@ -3054,8 +3054,8 @@
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_supervisor.php",
-      "bytes": 89191,
-      "sha256": "8905201e01d8d71cbabe8da88382b1cac9dbad9c79849306cdd746a4e781610c"
+      "bytes": 104174,
+      "sha256": "2fcda216962af3a17045fba83b2a1bd5e8188766995a8ac0ede373e94030e1eb"
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_web_gateway.php",
@@ -3149,8 +3149,13 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_scheduler_lifecycle.test.php",
-      "bytes": 30083,
-      "sha256": "223163bdc0f717a2fdfd8836009c424aa29db0c9cc00e504f3db97a53666e270"
+      "bytes": 36174,
+      "sha256": "93139129b462885a2fa99232e05b9c8945c2738a89ac35fe2fd9a2d556d380da"
+    },
+    {
+      "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_scheduler_multiplex.test.php",
+      "bytes": 16461,
+      "sha256": "2fe6734f14baf5e7c9d4f9c2bb512288cc2497fe4f2f2d74628ec0334b19e6a5"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_secret_broker.test.php",
@@ -3159,8 +3164,8 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_supervisor.test.php",
-      "bytes": 69920,
-      "sha256": "92aa988421762f9a2c3f5fb34aaee905576e59ce4f0331fed1fa8e2e1cedb6c1"
+      "bytes": 70118,
+      "sha256": "4bb5627afc1a7780b51267bf130a866b1da20548322e4bb8d8bb329322b6ee98"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_configuration_cluster_deep_coverage.test.php",
@@ -3710,7 +3715,7 @@
     {
       "path": "runtime/modules/core/unit_tests/fixtures/application_runtime_scheduler_state_boundary.php",
       "bytes": 1593,
-      "sha256": "37ec9fc0ccf5e06f4e751d3de9c48081d9a73e3056595cb47a566e85494e4cef"
+      "sha256": "3679f1ad00ddfc438ddff87cb35aab9aa0389e0cf2a086d6609b70d88496e286"
     },
     {
       "path": "runtime/modules/core/unit_tests/fixtures/application_runtime_scheduler_state_race.php",
@@ -13299,8 +13304,8 @@
     },
     {
       "path": "runtime/modules/panel/unit_tests/dataphyre.panel_release_contract_ci.test.php",
-      "bytes": 13366,
-      "sha256": "0efc3d6b8cc8c3d616cac1feb6bf31d4f291f4825e3d2e6e5dad3e1a2b12b183"
+      "bytes": 13469,
+      "sha256": "86116bfbfd19cda884837aeb55d2e53688ca507c00a5e637ea8c11598b89ffcd"
     },
     {
       "path": "runtime/modules/panel/unit_tests/dataphyre.panel_release_deployment_adapters_scorched_earth.test.php",
@@ -15014,8 +15019,8 @@
     },
     {
       "path": "runtime/modules/sql/documentation/Dataphyre_SQL.md",
-      "bytes": 119051,
-      "sha256": "3062bf92c5abfb41bd693eae14527366d84faf15ed1d88173f048a12e168e851"
+      "bytes": 119305,
+      "sha256": "b3f109cf1950e4c4076f13f73cf283303f222782b8c8e3fd39fbd64b9452af74"
     },
     {
       "path": "runtime/modules/sql/documentation/postgresql-migration-manifest-v3.schema.json",
@@ -15109,8 +15114,8 @@
     },
     {
       "path": "runtime/modules/sql/Framework/Migrations/PostgreSqlSchemaInspector.php",
-      "bytes": 92204,
-      "sha256": "584ca8884c70507f8802e9b36c9c0774602501d1a211ef6d6bcb62390ee94c8b"
+      "bytes": 98642,
+      "sha256": "5b150b812e03295ef84b41e4921e7340ddc2c95fea92370d8af4e0ea5bb9084b"
     },
     {
       "path": "runtime/modules/sql/Framework/Migrations/SqliteMigrationCommand.php",
@@ -15198,6 +15203,11 @@
       "sha256": "17e9d750029e847fd07ce651d3936efcc617f26cab734c6dafb54d3a355cbdfb"
     },
     {
+      "path": "runtime/modules/sql/Framework/Seeds/SeedExecutionException.php",
+      "bytes": 1266,
+      "sha256": "359a704647e429a6586b2f0094bff757ac8a58116fc17612fd4043e88a826bee"
+    },
+    {
       "path": "runtime/modules/sql/Framework/Seeds/SeedFileLoader.php",
       "bytes": 3022,
       "sha256": "96a93c3822ba82ef39d935938040925b44d5c7556538d767fd11fd5136882a71"
@@ -15209,8 +15219,8 @@
     },
     {
       "path": "runtime/modules/sql/Framework/Seeds/SeedManager.php",
-      "bytes": 14027,
-      "sha256": "314fa0382d6aa2f90edfd2d744cc51d8d496e73011f4ba23f749e9744b56ad99"
+      "bytes": 14771,
+      "sha256": "859f75db3ecab59c2b875f831fa7b53c9e1e6b887b26ecd4b98311fb26f698d2"
     },
     {
       "path": "runtime/modules/sql/Framework/Seeds/SqlSeedLedger.php",
@@ -15294,8 +15304,8 @@
     },
     {
       "path": "runtime/modules/sql/kernel/seeds.php",
-      "bytes": 14954,
-      "sha256": "f7677d89410fbcea02100e13179213a248c67dcf37a3721895e8edecf34262ac"
+      "bytes": 14979,
+      "sha256": "94cc2c6731951e6dc35ba6f0a6c7a9abb05710965508515049a275fb86a473ec"
     },
     {
       "path": "runtime/modules/sql/kernel/sql.diagnostic.php",
@@ -15394,13 +15404,13 @@
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.postgresql_migration_framework.test.php",
-      "bytes": 152635,
-      "sha256": "75c2046716688a799f51ec2c4ef7a071cc7afc46cf8b275eb7ccc244aa65016f"
+      "bytes": 154334,
+      "sha256": "1acfa29d960cc327dbe776a74c96934fa6d7e56ebddb0818a00d2777060e0dc2"
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.postgresql_schema_inspector_pg17.test.php",
-      "bytes": 9942,
-      "sha256": "e18cffba24cd624760c186e17ad0d99cb93a53fb70f2a7d1dd29e13f92b9f575"
+      "bytes": 12759,
+      "sha256": "4bcdca5c397fbfdbf593290cab09f70d631c9dec2dd5afee140171384bd4881f"
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.query_wrapper_parent_regression.test.php",
@@ -15539,13 +15549,13 @@
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.sql_seeds_deep_coverage.test.php",
-      "bytes": 19729,
-      "sha256": "576539cb010f2884b4dd8b03fbe9c4b5919fbbe63fb42930f473c9b56830393e"
+      "bytes": 19807,
+      "sha256": "fdae8a5ae52ec17205f7e19c935f797b6e6bb4ac59f45fa063513e82da8674c2"
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.sql_seeds.test.php",
-      "bytes": 24801,
-      "sha256": "afa943e12fe5f14f8e4969d8f0e111576a3a81c813bdcd6a37453c68cbf51751"
+      "bytes": 26684,
+      "sha256": "5e9bafae7d04b99e7374cf7260f889bb752354ff6495c885ec2c0acfc041c3fe"
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.sql_yugabyte_retry_classifier.test.php",

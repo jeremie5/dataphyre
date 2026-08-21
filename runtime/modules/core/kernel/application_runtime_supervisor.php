@@ -1059,7 +1059,9 @@ function dataphyre_runtime_serve_status(
 			dataphyre_runtime_private_response($connection,404,['ok'=>false]);
 		}
 		}catch(DataphyreManagedRuntimeControlPeerFailure){}
-		finally{fclose($connection);}
+		finally{
+			if(is_resource($connection)){fclose($connection);$connection=null;}
+		}
 	}
 }
 
@@ -1195,7 +1197,8 @@ function dataphyre_runtime_run_scheduler_multiplexed_callbacks(
 
 	$close=static function(array &$request) use (&$pendingRequests): void {
 		unset($pendingRequests[$request['request_key']]);
-		if(is_resource($request['socket'])) @fclose($request['socket']);
+		if(is_resource($request['socket'])) fclose($request['socket']);
+		$request['socket']=null;
 	};
 	$release=static function(array $request) use ($identity,$generation): void {
 		DataphyreApplicationRuntimeSchedulerState::releaseClaim(
@@ -1484,7 +1487,7 @@ function dataphyre_runtime_scheduler_request(
 		dataphyre_runtime_require_generation_healthy($runtime);
 		return $decoded;
     } finally {
-        fclose($socket);
+		if(is_resource($socket)){fclose($socket);$socket=null;}
 		unset($pendingRequests[$kind.':'.$counter]);
     }
 }
@@ -1559,7 +1562,7 @@ function dataphyre_runtime_require_scheduler_replay_rejection(
 		if(preg_match('/^HTTP\/1\.[01]\s+404\b/D',$head)!==1){
 			throw new RuntimeException('Scheduler replay was not rejected.');
 		}
-	}finally{fclose($socket);}
+	}finally{if(is_resource($socket)){fclose($socket);$socket=null;}}
 }
 
 /**
@@ -1673,6 +1676,8 @@ function dataphyre_runtime_run_scheduler_cycle(
 		DataphyreApplicationRuntimeSchedulerState::reconcile($identity,$registration['definitions']);
 		$due=DataphyreApplicationRuntimeSchedulerState::dueSchedule(
 			$identity,$registration['definitions'],$cycleStartedAtMilliseconds,
+			is_int($runtime['scheduler_active_since_milliseconds'] ?? null)
+				? $runtime['scheduler_active_since_milliseconds'] : null,
 			);
 		if($requestRunner===null){
 			$multiplexed=dataphyre_runtime_run_scheduler_multiplexed_callbacks(
@@ -1774,16 +1779,19 @@ function dataphyre_runtime_run_scheduler_cycle(
 		);
 		if($cadence['ok']!==true){
 			$cycleFailed=true;
-			$runtime['scheduler_cadence_failed']=true;
 			$cadenceReporter ??= static function(array $evidence): void {
 				$encoded=json_encode($evidence,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
 				fwrite(STDERR,'Scheduler cadence deadline missed: '.$encoded."\n");
 			};
 			$cadenceReporter($cadence);
 		}
-		$runtime['last_result']=$cycleFailed || ($runtime['scheduler_cadence_failed'] ?? false)===true
-			? 'failed'
-			: 'ok';
+		$priorResult=$runtime['last_result'] ?? 'never';
+		$fullGreenCycle=!$cycleFailed && $due!==[]
+			&& $cadence['observation_count']===count($due) && $cadence['ok']===true;
+		if($cycleFailed) $runtime['last_result']='failed';
+		elseif($fullGreenCycle) $runtime['last_result']='ok';
+		elseif($due===[] && !in_array($priorResult,['ok','failed'],true)) $runtime['last_result']='ok';
+		else $runtime['last_result']=$priorResult;
 	}catch(DataphyreManagedRuntimeGracefulShutdown $failure){throw $failure;}
 	catch(DataphyreManagedRuntimeGenerationUnavailable $failure){throw $failure;}
 	catch(Throwable){
@@ -1811,9 +1819,14 @@ function dataphyre_runtime_apply_activation_request(
 	if($activationRequested===null) return;
 	$requested=$activationRequested;
 	$activationRequested=null;
+	$wasActive=($runtime['active'] ?? false)===true;
 	$persister ??= [DataphyreApplicationRuntimeActivationLatch::class,'persist'];
 	$persister($requested);
 	$runtime['active']=$requested;
+	if(!$requested) $runtime['scheduler_active_since_milliseconds']=null;
+	elseif(!$wasActive){
+		$runtime['scheduler_active_since_milliseconds']=max(1000,(int)floor(microtime(true)*1000));
+	}
 	if($requested) $nextTick=microtime(true);
 }
 
@@ -1990,7 +2003,7 @@ try {
 		'realtime_pid'=>$children['realtime']['pid'],
 		'realtime_start_time_ticks'=>$children['realtime']['start_time_ticks'],
 		'count'=>0,'last_at'=>null,'last_result'=>'never','request_counter'=>0,
-		'scheduler_cadence_failed'=>false,
+		'scheduler_active_since_milliseconds'=>null,
 		'scheduler_cycle_in_progress'=>false,'scheduler_registration'=>null,
 		'scheduler_noop_probe'=>null,
 		'scheduler_state_identity_sha256'=>DataphyreApplicationRuntimeSchedulerState::identitySha256($identity),

@@ -108,6 +108,7 @@ test('public export boundary excludes generated trees while retaining the cache 
 	$attributes=(string)file_get_contents($root.'/.gitattributes');
 	$installer=json_decode((string)file_get_contents($root.'/dataphyre.manifest.json'), true, 16, JSON_THROW_ON_ERROR);
 	$prepare=(string)file_get_contents($root.'/dev/tools/private/release/prepare_public_export.ps1');
+	$t->contains("\$RelativePath.Equals('.git'", $prepare, 'linked worktree metadata is never exported');
 	$publicCheck=(string)file_get_contents($root.'/dev/tools/private/release/check_public_export.ps1');
 	$releaseCheck=(string)file_get_contents($root.'/dev/tools/private/release/check_release.ps1');
 	$publicExportDocs=(string)file_get_contents($root.'/dev/PUBLIC_EXPORT.md');
