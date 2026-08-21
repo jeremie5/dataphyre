@@ -403,6 +403,25 @@ test('managed callback runs only in the fresh scheduler CGI with an outer signed
 	$t->contains('SCHEDULER_TRANSPORT_MARGIN_MILLISECONDS',$gateway);
 })->tag('fresh-cgi','process-boundary','claim','signed-budget','security','deletion');
 
+test('managed callback failure reporter receives the exact framework phase and cannot change task outcome',static function(Context $t): void {
+	$reported=[];
+	$t->nonPublic(dataphyre_scheduling_task_runner::class)->invoke(
+		'reportManagedFailure',
+		static function(string $phase,Throwable $failure) use (&$reported): void {
+			$reported[]=[$phase,get_class($failure),$failure->getMessage()];
+		},
+		'task_execution',
+		new RuntimeException('safe_failure_code'),
+	);
+	$t->same([['task_execution',RuntimeException::class,'safe_failure_code']],$reported);
+	$t->nonPublic(dataphyre_scheduling_task_runner::class)->invoke(
+		'reportManagedFailure',
+		static function(): void {throw new RuntimeException('reporter_failure');},
+		'task_cleanup',
+		new RuntimeException('task_failure'),
+	);
+})->tag('managed-callback','throwable','failure-phase','diagnostic','fail-safe');
+
 test('task runner rejects unavailable invalid and missing scheduler requests before execution',static function(Context $t): void {
 	\dataphyre\SchedulingRuntimeProbe::reset();
 	$workspace=$t->workspace('scheduling-task-runner-invalid');

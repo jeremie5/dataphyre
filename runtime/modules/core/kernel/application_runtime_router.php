@@ -61,12 +61,27 @@ if($pool==='scheduler'){
 		@ob_end_clean();exit($ok ? 0 : 75);
 	}
 	if($expectedKind==='callback'){
+		$failureDiagnostic=null;
 		$ok=dataphyre_scheduling_task_runner::execute_managed_callback(
 			(string)$candidate['scheduler_name'],
 			(string)$candidate['definition_sha256'],
 			(int)$candidate['budget_milliseconds'],
+			static function(string $phase,Throwable $failure) use (&$failureDiagnostic): void {
+				$failureDiagnostic=DataphyreApplicationRuntimeSchedulerFailureDiagnostic::fromThrowable($phase,$failure);
+			},
 		);
-		@ob_end_clean();exit($ok ? 0 : 75);
+		@ob_end_clean();
+		if(!$ok){
+			$stream=@fopen('php://stderr','wb');
+			if(is_resource($stream)){
+				$diagnostic=is_array($failureDiagnostic)
+					? $failureDiagnostic
+					: DataphyreApplicationRuntimeSchedulerFailureDiagnostic::childFallback();
+				@fwrite($stream,DataphyreApplicationRuntimeSchedulerFailureDiagnostic::encodeChild($diagnostic));
+				@fclose($stream);
+			}
+		}
+		exit($ok ? 0 : 75);
 	}
 	$report=dataphyre_scheduling_task_runner::execute_managed_registration();
 	@ob_end_clean();header_remove();

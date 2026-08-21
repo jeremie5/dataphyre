@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-08-21T18:47:02Z",
-  "copied_source_files": 3688,
-  "skipped_source_files": 51,
-  "export_file_count": 3688,
-  "export_tree_sha256": "54c38aafc6b168dd987d8b893c0ca4b5a5e3d46f40b4218a15e52b0398b1be8c",
+  "generated_at_utc": "2026-08-21T21:03:04Z",
+  "copied_source_files": 3689,
+  "skipped_source_files": 49,
+  "export_file_count": 3689,
+  "export_tree_sha256": "a07adab08b30cae98da01c6ae7928db8f3e6867d46cd042001eb487e2fe027c8",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -3029,18 +3029,18 @@
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_router.php",
-      "bytes": 3965,
-      "sha256": "2aed92f2fcfeaf948043c39cd02255ccf2b7337c1a6ec72b19b80dfe46bdd5ef"
+      "bytes": 4562,
+      "sha256": "fad0b1f78d3520592f432cb10e117774057a93b174786e42f97b225e448dd781"
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_scheduler_gateway.php",
-      "bytes": 22982,
-      "sha256": "2e4d310dac50910ad938f1162e3cefb42a575c78c172bcb9099c1524d513e4b5"
+      "bytes": 26271,
+      "sha256": "d7f57b3479ef1d536874bedb7650ff309c2ecd4f66624a6347b6fad832a4f181"
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_scheduler_protocol.php",
-      "bytes": 6662,
-      "sha256": "f6e5a8d0e60a0e755235876fd14a95ecd694c0edded3377bf90b1f6d15f78f84"
+      "bytes": 13205,
+      "sha256": "7c8c165291bbb1e697642872b0cbd646135f626bd42c4fd3ec7e78d8092853cb"
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_scheduler_state.php",
@@ -3146,6 +3146,11 @@
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_probe_state_exact.test.php",
       "bytes": 3187,
       "sha256": "6f0c49c350b4c0380a342de77c5490f5654f74b3bbc465d98e662a824d28009c"
+    },
+    {
+      "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_scheduler_failure_diagnostic.test.php",
+      "bytes": 9361,
+      "sha256": "6d2133b93d06a24ce6f238f81072692d6d4000d0e763d8b44bc16df634705e09"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_scheduler_lifecycle.test.php",
@@ -14834,8 +14839,8 @@
     },
     {
       "path": "runtime/modules/scheduling/documentation/Dataphyre_Scheduling.md",
-      "bytes": 11161,
-      "sha256": "9d09b9c0fa56ebad3b9df6398589e6b6a970d66de406faa7aa71eeb2aa6ece4b"
+      "bytes": 11907,
+      "sha256": "2e532b67c31fdbb4b9cc232efe3247646c3a8a6d51ac189af52c277f59f4b3f3"
     },
     {
       "path": "runtime/modules/scheduling/Framework/Bootstrap.php",
@@ -14864,13 +14869,13 @@
     },
     {
       "path": "runtime/modules/scheduling/kernel/task_runner.php",
-      "bytes": 20311,
-      "sha256": "134447601908d3f3014d825e822e477357b91abbf430bb2266a24820d7f2b102"
+      "bytes": 21032,
+      "sha256": "08ce52468001052c374f622b5cfea167ab7e1277df6949271ae8d02ae8531c97"
     },
     {
       "path": "runtime/modules/scheduling/unit_tests/dataphyre.scheduling_exact.test.php",
-      "bytes": 34633,
-      "sha256": "9393d43b907ea6da3f572ab4b2001696ed875dda93b81032bf703a0c6ce7e00a"
+      "bytes": 35501,
+      "sha256": "2d29bb76c9a79b61f9c867696cf3821f324b0463eaffcf31539bf07e17496705"
     },
     {
       "path": "runtime/modules/scheduling/unit_tests/dataphyre.scheduling_framework_bootstrap.test.php",

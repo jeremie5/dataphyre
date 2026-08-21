@@ -24,6 +24,7 @@ final class DataphyreApplicationRuntimeSchedulerGateway
 	// deployment knob or a user-visible runtime concept.
 	private const MAX_CHILDREN=32;
 	private const MAX_SCHEDULER_CHILD_OUTPUT_BYTES=65536;
+	private const MAX_SCHEDULER_DIAGNOSTIC_BYTES=8192;
 	private const MAX_SCHEDULER_REGISTRATION_OUTPUT_BYTES=
 		DataphyreApplicationRuntimeSchedulerProtocol::MAX_TRANSPORT_BYTES+65536;
 	private const SCHEDULER_TRANSPORT_MARGIN_MILLISECONDS=2000;
@@ -107,82 +108,156 @@ final class DataphyreApplicationRuntimeSchedulerGateway
 		[$request,$body]=self::readSchedulerRequest($connection);
 		$schedulerKind=self::claimSchedulerRequest($request,$body,$applicationEnvironment);
 		if($schedulerKind===null){DataphyreApplicationRuntimeWebGateway::respond($connection,404,'Not Found');return;}
+		$schedulerName=self::callbackSchedulerName($schedulerKind,$body);
 		$publicEnvironment=DataphyreApplicationRuntimeWebGateway::requestEnvironment(
 			$request,strlen($body),$peer,$host,$port,$router,$projectRoot,
 		);
 		$timeoutMilliseconds=self::childTimeoutMilliseconds($request,$body);
-		$command=[
-			'/usr/bin/setpriv','--reuid=10001','--regid=10001','--groups=10001','--no-new-privs',
-			// The root gateway already has the exact e0 bounding set. CAP_SETPCAP
-			// is intentionally absent, so the child retains only that inert bound
-			// while UID 10001 + NNP clear every permitted/effective capability.
-			'--inh-caps=-all','--ambient-caps=-all','--pdeathsig=SIGKILL',
-			'/usr/bin/prlimit','--nproc=0:0',
-			'/usr/local/bin/php-cgi','-d','display_errors=0','-d','log_errors=0','-d','expose_php=0',
-			'-d','cgi.force_redirect=0','-d','cgi.discard_path=0','-d','user_ini.filename=',
-			'-d','auto_prepend_file='.__DIR__.'/application_runtime_cgi_environment.php','-d','auto_append_file=',
-			'-f',$router,
-		];
-		$previousMask=[];
-		if(!pcntl_sigprocmask(SIG_BLOCK,[SIGTERM,SIGINT],$previousMask)){
-			throw new RuntimeException('Application scheduler cleanup signals could not be blocked.');
-		}
-		$baselineChildren=self::directChildren();
+		$failurePhase='gateway_spawn';$failureKind='exception';$failureExitCode=null;$childDiagnostic=null;
+		$output='';$diagnosticOutput='';$diagnosticOverflow=false;
 		try{
-			$child=DataphyreApplicationRuntimeProcessBroker::spawn(
-				$command,[0=>['pipe','r'],1=>['pipe','w'],2=>['file','/dev/null','a']],
-				$projectRoot,$publicEnvironment,'scheduler',$applicationEnvironment,30000,$managedBootstrap,$body,true,
-			);
-		}catch(Throwable $failure){
-			try{self::terminateAdoptedChildren($baselineChildren);}
-			catch(Throwable $cleanupFailure){
-				@pcntl_sigprocmask(SIG_SETMASK,$previousMask);
-				throw new RuntimeException('Application scheduler adopted-child cleanup failed.',0,$cleanupFailure);
+			$command=[
+				'/usr/bin/setpriv','--reuid=10001','--regid=10001','--groups=10001','--no-new-privs',
+				// The root gateway already has the exact e0 bounding set. CAP_SETPCAP
+				// is intentionally absent, so the child retains only that inert bound
+				// while UID 10001 + NNP clear every permitted/effective capability.
+				'--inh-caps=-all','--ambient-caps=-all','--pdeathsig=SIGKILL',
+				'/usr/bin/prlimit','--nproc=0:0',
+				'/usr/local/bin/php-cgi','-d','display_errors=0','-d','log_errors=0','-d','expose_php=0',
+				'-d','cgi.force_redirect=0','-d','cgi.discard_path=0','-d','user_ini.filename=',
+				'-d','auto_prepend_file='.__DIR__.'/application_runtime_cgi_environment.php','-d','auto_append_file=',
+				'-f',$router,
+			];
+			$previousMask=[];
+			if(!pcntl_sigprocmask(SIG_BLOCK,[SIGTERM,SIGINT],$previousMask)){
+				throw new RuntimeException('Application scheduler cleanup signals could not be blocked.');
 			}
-			@pcntl_sigprocmask(SIG_SETMASK,$previousMask);throw $failure;
-		}
-		$process=$child['resource'];$pipes=$child['pipes'];$output='';$exitCode=null;
-		$maximum=$schedulerKind==='callback' || $schedulerKind==='noop'
-			? self::MAX_SCHEDULER_CHILD_OUTPUT_BYTES
-			: self::MAX_SCHEDULER_REGISTRATION_OUTPUT_BYTES;
-		try{
+			$baselineChildren=self::directChildren();
 			try{
+				$child=DataphyreApplicationRuntimeProcessBroker::spawn(
+					$command,[0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],
+					$projectRoot,$publicEnvironment,'scheduler',$applicationEnvironment,30000,$managedBootstrap,$body,true,
+				);
+			}catch(Throwable $failure){
+				try{self::terminateAdoptedChildren($baselineChildren);}
+				catch(Throwable $cleanupFailure){
+					$failurePhase='gateway_cleanup';
+					@pcntl_sigprocmask(SIG_SETMASK,$previousMask);
+					throw new RuntimeException('Application scheduler adopted-child cleanup failed.',0,$cleanupFailure);
+				}
+				@pcntl_sigprocmask(SIG_SETMASK,$previousMask);throw $failure;
+			}
+			$process=$child['resource'];$pipes=$child['pipes'];$exitCode=null;
+			$maximum=$schedulerKind==='callback' || $schedulerKind==='noop'
+				? self::MAX_SCHEDULER_CHILD_OUTPUT_BYTES
+				: self::MAX_SCHEDULER_REGISTRATION_OUTPUT_BYTES;
+			try{
+				$failurePhase='gateway_wait';
 				if(!pcntl_sigprocmask(SIG_SETMASK,$previousMask)){
 					throw new RuntimeException('Application scheduler cleanup signals could not be restored.');
 				}
-				stream_set_blocking($pipes[1],false);$deadline=hrtime(true)+($timeoutMilliseconds*1_000_000);
-				while(hrtime(true)<$deadline){
-					$chunk=fread($pipes[1],65536);
-					if(is_string($chunk) && $chunk!==''){
-						$output.=$chunk;
-						if(strlen($output)>$maximum) throw new RuntimeException('Application scheduler response exceeded its bound.');
+				foreach([1,2] as $index){
+					if(!is_resource($pipes[$index] ?? null) || !stream_set_blocking($pipes[$index],false)){
+						throw new RuntimeException('Application scheduler child output is unavailable.');
 					}
+				}
+				$deadline=hrtime(true)+($timeoutMilliseconds*1_000_000);
+				while(hrtime(true)<$deadline){
+					self::drainSchedulerStream($pipes[1],$output,$maximum,true,$diagnosticOverflow,$deadline);
+					self::drainSchedulerStream(
+						$pipes[2],$diagnosticOutput,self::MAX_SCHEDULER_DIAGNOSTIC_BYTES,false,$diagnosticOverflow,$deadline,
+					);
 					$status=proc_get_status($process);
 					if(!is_array($status)) throw new RuntimeException('Application scheduler status is unavailable.');
 					if(($status['running'] ?? false)!==true){
 						$exitCode=(int)($status['exitcode'] ?? -1);
-						while(true){
-							$chunk=fread($pipes[1],65536);
-							if(!is_string($chunk) || $chunk==='') break;
-							$output.=$chunk;
-							if(strlen($output)>$maximum) throw new RuntimeException('Application scheduler response exceeded its bound.');
-						}
+						do{
+							$stdoutRead=self::drainSchedulerStream(
+								$pipes[1],$output,$maximum,true,$diagnosticOverflow,$deadline,
+							);
+							$stderrRead=self::drainSchedulerStream(
+								$pipes[2],$diagnosticOutput,self::MAX_SCHEDULER_DIAGNOSTIC_BYTES,false,$diagnosticOverflow,$deadline,
+							);
+							}while(($stdoutRead || $stderrRead) && hrtime(true)<$deadline);
 						break;
 					}
-					$read=[$pipes[1]];$write=[];$except=[];@stream_select($read,$write,$except,0,20000);
+					$read=[];
+					foreach([1,2] as $index) if(!feof($pipes[$index])) $read[]=$pipes[$index];
+					if($read===[]){usleep(20000);continue;}
+					$write=[];$except=[];@stream_select($read,$write,$except,0,20000);
 				}
-				if($exitCode===null) throw new RuntimeException('Application scheduler request timed out.');
+				if($exitCode===null){
+					$failurePhase='gateway_timeout';$failureKind='timeout';
+					throw new RuntimeException('Application scheduler request timed out.');
+				}
 			}finally{
 				@pcntl_sigprocmask(SIG_BLOCK,[SIGTERM,SIGINT]);
-				self::terminateCgiGroup($child,$process,$pipes,$baselineChildren);
-				@pcntl_sigprocmask(SIG_SETMASK,$previousMask);
+				try{self::terminateCgiGroup($child,$process,$pipes,$baselineChildren);}
+				catch(Throwable $cleanupFailure){
+					$failurePhase='gateway_cleanup';$failureKind='exception';
+					throw $cleanupFailure;
+				}finally{@pcntl_sigprocmask(SIG_SETMASK,$previousMask);}
 			}
-			if($exitCode!==0) throw new RuntimeException('Application scheduler process failed.');
+			if($exitCode!==0){
+				$failurePhase='router_exit';$failureKind='exit';$failureExitCode=$exitCode;
+				if($exitCode===75 && !$diagnosticOverflow){
+					$childDiagnostic=DataphyreApplicationRuntimeSchedulerFailureDiagnostic::decodeChild($diagnosticOutput);
+				}
+				throw new RuntimeException('Application scheduler process failed.');
+			}
+			$failurePhase='gateway_transport';$failureKind='transport';
 			self::writeCompletedResponse($connection,$schedulerKind,$output,$request['method']==='HEAD');
+		}catch(Throwable $failure){
+			if(is_string($schedulerName)) self::reportFailure(
+				$schedulerName,$failurePhase,$failureKind,$failureExitCode,$failure,$childDiagnostic,
+			);
+			throw $failure;
 		}finally{
 			if($output!=='') sodium_memzero($output);
+			if($diagnosticOutput!=='') sodium_memzero($diagnosticOutput);
 			if($body!=='') sodium_memzero($body);
 		}
+	}
+
+	private static function callbackSchedulerName(string $kind,string $body): ?string
+	{
+		if($kind!=='callback') return null;
+		try{$candidate=json_decode($body,true,16,JSON_THROW_ON_ERROR);}catch(Throwable){return null;}
+		$name=is_array($candidate) ? ($candidate['scheduler_name'] ?? null) : null;
+		return is_string($name) && preg_match('/^[A-Za-z0-9._-]{1,128}$/D',$name)===1
+			&& !in_array($name,['.','..'],true) ? $name : null;
+	}
+
+	private static function drainSchedulerStream(
+		mixed $stream,string &$buffer,int $maximum,bool $fatalOnOverflow,bool &$overflow,int $deadline,
+	): bool {
+		if(hrtime(true)>=$deadline) return false;
+		$chunk=@fread($stream,65536);
+		if($chunk===false) throw new RuntimeException('Application scheduler child output read failed.');
+		if($chunk==='') return false;
+		$remaining=$maximum-strlen($buffer);
+		if(strlen($chunk)>$remaining){
+			if($fatalOnOverflow) throw new RuntimeException('Application scheduler response exceeded its bound.');
+			if($remaining>0) $buffer.=substr($chunk,0,$remaining);
+			$overflow=true;return true;
+		}
+		$buffer.=$chunk;return true;
+	}
+
+	/** @param null|array{failure_phase:string,exception_class:string} $child */
+	private static function reportFailure(
+		string $taskName,string $phase,string $kind,?int $exitCode,Throwable $failure,?array $child,
+		?callable $writer=null,
+	): void {
+		try{
+			$line=DataphyreApplicationRuntimeSchedulerFailureDiagnostic::encodeLog(
+				DataphyreApplicationRuntimeSchedulerFailureDiagnostic::logRecord(
+					$taskName,$phase,$kind,$exitCode,$failure,$child,
+				),
+			);
+			if(is_callable($writer)){$writer($line);return;}
+			@fwrite(STDERR,$line);
+		}catch(Throwable){}
 	}
 
 	/** @return array{0:array{method:string,target:string,protocol:string,headers:array<string,string>},1:string} */

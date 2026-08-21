@@ -25,6 +25,7 @@ final class dataphyre_scheduling_task_runner {
 		string $scheduler_name,
 		string $definition_sha256,
 		int $budget_milliseconds,
+		?callable $failure_reporter=null,
 	): bool {
 		if(preg_match('/^[A-Za-z0-9._-]{1,128}$/D',$scheduler_name)!==1
 			|| in_array($scheduler_name,['.','..'],true)
@@ -32,10 +33,13 @@ final class dataphyre_scheduling_task_runner {
 			|| $budget_milliseconds<1 || $budget_milliseconds>300000){
 			return false;
 		}
+		$failure_phase='callback_boundary';
 		try{
 			self::assertManagedSchedulerCgi();
 			@set_time_limit(max(1,(int)ceil($budget_milliseconds/1000)));
+			$failure_phase='application_registration';
 			$report=self::managedRegistrationReport();
+			$failure_phase='definition_verification';
 			$definition=\dataphyre\scheduling::runtime_definition($scheduler_name);
 			$evidence=null;
 			foreach(($report['definitions'] ?? []) as $candidate){
@@ -49,16 +53,19 @@ final class dataphyre_scheduling_task_runner {
 					$definition_sha256,
 					'sha256:'.hash('sha256',json_encode($evidence,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR))
 				)){
-				return false;
+				throw new \RuntimeException('scheduler_definition_evidence_mismatch');
 			}
 			\dataphyre\scheduling::begin_task_runner($scheduler_name);
 			try{
+				$failure_phase='task_execution';
 				self::executeTask($definition,static fn(string $path): bool=>is_file($path),[]);
 				return true;
 			}finally{
-				\dataphyre\scheduling::end_task_runner();
+				try{\dataphyre\scheduling::end_task_runner();}
+				catch(\Throwable $failure){$failure_phase='task_cleanup';throw $failure;}
 			}
-		}catch(\Throwable){
+		}catch(\Throwable $failure){
+			self::reportManagedFailure($failure_reporter,$failure_phase,$failure);
 			return false;
 		}
 	}
@@ -436,6 +443,12 @@ final class dataphyre_scheduling_task_runner {
 	private static function pre_init_failure(string $message,?\Throwable $failure,array $runtime): void {
 		$handler=$runtime['pre_init_error'] ?? (function_exists('pre_init_error') ? 'pre_init_error' : null);
 		if(is_callable($handler)) $failure===null ? $handler($message) : $handler($message,$failure);
+	}
+
+	/** Reports only to the framework-owned router; diagnostics cannot alter task outcome. */
+	private static function reportManagedFailure(?callable $reporter,string $phase,\Throwable $failure): void {
+		if(!is_callable($reporter)) return;
+		try{$reporter($phase,$failure);}catch(\Throwable){}
 	}
 
 	private static function terminate(?callable $terminator): void {

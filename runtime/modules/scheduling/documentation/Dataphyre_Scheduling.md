@@ -244,6 +244,17 @@ if(\dataphyre\scheduling::in_task_runner()){
    and completed claim; failure releases the claim and cannot starve later
    definitions.
 
+Failed callbacks write one private, bounded line through the existing root
+gateway stderr log. Its validated task name, gateway phase, exit/timeout kind,
+exit code, gateway exception class, and fixed message are authoritative. An
+exact clean router record may add allowlisted `application_reported_phase` and
+`application_reported_exception_class` hints; application code owns that
+process, so those two fields are explicitly non-authoritative. Throwable
+messages, claims, signatures, paths, environment values, SQL, headers, stack
+traces, and raw task stdout/stderr are never retained or returned. This is
+internal diagnostic evidence only; it adds no runtime status, release state,
+application setting, or customer-visible deployment concept.
+
 There is no second scheduler worker, runtime environment file, reusable
 dispatch secret, shell, or application-selectable process. Outside the managed
 Cloud pool, the request-driven scheduling API remains available for compatible
