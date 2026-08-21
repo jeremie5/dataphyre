@@ -10,6 +10,7 @@ declare(strict_types=1);
 use Dataphyre\Database\Seeds\InMemorySeedLedger;
 use Dataphyre\Database\Seeds\SeedContext;
 use Dataphyre\Database\Seeds\SeedDefinition;
+use Dataphyre\Database\Seeds\SeedExecutionException;
 use Dataphyre\Database\Seeds\SeedFileLoader;
 use Dataphyre\Database\Seeds\SeedManager;
 use Dataphyre\Database\Seeds\SqlSeedLedger;
@@ -18,7 +19,7 @@ use Dataphyre\Test\TestState;
 use function Dataphyre\Test\test;
 
 $dpSeedRoot=dirname(__DIR__);
-foreach(['SeedDefinition','SeedContext','SeedLedger','InMemorySeedLedger','SqlSeedLedger','SeedFileLoader','SeedManager'] as $dpSeedClass){
+foreach(['SeedDefinition','SeedContext','SeedExecutionException','SeedLedger','InMemorySeedLedger','SqlSeedLedger','SeedFileLoader','SeedManager'] as $dpSeedClass){
 	require_once $dpSeedRoot.'/Framework/Seeds/'.$dpSeedClass.'.php';
 }
 require_once $dpSeedRoot.'/kernel/seeds.php';
@@ -100,6 +101,52 @@ test('SQL seed manager applies dependencies and versions atomically and idempote
 	$t->throws(static fn()=>$atomic->apply(), RuntimeException::class);
 	$t->same([], $atomicLedger->all());
 })->tag('sql','seeds','framework')->maxMillis(5000);
+
+test('SQL seed manager reports the exact failing definition and preserves its cause', static function(Context $t): void {
+	$preflightLedger=new InMemorySeedLedger();
+	$preflightManager=new SeedManager([
+		new SeedDefinition(
+			'context.preflight',
+			1,
+			static fn()=>null,
+			null,
+			'',
+			[],
+			str_repeat('a', 64),
+			null,
+			['default'],
+			[],
+			static function(): never { throw new RuntimeException('preflight detail'); },
+		),
+	], $preflightLedger);
+	$preflightFailure=$t->throws(static fn()=>$preflightManager->apply(), SeedExecutionException::class);
+	$t->same('context.preflight@1', $preflightFailure->seedKey());
+	$t->same('preflight', $preflightFailure->phase());
+	$t->same(['seed_key'=>'context.preflight@1','phase'=>'preflight'], $preflightFailure->context());
+	$t->contains('context.preflight@1', $preflightFailure->getMessage());
+	$t->contains('preflight detail', $preflightFailure->getMessage());
+	$t->same('preflight detail', $preflightFailure->getPrevious()?->getMessage());
+	$t->same([], $preflightLedger->all());
+
+	$applyLedger=new InMemorySeedLedger();
+	$applyManager=new SeedManager([
+		new SeedDefinition('context.apply-first', 1, static fn()=>null, null, '', [], str_repeat('b', 64)),
+		new SeedDefinition(
+			'context.apply-second',
+			1,
+			static function(): never { throw new RuntimeException('apply detail'); },
+			null,
+			'',
+			[],
+			str_repeat('c', 64),
+		),
+	], $applyLedger);
+	$applyFailure=$t->throws(static fn()=>$applyManager->apply(), SeedExecutionException::class);
+	$t->same('context.apply-second@1', $applyFailure->seedKey());
+	$t->same('apply', $applyFailure->phase());
+	$t->same('apply detail', $applyFailure->getPrevious()?->getMessage());
+	$t->same([], $applyLedger->all());
+})->tag('sql','seeds','framework','failures','atomic')->maxMillis(5000);
 
 test('SQL seed profiles exclude demo data by default and preflight in dependency order inside the atomic batch', static function(Context $t): void {
 	$events=[];

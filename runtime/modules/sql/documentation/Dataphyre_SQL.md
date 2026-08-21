@@ -1190,7 +1190,11 @@ available only when the exact definition supplies a down callback, the checksum
 still matches, no applied dependent exists, and the caller passes `--confirm`.
 Every mutation takes a row lock in the companion ledger mutex table, validates
 the entire applied graph for drift/orphans, and uses Dataphyre Framework
-transaction/savepoint semantics. There is deliberately no reset-all command.
+transaction/savepoint semantics. If a definition preflight, apply callback, or
+ledger record fails, `SeedExecutionException` reports the exact
+`SeedDefinition::key()` and lifecycle phase while chaining the original
+throwable; the enclosing transaction still rolls back the entire batch. There
+is deliberately no reset-all command.
 
 Native mutation transactions are supported on MySQL and PostgreSQL. SQLite
 status/catalog operations remain portable, but apply/rollback fail before the

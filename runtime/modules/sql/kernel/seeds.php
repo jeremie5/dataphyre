@@ -15,7 +15,7 @@ use Dataphyre\Database\Seeds\SeedManager;
 use Dataphyre\Database\Seeds\SqlSeedLedger;
 
 $dp_seed_framework=dirname(__DIR__).'/Framework/Seeds';
-foreach(['SeedDefinition','SeedContext','SeedLedger','SeedFileLoader','SeedManager','SqlSeedLedger'] as $dp_seed_class){
+foreach(['SeedDefinition','SeedContext','SeedExecutionException','SeedLedger','SeedFileLoader','SeedManager','SqlSeedLedger'] as $dp_seed_class){
 	require_once $dp_seed_framework.'/'.$dp_seed_class.'.php';
 }
 

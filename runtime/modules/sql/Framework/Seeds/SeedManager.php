@@ -125,15 +125,17 @@ final class SeedManager {
 			$batch=$this->ledger->nextBatch();
 			$applied=[];
 			foreach($pending as $definition){
-				$definition->preflight($this->context);
-				$definition->apply($this->context);
-				$this->ledger->recordApplied([
-					'id'=>$definition->id(),
-					'version'=>$definition->version(),
-					'checksum'=>$definition->checksum(),
-					'batch'=>$batch,
-					'applied_at'=>gmdate('c'),
-				]);
+				$this->runDefinitionStep($definition, 'preflight', fn(): mixed=>$definition->preflight($this->context));
+				$this->runDefinitionStep($definition, 'apply', fn(): mixed=>$definition->apply($this->context));
+				$this->runDefinitionStep($definition, 'ledger', function() use ($definition, $batch): void {
+					$this->ledger->recordApplied([
+						'id'=>$definition->id(),
+						'version'=>$definition->version(),
+						'checksum'=>$definition->checksum(),
+						'batch'=>$batch,
+						'applied_at'=>gmdate('c'),
+					]);
+				});
 				$applied[]=$definition->jsonSerialize();
 			}
 			return [
@@ -142,6 +144,20 @@ final class SeedManager {
 				'skipped'=>$selected_count-count($pending),
 			];
 		});
+	}
+
+	/**
+	 * Runs one definition lifecycle step while retaining its exact definition key.
+	 *
+	 * The ledger transaction still owns rollback; this wrapper only adds stable
+	 * context and chains the original throwable without replacing its message.
+	 */
+	private function runDefinitionStep(SeedDefinition $definition, string $phase, callable $callback): mixed {
+		try{
+			return $callback();
+		}catch(\Throwable $throwable){
+			throw new SeedExecutionException($definition->key(), $phase, $throwable);
+		}
 	}
 
 	/** @return array<string,mixed> */

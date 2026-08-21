@@ -10,6 +10,7 @@ declare(strict_types=1);
 use Dataphyre\Database\Seeds\InMemorySeedLedger;
 use Dataphyre\Database\Seeds\SeedContext;
 use Dataphyre\Database\Seeds\SeedDefinition;
+use Dataphyre\Database\Seeds\SeedExecutionException;
 use Dataphyre\Database\Seeds\SeedFileLoader;
 use Dataphyre\Database\Seeds\SeedManager;
 use Dataphyre\Database\Seeds\SeedRuntimeFixture;
@@ -22,7 +23,7 @@ use function Dataphyre\Test\test;
 
 $dpSeedRoot=dirname(__DIR__);
 require_once __DIR__.'/fixtures/seed_failure_seams.php';
-foreach(['SeedDefinition','SeedContext','SeedLedger','InMemorySeedLedger','SqlSeedLedger','SeedFileLoader','SeedManager'] as $dpSeedClass){
+foreach(['SeedDefinition','SeedContext','SeedExecutionException','SeedLedger','InMemorySeedLedger','SqlSeedLedger','SeedFileLoader','SeedManager'] as $dpSeedClass){
 	require_once $dpSeedRoot.'/Framework/Seeds/'.$dpSeedClass.'.php';
 }
 require_once $dpSeedRoot.'/kernel/seeds.php';
