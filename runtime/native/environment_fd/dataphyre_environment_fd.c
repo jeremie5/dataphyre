@@ -378,11 +378,54 @@ static int dataphyre_process_boundary(pid_t expected_parent)
     length = fread(status, 1, sizeof(status) - 1, stream);
     fclose(stream);
     status[length] = '\0';
-    if (strstr(status, "CapEff:\t0000000000000000") == NULL
+    if (strstr(status, "CapInh:\t0000000000000000") == NULL
+        || strstr(status, "CapPrm:\t0000000000000000") == NULL
+        || strstr(status, "CapEff:\t0000000000000000") == NULL
+        || strstr(status, "CapBnd:\t0000000000000000") == NULL
+        || strstr(status, "CapAmb:\t0000000000000000") == NULL
         || strstr(status, "NoNewPrivs:\t1") == NULL) {
         return 0;
     }
     return 1;
+}
+
+static int dataphyre_scheduler_gateway_boundary(void)
+{
+    gid_t groups[8];
+    int group_count;
+    pid_t pid, parent, group, session;
+    const char *pool, *pool_role;
+    FILE *stream;
+    char status[8192];
+    size_t length;
+    pool = getenv("DATAPHYRE_RUNTIME_POOL");
+    pool_role = getenv("DATAPHYRE_RUNTIME_POOL_ROLE");
+    pid = getpid();
+    parent = getppid();
+    group = getpgrp();
+    session = getsid(0);
+    if (sapi_module.name == NULL || strcmp(sapi_module.name, "cli") != 0
+        || pool == NULL || pool_role == NULL
+        || strcmp(pool, "scheduler-gateway") != 0 || strcmp(pool_role, "scheduler-gateway") != 0
+        || !((session == pid && group == pid) || (session == parent && group == parent))
+        || getuid() != 0 || geteuid() != 0 || getgid() != 0 || getegid() != 0) {
+        return 0;
+    }
+    group_count = getgroups((int)(sizeof(groups) / sizeof(groups[0])), groups);
+    if (group_count != 1 || groups[0] != 0 || prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0) != 1) {
+        return 0;
+    }
+    stream = fopen("/proc/self/status", "rb");
+    if (stream == NULL) return 0;
+    length = fread(status, 1, sizeof(status) - 1, stream);
+    fclose(stream);
+    status[length] = '\0';
+    return strstr(status, "CapInh:\t0000000000000000") != NULL
+        && strstr(status, "CapPrm:\t00000000000000e0") != NULL
+        && strstr(status, "CapEff:\t00000000000000e0") != NULL
+        && strstr(status, "CapBnd:\t00000000000000e0") != NULL
+        && strstr(status, "CapAmb:\t0000000000000000") != NULL
+        && strstr(status, "NoNewPrivs:\t1") != NULL;
 }
 
 static int dataphyre_snapshot_environ(dataphyre_environment_entry **entries, size_t *count)
@@ -758,6 +801,19 @@ PHP_FUNCTION(dataphyre_close_unlisted_inherited_fds)
     RETURN_TRUE;
 }
 
+PHP_FUNCTION(dataphyre_enable_scheduler_child_subreaper)
+{
+    int enabled = 0;
+    ZEND_PARSE_PARAMETERS_NONE();
+    if (!dataphyre_scheduler_gateway_boundary()
+        || prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0
+        || prctl(PR_GET_CHILD_SUBREAPER, &enabled, 0, 0, 0) != 0
+        || enabled != 1) {
+        RETURN_FALSE;
+    }
+    RETURN_TRUE;
+}
+
 PHP_FUNCTION(dataphyre_managed_pool_request_context)
 {
     zval environment, managed_bootstrap;
@@ -811,6 +867,9 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_dataphyre_close_unlisted_inherited_fds, 0, 0, _IS_BOOL, 0)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_dataphyre_enable_scheduler_child_subreaper, 0, 0, _IS_BOOL, 0)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_MASK_EX(arginfo_dataphyre_managed_pool_request_context, 0, 0, MAY_BE_ARRAY|MAY_BE_FALSE)
 ZEND_END_ARG_INFO()
 
@@ -818,6 +877,7 @@ static const zend_function_entry dataphyre_environment_fd_functions[] = {
     PHP_FE(dataphyre_close_inherited_fd, arginfo_dataphyre_close_inherited_fd)
     PHP_FE(dataphyre_open_inherited_environment_fd, arginfo_dataphyre_open_inherited_environment_fd)
     PHP_FE(dataphyre_close_unlisted_inherited_fds, arginfo_dataphyre_close_unlisted_inherited_fds)
+    PHP_FE(dataphyre_enable_scheduler_child_subreaper, arginfo_dataphyre_enable_scheduler_child_subreaper)
     PHP_FE(dataphyre_managed_pool_request_context, arginfo_dataphyre_managed_pool_request_context)
     PHP_FE_END
 };

@@ -194,9 +194,11 @@ php vendor/dataphyre/dataphyre/runtime/modules/sql/kernel/postgresql_migrate.php
 
 Embedded installs use the same command under their fixed Dataphyre package
 directory. `--project-root`, `--app`, `--environment`, and `--mode` are
-required. Mode is exactly `bootstrap`, `rolling`, or `maintenance`. Optional
-`--dry-run` performs the runner's transactional rehearsal. Release version and
-digest must be supplied together. Maintenance may additionally receive
+required. Mode is exactly `automatic`, `bootstrap`, `rolling`, or
+`maintenance`. The fixed managed-runtime one-shot always uses `automatic`;
+there is no fresh-database, phase, SQL-path, or compatibility override in argv.
+Optional `--dry-run` performs the runner's transactional rehearsal. Release
+version and digest must be supplied together. Maintenance may additionally receive
 `--verified-minimum-active-release=<semver>`; that option is rejected in other
 modes.
 
@@ -226,8 +228,9 @@ before dropping privileges. When absent, the command continues to consume the
 existing canonical/default configuration. The purpose and credentials never
 enter child argv or command evidence.
 
-Every invocation emits one canonical JSON envelope with a stable key order and
-field allowlist. Success is written to stdout; failure is written to stderr.
+Every invocation emits one canonical JSON envelope with a stable key order,
+field allowlist, and 262,144-byte maximum. Success is written to stdout;
+failure is written to stderr.
 Failure messages are fixed and never include PDO, SQL, environment-variable,
 or exception text. Exit status is stable:
 
@@ -247,6 +250,71 @@ adapter from deployment argv to the framework's native migration lifecycle.
 The command contains no Dataphyre Cloud vocabulary or application policy. It
 only removes repeated, unsafe application release wrappers around public
 profile, manifest, locking, drift, transaction, and journal behavior.
+
+### Automatic fresh-database convergence
+
+`automatic` does not mean “apply every contract to any database.” Before the
+first mutation, Dataphyre inspects the immutable manifest and live PostgreSQL
+catalog. It may converge all ordered `bootstrap`, `rolling_expand`, and
+`rolling_contract` entries only when all of these facts hold, and it re-proves
+them after taking the profile's transaction-scoped advisory lock:
+
+- the application schema does not exist;
+- neither migration journal exists;
+- applied count and applied head are empty;
+- every manifest entry is pending exactly once; and
+- drift is zero.
+
+That proof establishes the compatibility-floor authority for a new application
+schema: there cannot be an older application release using schema objects that
+do not yet exist. Before application SQL, the runner materializes only its fixed
+Dataphyre-owned migration prerequisites from their framework `TableDefinition`
+factories. The current prerequisite set is the Permission role authority storage
+(`dataphyre.permission_roles` and
+`dataphyre.permission_role_permissions`), because application migrations may
+bind cross-schema integrity or audit triggers to that public framework storage.
+The set is not selected by application id, migration id, argv, or manifest data.
+Every declared prerequisite column is rechecked before application SQL, so an
+existing partial framework table fails closed instead of being mistaken for a
+complete dependency.
+
+Prerequisite DDL, journal creation, every ordered phase, all journal/event rows,
+and final schema validation share the same transaction and transaction-scoped
+advisory lock. A failed prerequisite, migration, or process crash rolls back the
+complete attempt and releases the lock with the transaction, so an ordinary
+retry sees either the original pristine database or the exact committed manifest
+head. There is no recovery marker, resume flag, separately callable prerequisite
+stage, or partially committed fresh prefix. This is not the registered-table
+materializer: all other current framework and application table definitions are
+still materialized only after migration convergence.
+
+The same fixed prerequisite proof runs before any nonempty established
+bootstrap, rolling, or maintenance selection. Rolling and maintenance keep its
+DDL in their existing lock-bound deployment transaction, so a missing or partial
+framework prerequisite stops the batch before application SQL and rolls back
+cleanly. Bootstrap retains its documented session lock and per-migration commit
+model. A fully applied no-op selection does not materialize prerequisites; the
+ordinary post-migration materializer remains authoritative when no application
+migration needs them.
+
+For any established or unjournalled-but-existing application schema,
+`automatic` retains the normal bootstrap/rolling selection. It never invents a
+minimum active release and never crosses a pending contract head. Maintenance
+still requires the caller-verified floor described below.
+
+Successful non-dry-run automatic output contains both the initial
+`result.pending_validation` and a final `result.convergence_validation`. A
+release coordinator must parse the canonical JSON and require final
+`bootstrap_cutoff_status="applied"`, `eligible=true`, empty `errors`, and empty
+`pending_migrations`, `pending_phases`, `selected_migrations`,
+`selected_phases`, and `deferred_migrations`. Exit status zero is not a
+substitute for those fields. Final automatic convergence always reports
+`compatibility_floor_satisfied=true` once no pending or deferred contract
+remains. A fresh convergence additionally reports
+`fresh_database_proven=true`; an idempotent rerun reports an empty migration
+list and the same empty final inventory without claiming a new freshness proof. This evidence certifies
+migration convergence only. It does not certify seed data, application health,
+traffic switching, rollback readiness, or a fleet-wide release floor.
 
 ## Manifest v3
 
@@ -426,6 +494,11 @@ transaction-scoped advisory lock and one deployment transaction. Migration SQL
 must not contain `BEGIN`, `COMMIT`, `ROLLBACK`, or psql meta-commands. Supply a
 connection that is not already inside a transaction. Every committed direction
 appends an immutable event with an operation ID and checksums.
+
+Proven-fresh automatic convergence uses one deployment transaction and one
+transaction-scoped advisory lock across journal creation, every manifest phase,
+and final status validation. This narrow path does not alter the transaction or
+compatibility rules for an established database.
 
 Maintenance apply accepts the verified floor as its final optional argument and
 recomputes evidence after taking the advisory lock:

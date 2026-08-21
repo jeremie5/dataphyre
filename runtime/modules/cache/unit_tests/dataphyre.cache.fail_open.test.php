@@ -35,7 +35,7 @@ class DpCacheUnavailableBackend {
 	public function flush(): bool { return false; }
 	public function increment(string $key, int $offset=1): bool { return false; }
 	public function decrement(string $key, int $offset=1): bool { return false; }
-	public function add(string $key, mixed $value): bool { return false; }
+	public function add(string $key, mixed $value, int $expiration=0): bool { return false; }
 	public function getResultCode(): int { return 47; }
 }
 
@@ -103,14 +103,40 @@ final class DpCacheHealthyBackend {
 		return $this->values[$key]=max(0, (int)$this->values[$key]-$offset);
 	}
 
-	public function add(string $key, mixed $value): bool {
+	public function add(string $key, mixed $value, int $expiration=0): bool {
 		if(array_key_exists($key, $this->values)){
 			$this->resultCode=12;
 			return false;
 		}
 		$this->values[$key]=$value;
+		$this->expirations[$key]=$expiration;
 		$this->resultCode=0;
 		return true;
+	}
+
+	public function getResultCode(): int {
+		return $this->resultCode;
+	}
+}
+
+final class DpCacheRacingCounterBackend {
+	private bool $firstIncrement=true;
+	private int $value=7;
+	private int $resultCode=0;
+
+	public function increment(string $key, int $offset=1): int|false {
+		if($this->firstIncrement){
+			$this->firstIncrement=false;
+			$this->resultCode=16;
+			return false;
+		}
+		$this->resultCode=0;
+		return $this->value+=$offset;
+	}
+
+	public function add(string $key, mixed $value, int $expiration=0): bool {
+		$this->resultCode=14;
+		return false;
 	}
 
 	public function getResultCode(): int {
@@ -158,10 +184,20 @@ test('cache identifies a healthy shared backend and preserves SQL expiration sem
 	$t->same($absoluteExpiration, $backend->expirations['cache:test:shared'] ?? null);
 	$t->same(3, \dataphyre\cache::increment('cache:test:new-counter', 3));
 	$t->same(1, \dataphyre\cache::decrement('cache:test:new-counter', 2));
+	$t->same(4, \dataphyre\cache::incrementShared('cache:test:shared-counter', 4, 90));
+	$t->same(90, $backend->expirations['cache:test:shared-counter'] ?? null);
+	$t->same(6, \dataphyre\cache::incrementShared('cache:test:shared-counter', 2, 300));
+	$t->same(90, $backend->expirations['cache:test:shared-counter'] ?? null);
 	$t->isTrue(\dataphyre\cache::delete('cache:test:shared'));
 	$t->isNull(\dataphyre\cache::get('cache:test:shared'));
 	$t->isFalse($access->readProperty('memory_fallback'));
 })->tag('cache', 'memcached', 'sql', 'compatibility')->group('framework-coverage');
+
+test('cache shared counters preserve every increment when creators race', static function(Context $t): void {
+	$access=dp_cache_test_reset($t, new DpCacheRacingCounterBackend(), false, true);
+	$t->same(10, \dataphyre\cache::incrementShared('cache:test:racing-counter', 3, 60));
+	$t->isFalse($access->readProperty('memory_fallback'));
+})->tag('cache', 'memcached', 'counter', 'concurrency')->group('framework-coverage');
 
 test('cache resolves bounded container endpoints without exposing credentials', static function(Context $t): void {
 	$names=[
@@ -215,6 +251,7 @@ test('cache memory fallback preserves counter and expiration semantics', static 
 	$t->same(3, \dataphyre\cache::increment('cache:test:counter', 3));
 	$t->same(1, \dataphyre\cache::decrement('cache:test:counter', 2));
 	$t->same(0, \dataphyre\cache::decrement('cache:test:counter', 5));
+	$t->isFalse(\dataphyre\cache::incrementShared('cache:test:local-policy-counter', 1, 60));
 	\dataphyre\cache::set('cache:test:expired', 'stale', 10);
 	$entries=$access->readProperty('memory_cache');
 	$entries['cache:test:expired']['expires']=time()-1;
@@ -235,6 +272,11 @@ test('cache backend failures degrade to memory and stop claiming shared state', 
 	dp_cache_test_reset($t, new DpCacheThrowingBackend(), false, true);
 	$t->isNull(\dataphyre\cache::get('cache:test:throws'));
 	$t->isFalse(\dataphyre\cache::isShared());
+
+	$access=dp_cache_test_reset($t, new DpCacheUnavailableBackend(), false, true);
+	$t->isFalse(\dataphyre\cache::incrementShared('cache:test:strict-counter', 1, 60));
+	$t->isFalse(\dataphyre\cache::isShared());
+	$t->same([], $access->readProperty('memory_cache'));
 })->tag('cache', 'fallback', 'availability')->group('framework-coverage');
 
 test('cache cold start fails open when the Memcached extension is absent', static function(Context $t): void {

@@ -480,6 +480,66 @@ namespace {
 		$state->put('pg_query_results',[new DpKqPgResult([],[],2)]);$t->same(2,$class::postgresql_delete('primary','normal','',null));
 	})->tag('sql','kernel','query-builders','deep-coverage')->group('framework-coverage');
 
+	test('PostgreSQL compatibility preserves JSON operators and SQL literals while numbering bound placeholders',static function(Context $t): void {
+		$state=dp_kq_scenario($t);$class=\dataphyre\postgresql_query_builder::class;$builder=$t->nonPublic($class);
+		$query=<<<'SQL'
+SELECT capabilities ? 'change_control',
+       capabilities ?| ARRAY['change_control','audit'],
+       capabilities ?& ARRAY['change_control','audit'],
+       capabilities @? '$.change_control',
+       note='?', /* ? */ id=?, -- ?
+       marker=?
+SQL;
+		$translated=$builder->invokeWithArguments('mysql_compatibility_layer',[$query]);
+		$expected=<<<'SQL'
+SELECT capabilities ? 'change_control',
+       capabilities ?| ARRAY['change_control','audit'],
+       capabilities ?& ARRAY['change_control','audit'],
+       capabilities @? '$.change_control',
+       note='?', /* ? */ id=$1, -- ?
+       marker=$2
+SQL;
+		$t->same($expected,$translated);
+
+		$versioned=<<<'SQL'
+CREATE FUNCTION fixture.capability_exists(payload jsonb) RETURNS boolean
+LANGUAGE plpgsql AS $capability_body$
+BEGIN
+    RETURN payload ? 'change_control';
+END;
+$capability_body$;
+SQL;
+		$t->same($versioned,$builder->invokeWithArguments('mysql_compatibility_layer',[$versioned]));
+
+		$boundOperators=<<<'SQL'
+SELECT payload ? ?, payload @? ?, marker=?
+SQL;
+		$translated=$builder->invokeWithArguments('mysql_compatibility_layer',[$boundOperators]);
+		$expected=<<<'SQL'
+SELECT payload ? $1, payload @? $2, marker=$3
+SQL;
+		$t->same($expected,$translated);
+		$t->same('SELECT payload ? $1',$builder->invokeWithArguments('mysql_compatibility_layer',['SELECT payload ? $1']));
+
+		$numberedBeforeDollarBody=<<<'SQL'
+SELECT $1, body=$capability_body$ RETURN payload ? 'change_control'; $capability_body$
+SQL;
+		$translated=$builder->invokeWithArguments('mysql_compatibility_layer',[$numberedBeforeDollarBody]);
+		$t->same($numberedBeforeDollarBody,$translated);
+
+		$state->put('pg_get_results',[false,false]);
+		$t->isTrue(dp_kq_multi_execution($builder,new DpKqPgConnection(),"SELECT capabilities ? 'change_control'; SELECT capabilities ?| ARRAY['audit'];")->result());
+		$t->same([
+			"SELECT capabilities ? 'change_control'",
+			"SELECT capabilities ?| ARRAY['audit']",
+		],$state->get('pg_queries'));
+
+		$state->put('pg_queries',[]);$class::$conns['primary']=new DpKqPgConnection();
+		$state->put('pg_execute_results',[new DpKqPgResult([],[],3)]);
+		$t->same(3,$class::postgresql_delete('primary','normal',"WHERE capabilities ? 'change_control' AND id=?",[1]));
+		$t->same(["DELETE FROM normal WHERE capabilities ? 'change_control' AND id=$1"],$state->get('pg_queries'));
+	})->tag('sql','postgresql','jsonb','operators','placeholders','regression')->group('framework-coverage');
+
 	test('sql kernel query builders deep coverage covers PostgreSQL executor and direct failure contracts',static function(Context $t): void {
 		$state=dp_kq_scenario($t);$class=\dataphyre\postgresql_query_builder::class;$conn=new DpKqPgConnection();$class::$conns['primary']=$conn;
 		$builder=$t->nonPublic($class);

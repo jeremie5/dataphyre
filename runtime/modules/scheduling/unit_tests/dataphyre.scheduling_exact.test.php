@@ -387,7 +387,7 @@ test('managed callback runs only in the fresh scheduler CGI with an outer signed
 	$core=dirname(__DIR__,2).'/core/kernel';
 	$runner=(string)file_get_contents(dirname(__DIR__).'/kernel/task_runner.php');
 	$router=(string)file_get_contents($core.'/application_runtime_router.php');
-	$gateway=(string)file_get_contents($core.'/application_runtime_cgi_gateway.php');
+	$gateway=(string)file_get_contents($core.'/application_runtime_scheduler_gateway.php');
 	$t->isFalse(file_exists(dirname(__DIR__).'/kernel/managed_task_worker.php'));
 	$t->isFalse(str_contains($runner,'executeManagedTask'));
 	$t->isFalse(str_contains($runner,'proc_open('));

@@ -10,6 +10,9 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Extended the application-neutral secret redactor to treat PIN and passcode
+  fields as credential material, including normalized snake-case and camel-case
+  variants, so structured diagnostics cannot disclose short access secrets.
 - Restored the optional `cache` module compatibility facade and made missing or
   unhealthy Memcached infrastructure degrade to request-local memory instead of
   making production requests unavailable.

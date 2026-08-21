@@ -387,15 +387,11 @@ test('root process accepts only the image-owned root home value',static function
 	$t->isFalse(str_contains($source,"'TERM','HOME'"));
 })->tag('root-environment','home','fixed-value','positive','negative');
 
-test('root process accepts every fixed runtime endpoint without admitting tenant endpoint controls',static function(Context $t): void {
+test('root process accepts public fixed endpoints and rejects removed private TCP endpoint controls',static function(Context $t): void {
 	$base=['HOME'=>'/root'];
 	$fixedEndpoints=[
 		'DATAPHYRE_RUNTIME_WEB_HOST'=>'127.0.0.1',
 		'DATAPHYRE_RUNTIME_WEB_PORT'=>'8083',
-		'DATAPHYRE_RUNTIME_SCHEDULER_HOST'=>'127.0.0.1',
-		'DATAPHYRE_RUNTIME_SCHEDULER_PORT'=>'8081',
-		'DATAPHYRE_RUNTIME_STATUS_HOST'=>'127.0.0.1',
-		'DATAPHYRE_RUNTIME_STATUS_PORT'=>'8082',
 		'DATAPHYRE_RUNTIME_REALTIME_HOST'=>'0.0.0.0',
 		'DATAPHYRE_RUNTIME_REALTIME_PORT'=>'8080',
 	];
@@ -404,12 +400,22 @@ test('root process accepts every fixed runtime endpoint without admitting tenant
 		$t->same($value,($base+[$name=>$value])[$name],$name);
 	}
 	DataphyreApplicationRuntimeEnvironment::assertCleanRootEnvironment($base+$fixedEndpoints);
+	foreach([
+		'DATAPHYRE_RUNTIME_SCHEDULER_HOST'=>'127.0.0.1','DATAPHYRE_RUNTIME_SCHEDULER_PORT'=>'8081',
+		'DATAPHYRE_RUNTIME_STATUS_HOST'=>'127.0.0.1','DATAPHYRE_RUNTIME_STATUS_PORT'=>'8082',
+	] as $legacyName=>$legacyValue){
+		$t->throws(
+			static fn()=>DataphyreApplicationRuntimeEnvironment::assertCleanRootEnvironment(
+				$base+$fixedEndpoints+[$legacyName=>$legacyValue],
+			),RuntimeException::class,$legacyName,
+		);
+	}
 	$tenantEndpointControl=$base+$fixedEndpoints+['DATAPHYRE_RUNTIME_WEB_HOST_OVERRIDE'=>'tenant.example'];
 	$t->throws(
 		static fn()=>DataphyreApplicationRuntimeEnvironment::assertCleanRootEnvironment($tenantEndpointControl),
 		RuntimeException::class,
 	);
-})->tag('root-environment','fixed-endpoints','positive','negative','regression');
+})->tag('root-environment','fixed-endpoints','private-uds','positive','negative','regression');
 
 test('fixed root directory accepts overlay nlink one but rejects an impossible zero count',static function(Context $t): void {
 	$internals=$t->nonPublic(DataphyreApplicationRuntimeEnvironment::class);

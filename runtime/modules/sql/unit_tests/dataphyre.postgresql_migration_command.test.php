@@ -221,6 +221,8 @@ test('PostgreSQL migration command rejects command paths scripts and untyped arg
 		['postgresql_migrate.php', 'apply'],
 		['postgresql_migrate.php', '--script=/tmp/release.sh'],
 		['postgresql_migrate.php', '--bootstrap=/tmp/bootstrap.php'],
+		['postgresql_migrate.php', '--fresh-database'],
+		['postgresql_migrate.php', '--framework-prerequisite=permission_roles'],
 		['postgresql_migrate.php', '--command=php -r secret-value'],
 		['postgresql_migrate.php', '--dry-run=true'],
 		['postgresql_migrate.php', '--project-root=/tmp', '--project-root=/tmp'],
@@ -294,6 +296,18 @@ test('PostgreSQL migration command resolves automatic first-environment policy b
 				'eligible'=>true,
 				'errors'=>[],
 			],
+			'convergence_validation'=>[
+				'mode'=>'rolling',
+				'bootstrap_cutoff_status'=>'applied',
+				'pending_migrations'=>[],
+				'pending_phases'=>[],
+				'selected_migrations'=>[],
+				'selected_phases'=>[],
+				'deferred_migrations'=>[],
+				'eligible'=>true,
+				'errors'=>[],
+				'compatibility_floor_satisfied'=>true,
+			],
 		],
 	]);
 
@@ -306,7 +320,196 @@ test('PostgreSQL migration command resolves automatic first-environment policy b
 	$t->same('automatic', $run['payload']['mode']);
 	$t->same('bootstrap', $run['payload']['result']['deployment_mode']);
 	$t->same('bootstrap', $run['payload']['result']['pending_validation']['mode']);
+	$t->same([], $run['payload']['result']['convergence_validation']['pending_migrations']);
 })->tag('sql', 'migration', 'postgresql', 'cli', 'automatic')->group('framework-coverage');
+
+test('PostgreSQL migration command selects fresh convergence internally and emits exact final evidence', static function(Context $t): void {
+	$workspace=dp_postgresql_command_fixture($t, 'automatic-fresh-convergence');
+	$pdo=$t->scriptedPdo('pgsql')
+		->queueScalar(0)
+		->queueScalar(0)
+		->queueScalar(0);
+	$received=[];
+	$run=dp_postgresql_command_run([
+		'postgresql_migrate.php',
+		'--project-root='.$workspace->root(),
+		'--app=fixture',
+		'--environment=production',
+		'--mode=automatic',
+	], [
+		'environment_values'=>[
+			'DATAPHYRE_DATABASE_DSN'=>'pgsql:host=database.internal;dbname=fixture',
+		],
+		'pdo_factory'=>static fn()=> $pdo,
+		'apply'=>static function(
+			PDO $connection,
+			PostgreSqlMigrationProfile $profile,
+			PostgreSqlMigrationManifest $manifest,
+			array $options
+		) use (&$received, $pdo): array {
+			$received=[
+				'same_pdo'=>$connection===$pdo,
+				'mode'=>$options['mode'],
+				'automatic_requested'=>$options['automatic_requested'],
+				'fresh_database_convergence'=>$options['fresh_database_convergence'],
+			];
+			return [
+				'transaction'=>'committed',
+				'transaction_scope'=>'per_migration',
+				'migrations'=>['001_base'],
+				'deployment_mode'=>'automatic',
+				'direction'=>'up',
+				'bootstrap_cutoff'=>$manifest->bootstrapCutoff(),
+				'pending_validation'=>[
+					'mode'=>'automatic',
+					'bootstrap_cutoff_status'=>'pending',
+					'pending_migrations'=>['001_base'],
+					'pending_phases'=>['bootstrap'=>1],
+					'selected_migrations'=>['001_base'],
+					'selected_phases'=>['bootstrap'=>1],
+					'deferred_migrations'=>[],
+					'eligible'=>true,
+					'errors'=>[],
+					'compatibility_floor_satisfied'=>true,
+					'fresh_database_proven'=>true,
+				],
+				'convergence_validation'=>[
+					'mode'=>'automatic',
+					'bootstrap_cutoff_status'=>'applied',
+					'pending_migrations'=>[],
+					'pending_phases'=>[],
+					'selected_migrations'=>[],
+					'selected_phases'=>[],
+					'deferred_migrations'=>[],
+					'eligible'=>true,
+					'errors'=>[],
+					'compatibility_floor_satisfied'=>true,
+					'fresh_database_proven'=>true,
+				],
+			];
+		},
+	]);
+
+	$t->same(PostgreSqlMigrationCommand::EXIT_SUCCESS, $run['status']);
+	$t->same('', $run['error']);
+	$t->same([
+		'same_pdo'=>true,
+		'mode'=>'automatic',
+		'automatic_requested'=>true,
+		'fresh_database_convergence'=>true,
+	], $received);
+	$convergence=$run['payload']['result']['convergence_validation'];
+	$t->same(true, $convergence['eligible']);
+	$t->same([], $convergence['pending_migrations']);
+	$t->same([], $convergence['selected_migrations']);
+	$t->same([], $convergence['deferred_migrations']);
+	$t->same(true, $convergence['fresh_database_proven']);
+	$t->isTrue(strlen($run['out'])<=PostgreSqlMigrationCommand::MAX_EVIDENCE_BYTES);
+})->tag('sql', 'migration', 'postgresql', 'cli', 'automatic', 'fresh', 'convergence')->group('framework-coverage');
+
+test('PostgreSQL migration command rejects automatic success without final convergence proof', static function(Context $t): void {
+	$workspace=dp_postgresql_command_fixture($t, 'automatic-incomplete');
+	$run=dp_postgresql_command_run([
+		'postgresql_migrate.php',
+		'--project-root='.$workspace->root(),
+		'--app=fixture',
+		'--environment=production',
+		'--mode=automatic',
+	], [
+		'environment_values'=>[
+			'DATAPHYRE_DATABASE_DSN'=>'pgsql:host=database.internal;dbname=fixture',
+		],
+		'pdo_factory'=>static fn()=> $t->scriptedPdo('pgsql'),
+		'automatic_mode_selector'=>static fn()=> 'rolling',
+		'apply'=>static fn(): array=>[
+			'transaction'=>'committed',
+			'transaction_scope'=>'deployment',
+			'migrations'=>[],
+			'deployment_mode'=>'rolling',
+			'direction'=>'up',
+			'bootstrap_cutoff'=>'001_base',
+			'pending_validation'=>[
+				'mode'=>'rolling',
+				'eligible'=>true,
+				'errors'=>[],
+			],
+			'convergence_validation'=>[
+				'mode'=>'rolling',
+				'bootstrap_cutoff_status'=>'applied',
+				'pending_migrations'=>['002_contract'],
+				'pending_phases'=>['rolling_contract'=>1],
+				'selected_migrations'=>[],
+				'selected_phases'=>[],
+				'deferred_migrations'=>['002_contract'],
+				'eligible'=>false,
+				'errors'=>[
+					'pending_contract_requires_compatibility_finalization:002_contract',
+				],
+			],
+		],
+	]);
+
+	$t->same(PostgreSqlMigrationCommand::EXIT_MIGRATION, $run['status']);
+	$t->same('', $run['out']);
+	$t->same('migration_convergence_incomplete', $run['payload']['error']['code']);
+	$t->same(false, $run['payload']['result']['convergence_validation']['eligible']);
+	$t->same(['002_contract'], $run['payload']['result']['convergence_validation']['deferred_migrations']);
+})->tag('sql', 'migration', 'postgresql', 'cli', 'automatic', 'convergence', 'fail-closed')->group('framework-coverage');
+
+test('PostgreSQL migration command treats a fully applied automatic rerun as one evidenced no-op', static function(Context $t): void {
+	$workspace=dp_postgresql_command_fixture($t, 'automatic-idempotent-rerun');
+	$run=dp_postgresql_command_run([
+		'postgresql_migrate.php',
+		'--project-root='.$workspace->root(),
+		'--app=fixture',
+		'--environment=production',
+		'--mode=automatic',
+	], [
+		'environment_values'=>[
+			'DATAPHYRE_DATABASE_DSN'=>'pgsql:host=database.internal;dbname=fixture',
+		],
+		'pdo_factory'=>static fn()=> $t->scriptedPdo('pgsql'),
+		'automatic_mode_selector'=>static fn()=> 'rolling',
+		'apply'=>static fn(): array=>[
+			'transaction'=>'committed',
+			'transaction_scope'=>'deployment',
+			'migrations'=>[],
+			'deployment_mode'=>'rolling',
+			'direction'=>'up',
+			'bootstrap_cutoff'=>'001_base',
+			'pending_validation'=>[
+				'mode'=>'rolling',
+				'bootstrap_cutoff_status'=>'applied',
+				'pending_migrations'=>[],
+				'pending_phases'=>[],
+				'selected_migrations'=>[],
+				'selected_phases'=>[],
+				'deferred_migrations'=>[],
+				'eligible'=>true,
+				'errors'=>[],
+				'compatibility_floor_satisfied'=>true,
+			],
+			'convergence_validation'=>[
+				'mode'=>'rolling',
+				'bootstrap_cutoff_status'=>'applied',
+				'pending_migrations'=>[],
+				'pending_phases'=>[],
+				'selected_migrations'=>[],
+				'selected_phases'=>[],
+				'deferred_migrations'=>[],
+				'eligible'=>true,
+				'errors'=>[],
+				'compatibility_floor_satisfied'=>true,
+			],
+		],
+	]);
+
+	$t->same(PostgreSqlMigrationCommand::EXIT_SUCCESS, $run['status']);
+	$t->same([], $run['payload']['result']['migrations']);
+	$t->same('committed', $run['payload']['result']['transaction']);
+	$t->same([], $run['payload']['result']['convergence_validation']['pending_migrations']);
+	$t->same(true, $run['payload']['result']['convergence_validation']['eligible']);
+})->tag('sql', 'migration', 'postgresql', 'cli', 'automatic', 'idempotent', 'no-op')->group('framework-coverage');
 
 test('PostgreSQL migration command returns bounded eligibility blockers before mutation', static function(Context $t): void {
 	$workspace=dp_postgresql_command_fixture($t, 'ineligible');

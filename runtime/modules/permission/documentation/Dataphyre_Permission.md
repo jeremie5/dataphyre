@@ -211,6 +211,18 @@ Use the facade for assignment workflows:
 
 Stored rows hydrate automatically during checks. Pass `scope`, `tenant`, or `tenant_id` in the context to isolate assignments by tenant while still inheriting `global` rows.
 
+Before any nonempty fresh or established PostgreSQL migration selection, the
+fixed Dataphyre migration runner materializes `permission_roles` and
+`permission_role_permissions` from these same module-owned definitions. This
+lets application migrations establish cross-schema audit or integrity contracts
+against framework role authority without running the full registered-table
+materializer early. Fresh convergence, rolling, and maintenance keep this work
+inside the migration batch's lock-bound transaction; partial definitions fail
+before application SQL. The prerequisite set is fixed by Dataphyre, has no
+caller option, and a fully applied no-op does not invoke it.
+`permission_assignments` and every other registered definition remain part of
+the ordinary post-migration materializer.
+
 ## Panel Integration
 
 Register the Panel bridge after Panel auth:

@@ -200,6 +200,15 @@ bootstrap. The CGI
 uses the fixed `scheduler-task` run mode and does not start visitor sessions,
 request-only modules, or load shedding.
 
+The root gateway retains only `CAP_KILL`, `CAP_SETUID`, and `CAP_SETGID`. Each
+fresh capability-free CGI owns a separate session/process group; the gateway
+terminates and verifies that whole group on success, failure, timeout, and
+handler interruption. Scheduler headers and decoded bodies are independently
+limited to 4096 bytes and transfer encoding is rejected before body allocation.
+Callback/no-op output is limited to 64 KiB; registration output is limited to
+the 512 KiB signed transport plus 64 KiB. These are framework constants, not
+application settings.
+
 ```php
 if(\dataphyre\scheduling::in_task_runner()){
 	my_module::run_headless((string)(\dataphyre\scheduling::current_scheduler_name() ?? ''));
@@ -215,9 +224,13 @@ if(\dataphyre\scheduling::in_task_runner()){
 2. When one definition is due, PID 1 creates a generation- and release-bound
    durable claim and sends its name, definition digest, and wall-clock budget in
    a canonical Ed25519-signed POST to `/dataphyre/runtime/scheduler/callback`.
-3. The root gateway accepts loopback traffic only, verifies the exact canonical
-   request and public key, and asks PID 1 to consume that request once. Replay or
-   any mismatch returns `404` before application PHP exists.
+3. The root gateway accepts only root callers through
+   `/run/dataphyre/scheduler/gateway.sock`, verifies the exact canonical request
+   and public key, and asks PID 1 through
+   `/run/dataphyre/control/runtime.sock` to consume that request once. Replay or
+   any mismatch returns `404` before application PHP exists. There is no private
+   scheduler or control TCP listener; `SERVER_PORT=8081` is only the fixed CGI
+   request projection supplied to a claimed callback process.
 4. After the claim succeeds, the gateway creates one fresh capability-free
    scheduler CGI. The signed budget also bounds that process from the gateway,
    outside application PHP.

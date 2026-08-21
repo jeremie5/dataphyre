@@ -48,6 +48,9 @@ namespace {
 		$runtime_modules.'/mvc/Framework/PermissionMiddleware.php',
 		$runtime_modules.'/mvc/Framework/PermissionAnyMiddleware.php',
 		$runtime_modules.'/mvc/Framework/SignedUrlMiddleware.php',
+		$runtime_modules.'/mvc/Framework/ThrottleStore.php',
+		$runtime_modules.'/mvc/Framework/SharedCacheThrottleStore.php',
+		$runtime_modules.'/mvc/Framework/LocalThrottleStore.php',
 		$runtime_modules.'/mvc/Framework/ThrottleMiddleware.php',
 		$runtime_modules.'/mvc/Framework/CacheMiddleware.php',
 		$runtime_modules.'/mvc/Framework/Session.php',
@@ -6085,6 +6088,10 @@ PHP);
 				$routes->get('/limited', static fn(): array => ['ok'=>true])->middleware('throttle:2,60,limited');
 			},
 		]);
+		$app->container()->instance(
+			\Dataphyre\Mvc\ThrottleStore::class,
+			new \Dataphyre\Mvc\LocalThrottleStore()
+		);
 		$first=$app->dispatcher()->dispatch(Request::create('GET', '/limited'));
 		$second=$app->dispatcher()->dispatch(Request::create('GET', '/limited'));
 		$third=$app->dispatcher()->dispatch(Request::create('GET', '/limited'));

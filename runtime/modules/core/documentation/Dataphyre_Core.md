@@ -75,7 +75,8 @@ under a private temporary state root; application cache/config/log bytes are
 unchanged, no lock, cadence timestamp, task, or shutdown callback can be created, and an
 ignored invalid, duplicate, or unpersisted registration fails the preflight.
 Table names, callbacks, credentials, headers, task paths, and event payloads never enter the
-report. Cloud must add exact-image proof of the three fixed child identities,
+report. Cloud must add exact-image proof of the four direct runtime children,
+the eight FPM workers,
 scheduler callback execution with claim-bound success receipts and lock
 cleanup, a framework listener roundtrip, execution and
 strict invalid-Origin rejection by every registered application authorization
@@ -138,24 +139,28 @@ candidate and preserve source, image, environment, and traffic identity before
 promotion; a local pass is a prediction, not proof that a different image will
 work.
 
-## Fixed Realtime Runtime
+## Fixed Managed Application Runtime
 
-Dataphyre application images have exactly three framework-owned child roles:
-private web on `127.0.0.1:8083`, private scheduler on `127.0.0.1:8081`, and the
-public realtime ingress on `0.0.0.0:8080`. The realtime ingress handles
-authenticated WebSocket upgrades and safely forwards ordinary HTTP to the
-private web child. Status remains private on `127.0.0.1:8082`. Applications do
-not declare processes, commands, listeners, ports, or sidecars.
+Dataphyre application images have exactly four framework-owned direct child
+roles: the private rootless HTTP gateway on `127.0.0.1:8083`, its rootless
+PHP-FPM master with eight workers on a fixed Unix socket, the root scheduler
+gateway on the root-only `/run/dataphyre/scheduler/gateway.sock`, and public
+realtime ingress on `0.0.0.0:8080`. The realtime ingress handles authenticated
+WebSocket upgrades and safely forwards ordinary HTTP to the private web
+gateway. PID 1 exposes status and scheduler claims only on the root-only
+`/run/dataphyre/control/runtime.sock`. Neither private control surface has a TCP
+listener. Applications do not declare processes, commands, listeners, ports,
+pool sizes, or sidecars.
 
-Web and scheduler listeners are fixed Cloud gateways, not PHP application
-servers. Each accepted HTTP request is executed by one fresh `php-cgi` process
-and that process exits after its response. The gateway never loads an
-application bootstrap. It retains only `CAP_SETUID` and `CAP_SETGID`, runs with
-`NoNewPrivs`, and uses those capabilities solely to create a UID/GID `10001`
-request child with an empty capability set and `NoNewPrivs`. The realtime role
-is also UID/GID `10001`, capability-free, and `NoNewPrivs`. Normal image PHP
-configuration and extensions remain active; Cloud must not launch any role
-with `-n`.
+The web gateway, FPM master and workers, and realtime role are UID/GID `10001`,
+capability-free, and `NoNewPrivs`. Dynamic web requests stay within the
+persistent FPM pool. Only the root scheduler gateway retains `CAP_KILL`,
+`CAP_SETUID`, and `CAP_SETGID`; it uses the identity capabilities solely to
+create one fresh UID/GID `10001`, capability-free `php-cgi` process for each
+accepted signed scheduler request, and `CAP_KILL` solely to terminate that
+child's complete owned process group after success, failure, or timeout.
+Normal image PHP configuration and extensions remain active; Cloud must not
+launch any role with `-n`.
 
 PID 1 is the only process that consumes the root-only, read-only application
 environment mount. Secret-bearing child environments are never published to a
@@ -170,14 +175,15 @@ closes both the PHP stream and native descriptor. The broker then closes its
 endpoint. There is no refetch, replay, same-process second read, sibling claim,
 PID-reuse acceptance, or tenant-readable fallback file.
 
-PHP CGI cannot safely reopen an anonymous socket through `php://fd`; the public
+PHP cannot safely reopen an anonymous socket through `php://fd`; the public
 runtime therefore includes the tiny `dataphyre_environment_fd` extension. Its
-entire callable surface duplicates only descriptor `198` into a PHP stream,
+one-shot callable surface duplicates only descriptor `198` into a PHP stream,
 closes only descriptor `198`, and closes every non-stdio inherited descriptor
 except `198` in the fixed pre-exec process; callers cannot select descriptors.
-Image
-construction must compile and enable that extension for both CLI and CGI and
-fail closed if either callable is unavailable. One-shot database identity,
+Its managed FPM surface consumes the same envelope during module startup and
+returns one sealed request context per worker request. Image construction must
+compile and enable the extension for CLI, CGI, and FPM and fail closed if the
+required callable is unavailable. One-shot database identity,
 release preflight, supported migration commands, and `php artisan migrate`
 use the same one-child broker. Arbitrary application shell or release scripts
 remain unsupported.
@@ -200,6 +206,23 @@ and a 64-character lowercase hexadecimal challenge, then dispatches the
 image-owned cache probe. Detect is networkless; write and read-delete must run
 as separate network-enabled one-shots. Keys, values, endpoints, TTLs, scripts,
 commands, and environment files are never selectable through this boundary.
+
+Managed HTTP traffic has one framework-owned topology. A rootless
+`web-http-gateway` listens on `127.0.0.1:8083`, serves safe immutable files
+directly from the application's canonical `public/` directory, and forwards
+all dynamic requests over `/run/dataphyre/web/php-fpm.sock`. A separate
+rootless PHP-FPM master owns eight static workers, recycles each worker after
+500 requests, and terminates requests after 300 seconds. The gateway never
+receives application environment values or a managed bootstrap key. The FPM
+master consumes those values once from descriptor 198 before forking; the
+native request boundary restores the sealed environment, cwd, and umask for
+every worker request. Applications cannot supply a web command, release
+script, pool size, socket, timeout, or process-manager setting.
+
+The former per-request web `php-cgi` path is deleted. Fresh `php-cgi` remains
+only behind the signed scheduler gateway, where one accepted scheduler claim
+still maps to one reaped child. Realtime remains its own persistent,
+capability-free framework process.
 
 Applications register realtime code while their normal `framework_bootstrap.php`
 is loaded with `$_SERVER['DATAPHYRE_RUNTIME_REALTIME_BOOTSTRAP'] === '1'`:
@@ -248,6 +271,22 @@ The evidence also reports the sealed application registration count and
 `registration_sha256`; the exact-image probe must match the registration digest
 recorded by release preflight.
 
+The same exact candidate image must also pass the fixed private runtime release
+probe:
+
+```text
+php runtime/modules/core/kernel/application_runtime_release_probe.php
+```
+
+It accepts no arguments or application settings. It warms `GET /health` three
+times, measures 20 dynamic requests against a fixed 750 ms p95 budget, requires
+eight concurrent dynamic requests to complete within 3000 ms, and reads the
+private supervisor cadence evidence. Promotion requires at least one completed
+successful cadence cycle; any measured per-definition start, completion, or
+recurrence deadline breach remains sticky for the generation and fails the
+probe. Its canonical evidence is bounded to 2048 bytes and its fixed command
+budget is 30 seconds.
+
 TLS terminates at the Dataphyre Cloud edge. The fixed container ingress accepts
 the edge's plain HTTP connection and must never be published directly without
 that platform TLS and traffic-identity boundary.
@@ -270,10 +309,12 @@ definitions. Deactivation stops new claims after the current callback drains.
 Task paths, claims, callback output, signing keys, and credentials never enter
 status evidence.
 
-The private status contract `dataphyre.application_runtime.v4` exposes the
+The private status contract `dataphyre.application_runtime.v6` exposes the
 supervisor identity, immutable application/release identity, activation mode,
-active state, `scheduler_cycle_in_progress`, exact web/scheduler/realtime pool
-identities and execution models, bounded scheduler registration and noop proof,
+active state, `scheduler_cycle_in_progress`, the rootless HTTP gateway, FPM
+master and eight worker identities, fixed socket and native-generation hashes,
+spawn-captured scheduler/realtime process identities, root-only control and
+scheduler Unix-socket identities, bounded scheduler registration and noop proof,
 durable scheduler-state identity, and business cadence. In signal mode,
 `SIGUSR1` activates dispatch and `SIGUSR2` deactivates it. The decision is
 persisted at the fixed framework path

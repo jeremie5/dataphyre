@@ -56,6 +56,7 @@ or a policy named `shared_cache`; it performs lazy backend selection and returns
 \dataphyre\cache::delete($key);
 \dataphyre\cache::flush();
 \dataphyre\cache::increment($key, $offset = 1);
+\dataphyre\cache::incrementShared($key, $offset = 1, $expiration = 0);
 \dataphyre\cache::decrement($key, $offset = 1);
 ```
 
@@ -64,6 +65,11 @@ or a policy named `shared_cache`; it performs lazy backend selection and returns
 - `set()`, `delete()`, and `flush()` return `true` when the requested state is
   established in either backend.
 - `increment()` creates a missing counter from zero.
+- `incrementShared()` atomically creates or increments an expiring counter only
+  while Memcached is healthy. It returns `false` instead of using request-local
+  memory, making it suitable for cross-worker policy such as MVC throttling.
+  Concurrent creators use `add()` so every successful caller is counted once;
+  the first creator establishes the expiration.
 - `decrement()` creates a missing counter at zero and never returns a negative
   value.
 - Keys that are empty, exceed Memcached's 250-byte limit, or contain forbidden

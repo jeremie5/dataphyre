@@ -37,7 +37,7 @@ test('managed scheduler accepts only the canonical signed and claim-bound CGI ro
 
 	$runtime=(string)file_get_contents(dirname(__DIR__).'/kernel/runtime.php');
 	$router=(string)file_get_contents(dirname(__DIR__).'/kernel/application_runtime_router.php');
-	$gateway=(string)file_get_contents(dirname(__DIR__).'/kernel/application_runtime_cgi_gateway.php');
+	$gateway=(string)file_get_contents(dirname(__DIR__).'/kernel/application_runtime_scheduler_gateway.php');
 	$t->isFalse(str_contains($runtime,'boot_internal_runtime_route'));
 	$t->isFalse(str_contains($runtime,'scheduler_route_name'));
 	$t->isFalse(str_contains($runtime,'/dataphyre/scheduler/'));
@@ -47,7 +47,10 @@ test('managed scheduler accepts only the canonical signed and claim-bound CGI ro
 	$t->contains("'/dataphyre/runtime/scheduler/noop'",$router);
 	$t->contains('DataphyreApplicationRuntimeSchedulerProtocol::matchesCanonicalJson',$router);
 	$t->contains('DataphyreApplicationRuntimeSchedulerProtocol::verify',$router);
-	$t->contains("'http://127.0.0.1:8082/dataphyre/runtime/scheduler/claim'",$gateway);
+	$t->contains("private const CONTROL_SOCKET='/run/dataphyre/control/runtime.sock'",$gateway);
+	$t->contains("stream_socket_client('unix://'.self::CONTROL_SOCKET",$gateway);
+	$t->contains('POST /dataphyre/runtime/scheduler/claim HTTP/1.1',$gateway);
+	$t->isFalse(str_contains($gateway,'127.0.0.1:8082'));
 	$t->isTrue(strpos($gateway,'claimSchedulerRequest($request,$body')<strpos($gateway,'DataphyreApplicationRuntimeProcessBroker::spawn'));
 	$t->isFalse(str_contains($router,'/dataphyre/runtime/scheduler/claim'));
 	$t->contains('writeCompletedResponse($connection,$schedulerKind,$output',$gateway);

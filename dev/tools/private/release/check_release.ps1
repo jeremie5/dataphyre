@@ -741,6 +741,20 @@ if (Test-Path $devDirectory -PathType Container) {
 					Add-Failure "check_public_export.ps1 is missing testing release-closure term: $testingReleaseTerm"
 				}
 			}
+			foreach ($managedRuntimeReleaseTerm in @(
+				'runtime/modules/core/kernel/application_runtime_php_fpm.conf',
+				'runtime/modules/core/kernel/application_runtime_release_probe.php',
+				'runtime/modules/core/kernel/application_runtime_scheduler_gateway.php',
+				'runtime/modules/core/kernel/application_runtime_web_gateway.php'
+			)) {
+				if ($checkPublicExportText -notmatch [regex]::Escape($managedRuntimeReleaseTerm)) {
+					Add-Failure "check_public_export.ps1 is missing managed-runtime release-closure term: $managedRuntimeReleaseTerm"
+				}
+			}
+			$obsoleteCgiGateway = 'runtime/modules/core/kernel/application_runtime_' + 'cgi_gateway.php'
+			if ($checkPublicExportText -match [regex]::Escape($obsoleteCgiGateway)) {
+				Add-Failure 'check_public_export.ps1 still requires the retired combined CGI gateway'
+			}
 			foreach ($archiveExecutableTerm in @(
 				'git -C $Root rev-parse --verify',
 				'git -C $Root ls-tree $resolvedRef',

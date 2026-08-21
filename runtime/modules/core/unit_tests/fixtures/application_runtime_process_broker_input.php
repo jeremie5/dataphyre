@@ -16,11 +16,41 @@ if(!is_string($kernel) || !is_string($mode) || !is_string($pidPath)
 }
 if($mode==='exit') exit(23);
 if($mode==='stall'){sleep(30);exit(70);}
-if(in_array($mode,['ack-exit','ack-stall'],true)){
+if($mode==='raw-fork-exit'){
+	$descendant=pcntl_fork();
+	if($descendant===-1) exit(79);
+	if($descendant===0){
+		pcntl_async_signals(true);pcntl_signal(SIGTERM,SIG_IGN);pcntl_signal(SIGINT,SIG_IGN);pcntl_signal(SIGHUP,SIG_IGN);
+		foreach([STDIN,STDOUT,STDERR] as $stream) if(is_resource($stream)) fclose($stream);
+		file_put_contents($pidPath.'.descendant',json_encode([
+			'pid'=>getmypid(),'parent_pid'=>posix_getppid(),'process_group_id'=>posix_getpgid(0),
+		],JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),LOCK_EX);
+		while(true) usleep(100000);
+	}
+	$deadline=microtime(true)+2.0;
+	while(!is_file($pidPath.'.descendant') && microtime(true)<$deadline) usleep(10000);
+	exit(is_file($pidPath.'.descendant') ? 0 : 80);
+}
+if(in_array($mode,['ack-exit','ack-stall','ack-fork-exit'],true)){
 	require_once $kernel.'/application_runtime_child_environment.php';
 	try{DataphyreApplicationRuntimeChildEnvironment::consumeInherited('one-shot');}
 	catch(Throwable){exit(78);}
 	if($mode==='ack-exit'){usleep(100000);exit(0);}
+	if($mode==='ack-fork-exit'){
+		$descendant=pcntl_fork();
+		if($descendant===-1) exit(79);
+		if($descendant===0){
+			pcntl_async_signals(true);pcntl_signal(SIGTERM,SIG_IGN);pcntl_signal(SIGINT,SIG_IGN);pcntl_signal(SIGHUP,SIG_IGN);
+			foreach([STDIN,STDOUT,STDERR] as $stream) if(is_resource($stream)) fclose($stream);
+			file_put_contents($pidPath.'.descendant',json_encode([
+				'pid'=>getmypid(),'parent_pid'=>posix_getppid(),'process_group_id'=>posix_getpgid(0),
+			],JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),LOCK_EX);
+			while(true) usleep(100000);
+		}
+		$deadline=microtime(true)+2.0;
+		while(!is_file($pidPath.'.descendant') && microtime(true)<$deadline) usleep(10000);
+		exit(is_file($pidPath.'.descendant') ? 0 : 80);
+	}
 	sleep(30);exit(70);
 }
 if($mode!=='consume') exit(64);

@@ -38,10 +38,15 @@ final class PostgreSqlSchemaInspector {
 		$qualified='('.$identifier.')\\s*\\.\\s*('.$identifier.')';
 		$scope=$this->profile->schema().'.';
 		foreach($entries as $entry){
-			$sql=self::migrationSchemaSql(
+			$migrationSql=self::migrationSchemaSql(
 				(string)($entry['sql'] ?? ''),
 				$databaseDialect
 			);
+			// Apply projected DDL one statement at a time. A migration commonly
+			// drops and recreates one named constraint or index; processing every
+			// addition before every drop reverses that contract and certifies the
+			// wrong final schema.
+			foreach(self::topLevelSqlStatements($migrationSql) as $sql){
 			if(preg_match_all(
 				'/\\bCREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?'.$qualified.
 				'\\s*\\((.*?)\\)\\s*(?:;|\\z)/is',
@@ -179,6 +184,7 @@ final class PostgreSqlSchemaInspector {
 				}
 			}
 			$this->applyDrops($expected, $sql, $identifier, $qualified);
+			}
 		}
 		return $expected;
 	}
@@ -1209,6 +1215,7 @@ final class PostgreSqlSchemaInspector {
 		$normalized=self::normalizeCatalogExpressionArtifacts(
 			self::normalizeSqlExpression($expression)
 		);
+		$normalized=self::normalizeEmbeddedTextMembershipExpressions($normalized);
 		$normalized=self::normalizeRedundantConcatenationParentheses($normalized);
 		return self::normalizeBooleanCheckExpression($normalized);
 	}
@@ -1239,6 +1246,20 @@ final class PostgreSqlSchemaInspector {
 			'(?:\\.(?:"(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*))*';
 		$literal="'(?:''|[^'])*'";
 		$jsonValue=$identifier.'(?:(?:->|#>)'.$literal.')+';
+		$expression=(string)preg_replace('/\\b(and|or|not)\\(/i', '$1 (', $expression);
+		do{
+			$before=$expression;
+			$expression=(string)preg_replace(
+				'/\\(\\(([^()]*)\\)\\)(::[A-Za-z_][A-Za-z0-9_ ]*)/i',
+				'($1)$2',
+				$expression
+			);
+			$expression=(string)preg_replace(
+				'/\\b(jsonb?_typeof|jsonb?_array_length)\\(\\(('.$jsonValue.')\\)\\)/i',
+				'$1($2)',
+				$expression
+			);
+		}while($expression!==$before);
 		do{
 			$before=$expression;
 			$expression=(string)preg_replace(
@@ -1248,8 +1269,8 @@ final class PostgreSqlSchemaInspector {
 			);
 		}while($expression!==$before);
 		$expression=(string)preg_replace(
-			'/\\(('.$identifier.'(?:(?:->|#>)'.$literal.')*(?:->>|#>>)'.$literal.')\\)'.
-			'(?=\\s*(?:=|<>|!=|<=|>=|<|>|~~|!~~|~|!~|'.
+			'/(?<![A-Za-z0-9_$])\\(('.$identifier.'(?:(?:->|#>)'.$literal.')*(?:->>|#>>|->|#>)'.$literal.')\\)'.
+			'(?=\\s*(?:=|<>|!=|<=|>=|<|>|@>|<@|~~|!~~|~|!~|'.
 			'is(?:\\s+not)?\\s+(?:null|true|false)\\b))/i',
 			'$1',
 			$expression
@@ -1290,10 +1311,15 @@ final class PostgreSqlSchemaInspector {
 			return false;
 		}
 		$expected=self::stripCatalogTextCasts($expected);
-		$catalog=self::stripContextBoundCatalogCasts($actual);
-		$expected=self::normalizeCatalogExpressionArtifacts($expected);
-		$catalog=self::normalizeCatalogExpressionArtifacts($catalog);
-		return $expected===$catalog;
+		$expected=self::normalizeEquivalentExpression($expected);
+		foreach([false, true] as $stripOperands){
+			$catalog=self::stripContextBoundCatalogCasts($actual, $stripOperands);
+			$catalog=self::normalizeEquivalentExpression($catalog);
+			if($expected===$catalog){
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static function expectedTextCastsPresent(string $expected, string $actual): bool {
@@ -1337,11 +1363,18 @@ final class PostgreSqlSchemaInspector {
 		));
 	}
 
-	private static function stripContextBoundCatalogCasts(string $expression): string {
+	private static function stripContextBoundCatalogCasts(
+		string $expression,
+		bool $stripOperands=true
+	): string {
 		$identifier='(?:"(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)'.
 			'(?:\\.(?:"(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*))*';
 		$literal="'(?:''|[^'])*'";
 		$type='(?:text|character varying)';
+		$value=$identifier.'(?:(?:->|->>|#>|#>>)'.$literal.')*';
+		$simpleValue='(?:'.$value.'|\\(\\s*'.$value.'\\s*\\))';
+		$numericLiteral="(?:'?-?[0-9]+(?:\\.[0-9]+)?'?)";
+		$numericType='(?:smallint|integer|bigint|numeric(?:\\([0-9]+(?:,[0-9]+)?\\))?|real|double precision)';
 
 		// mod(column, literal) resolves the literal to the exact built-in column
 		// overload. A casted first operand is intentionally outside this rule.
@@ -1372,6 +1405,28 @@ final class PostgreSqlSchemaInspector {
 			$expression
 		);
 
+		if($stripOperands){
+			// PostgreSQL resolves varchar-only text functions through their text
+			// signatures and records the implicit column cast in pg_get_expr().
+			// Keep this bounded to exact built-in one-argument contexts.
+			$expression=(string)preg_replace(
+				'/\\b(btrim|ltrim|rtrim|lower|upper)'.
+				'\\(('.$identifier.')::'.$type.'\\)/i',
+				'$1($2)',
+				$expression
+			);
+
+			// IN is rendered as ANY/ALL, and varchar membership adds an implicit
+			// cast to the left operand. Array/member annotations are handled by
+			// the membership normalizer below.
+			$expression=(string)preg_replace_callback(
+				'/('.$simpleValue.')::'.$type.'\\b(\\s+(?:not\\s+)?in)\\(/i',
+				static fn(array $match): string=>
+					self::stripOuterParentheses(trim($match[1])).$match[2].'(',
+				$expression
+			);
+		}
+
 		// Membership leaves have already been isolated by the Boolean parser.
 		$expression=(string)preg_replace_callback(
 			'/\\b((?:not\\s+)?in)\\(([^()]*)\\)/i',
@@ -1388,8 +1443,50 @@ final class PostgreSqlSchemaInspector {
 
 		// A simple column/JSON value fixes the comparison literal type. Function
 		// arguments are excluded so overload-selecting casts remain significant.
-		$value=$identifier.'(?:(?:->|->>|#>|#>>)'.$literal.')*';
 		$comparison='(?:=|<>|!=|<=|>=|<|>)';
+		// A comparison with a concrete column fixes a numeric constant's type.
+		// PostgreSQL 17 may render integral constants as quoted bigint literals
+		// and numeric constants with an explicit numeric cast. Strip only that
+		// catalog annotation; casts in the migration-side expression stay intact.
+		$expression=(string)preg_replace_callback(
+			'/('.$value.$comparison.')\\(?('.$numericLiteral.')\\)?::'.$numericType.'\\b/i',
+			static function(array $match): string {
+				$number=$match[2];
+				if(str_starts_with($number, "'") && str_ends_with($number, "'")){
+					$number=substr($number, 1, -1);
+				}
+				return $match[1].$number;
+			},
+			$expression
+		);
+		// COALESCE(column, numeric literal) resolves the fallback to the exact
+		// column type, so the catalog's literal cast is renderer-only as well.
+		$expression=(string)preg_replace_callback(
+			'/\\bcoalesce\\(('.$identifier.'),\\s*\\(?('.$numericLiteral.')\\)?::'.$numericType.'\\)/i',
+			static function(array $match): string {
+				$number=$match[2];
+				if(str_starts_with($number, "'") && str_ends_with($number, "'")){
+					$number=substr($number, 1, -1);
+				}
+				return 'coalesce('.$match[1].','.$number.')';
+			},
+			$expression
+		);
+		if($stripOperands){
+			$expression=(string)preg_replace_callback(
+				'/('.$simpleValue.')::'.$type.'('.$comparison.')/i',
+				static fn(array $match): string=>
+					self::stripOuterParentheses(trim($match[1])).$match[2],
+				$expression
+			);
+			$patternOperator='(?:!~~\\*?|~~\\*?|!~\\*?|~\\*?)';
+			$expression=(string)preg_replace_callback(
+				'/('.$simpleValue.')::'.$type.'('.$patternOperator.')/i',
+				static fn(array $match): string=>
+					self::stripOuterParentheses(trim($match[1])).$match[2],
+				$expression
+			);
+		}
 		$expression=(string)preg_replace(
 			'/('.$value.$comparison.')('.$literal.')::'.$type.'\\b/i',
 			'$1$2',
@@ -1401,6 +1498,117 @@ final class PostgreSqlSchemaInspector {
 			$expression
 		);
 		return self::normalizeSqlExpression($expression);
+	}
+
+	/**
+	 * Canonicalizes only renderer artifacts that remain after the context-bound
+	 * cast pass. This helper is shared by CHECK and expression-index comparison;
+	 * it does not reorder operands or erase migration-authored casts.
+	 */
+	private static function normalizeEquivalentExpression(string $expression): string {
+		$expression=self::normalizeCatalogExpressionArtifacts($expression);
+		$expression=self::normalizeEmbeddedTextMembershipExpressions($expression);
+		$expression=self::normalizePatternOperatorAliases($expression);
+		$expression=self::normalizeJsonLiteralCasts($expression);
+		$expression=self::normalizeRedundantCatalogOperandParentheses($expression);
+		return self::normalizeSqlExpression($expression);
+	}
+
+	/** PostgreSQL renders the SQL LIKE family with its exact internal operators. */
+	private static function normalizePatternOperatorAliases(string $expression): string {
+		return self::normalizeSqlExpression(str_replace(
+			['!~~*', '~~*', '!~~', '~~'],
+			[' not ilike ', ' ilike ', ' not like ', ' like '],
+			$expression
+		));
+	}
+
+	/**
+	 * PostgreSQL can render IN/NOT IN inside a larger comparison as ANY/ALL.
+	 * The Boolean leaf normalizer cannot see through an enclosing equality, so
+	 * normalize the bounded simple-column/text-array form before parsing leaves.
+	 */
+	private static function normalizeEmbeddedTextMembershipExpressions(string $expression): string {
+		$identifier='(?:(?:"(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)'.
+			'(?:\\.(?:"(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*))*)';
+		$left=$identifier.'(?:::(?:text|character varying))?';
+		$array='array\\s*\\[(?:[^\\[\\]]|\\[(?:[^\\[\\]]*)\\])*\\]'.
+			'(?:::(?:text|character\\s+varying|varchar)\\s*\\[\\])?';
+		do{
+			$before=$expression;
+			$expression=(string)preg_replace_callback(
+				'/('.$left.')(=any|<>all)\\(('.$array.')\\)/i',
+				static function(array $match): string {
+					$members=self::textMembershipArrayMembers($match[3]);
+					if($members===null || $members===''){
+						return $match[0];
+					}
+					return $match[1].($match[2]==='=any' ? ' in(' : ' not in(').$members.')';
+				},
+				$expression
+			);
+		}while($expression!==$before);
+		return $expression;
+	}
+
+	/** PostgreSQL json/jsonb values ignore insignificant literal whitespace. */
+	private static function normalizeJsonLiteralCasts(string $expression): string {
+		$literal="'(?:''|[^'])*'";
+		return (string)preg_replace_callback(
+			'/('.$literal.')::(jsonb?)\\b/i',
+			static function(array $match): string {
+				$source=str_replace("''", "'", substr($match[1], 1, -1));
+				try{
+					$value=json_decode($source, true, 512, JSON_THROW_ON_ERROR);
+					$canonical=json_encode(
+						$value,
+						JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES |
+						JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION
+					);
+				}catch(\JsonException){
+					return $match[0];
+				}
+				return "'".str_replace("'", "''", $canonical)."'::".strtolower($match[2]);
+			},
+			$expression
+		);
+	}
+
+	/**
+	 * Removes only catalog grouping around one scalar comparison operand. The
+	 * contents must be a cast or arithmetic expression and may not contain a
+	 * Boolean/comparison operator, so meaningful predicate grouping survives.
+	 */
+	private static function normalizeRedundantCatalogOperandParentheses(string $expression): string {
+		$comparison='(?:=|<>|!=|<=|>=|<|>|!~~\\*?|~~\\*?|!~\\*?|~\\*?)';
+		do{
+			$before=$expression;
+			$expression=(string)preg_replace(
+				'/\\(\\(([^()]*)\\)::([A-Za-z_][A-Za-z0-9_ ]*)\\)(?='.$comparison.')/i',
+				'($1)::$2',
+				$expression
+			);
+			$expression=(string)preg_replace(
+				'/('.$comparison.')\\(\\(([^()]*)\\)::([A-Za-z_][A-Za-z0-9_ ]*)\\)/i',
+				'$1($2)::$3',
+				$expression
+			);
+			$expression=(string)preg_replace_callback(
+				'/('.$comparison.')\\(([^()]*)\\)/i',
+				static function(array $match): string {
+					$operand=trim($match[2]);
+					if(
+						preg_match('/\\b(?:and|or)\\b|(?:=|<>|!=|<=|>=|<|>)/i', $operand)===1
+						|| preg_match('/(?:\\*|\\/|::|->|#>)/', $operand)!==1
+					){
+						return $match[0];
+					}
+					return $match[1].$operand;
+				},
+				$expression
+			);
+		}while($expression!==$before);
+		return $expression;
 	}
 
 	public static function normalizeSqlExpression(string $expression): string {
@@ -1585,19 +1793,55 @@ final class PostgreSqlSchemaInspector {
 			'<>all'=>' not in',
 		] as $operator=>$replacement){
 			if(preg_match(
-				'/^(.+)'.preg_quote($operator, '/').'\\(array\\s*\\[(.*)\\]\\)$/is',
+				'/^(.+?)'.preg_quote($operator, '/').'\\((.*)\\)$/is',
 				$expression,
 				$match
 			)!==1){
 				continue;
 			}
 			$left=trim($match[1]);
-			$members=trim($match[2]);
-			if($left!=='' && $members!==''){
+			$members=self::textMembershipArrayMembers($match[2]);
+			if($left!=='' && $members!==null && $members!==''){
 				return $left.$replacement.'('.$members.')';
 			}
 		}
 		return $expression;
+	}
+
+	/**
+	 * Extract members from PostgreSQL's canonical text-array form used by
+	 * varchar/text IN and NOT IN checks. Other array casts stay opaque so a
+	 * domain/operator change cannot be accepted as renderer-only drift.
+	 */
+	private static function textMembershipArrayMembers(string $expression): ?string {
+		$expression=self::stripOuterParentheses(trim($expression));
+		$outerTail='';
+		if(str_starts_with($expression, '(')){
+			$closing=self::matchingParenthesis($expression, 0);
+			if($closing<strlen($expression)-1){
+				$outerTail=trim(substr($expression, $closing+1));
+				$expression=self::stripOuterParentheses(
+					trim(substr($expression, 1, $closing-1))
+				);
+			}
+		}
+		if(preg_match('/^array\\s*\\[/i', $expression, $openingMatch)!==1){
+			return null;
+		}
+		$opening=strpos($openingMatch[0], '[');
+		if($opening===false){
+			return null;
+		}
+		$closing=self::matchingSquareBracket($expression, $opening);
+		$tail=trim(substr($expression, $closing+1)).$outerTail;
+		if(
+			$tail!==''
+			&& preg_match('/^::(?:text|character\\s+varying|varchar)\\s*\\[\\]$/i', $tail)!==1
+		){
+			return null;
+		}
+		$members=trim(substr($expression, $opening+1, $closing-$opening-1));
+		return $members==='' ? null : $members;
 	}
 
 	/** @return list<string> */
@@ -1769,6 +2013,7 @@ final class PostgreSqlSchemaInspector {
 		$normalized=self::normalizeCatalogExpressionArtifacts(
 			self::normalizeSqlExpression($expression)
 		);
+		$normalized=self::normalizeEmbeddedTextMembershipExpressions($normalized);
 		$normalized=(string)preg_replace_callback(
 			'/\\b([A-Za-z_][A-Za-z0-9_$.\"]*)=any\\(array\\s*\\[([^\\[\\]]*)\\]\\)/i',
 			static fn(array $match): string=>$match[1].' in('.trim($match[2]).')',
@@ -2582,6 +2827,36 @@ final class PostgreSqlSchemaInspector {
 			}
 		}
 		throw new RuntimeException('Unclosed parenthesis in applied migration definition.');
+	}
+
+	private static function matchingSquareBracket(string $sql, int $opening): int {
+		if(($sql[$opening] ?? null)!=='['){
+			throw new RuntimeException('Cannot parse migration array boundary.');
+		}
+		$depth=0;
+		$quote=null;
+		$length=strlen($sql);
+		for($index=$opening; $index<$length; $index++){
+			$character=$sql[$index];
+			if($quote!==null){
+				if($character===$quote){
+					if(($sql[$index+1] ?? null)===$quote){
+						$index++;
+					}else{
+						$quote=null;
+					}
+				}
+				continue;
+			}
+			if($character==="'" || $character==='"'){
+				$quote=$character;
+			}elseif($character==='['){
+				$depth++;
+			}elseif($character===']' && --$depth===0){
+				return $index;
+			}
+		}
+		throw new RuntimeException('Unclosed array in applied migration definition.');
 	}
 
 	private static function statementEnd(string $sql, int $start): int {

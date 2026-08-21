@@ -22,7 +22,7 @@ final class SecretRedactor {
 
 	public static function sensitiveKey(string $key): bool {
 		$key=self::normalizeKey($key);
-		return preg_match('/(?:^|_)(?:api_key|authorization(?:_code)?|bearer|ciphertext|client_secret|cookie|credential(?:s)?|fingerprint|passphrase|password|private_key|refresh_token|secret|session_key|signing_key|token)(?:_|$)/', $key)===1;
+		return preg_match('/(?:^|_)(?:api_key|authorization(?:_code)?|bearer|ciphertext|client_secret|cookie|credential(?:s)?|fingerprint|passcode|passphrase|password|pin|private_key|refresh_token|secret|session_key|signing_key|token)(?:_|$)/', $key)===1;
 	}
 
 	/** @param array<string,bool> $additional */

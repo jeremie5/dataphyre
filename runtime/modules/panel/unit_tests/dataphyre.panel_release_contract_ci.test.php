@@ -174,6 +174,20 @@ test('public export boundary excludes generated trees while retaining the cache 
 		$t->contains("'".$testingReleaseFile."'", $publicCheck, $testingReleaseFile.' is required by the public-export checker');
 		$t->isTrue(isset($releaseFiles[$testingReleaseFile]), $testingReleaseFile.' is represented in the public release manifest');
 	}
+	foreach([
+		'runtime/modules/core/kernel/application_runtime_php_fpm.conf',
+		'runtime/modules/core/kernel/application_runtime_release_probe.php',
+		'runtime/modules/core/kernel/application_runtime_scheduler_gateway.php',
+		'runtime/modules/core/kernel/application_runtime_web_gateway.php',
+	] as $managedRuntimeReleaseFile){
+		$t->isTrue(is_file($root.'/'.$managedRuntimeReleaseFile), $managedRuntimeReleaseFile.' exists');
+		$t->contains("'".$managedRuntimeReleaseFile."'", $publicCheck, $managedRuntimeReleaseFile.' is required by the public-export checker');
+	}
+	$t->notContains(
+		"'runtime/modules/core/kernel/application_runtime_".'cgi_gateway.php'."'",
+		$publicCheck,
+		'the retired combined CGI gateway is absent from the public-export closure'
+	);
 	$t->contains('canonical test CLI smoke', $publicCheck);
 	$archiveCheck=(string)file_get_contents($root.'/dev/tools/private/release/check_release_archive.ps1');
 	$t->contains("'bin/dataphyre-test'", $archiveCheck);

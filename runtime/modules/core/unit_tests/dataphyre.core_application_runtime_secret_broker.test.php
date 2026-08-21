@@ -179,7 +179,7 @@ test('broker and gateway reject invalid invocation unavailable targets and wrong
 	}
 	$t->throws(static fn()=>DataphyreApplicationRuntimeChildEnvironment::consumeGateway('one-shot'),RuntimeException::class);
 	$t->throws(static fn()=>DataphyreApplicationRuntimeChildEnvironment::consumeGateway(
-		'web-gateway',DataphyreApplicationRuntimeChildEnvironment::INHERITED_FD-1,
+		'web-http-gateway',DataphyreApplicationRuntimeChildEnvironment::INHERITED_FD-1,
 	),RuntimeException::class);
 })->tag('broker','gateway','timeout','negative');
 
@@ -188,7 +188,7 @@ test('broker rejects a post-exec child acknowledgement that is not canonical',st
 	[$broker,$childChannel]=DataphyreApplicationRuntimeChildEnvironment::socketPair();$pipes=[];
 	$child=proc_open([ // dataphyre-test-architecture: exempt[raw-process-control] reason="Exact malformed acknowledgement proof requires controlling the inherited broker endpoint."
 		'/usr/bin/setpriv','--reuid=0','--regid=0','--groups=0','--no-new-privs',
-		'--inh-caps=-all','--ambient-caps=-all','--bounding-set=-all,+setuid,+setgid','--pdeathsig=SIGKILL',
+		'--inh-caps=-all','--ambient-caps=-all','--bounding-set=-all,+kill,+setuid,+setgid','--pdeathsig=SIGKILL',
 		PHP_BINARY,'-r','$s=fopen("php://fd/198","r+");$h=fgets($s,10);$n=hexdec(substr($h,0,8));'.
 			'$b="";while(strlen($b)<$n){$b.=fread($s,$n-strlen($b));}fwrite($s,"wrong\\n");fflush($s);',
 	],[0=>['file','/dev/null','r'],1=>['pipe','w'],2=>['pipe','w'],DataphyreApplicationRuntimeChildEnvironment::INHERITED_FD=>$childChannel],
@@ -197,10 +197,10 @@ test('broker rejects a post-exec child acknowledgement that is not canonical',st
 	if(!is_resource($child)) throw new RuntimeException('Malformed acknowledgement child could not start.');
 	$status=proc_get_status($child);$pid=(int)($status['pid'] ?? 0);
 	$root=(string)realpath(dirname(__DIR__,4));$key=random_bytes(32);
-	$context=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('web',$root,$key);
+	$context=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('scheduler',$root,$key);
 	try{
 		$t->throws(static fn()=>DataphyreApplicationRuntimeChildEnvironment::broker(
-			$broker,$pid,getmypid(),'web-gateway',['DATAPHYRE_RUNTIME_PROJECT_ROOT'=>$root],5000,$context,
+			$broker,$pid,getmypid(),'scheduler-gateway',['DATAPHYRE_RUNTIME_PROJECT_ROOT'=>$root],5000,$context,
 		),RuntimeException::class);
 	}finally{
 		foreach($pipes as $pipe) if(is_resource($pipe)) fclose($pipe);
@@ -345,100 +345,120 @@ test('socket exhaustion and over-deep process ancestry fail closed with exact ev
 	CoverageParts::add($decoded);
 })->tag('socketpair','resource-exhaustion','ancestry','exact-coverage','negative');
 
-test('web gateway executes every request in a distinct capability-free php-cgi process',static function(Context $t): void {
-	$fixedPortLock=dataphyre_application_runtime_fixed_port_lock();
-	$kernel=(string)realpath(dirname(__DIR__).'/kernel');$gateway=$kernel.'/application_runtime_cgi_gateway.php';
-	$router=(string)realpath(__DIR__.'/fixtures/application_runtime_cgi_probe.php');$project=(string)realpath(dirname(__DIR__,4));
-	$secret='cgi-'.bin2hex(random_bytes(32));$expected=hash('sha256',$secret);
-	$managedKey=random_bytes(32);$managedKeySha=hash('sha256',$managedKey);
-	$managed=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('web',$project,$managedKey);
-	$gatewayPort=8083;
-	$gatewayProcess=DataphyreApplicationRuntimeProcessBroker::spawn([
-		'/usr/bin/setpriv','--reuid=0','--regid=0','--groups=0','--no-new-privs',
-		'--inh-caps=-all','--ambient-caps=-all','--bounding-set=-all,+setuid,+setgid','--pdeathsig=SIGKILL',
-		PHP_BINARY,'-d','display_errors=0',
-		$gateway,'web','127.0.0.1',(string)$gatewayPort,$router,$project,
-	],[0=>['file','/dev/null','r'],1=>['pipe','w'],2=>['pipe','w']],$project,[],'web-gateway',[
-		'PROBE_SECRET'=>$secret,'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>$project,
-	],5000,$managed);
-	$t->isFalse(str_contains((string)@file_get_contents('/proc/'.$gatewayProcess['pid'].'/environ'),$secret));
-	$t->isFalse(str_contains((string)@file_get_contents('/proc/'.$gatewayProcess['pid'].'/cmdline'),$secret));
-	$diagnosticFailure=null;
+test('scheduler execution keeps one fresh capability-free php-cgi process per request',static function(Context $t): void {
+	$kernel=(string)realpath(dirname(__DIR__).'/kernel');$fixture=(string)realpath(__DIR__.'/fixtures/application_runtime_scheduler_cgi_probe.php');
+	$project=(string)realpath(dirname(__DIR__,4));$secret='scheduler-cgi-'.bin2hex(random_bytes(32));
+	$key=random_bytes(32);$managed=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('scheduler',$project,$key);
+	$expected=hash('sha256',$secret);$keySha=hash('sha256',$key);$results=[];
 	try{
-		$results=[];
-		usleep(200000);
 		for($request=0;$request<2;$request++){
-			$socket=null;$deadline=microtime(true)+3.0;$errno=0;$error='';
-			do{
-				$socket=@stream_socket_client('tcp://127.0.0.1:'.$gatewayPort,$errno,$error,0.1);
-				if(is_resource($socket)) break;
-				usleep(10000);
-			}while(microtime(true)<$deadline);
-			if(!is_resource($socket)) throw new RuntimeException('Gateway connection '.$request.' errno='.$errno.' error='.$error);
-			stream_set_timeout($socket,5,0);
-			$raw="GET /probe?request={$request} HTTP/1.1\r\nHost: 127.0.0.1:{$gatewayPort}\r\nX-Probe-Secret-Sha256: {$expected}\r\nX-Probe-Managed-Key-Sha256: {$managedKeySha}\r\nConnection: close\r\n\r\n";
-			fwrite($socket,$raw);$response=stream_get_contents($socket);fclose($socket);
-			if(str_contains((string)$response,$secret)) throw new RuntimeException('Gateway response exposed its application secret.');
-			[$head,$body]=array_pad(explode("\r\n\r\n",(string)$response,2),2,'');
-			if(preg_match('/^HTTP\/1\.1 200\b/D',$head)!==1) throw new RuntimeException('Gateway response '.$request.': '.$head);
+			$public=[
+				'GATEWAY_INTERFACE'=>'CGI/1.1','REQUEST_METHOD'=>'POST','REQUEST_URI'=>'/dataphyre/runtime/scheduler/noop',
+				'SCRIPT_FILENAME'=>$fixture,'SCRIPT_NAME'=>'/dataphyre/runtime/scheduler/noop','QUERY_STRING'=>'',
+				'DOCUMENT_ROOT'=>$project.'/public','SERVER_SOFTWARE'=>'Dataphyre-Test','REMOTE_ADDR'=>'127.0.0.1',
+				'REMOTE_PORT'=>(string)(39000+$request),'SERVER_ADDR'=>'127.0.0.1','SERVER_PORT'=>'8081',
+				'SERVER_NAME'=>'127.0.0.1','SERVER_PROTOCOL'=>'HTTP/1.1','CONTENT_LENGTH'=>'0',
+				'HTTP_X_PROBE_SECRET_SHA256'=>$expected,'HTTP_X_PROBE_MANAGED_KEY_SHA256'=>$keySha,
+			];ksort($public,SORT_STRING);
+			$child=DataphyreApplicationRuntimeProcessBroker::spawn([
+				'/usr/bin/setpriv','--reuid=10001','--regid=10001','--groups=10001','--no-new-privs',
+				'--inh-caps=-all','--ambient-caps=-all','--bounding-set=-all','--pdeathsig=SIGKILL',
+				'/usr/local/bin/php-cgi','-d','display_errors=0','-d','log_errors=0','-d','expose_php=0',
+				'-d','cgi.force_redirect=0','-d','user_ini.filename=',
+				'-d','auto_prepend_file='.$kernel.'/application_runtime_cgi_environment.php','-d','auto_append_file=',
+				'-f',$fixture,
+			],[0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$project,$public,'scheduler',[
+				'PROBE_SECRET'=>$secret,'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>$project,
+				],5000,$managed,'',true);
+			$output=(string)stream_get_contents($child['pipes'][1]);$error=(string)stream_get_contents($child['pipes'][2]);
+			foreach($child['pipes'] as $pipe) if(is_resource($pipe)) fclose($pipe);
+			$t->same(0,proc_close($child['resource']),$error);
+			[, $body]=array_pad(preg_split('/\r?\n\r?\n/',$output,2) ?: [],2,'');
 			$results[]=json_decode($body,true,8,JSON_THROW_ON_ERROR);
 		}
-		$t->same(true,$results[0]['ok']);$t->same(true,$results[1]['ok']);
 		$t->isFalse($results[0]['pid']===$results[1]['pid']);
 		foreach($results as $result){
-			$t->same(10001,$result['uid']);$t->same(10001,$result['gid']);$t->same([10001],$result['groups']);
-			$t->same('0000000000000000',$result['cap_eff']);$t->same(true,$result['no_new_privileges']);
-			$t->same(true,$result['broker_descriptor_closed']);
-			$t->same([],$result['unexpected_descriptors']);
-			$t->same(true,$result['secret_absent_from_proc']);
-			$t->same(true,$result['managed_bootstrap']);$t->same(true,$result['managed_private_key_matches']);
-			$t->same(true,$result['managed_private_key_absent_from_proc_and_environment']);
-			$t->same(true,$result['legacy_source_writes_suppressed']);
-			$t->same(true,$result['pre_exec_closer_rejected']);
+			$t->same(true,$result['ok']);$t->same(10001,$result['uid']);$t->same(10001,$result['gid']);
+				$t->same([10001],$result['groups']);
+				foreach(['cap_inheritable','cap_permitted','cap_eff','cap_bounding','cap_ambient'] as $capability){
+					$t->same('0000000000000000',$result[$capability]);
+				}
+				$t->same([],$result['signal_mask']);
+				$t->same($result['pid'],$result['process_group_id']);$t->same($result['pid'],$result['session_id']);
+			$t->same(true,$result['no_new_privileges']);$t->same(true,$result['broker_descriptor_closed']);
+			$t->same(true,$result['secret_absent_from_proc']);$t->same(true,$result['managed_bootstrap']);
+			$t->same(true,$result['managed_private_key_matches']);
 		}
-	}catch(Throwable $failure){$diagnosticFailure=$failure;
 	}finally{
-		$statusBeforeStop=proc_get_status($gatewayProcess['resource']);
-		@posix_kill($gatewayProcess['pid'],15);$deadline=microtime(true)+5.0;
-		do{$status=proc_get_status($gatewayProcess['resource']);if(($status['running'] ?? false)!==true) break;usleep(10000);}while(microtime(true)<$deadline);
-		$status=proc_get_status($gatewayProcess['resource']);if(($status['running'] ?? false)===true) @posix_kill($gatewayProcess['pid'],9);
-		foreach($gatewayProcess['pipes'] as $pipe) if(is_resource($pipe)) stream_set_blocking($pipe,false);
-		$gatewayStdout=is_resource($gatewayProcess['pipes'][1] ?? null) ? stream_get_contents($gatewayProcess['pipes'][1]) : '';
-		$gatewayStderr=is_resource($gatewayProcess['pipes'][2] ?? null) ? stream_get_contents($gatewayProcess['pipes'][2]) : '';
-		foreach($gatewayProcess['pipes'] as $pipe) if(is_resource($pipe)) fclose($pipe);
-		proc_close($gatewayProcess['resource']);sodium_memzero($secret);sodium_memzero($managedKey);
-		sodium_memzero($managed['private_key']);
-		dataphyre_application_runtime_fixed_port_unlock($fixedPortLock);
-		if($diagnosticFailure!==null || !isset($results) || count($results)!==2){
-			throw new RuntimeException(
-				'Gateway failure='.($diagnosticFailure?->getMessage() ?? 'none').' status='.json_encode($statusBeforeStop)
-				.' results='.json_encode($results ?? null).' stdout='.$gatewayStdout.' stderr='.$gatewayStderr,
-				0,$diagnosticFailure,
-			);
-		}
+		sodium_memzero($secret);sodium_memzero($key);sodium_memzero($managed['private_key']);
 	}
-})->tag('cgi','one-request-per-process','exact-image','multi-request','no-new-privileges')->maxMillis(60000)
+})->tag('scheduler','cgi','one-request-per-process','exact-image','no-new-privileges')->maxMillis(30000)
 	->skipUnless(dataphyre_secret_broker_exact_root_runtime(),'Requires the canonical root test image and native descriptor extension.');
+
+test('every managed process capability set is part of the live privilege boundary',static function(Context $t): void {
+	$boundary=$t->nonPublic(DataphyreApplicationRuntimeChildEnvironment::class);
+	$zero='0000000000000000';$gatewayCaps='00000000000000e0';
+	$gateway=[
+		'uid'=>0,'gid'=>0,'groups'=>[0],
+		'cap_inheritable'=>$zero,'cap_permitted'=>$gatewayCaps,'cap_eff'=>$gatewayCaps,
+		'cap_bounding'=>$gatewayCaps,'cap_ambient'=>$zero,'no_new_privileges'=>true,
+	];
+	$t->same(true,$boundary->invoke('identityMatchesPrivilegeBoundary',$gateway,'scheduler-gateway'));
+	foreach(['cap_inheritable','cap_permitted','cap_eff','cap_bounding','cap_ambient'] as $capability){
+		$mutated=$gateway;$mutated[$capability]=$capability==='cap_inheritable' || $capability==='cap_ambient'
+			? '0000000000000001' : '00000000000000e1';
+		$t->same(false,$boundary->invoke('identityMatchesPrivilegeBoundary',$mutated,'scheduler-gateway'),$capability);
+	}
+	$gatewayWithoutNoNewPrivileges=$gateway;$gatewayWithoutNoNewPrivileges['no_new_privileges']=false;
+	$t->same(false,$boundary->invoke('identityMatchesPrivilegeBoundary',$gatewayWithoutNoNewPrivileges,'scheduler-gateway'));
+
+	$tenant=[
+		'uid'=>10001,'gid'=>10001,'groups'=>[10001],
+		'cap_inheritable'=>$zero,'cap_permitted'=>$zero,'cap_eff'=>$zero,
+		'cap_bounding'=>$gatewayCaps,'cap_ambient'=>$zero,'no_new_privileges'=>true,
+	];
+	$t->same(true,$boundary->invoke('identityMatchesPrivilegeBoundary',$tenant,'scheduler'));
+	$schedulerWithEmptyBounding=$tenant;$schedulerWithEmptyBounding['cap_bounding']=$zero;
+	$t->same(true,$boundary->invoke('identityMatchesPrivilegeBoundary',$schedulerWithEmptyBounding,'scheduler'));
+	foreach(['cap_inheritable','cap_permitted','cap_eff','cap_bounding','cap_ambient'] as $capability){
+		$mutated=$tenant;$mutated[$capability]='0000000000000001';
+		$t->same(false,$boundary->invoke('identityMatchesPrivilegeBoundary',$mutated,'scheduler'),$capability);
+	}
+	$tenantWithoutNoNewPrivileges=$tenant;$tenantWithoutNoNewPrivileges['no_new_privileges']=false;
+	$t->same(false,$boundary->invoke('identityMatchesPrivilegeBoundary',$tenantWithoutNoNewPrivileges,'scheduler'));
+
+	$web=$schedulerWithEmptyBounding;
+	$t->same(true,$boundary->invoke('identityMatchesPrivilegeBoundary',$web,'web-pool'));
+	foreach(['cap_inheritable','cap_permitted','cap_eff','cap_bounding','cap_ambient'] as $capability){
+		$mutated=$web;$mutated[$capability]='0000000000000001';
+		$t->same(false,$boundary->invoke('identityMatchesPrivilegeBoundary',$mutated,'web-pool'),$capability);
+	}
+})->tag('capabilities','privilege-boundary','mutation','negative');
 
 test('source contract contains no reusable child secret file or persistent php development server',static function(Context $t): void {
 	$kernel=dirname(__DIR__).'/kernel';
 	$child=(string)file_get_contents($kernel.'/application_runtime_child_environment.php');
-	$gateway=(string)file_get_contents($kernel.'/application_runtime_cgi_gateway.php');
+	$webGateway=(string)file_get_contents($kernel.'/application_runtime_web_gateway.php');
+	$schedulerGateway=(string)file_get_contents($kernel.'/application_runtime_scheduler_gateway.php');
 	$supervisor=(string)file_get_contents($kernel.'/application_runtime_supervisor.php');
 	$preExec=(string)file_get_contents($kernel.'/application_runtime_pre_exec.php');
 	$native=(string)file_get_contents(dirname(__DIR__,3).'/native/environment_fd/dataphyre_environment_fd.c');
 	$bootstrap=(string)file_get_contents(dirname(__DIR__,3).'/bootstrap.php');
 	$core=(string)file_get_contents($kernel.'/core.main.php');
 	$helpers=(string)file_get_contents($kernel.'/helper_functions.php');
-	foreach([$child,$gateway,$supervisor] as $source){
+	foreach([$child,$webGateway,$schedulerGateway,$supervisor] as $source){
 		$t->isFalse(str_contains($source,'application-environment.runtime.json'));
 		$t->isFalse(str_contains($source,'consumeRuntimeFile'));
 		$t->isFalse(str_contains($source,'PHP_CLI_SERVER_WORKERS'));
 	}
 	$t->isFalse(str_contains($supervisor,"'-S'"));$t->isFalse(str_contains($supervisor,' -S '));
-	$t->contains("'/usr/local/bin/php-cgi'",$gateway);$t->isFalse(str_contains($gateway,"'-n'"));
+	$t->contains("'/usr/local/bin/php-cgi'",$schedulerGateway);
+	$t->isFalse(str_contains($webGateway,"'/usr/local/bin/php-cgi'"));
+	$t->isFalse(str_contains($schedulerGateway,"'-n'"));
 	$t->contains("public const INHERITED_FD=198",$child);$t->contains('start_time_ticks',$child);
-	$t->contains("'--no-new-privs'",$supervisor);$t->contains("'--no-new-privs'",$gateway);
+	$t->contains("'--no-new-privs'",$supervisor);$t->isFalse(str_contains($webGateway,"'--no-new-privs'"));
+	$t->contains("'--no-new-privs'",$schedulerGateway);
+	$t->isFalse(is_file($kernel.'/application_runtime_cgi_gateway.php'));
 	$t->isFalse(is_file($kernel.'/application_runtime_pool_launcher.php'));
 	$t->contains('fd != 198',$native);$t->contains('close((int) fd)',$native);
 	$t->contains('dataphyre_close_unlisted_inherited_fds',$native);
@@ -454,7 +474,7 @@ test('source contract contains no reusable child secret file or persistent php d
 	$t->contains('managedBootstrapPrivateKeyForCore',$helpers);
 	$functions=(string)file_get_contents($kernel.'/core_functions.php');
 	$t->contains("if(!function_exists('dp_source_local_runtime_writes_allowed') || dp_source_local_runtime_writes_allowed())",$functions);
-	foreach([$child,$gateway,$supervisor,$bootstrap,$core,$helpers] as $source){
+	foreach([$child,$webGateway,$schedulerGateway,$supervisor,$bootstrap,$core,$helpers] as $source){
 		$t->isFalse(str_contains($source,'DATAPHYRE_MANAGED_RUNTIME'));
 	}
 })->tag('source','deletion','cgi','native-extension');

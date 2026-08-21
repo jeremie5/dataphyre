@@ -1,8 +1,8 @@
 # Dataphyre Managed PHP Web Pool
 
-Status: the native envelope/request-reset and exact-image FPM prerequisites are
-implemented and tested. The serving topology is deliberately not selectable
-until the remaining gateway/supervisor gates below are implemented and green.
+Status: implemented. Promotion remains fail-closed unless the exact candidate
+image passes every focused gate in this document, including the private warm
+traffic, concurrency, and scheduler-cadence probe.
 
 ## Decision
 
@@ -12,7 +12,7 @@ Dataphyre HTTP gateway without entering PHP. The scheduler remains a separate
 one-shot `php-cgi` execution boundary. Realtime remains its separate persistent
 framework process.
 
-The current fresh-`php-cgi` web path must be deleted, not retained behind a
+The former fresh-`php-cgi` web path is deleted and is not retained behind a
 mode, compatibility switch, application manifest, or user-selectable process
 command. There is one managed web topology.
 
@@ -48,15 +48,20 @@ PID 1 owns exactly four direct children:
 2. `web`: UID/GID `10001`, no capabilities, `NoNewPrivs`, rootless PHP-FPM
    master, listens only on `/run/dataphyre/web/php-fpm.sock`, and owns a fixed
    static pool of eight workers.
-3. `scheduler`: the existing root gateway with only `CAP_SETUID` and
+3. `scheduler`: the root gateway with only `CAP_KILL`, `CAP_SETUID`, and
    `CAP_SETGID`; every accepted signed registration, callback, or no-op is still
-   executed by one fresh UID/GID `10001` `php-cgi` child.
+   executed by one fresh UID/GID `10001` `php-cgi` child. `CAP_KILL` exists only
+   so the gateway can terminate that privilege-dropped child's complete owned
+   process group.
 4. `realtime`: the existing UID/GID `10001`, capability-free persistent
    realtime process.
 
-The web gateway and FPM master each start in their own session. Their process
-group ID equals their direct-child PID. PID 1 sends `SIGTERM` to the complete
-group, waits five seconds, sends `SIGKILL` to any remaining group, and reaps all
+The web gateway, FPM master, and scheduler gateway each start in their own
+session. Their process-group ID equals their direct-child PID. Every scheduler
+CGI starts in a separate owned session so success, failure, timeout, and outer
+gateway interruption all terminate its complete group before the handler exits.
+PID 1 sends `SIGTERM` to a stored proven group even if its leader has already
+died, waits five seconds, sends `SIGKILL` to any remaining group, and reaps all
 adopted descendants. An unexpected gateway, FPM master, scheduler gateway, or
 realtime exit fails the runtime generation; PID 1 does not silently construct a
 replacement generation with reused secrets.
@@ -128,7 +133,8 @@ managed startup path is dormant unless the fixed system INI role is present.
 
 ## Fixed web gateway
 
-Replace `application_runtime_cgi_gateway.php` with two files:
+The former `application_runtime_cgi_gateway.php` is deleted. Its two retained
+responsibilities now live in separate files:
 
 - `application_runtime_scheduler_gateway.php` retains only the current signed
   scheduler claim, fresh `php-cgi` spawn, timeout, response receipt, and child
@@ -137,19 +143,33 @@ Replace `application_runtime_cgi_gateway.php` with two files:
   response writer, runs capability-free as UID/GID `10001`, and never receives
   the application environment or managed bootstrap key.
 
-The web gateway accepts the existing bounded methods, headers, request body, and
-timeouts. For `GET` and `HEAD`, a non-PHP regular file whose canonical path is
-beneath `<project>/public/` is streamed directly. Symlinks, dot-path traversal,
-PHP extensions, non-regular files, ambiguous framing, duplicate headers, and
-oversized input fail closed. Hashed assets receive immutable caching; other
-files receive conservative caching.
+The web gateway accepts a maximum of eight connection handlers. Each request
+has a five-second absolute header deadline, a 30-second absolute body deadline,
+a 16 MiB decoded-body limit, and a 256 KiB memory spool before spilling to an
+unnamed temporary stream. Strict `Transfer-Encoding: chunked` uploads are
+decoded directly into that bounded spool; extensions, trailers, ambiguous
+framing, invalid delimiters, and decoded overflow fail closed. The eight-handler
+request-plus-dynamic-response spool ceiling is therefore 192 MiB, with at most
+4 MiB resident in gateway body spools.
+
+For `GET` and `HEAD`, a non-PHP regular file whose canonical path is beneath
+`<project>/public/` is streamed directly under a 30-second client-write deadline.
+The normalized decoded `/health` path is always dynamic: a public file, query,
+or percent-encoded alias cannot shadow application health. Symlinks, dot-path
+traversal, PHP extensions, non-regular files, ambiguous framing, duplicate
+headers, and oversized input fail closed. Hashed assets receive immutable
+caching; other files receive conservative caching.
 
 Every other request is translated to FastCGI records and sent only to
 `/run/dataphyre/web/php-fpm.sock`. The gateway fixes `SCRIPT_FILENAME` to the
 framework-owned `application_runtime_router.php`; caller headers cannot replace
-FastCGI parameters. It bounds FastCGI records, stdout, stderr, response headers,
-body, and elapsed time with the existing HTTP limits. Protocol errors, a dead
-worker, or a timeout return `502`/`504` without exposing FastCGI stderr.
+FastCGI parameters. FastCGI execution has one 300-second absolute deadline,
+64 KiB response-header and stderr bounds, and an 8 MiB dynamic response spool.
+The response normalizer removes every fixed and `Connection`-nominated
+hop-by-hop field, rejects control characters, emits representation length for
+`HEAD`, and emits no payload or synthesized length for `1xx`, `204`, and `304`.
+Protocol errors, a dead worker, oversize output, or a timeout return `502`/`504`
+without exposing FastCGI stderr.
 
 The gateway may fork a cheap capability-free protocol child per accepted HTTP
 connection. It must never fork or exec tenant PHP. This preserves bounded
@@ -163,7 +183,7 @@ effective settings are fixed:
 ```ini
 [global]
 daemonize = no
-error_log = /proc/self/fd/2
+error_log = /var/log/dataphyre/php-fpm-error.log
 log_level = warning
 process_control_timeout = 5s
 
@@ -227,82 +247,37 @@ separate signed scheduler registration remains the only persistence owner.
   `web-pool` and the one-use secret envelope;
 - spawn the capability-free HTTP gateway with an empty `web-http-gateway`
   envelope;
-- spawn the scheduler gateway with the current `scheduler-gateway` secret
-  envelope and one-shot child behavior;
+- spawn the scheduler gateway in its own session with the current
+  `scheduler-gateway` secret envelope and one-shot child behavior;
 - wait for the exact Unix socket, eight direct FPM workers, and identity checks
   before exposing runtime readiness;
 - fail the generation if any direct child exits or if the worker inventory does
   not recover within five seconds;
 - terminate complete process groups and reap all descendants.
 
-The private runtime status contract advances once, from v4 to v5. Its existing
-`web` field becomes one composite fixed-runtime attestation containing HTTP
+The private runtime status contract is `dataphyre.application_runtime.v6`. Its
+`web` field is one composite fixed-runtime attestation containing HTTP
 gateway PID/identity, FPM master PID/identity, eight worker PIDs/identities,
 socket path hash, native envelope generation hash, execution model
 `persistent-php-fpm`, and fixed recycle policy. Scheduler remains
 `one-request-per-process-cgi`; realtime remains `single-exec-realtime`. No
 application setting or release manifest field is added.
 
-## Implemented prerequisite slice
+## Implemented topology
 
-The current prerequisite changes are intentionally smaller than the final
-topology: the native extension consumes the master envelope, restores request
+The native extension consumes the master envelope, restores request
 environment/cwd/umask, supplies one prepend-only request context, and fails a
-worker closed on reset failure. The fixed test image and Cloud PHP builder carry
-an ABI-matched FPM executable, while their entrypoint remains the isolating
-supervisor. Focused tests prove same-worker adversarial mutation reset,
-including through the real runtime router and framework bootstrap, plus
-`pm.max_requests` recycle, descriptor closure, `/proc` metadata exclusion,
-master signal cleanup, and one total monotonic five-second envelope deadline.
-SQL endpoint outage memory is request-local rather than browser-session state,
-and Tracelog establishes an array session at shutdown.
+worker closed on reset failure. PID 1 starts the rootless FPM master and HTTP
+gateway in separate process groups, waits for the exact socket and eight direct
+workers, and retains the existing scheduler and realtime isolation boundaries.
+The fixed test and publishing images carry an ABI-matched FPM executable.
 
-This slice does not start FPM in Cloud and does not change traffic.
-
-## Remaining topology patch set
-
-Modify:
-
-- `runtime/native/environment_fd/config.m4`
-- `runtime/native/environment_fd/dataphyre_environment_fd.c`
-- `runtime/modules/core/kernel/application_runtime_child_environment.php`
-- `runtime/modules/core/kernel/application_runtime_process_broker.php`
-- `runtime/modules/core/kernel/application_runtime_router.php`
-- `runtime/modules/core/kernel/application_runtime_supervisor.php`
-- `runtime/modules/core/kernel/application_runtime_status_probe.php`
-- `runtime/modules/core/kernel/helper_functions.php`
-- `runtime/bootstrap.php`
-- `runtime/modules/core/documentation/Dataphyre_Core.md`
-
-Add:
-
-- `runtime/modules/core/kernel/application_runtime_web_gateway.php`
-- `runtime/modules/core/kernel/application_runtime_scheduler_gateway.php`
-- `runtime/modules/core/kernel/application_runtime_php_fpm.conf`
-
-Extend the existing managed-pool test and fixtures with the complete gateway,
-worker-crash, socket, concurrency, and supervisor-generation cases below.
-
-Delete:
-
-- `runtime/modules/core/kernel/application_runtime_cgi_gateway.php`
-- every source/test assertion for web execution model
-  `one-request-per-process-cgi`
-- every web path that execs `/usr/local/bin/php-cgi`
-
-Update focused contracts that currently name the deleted gateway:
-
-- `dataphyre.core_application_runtime_secret_broker.test.php`
-- `dataphyre.core_application_runtime_supervisor.test.php`
-- `dataphyre.core_process_entrypoints_exact.test.php`
-- `dataphyre.core_scheduler_internal_route.test.php`
-- `dataphyre.core_application_runtime_scheduler_v4.test.php`
-- `dataphyre.scheduling_exact.test.php`
-
-The exact Dataphyre testing image and the publishing image must also contain the
-matching FPM SAPI before this patch is selectable. That image work is outside
-the runtime-core patch and must not be simulated by skipping the integration
-suite.
+Focused exact-image tests cover same-worker adversarial mutation reset, the
+real runtime router and framework bootstrap, `pm.max_requests` recycle,
+descriptor closure, `/proc` metadata exclusion, worker crash and replacement,
+static-file rejection boundaries, process-group cleanup, socket removal, and
+one total monotonic five-second envelope deadline. SQL endpoint outage memory
+remains request-local and Tracelog establishes an array session at shutdown.
 
 ## Release-blocking focused gates
 
@@ -328,17 +303,31 @@ The exact-image suite must prove all of the following:
    seconds, leaves no descendants or socket, and never invokes tenant shutdown
    code as root.
 9. Static files never start PHP and preserve exact bytes for `GET` and `HEAD`.
-   Traversal, symlink, dot-path, PHP, malformed FastCGI, and oversized-response
-   cases fail closed.
+   `/health` remains dynamic even when `public/health` exists. Traversal,
+   symlink, dot-path, PHP, malformed FastCGI, request amplification, slowloris,
+   and oversized-response cases fail closed.
 10. Scheduler registration, callback, no-op, receipt, lock cleanup, replay
     rejection, budget timeout, and child reaping still use distinct fresh
-    `php-cgi` PIDs.
+    `php-cgi` PIDs. Input headers and bodies are independently limited to 4096
+    bytes, transfer encoding is rejected, callback/no-op output is limited to
+    64 KiB, and registration output is limited to the 512 KiB protocol
+    transport plus 64 KiB.
 11. Realtime registration and HTTP forwarding continue to work through the new
     HTTP gateway.
 12. A full application warm dynamic latency probe and concurrent request probe
-    run inside the exact image. Release preflight fails if warm p95 exceeds the
-    fixed platform budget or if scheduler cadence lag exceeds its definition
-    budget; registration success alone is not cadence evidence.
+    run inside the exact image. The private release gate fails if warm p95
+    exceeds the fixed platform budget or if scheduler cadence lag exceeds its
+    definition budget; registration success alone is not cadence evidence.
+
+Gate 12 is the private, argument-free
+`application_runtime_release_probe.php`. It warms `GET /health` three times,
+measures 20 requests with a fixed 750 ms p95 budget, requires eight concurrent
+requests to complete within 3000 ms, and requires at least one successful
+business-cadence cycle. The supervisor's cadence result is sticky after any
+per-definition start, completion, or recurrence deadline breach. The probe has
+a 25-second internal deadline, a 30-second process budget, and a 2048-byte
+canonical evidence bound. These are platform constants, not application
+settings.
 
 No source-only assertion, skipped FPM test, different PHP image, or self-hosted
 sidecar is sufficient evidence for promotion.

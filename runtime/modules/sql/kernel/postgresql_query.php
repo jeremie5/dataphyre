@@ -46,7 +46,85 @@ class postgresql_query_builder {
 	private static function mysql_compatibility_layer(string $query='') : string {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$index=0;
-		$query=preg_replace_callback('/\?/', static function()use(&$index): string{return '$'.(++$index);}, $query);
+		$translated='';
+		$length=strlen($query);
+		for($offset=0;$offset<$length;){
+			$character=$query[$offset];
+			if($character==="'" || $character==='"' || $character==='`'){
+				$quote=$character;
+				$translated.=$character;
+				$offset++;
+				while($offset<$length){
+					$character=$query[$offset];
+					$translated.=$character;
+					$offset++;
+					if($character==='\\' && $offset<$length){
+						$translated.=$query[$offset++];
+						continue;
+					}
+					if($character===$quote){
+						if($offset<$length && $query[$offset]===$quote){
+							$translated.=$query[$offset++];
+							continue;
+						}
+						break;
+					}
+				}
+				continue;
+			}
+			if($character==='-' && ($query[$offset+1]??null)==='-'){
+				$end=strpos($query,"\n",$offset+2);
+				$end=$end===false ? $length : $end;
+				$translated.=substr($query,$offset,$end-$offset);
+				$offset=$end;
+				continue;
+			}
+			if($character==='/' && ($query[$offset+1]??null)==='*'){
+				$start=$offset;
+				$offset+=2;
+				$depth=1;
+				while($offset<$length && $depth>0){
+					if(substr($query,$offset,2)==='/*'){
+						$depth++;
+						$offset+=2;
+						continue;
+					}
+					if(substr($query,$offset,2)==='*/'){
+						$depth--;
+						$offset+=2;
+						continue;
+					}
+					$offset++;
+				}
+				$translated.=substr($query,$start,$offset-$start);
+				continue;
+			}
+			if($character==='$' && preg_match('/\A\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/',substr($query,$offset),$match)===1){
+				$delimiter=$match[0];
+				$end=strpos($query,$delimiter,$offset+strlen($delimiter));
+				if($end===false){
+					$translated.=substr($query,$offset);
+					break;
+				}
+				$end+=strlen($delimiter);
+				$translated.=substr($query,$offset,$end-$offset);
+				$offset=$end;
+				continue;
+			}
+			if($character==='?'){
+				if(($query[$offset+1]??null)==='|' || ($query[$offset+1]??null)==='&' || self::is_postgresql_json_operator($query,$offset)){
+					$translated.='?';
+					$offset++;
+					continue;
+				}
+				$translated.='$'.(++$index);
+				$offset++;
+				continue;
+			}
+			$translated.=$character;
+			$offset++;
+		}
+		$query=$translated;
 		$query=preg_replace('/RAND\(\)/i', 'RANDOM()', $query);
 		$query=str_ireplace('UNIX_TIMESTAMP()','NOW()', $query);
 		$query=str_ireplace('UNIX_TIMESTAMP(','TO_TIMESTAMP(', $query);
@@ -56,6 +134,33 @@ class postgresql_query_builder {
 		$query=preg_replace('/\bFROM_UNIXTIME\s*\(/i', 'TO_TIMESTAMP(', $query);
 		$query=preg_replace('/!=/', '<>', $query);
 		return $query;
+	}
+
+	/**
+	 * Distinguishes PostgreSQL JSON operators from Dataphyre's `?` placeholder.
+	 *
+	 * The compatibility layer is shared by prepared helper queries and raw
+	 * versioned SQL. PostgreSQL's `?`, `?|`, `?&`, and `@?` operators therefore
+	 * must remain SQL tokens while ordinary unquoted `?` values become `$N`.
+	 */
+	private static function is_postgresql_json_operator(string $query,int $offset): bool {
+		$length=strlen($query);
+		$previous=$offset-1;
+		while($previous>=0 && ctype_space($query[$previous]))$previous--;
+		if($previous>=0 && $query[$previous]==='@')return true;
+		$next=$offset+1;
+		while($next<$length && ctype_space($query[$next]))$next++;
+		$next_character=$query[$next]??'';
+		if($next_character==='|' || $next_character==='&')return true;
+		$placeholder_rhs=$next_character==='?'
+			|| ($next_character==='$' && preg_match('/\A\$[0-9]+\b/',substr($query,$next))===1);
+		$quoted_rhs=$next_character==="'" || $next_character==='"'
+			|| (($next_character==='e' || $next_character==='E') && ($query[$next+1]??null)==="'");
+		if(!$placeholder_rhs && !$quoted_rhs)return false;
+		if($previous<0)return false;
+		$previous_character=$query[$previous];
+		return ctype_alnum($previous_character)
+			|| in_array($previous_character,['_', '$', '.', ')', ']', '"', "'", '@'], true);
 	}
 	
 	/**
@@ -921,7 +1026,6 @@ class postgresql_query_builder {
 				$query="DELETE FROM ".$location." ".$params;
 				$query=self::mysql_compatibility_layer($query);
 				if(!empty($vars)){
-					$query=preg_replace_callback('/\?/', function($matches){static $index=0;return'$'.(++$index);}, $query);
 					$statement_name='stmt_'.bin2hex(random_bytes(6));
 					if(!$stmt=pg_prepare($conn, $statement_name, $query)){
 						throw new \Exception("Failed to prepare statement: ".pg_last_error($conn));

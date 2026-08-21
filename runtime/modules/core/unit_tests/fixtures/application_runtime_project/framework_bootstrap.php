@@ -245,40 +245,66 @@ if ((string) ($_SERVER['DATAPHYRE_RUNTIME_REALTIME_BOOTSTRAP'] ?? '') === '1') {
     );
 }
 
-if ((string) ($_SERVER['DATAPHYRE_RUNTIME_SCHEDULER_TICK'] ?? '') === '1') { // dataphyre-test-architecture: exempt[raw-superglobal] reason="Exact-image fixture must observe the framework router's native request boundary."
+$managedSchedulerBootstrap=defined('DATAPHYRE_INTERNAL_MANAGED_SCHEDULER_ROLE')
+	&& constant('DATAPHYRE_INTERNAL_MANAGED_SCHEDULER_ROLE')==='scheduler';
+if ((string) ($_SERVER['DATAPHYRE_RUNTIME_SCHEDULER_TICK'] ?? '') === '1' || $managedSchedulerBootstrap) { // dataphyre-test-architecture: exempt[raw-superglobal] reason="Exact-image fixture must observe the framework router's native request boundary."
     $tickPath = (string) getenv('DATAPHYRE_RUNTIME_TEST_TICK_PATH');
     if ($tickPath !== '') {
         file_put_contents($tickPath, (string) getmypid(), LOCK_EX);
     }
-    $forgePath = (string) getenv('DATAPHYRE_RUNTIME_TEST_FORGE_PATH');
-    if ($forgePath !== '') {
-        $forgedStatus=['contract'=>'dataphyre.application_runtime.v1','active'=>true];
-        $forgedBody=json_encode($forgedStatus,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
-        $forgeContext=stream_context_create(['http'=>[
-            'method'=>'POST','timeout'=>1,'ignore_errors'=>true,
-            'header'=>"Content-Type: application/json\r\nConnection: close\r\nContent-Length: ".strlen($forgedBody)."\r\n",
-            'content'=>$forgedBody,
-        ]]);
-        @file_get_contents('http://127.0.0.1:8082/dataphyre/runtime/status',false,$forgeContext);
-        $forgedStatusCode=null;
-        foreach (($http_response_header ?? []) as $forgeHeader) {
-            if (preg_match('/^HTTP\/\S+\s+(\d{3})\b/i',(string)$forgeHeader,$forgeMatches)===1) {
-                $forgedStatusCode=(int)$forgeMatches[1];
-                break;
-            }
-        }
-        $forged=$forgedStatusCode!==null && $forgedStatusCode>=200 && $forgedStatusCode<300;
-        file_put_contents($forgePath,$forged ? 'forged' : 'denied',LOCK_EX);
-    }
-    \dataphyre\scheduling::run(
-        'runtime.lifecycle',
-        __DIR__ . '/scheduled_task.php',
-        3600,
-        30,
-        '64M',
-        [],
-        '',
-    );
+	$forgePath = (string) getenv('DATAPHYRE_RUNTIME_TEST_FORGE_PATH');
+	if ($forgePath !== '') {
+		$forgedSocket=@stream_socket_client(
+			'unix:///run/dataphyre/control/runtime.sock',$forgeErrorNumber,$forgeError,0.2,STREAM_CLIENT_CONNECT,
+		);
+		$forged=is_resource($forgedSocket);
+		if(is_resource($forgedSocket)) fclose($forgedSocket);
+		file_put_contents($forgePath,$forged ? 'forged' : 'denied',LOCK_EX);
+	}
+	$activeCallbackBlockPath=(string)getenv('DATAPHYRE_TEST_ACTIVE_CALLBACK_STARTED_PATH');
+	if($activeCallbackBlockPath!==''){
+		foreach(['runtime.lifecycle.00-blocking','runtime.lifecycle.01-later'] as $schedulerName){
+			\dataphyre\scheduling::run(
+				$schedulerName,__DIR__.'/scheduled_task.php',3600,300,'64M',[],'',
+			);
+		}
+	}else{
+		\dataphyre\scheduling::run(
+			'runtime.lifecycle',
+			__DIR__ . '/scheduled_task.php',
+			3600,
+			30,
+			'64M',
+			[],
+			'',
+		);
+	}
+}
+
+if((string)getenv('DATAPHYRE_RUNTIME_TEST_WEB_SLEEP')==='1'
+	&& (string)($_GET['action'] ?? '')==='sleep'){ // dataphyre-test-architecture: exempt[raw-superglobal] reason="Exact FPM topology proof holds all eight managed workers before killing one."
+	usleep(750000);
+}
+
+$managedHealthPath=(string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'),PHP_URL_PATH) ?: '/'); // dataphyre-test-architecture: exempt[raw-superglobal] reason="Exact managed-gateway fixture counts only the reserved dynamic health route."
+$managedHealthCounter=(string)getenv('DATAPHYRE_RUNTIME_TEST_WEB_HEALTH_COUNTER_PATH');
+if(rawurldecode($managedHealthPath)==='/health' && $managedHealthCounter!==''){
+	$counter=fopen($managedHealthCounter,'c+');
+	if(!is_resource($counter) || !flock($counter,LOCK_EX)) throw new RuntimeException('Managed health counter is unavailable.');
+	$current=trim((string)stream_get_contents($counter));
+	if(!ctype_digit($current)) $current='0';
+	rewind($counter);ftruncate($counter,0);fwrite($counter,(string)((int)$current+1));fflush($counter);
+	flock($counter,LOCK_UN);fclose($counter);
+}
+
+if((string)($_GET['action'] ?? '')==='oversized-response'){ // dataphyre-test-architecture: exempt[raw-superglobal] reason="Exact gateway resource proof generates one byte beyond the fixed dynamic-response bound."
+	header('Content-Type: text/plain');echo str_repeat('x',8388609);return;
+}
+if((string)($_GET['action'] ?? '')==='oversized-response-header'){ // dataphyre-test-architecture: exempt[raw-superglobal] reason="Exact FastCGI proof splits one oversized response header across native records."
+	header('X-Oversized: '.str_repeat('x',65537));echo 'must-not-pass';return;
+}
+if((string)($_GET['action'] ?? '')==='oversized-response-header-line'){ // dataphyre-test-architecture: exempt[raw-superglobal] reason="Exact FastCGI proof rejects an oversized individual response-header line."
+	header('X-Oversized-Line: '.str_repeat('x',8193));echo 'must-not-pass';return;
 }
 
 header('Content-Type: application/json; charset=utf-8');

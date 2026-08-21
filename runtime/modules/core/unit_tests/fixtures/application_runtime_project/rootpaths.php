@@ -11,7 +11,10 @@ $fixtureRoot = __DIR__;
 $runtimeRoot = rtrim((string) getenv('DATAPHYRE_RUNTIME_TEST_FRAMEWORK_ROOT'), '/\\');
 $stateRoot = rtrim((string) getenv('DATAPHYRE_RUNTIME_TEST_STATE_ROOT'), '/\\');
 $runtimeRoot = $runtimeRoot!=='' ? $runtimeRoot : '/workspace/dataphyre/runtime';
-$stateRoot = $stateRoot!=='' ? $stateRoot : '/var/lib/dataphyre/scheduler-state/application';
+$managedApplicationDataRoot=rtrim((string)getenv('DATAPHYRE_APPLICATION_DATA_ROOT'),'/\\');
+$stateRoot = $stateRoot!==''
+	? $stateRoot
+	: ($managedApplicationDataRoot!=='' ? $managedApplicationDataRoot : '/var/lib/dataphyre/scheduler-state/application');
 if ($runtimeRoot === '' || !is_file($runtimeRoot . '/bootstrap.php') || $stateRoot === '') {
     throw new RuntimeException('Runtime supervisor fixture roots are unavailable.');
 }
@@ -35,4 +38,4 @@ $paths = [
 if (!defined('ROOTPATH')) {
     define('ROOTPATH', $paths);
 }
-unset($paths, $fixtureRoot, $runtimeRoot, $stateRoot);
+unset($paths, $fixtureRoot, $runtimeRoot, $stateRoot, $managedApplicationDataRoot);
