@@ -317,6 +317,10 @@ final class DataphyreApplicationRuntimeWebGateway
 		}
 		if(preg_match('/\.(?:php[0-9]*|phtml|phar)(?:\.|$)/i',$path)===1){self::respond($connection,404,'Not Found');return true;}
 		$publicRoot=$projectRoot.'/public';
+		// A public tree is optional. Applications that keep their document shell
+		// elsewhere must still reach the framework router; only an existing but
+		// unsafe public node is a static-boundary rejection.
+		if(!file_exists($publicRoot) && !is_link($publicRoot)) return false;
 		if(is_link($publicRoot) || !is_dir($publicRoot) || !hash_equals($publicRoot,(string)realpath($publicRoot))){
 			self::respond($connection,404,'Not Found');return true;
 		}

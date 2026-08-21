@@ -1243,6 +1243,35 @@ test('separated web and scheduler gateway helpers enforce framing claims budgets
 	$t->same('text/plain',$environment['CONTENT_TYPE']);$t->same('yes',$environment['HTTP_X_PUBLIC']);
 	$t->same('mode=exact',$environment['QUERY_STRING']);
 	$t->same(false,array_key_exists('HTTP_CONNECTION',$environment));
+	$publicBoundary=$t->workspace('managed-web-public-root-boundary');
+	$publicBoundaryProject=$publicBoundary->directory('application');
+	$staticRequest=[
+		'method'=>'GET','target'=>'/application-route','protocol'=>'HTTP/1.1',
+		'headers'=>['host'=>'example.test'],
+	];
+	$staticProbe=static function() use ($webInternals,$staticRequest,$publicBoundaryProject): array {
+		$pair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
+		try{
+			$handled=$webInternals->invoke(
+				'serveStatic',$pair[0],$staticRequest,$publicBoundaryProject,hrtime(true)+1_000_000_000,
+			);
+			stream_socket_shutdown($pair[0],STREAM_SHUT_WR);
+			return [$handled,(string)stream_get_contents($pair[1])];
+		}finally{fclose($pair[0]);fclose($pair[1]);}
+	};
+	[$missingPublicHandled,$missingPublicResponse]=$staticProbe();
+	$t->same(false,$missingPublicHandled);$t->same('',$missingPublicResponse);
+	file_put_contents($publicBoundaryProject.'/public','not-a-directory',LOCK_EX);
+	[$filePublicHandled,$filePublicResponse]=$staticProbe();
+	$t->same(true,$filePublicHandled);$t->matches('/^HTTP\/1\.1 404\b/D',$filePublicResponse);
+	unlink($publicBoundaryProject.'/public');
+	if(!symlink($publicBoundaryProject.'/missing-public',$publicBoundaryProject.'/public')){
+		throw new RuntimeException('Broken public-root symlink fixture could not be created.');
+	}
+	try{
+		[$symlinkPublicHandled,$symlinkPublicResponse]=$staticProbe();
+		$t->same(true,$symlinkPublicHandled);$t->matches('/^HTTP\/1\.1 404\b/D',$symlinkPublicResponse);
+	}finally{unlink($publicBoundaryProject.'/public');}
 	$router=(string)realpath(__DIR__.'/fixtures/application_runtime_scheduler_cgi_probe.php');
 	$project=(string)realpath(dirname(__DIR__,4));
 	$managed=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('scheduler',$project,random_bytes(32));

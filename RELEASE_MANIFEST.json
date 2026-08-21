@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-08-21T18:15:42Z",
+  "generated_at_utc": "2026-08-21T18:47:02Z",
   "copied_source_files": 3688,
-  "skipped_source_files": 46,
+  "skipped_source_files": 51,
   "export_file_count": 3688,
-  "export_tree_sha256": "74e928cfe09b2b33f85e24edd434d12854edfbb28f4bfc65f2bdc9fe4a485934",
+  "export_tree_sha256": "54c38aafc6b168dd987d8b893c0ca4b5a5e3d46f40b4218a15e52b0398b1be8c",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -2734,8 +2734,8 @@
     },
     {
       "path": "runtime/modules/core/documentation/Dataphyre_Managed_PHP_Web_Pool.md",
-      "bytes": 17779,
-      "sha256": "47560e6f63d0c23ade779390bbd4b21a2e9b5de4d0481b1301cc47f6314fb79d"
+      "bytes": 18214,
+      "sha256": "e24b19d6b299eba4bb66bbd10d7c45270d0fa18fef1306ea6e8836cc15ad5cbb"
     },
     {
       "path": "runtime/modules/core/Framework/App.php",
@@ -3059,8 +3059,8 @@
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_web_gateway.php",
-      "bytes": 37078,
-      "sha256": "e643785e33478d434e38a5d9c93fa1280b6c4ba3fc04797d78ad1b28ded39f3e"
+      "bytes": 37356,
+      "sha256": "a8a1bd61a3ea14ed3b6bbe1d1f010c6b2e4b93cdc1d36eef39cb9976c7d47ccd"
     },
     {
       "path": "runtime/modules/core/kernel/autoloader.php",
@@ -3279,13 +3279,13 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_managed_php_web_pool.test.php",
-      "bytes": 44038,
-      "sha256": "c366e17de88de04195733e32188fed38ecd71dec98ac951b838e0966d3b716fb"
+      "bytes": 45023,
+      "sha256": "46767f5b60f856a1a24157445e2fd6a7f85ac01862d2d35242f10a7c1e8799ea"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_process_entrypoints_exact.test.php",
-      "bytes": 119301,
-      "sha256": "c435732ca401d72b36677521fc06245a7112d923513d2de08abeceb4a5e2843e"
+      "bytes": 120857,
+      "sha256": "b9499b0872726672f5e83422712df7e67074ea84d48f6ac34d627d1f4c42bcd9"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_runtime_catalogs_deep_coverage.test.php",

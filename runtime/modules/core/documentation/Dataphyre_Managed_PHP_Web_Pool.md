@@ -160,6 +160,11 @@ traversal, PHP extensions, non-regular files, ambiguous framing, duplicate
 headers, and oversized input fail closed. Hashed assets receive immutable
 caching; other files receive conservative caching.
 
+`<project>/public/` is optional. When it is absent, the gateway skips static
+resolution and forwards the request to the framework router. A path that exists
+at that boundary but is a symlink, file, or non-canonical directory still fails
+closed instead of being treated as an application route.
+
 Every other request is translated to FastCGI records and sent only to
 `/run/dataphyre/web/php-fpm.sock`. The gateway fixes `SCRIPT_FILENAME` to the
 framework-owned `application_runtime_router.php`; caller headers cannot replace
@@ -305,7 +310,9 @@ The exact-image suite must prove all of the following:
 9. Static files never start PHP and preserve exact bytes for `GET` and `HEAD`.
    `/health` remains dynamic even when `public/health` exists. Traversal,
    symlink, dot-path, PHP, malformed FastCGI, request amplification, slowloris,
-   and oversized-response cases fail closed.
+   and oversized-response cases fail closed. An application with no `public/`
+   tree reaches its dynamic routes, while an existing unsafe public-root node
+   remains a `404` boundary.
 10. Scheduler registration, callback, no-op, receipt, lock cleanup, replay
     rejection, budget timeout, and child reaping still use distinct fresh
     `php-cgi` PIDs. Input headers and bodies are independently limited to 4096

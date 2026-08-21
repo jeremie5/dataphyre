@@ -479,6 +479,21 @@ test('fixed rootless gateway and eight-worker FPM topology serves static and dyn
 			foreach(['/leak.txt','/.hidden.txt','/probe.php','/%2e%2e/etc/passwd'] as $unsafeTarget){
 				$t->same(404,dataphyre_managed_web_http('GET',$unsafeTarget)['status'],$unsafeTarget);
 			}
+			$publicRoot=$project.'/public';$retainedPublicRoot=$project.'/retained-public';
+			if(!rename($publicRoot,$retainedPublicRoot)) throw new RuntimeException('Public-tree absence fixture could not be prepared.');
+			try{
+				$withoutPublic=dataphyre_managed_web_http('GET','/application-route');
+				$t->same(200,$withoutPublic['status'],$withoutPublic['head'].' '.$withoutPublic['body']);
+				$t->same('healthy',json_decode($withoutPublic['body'],true,32,JSON_THROW_ON_ERROR)['status'] ?? null);
+				if(!symlink($retainedPublicRoot,$publicRoot)) throw new RuntimeException('Unsafe public-tree fixture could not be created.');
+				try{$t->same(404,dataphyre_managed_web_http('GET','/application-route')['status']);}
+				finally{unlink($publicRoot);}
+			}finally{
+				if(is_link($publicRoot)) unlink($publicRoot);
+				if(!is_dir($publicRoot) && !rename($retainedPublicRoot,$publicRoot)){
+					throw new RuntimeException('Public-tree absence fixture could not be restored.');
+				}
+			}
 			$t->same(502,dataphyre_managed_web_http('GET','/health?action=oversized-response-header')['status']);
 			$t->same(502,dataphyre_managed_web_http('GET','/health?action=oversized-response-header-line')['status']);
 
