@@ -235,7 +235,7 @@ test('durable scheduler claim fences concurrent supervisors and recovers crashes
 	$t->same([false,true],$claims);
 	// Recovery waits through the three fixed broker phases plus transport and
 	// cleanup margins; a stopped predecessor cannot overlap a reclaimed task.
-	$recovery=$t->phpProcess([$fixture,$kernel,'recovery',(string)($now+125),$stateRoot]);
+	$recovery=$t->phpProcess([$fixture,$kernel,'recovery',(string)($now+155),$stateRoot]);
 	$t->processSucceeded($recovery,$recovery->stderr());
 	$t->same(true,$recovery->json()['claimed']);
 })->tag('durable-claim','race','crash-recovery','exact-image');

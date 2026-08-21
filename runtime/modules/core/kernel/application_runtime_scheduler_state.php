@@ -21,17 +21,22 @@ final class DataphyreApplicationRuntimeSchedulerState
 	 * stopped waiting for the socket.  ProcessBroker has three independently
 	 * bounded phases before the callback budget starts: process-group setup,
 	 * stdin delivery, and the environment acknowledgement.  Keep the claim
-	 * unavailable for all of those phases, the fixed scheduler/control transport
-	 * margins, and the existing recovery grace.  This is an internal safety
-	 * bound, not a deployment or application setting.
+	 * unavailable for the signed-request freshness window before gateway/control
+	 * consumption, all of those phases, the fixed scheduler/control transport
+	 * margins, the claimedAt flooring second, and the existing recovery grace.
+	 * This is an internal safety bound, not a deployment or application setting.
 	 */
+	private const REQUEST_FRESHNESS_SECONDS=30;
 	private const BROKER_PHASE_TIMEOUT_SECONDS=30;
 	private const BROKER_PHASE_COUNT=3;
 	private const TRANSPORT_MARGIN_SECONDS=12; // six fixed two-second socket/control bounds
 	private const CLEANUP_MARGIN_SECONDS=3; // gateway group and adopted-child teardown
+	private const CLAIM_TIMESTAMP_FLOOR_MARGIN_SECONDS=1;
 	private const RECOVERY_GRACE_SECONDS=15;
-	private const CLAIM_GRACE_SECONDS=(self::BROKER_PHASE_TIMEOUT_SECONDS*self::BROKER_PHASE_COUNT)
-		+self::TRANSPORT_MARGIN_SECONDS+self::CLEANUP_MARGIN_SECONDS+self::RECOVERY_GRACE_SECONDS;
+	private const CLAIM_GRACE_SECONDS=self::REQUEST_FRESHNESS_SECONDS
+		+(self::BROKER_PHASE_TIMEOUT_SECONDS*self::BROKER_PHASE_COUNT)
+		+self::TRANSPORT_MARGIN_SECONDS+self::CLEANUP_MARGIN_SECONDS
+		+self::CLAIM_TIMESTAMP_FLOOR_MARGIN_SECONDS+self::RECOVERY_GRACE_SECONDS;
 
 	private static function root(): string
 	{

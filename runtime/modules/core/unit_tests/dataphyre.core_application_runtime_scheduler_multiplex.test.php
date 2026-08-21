@@ -57,10 +57,13 @@ test('durable claims outlive broker setup before a successor may reclaim work',s
 	));
 	$state=json_decode((string)file_get_contents($root.'/state.json'),true,32,JSON_THROW_ON_ERROR);
 	$entry=$state['entries'][$definition['name']] ?? null;
-	$t->same($now+2+120,$entry['claim_expires_at'],'two-second task plus the 120-second broker/transport/recovery lease');
+	$t->same($now+2+151,$entry['claim_expires_at'],'two-second task plus freshness, broker, transport, flooring, and recovery lease');
 	$t->isFalse(DataphyreApplicationRuntimeSchedulerState::claim(
 		$identity,$definition,$release,$secondGeneration,$secondNonce,$now+100,
 	),'a successor cannot reclaim while any independently bounded broker phase may still be alive');
+	$t->isFalse(DataphyreApplicationRuntimeSchedulerState::claim(
+		$identity,$definition,$release,$secondGeneration,$secondNonce,$now+150,
+	),'a late-consumption request remains fenced at the full 150-second pre-reclaim boundary');
 	$t->isTrue(DataphyreApplicationRuntimeSchedulerState::claim(
 		$identity,$definition,$release,$secondGeneration,$secondNonce,$entry['claim_expires_at']+1,
 	),'recovery begins only after the complete fixed lease expires');

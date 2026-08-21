@@ -25,10 +25,10 @@ $atWorkerBoundary=DataphyreApplicationRuntimeSchedulerState::claim(
 	$identity,$definition,$release,$secondGeneration,str_repeat('e',64),$startedAt+300,
 );
 $atTransportMargin=DataphyreApplicationRuntimeSchedulerState::claim(
-	$identity,$definition,$release,$secondGeneration,str_repeat('e',64),$startedAt+419,
+	$identity,$definition,$release,$secondGeneration,str_repeat('e',64),$startedAt+450,
 );
 $afterExpiry=DataphyreApplicationRuntimeSchedulerState::claim(
-	$identity,$definition,$release,$secondGeneration,str_repeat('e',64),$startedAt+421,
+	$identity,$definition,$release,$secondGeneration,str_repeat('e',64),$startedAt+452,
 );
 fwrite(STDOUT,json_encode(compact(
 	'first','atWorkerBoundary','atTransportMargin','afterExpiry',
