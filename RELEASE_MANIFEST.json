@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-08-21T21:03:04Z",
+  "generated_at_utc": "2026-08-21T22:44:10Z",
   "copied_source_files": 3689,
   "skipped_source_files": 49,
   "export_file_count": 3689,
-  "export_tree_sha256": "a07adab08b30cae98da01c6ae7928db8f3e6867d46cd042001eb487e2fe027c8",
+  "export_tree_sha256": "918e57e3520efadcb8ce60dc55729a66f890b2c4ba29135447ceaaeccffb0742",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -3034,8 +3034,8 @@
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_scheduler_gateway.php",
-      "bytes": 26271,
-      "sha256": "d7f57b3479ef1d536874bedb7650ff309c2ecd4f66624a6347b6fad832a4f181"
+      "bytes": 27190,
+      "sha256": "bff2cd0b1231fb472dd02e5d8973fb7bc8504c31e9a851d250d9d971beacdec0"
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_scheduler_protocol.php",
@@ -3289,8 +3289,8 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_process_entrypoints_exact.test.php",
-      "bytes": 120857,
-      "sha256": "b9499b0872726672f5e83422712df7e67074ea84d48f6ac34d627d1f4c42bcd9"
+      "bytes": 122385,
+      "sha256": "5edeb51ee563315881e8a399289d325c192412ea9630d9aca07a8c212e428ebb"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_runtime_catalogs_deep_coverage.test.php",

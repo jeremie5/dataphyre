@@ -70,8 +70,9 @@ function dataphyre_process_entrypoints_restore_runtime_parent(array $state): voi
 }
 
 /** @return array{pid:int,identity:array{dev:int,ino:int},directory_identity:array{dev:int,ino:int}} */
-function dataphyre_process_entrypoints_start_claim_server(): array
+function dataphyre_process_entrypoints_start_claim_server(int $expectedClaims=1): array
 {
+	if($expectedClaims<1 || $expectedClaims>64) throw new RuntimeException('Scheduler claim fixture count is invalid.');
 	$control=dataphyre_runtime_bind_control_socket();$listener=$control['listener'];
 	$pid=pcntl_fork();
 	if($pid===-1){fclose($listener);throw new RuntimeException('Scheduler claim fixture could not fork.');}
@@ -82,15 +83,19 @@ function dataphyre_process_entrypoints_start_claim_server(): array
 				$control['identity'],$control['directory_identity'],
 			);
 		});
-		$claim=stream_socket_accept($listener,5);fclose($listener);
-		if(!is_resource($claim)) exit(2);
-		stream_set_timeout($claim,5,0);$wire='';
-		do{$chunk=fread($claim,16384);if(!is_string($chunk) || $chunk==='') break;$wire.=$chunk;}while(!str_contains($wire,"\r\n\r\n"));
-		[$head,$claimBody]=array_pad(explode("\r\n\r\n",$wire,2),2,'');
-		preg_match('/\r\nContent-Length:\s*([0-9]+)\r\n/i',"\r\n{$head}\r\n",$lengthMatch);$length=(int)($lengthMatch[1] ?? 0);
-		while(strlen($claimBody)<$length){$chunk=fread($claim,$length-strlen($claimBody));if(!is_string($chunk) || $chunk==='') break;$claimBody.=$chunk;}
-		$response='{"ok":true}';fwrite($claim,"HTTP/1.1 200 OK\r\nContent-Length: ".strlen($response)."\r\nConnection: close\r\n\r\n{$response}");
-		fclose($claim);exit(strlen($claimBody)===$length ? 0 : 3);
+		$accepted=0;$valid=true;
+		while($accepted<$expectedClaims){
+			$claim=stream_socket_accept($listener,5);
+			if(!is_resource($claim)){fclose($listener);exit(2);}
+			stream_set_timeout($claim,5,0);$wire='';
+			do{$chunk=fread($claim,16384);if(!is_string($chunk) || $chunk==='') break;$wire.=$chunk;}while(!str_contains($wire,"\r\n\r\n"));
+			[$head,$claimBody]=array_pad(explode("\r\n\r\n",$wire,2),2,'');
+			preg_match('/\r\nContent-Length:\s*([0-9]+)\r\n/i',"\r\n{$head}\r\n",$lengthMatch);$length=(int)($lengthMatch[1] ?? 0);
+			while(strlen($claimBody)<$length){$chunk=fread($claim,$length-strlen($claimBody));if(!is_string($chunk) || $chunk==='') break;$claimBody.=$chunk;}
+			$response='{"ok":true}';fwrite($claim,"HTTP/1.1 200 OK\r\nContent-Length: ".strlen($response)."\r\nConnection: close\r\n\r\n{$response}");
+			fclose($claim);$valid=$valid && strlen($claimBody)===$length;$accepted++;
+		}
+		fclose($listener);exit($valid ? 0 : 3);
 	}
 	fclose($listener);return [
 		'pid'=>$pid,'identity'=>$control['identity'],'directory_identity'=>$control['directory_identity'],
@@ -1714,8 +1719,8 @@ test('scheduler subreaper reaps repeated setsid escapes and a leader-exit proces
 		'Requires the canonical root test image with the e0-only native scheduler subreaper.',
 	);
 
-test('unprivileged scheduler and control UDS attempts allocate no handler while a root signed callback succeeds',static function(Context $t): void {
-	$fixedPortLock=dataphyre_application_runtime_fixed_port_lock();$gateway=null;$claimServer=null;$validClient=null;
+test('unprivileged scheduler and control UDS attempts allocate no handler while 32 root callbacks drain',static function(Context $t): void {
+	$fixedPortLock=dataphyre_application_runtime_fixed_port_lock();$gateway=null;$claimServer=null;$validClients=[];
 	$parentState=null;$schedulerDirectoryIdentity=null;$schedulerSocketIdentity=null;
 	$kernel=(string)realpath(dirname(__DIR__).'/kernel');require_once $kernel.'/application_runtime_supervisor.php';
 	$router=(string)realpath(__DIR__.'/fixtures/application_runtime_scheduler_cgi_probe.php');$project=(string)realpath(dirname(__DIR__,4));
@@ -1724,12 +1729,10 @@ test('unprivileged scheduler and control UDS attempts allocate no handler while 
 	$publicKey=sodium_crypto_sign_publickey($signing);$managedKey=random_bytes(32);
 	$managed=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('scheduler',$project,$managedKey);
 	$identity=['cloud_application'=>'serve','framework_application'=>'Serve','environment'=>'staging_blue','release_id'=>'dep_'.str_repeat('a',40)];
-	$body=json_encode(DataphyreApplicationRuntimeSchedulerProtocol::issue(
-		'noop',$identity,'gen_'.str_repeat('b',32),31,$secretKey,timestamp:time(),nonce:str_repeat('8',32),
-	),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 	$applicationEnvironment=[
 		'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>$project,
 		'DATAPHYRE_RUNTIME_SCHEDULER_PUBLIC_KEY'=>sodium_bin2base64($publicKey,SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING),
+		'DATAPHYRE_RUNTIME_TEST_CGI_BLOCK_MILLISECONDS'=>'500',
 	];
 	$directChildren=static function(int $pid): array {
 		$bytes=@file_get_contents('/proc/'.$pid.'/task/'.$pid.'/children');
@@ -1745,7 +1748,7 @@ test('unprivileged scheduler and control UDS attempts allocate no handler while 
 		);
 		$gateway=dataphyre_runtime_spawn($router,$project,'scheduler','',0,$applicationEnvironment,$managed);
 		$schedulerSocketIdentity=dataphyre_runtime_wait_for_scheduler_socket($gateway['pid'],$schedulerSocketIdentity);
-		$claimServer=dataphyre_process_entrypoints_start_claim_server();
+		$claimServer=dataphyre_process_entrypoints_start_claim_server(32);
 		$t->same([],$directChildren($gateway['pid']));
 
 		$pipes=[];$probe=proc_open([ // dataphyre-test-architecture: exempt[raw-process-control] reason="Exact unprivileged UDS-connect denial must run below the root-only directory boundary."
@@ -1761,21 +1764,48 @@ test('unprivileged scheduler and control UDS attempts allocate no handler while 
 		],json_decode(trim($probeOut),true,8,JSON_THROW_ON_ERROR));
 		$t->same([],$directChildren($gateway['pid']),'denied UID 10001 connects allocated zero scheduler handlers');
 
-		$started=hrtime(true);$validClient=stream_socket_client(
-			'unix://'.DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$errorNumber,$error,2,STREAM_CLIENT_CONNECT,
-		);
-		if(!is_resource($validClient)) throw new RuntimeException('Root scheduler callback could not connect.');
-		$request="POST /dataphyre/runtime/scheduler/noop HTTP/1.1\r\nHost: dataphyre-scheduler\r\nContent-Type: application/json\r\n".
-			'Content-Length: '.strlen($body)."\r\nConnection: close\r\n\r\n{$body}";
-		fwrite($validClient,$request);stream_socket_shutdown($validClient,STREAM_SHUT_WR);stream_set_timeout($validClient,6,0);
-		$response=(string)stream_get_contents($validClient);$metadata=stream_get_meta_data($validClient);
+		// Keep all handlers alive together so cleanup observes the exact small-PID
+		// namespace churn that used to turn a completed sibling into a false survivor.
+		$started=hrtime(true);$responses=[];
+		for($index=0;$index<32;$index++){
+			$body=json_encode(DataphyreApplicationRuntimeSchedulerProtocol::issue(
+				'noop',$identity,'gen_'.str_repeat('b',32),31+$index,$secretKey,
+				timestamp:time(),nonce:substr(hash('sha256','gateway-fanout-'.$index),0,32),
+			),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+			$client=stream_socket_client(
+				'unix://'.DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$errorNumber,$error,2,STREAM_CLIENT_CONNECT,
+			);
+			if(!is_resource($client)) throw new RuntimeException('Root scheduler callback could not connect.');
+			$request="POST /dataphyre/runtime/scheduler/noop HTTP/1.1\r\nHost: dataphyre-scheduler\r\nContent-Type: application/json\r\n".
+				'Content-Length: '.strlen($body)."\r\nConnection: close\r\n\r\n{$body}";
+			fwrite($client,$request);stream_socket_shutdown($client,STREAM_SHUT_WR);stream_set_blocking($client,false);
+			$id=(int)get_resource_id($client);$validClients[$id]=$client;$responses[$id]='';
+		}
+		$deadline=microtime(true)+12.0;
+		while($validClients!==[] && microtime(true)<$deadline){
+			$read=array_values($validClients);$write=[];$except=[];
+			if(stream_select($read,$write,$except,1)===false) throw new RuntimeException('Root scheduler callback select failed.');
+			foreach($read as $client){
+				$id=(int)get_resource_id($client);$chunk=fread($client,8192);
+				if($chunk===false) throw new RuntimeException('Root scheduler callback read failed.');
+				$responses[$id].=$chunk;
+				if(feof($client)){fclose($client);unset($validClients[$id]);}
+			}
+		}
+		$t->same([],$validClients,'all 32 root callbacks completed inside the fixed gateway window');
+		$t->count(32,$responses);
+		foreach($responses as $response){
+			$t->matches('/^HTTP\/1\.1 200\b/D',$response);
+			$t->contains('dataphyre.scheduler_noop.v1',$response);
+		}
 		$elapsed=(hrtime(true)-$started)/1_000_000_000;
-		$t->same(false,$metadata['timed_out'] ?? null);$t->matches('/^HTTP\/1\.1 200\b/D',$response);
-		$t->contains('dataphyre.scheduler_noop.v1',$response);
-		$t->isTrue($elapsed<4.5,'root signed callback took '.$elapsed.' seconds');
+		$t->isTrue($elapsed<12.0,'32 root callbacks took '.$elapsed.' seconds');
 		pcntl_waitpid($claimServer['pid'],$claimStatus);$t->same(0,pcntl_wexitstatus($claimStatus));$claimServer=null;
+		$reapDeadline=microtime(true)+2.0;
+		do{$remaining=$directChildren($gateway['pid']);if($remaining===[]) break;usleep(10000);}while(microtime(true)<$reapDeadline);
+		$t->same([],$remaining,'the 32-handler burst left no gateway child residue');
 	}finally{
-		if(is_resource($validClient)) fclose($validClient);
+		foreach($validClients as $client) if(is_resource($client)) fclose($client);
 		if(is_array($gateway)){
 			dataphyre_runtime_signal_child($gateway,SIGTERM);$deadline=microtime(true)+5.0;
 			do{$status=proc_get_status($gateway['resource']);if(($status['running'] ?? false)!==true) break;usleep(10000);}while(microtime(true)<$deadline);
@@ -1797,7 +1827,7 @@ test('unprivileged scheduler and control UDS attempts allocate no handler while 
 		dataphyre_application_runtime_fixed_port_unlock($fixedPortLock);
 		sodium_memzero($secretKey);sodium_memzero($managedKey);sodium_memzero($managed['private_key']);
 	}
-})->tag('scheduler','unix-socket','unprivileged-denial','zero-handler-allocation','signed-callback','exact-image')->maxMillis(30000)
+})->tag('scheduler','unix-socket','unprivileged-denial','zero-handler-allocation','32-callback-fanout','pid-reuse','exact-image')->maxMillis(30000)
 	->skipUnless(
 		dataphyre_process_entrypoints_exact_native_runtime(['/usr/bin/setpriv','/usr/bin/prlimit','/usr/local/bin/php-cgi'])
 			&& function_exists('dataphyre_enable_scheduler_child_subreaper'),

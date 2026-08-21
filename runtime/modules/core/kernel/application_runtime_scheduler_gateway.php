@@ -171,7 +171,7 @@ final class DataphyreApplicationRuntimeSchedulerGateway
 					if(!is_array($status)) throw new RuntimeException('Application scheduler status is unavailable.');
 					if(($status['running'] ?? false)!==true){
 						$exitCode=(int)($status['exitcode'] ?? -1);
-						do{
+			do{
 							$stdoutRead=self::drainSchedulerStream(
 								$pipes[1],$output,$maximum,true,$diagnosticOverflow,$deadline,
 							);
@@ -327,8 +327,26 @@ final class DataphyreApplicationRuntimeSchedulerGateway
 			foreach($targets as $pid) self::signalDirectChild($pid,$signal);
 			usleep(10000);
 		}while(microtime(true)<$killDeadline);
+		// A /proc children snapshot can race with reap/reparent and container PID reuse.
+		// Only a twice-attested child identity may fail this cleanup boundary.
+		$survivors=[];
 		foreach(self::directChildren() as $pid){
-			if(!isset($allowedMap[$pid])) throw new RuntimeException('Application scheduler adopted child survived cleanup.');
+			if(isset($allowedMap[$pid])) continue;
+			if(@pcntl_waitpid($pid,$status,WNOHANG)===$pid) continue;
+			try{$identity=DataphyreApplicationRuntimeChildEnvironment::processIdentity($pid);}
+			catch(Throwable){@pcntl_waitpid($pid,$status,WNOHANG);continue;}
+			if(($identity['parent_pid'] ?? null)===getmypid()){
+				$survivors[$pid]=(string)($identity['start_time_ticks'] ?? '');
+			}
+		}
+		foreach($survivors as $pid=>$start){
+			if(@pcntl_waitpid($pid,$status,WNOHANG)===$pid) continue;
+			try{$identity=DataphyreApplicationRuntimeChildEnvironment::processIdentity($pid);}
+			catch(Throwable){@pcntl_waitpid($pid,$status,WNOHANG);continue;}
+			if(($identity['parent_pid'] ?? null)===getmypid()
+				&& hash_equals($start,(string)($identity['start_time_ticks'] ?? ''))){
+				throw new RuntimeException('Application scheduler adopted child survived cleanup.');
+			}
 		}
 	}
 
