@@ -1063,6 +1063,322 @@ function dataphyre_runtime_serve_status(
 	}
 }
 
+/**
+ * Fixed internal callback fan-out for one cadence cycle.
+ *
+ * The scheduler gateway is deliberately bounded at the same value.  Keeping
+ * this in the framework (rather than accepting an environment setting) makes
+ * the capacity part of the measured cadence topology and prevents a tenant or
+ * deployment from trading away the privilege and resource boundaries.
+ */
+function dataphyre_runtime_scheduler_callback_concurrency(): int
+{
+	return 32;
+}
+
+/**
+ * Opens one signed callback request without waiting for its receipt.
+ *
+ * The caller owns the returned socket until the request is settled.  The
+ * pending signed request is retained until the response (or failure cleanup)
+ * so the root control plane can consume it exactly once.
+ *
+ * @return array{socket:resource,request:string,offset:int,response:string,deadline:float,
+ *  request_key:string,definition:array<string,mixed>,scheduled:array<string,mixed>,claim_nonce:string,
+ *  started_at_milliseconds:int,eof:bool}
+ */
+function dataphyre_runtime_scheduler_open_callback(
+	string $socketPath,
+	array $identity,
+	string $generation,
+	int $counter,
+	string $secretKey,
+	array &$pendingRequests,
+	array $definition,
+	array $scheduled,
+	string $claimNonce,
+	int $startedAtMilliseconds,
+): array {
+	if($socketPath!==DataphyreApplicationRuntimeSchedulerGateway::SOCKET
+		|| !is_string($definition['name'] ?? null)){
+		throw new RuntimeException('Scheduler callback transport is invalid.');
+	}
+	$definitionSha=DataphyreApplicationRuntimeSchedulerState::definitionSha256($definition);
+	$issued=DataphyreApplicationRuntimeSchedulerProtocol::issue(
+		'callback',$identity,$generation,$counter,$secretKey,$definition['name'],$definitionSha,
+		$definition['timeout_milliseconds'],
+	);
+	$requestKey='callback:'.$counter;
+	$pendingRequests[$requestKey]=$issued;
+	$body=json_encode($issued,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
+	$request="POST /dataphyre/runtime/scheduler/callback HTTP/1.1\r\nHost: dataphyre-scheduler\r\n".
+		"Content-Type: application/json\r\nConnection: close\r\nContent-Length: ".strlen($body)."\r\n\r\n".$body;
+	try{
+		$socket=@stream_socket_client('unix://'.$socketPath,$errno,$error,2,STREAM_CLIENT_CONNECT);
+		if(!is_resource($socket)) throw new RuntimeException('Scheduler request connection failed');
+		stream_set_blocking($socket,false);
+		return [
+			'socket'=>$socket,'request'=>$request,'offset'=>0,'response'=>'',
+			'deadline'=>microtime(true)+((int)$definition['timeout_milliseconds']/1000)+2.0,
+			'request_key'=>$requestKey,'definition'=>$definition,'scheduled'=>$scheduled,
+			'claim_nonce'=>$claimNonce,'started_at_milliseconds'=>$startedAtMilliseconds,'eof'=>false,
+		];
+	}catch(Throwable $failure){
+		unset($pendingRequests[$requestKey]);
+		throw $failure;
+	}
+}
+
+/** @return array{contract:string,ok:bool} */
+function dataphyre_runtime_scheduler_decode_callback_response(string $response): array
+{
+	[$head,$body]=array_pad(explode("\r\n\r\n",$response,2),2,'');
+	$status=preg_match('/^HTTP\/1\.[01]\s+(\d{3})\b/D',$head,$matches)===1 ? (int)$matches[1] : null;
+	$decoded=json_decode($body,true);
+	if($status===null || $status<200 || $status>=300 || !is_array($decoded)
+		|| array_keys($decoded)!==['contract','ok']
+		|| ($decoded['contract'] ?? null)!=='dataphyre.scheduler_callback.v1'
+		|| ($decoded['ok'] ?? null)!==true){
+		throw new RuntimeException('Scheduler callback response contract is invalid.');
+	}
+	return ['contract'=>'dataphyre.scheduler_callback.v1','ok'=>true];
+}
+
+/**
+ * Drains due callbacks through bounded non-blocking sockets.
+ *
+ * Each task is claimed before a socket is opened.  Receipts are validated and
+ * recorded independently; a failed request releases only its own claim after
+ * EOF proves that the gateway has finished. TERM, generation loss, or cleanup
+ * failure tears down the whole in-flight set while retaining unproven claims
+ * until their fixed broker-safe expiry.
+ *
+ * @param list<array{definition:array<string,mixed>,due_at_milliseconds:int,first_execution:bool}> $due
+ * @return array{observations:list<array<string,mixed>>,cycle_failed:bool}
+ */
+function dataphyre_runtime_run_scheduler_multiplexed_callbacks(
+	string $socketPath,
+	array $identity,
+	string $generation,
+	string $secretKey,
+	string $publicKey,
+	mixed $statusListener,
+	array &$runtime,
+	array &$pendingRequests,
+	?bool &$activationRequested,
+	float &$nextTick,
+	int $interval,
+	array $due,
+	?callable $activationPersister=null,
+	?callable $clockMilliseconds=null,
+	?bool &$stopRequested=null,
+): array {
+	$clockMilliseconds ??= static fn(): int=>(int)floor(microtime(true)*1000);
+	$active=[];$dueIndex=0;$cycleFailed=false;$observations=[];
+	$capacity=dataphyre_runtime_scheduler_callback_concurrency();
+	if($capacity<1 || $capacity>128) throw new RuntimeException('Scheduler callback concurrency bound is invalid.');
+	if($interval<1 || $interval>86400) throw new RuntimeException('Scheduler interval bound is invalid.');
+	usort($due,static function(array $left,array $right) use ($interval): int {
+		$leftDefinition=$left['definition'];$rightDefinition=$right['definition'];
+		$leftDeadline=$left['due_at_milliseconds']+(
+			(int)($leftDefinition['frequency_milliseconds']>0
+				? $leftDefinition['frequency_milliseconds'] : $interval*1000)
+		);
+		$rightDeadline=$right['due_at_milliseconds']+(
+			(int)($rightDefinition['frequency_milliseconds']>0
+				? $rightDefinition['frequency_milliseconds'] : $interval*1000)
+		);
+		return $leftDeadline===$rightDeadline
+			? strcmp($leftDefinition['name'],$rightDefinition['name'])
+			: ($leftDeadline<=>$rightDeadline);
+	});
+
+	$close=static function(array &$request) use (&$pendingRequests): void {
+		unset($pendingRequests[$request['request_key']]);
+		if(is_resource($request['socket'])) @fclose($request['socket']);
+	};
+	$release=static function(array $request) use ($identity,$generation): void {
+		DataphyreApplicationRuntimeSchedulerState::releaseClaim(
+			$identity,$request['definition'],$identity['release_id'],$generation,$request['claim_nonce'],
+		);
+	};
+	$cleanup=static function() use (&$active,$close,$release): void {
+		$failure=null;
+		foreach($active as $key=>$request){
+			$close($active[$key]);
+			// Closing a client socket does not prove that the root gateway reaped
+			// its CGI child.  Retain that claim until its fixed expiry to prevent
+			// a successor generation from overlapping still-running work.
+			if(($request['eof'] ?? false)===true){
+				try{$release($request);}catch(Throwable $caught){$failure ??= $caught;}
+			}
+			unset($active[$key]);
+		}
+		if($failure!==null) throw new DataphyreManagedRuntimeGenerationUnavailable(
+			'Managed runtime scheduler claim cleanup failed.',0,$failure,
+		);
+	};
+	$settle=static function(string $key,?Throwable $requestFailure=null) use (
+		&$active,&$observations,&$cycleFailed,&$pendingRequests,$close,$release,$clockMilliseconds,
+	): void {
+		$request=$active[$key] ?? null;
+		if(!is_array($request)) return;
+		unset($active[$key]);
+		try{
+			if($requestFailure!==null) throw $requestFailure;
+			if(isset($pendingRequests[$request['request_key']])){
+				throw new RuntimeException('Scheduler callback receipt was not claim-consumed.');
+			}
+			dataphyre_runtime_scheduler_decode_callback_response($request['response']);
+			$completedAtMilliseconds=$clockMilliseconds();
+			if(!is_int($completedAtMilliseconds)
+				|| $completedAtMilliseconds<$request['started_at_milliseconds']){
+				throw new RuntimeException('Scheduler callback completion time is invalid.');
+			}
+			DataphyreApplicationRuntimeSchedulerState::recordSuccess(
+				$request['identity'],$request['definition'],$request['identity']['release_id'],$request['generation'],
+				max(1,intdiv($completedAtMilliseconds,1000)),$request['claim_nonce'],
+			);
+			$observations[]=[
+				'name'=>$request['definition']['name'],
+				'frequency_milliseconds'=>$request['definition']['frequency_milliseconds'],
+				'due_at_milliseconds'=>$request['scheduled']['due_at_milliseconds'],
+				'first_execution'=>$request['scheduled']['first_execution'],
+				'started_at_milliseconds'=>$request['started_at_milliseconds'],
+				'completed_at_milliseconds'=>$completedAtMilliseconds,
+			];
+		}catch(DataphyreManagedRuntimeGracefulShutdown|DataphyreManagedRuntimeGenerationUnavailable $failure){
+			$close($request);
+			if(($request['eof'] ?? false)===true){
+				try{$release($request);}catch(Throwable $cleanupFailure){
+					throw new DataphyreManagedRuntimeGenerationUnavailable(
+						'Managed runtime scheduler claim cleanup failed.',0,$failure,
+					);
+				}
+			}
+			throw $failure;
+		}catch(Throwable $failure){
+			$close($request);
+			if(($request['eof'] ?? false)===true){
+				try{$release($request);}catch(Throwable $cleanupFailure){
+					throw new DataphyreManagedRuntimeGenerationUnavailable(
+						'Managed runtime scheduler claim cleanup failed.',0,$failure,
+					);
+				}
+			}
+			$cycleFailed=true;
+			return;
+		}
+		$close($request);
+	};
+
+	try{
+		while($dueIndex<count($due) || $active!==[]){
+			dataphyre_runtime_require_not_stopping($stopRequested);
+			dataphyre_runtime_require_generation_healthy($runtime);
+			dataphyre_runtime_apply_activation_request($runtime,$activationRequested,$nextTick,$activationPersister);
+			while($runtime['active']===true && $dueIndex<count($due) && count($active)<$capacity){
+				dataphyre_runtime_require_not_stopping($stopRequested);
+				dataphyre_runtime_require_generation_healthy($runtime);
+				dataphyre_runtime_apply_activation_request($runtime,$activationRequested,$nextTick,$activationPersister);
+				if($runtime['active']!==true) break;
+				$scheduled=$due[$dueIndex++];$definition=$scheduled['definition'];
+				$startedAtMilliseconds=$clockMilliseconds();
+				if(!is_int($startedAtMilliseconds) || $startedAtMilliseconds<$scheduled['due_at_milliseconds']){
+					throw new RuntimeException('Scheduler callback start time is invalid.');
+				}
+				$claimNonce=bin2hex(random_bytes(32));
+				if(!DataphyreApplicationRuntimeSchedulerState::claim(
+					$identity,$definition,$identity['release_id'],$generation,$claimNonce,
+					max(1,intdiv($startedAtMilliseconds,1000)),
+				)) continue;
+				$claimed=[
+					'definition'=>$definition,'scheduled'=>$scheduled,'claim_nonce'=>$claimNonce,
+					'identity'=>$identity,'generation'=>$generation,
+				];
+				try{
+					$request=dataphyre_runtime_scheduler_open_callback(
+						$socketPath,$identity,$generation,dataphyre_runtime_next_scheduler_counter($runtime),
+						$secretKey,$pendingRequests,$definition,$scheduled,$claimNonce,$startedAtMilliseconds,
+					);
+					$active[$request['request_key']]=$request+[
+						'identity'=>$identity,'generation'=>$generation,
+					];
+				}catch(DataphyreManagedRuntimeGracefulShutdown|DataphyreManagedRuntimeGenerationUnavailable $failure){
+					try{$release($claimed);}catch(Throwable $cleanupFailure){
+						throw new DataphyreManagedRuntimeGenerationUnavailable(
+							'Managed runtime scheduler claim cleanup failed.',0,$failure,
+						);
+					}
+					throw $failure;
+				}catch(Throwable $failure){
+					try{$release($claimed);}catch(Throwable $cleanupFailure){
+						throw new DataphyreManagedRuntimeGenerationUnavailable(
+							'Managed runtime scheduler claim cleanup failed.',0,$failure,
+						);
+					}
+					$cycleFailed=true;
+				}
+			}
+			if($active===[]){
+				if($dueIndex>=count($due) || $runtime['active']!==true) break;
+				continue;
+			}
+
+			$read=[];$write=[];$except=[];$socketKeys=[];
+			foreach($active as $key=>$request){
+				if(microtime(true)>=$request['deadline']){
+					$settle($key,new RuntimeException('Scheduler request timed out.'));continue;
+				}
+				$id=(int)get_resource_id($request['socket']);$socketKeys[$id]=$key;
+				if($request['offset']<strlen($request['request'])) $write[]=$request['socket'];
+				else $read[]=$request['socket'];
+			}
+			if($active===[]){
+				if($dueIndex>=count($due) || $runtime['active']!==true) break;
+				continue;
+			}
+			dataphyre_runtime_require_not_stopping($stopRequested);
+			dataphyre_runtime_require_generation_healthy($runtime);
+			dataphyre_runtime_apply_activation_request($runtime,$activationRequested,$nextTick,$activationPersister);
+			if(is_resource($statusListener)){
+				dataphyre_runtime_serve_status($statusListener,$runtime,$pendingRequests,$publicKey);
+			}
+			$selected=@stream_select($read,$write,$except,0,20000);
+			if($selected===false) throw new RuntimeException('Scheduler callback multiplex select failed.');
+			foreach($write as $socket){
+				$key=$socketKeys[(int)get_resource_id($socket)] ?? null;
+				if(!is_string($key) || !isset($active[$key])) continue;
+				$remaining=substr($active[$key]['request'],$active[$key]['offset']);
+				$written=@fwrite($socket,$remaining);
+				if($written===false){$settle($key,new RuntimeException('Scheduler request write failed.'));continue;}
+				if($written===0) continue; // EAGAIN after select; the per-task deadline remains authoritative.
+				$active[$key]['offset']+=$written;
+				if($active[$key]['offset']>=strlen($active[$key]['request'])) @stream_socket_shutdown($socket,STREAM_SHUT_WR);
+			}
+			foreach($read as $socket){
+				$key=$socketKeys[(int)get_resource_id($socket)] ?? null;
+				if(!is_string($key) || !isset($active[$key])) continue;
+				$chunk=@fread($socket,8192);
+				if($chunk===false){$settle($key,new RuntimeException('Scheduler request read failed.'));continue;}
+				if($chunk!==''){
+					$active[$key]['response'].=$chunk;
+					if(strlen($active[$key]['response'])>DataphyreApplicationRuntimeSchedulerProtocol::MAX_TRANSPORT_BYTES){
+						$settle($key,new RuntimeException('Scheduler response exceeded its bound.'));continue;
+					}
+				}
+				if(feof($socket)){
+					$active[$key]['eof']=true;
+					$settle($key);
+				}
+			}
+		}
+	}catch(Throwable $failure){
+		$cleanup();throw $failure;
+	}
+	return ['observations'=>$observations,'cycle_failed'=>$cycleFailed];
+}
+
 function dataphyre_runtime_scheduler_request(
 	string $socketPath,
 	string $kind,
@@ -1350,7 +1666,6 @@ function dataphyre_runtime_run_scheduler_cycle(
 		dataphyre_runtime_require_not_stopping($stopRequested);
 		$cycleFailed=false;
 		$cadenceObservations=[];
-		$requestRunner ??= 'dataphyre_runtime_scheduler_request';
 		$registration=$runtime['scheduler_registration'];
 		if(!dataphyre_runtime_scheduler_registration_valid($registration)){
 			throw new RuntimeException('Scheduler registration evidence is invalid.');
@@ -1359,6 +1674,14 @@ function dataphyre_runtime_run_scheduler_cycle(
 		$due=DataphyreApplicationRuntimeSchedulerState::dueSchedule(
 			$identity,$registration['definitions'],$cycleStartedAtMilliseconds,
 			);
+		if($requestRunner===null){
+			$multiplexed=dataphyre_runtime_run_scheduler_multiplexed_callbacks(
+				$socketPath,$identity,$generation,$secretKey,$publicKey,$statusListener,$runtime,$pendingRequests,
+				$activationRequested,$nextTick,$interval,$due,$activationPersister,$clockMilliseconds,$stopRequested,
+			);
+			$cadenceObservations=$multiplexed['observations'];
+			$cycleFailed=$multiplexed['cycle_failed'];
+		}else{
 			foreach($due as $scheduled){
 				dataphyre_runtime_require_not_stopping($stopRequested);
 				dataphyre_runtime_require_generation_healthy($runtime);
@@ -1439,6 +1762,7 @@ function dataphyre_runtime_run_scheduler_cycle(
 					dataphyre_runtime_require_generation_healthy($runtime);
 					$cycleFailed=true;
 				}
+		}
 		}
 		dataphyre_runtime_require_not_stopping($stopRequested);
 		$cycleCompletedAtMilliseconds=$clockMilliseconds();

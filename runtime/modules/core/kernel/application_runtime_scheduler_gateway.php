@@ -18,7 +18,11 @@ final class DataphyreApplicationRuntimeSchedulerGateway
 	public const SOCKET='/run/dataphyre/scheduler/gateway.sock';
 	private const SOCKET_DIRECTORY='/run/dataphyre/scheduler';
 	private const CONTROL_SOCKET='/run/dataphyre/control/runtime.sock';
-	private const MAX_CHILDREN=8;
+	// The supervisor multiplexes one signed socket per due definition.  The
+	// fixed bound is deliberately internal: it matches the measured callback
+	// burst required by the framework's cadence contract without becoming a
+	// deployment knob or a user-visible runtime concept.
+	private const MAX_CHILDREN=32;
 	private const MAX_SCHEDULER_CHILD_OUTPUT_BYTES=65536;
 	private const MAX_SCHEDULER_REGISTRATION_OUTPUT_BYTES=
 		DataphyreApplicationRuntimeSchedulerProtocol::MAX_TRANSPORT_BYTES+65536;
