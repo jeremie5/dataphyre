@@ -92,7 +92,9 @@ All notable Dataphyre changes are tracked here.
   direct native handles or unrelated filesystem/network side effects. The
   fixed launcher drops to the application UID before applying its zero-process
   creation ceiling, so the final PHP exec remains possible while tenant process
-  creation stays unavailable.
+  creation stays unavailable. Its PID 1 retains `CAP_KILL` only long enough to
+  hard-stop and reap that different-UID child after authenticated evidence; the
+  child has no active capabilities and cannot regain any under `NoNewPrivs`.
 - Added Datadoc's producer-neutral static documentation engine, integrity-
   checked build and publication values, dependency-free responsive portal,
   local search and version protocols, preview-first universal CLI, exact-tree

@@ -84,9 +84,13 @@ test('one-shot accepts the inert identity-drop bounding residue with no usable c
 	foreach(['cap_inheritable','cap_permitted','cap_eff','cap_ambient'] as $capability){
 		$t->same('0000000000000000',$result[$capability],$capability);
 	}
-	$t->isTrue(in_array($result['cap_bounding'],['0000000000000000','00000000000000c0'],true));
-	if(($parent['cap_bounding'] ?? null)==='00000000000000c0'){
-		$t->same('00000000000000c0',$result['cap_bounding']);
+	$t->isTrue(in_array($result['cap_bounding'],[
+		'0000000000000000','00000000000000c0','00000000000000e0',
+	],true));
+	if(in_array(($parent['cap_bounding'] ?? null),[
+		'00000000000000c0','00000000000000e0',
+	],true)){
+		$t->same($parent['cap_bounding'],$result['cap_bounding']);
 	}
 	$t->isFalse(str_contains((string)$out,$secret));$t->isFalse(str_contains((string)$err,$secret));
 	sodium_memzero($secret);
@@ -456,6 +460,8 @@ test('every managed process capability set is part of the live privilege boundar
 
 	$oneShot=$web;$oneShot['cap_bounding']='00000000000000c0';
 	$t->same(true,$boundary->invoke('identityMatchesPrivilegeBoundary',$oneShot,'one-shot'));
+	$oneShotWithKillBounding=$oneShot;$oneShotWithKillBounding['cap_bounding']='00000000000000e0';
+	$t->same(true,$boundary->invoke('identityMatchesPrivilegeBoundary',$oneShotWithKillBounding,'one-shot'));
 	$oneShotWithEmptyBounding=$oneShot;$oneShotWithEmptyBounding['cap_bounding']=$zero;
 	$t->same(true,$boundary->invoke('identityMatchesPrivilegeBoundary',$oneShotWithEmptyBounding,'one-shot'));
 	foreach(['cap_inheritable','cap_permitted','cap_eff','cap_ambient'] as $capability){

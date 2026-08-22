@@ -564,10 +564,12 @@ final class DataphyreApplicationRuntimeChildEnvironment
 				&& ($identity['no_new_privileges'] ?? null)===true;
 		}
 		$bounding=$identity['cap_bounding'] ?? null;
-		// A SETUID|SETGID-only PID 1 lacks CAP_SETPCAP, so this exact inactive one-shot ceiling can survive the drop.
+		// The one-shot PID 1 lacks CAP_SETPCAP, so its exact inactive identity/kill ceiling can survive the drop.
 		$boundingValid=match($role){
 			'scheduler'=>\in_array($bounding,['0000000000000000','00000000000000e0'],true),
-			'one-shot'=>\in_array($bounding,['0000000000000000','00000000000000c0'],true),
+			'one-shot'=>\in_array($bounding,[
+				'0000000000000000','00000000000000c0','00000000000000e0',
+			],true),
 			default=>$bounding==='0000000000000000',
 		};
 		return ($identity['uid'] ?? null)===self::POOL_UID && ($identity['gid'] ?? null)===self::POOL_GID
