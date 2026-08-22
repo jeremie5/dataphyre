@@ -10,6 +10,14 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Moved Vestra's implicit cache and upload staging directory to the writable
+  system-temporary Dataphyre tree for immutable Cloud-managed application
+  releases. Explicit runtime cache directories and ordinary local defaults are
+  unchanged, and the local Vestra loader now shares the exact writer resolver.
+  Vestra tenant/rate environment values are now last-resort fallbacks that cannot
+  override flat or tenant-profile configuration. Direct upload reservations are
+  retry-stable and content-addressed by canonical tenant, resolved rate, and the
+  full SHA-256 digest, without date or temporary-filename identity drift.
 - Restored the fixed managed-image runtime and application roots in every
   post-exec child envelope. The broker intentionally supplies an empty public
   environment, so applications now resolve `/opt/dataphyre/runtime` and `/app`

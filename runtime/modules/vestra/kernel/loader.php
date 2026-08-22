@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__, 3).'/http.php';
+require_once __DIR__.'/vestra.cache.php';
 
 /** Immutable cache-file delivery endpoint used by legacy Vestra origin URLs. */
 final class dataphyre_vestra_cache_endpoint {
@@ -25,12 +26,7 @@ final class dataphyre_vestra_cache_endpoint {
 		$bindings=is_array($runtime['bindings'] ?? null) ? $runtime['bindings'] : [];
 		$requested=urldecode((string)($bindings['filename'] ?? $runtime['filename'] ?? ''));
 		$filename=basename(str_replace(["\0",'\\'], ['', '/'], $requested));
-		$cache=trim((string)($runtime['cache_directory'] ?? ''));
-		if($cache===''){
-			$roots=defined('ROOTPATH') && is_array(ROOTPATH) ? ROOTPATH : [];
-			$root=trim((string)($roots['common_dataphyre'] ?? ''));
-			$cache=$root!=='' ? rtrim($root, '/\\').'/cache/vestra' : '';
-		}
+		$cache=dataphyre_vestra_cache_directory::resolve($runtime);
 		$path=$cache!=='' && $filename!=='' ? rtrim($cache, '/\\').DIRECTORY_SEPARATOR.$filename : '';
 		$exists=$runtime['exists'] ?? static fn(string $path): bool=>is_file($path) && is_readable($path);
 		$read=$runtime['read'] ?? static fn(string $path): string|false=>file_get_contents($path);

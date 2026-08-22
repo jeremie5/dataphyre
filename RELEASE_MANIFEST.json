@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-08-22T13:36:29Z",
-  "copied_source_files": 3692,
-  "skipped_source_files": 46,
-  "export_file_count": 3692,
-  "export_tree_sha256": "f88ed01a8c90e6a4ce6a79e18af7359fea69f7de29595845dc1e75904e54df56",
+  "generated_at_utc": "2026-08-22T18:11:56Z",
+  "copied_source_files": 3693,
+  "skipped_source_files": 50,
+  "export_file_count": 3693,
+  "export_tree_sha256": "e41ae098e80237e40a009187a24b04ecc9ef550acf304405dcf73c1c8af5a253",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -1759,8 +1759,8 @@
     },
     {
       "path": "docs/CHANGELOG.md",
-      "bytes": 35250,
-      "sha256": "bbf1bccd79093d05dd1d06e64814148ac35bf87fcbf4ef70b82773c51ccd426e"
+      "bytes": 35876,
+      "sha256": "a04780663605b656071fa80e67285162cf1ae3e2b64731b87a986bbc4a50a22c"
     },
     {
       "path": "docs/changelog/v2.0.md",
@@ -18699,8 +18699,8 @@
     },
     {
       "path": "runtime/modules/vestra/documentation/Dataphyre_Vestra_Client.md",
-      "bytes": 10281,
-      "sha256": "ad8c147dfd6cd1ed0ed1fb03d796bdba18ca043557a2bdae8628d2e8340cf7c6"
+      "bytes": 12223,
+      "sha256": "f123e782d110b6a82e852e8a85da1164910dc4a5e0e77dadbd94525d8e27d997"
     },
     {
       "path": "runtime/modules/vestra/Framework/Bootstrap.php",
@@ -18724,13 +18724,18 @@
     },
     {
       "path": "runtime/modules/vestra/kernel/loader.php",
-      "bytes": 4329,
-      "sha256": "6d88840ce801d9ddcbeb9e2fde5f56f665ce9f343478360c3451c5b14b531e6c"
+      "bytes": 4157,
+      "sha256": "a453785348a68e76b31395a1cce2d323e98f8399855b95429452bdbcc549a83f"
+    },
+    {
+      "path": "runtime/modules/vestra/kernel/vestra.cache.php",
+      "bytes": 2071,
+      "sha256": "4fd1e1e9c686d3b8eb31ec3656192ae63bc583531627d58cdabe32ade40d113c"
     },
     {
       "path": "runtime/modules/vestra/kernel/vestra.main.php",
-      "bytes": 66528,
-      "sha256": "54e9706446128a6c5f5476b59b88baec5e7fa45d3b3fa2c8b99b82215600e269"
+      "bytes": 66671,
+      "sha256": "802a769acf9aec25d5ed5cdcdccbea8efce54ccc389db8792d845c9885b0137a"
     },
     {
       "path": "runtime/modules/vestra/kernel/vestra.tables.php",
@@ -18744,8 +18749,8 @@
     },
     {
       "path": "runtime/modules/vestra/unit_tests/dataphyre.vestra_runtime_exact.test.php",
-      "bytes": 14624,
-      "sha256": "eb8c9b4e940f07c6f7c48888cc01f1ce0202993c87b06bb186d061e9a52220ac"
+      "bytes": 19139,
+      "sha256": "ec2f2b5af6b7ccbf1f47fc305185f56f4c1fc1015fd205c7af1666c7caf95354"
     },
     {
       "path": "runtime/modules/vestra/unit_tests/dataphyre.vestra.ingestion_result.json",
@@ -18754,8 +18759,8 @@
     },
     {
       "path": "runtime/modules/vestra/unit_tests/dataphyre.vestra.tenant_credentials.test.php",
-      "bytes": 17348,
-      "sha256": "f21bde96c804e1f727235c838743db5fccaaceb14218731c226c0fb4e972bacc"
+      "bytes": 17699,
+      "sha256": "cbedad9250b225fbc130b83512116d34ea634720a8b6fd61a76ebfb0427b0e4c"
     },
     {
       "path": "runtime/modules/vestra/unit_tests/fixtures/vestra_legacy_configuration_probe.php",
@@ -18769,8 +18774,8 @@
     },
     {
       "path": "runtime/modules/vestra/unit_tests/vestra_runtime_test_helpers.php",
-      "bytes": 33196,
-      "sha256": "fb2c86061f3689a35b49ed6f26108c5b2ab0dd706a537a90a384645f4ccb58b1"
+      "bytes": 36543,
+      "sha256": "3b9ddcd88549552121ddcbd059afd841d5727579fb6189707eaa4e0c312d2dd3"
     },
     {
       "path": "runtime/modules/vestra/unit_tests/vestra_test_helpers.php",

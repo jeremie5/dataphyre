@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace dataphyre;
 
 require_once dirname(__DIR__, 3).'/http.php';
+require_once __DIR__.'/vestra.cache.php';
 
 /**
  * Vestra object-storage facade with explicit configuration, transport, SQL,
@@ -333,13 +334,7 @@ class vestra {
 	}
 
 	public static function cacheDirectory(): string {
-		$configured=trim((string)(self::$runtime['cache_directory'] ?? ''));
-		if($configured!==''){
-			return rtrim($configured, '/\\').DIRECTORY_SEPARATOR;
-		}
-		$roots=defined('ROOTPATH') && is_array(ROOTPATH) ? ROOTPATH : [];
-		$root=trim((string)($roots['common_dataphyre'] ?? ''));
-		return $root!=='' ? rtrim($root, '/\\').DIRECTORY_SEPARATOR.'cache'.DIRECTORY_SEPARATOR.'vestra'.DIRECTORY_SEPARATOR : '';
+		return \dataphyre_vestra_cache_directory::resolve(self::$runtime);
 	}
 
 	/** @return array<string,mixed> */
@@ -492,13 +487,16 @@ class vestra {
 
 	private static function tenant(): string {
 		$config=self::configAll();
-		$value=trim((string)($config['default_tenant'] ?? $config['tenant'] ?? ''));
-		return $value!=='' ? $value : trim((string)self::legacy(['vestra_tenant'], ''));
+		$value=trim((string)($config['default_tenant'] ?? ''));
+		$value=$value!=='' ? $value : trim((string)($config['tenant'] ?? ''));
+		$value=$value!=='' ? $value : trim((string)self::legacy(['vestra_tenant'], ''));
+		return $value!=='' ? $value : self::env(['VESTRA_TENANT']);
 	}
 
 	private static function rate(string $tenant=''): string {
 		$value=trim((string)(self::profile($tenant)['rate'] ?? ''));
 		$value=$value!=='' ? $value : trim((string)self::legacy(['vestra_rate','vestra_plan'], ''));
+		$value=$value!=='' ? $value : self::env(['VESTRA_RATE']);
 		return $value!=='' ? $value : 's';
 	}
 
@@ -1286,15 +1284,22 @@ class vestra {
 		if($canonical==='' || self::controlApiToken($controlPath, $tenant)===''){
 			return false;
 		}
-		$key=self::safeObjectKey($file, $hash);
-		$idempotencyKey='dataphyre_'.$canonical.'_'.substr(hash('sha256', implode('|', [$canonical,$key,(string)$bytes,$hash])), 0, 40);
+		$hash=strtolower(trim($hash));
+		$rate=self::rate($tenant);
+		$key=self::safeObjectKey($canonical, $rate, $hash);
+		if($key===''){
+			return false;
+		}
+		$idempotencyKey='dataphyre_'.hash('sha256', implode("\0", [
+			'dataphyre.vestra.object.v1',$canonical,$rate,$hash,
+		]));
 		$response=self::controlRequest('POST', $controlPath, [
 			'object_key'=>$key,
 			'name'=>$key,
 			'content_type'=>$contentType,
 			'max_bytes'=>$bytes,
 			'bytes'=>$bytes,
-			'rate'=>self::rate($tenant),
+			'rate'=>$rate,
 			'method'=>'PUT',
 			'checksum_sha256'=>$hash,
 			'idempotency_key'=>$idempotencyKey,
@@ -1421,10 +1426,14 @@ class vestra {
 		return $scheme.'://'.$host.'/dataphyre/vestra/'.rawurlencode($filename);
 	}
 
-	private static function safeObjectKey(string $file, string $hash): string {
-		$name=preg_replace('/[^a-zA-Z0-9._-]+/', '-', basename(str_replace('\\', '/', $file))) ?: 'object';
-		$name=trim($name, '.-') ?: 'object';
-		return 'dataphyre/'.date('Y/m', self::clock()).'/'.substr($hash, 0, 16).'-'.$name;
+	private static function safeObjectKey(string $tenant, string $rate, string $hash): string {
+		$tenant=trim($tenant);
+		$rate=trim($rate);
+		$hash=strtolower(trim($hash));
+		if($tenant==='' || $rate==='' || preg_match('/^[a-f0-9]{64}$/D', $hash)!==1){
+			return '';
+		}
+		return 'dataphyre/sha256/'.$hash;
 	}
 
 	private static function fileContentType(string $file): string {
@@ -1450,7 +1459,11 @@ class vestra {
 			'readable'=>static fn(string $path): bool=>is_readable($path),
 			'hash'=>static fn(string $path): string|false=>hash_file('sha256', $path),
 			'is_dir'=>static fn(string $path): bool=>is_dir($path),
-			'mkdir'=>static fn(string $path): bool=>@mkdir($path, 0775, true),
+			'mkdir'=>static fn(string $path): bool=>@mkdir(
+				$path,
+				\dataphyre_vestra_cache_directory::creationMode(self::$runtime),
+				true,
+			),
 			'read'=>static fn(string $path): string|false=>@file_get_contents($path),
 			'write'=>static fn(string $path, string $contents): int|false=>@file_put_contents($path, $contents),
 			'copy'=>static fn(string $source, string $destination): bool=>@copy($source, $destination),
@@ -1669,9 +1682,11 @@ function vestra_bootstrap(?bool $dispatch=null, array $runtime=[]): array {
 		$defineTable('dataphyre.vestra_objects', __DIR__.'/vestra.tables.php', 'objects');
 		$tableRegistered=true;
 	}
-	vestra::resetRuntime(is_array($runtime['vestra_runtime'] ?? null) ? $runtime['vestra_runtime'] : []);
+	$vestraRuntime=is_array($runtime['vestra_runtime'] ?? null) ? $runtime['vestra_runtime'] : [];
+	vestra::resetRuntime($vestraRuntime);
 	$cache=vestra::cacheDirectory();
-	$mkdir=$runtime['mkdir'] ?? static fn(string $path): bool=>is_dir($path) || @mkdir($path, 0775, true);
+	$mkdir=$runtime['mkdir'] ?? static fn(string $path): bool=>is_dir($path)
+		|| @mkdir($path, \dataphyre_vestra_cache_directory::creationMode($vestraRuntime), true);
 	$writable=$runtime['is_writable'] ?? 'is_writable';
 	if(!is_callable($mkdir) || !is_callable($writable)){
 		throw new \LogicException('Vestra cache boundaries must be callable.');

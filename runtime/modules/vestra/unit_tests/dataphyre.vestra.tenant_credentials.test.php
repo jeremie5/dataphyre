@@ -410,7 +410,16 @@ namespace DataphyreUnitTests {
 		$t->same('https://upload.example.test/object', $calls[1][CURLOPT_URL] ?? null);
 		$headers=is_array($calls[0][CURLOPT_HTTPHEADER] ?? null) ? $calls[0][CURLOPT_HTTPHEADER] : [];
 		$t->isTrue(in_array('X-Vestra-Control-Key: write-control-token', $headers, true));
-		$t->isTrue(count(array_filter($headers, static fn(mixed $header): bool=>is_string($header) && str_starts_with($header, 'Idempotency-Key: dataphyre_split-canonical_')))===1);
+		$idempotency_headers=array_values(array_filter(
+			$headers,
+			static fn(mixed $header): bool=>is_string($header) && str_starts_with($header, 'Idempotency-Key: '),
+		));
+		$t->count(1, $idempotency_headers);
+		$t->matches('/^Idempotency-Key: dataphyre_[a-f0-9]{64}$/D', $idempotency_headers[0]);
+		$form=[];
+		parse_str((string)($calls[0][CURLOPT_POSTFIELDS] ?? ''), $form);
+		$t->same('dataphyre/sha256/'.str_repeat('a', 64), $form['object_key'] ?? null);
+		$t->same(str_repeat('a', 64), $form['checksum_sha256'] ?? null);
 	})->tag('vestra', 'credentials', 'tenant-isolation');
 
 	test('write-only Control credentials can mint when access authority is explicitly denied', static function(Context $t): void {

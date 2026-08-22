@@ -197,6 +197,39 @@ final class DpVestraRuntimeScenario {
 		];
 	}
 
+	/** @return array<string,string> */
+	public function tenantAndRateEnvironmentFallbackContract(): array {
+		$this->reset();
+		$this->environment=['VESTRA_TENANT'=>'environment-tenant','VESTRA_RATE'=>'environment-rate'];
+		$this->withConfig(['default_tenant'=>'','tenant'=>'','rate'=>'','tenants'=>[]]);
+		$environmentTenant=$this->invoke('tenant');
+		$environmentRate=$this->invoke('rate');
+
+		$this->withConfig([
+			'default_tenant'=>'profile-alias',
+			'tenant'=>'configured-flat-tenant',
+			'rate'=>'configured-flat-rate',
+			'tenants'=>[
+				'profile-alias'=>['tenant'=>'profile-canonical','rate'=>'configured-profile-rate'],
+			],
+		]);
+		$profileTenant=$this->invoke('tenant');
+		$profileRate=$this->invoke('rate', 'profile-alias');
+
+		$this->withConfig(['default_tenant'=>'','tenant'=>'configured-flat-tenant','tenants'=>[]]);
+		$flatTenant=$this->invoke('tenant');
+		$flatRate=$this->invoke('rate');
+
+		return [
+			'environment_tenant'=>$environmentTenant,
+			'environment_rate'=>$environmentRate,
+			'profile_tenant'=>$profileTenant,
+			'profile_rate'=>$profileRate,
+			'flat_tenant'=>$flatTenant,
+			'flat_rate'=>$flatRate,
+		];
+	}
+
 	/** @return array<string,mixed> */
 	public function referenceContract(): array {
 		$this->reset();
@@ -421,6 +454,27 @@ final class DpVestraRuntimeScenario {
 	}
 
 	/** @return array<string,mixed> */
+	public function contentAddressedReserveIdentityContract(): array {
+		$sameContents='retry-stable Vestra bytes';
+		$changedContents='retry-stable Vestra bytes changed';
+		$firstFile=$this->context->tempFile($sameContents, 'vestra-reserve-first');
+		$secondFile=$this->context->tempFile($sameContents, 'vestra-reserve-second');
+		$changedFile=$this->context->tempFile($changedContents, 'vestra-reserve-changed');
+
+		$first=$this->reserveIdentity($firstFile, 1704067200, 301);
+		$second=$this->reserveIdentity($secondFile, 1767225600, 301);
+		$changed=$this->reserveIdentity($changedFile, 1767225600, 302);
+
+		return [
+			'distinct_source_paths'=>$firstFile!==$secondFile,
+			'truncated_hash_key'=>$this->invoke('safeObjectKey', 'tenant-one', 's.p', str_repeat('a', 63)),
+			'first'=>$first,
+			'second'=>$second,
+			'changed'=>$changed,
+		];
+	}
+
+	/** @return array<string,mixed> */
 	public function transportFailureContract(): array {
 		$invalidBoundary=function(): mixed {
 			$this->reset(['http'=>'invalid'])->withDialback('CALL_VESTRA_PROPAGATE', null);
@@ -641,20 +695,21 @@ final class DpVestraRuntimeScenario {
 		$missingGuidance=$this->invoke('uploadGuidance', ['upload'=>['headers'=>[]]]);
 
 		$file=$this->file('edges/upload.png', 'upload');
-		$reserveMissing=$this->invoke('reserveAndUpload', $file, 'hash', '', 6, 'image/png');
+		$hash=hash('sha256', 'upload');
+		$reserveMissing=$this->invoke('reserveAndUpload', $file, $hash, '', 6, 'image/png');
 
 		$this->reset()->queueJson('/objects/reserve', ['ok'=>true,'data'=>['object_id'=>92]]);
-		$reserveNoGuidance=$this->invoke('reserveAndUpload', $file, 'hash', 'tenant-one', 6, 'image/png');
+		$reserveNoGuidance=$this->invoke('reserveAndUpload', $file, $hash, 'tenant-one', 6, 'image/png');
 
 		$this->reset()->withConfig(['base_url'=>'','object_url'=>''])->queueJson('/objects/reserve', [
 			'ok'=>true,'data'=>['object_id'=>93,'upload'=>['url'=>'/relative']],
 		]);
-		$relativeNoBase=$this->invoke('reserveAndUpload', $file, 'hash', 'tenant-one', 6, 'image/png');
+		$relativeNoBase=$this->invoke('reserveAndUpload', $file, $hash, 'tenant-one', 6, 'image/png');
 
 		$this->reset()->queueJson('/objects/reserve', [
 			'ok'=>true,'data'=>['object_id'=>94,'upload'=>['url'=>'https://uploads.test/fail']],
 		])->queueHttp('https://uploads.test/fail', false);
-		$uploadFailure=$this->invoke('reserveAndUpload', $file, 'hash', 'tenant-one', 6, 'image/png');
+		$uploadFailure=$this->invoke('reserveAndUpload', $file, $hash, 'tenant-one', 6, 'image/png');
 
 		$this->reset();
 		$this->invoke('recordObject', ['missing'=>'identity']);
@@ -729,6 +784,36 @@ final class DpVestraRuntimeScenario {
 
 	private function invoke(string $method, mixed ...$arguments): mixed {
 		return $this->context->nonPublic(\dataphyre\vestra::class)->invoke($method, ...$arguments);
+	}
+
+	/** @return array{reserved:bool,object_key:string,checksum:string,rate:string,idempotency:string,idempotency_header:string,hash:string} */
+	private function reserveIdentity(string $file, int $time, int $objectId): array {
+		$hash=(string)hash_file('sha256', $file);
+		$bytes=(int)filesize($file);
+		$this->reset(['time'=>$time])
+			->queueJson('/objects/reserve', [
+				'ok'=>true,
+				'data'=>[
+					'object_id'=>$objectId,
+					'tenant'=>'tenant-media',
+					'upload'=>['url'=>'https://uploads.test/content','method'=>'PUT'],
+				],
+			])
+			->queueHttp('https://uploads.test/content', ['status'=>200,'json'=>[],'body'=>'']);
+		$reference=$this->invoke('reserveAndUpload', $file, $hash, 'media', $bytes, 'application/octet-stream');
+		$control=$this->httpCalls[0] ?? [];
+		$payload=[];
+		parse_str((string)($control['body'] ?? ''), $payload);
+		$headers=is_array($control['headers'] ?? null) ? $control['headers'] : [];
+		return [
+			'reserved'=>is_array($reference),
+			'object_key'=>(string)($payload['object_key'] ?? ''),
+			'checksum'=>(string)($payload['checksum_sha256'] ?? ''),
+			'rate'=>(string)($payload['rate'] ?? ''),
+			'idempotency'=>(string)($payload['idempotency_key'] ?? ''),
+			'idempotency_header'=>(string)($headers['Idempotency-Key'] ?? ''),
+			'hash'=>$hash,
+		];
 	}
 
 	private function respond(array $request): mixed {

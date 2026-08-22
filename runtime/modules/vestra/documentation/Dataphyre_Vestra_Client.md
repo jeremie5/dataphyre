@@ -30,12 +30,16 @@ The owning kernel exposes the merged readonly config as `DP_VESTRA_CFG`.
     `base_url` for `/v/{tenant}/{rate}/{blockid}` delivery.
 - `tenant`
   - Legacy/default application tenant used for application accounting and Fabric
-    delivery context when `default_tenant` is not set.
+    delivery context when `default_tenant` is not set. `VESTRA_TENANT` is the
+    final fallback only when neither explicit configuration nor legacy config
+    supplies a tenant.
 - `default_tenant`
   - Tenant profile key used when a reference or call does not specify a tenant.
 - `rate`
   - Optional default Fabric rate for the flat/default profile. Applications should prefer
     `CALL_VESTRA_RESOLVE_TENANT_CONTEXT` when the rate depends on billing state.
+    `VESTRA_RATE` is the final fallback before the framework's `s` default; an
+    explicit flat or tenant-profile rate always wins.
 - `tenants`
   - Map of Fabric tenant ids or aliases to tenant-specific profile overrides.
     Each profile can set `tenant`, `base_url`, `object_url`, `rate`,
@@ -67,6 +71,17 @@ The owning kernel exposes the merged readonly config as `DP_VESTRA_CFG`.
 - `allow_unsigned`
   - Local-development escape hatch for unsigned `/v/...` URLs. Keep this `false`
     for signed Fabric deployments.
+
+An explicitly supplied runtime `cache_directory` remains authoritative for
+Vestra staging and for the local loader route. Without that override, ordinary
+local and self-managed runtimes retain the existing
+`ROOTPATH['common_dataphyre']/cache/vestra` default. Immutable Cloud-managed
+releases (`DATAPHYRE_APPLICATION_RELEASE=dep_<40 lowercase hex>`) instead use
+the process' system temporary directory under `dataphyre/vestra`; their source
+tree may be read-only, while the application UID can create and remove staging
+files inside its private workload filesystem. Dataphyre creates this implicit
+managed directory with owner-only permissions. It is ephemeral staging, not
+durable application storage.
 
 Credential inheritance is fail closed per tenant profile. Omitting `api_token`,
 `write_api_token`, `tenant_read_token`, `write_token`, or `node_token` from a
@@ -142,6 +157,19 @@ The kernel surface is centered around `\dataphyre\vestra`.
     `changes`, a URL-to-reference map.
 - `propagate(string $file, bool $encryption=false): bool|array`
   - Pushes a local file or remote URL to Vestra and returns the propagated reference.
+
+Direct local uploads reserve the content-addressed object key
+`dataphyre/sha256/{digest}`. The surrounding reservation and idempotency identity
+also bind the canonical tenant and resolved rate. Source paths, temporary
+basenames, and wall-clock dates do not participate. Retrying identical bytes in
+the same tenant/rate scope therefore reuses the same reservation, while changed
+bytes select a different identity.
+
+Vestra is an external object system, so its writes are not part of a caller's SQL
+transaction. A SQL rollback after propagation can leave a bounded, same-tenant,
+content-addressed Vestra reservation or object. A retry reuses that exact identity
+instead of creating path-, date-, or attempt-specific residue; callers must not
+describe the external object write as SQL-atomic.
 
 #### Storage References
 
@@ -255,4 +283,6 @@ The module also exposes the local route:
 
 This loader is primarily used as a local origin during propagation, allowing the
 Vestra server to pull a freshly staged file from the current node before it is
-deleted or moved.
+deleted or moved. It resolves the same explicit, managed-release, or local cache
+directory as `\dataphyre\vestra::propagate()`, so the origin endpoint never reads
+from a different staging root than the writer.

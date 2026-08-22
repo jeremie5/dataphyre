@@ -38,6 +38,17 @@ test('runtime configuration names endpoint tenant rate cache and safe-source def
 	$t->endsWith('/cache/', $contract['cache']);
 });
 
+test('tenant and rate environment fallbacks never override explicit flat or profile configuration', static function(Context $t): void {
+	$t->same([
+		'environment_tenant'=>'environment-tenant',
+		'environment_rate'=>'environment-rate',
+		'profile_tenant'=>'profile-alias',
+		'profile_rate'=>'configured-profile-rate',
+		'flat_tenant'=>'configured-flat-tenant',
+		'flat_rate'=>'configured-flat-rate',
+	], DpVestraRuntimeScenario::open($t)->tenantAndRateEnvironmentFallbackContract());
+});
+
 test('reference normalization accepts nested ids handles links metadata and rejects negative envelopes', static function(Context $t): void {
 	$t->hasPathValues([
 		'nested_id'=>42,
@@ -137,6 +148,27 @@ test('direct upload follows reserve guidance streams once and materializes its r
 		'purposes'=>['control','upload'],
 		'source_preserved'=>true,
 	], DpVestraRuntimeScenario::open($t)->directUploadContract());
+});
+
+test('reserve identity is tenant rate and full-content addressed across source paths dates and retries', static function(Context $t): void {
+	$identity=DpVestraRuntimeScenario::open($t)->contentAddressedReserveIdentityContract();
+	$t->isTrue($identity['distinct_source_paths']);
+	$t->same('', $identity['truncated_hash_key']);
+	$t->isTrue($identity['first']['reserved']);
+	$t->isTrue($identity['second']['reserved']);
+	$t->isTrue($identity['changed']['reserved']);
+	$t->same($identity['first']['object_key'], $identity['second']['object_key']);
+	$t->same($identity['first']['idempotency'], $identity['second']['idempotency']);
+	$t->same($identity['first']['idempotency_header'], $identity['second']['idempotency_header']);
+	$t->same($identity['first']['idempotency'], $identity['first']['idempotency_header']);
+	$t->same($identity['first']['hash'], $identity['first']['checksum']);
+	$t->same($identity['second']['hash'], $identity['second']['checksum']);
+	$t->same('m.p', $identity['first']['rate']);
+	$t->same('dataphyre/sha256/'.$identity['first']['hash'], $identity['first']['object_key']);
+	$t->endsWith($identity['first']['hash'], $identity['first']['object_key']);
+	$t->notSame($identity['first']['object_key'], $identity['changed']['object_key']);
+	$t->notSame($identity['first']['idempotency'], $identity['changed']['idempotency']);
+	$t->endsWith($identity['changed']['hash'], $identity['changed']['object_key']);
 });
 
 test('transport failures distinguish invalid boundaries unavailable HTTP statuses and malformed JSON', static function(Context $t): void {
@@ -301,6 +333,55 @@ test('cache endpoint serves immutable GET HEAD and conditional responses without
 	]);
 	$t->same(200, $response['status']);
 	$emit->assertCalledTimes($t, 1);
+});
+
+test('managed releases share a writable system-temp Vestra cache without changing explicit or local defaults', static function(Context $t): void {
+	$workspace=$t->workspace('vestra-managed-cache');
+	$temporary=$workspace->path('system-temp');
+	$managed=$temporary.DIRECTORY_SEPARATOR.'dataphyre'.DIRECTORY_SEPARATOR.'vestra'.DIRECTORY_SEPARATOR;
+	$t->environment(['DATAPHYRE_APPLICATION_RELEASE'=>'dep_'.str_repeat('a', 40)]);
+	\dataphyre\vestra::resetRuntime(['system_temp_directory'=>$temporary]);
+	$t->same($managed, \dataphyre\vestra::cacheDirectory());
+	$t->same($managed, dataphyre_vestra_cache_directory::resolve(['system_temp_directory'=>$temporary]));
+	$t->same(0700, dataphyre_vestra_cache_directory::creationMode(['system_temp_directory'=>$temporary]));
+	$bootstrap=\dataphyre\vestra_bootstrap(true, [
+		'trace'=>static fn(): null=>null,
+		'define_config'=>static fn(): null=>null,
+		'define_table'=>static fn(): null=>null,
+		'vestra_runtime'=>['system_temp_directory'=>$temporary],
+	]);
+	$t->same(['initialized'=>true,'table_registered'=>true,'cache_ready'=>true], $bootstrap);
+	clearstatcache(true, $managed);
+	$t->same(0700, fileperms($managed)&0777);
+
+	$workspace->file('system-temp/dataphyre/vestra/managed.css', 'body{color:blue}');
+	$delivered=dataphyre_vestra_cache_endpoint::dispatch([
+		'system_temp_directory'=>$temporary,'filename'=>'managed.css','server'=>['REQUEST_METHOD'=>'GET'],
+	]);
+	$t->same(200, $delivered['status']);
+	$t->same('body{color:blue}', $delivered['body']);
+
+	$explicit=$workspace->directory('explicit');
+	\dataphyre\vestra::resetRuntime([
+		'cache_directory'=>$explicit,'system_temp_directory'=>$temporary,
+	]);
+	$t->same($explicit.DIRECTORY_SEPARATOR, \dataphyre\vestra::cacheDirectory());
+	$t->same($explicit.DIRECTORY_SEPARATOR, dataphyre_vestra_cache_directory::resolve([
+		'cache_directory'=>$explicit,'system_temp_directory'=>$temporary,
+	]));
+	$t->same(0775, dataphyre_vestra_cache_directory::creationMode([
+		'cache_directory'=>$explicit,'system_temp_directory'=>$temporary,
+	]));
+
+	foreach(['development','dep_'.str_repeat('a', 39),'dep_'.str_repeat('A', 40)] as $release){
+		$t->environment(['DATAPHYRE_APPLICATION_RELEASE'=>$release]);
+		\dataphyre\vestra::resetRuntime(['system_temp_directory'=>$temporary]);
+		$local=\dataphyre\vestra::cacheDirectory();
+		$t->notSame($managed, $local);
+		$t->notContains($temporary, $local);
+		$t->endsWith(DIRECTORY_SEPARATOR.'cache'.DIRECTORY_SEPARATOR.'vestra'.DIRECTORY_SEPARATOR, $local);
+		$t->same(0775, dataphyre_vestra_cache_directory::creationMode(['system_temp_directory'=>$temporary]));
+	}
 });
 
 test('cache endpoint explains root fallback read failures unknown MIME and invalid boundaries', static function(Context $t): void {
