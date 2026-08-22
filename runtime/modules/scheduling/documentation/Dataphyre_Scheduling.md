@@ -255,6 +255,11 @@ or deployment knob. This keeps the same definition and cadence contract on
 local, CI, and Cloud runtimes while respecting the compute boundary Cloud
 actually assigned.
 
+Cadence assessment allows exactly one fixed scheduler wake interval plus one
+second for durable success timestamp precision. Both tolerances are
+framework-owned and are neither application settings nor deployment knobs; they
+do not change a definition's cadence or callback timeout.
+
 Failed callbacks write one private, bounded line through the existing root
 gateway stderr log. Its validated task name, gateway phase, exit/timeout kind,
 exit code, gateway exception class, and fixed message are authoritative. An

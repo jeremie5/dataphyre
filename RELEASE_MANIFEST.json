@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-08-22T00:50:18Z",
+  "generated_at_utc": "2026-08-22T01:19:17Z",
   "copied_source_files": 3689,
   "skipped_source_files": 46,
   "export_file_count": 3689,
-  "export_tree_sha256": "246699a39fee84eaa7e91731a3d9269e423c731b7c9027a2203a3248533229f9",
+  "export_tree_sha256": "4d214790ba42f884c9dd8e79b64e15624e145ec5665a9867f28daebae3f62fc3",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -2729,8 +2729,8 @@
     },
     {
       "path": "runtime/modules/core/documentation/Dataphyre_Core.md",
-      "bytes": 65124,
-      "sha256": "9217d8d6a49c6196a6812475a271faa61ba831e9fdd230624dead8b891530464"
+      "bytes": 65330,
+      "sha256": "a40e15d2cc54a396955a97bf692c6c0dd5f501e80e09d7785da7b50e1e7aa93c"
     },
     {
       "path": "runtime/modules/core/documentation/Dataphyre_Managed_PHP_Web_Pool.md",
@@ -3054,8 +3054,8 @@
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_supervisor.php",
-      "bytes": 106181,
-      "sha256": "dcb3fcbfa9b6bda555477621b29fb9f0dcfe15798fd6d4639a1aa66c17c03228"
+      "bytes": 106231,
+      "sha256": "81c327445e21ca4f1ec3471a2b8f020dc65ba3cd4e5fbcdf915e7a2f384ddffa"
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_web_gateway.php",
@@ -3154,8 +3154,8 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_scheduler_lifecycle.test.php",
-      "bytes": 40540,
-      "sha256": "ec4a77545a0c5186bd4eee93e112f75625293ee0f18f1f5d28959b314061c7e0"
+      "bytes": 41787,
+      "sha256": "c72597c673b88b9c5d34c10c48ab77ddb3131c8ce7c745503a36ead0fe1c96d9"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_scheduler_multiplex.test.php",
@@ -14839,8 +14839,8 @@
     },
     {
       "path": "runtime/modules/scheduling/documentation/Dataphyre_Scheduling.md",
-      "bytes": 12621,
-      "sha256": "e245248dd8dae73fac0be548b582eed496bb9264b17aa939cd73842d35519a3d"
+      "bytes": 12905,
+      "sha256": "5d2fb5d875b3455573e75d281896945d9ad6fb9ba0b7dd1ff7cc9e77ba1669c3"
     },
     {
       "path": "runtime/modules/scheduling/Framework/Bootstrap.php",

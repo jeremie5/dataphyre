@@ -285,9 +285,11 @@ private supervisor cadence evidence. Promotion requires at least one completed
 successful cadence cycle; any measured per-definition start, completion, or
 recurrence deadline breach makes the measured result fail. Empty, claimed-only,
 and partially observed cycles preserve that result; only a later nonempty cycle
-that observes every due definition within its cadence returns it to `ok`. Its
-canonical evidence is bounded to 2048 bytes and its fixed command budget is 30
-seconds.
+that observes every due definition within its cadence returns it to `ok`.
+Cadence deadlines include one fixed scheduler wake interval and one second for
+durable timestamp precision; neither is application-configurable. This does not
+change a definition's cadence or callback timeout. Canonical evidence is bounded
+to 2048 bytes and the fixed command budget is 30 seconds.
 
 TLS terminates at the Dataphyre Cloud edge. The fixed container ingress accepts
 the edge's plain HTTP connection and must never be published directly without

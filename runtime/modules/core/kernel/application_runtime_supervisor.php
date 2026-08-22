@@ -1610,7 +1610,8 @@ function dataphyre_runtime_require_scheduler_replay_rejection(
  *
  * Successful HTTP receipts are not timing evidence. The supervisor measures the
  * real synchronous scheduler-gateway path around every callback and allows one
- * second only because durable success timestamps currently have second precision.
+ * fixed scheduler tick plus one second because durable success timestamps
+ * currently have second precision.
  * A first execution may establish its phase anywhere in its first cadence window;
  * later executions must start when due. Every callback must complete before the
  * next declared period, and work completed early in a serial cycle must not be due
@@ -1629,7 +1630,7 @@ function dataphyre_runtime_scheduler_cadence_assessment(
 	}
 	$lateStarts=0;$lateCompletions=0;$overdueAgain=0;
 	$maxStartLateness=0;$maxCompletionLateness=0;$maxRecurrenceLateness=0;
-	$graceMilliseconds=1000;
+	$graceMilliseconds=$intervalMilliseconds+1000;
 	foreach($observations as $observation){
 		if(!is_array($observation) || array_keys($observation)!==[
 			'name','frequency_milliseconds','due_at_milliseconds','first_execution',

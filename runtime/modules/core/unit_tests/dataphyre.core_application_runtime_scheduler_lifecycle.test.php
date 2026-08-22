@@ -423,6 +423,26 @@ test('durable scheduler state executes its complete claim success reconciliation
 	$t->same(json_encode($empty,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n",$internals->invoke('canonical',$empty));
 })->tag('durable-state','claim','success','release','reconcile','corruption','exact-coverage');
 
+test('cadence assessment includes one fixed scheduler wake interval',static function(Context $t): void {
+	require_once dirname(__DIR__).'/kernel/application_runtime_supervisor.php';
+	$dueAt=1776073000000;
+	$observation=static fn(int $startedAt): array=>[
+		'name'=>'fixture.wake-boundary','frequency_milliseconds'=>10000,
+		'due_at_milliseconds'=>$dueAt,'first_execution'=>false,
+		'started_at_milliseconds'=>$startedAt,'completed_at_milliseconds'=>$startedAt,
+	];
+	$t->same([
+		'ok'=>true,'observation_count'=>1,'late_start_count'=>0,'late_completion_count'=>0,
+		'overdue_again_count'=>0,'max_start_lateness_milliseconds'=>0,
+		'max_completion_lateness_milliseconds'=>0,'max_recurrence_lateness_milliseconds'=>0,
+	],dataphyre_runtime_scheduler_cadence_assessment([$observation($dueAt+2000)],$dueAt+2000,1000));
+	$t->same([
+		'ok'=>false,'observation_count'=>1,'late_start_count'=>1,'late_completion_count'=>0,
+		'overdue_again_count'=>0,'max_start_lateness_milliseconds'=>1,
+		'max_completion_lateness_milliseconds'=>0,'max_recurrence_lateness_milliseconds'=>0,
+	],dataphyre_runtime_scheduler_cadence_assessment([$observation($dueAt+2001)],$dueAt+2001,1000));
+})->tag('scheduler','cadence','wake-interval','precision','boundary','regression');
+
 test('serial cold callbacks fail cadence even when every worker receipt succeeds',static function(Context $t): void {
 	$root=$t->tempDirectory('scheduler-cadence-timing');
 	if(!chmod($root,0700)) throw new RuntimeException('Scheduler cadence state root mode could not be prepared.');
@@ -475,8 +495,8 @@ test('serial cold callbacks fail cadence even when every worker receipt succeeds
 	$t->count(1,$reports);
 	$t->same([
 		'ok'=>false,'observation_count'=>3,'late_start_count'=>2,'late_completion_count'=>3,
-		'overdue_again_count'=>2,'max_start_lateness_milliseconds'=>28000,
-		'max_completion_lateness_milliseconds'=>50000,'max_recurrence_lateness_milliseconds'=>38000,
+		'overdue_again_count'=>2,'max_start_lateness_milliseconds'=>27000,
+		'max_completion_lateness_milliseconds'=>49000,'max_recurrence_lateness_milliseconds'=>37000,
 	],$reports[0]);
 	$slowRuntime['scheduler_registration']=$registration([]);$reports=[];
 	dataphyre_runtime_run_scheduler_cycle(
