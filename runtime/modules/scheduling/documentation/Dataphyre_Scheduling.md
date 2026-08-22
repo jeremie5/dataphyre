@@ -244,13 +244,16 @@ if(\dataphyre\scheduling::in_task_runner()){
    and completed claim; failure releases the claim and cannot starve later
    definitions.
 
-On boot or activation, PID 1 deterministically phases stable task names across
-their cadence (with a one-minute maximum spread) instead of cold-booting every
-definition together. Callback fan-out is derived internally from the VM's Linux
-CPU affinity and cgroup quota, capped by the gateway's fixed 32-child ceiling.
-Neither value is an application setting or deployment knob. This keeps the same
-definition and cadence contract on local, CI, and Cloud runtimes while respecting
-the compute boundary Cloud actually assigned.
+On boot or activation, PID 1 deterministically balances stable task names across
+absolute cadence phases (with a one-minute maximum horizon) instead of
+cold-booting every definition together. Recurring executions remain on those
+phases rather than being re-anchored to completion time, so independently
+balanced callbacks cannot converge into later completion waves. Callback fan-out
+is derived internally from the VM's Linux CPU affinity and cgroup quota, capped
+by the gateway's fixed 32-child ceiling. Neither value is an application setting
+or deployment knob. This keeps the same definition and cadence contract on
+local, CI, and Cloud runtimes while respecting the compute boundary Cloud
+actually assigned.
 
 Failed callbacks write one private, bounded line through the existing root
 gateway stderr log. Its validated task name, gateway phase, exit/timeout kind,

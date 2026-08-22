@@ -126,7 +126,10 @@ final class DataphyreApplicationRuntimeSchedulerState
 		if($eligibilityFloorMilliseconds!==null && $eligibilityFloorMilliseconds<1000){
 			throw new RuntimeException('Scheduler eligibility floor is invalid.');
 		}
-		return self::locked(static function() use ($identity,$definitions,$nowMilliseconds,$eligibilityFloorMilliseconds): array {
+		$activationPhases=$eligibilityFloorMilliseconds===null ? [] : self::activationPhases($definitions);
+		return self::locked(static function() use (
+			$identity,$definitions,$nowMilliseconds,$eligibilityFloorMilliseconds,$activationPhases,
+		): array {
 			$state=self::read($identity);
 			$schedule=[];$dueCount=0;$nowSeconds=intdiv($nowMilliseconds,1000);
 			foreach($definitions as $definition){
@@ -145,13 +148,20 @@ final class DataphyreApplicationRuntimeSchedulerState
 					? ($eligibilityFloorMilliseconds ?? $nowMilliseconds)
 					: ($last*1000)+$frequencyMilliseconds;
 				if($eligibilityFloorMilliseconds!==null){
-					// A fresh or resumed generation must not cold-boot every application
-					// task at once. Spread each stable name inside at most one minute of
-					// its own cadence; the floor remains fixed for the activation, so a
-					// task that becomes eligible stays due until it owns a receipt.
-					$phaseWindow=max(1000,min(60000,$frequencyMilliseconds>0 ? $frequencyMilliseconds : 1000));
-					$phase=(int)(hexdec(substr(hash('sha256',$name),0,8))%$phaseWindow);
-					$dueAt=max($dueAt,$eligibilityFloorMilliseconds+$phase);
+					// Keep both first and recurring work on the same balanced absolute
+					// activation phase. Anchoring recurrence to completion seconds makes
+					// independently phased callbacks collapse back into completion waves.
+					$phase=(int)($activationPhases[$name] ?? 0);
+					$phaseBase=$eligibilityFloorMilliseconds+$phase;
+					if($firstExecution || $frequencyMilliseconds===0){
+						$dueAt=max($dueAt,$phaseBase);
+					}else{
+						$minimumDueAt=($last*1000)+$frequencyMilliseconds;
+						$periods=$phaseBase>=$minimumDueAt ? 0 : (int)ceil(
+							($minimumDueAt-$phaseBase)/$frequencyMilliseconds,
+						);
+						$dueAt=$phaseBase+($periods*$frequencyMilliseconds);
+					}
 				}
 				if($nowMilliseconds>=$dueAt){
 					$dueCount++;
@@ -164,6 +174,55 @@ final class DataphyreApplicationRuntimeSchedulerState
 			}
 			return ['schedule'=>$schedule,'due_count'=>$dueCount];
 		});
+	}
+
+	/**
+	 * Balances one activation's immutable registration over the fixed one-minute
+	 * scheduling horizon. This is runtime-owned capacity planning, not an
+	 * application manifest, deployment knob, or persisted workflow concept.
+	 *
+	 * @param list<array<string,mixed>> $definitions
+	 * @return array<string,int>
+	 */
+	private static function activationPhases(array $definitions): array
+	{
+		$horizonMilliseconds=60000;$bucketMilliseconds=1000;$bucketCount=60;
+		$groups=[];
+		foreach($definitions as $definition){
+			self::assertDefinition($definition);
+			$frequency=(int)$definition['frequency_milliseconds'];
+			$period=$frequency>0 ? $frequency : $bucketMilliseconds;
+			$window=max($bucketMilliseconds,min($horizonMilliseconds,$period));
+			$key=str_pad((string)$period,10,'0',STR_PAD_LEFT).':'.str_pad((string)$window,10,'0',STR_PAD_LEFT);
+			$groups[$key] ??=['period'=>$period,'window'=>$window,'names'=>[]];
+			$groups[$key]['names'][]=$definition['name'];
+		}
+		ksort($groups,SORT_STRING);$load=array_fill(0,$bucketCount,0);$result=[];
+		foreach($groups as $group){
+			$names=$group['names'];sort($names,SORT_STRING);$count=count($names);
+			if($count<1) continue;
+			$base=[];
+			foreach($names as $index=>$name) $base[$name]=intdiv($index*$group['window'],$count);
+			$bestOffset=0;$bestScore=null;$bestEvents=[];
+			for($offset=0;$offset<$group['window'];$offset+=$bucketMilliseconds){
+				$events=array_fill(0,$bucketCount,0);
+				foreach($base as $phase){
+					$shifted=($phase+$offset)%$group['window'];
+					for($at=$shifted;$at<$horizonMilliseconds;$at+=$group['period']){
+						$events[intdiv($at,$bucketMilliseconds)]++;
+					}
+				}
+				$projected=[];
+				for($bucket=0;$bucket<$bucketCount;$bucket++) $projected[$bucket]=$load[$bucket]+$events[$bucket];
+				$score=[max($projected),array_sum(array_map(static fn(int $value): int=>$value*$value,$projected)),$offset];
+				if($bestScore===null || $score<$bestScore){
+					$bestScore=$score;$bestOffset=$offset;$bestEvents=$events;
+				}
+			}
+			foreach($base as $name=>$phase) $result[$name]=($phase+$bestOffset)%$group['window'];
+			for($bucket=0;$bucket<$bucketCount;$bucket++) $load[$bucket]+=$bestEvents[$bucket];
+		}
+		ksort($result,SORT_STRING);return $result;
 	}
 
 	/** Atomically reserves one due definition across predecessor/recovery supervisors. */

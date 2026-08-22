@@ -294,11 +294,14 @@ the edge's plain HTTP connection and must never be published directly without
 that platform TLS and traffic-identity boundary.
 
 PID 1 owns scheduler registration, durable cadence state, and one ephemeral
-Ed25519 keypair per container generation. It issues canonical, one-time signed
-`registration`, `noop`, and `callback` requests to the private scheduler CGI
-gateway. The gateway must claim the exact request from PID 1 before loading the
-ordinary application bootstrap. The private key never enters a child; the
-public key alone is provided through that child's single-use environment.
+Ed25519 keypair per container generation. It balances the immutable registration
+over absolute cadence phases and keeps recurring callbacks on those phases, so
+completion timing cannot collapse later cycles into bursts. It issues canonical,
+one-time signed `registration`, `noop`, and `callback` requests to the private
+scheduler CGI gateway. The gateway must claim the exact request from PID 1 before
+loading the ordinary application bootstrap. The private key never enters a
+child; the public key alone is provided through that child's single-use
+environment.
 
 Registration must produce a complete, unique, immutable definition set. PID 1
 retains the full definitions privately and exposes only their count and digest.

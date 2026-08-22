@@ -338,5 +338,10 @@ observes every due definition within cadence can recover it. The probe has a
 canonical evidence bound. These are platform constants, not application
 settings.
 
+PID 1 assigns the immutable definition set deterministic absolute cadence phases
+over a fixed one-minute horizon. First and recurring executions retain those
+phases, preventing completion-time convergence from recreating callback waves.
+The planner is runtime-owned and exposes no application or deployment control.
+
 No source-only assertion, skipped FPM test, different PHP image, or self-hosted
 sidecar is sufficient evidence for promotion.

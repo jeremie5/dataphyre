@@ -288,7 +288,7 @@ test('durable scheduler state executes its complete claim success reconciliation
 		'definition'=>$task,'due_at_milliseconds'=>($now+2)*1000,'first_execution'=>false,
 	]],DataphyreApplicationRuntimeSchedulerState::dueSchedule($identity,[$task],($now+2)*1000));
 	$resumeFloor=($now+10)*1000;
-	$resumeDueAt=$resumeFloor+(int)(hexdec(substr(hash('sha256',$task['name']),0,8))%1000);
+	$resumeDueAt=$resumeFloor;
 	$t->same([[
 		'definition'=>$task,'due_at_milliseconds'=>$resumeDueAt,'first_execution'=>false,
 	]],DataphyreApplicationRuntimeSchedulerState::dueSchedule(
@@ -649,7 +649,7 @@ test('resume phase is the due timestamp used by both dispatch and cadence assess
 		$identity,$definition,$release,$generation,$lastSuccess,$claimNonce,
 	);
 	$resumeFloor=($lastSuccess+20)*1000;
-	$resumeDueAt=$resumeFloor+(int)(hexdec(substr(hash('sha256',$definition['name']),0,8))%5000);
+	$resumeDueAt=$resumeFloor;
 	$cycleNow=$resumeDueAt;
 	$t->same($resumeDueAt,DataphyreApplicationRuntimeSchedulerState::dueSchedule(
 		$identity,[$definition],$cycleNow,$resumeFloor,

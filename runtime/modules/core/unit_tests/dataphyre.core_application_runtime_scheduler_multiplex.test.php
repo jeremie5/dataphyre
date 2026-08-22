@@ -39,7 +39,7 @@ test('callback fan-out follows the immutable VM CPU boundary beneath the gateway
 	$t->contains("strcmp(\$leftDefinition['name'],\$rightDefinition['name'])",$supervisor);
 })->tag('cpu-affinity','cgroup-quota','capacity','cadence','deterministic');
 
-test('activation phases stable task names without making eligible work disappear',static function(Context $t): void {
+test('activation phases balance mixed cadences without making eligible work disappear',static function(Context $t): void {
 	$kernel=dirname(__DIR__).'/kernel';
 	$root=$t->tempDirectory('scheduler-activation-phase');
 	if(!chmod($root,0700)) throw new RuntimeException('Scheduler activation phase root mode could not be prepared.');
@@ -48,28 +48,64 @@ test('activation phases stable task names without making eligible work disappear
 	$identity=[
 		'cloud_application'=>'fixture','framework_application'=>'Fixture','environment'=>'staging',
 	];
-	$definition=static fn(string $name): array=>[
+	$definition=static fn(string $name,int $frequency): array=>[
 		'name'=>$name,'task_sha256'=>'sha256:'.hash('sha256',$name),'dependency_sha256'=>[],
-		'frequency_milliseconds'=>5000,'timeout_milliseconds'=>2000,'memory_limit'=>'128M',
+		'frequency_milliseconds'=>$frequency,'timeout_milliseconds'=>2000,'memory_limit'=>'128M',
 	];
-	$definitions=array_map($definition,[
-		'fixture.phase.alpha','fixture.phase.bravo','fixture.phase.charlie','fixture.phase.delta',
-	]);
+	$definitions=[];
+	foreach([[20000,24],[30000,24],[60000,43]] as [$frequency,$count]){
+		for($index=0;$index<$count;$index++){
+			$definitions[]=$definition(sprintf('fixture.phase.%05d.%03d',$frequency,$index),$frequency);
+		}
+	}
 	$floor=1776073500000;
-	$schedule=DataphyreApplicationRuntimeSchedulerState::dueSchedule($identity,$definitions,$floor+5000,$floor);
-	$t->count(4,$schedule);
-	$dueAt=[];
+	$schedule=DataphyreApplicationRuntimeSchedulerState::dueSchedule($identity,$definitions,$floor+60000,$floor);
+	$t->count(91,$schedule);$events=array_fill(0,60,0);
 	foreach($schedule as $scheduled){
 		$t->same(true,$scheduled['first_execution']);
 		$t->greaterThanOrEqual($floor,$scheduled['due_at_milliseconds']);
-		$t->lessThan($floor+5000,$scheduled['due_at_milliseconds']);
-		$dueAt[$scheduled['definition']['name']]=$scheduled['due_at_milliseconds'];
+		$t->lessThan($floor+60000,$scheduled['due_at_milliseconds']);
+		$phase=$scheduled['due_at_milliseconds']-$floor;
+		for($at=$phase;$at<60000;$at+=$scheduled['definition']['frequency_milliseconds']){
+			$events[intdiv($at,1000)]++;
+		}
 	}
-	$t->greaterThan(1,count(array_unique($dueAt)),'stable names are not collapsed onto one cold-start instant');
+	$t->same(163,array_sum($events));
+	$t->same(3,max($events),'the mixed one-minute schedule never recreates a callback wave');
+	$t->same(2,min($events),'the mixed one-minute schedule consumes its capacity evenly');
 	$t->same($schedule,DataphyreApplicationRuntimeSchedulerState::dueSchedule(
-		$identity,$definitions,$floor+6000,$floor,
+		$identity,$definitions,$floor+61000,$floor,
 	),'the fixed activation floor keeps already-eligible work due');
-})->tag('activation','phase','cold-start','cadence','deterministic');
+})->tag('activation','phase','cold-start','cadence','balanced','deterministic');
+
+test('recurrence remains on the activation phase after completion times converge',static function(Context $t): void {
+	$kernel=dirname(__DIR__).'/kernel';
+	$root=$t->tempDirectory('scheduler-recurring-phase');
+	if(!chmod($root,0700)) throw new RuntimeException('Scheduler recurring phase root mode could not be prepared.');
+	if(!defined('DATAPHYRE_INTERNAL_SCHEDULER_STATE_TEST_ROOT')) define('DATAPHYRE_INTERNAL_SCHEDULER_STATE_TEST_ROOT',$root);
+	require_once $kernel.'/application_runtime_scheduler_state.php';
+	$identity=['cloud_application'=>'fixture','framework_application'=>'Fixture','environment'=>'staging'];
+	$definitions=[];
+	foreach(['alpha','bravo','charlie'] as $name) $definitions[]=[
+		'name'=>'fixture.recurrence.'.$name,'task_sha256'=>'sha256:'.hash('sha256',$name),'dependency_sha256'=>[],
+		'frequency_milliseconds'=>5000,'timeout_milliseconds'=>2000,'memory_limit'=>'128M',
+	];
+	$release='dep_'.str_repeat('a',40);$generation='gen_'.str_repeat('b',32);
+	$floor=1776073500000;$completedAt=intdiv($floor,1000)+2;
+	foreach($definitions as $index=>$candidate){
+		$claim=str_repeat(dechex($index+1),64);
+		$t->isTrue(DataphyreApplicationRuntimeSchedulerState::claim(
+			$identity,$candidate,$release,$generation,$claim,$completedAt,
+		));
+		DataphyreApplicationRuntimeSchedulerState::recordSuccess(
+			$identity,$candidate,$release,$generation,$completedAt,$claim,
+		);
+	}
+	$schedule=DataphyreApplicationRuntimeSchedulerState::dueSchedule($identity,$definitions,$floor+12000,$floor);
+	$t->count(3,$schedule);$dueAt=array_column($schedule,'due_at_milliseconds');sort($dueAt,SORT_NUMERIC);
+	$t->same([$floor+8333,$floor+10000,$floor+11666],$dueAt);
+	$t->greaterThan(1,count(array_unique($dueAt)),'completion-second convergence cannot collapse recurrence');
+})->tag('activation','phase','recurrence','completion-wave','cadence','deterministic');
 
 test('durable claims outlive broker setup before a successor may reclaim work',static function(Context $t): void {
 	$kernel=dirname(__DIR__).'/kernel';
