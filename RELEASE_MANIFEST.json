@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-08-22T10:13:57Z",
+  "generated_at_utc": "2026-08-22T10:42:00Z",
   "copied_source_files": 3692,
   "skipped_source_files": 45,
   "export_file_count": 3692,
-  "export_tree_sha256": "a8feb2f7d243bab401bc67b96b5feffae08bf0e5d16ad21b64b72d32d0ec3f53",
+  "export_tree_sha256": "1c8672451a5739890c789a756d11c40ec446c70ef51ea39d35811850fb512a1e",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -1759,8 +1759,8 @@
     },
     {
       "path": "docs/CHANGELOG.md",
-      "bytes": 33621,
-      "sha256": "adadb8e27dc2cb941b1086b33f14c8c9e175b3d177a217541f4b1defb43dcfe8"
+      "bytes": 33814,
+      "sha256": "45c73f88057748649b99ee4c47fcadf6aa584e302b729ea4d1970ae915085a72"
     },
     {
       "path": "docs/changelog/v2.0.md",
@@ -2985,7 +2985,7 @@
     {
       "path": "runtime/modules/core/kernel/application_runtime_one_shot.php",
       "bytes": 21062,
-      "sha256": "a0fc8897e6dcbbb6583e82dd07b0892a1ead7129609dc4cb1bb940892737d12b"
+      "sha256": "6a787125b5191a100397f21d746687f1b76d26a5e810a41623c9c370e4a8293a"
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_php_fpm.conf",
@@ -3144,8 +3144,8 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_environment.test.php",
-      "bytes": 29456,
-      "sha256": "5a49b14ff19428ca3b3b9f9c610e4347bdeb91c3fa521d7f71dd161fe49fa60f"
+      "bytes": 29658,
+      "sha256": "26487e86a2ce0458907af65afe9dde81ebdbd12f2c2a675c371d04d439ebdf6b"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_probe_state_exact.test.php",
@@ -15409,8 +15409,8 @@
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.managed_seed_one_shot.test.php",
-      "bytes": 23347,
-      "sha256": "2cbcc22480add2cb9b0bca1a4be7e279b10e3cf1c8b139a428e2966308d63aef"
+      "bytes": 23694,
+      "sha256": "0674aefe7fb165ea180c2d4f693e2098c419064edf510e6d76bbfd84264147c0"
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.mutation_result_insert_identity_regression.test.php",

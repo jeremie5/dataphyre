@@ -250,10 +250,10 @@ try{
 	$worker=dataphyre_one_shot_file(__DIR__.'/application_runtime_one_shot_worker.php');
 	$command=[
 		$setsid,
-		...($operation==='dataphyre_seed' ? [$prlimit,'--nproc=0:0','--'] : []),
 		$setpriv,
 		'--reuid='.$uid,'--regid='.$gid,'--groups='.$gid,'--no-new-privs',
 		'--inh-caps=-all','--ambient-caps=-all','--bounding-set=-all','--pdeathsig=SIGTERM',
+		...($operation==='dataphyre_seed' ? [$prlimit,'--nproc=0:0','--'] : []),
 		PHP_BINARY,
 		'-d','display_errors=0','-d','log_errors=1','-d','expose_php=0',
 		'-d','user_ini.filename=','-d','auto_prepend_file=','-d','auto_append_file=',

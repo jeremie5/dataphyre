@@ -89,7 +89,10 @@ All notable Dataphyre changes are tracked here.
   post-commit evidence-delivery ambiguity is an idempotent-retry outcome, never
   an inferred rollback or success. Its bootstrap and callbacks are trusted
   committed release code; the atomic guarantee covers Dataphyre SQL APIs, not
-  direct native handles or unrelated filesystem/network side effects.
+  direct native handles or unrelated filesystem/network side effects. The
+  fixed launcher drops to the application UID before applying its zero-process
+  creation ceiling, so the final PHP exec remains possible while tenant process
+  creation stays unavailable.
 - Added Datadoc's producer-neutral static documentation engine, integrity-
   checked build and publication values, dependency-free responsive portal,
   local search and version protocols, preview-first universal CLI, exact-tree

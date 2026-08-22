@@ -472,6 +472,10 @@ test('source freezes the root-only canonical channel and fixed one-shot allowlis
 	$t->contains("/usr/bin/setsid",$oneShot);
 	$t->contains("/usr/bin/prlimit",$oneShot);
 	$t->contains("--nproc=0:0",$oneShot);
+	$t->same(true,
+		strpos($oneShot,"\t\t$"."setpriv,")<strpos($oneShot,"[$"."prlimit,'--nproc=0:0','--']")
+		&& strpos($oneShot,"[$"."prlimit,'--nproc=0:0','--']")<strpos($oneShot,"\t\tPHP_BINARY,")
+	);
 	$t->contains("--no-new-privs",$oneShot);
 	$t->contains("'--groups='.$"."gid",$oneShot);
 	$t->isFalse(str_contains($oneShot,'--init-groups'));

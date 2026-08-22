@@ -98,6 +98,13 @@ test('managed seed source fixes every executable and filesystem selection',stati
 		'disable_functions=exec,passthru,shell_exec,system,proc_open,popen,pcntl_exec,pcntl_fork',
 		'dataphyre_one_shot_clear_uid_processes',"dataphyre_one_shot_file('/usr/bin/prlimit')",'--nproc=0:0',
 	] as $required) $t->contains($required,$oneShot);
+	$setprivPosition=strpos($oneShot,"\t\t$"."setpriv,");
+	$prlimitPosition=strpos($oneShot,"[$"."prlimit,'--nproc=0:0','--']");
+	$phpPosition=strpos($oneShot,"\t\tPHP_BINARY,");
+	$t->same(true,
+		$setprivPosition!==false && $prlimitPosition!==false && $phpPosition!==false
+		&& $setprivPosition<$prlimitPosition && $prlimitPosition<$phpPosition
+	);
 	foreach(['dataphyre_managed_seed_read_evidence_key','fclose(STDIN)','without_deferred_queries'] as $required){
 		$t->contains($required,$entrypoint);
 	}
