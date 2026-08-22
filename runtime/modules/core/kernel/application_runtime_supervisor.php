@@ -59,6 +59,18 @@ function dataphyre_runtime_require_managed_web_runtime(): void
 	}
 }
 
+/** Assigns the fixed FPM group without requiring CAP_CHOWN. */
+function dataphyre_runtime_assign_web_socket_group(string $directory): bool
+{
+	if(posix_getegid()!==0 || !posix_setegid(10001)) return false;
+	try{return @chgrp($directory,10001);}
+	finally{
+		if(!posix_setegid(0) || posix_getegid()!==0){
+			throw new RuntimeException('Managed web runtime effective group could not be restored.');
+		}
+	}
+}
+
 /** @return array{directory:array{dev:int,ino:int},parent:array{dev:int,ino:int}} */
 function dataphyre_runtime_prepare_web_socket(): array
 {
@@ -77,10 +89,11 @@ function dataphyre_runtime_prepare_web_socket(): array
 	try{
 		if(file_exists($directory) || is_link($directory)){
 			$stat=@lstat($directory);$resolved=@realpath($directory);
-			$recoverable=is_array($stat) && (((($stat['mode'] ?? 0)&0777)&~0700)===0)
-				&& in_array([$stat['uid'] ?? -1,$stat['gid'] ?? -1],[
-					[10001,10001],[10001,0],[0,10001],[0,0],
-				],true);
+			$permissions=is_array($stat) ? (($stat['mode'] ?? 0)&0777) : -1;
+			$recoverable=is_array($stat) && ($stat['uid'] ?? -1)===0 && (
+				(($stat['gid'] ?? -1)===0 && (($permissions&~0700)===0))
+				|| (($stat['gid'] ?? -1)===10001 && (($permissions&~0730)===0))
+			);
 			$locked=is_array($stat) && (($stat['mode'] ?? 0)&0777)===0711
 				&& ($stat['uid'] ?? -1)===0 && ($stat['gid'] ?? -1)===0;
 			if(is_link($directory) || !is_array($stat) || (($stat['mode'] ?? 0)&0170000)!==0040000
@@ -89,7 +102,7 @@ function dataphyre_runtime_prepare_web_socket(): array
 				throw new RuntimeException('Managed web runtime directory is invalid.');
 			}
 			$directoryIdentity=['dev'=>$stat['dev'],'ino'=>$stat['ino']];
-			if($locked && !@chmod($directory,0700)){
+			if(!@chmod($directory,0700)){
 				throw new RuntimeException('Managed web runtime directory could not be unlocked.');
 			}
 		}else{
@@ -113,14 +126,15 @@ function dataphyre_runtime_prepare_web_socket(): array
 				throw new RuntimeException('Managed web runtime stale socket is invalid.');
 			}
 		}
-		// Set the group first so no failure can leave the historical uid 10001/gid 0 wedge.
-		if(!@chgrp($directory,10001) || !@chown($directory,10001) || !@chmod($directory,0700)){
+		// PID 1 remains the owner. The fixed group gets write access only until
+		// the capability-free FPM master has bound its private socket.
+		if(!dataphyre_runtime_assign_web_socket_group($directory) || !@chmod($directory,0730)){
 			throw new RuntimeException('Managed web runtime directory could not be prepared.');
 		}
 		if(!@chmod($parent,0711)) throw new RuntimeException('Managed web runtime parent could not be opened.');
 		$prepared=@lstat($directory);$openedParent=@lstat($parent);
 		if(is_link($directory) || !is_array($prepared) || (($prepared['mode'] ?? 0)&0170000)!==0040000
-			|| (($prepared['mode'] ?? 0)&0777)!==0700 || ($prepared['uid'] ?? -1)!==10001 || ($prepared['gid'] ?? -1)!==10001
+			|| (($prepared['mode'] ?? 0)&0777)!==0730 || ($prepared['uid'] ?? -1)!==0 || ($prepared['gid'] ?? -1)!==10001
 			|| ($prepared['dev'] ?? null)!==$directoryIdentity['dev'] || ($prepared['ino'] ?? null)!==$directoryIdentity['ino']
 			|| is_link($parent) || !is_array($openedParent) || (($openedParent['mode'] ?? 0)&0170000)!==0040000
 			|| (($openedParent['mode'] ?? 0)&0777)!==0711 || ($openedParent['uid'] ?? -1)!==0 || ($openedParent['gid'] ?? -1)!==0
@@ -156,6 +170,31 @@ function dataphyre_runtime_web_socket_valid(?array $expectedSocketIdentity=null,
 		));
 }
 
+/** @param array{dev:int,ino:int} $socketIdentity @param array{dev:int,ino:int} $directoryIdentity */
+function dataphyre_runtime_lock_web_socket(array $socketIdentity,array $directoryIdentity): bool
+{
+	if(array_keys($socketIdentity)!==['dev','ino'] || array_keys($directoryIdentity)!==['dev','ino']
+		|| !is_int($socketIdentity['dev']) || !is_int($socketIdentity['ino'])
+		|| !is_int($directoryIdentity['dev']) || !is_int($directoryIdentity['ino'])) return false;
+	$socket='/run/dataphyre/web/php-fpm.sock';$directory='/run/dataphyre/web';
+	$beforeSocket=@lstat($socket);$beforeDirectory=@lstat($directory);
+	if(is_link($socket) || !is_array($beforeSocket) || (($beforeSocket['mode'] ?? 0)&0170000)!==0140000
+		|| (($beforeSocket['mode'] ?? 0)&0777)!==0600 || ($beforeSocket['uid'] ?? -1)!==10001 || ($beforeSocket['gid'] ?? -1)!==10001
+		|| ($beforeSocket['dev'] ?? null)!==$socketIdentity['dev'] || ($beforeSocket['ino'] ?? null)!==$socketIdentity['ino']
+		|| is_link($directory) || !is_array($beforeDirectory) || (($beforeDirectory['mode'] ?? 0)&0170000)!==0040000
+		|| (($beforeDirectory['mode'] ?? 0)&0777)!==0730 || ($beforeDirectory['uid'] ?? -1)!==0 || ($beforeDirectory['gid'] ?? -1)!==10001
+		|| ($beforeDirectory['dev'] ?? null)!==$directoryIdentity['dev'] || ($beforeDirectory['ino'] ?? null)!==$directoryIdentity['ino']
+		|| !@chmod($directory,0700)) return false;
+	$revokedSocket=@lstat($socket);$revokedDirectory=@lstat($directory);
+	if(is_link($socket) || !is_array($revokedSocket)
+		|| ($revokedSocket['dev'] ?? null)!==$socketIdentity['dev'] || ($revokedSocket['ino'] ?? null)!==$socketIdentity['ino']
+		|| is_link($directory) || !is_array($revokedDirectory) || (($revokedDirectory['mode'] ?? 0)&0777)!==0700
+		|| ($revokedDirectory['uid'] ?? -1)!==0 || ($revokedDirectory['gid'] ?? -1)!==10001
+		|| ($revokedDirectory['dev'] ?? null)!==$directoryIdentity['dev'] || ($revokedDirectory['ino'] ?? null)!==$directoryIdentity['ino']
+		|| !@chgrp($directory,0) || !@chmod($directory,0711)) return false;
+	return dataphyre_runtime_web_socket_valid($socketIdentity,$directoryIdentity);
+}
+
 /** @param null|array{dev:int,ino:int} $socketIdentity @param null|array{dev:int,ino:int} $directoryIdentity */
 function dataphyre_runtime_web_pool_healthy(
 	int $masterPid,bool $startup=false,?array $socketIdentity=null,?array $directoryIdentity=null,
@@ -189,23 +228,15 @@ function dataphyre_runtime_wait_for_web_pool(
 			&& is_int($ready['dev'] ?? null) && is_int($ready['ino'] ?? null)
 			&& ($observedSocketIdentity=['dev'=>$ready['dev'],'ino'=>$ready['ino']])
 			&& !is_link('/run/dataphyre/web') && is_array($readyDirectory)
-			&& (($readyDirectory['mode'] ?? 0)&0170000)===0040000 && (($readyDirectory['mode'] ?? 0)&0777)===0700
-			&& ($readyDirectory['uid'] ?? -1)===10001 && ($readyDirectory['gid'] ?? -1)===10001
+			&& (($readyDirectory['mode'] ?? 0)&0170000)===0040000 && (($readyDirectory['mode'] ?? 0)&0777)===0730
+			&& ($readyDirectory['uid'] ?? -1)===0 && ($readyDirectory['gid'] ?? -1)===10001
 			&& is_int($readyDirectory['dev'] ?? null) && is_int($readyDirectory['ino'] ?? null)
 			&& ($observedDirectoryIdentity=['dev'=>$readyDirectory['dev'],'ino'=>$readyDirectory['ino']])
-			// Changing ownership to root is the write-revocation transition. No
-			// application-bootstrap-capable UID 10001 sibling may exist before it.
-			&& @chown('/run/dataphyre/web',0) && @chgrp('/run/dataphyre/web',0)
-			&& @chmod('/run/dataphyre/web',0711)){
-			$socket=@lstat('/run/dataphyre/web/php-fpm.sock');$directory=@lstat('/run/dataphyre/web');
-			$socketIdentity=is_array($socket) && is_int($socket['dev'] ?? null) && is_int($socket['ino'] ?? null)
-				? ['dev'=>$socket['dev'],'ino'=>$socket['ino']] : null;
-			$directoryIdentity=is_array($directory) ? ['dev'=>$directory['dev'],'ino'=>$directory['ino']] : null;
-			if(is_array($socketIdentity) && is_array($directoryIdentity)
-				&& dataphyre_runtime_web_pool_healthy($masterPid,true,$socketIdentity,$directoryIdentity)){
-				$observedSocketIdentity=$socketIdentity;$observedDirectoryIdentity=$directoryIdentity;
-				return ['socket'=>$socketIdentity,'directory'=>$directoryIdentity];
-			}
+			&& dataphyre_runtime_lock_web_socket($observedSocketIdentity,$observedDirectoryIdentity)
+			&& dataphyre_runtime_web_pool_healthy(
+				$masterPid,true,$observedSocketIdentity,$observedDirectoryIdentity,
+			)){
+			return ['socket'=>$observedSocketIdentity,'directory'=>$observedDirectoryIdentity];
 		}
 		if(dataphyre_runtime_web_pool_healthy($masterPid,true)){
 			$stat=@lstat('/run/dataphyre/web/php-fpm.sock');
@@ -240,7 +271,7 @@ function dataphyre_runtime_prepare_root_socket(string $directory,string $socket)
 			|| !hash_equals($directory,(string)realpath($directory))){
 			throw new RuntimeException('Managed root socket directory is invalid.');
 		}
-	}else if(!@mkdir($directory,0700) || !@chown($directory,0) || !@chgrp($directory,0) || !@chmod($directory,0700)){
+	}else if(!@mkdir($directory,0700) || !@chgrp($directory,0) || !@chmod($directory,0700)){
 		throw new RuntimeException('Managed root socket directory could not be created.');
 	}
 	if(file_exists($socket) || is_link($socket)){
@@ -476,9 +507,10 @@ function dataphyre_runtime_cleanup_web_socket(
 	$parent='/run/dataphyre';$socket='/run/dataphyre/web/php-fpm.sock';$directory='/run/dataphyre/web';
 	$directoryStat=@lstat($directory);
 	$directoryMode=is_array($directoryStat) ? (($directoryStat['mode'] ?? 0)&0777) : -1;
-	$directoryOwnerMatches=(($directoryMode&~0700)===0 && in_array([
-		$directoryStat['uid'] ?? -1,$directoryStat['gid'] ?? -1,
-	],[[10001,10001],[10001,0],[0,10001],[0,0]],true))
+	$directoryOwnerMatches=($directoryStat['uid'] ?? -1)===0 && (
+		(($directoryStat['gid'] ?? -1)===0 && (($directoryMode&~0700)===0))
+		|| (($directoryStat['gid'] ?? -1)===10001 && (($directoryMode&~0730)===0))
+	)
 		|| ($directoryMode===0711 && ($directoryStat['uid'] ?? -1)===0 && ($directoryStat['gid'] ?? -1)===0);
 	$directoryMatches=is_array($directoryIdentity) && array_keys($directoryIdentity)===['dev','ino']
 		&& !is_link($directory) && is_array($directoryStat) && (($directoryStat['mode'] ?? 0)&0170000)===0040000
@@ -1874,7 +1906,8 @@ function dataphyre_runtime_apply_activation_request(
 
 if(realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? ''))!==__FILE__) return;
 foreach([
-	'pcntl_async_signals','pcntl_signal','pcntl_waitpid','posix_kill','posix_setsid','posix_getpgid','sodium_crypto_sign_keypair',
+	'pcntl_async_signals','pcntl_signal','pcntl_waitpid','posix_kill','posix_setsid','posix_getpgid',
+	'posix_getegid','posix_setegid','sodium_crypto_sign_keypair',
 	'dataphyre_open_inherited_environment_fd','dataphyre_close_inherited_fd',
 	'dataphyre_close_unlisted_inherited_fds',
 ] as $requiredFunction){

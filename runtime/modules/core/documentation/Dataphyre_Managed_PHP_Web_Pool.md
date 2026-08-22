@@ -220,9 +220,15 @@ extension directory, loaded extension hashes, and FPM binary build ID must
 match. Copying an arbitrary FPM binary into an otherwise different PHP image is
 not a release contract.
 
-PID 1 creates `/run/dataphyre/web` as one non-symlink directory owned by
-UID/GID `10001`, mode `0700`, removes only a stale socket at the exact fixed
-path after verifying its type and ownership, and otherwise fails closed.
+PID 1 creates `/run/dataphyre/web` as one non-symlink directory owned by root
+with fixed group `10001` and mode `0730`. That bounded group-write window lets
+the capability-free FPM master bind only its fixed socket before any request can
+reach application bootstrap. PID 1, which remains the owner, immediately
+changes the mode to `0700`, returns the directory to group `0`, and opens only
+traversal with mode `0711`. It needs no `CAP_CHOWN` or `CAP_SETPCAP`. Restart and
+cleanup accept only the attested root-owned intermediate/final states, remove
+only a stale socket at the exact fixed path after verifying its type and
+ownership, and otherwise fail closed.
 
 ## Bootstrap changes
 

@@ -1,5 +1,11 @@
 # Changelog
 
+- Kept the managed PHP supervisor at the fixed `CAP_KILL|CAP_SETUID|CAP_SETGID`
+  ceiling by deleting the FPM socket-directory ownership transfer. PID 1 now
+  remains the root owner, grants group `10001` a bounded pre-bootstrap bind
+  window, then revokes group writes and restores group `0`; neither
+  `CAP_CHOWN` nor `CAP_SETPCAP` is required.
+
 - Added a fixed, brokered three-process shared-cache release probe so platforms
   can prove Memcached capability and cross-process write/read/delete behavior
   without inline PHP, arbitrary cache keys, or secret-bearing environment files.

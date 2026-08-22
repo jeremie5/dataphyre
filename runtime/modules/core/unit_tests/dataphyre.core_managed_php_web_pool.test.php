@@ -361,10 +361,12 @@ test('fixed rootless gateway and eight-worker FPM topology serves static and dyn
 		}
 		$webParentIdentity=['dev'=>$preparedParent['dev'],'ino'=>$preparedParent['ino']];
 		if(file_exists($webDirectory) || is_link($webDirectory)) throw new RuntimeException('Managed runtime web directory is already in use.');
-		if(!mkdir($webDirectory,0700) || !chown($webDirectory,10001) || !chgrp($webDirectory,10001)
-			|| !chmod($webDirectory,0700)){
+		if(!mkdir($webDirectory,0700) || !dataphyre_runtime_assign_web_socket_group($webDirectory)
+			|| !chmod($webDirectory,0730)){
 			throw new RuntimeException('Managed runtime web directory could not be prepared.');
 		}
+		$openDirectory=lstat($webDirectory);
+		$t->same(0730,($openDirectory['mode'] ?? 0)&0777);$t->same(0,$openDirectory['uid']);$t->same(10001,$openDirectory['gid']);
 		$fpm=DataphyreApplicationRuntimeProcessBroker::spawn([
 			'/usr/bin/setpriv','--reuid=10001','--regid=10001','--groups=10001','--no-new-privs',
 			'--inh-caps=-all','--ambient-caps=-all','--bounding-set=-all','--pdeathsig=SIGKILL',
@@ -383,7 +385,7 @@ test('fixed rootless gateway and eight-worker FPM topology serves static and dyn
 		$t->isTrue(is_array($socketStat),'the fixed FPM socket exists');
 		$t->same(0600,($socketStat['mode'] ?? 0)&0777);$t->same(10001,$socketStat['uid']);$t->same(10001,$socketStat['gid']);
 		$socketIdentity=['dev'=>$socketStat['dev'],'ino'=>$socketStat['ino']];
-		$t->isTrue(chown($webDirectory,0),'root ownership atomically revokes UID 10001 directory mutation');
+		$t->isTrue(chmod($webDirectory,0700),'root ownership atomically revokes UID 10001 directory mutation');
 		$replacementPath=$webDirectory.'/tenant-replacement.sock';
 		$transitionSubstitution=$t->process([
 			'/usr/bin/setpriv','--reuid=10001','--regid=10001','--groups=10001','--no-new-privs',

@@ -115,6 +115,15 @@ test('supervisor owns private status and signs cadence before privilege-dropped 
 	$t->same(1,substr_count($supervisor,'pcntl_signal(SIGINT,$stop)'));
 	$t->isFalse(str_contains($supervisor,"@chown('/run/dataphyre'"));
 	$t->isFalse(str_contains($supervisor,"@chgrp('/run/dataphyre'"));
+	$t->isFalse(str_contains($supervisor,'@chown($directory'));
+	$t->contains('dataphyre_runtime_assign_web_socket_group($directory)',$supervisor);
+	$t->contains('dataphyre_runtime_lock_web_socket($observedSocketIdentity,$observedDirectoryIdentity)',$supervisor);
+	$lockBoundary=strpos($supervisor,'function dataphyre_runtime_lock_web_socket(');
+	$revokeMode=strpos($supervisor,'!@chmod($directory,0700)',$lockBoundary===false ? 0 : $lockBoundary);
+	$restoreGroup=strpos($supervisor,'!@chgrp($directory,0)',$revokeMode===false ? 0 : $revokeMode);
+	$openMode=strpos($supervisor,'!@chmod($directory,0711)',$restoreGroup===false ? 0 : $restoreGroup);
+	$t->isTrue(is_int($lockBoundary) && is_int($revokeMode) && is_int($restoreGroup) && is_int($openMode)
+		&& $lockBoundary<$revokeMode && $revokeMode<$restoreGroup && $restoreGroup<$openMode);
 	$t->contains("($" . "decoded['contract'] ?? null)==='dataphyre.application_runtime.v6'",$probe);
 	foreach(['cloud_application','framework_application','environment','release_id','environment_fingerprint'] as $identity){
 		$t->contains("'{$identity}'=>",$supervisor);
@@ -379,11 +388,23 @@ test('supervisor helpers enforce their exact bounded environment private HTTP an
 			throw new RuntimeException('Web restrictive-umask restart fixture could not be prepared.');
 		}
 		$preparation=dataphyre_runtime_prepare_web_socket();$prepared=lstat('/run/dataphyre/web');
-		$t->same(0700,($prepared['mode'] ?? 0)&0777);$t->same(10001,$prepared['uid']);$t->same(10001,$prepared['gid']);
+		$t->same(0730,($prepared['mode'] ?? 0)&0777);$t->same(0,$prepared['uid']);$t->same(10001,$prepared['gid']);
 		dataphyre_runtime_cleanup_web_socket(null,$preparation['directory'],$preparation['parent']);
 		$t->isFalse(file_exists('/run/dataphyre/web'));
 	}
-	foreach([[10001,10001,0700],[10001,0,0700],[0,10001,0700],[0,0,0700],[0,0,0711]] as [$uid,$gid,$mode]){
+	if(!mkdir('/run/dataphyre/web',0700) || !chown('/run/dataphyre/web',10001)
+		|| !chgrp('/run/dataphyre/web',10001) || !chmod('/run/dataphyre/web',0700)){
+		throw new RuntimeException('Legacy tenant-owned web directory fixture could not be prepared.');
+	}
+	$legacyDirectory=lstat('/run/dataphyre/web');
+	$t->throws(static fn()=>dataphyre_runtime_prepare_web_socket(),RuntimeException::class);
+	$unchangedLegacyDirectory=lstat('/run/dataphyre/web');
+	$t->same($legacyDirectory['ino'],$unchangedLegacyDirectory['ino']);
+	$t->same(10001,$unchangedLegacyDirectory['uid'],'tenant-owned legacy state is rejected without mutation');
+	if(!chown('/run/dataphyre/web',0) || !chgrp('/run/dataphyre/web',0) || !rmdir('/run/dataphyre/web')){
+		throw new RuntimeException('Legacy tenant-owned web directory fixture could not be removed.');
+	}
+	foreach([[0,10001,0730],[0,10001,0700],[0,0,0700],[0,0,0711]] as [$uid,$gid,$mode]){
 		[$listener,$socketIdentity,$directoryIdentity,$parentIdentity]=$bindWebSocket();
 		if(!chown('/run/dataphyre/web',$uid) || !chgrp('/run/dataphyre/web',$gid) || !chmod('/run/dataphyre/web',$mode)){
 			throw new RuntimeException('Web cleanup transition state could not be prepared.');
@@ -624,6 +645,32 @@ test('supervisor helpers enforce their exact bounded environment private HTTP an
 		$t->same(false,$probe['ok']);$t->same(0,pcntl_wexitstatus($status));
 	}finally{dataphyre_application_runtime_fixed_port_unlock($fixedPortLock);}
 })->tag('supervisor','helpers','private-http','websocket','bounds','positive','negative');
+
+test('web socket bind and restart stay inside the exact e0 supervisor capability ceiling',static function(Context $t): void {
+	$fixedPortLock=dataphyre_application_runtime_fixed_port_lock();
+	try{
+		$result=$t->process([
+			'/usr/bin/setpriv','--reuid=0','--regid=0','--groups=0','--no-new-privs',
+			'--inh-caps=-all','--ambient-caps=-all','--bounding-set=-all,+kill,+setuid,+setgid',
+			PHP_BINARY,__DIR__.'/fixtures/application_runtime_web_socket_capability_probe.php',dirname(__DIR__).'/kernel',
+		],working_directory:dirname(__DIR__,4),timeout_millis:15000);
+		$t->processSucceeded($result,$result->stderr());$evidence=$result->json();
+		$t->same('dataphyre.web_socket_capability_probe.v1',$evidence['contract']);$t->same(true,$evidence['ok']);
+		$t->same('00000000000000e0',$evidence['capabilities']['cap_effective']);
+		$t->same('00000000000000e0',$evidence['capabilities']['cap_bounding']);
+		$t->same(['uid'=>0,'gid'=>10001,'mode'=>0730],$evidence['prepared']);
+		$t->same(['uid'=>10001,'gid'=>10001,'mode'=>0600],$evidence['socket']);
+		$t->same(['uid'=>0,'gid'=>0,'mode'=>0711],$evidence['locked']);
+		$t->same(['unlink'=>false,'rename'=>false,'replacement_bound'=>false],$evidence['tenant_mutation']);
+		$t->same(true,$evidence['cleanup']);$t->same(true,$evidence['restart']);
+		$t->same(true,$evidence['effective_gid_restored']);
+	}finally{dataphyre_application_runtime_fixed_port_unlock($fixedPortLock);}
+})->tag('supervisor','web','socket','capabilities','restart','exact-image')->maxMillis(20000)
+	->skipUnless(
+		function_exists('posix_geteuid') && posix_geteuid()===0
+			&& getenv('DATAPHYRE_TEST_CONTAINER_ROOT')==='1' && is_executable('/usr/bin/setpriv'),
+		'Requires the canonical root test image with the exact e0 supervisor capability ceiling.',
+	);
 
 test('realtime registry accepts exact application callbacks and seals deterministic evidence', static function(Context $t): void {
 	$kernel=dirname(__DIR__) . '/kernel';

@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-08-22T21:02:00Z",
-  "copied_source_files": 3694,
-  "skipped_source_files": 50,
-  "export_file_count": 3694,
-  "export_tree_sha256": "961d6bea7c4c4c175bcd579e96c3d29e76fadc47e803e6291998de33240f8096",
+  "generated_at_utc": "2026-08-22T22:31:01Z",
+  "copied_source_files": 3695,
+  "skipped_source_files": 46,
+  "export_file_count": 3695,
+  "export_tree_sha256": "34f293c12b8ebacd10554d4daec69489647b094984e4d1de5fd803b8969fdec3",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -1759,8 +1759,8 @@
     },
     {
       "path": "docs/CHANGELOG.md",
-      "bytes": 36198,
-      "sha256": "2281edd318cca6d5cef106d3b8abe15119f68cf3c1a113fe4f4e79a79809fa1e"
+      "bytes": 36545,
+      "sha256": "dcc6ef03c0beba6e810bf70349217150cb7e06bef40e99f6b76c0cb59dd6eaf5"
     },
     {
       "path": "docs/changelog/v2.0.md",
@@ -2729,13 +2729,13 @@
     },
     {
       "path": "runtime/modules/core/documentation/Dataphyre_Core.md",
-      "bytes": 69657,
-      "sha256": "7e3e4d6f53c49bef917d1e1c54729db154036df0b4f052536a2870476dc3865b"
+      "bytes": 70157,
+      "sha256": "ee13fc9fc26d8afabb9c352d4d11b94177d070f2004f36ed733465af245ebd55"
     },
     {
       "path": "runtime/modules/core/documentation/Dataphyre_Managed_PHP_Web_Pool.md",
-      "bytes": 18531,
-      "sha256": "0f241644651fd3e4008a7a55573cc4ccfe2e36b077d2ad2785bb7d7485628dd9"
+      "bytes": 18969,
+      "sha256": "61bc1767e82d7506146269eee4849dd1cf379847bca67974573b14cee9980f89"
     },
     {
       "path": "runtime/modules/core/Framework/App.php",
@@ -3059,8 +3059,8 @@
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_supervisor.php",
-      "bytes": 106231,
-      "sha256": "81c327445e21ca4f1ec3471a2b8f020dc65ba3cd4e5fbcdf915e7a2f384ddffa"
+      "bytes": 108239,
+      "sha256": "41745de07a318fdbf59b4f393dd31afb20da263c25fb410206dba67a53439cd9"
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_web_gateway.php",
@@ -3174,8 +3174,8 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_supervisor.test.php",
-      "bytes": 70118,
-      "sha256": "4bb5627afc1a7780b51267bf130a866b1da20548322e4bb8d8bb329322b6ee98"
+      "bytes": 73535,
+      "sha256": "2fac09f349798351d265b35f5fca6a4ac2c095baa86b5c0f93f81db65efeb728"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_configuration_cluster_deep_coverage.test.php",
@@ -3289,8 +3289,8 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_managed_php_web_pool.test.php",
-      "bytes": 45023,
-      "sha256": "46767f5b60f856a1a24157445e2fd6a7f85ac01862d2d35242f10a7c1e8799ea"
+      "bytes": 45189,
+      "sha256": "10d235d2730c222db3c98792726e4cad635eb637d20061567c8049c163394529"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_process_entrypoints_exact.test.php",
@@ -3751,6 +3751,11 @@
       "path": "runtime/modules/core/unit_tests/fixtures/application_runtime_supervisor_pid1_boundary.php",
       "bytes": 1496,
       "sha256": "b069de22f488c1a3742a7554a098f1417083e39e1ca2c6078fce2b4d7a6077c8"
+    },
+    {
+      "path": "runtime/modules/core/unit_tests/fixtures/application_runtime_web_socket_capability_probe.php",
+      "bytes": 7615,
+      "sha256": "b822a7f7d2c916af15a246ce5f706063bf8eefeef5748ed6cbebba2ce98c8396"
     },
     {
       "path": "runtime/modules/core/unit_tests/fixtures/core_functions_deep_plugin.php",

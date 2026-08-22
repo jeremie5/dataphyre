@@ -198,6 +198,14 @@ child's complete owned process group after success, failure, or timeout.
 Normal image PHP configuration and extensions remain active; Cloud must not
 launch any role with `-n`.
 
+The root supervisor needs only that same `CAP_KILL`, `CAP_SETUID`, and
+`CAP_SETGID` tuple. It never transfers ownership of the FPM socket directory.
+Instead, root owns the directory throughout, temporarily assigns fixed group
+`10001` with mode `0730` while the capability-free FPM master binds, then
+revokes group writes and restores group `0` before any request can reach
+application bootstrap. `CAP_CHOWN`, `CAP_SETPCAP`, `CAP_FOWNER`, and
+`CAP_DAC_OVERRIDE` are not part of the runtime contract.
+
 PID 1 is the only process that consumes the root-only, read-only application
 environment mount. Secret-bearing child environments are never published to a
 path and never enter `argv`, `envp`, or `/proc/<pid>/environ`. Immediately
