@@ -10,6 +10,10 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Fixed the Cloud-managed seed child at a framework-owned `512M` PHP heap in
+  its immutable seed-only argv. Tenant environment, seed metadata, and command
+  input cannot alter it; non-seed one-shots are unchanged, while the private
+  KVM workload and host cgroup remain the outer resource boundary.
 - Preserved the managed-seed lifecycle stage by reference across the outer
   transaction and data-environment callbacks, so a redacted application
   preflight or apply failure is classified as `seed_precondition_failed` or

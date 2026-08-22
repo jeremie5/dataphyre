@@ -21,6 +21,7 @@ foreach(['SeedDefinition','SeedContext','SeedExecutionException','SeedLedger','I
 	require_once $managedSeedRoot.'/Framework/Seeds/'.$managedSeedClass.'.php';
 }
 require_once $managedSeedCoreKernel.'/application_runtime_seed_evidence.php';
+require_once $managedSeedCoreKernel.'/application_runtime_environment.php';
 require_once $managedSeedRoot.'/kernel/managed_seeds.php';
 require_once $managedSeedRoot.'/kernel/seeds.php';
 
@@ -111,6 +112,35 @@ test('managed seed source fixes every executable and filesystem selection',stati
 	}
 	foreach(['seed_key','phase','getMessage'] as $forbidden) $t->isFalse(str_contains($seedEvidence,$forbidden));
 })->tag('source','allowlist','fixed-path','no-shell');
+
+test('root broker pins the managed seed PHP heap in seed-only immutable argv',static function(Context $t): void {
+	$core=dirname(__DIR__,2).'/core';
+	$oneShot=(string)file_get_contents($core.'/kernel/application_runtime_one_shot.php');
+	$environment=(string)file_get_contents($core.'/kernel/application_runtime_environment.php');
+	$t->contains("const DATAPHYRE_ONE_SHOT_SEED_PHP_MEMORY_LIMIT='512M';",$oneShot);
+	$argument="...($"."operation==='dataphyre_seed' ? ['-d','memory_limit='.DATAPHYRE_ONE_SHOT_SEED_PHP_MEMORY_LIMIT] : []),";
+	$t->contains($argument,$oneShot);
+	$t->same(1,substr_count($oneShot,'memory_limit='));
+	$commandStart=strpos($oneShot,"$".'command=[');$commandEnd=strpos($oneShot,"\n\t$".'pendingSignal',$commandStart ?: 0);
+	$t->isTrue(is_int($commandStart) && is_int($commandEnd) && $commandStart<$commandEnd);
+	$command=is_int($commandStart) && is_int($commandEnd)
+		? substr($oneShot,$commandStart,$commandEnd-$commandStart)
+		: '';
+	$t->same(1,substr_count($command,$argument));
+	$phpPosition=strpos($command,"\t\tPHP_BINARY,");
+	$argumentPosition=strpos($command,$argument);
+	$commonIniPosition=strpos($command,"'-d','display_errors=0'");
+	$t->same(true,
+		is_int($phpPosition) && is_int($argumentPosition) && is_int($commonIniPosition)
+		&& $phpPosition<$argumentPosition && $argumentPosition<$commonIniPosition,
+	);
+	$t->isFalse(str_contains($command,'getenv('));
+	$t->isFalse(str_contains($environment,'DATAPHYRE_ONE_SHOT_SEED_PHP_MEMORY_LIMIT'));
+	$internals=$t->nonPublic(DataphyreApplicationRuntimeEnvironment::class);
+	foreach(['PHP_MEMORY_LIMIT','PHP_INI_SCAN_DIR','PHPRC','DATAPHYRE_ONE_SHOT_SEED_PHP_MEMORY_LIMIT'] as $name){
+		$t->isTrue($internals->invoke('reserved',$name),$name);
+	}
+})->tag('one-shot','managed-seed','memory','fixed-argv','security');
 
 test('managed seed apply rejects empty profiles and emits only bounded convergence evidence',static function(Context $t): void {
 	$definitions=[

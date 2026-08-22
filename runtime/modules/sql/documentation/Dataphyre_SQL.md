@@ -1236,6 +1236,13 @@ its database cluster and cache namespace move together. Direct CLI may use
 `--data-environment=<name>` for the same application-neutral behavior, and may
 not combine it with `--cluster`.
 
+The broker fixes the managed-seed child PHP heap at `512M` in its root-owned
+argv. Applications cannot select or override that value through environment
+settings, seed metadata, or command arguments, and other one-shot operations
+retain their existing PHP limit. This is a bounded framework execution default,
+not a tenant-isolation boundary: the private KVM workload and its host-owned
+cgroup remain the outer memory authority.
+
 The fixed Cloud path requires the application-resolved cluster to be PostgreSQL.
 Its bootstrap is trusted, side-effect-free startup/autoload configuration. It
 runs under the selected environment identity before the database transaction and

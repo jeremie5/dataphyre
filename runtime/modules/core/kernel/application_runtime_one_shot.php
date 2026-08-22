@@ -27,6 +27,7 @@ const DATAPHYRE_ONE_SHOT_DATABASE_IDENTITY_MAXIMUM_MILLISECONDS=30000;
 const DATAPHYRE_ONE_SHOT_CACHE_MAXIMUM_MILLISECONDS=10000;
 const DATAPHYRE_ONE_SHOT_MIGRATION_MAXIMUM_MILLISECONDS=180000;
 const DATAPHYRE_ONE_SHOT_SEED_MAXIMUM_MILLISECONDS=900000;
+const DATAPHYRE_ONE_SHOT_SEED_PHP_MEMORY_LIMIT='512M';
 const DATAPHYRE_ONE_SHOT_TERMINATE_GRACE_SECONDS=0.5;
 const DATAPHYRE_ONE_SHOT_KILL_REAP_SECONDS=0.5;
 const DATAPHYRE_ONE_SHOT_POLL_MICROSECONDS=10000;
@@ -255,6 +256,7 @@ try{
 		'--inh-caps=-all','--ambient-caps=-all','--bounding-set=-all','--pdeathsig=SIGTERM',
 		...($operation==='dataphyre_seed' ? [$prlimit,'--nproc=0:0','--'] : []),
 		PHP_BINARY,
+		...($operation==='dataphyre_seed' ? ['-d','memory_limit='.DATAPHYRE_ONE_SHOT_SEED_PHP_MEMORY_LIMIT] : []),
 		'-d','display_errors=0','-d','log_errors=1','-d','expose_php=0',
 		'-d','user_ini.filename=','-d','auto_prepend_file=','-d','auto_append_file=',
 		...($operation==='dataphyre_seed' ? [
