@@ -368,11 +368,15 @@ final class DataphyreApplicationRuntimeChildEnvironment
 		if(!isset($fields[0],$fields[1],$fields[19]) || in_array($fields[0],['Z','X'],true)
 			|| preg_match('/^[0-9]+$/D',$fields[1])!==1
 			|| preg_match('/^[0-9]+$/D',$fields[19])!==1
-			|| preg_match('/^Uid:\s+(\d+)\s+/m',$status,$matches)!==1){
+			|| preg_match('/^Uid:[ \t]+(\d+)[ \t]+(\d+)[ \t]+(\d+)[ \t]+(\d+)[ \t]*$/m',$status,$matches)!==1
+			|| count(array_unique(array_slice($matches,1,4),SORT_STRING))!==1){
 			throw new RuntimeException('Process identity is invalid.');
 		}
 		$uid=(int)$matches[1];
-		if(preg_match('/^Gid:\s+(\d+)\s+/m',$status,$matches)!==1) throw new RuntimeException('Process identity is invalid.');
+		if(preg_match('/^Gid:[ \t]+(\d+)[ \t]+(\d+)[ \t]+(\d+)[ \t]+(\d+)[ \t]*$/m',$status,$matches)!==1
+			|| count(array_unique(array_slice($matches,1,4),SORT_STRING))!==1){
+			throw new RuntimeException('Process identity is invalid.');
+		}
 		$gid=(int)$matches[1];
 		if(preg_match('/^Groups:\s*([^\r\n]*)$/m',$status,$matches)!==1) throw new RuntimeException('Process identity is invalid.');
 		$groups=array_values(array_map('intval',preg_split('/\s+/',trim($matches[1]),-1,PREG_SPLIT_NO_EMPTY) ?: []));
@@ -564,9 +568,13 @@ final class DataphyreApplicationRuntimeChildEnvironment
 				&& ($identity['no_new_privileges'] ?? null)===true;
 		}
 		$bounding=$identity['cap_bounding'] ?? null;
-		// The one-shot PID 1 lacks CAP_SETPCAP, so its exact inactive identity/kill ceiling can survive the drop.
+		// PID 1 deliberately lacks CAP_SETPCAP, so its exact inactive identity/kill
+		// ceiling can survive a best-effort bounding-set drop. With every usable
+		// set empty and NoNewPrivs fixed, that ceiling cannot become authority.
 		$boundingValid=match($role){
-			'scheduler'=>\in_array($bounding,['0000000000000000','00000000000000e0'],true),
+			'web','web-pool','web-http-gateway','scheduler','realtime'=>\in_array(
+				$bounding,['0000000000000000','00000000000000e0'],true,
+			),
 			'one-shot'=>\in_array($bounding,[
 				'0000000000000000','00000000000000c0','00000000000000e0',
 			],true),

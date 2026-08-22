@@ -33,6 +33,13 @@ if(!is_array($decoded)
 }
 
 $zero='0000000000000000';$gatewayCaps='00000000000000e0';
+$validInactiveCapabilities=static fn(mixed $value): bool=>is_array($value)
+	&& ($value['cap_inheritable'] ?? null)===$zero
+	&& ($value['cap_permitted'] ?? null)===$zero
+	&& ($value['cap_eff'] ?? null)===$zero
+	&& in_array(($value['cap_bounding'] ?? null),[$zero,$gatewayCaps],true)
+	&& ($value['cap_ambient'] ?? null)===$zero
+	&& ($value['no_new_privileges'] ?? null)===true;
 $validRealtimePool=static fn(mixed $value): bool=>is_array($value)
 	&& array_keys($value)===[
 		'running','pid','start_time_ticks','uid','gid','supplementary_gids','cap_inheritable','cap_permitted','cap_eff',
@@ -44,10 +51,7 @@ $validRealtimePool=static fn(mixed $value): bool=>is_array($value)
 	&& is_string($value['start_time_ticks'] ?? null) && preg_match('/^[1-9][0-9]{0,31}$/D',$value['start_time_ticks'])===1
 	&& ($value['uid'] ?? null)===10001 && ($value['gid'] ?? null)===10001
 	&& ($value['supplementary_gids'] ?? null)===[10001]
-	&& ($value['cap_inheritable'] ?? null)===$zero && ($value['cap_permitted'] ?? null)===$zero
-	&& ($value['cap_eff'] ?? null)===$zero && ($value['cap_bounding'] ?? null)===$zero
-	&& ($value['cap_ambient'] ?? null)===$zero
-	&& ($value['no_new_privileges'] ?? null)===true
+	&& $validInactiveCapabilities($value)
 	&& ($value['role'] ?? null)==='realtime'
 	&& ($value['listen_host'] ?? null)==='0.0.0.0' && ($value['listen_port'] ?? null)===8080
 	&& ($value['parent_pid'] ?? null)===1
@@ -105,11 +109,7 @@ $validWebProcess=static fn(mixed $value,string $role,int $parentPid,int $process
 	&& is_string($value['start_time_ticks'] ?? null) && preg_match('/^[1-9][0-9]{0,31}$/D',$value['start_time_ticks'])===1
 	&& ($value['uid'] ?? null)===10001 && ($value['gid'] ?? null)===10001
 	&& ($value['supplementary_gids'] ?? null)===[10001]
-	&& ($value['cap_inheritable'] ?? null)==='0000000000000000'
-	&& ($value['cap_permitted'] ?? null)==='0000000000000000'
-	&& ($value['cap_eff'] ?? null)==='0000000000000000'
-	&& ($value['cap_bounding'] ?? null)==='0000000000000000'
-	&& ($value['cap_ambient'] ?? null)==='0000000000000000' && ($value['no_new_privileges'] ?? null)===true
+	&& $validInactiveCapabilities($value)
 	&& ($value['role'] ?? null)===$role && ($value['parent_pid'] ?? null)===$parentPid
 	&& ($value['process_group_id'] ?? null)===$processGroupId;
 

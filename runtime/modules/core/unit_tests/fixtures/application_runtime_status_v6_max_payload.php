@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 function dataphyre_test_application_runtime_status_v6_max_payload(): string
 {
-	$integer=PHP_INT_MAX;$ticks=str_repeat('9',32);$zero='0000000000000000';
+	$integer=PHP_INT_MAX;$ticks=str_repeat('9',32);$zero='0000000000000000';$inactiveCeiling='00000000000000e0';
 	$cloud=str_repeat('a',120);$framework=str_repeat('f',128);$environment=str_repeat('e',128);
 	$release='dep_'.str_repeat('f',40);$fingerprint='hmac-sha256:'.str_repeat('f',64);$generation='gen_'.str_repeat('f',32);
 	$socket=static fn(string $path,string $mode,string $directoryMode,int $uid,int $gid): array=>[
@@ -20,13 +20,13 @@ function dataphyre_test_application_runtime_status_v6_max_payload(): string
 	];
 	$webProcess=static fn(int $pid,string $role,int $parentPid,int $processGroupId): array=>[
 		'running'=>true,'pid'=>$pid,'start_time_ticks'=>$ticks,'uid'=>10001,'gid'=>10001,'supplementary_gids'=>[10001],
-		'cap_inheritable'=>$zero,'cap_permitted'=>$zero,'cap_eff'=>$zero,'cap_bounding'=>$zero,'cap_ambient'=>$zero,
+		'cap_inheritable'=>$zero,'cap_permitted'=>$zero,'cap_eff'=>$zero,'cap_bounding'=>$inactiveCeiling,'cap_ambient'=>$zero,
 		'no_new_privileges'=>true,'role'=>$role,'parent_pid'=>$parentPid,'process_group_id'=>$processGroupId,
 	];
 	$gatewayPid=2147483636;$masterPid=2147483637;
 	$gateway=[
 		'running'=>true,'pid'=>$gatewayPid,'start_time_ticks'=>$ticks,'uid'=>10001,'gid'=>10001,'supplementary_gids'=>[10001],
-		'cap_inheritable'=>$zero,'cap_permitted'=>$zero,'cap_eff'=>$zero,'cap_bounding'=>$zero,'cap_ambient'=>$zero,
+		'cap_inheritable'=>$zero,'cap_permitted'=>$zero,'cap_eff'=>$zero,'cap_bounding'=>$inactiveCeiling,'cap_ambient'=>$zero,
 		'no_new_privileges'=>true,'role'=>'web-http-gateway','listen_host'=>'127.0.0.1','listen_port'=>8083,
 		'parent_pid'=>1,'process_group_id'=>$gatewayPid,
 	];
@@ -74,7 +74,7 @@ function dataphyre_test_application_runtime_status_v6_max_payload(): string
 		],
 		'realtime'=>[
 			'running'=>true,'pid'=>2147483647,'start_time_ticks'=>$ticks,'uid'=>10001,'gid'=>10001,'supplementary_gids'=>[10001],
-			'cap_inheritable'=>$zero,'cap_permitted'=>$zero,'cap_eff'=>$zero,'cap_bounding'=>$zero,'cap_ambient'=>$zero,
+			'cap_inheritable'=>$zero,'cap_permitted'=>$zero,'cap_eff'=>$zero,'cap_bounding'=>$inactiveCeiling,'cap_ambient'=>$zero,
 			'no_new_privileges'=>true,'role'=>'realtime','listen_host'=>'0.0.0.0','listen_port'=>8080,
 			'parent_pid'=>1,'execution_model'=>'single-exec-realtime',
 		],

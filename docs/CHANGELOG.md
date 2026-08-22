@@ -51,11 +51,14 @@ All notable Dataphyre changes are tracked here.
   profile alias for already-immutable legacy migrations. Platforms no longer
   need application-specific migration wrappers or database-name inference to
   distinguish live and sandbox targets.
-- Accepted the exact inert `CAP_SETUID|CAP_SETGID` bounding-set residue for a
-  root-brokered one-shot child when its UID/GID/groups are already `10001`, all
-  usable capability sets are empty, and `NoNewPrivs` is set. Container PID 1
-  does not need the broader `CAP_SETPCAP` merely to erase that ceiling; every
-  other rootless role and every active capability set remains unchanged.
+- Accepted only the exact inert `CAP_SETUID|CAP_SETGID|CAP_KILL` bounding-set
+  residue for root-brokered UID/GID `10001` children when all real, effective,
+  saved, and filesystem identities are already `10001`, every usable
+  capability set is empty, and `NoNewPrivs` is set. Container PID 1 does not
+  need the broader `CAP_SETPCAP` merely to erase that inactive ceiling. A
+  one-shot without `CAP_KILL` may still retain only the narrower
+  `CAP_SETUID|CAP_SETGID` ceiling; no role accepts a usable capability or any
+  other residue.
 - Extended the application-neutral secret redactor to treat PIN and passcode
   fields as credential material, including normalized snake-case and camel-case
   variants, so structured diagnostics cannot disclose short access secrets.

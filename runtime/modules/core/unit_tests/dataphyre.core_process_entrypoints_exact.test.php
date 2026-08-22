@@ -385,7 +385,7 @@ test('status and realtime probes accept one canonical supervisor roundtrip over 
 			'cap_inheritable'=>'0000000000000000',
 			'cap_permitted'=>$privileged ? '00000000000000e0' : '0000000000000000',
 			'cap_eff'=>$privileged ? '00000000000000e0' : '0000000000000000',
-			'cap_bounding'=>$privileged ? '00000000000000e0' : '0000000000000000',
+			'cap_bounding'=>'00000000000000e0',
 			'cap_ambient'=>'0000000000000000','no_new_privileges'=>true,'role'=>$role,
 		];
 		return $privileged ? [
@@ -401,7 +401,7 @@ test('status and realtime probes accept one canonical supervisor roundtrip over 
 		'running'=>true,'pid'=>$pid,'start_time_ticks'=>(string)(100000+$pid),
 		'uid'=>10001,'gid'=>10001,'supplementary_gids'=>[10001],
 		'cap_inheritable'=>'0000000000000000','cap_permitted'=>'0000000000000000',
-		'cap_eff'=>'0000000000000000','cap_bounding'=>'0000000000000000','cap_ambient'=>'0000000000000000',
+		'cap_eff'=>'0000000000000000','cap_bounding'=>'00000000000000e0','cap_ambient'=>'0000000000000000',
 		'no_new_privileges'=>true,'role'=>$role,'parent_pid'=>$parent,'process_group_id'=>$group,
 	];
 	$webGateway=$webProcess(101,'web-http-gateway',1,101);
@@ -485,7 +485,20 @@ test('status and realtime probes accept one canonical supervisor roundtrip over 
 	$realtimeFailed['ok']=false;
 	$invalidRegistration=$status;
 	$invalidRegistration['scheduler_registration']['ok']=false;
+	$zeroRootlessCeiling=$status;
+	$zeroRootlessCeiling['realtime']['cap_bounding']='0000000000000000';
+	foreach(['http_gateway','fpm_master'] as $process){
+		$zeroRootlessCeiling['web'][$process]['cap_bounding']='0000000000000000';
+	}
+	foreach($zeroRootlessCeiling['web']['workers'] as &$worker){
+		$worker['cap_bounding']='0000000000000000';
+	}
+	unset($worker);
 	$statusPath=$state->file('status.json',json_encode($status,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
+	$zeroRootlessCeilingPath=$state->file(
+		'status-zero-rootless-ceiling.json',
+		json_encode($zeroRootlessCeiling,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
+	);
 	$realtimePath=$state->file('realtime.json',json_encode($realtime,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
 	$malformedPath=$state->file('malformed.json','{');
 	$noncanonicalPath=$state->file('noncanonical.json','{"bad": true}');
@@ -500,7 +513,7 @@ test('status and realtime probes accept one canonical supervisor roundtrip over 
 	$ready=$state->path('ready');
 	$server=$t->startPhpProcess([
 		__DIR__.'/fixtures/application_runtime_status_server.php',$ready,
-		$statusPath,$realtimePath,$malformedPath,$noncanonicalPath,$invalidRegistrationPath,
+		$statusPath,$zeroRootlessCeilingPath,$realtimePath,$malformedPath,$noncanonicalPath,$invalidRegistrationPath,
 		$invalidRealtimePath,$oversizedRealtimePath,$realtimeFailedPath,
 	],timeout_millis:15000);
 	$deadline=microtime(true)+5.0;
@@ -513,6 +526,16 @@ test('status and realtime probes accept one canonical supervisor roundtrip over 
 	);
 	$t->processSucceeded($statusResult,$statusResult->stderr());
 	$t->same(json_encode($status,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),trim($statusResult->stdout()));
+
+	$zeroRootlessCeilingResult=$t->coveredPhpProcess(
+		[$kernel.'/application_runtime_status_probe.php'],
+		timeout_millis:10000,framework_root:$frameworkRoot,
+	);
+	$t->processSucceeded($zeroRootlessCeilingResult,$zeroRootlessCeilingResult->stderr());
+	$t->same(
+		json_encode($zeroRootlessCeiling,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
+		trim($zeroRootlessCeilingResult->stdout()),
+	);
 
 	$realtimeResult=$t->coveredPhpProcess(
 		[$kernel.'/application_runtime_realtime_probe.php'],

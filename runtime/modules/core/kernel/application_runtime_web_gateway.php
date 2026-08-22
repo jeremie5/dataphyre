@@ -679,7 +679,8 @@ final class DataphyreApplicationRuntimeWebGateway
 			|| $identity['uid']!==10001 || $identity['gid']!==10001 || $identity['groups']!==[10001]
 			|| $identity['cap_inheritable']!=='0000000000000000'
 			|| $identity['cap_permitted']!=='0000000000000000' || $identity['cap_eff']!=='0000000000000000'
-			|| $identity['cap_bounding']!=='0000000000000000' || $identity['cap_ambient']!=='0000000000000000'
+			|| !in_array($identity['cap_bounding'],['0000000000000000','00000000000000e0'],true)
+			|| $identity['cap_ambient']!=='0000000000000000'
 			|| $identity['no_new_privileges']!==true
 			|| (string)(getenv('DATAPHYRE_RUNTIME_POOL') ?: '')!=='web-http-gateway'
 			|| (string)(getenv('DATAPHYRE_RUNTIME_POOL_ROLE') ?: '')!=='web-http-gateway'){

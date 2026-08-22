@@ -718,6 +718,19 @@ function dataphyre_runtime_scheduler_registration_valid(mixed $report): bool
 	return hash_equals('sha256:'.hash('sha256',$encoded),$report['definition_sha256']);
 }
 
+/** Proves a UID-10001 process has no usable capabilities. */
+function dataphyre_runtime_inactive_capability_boundary(array $identity): bool
+{
+	return ($identity['cap_inheritable'] ?? null)==='0000000000000000'
+		&& ($identity['cap_permitted'] ?? null)==='0000000000000000'
+		&& ($identity['cap_eff'] ?? null)==='0000000000000000'
+		&& in_array(($identity['cap_bounding'] ?? null),[
+			'0000000000000000','00000000000000e0',
+		],true)
+		&& ($identity['cap_ambient'] ?? null)==='0000000000000000'
+		&& ($identity['no_new_privileges'] ?? null)===true;
+}
+
 /** Allocates one generation-local, strictly increasing signed-request counter. */
 function dataphyre_runtime_next_scheduler_counter(array &$runtime): int
 {
@@ -744,13 +757,18 @@ function dataphyre_runtime_pool_identity(
 	catch(Throwable $failure){throw new RuntimeException('Unable to attest runtime pool identity',0,$failure);}
 	$gateway=$role==='scheduler';
 	$expectedUid=$gateway ? 0 : 10001;$expectedGid=$gateway ? 0 : 10001;
-	$expectedGroups=[$expectedGid];$expectedCapabilities=$gateway ? '00000000000000e0' : '0000000000000000';
+	$expectedGroups=[$expectedGid];
+	$capabilityBoundary=$gateway
+		? $identity['cap_inheritable']==='0000000000000000'
+			&& $identity['cap_permitted']==='00000000000000e0'
+			&& $identity['cap_eff']==='00000000000000e0'
+			&& $identity['cap_bounding']==='00000000000000e0'
+			&& $identity['cap_ambient']==='0000000000000000'
+			&& $identity['no_new_privileges']===true
+		: dataphyre_runtime_inactive_capability_boundary($identity);
 	if(!hash_equals($expectedStartTimeTicks,$identity['start_time_ticks'])
 		|| $identity['uid']!==$expectedUid || $identity['gid']!==$expectedGid || $identity['groups']!==$expectedGroups
-		|| $identity['cap_inheritable']!=='0000000000000000'
-		|| $identity['cap_permitted']!==$expectedCapabilities || $identity['cap_eff']!==$expectedCapabilities
-		|| $identity['cap_bounding']!==$expectedCapabilities || $identity['cap_ambient']!=='0000000000000000'
-		|| $identity['no_new_privileges']!==true || $identity['parent_pid']!==1
+		|| !$capabilityBoundary || $identity['parent_pid']!==1
 		|| ($gateway && (!function_exists('posix_getpgid') || @posix_getpgid($pid)!==$pid))){
 		throw new RuntimeException('Runtime pool privilege boundary is invalid');
 	}
@@ -804,10 +822,8 @@ function dataphyre_runtime_web_process_identity(int $pid,string $role,int $paren
 	}
 	$group=function_exists('posix_getpgid') ? @posix_getpgid($pid) : false;
 	if($identity['parent_pid']!==$parentPid || $identity['uid']!==10001 || $identity['gid']!==10001
-		|| $identity['groups']!==[10001] || $identity['cap_inheritable']!=='0000000000000000'
-		|| $identity['cap_permitted']!=='0000000000000000' || $identity['cap_eff']!=='0000000000000000'
-		|| $identity['cap_bounding']!=='0000000000000000' || $identity['cap_ambient']!=='0000000000000000'
-		|| $identity['no_new_privileges']!==true || $group!==$processGroupId){
+		|| $identity['groups']!==[10001] || !dataphyre_runtime_inactive_capability_boundary($identity)
+		|| $group!==$processGroupId){
 		throw new RuntimeException('Managed web process privilege boundary is invalid.');
 	}
 	return [

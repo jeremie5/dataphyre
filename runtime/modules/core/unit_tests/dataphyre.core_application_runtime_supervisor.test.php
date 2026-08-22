@@ -146,6 +146,9 @@ test('supervisor owns private status and signs cadence before privilege-dropped 
 	$t->contains("'--no-new-privs'",$supervisor);
 	$t->contains("'--reuid=0'",$supervisor);
 	$t->contains("'--bounding-set=-all,+kill,+setuid,+setgid'",$supervisor);
+	$t->same(1,substr_count($supervisor,"'--bounding-set=-all,+kill,+setuid,+setgid'"));
+	$t->contains("'--bounding-set=-all','--pdeathsig=SIGTERM'",$supervisor);
+	$t->contains('dataphyre_runtime_inactive_capability_boundary',$supervisor);
 	$t->contains("in_array(\$pool,['web','web-http-gateway','scheduler'],true)",$supervisor);
 	$t->contains("@posix_kill(-\$group,\$signal)",$supervisor);
 	$t->contains('application_runtime_web_gateway.php',$supervisor);

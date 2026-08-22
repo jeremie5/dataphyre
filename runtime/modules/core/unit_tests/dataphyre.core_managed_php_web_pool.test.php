@@ -32,6 +32,24 @@ function dataphyre_managed_fpm_exact_runtime(): bool
 		&& is_executable('/usr/bin/setpriv') && is_executable('/usr/local/sbin/php-fpm');
 }
 
+/** @param array<string,mixed> $identity */
+function dataphyre_managed_fpm_assert_inactive_identity(
+	Context $t,
+	array $identity,
+	?string $parentBounding=null,
+): void {
+	foreach(['cap_inheritable','cap_permitted','cap_eff','cap_ambient'] as $capability){
+		$t->same('0000000000000000',$identity[$capability] ?? null,$capability);
+	}
+	$t->isTrue(in_array($identity['cap_bounding'] ?? null,[
+		'0000000000000000','00000000000000e0',
+	],true),'inactive capability ceiling');
+	if($parentBounding==='00000000000000e0'){
+		$t->same('00000000000000e0',$identity['cap_bounding'] ?? null,'inherited exact supervisor ceiling');
+	}
+	$t->same(true,$identity['no_new_privileges'] ?? null);
+}
+
 function dataphyre_managed_fpm_length(int $length): string
 {
 	return $length<128 ? chr($length) : pack('N',$length|0x80000000);
@@ -346,6 +364,7 @@ test('fixed rootless gateway and eight-worker FPM topology serves static and dyn
 	$parentCreated=false;$parentMode=null;$webDirectory='/run/dataphyre/web';$socketPath=$webDirectory.'/php-fpm.sock';
 	$fpm=null;$web=null;$statusServer=null;$failure=null;$diagnostics='';$initialWorkers=[];$replacementWorkers=[];
 	$socketIdentity=null;$webDirectoryIdentity=null;$webParentIdentity=null;
+	$testParentBounding=DataphyreApplicationRuntimeChildEnvironment::processIdentity(getmypid())['cap_bounding'];
 	try{
 		if(is_link('/run/dataphyre')) throw new RuntimeException('Managed runtime parent is a symlink.');
 		if(!is_dir('/run/dataphyre')){
@@ -406,14 +425,13 @@ test('fixed rootless gateway and eight-worker FPM topology serves static and dyn
 		$initialWorkers=dataphyre_managed_fpm_workers($fpm['pid']);$t->count(8,$initialWorkers);
 		$masterIdentity=DataphyreApplicationRuntimeChildEnvironment::processIdentity($fpm['pid']);
 		$t->same(10001,$masterIdentity['uid']);$t->same(10001,$masterIdentity['gid']);$t->same([10001],$masterIdentity['groups']);
-		foreach(['cap_inheritable','cap_permitted','cap_eff','cap_bounding','cap_ambient'] as $capability) $t->same('0000000000000000',$masterIdentity[$capability]);
-		$t->same(true,$masterIdentity['no_new_privileges']);
+		dataphyre_managed_fpm_assert_inactive_identity($t,$masterIdentity,$testParentBounding);
 		foreach($initialWorkers as $workerPid){
 			$identity=DataphyreApplicationRuntimeChildEnvironment::processIdentity($workerPid);
 			$t->same($fpm['pid'],$identity['parent_pid']);$t->same(10001,$identity['uid']);$t->same(10001,$identity['gid']);
 			$t->same([10001],$identity['groups']);
-			foreach(['cap_inheritable','cap_permitted','cap_eff','cap_bounding','cap_ambient'] as $capability) $t->same('0000000000000000',$identity[$capability]);
-			$t->same(true,$identity['no_new_privileges']);$t->same($fpm['pid'],posix_getpgid($workerPid));
+			dataphyre_managed_fpm_assert_inactive_identity($t,$identity,$testParentBounding);
+			$t->same($fpm['pid'],posix_getpgid($workerPid));
 		}
 
 		$web=DataphyreApplicationRuntimeProcessBroker::spawn([
@@ -425,8 +443,7 @@ test('fixed rootless gateway and eight-worker FPM topology serves static and dyn
 		$gatewayIdentity=DataphyreApplicationRuntimeChildEnvironment::processIdentity($web['pid']);
 		$t->same(10001,$gatewayIdentity['uid']);$t->same(10001,$gatewayIdentity['gid']);
 		$t->same([10001],$gatewayIdentity['groups']);
-		foreach(['cap_inheritable','cap_permitted','cap_eff','cap_bounding','cap_ambient'] as $capability) $t->same('0000000000000000',$gatewayIdentity[$capability]);
-		$t->same(true,$gatewayIdentity['no_new_privileges']);
+		dataphyre_managed_fpm_assert_inactive_identity($t,$gatewayIdentity,$testParentBounding);
 		$modeDrift=$t->process([
 			'/usr/bin/setpriv','--reuid=10001','--regid=10001','--groups=10001','--no-new-privs',
 			'--inh-caps=-all','--ambient-caps=-all','--bounding-set=-all',PHP_BINARY,'-r',

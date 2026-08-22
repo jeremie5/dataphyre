@@ -378,10 +378,13 @@ static int dataphyre_process_boundary(pid_t expected_parent)
     length = fread(status, 1, sizeof(status) - 1, stream);
     fclose(stream);
     status[length] = '\0';
-    if (strstr(status, "CapInh:\t0000000000000000") == NULL
+    if (strstr(status, "Uid:\t10001\t10001\t10001\t10001\n") == NULL
+        || strstr(status, "Gid:\t10001\t10001\t10001\t10001\n") == NULL
+        || strstr(status, "CapInh:\t0000000000000000") == NULL
         || strstr(status, "CapPrm:\t0000000000000000") == NULL
         || strstr(status, "CapEff:\t0000000000000000") == NULL
-        || strstr(status, "CapBnd:\t0000000000000000") == NULL
+        || (strstr(status, "CapBnd:\t0000000000000000") == NULL
+            && strstr(status, "CapBnd:\t00000000000000e0") == NULL)
         || strstr(status, "CapAmb:\t0000000000000000") == NULL
         || strstr(status, "NoNewPrivs:\t1") == NULL) {
         return 0;
@@ -420,7 +423,9 @@ static int dataphyre_scheduler_gateway_boundary(void)
     length = fread(status, 1, sizeof(status) - 1, stream);
     fclose(stream);
     status[length] = '\0';
-    return strstr(status, "CapInh:\t0000000000000000") != NULL
+    return strstr(status, "Uid:\t0\t0\t0\t0\n") != NULL
+        && strstr(status, "Gid:\t0\t0\t0\t0\n") != NULL
+        && strstr(status, "CapInh:\t0000000000000000") != NULL
         && strstr(status, "CapPrm:\t00000000000000e0") != NULL
         && strstr(status, "CapEff:\t00000000000000e0") != NULL
         && strstr(status, "CapBnd:\t00000000000000e0") != NULL

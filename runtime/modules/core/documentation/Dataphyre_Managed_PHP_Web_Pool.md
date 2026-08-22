@@ -42,10 +42,10 @@ transport descriptor or a reusable environment source.
 
 PID 1 owns exactly four direct children:
 
-1. `web-http-gateway`: UID/GID `10001`, no capabilities, `NoNewPrivs`, listens
+1. `web-http-gateway`: UID/GID `10001`, no usable capabilities, `NoNewPrivs`, listens
    on `127.0.0.1:8083`, serves immutable public files, and forwards dynamic
    requests over the fixed Unix FastCGI socket.
-2. `web`: UID/GID `10001`, no capabilities, `NoNewPrivs`, rootless PHP-FPM
+2. `web`: UID/GID `10001`, no usable capabilities, `NoNewPrivs`, rootless PHP-FPM
    master, listens only on `/run/dataphyre/web/php-fpm.sock`, and owns a fixed
    static pool of eight workers.
 3. `scheduler`: the root gateway with only `CAP_KILL`, `CAP_SETUID`, and
@@ -53,8 +53,16 @@ PID 1 owns exactly four direct children:
    executed by one fresh UID/GID `10001` `php-cgi` child. `CAP_KILL` exists only
    so the gateway can terminate that privilege-dropped child's complete owned
    process group.
-4. `realtime`: the existing UID/GID `10001`, capability-free persistent
+4. `realtime`: the existing UID/GID `10001`, no-usable-capability persistent
    realtime process.
+
+For these fixed rootless roles, “no usable capabilities” means
+`CapInh=CapPrm=CapEff=CapAmb=0`, all real/effective/saved/filesystem UID and GID
+values equal `10001`, and `NoNewPrivs=1`. Because the exact `0xe0` supervisor
+does not receive `CAP_SETPCAP`, the children retain only its inert
+`CapBnd=0xe0` ceiling. That ceiling cannot be activated and is attested exactly;
+an empty ceiling remains valid only for a stronger local parent that could
+perform the best-effort drop before the broker check.
 
 The web gateway, FPM master, and scheduler gateway each start in their own
 session. Their process-group ID equals their direct-child PID. Every scheduler
@@ -222,7 +230,7 @@ not a release contract.
 
 PID 1 creates `/run/dataphyre/web` as one non-symlink directory owned by root
 with fixed group `10001` and mode `0730`. That bounded group-write window lets
-the capability-free FPM master bind only its fixed socket before any request can
+the no-usable-capability FPM master bind only its fixed socket before any request can
 reach application bootstrap. PID 1, which remains the owner, immediately
 changes the mode to `0700`, returns the directory to group `0`, and opens only
 traversal with mode `0711`. It needs no `CAP_CHOWN` or `CAP_SETPCAP`. Restart and
@@ -256,7 +264,7 @@ separate signed scheduler registration remains the only persistence owner.
   version `1.2.0` before consuming the root envelope;
 - spawn the rootless FPM master directly through the process broker with role
   `web-pool` and the one-use secret envelope;
-- spawn the capability-free HTTP gateway with an empty `web-http-gateway`
+- spawn the no-usable-capability HTTP gateway with an empty `web-http-gateway`
   envelope;
 - spawn the scheduler gateway in its own session with the current
   `scheduler-gateway` secret envelope and one-shot child behavior;

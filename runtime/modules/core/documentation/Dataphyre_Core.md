@@ -189,8 +189,12 @@ listener. Applications do not declare processes, commands, listeners, ports,
 pool sizes, or sidecars.
 
 The web gateway, FPM master and workers, and realtime role are UID/GID `10001`,
-capability-free, and `NoNewPrivs`. Dynamic web requests stay within the
-persistent FPM pool. Only the root scheduler gateway retains `CAP_KILL`,
+have empty inheritable, permitted, effective, and ambient capability sets, and
+run with `NoNewPrivs`. Their root supervisor deliberately lacks `CAP_SETPCAP`,
+so its exact `CAP_KILL|CAP_SETGID|CAP_SETUID` bounding ceiling remains visible
+as inert `CapBnd=0xe0`; it is not usable authority and cannot be activated by a
+later exec. Dynamic web requests stay within the persistent FPM pool. Only the
+root scheduler gateway retains `CAP_KILL`,
 `CAP_SETUID`, and `CAP_SETGID`; it uses the identity capabilities solely to
 create one fresh UID/GID `10001`, capability-free `php-cgi` process for each
 accepted signed scheduler request, and `CAP_KILL` solely to terminate that
@@ -250,17 +254,18 @@ migration, or public release-preflight maximum. `SIGTERM` and `SIGINT` are
 converted to one group-wide `SIGTERM`; after 500 ms PID 1 escalates to
 group-wide `SIGKILL`, reaps adopted descendants, and exits without waiting on
 tenant-controlled descendants.
-The one-shot child always has UID/GID and supplementary group `10001`, empty
-inheritable, permitted, effective, and ambient capability sets, and
+The one-shot child always has all four UID/GID identities and supplementary
+group `10001`, empty inheritable, permitted, effective, and ambient capability sets, and
 `NoNewPrivs`. PID 1 receives `CAP_SETUID` and `CAP_SETGID`; a managed-seed PID 1
 also receives `CAP_KILL` so it can hard-stop and reap the different-UID child
 after authenticated terminal evidence. Without `CAP_SETPCAP`, those granted
 bits can remain in the child's bounding set as `CapBnd=0xc0` or `CapBnd=0xe0`.
 The bounding set is only an inactive ceiling, and `NoNewPrivs` prevents a later
 exec from gaining file or set-user-ID privileges. The broker therefore accepts
-only an empty set or those exact inert residues for the one-shot role. It does
-not accept any bit in inheritable, permitted, effective, or ambient sets, and
-no other rootless role gains this exception.
+only an empty set or those exact inert residues for one-shots. Fixed web,
+realtime, and scheduler CGI children of the long-running `0xe0` supervisor may
+retain only that same exact inactive `0xe0` ceiling. No role accepts any bit in
+inheritable, permitted, effective, or ambient sets.
 The fixed registered-table materialization operation accepts the private
 `/var/lib/dataphyre/application` mount only when the root launcher proves that
 it is one distinct read-write directory owned by UID/GID `10001`. That mount is

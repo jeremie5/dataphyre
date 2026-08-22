@@ -180,6 +180,26 @@ test('child environment canonical and managed-bootstrap internals reject every m
 	$t->throws(static fn()=>$internals->invoke('validateValues',['listed']),RuntimeException::class);
 	$t->throws(static fn()=>$internals->invoke('validateValues',['lowercase'=>'value']),RuntimeException::class);
 	$t->throws(static fn()=>$internals->invoke('parseProcessIdentity','1 (invalid) S','invalid',11),RuntimeException::class);
+	$processStat=(string)file_get_contents('/proc/self/stat');$processStatus=(string)file_get_contents('/proc/self/status');
+	$processClose=strrpos($processStat,') ');
+	if($processClose===false) throw new RuntimeException('Current process identity fixture is unavailable.');
+	$t->same(posix_geteuid(),$internals->invoke('parseProcessIdentity',$processStat,$processStatus,$processClose)['uid']);
+	foreach(['Uid','Gid'] as $field){
+		for($position=0;$position<4;$position++){
+			$mutated=preg_replace_callback(
+				'/^'.preg_quote($field,'/').':[ \t]+(\d+)[ \t]+(\d+)[ \t]+(\d+)[ \t]+(\d+)[ \t]*$/m',
+				static function(array $match) use ($field,$position): string {
+					$values=array_slice($match,1,4);$values[$position]='99999';
+					return $field.":\t".implode("\t",$values);
+				},
+				$processStatus,1,
+			);
+			if(!is_string($mutated)) throw new RuntimeException('Process identity mutation fixture is unavailable.');
+			$t->throws(static fn()=>$internals->invoke(
+				'parseProcessIdentity',$processStat,$mutated,$processClose,
+			),RuntimeException::class,$field.' identity '.$position);
+		}
+	}
 	$t->throws(static fn()=>$internals->invoke('closeNativeDescriptor',-1),RuntimeException::class);
 
 	sodium_memzero($key);sodium_memzero($context['private_key']);
@@ -441,9 +461,13 @@ test('every managed process capability set is part of the live privilege boundar
 		'cap_inheritable'=>$zero,'cap_permitted'=>$zero,'cap_eff'=>$zero,
 		'cap_bounding'=>$gatewayCaps,'cap_ambient'=>$zero,'no_new_privileges'=>true,
 	];
-	$t->same(true,$boundary->invoke('identityMatchesPrivilegeBoundary',$tenant,'scheduler'));
+	foreach(['web','web-pool','web-http-gateway','scheduler','realtime'] as $role){
+		$t->same(true,$boundary->invoke('identityMatchesPrivilegeBoundary',$tenant,$role),$role.' e0 ceiling');
+	}
 	$schedulerWithEmptyBounding=$tenant;$schedulerWithEmptyBounding['cap_bounding']=$zero;
-	$t->same(true,$boundary->invoke('identityMatchesPrivilegeBoundary',$schedulerWithEmptyBounding,'scheduler'));
+	foreach(['web','web-pool','web-http-gateway','scheduler','realtime'] as $role){
+		$t->same(true,$boundary->invoke('identityMatchesPrivilegeBoundary',$schedulerWithEmptyBounding,$role),$role.' empty ceiling');
+	}
 	foreach(['cap_inheritable','cap_permitted','cap_eff','cap_bounding','cap_ambient'] as $capability){
 		$mutated=$tenant;$mutated[$capability]='0000000000000001';
 		$t->same(false,$boundary->invoke('identityMatchesPrivilegeBoundary',$mutated,'scheduler'),$capability);
@@ -452,7 +476,6 @@ test('every managed process capability set is part of the live privilege boundar
 	$t->same(false,$boundary->invoke('identityMatchesPrivilegeBoundary',$tenantWithoutNoNewPrivileges,'scheduler'));
 
 	$web=$schedulerWithEmptyBounding;
-	$t->same(true,$boundary->invoke('identityMatchesPrivilegeBoundary',$web,'web-pool'));
 	foreach(['cap_inheritable','cap_permitted','cap_eff','cap_bounding','cap_ambient'] as $capability){
 		$mutated=$web;$mutated[$capability]='0000000000000001';
 		$t->same(false,$boundary->invoke('identityMatchesPrivilegeBoundary',$mutated,'web-pool'),$capability);
@@ -476,6 +499,12 @@ test('every managed process capability set is part of the live privilege boundar
 	}
 	foreach(['web','web-pool','web-http-gateway','realtime','scheduler','scheduler-gateway'] as $role){
 		$t->same(false,$boundary->invoke('identityMatchesPrivilegeBoundary',$oneShot,$role),$role);
+	}
+	$broader=$tenant;$broader['cap_bounding']='00000000000000e1';
+	$oneShotOnly=$tenant;$oneShotOnly['cap_bounding']='00000000000000c0';
+	foreach(['web','web-pool','web-http-gateway','scheduler','realtime'] as $role){
+		$t->same(false,$boundary->invoke('identityMatchesPrivilegeBoundary',$broader,$role),$role.' broader ceiling');
+		$t->same(false,$boundary->invoke('identityMatchesPrivilegeBoundary',$oneShotOnly,$role),$role.' one-shot-only ceiling');
 	}
 })->tag('capabilities','privilege-boundary','mutation','negative');
 
