@@ -1230,6 +1230,11 @@ default ledger, and the entire selected non-empty profile. Its canonical
 digests, batch accounting, and convergence state; application and driver
 messages are never emitted. Callers cannot supply a mode, PHP file, executable,
 seed id, cluster, ledger table, path, rollback, reset, or shell command.
+The post-exec child has no public environment, so the private framework envelope
+also restores the image-owned `DATAPHYRE_RUNTIME_ROOT=/opt/dataphyre/runtime`
+and `/app` project/application roots before the trusted seed bootstrap runs.
+Application values cannot override those paths. A missing fixed-root projection
+fails before profile discovery; it is never repaired by an application fallback.
 `primary` uses the live/default SQL context; another purpose activates the
 application-configured `DataEnvironment` before seed definition discovery so
 its database cluster and cache namespace move together. Direct CLI may use

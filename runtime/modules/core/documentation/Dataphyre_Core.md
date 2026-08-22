@@ -206,6 +206,19 @@ closes both the PHP stream and native descriptor. The broker then closes its
 endpoint. There is no refetch, replay, same-process second read, sibling claim,
 PID-reuse acceptance, or tenant-readable fallback file.
 
+The final exec deliberately starts with an empty public environment. The
+private child envelope therefore restores the managed image's fixed
+`DATAPHYRE_RUNTIME_ROOT=/opt/dataphyre/runtime`,
+`DATAPHYRE_PROJECT_ROOT=/app`, `DATAPHYRE_APPLICATION_ROOT=/app`, and
+`DATAPHYRE_RUNTIME_PROJECT_ROOT=/app` identities alongside the application
+identity. These values are framework-owned and
+overwrite same-named input; tenant configuration cannot redirect application
+bootstrap to another runtime or project tree. The managed supervisor may
+replace only `DATAPHYRE_RUNTIME_PROJECT_ROOT` with the root-owned project path
+it already resolved and validated; fixed Cloud images use `/app`, while local
+and test supervisors keep the same private-envelope contract at their mounted
+project root.
+
 PHP cannot safely reopen an anonymous socket through `php://fd`; the public
 runtime therefore includes the tiny `dataphyre_environment_fd` extension. Its
 one-shot callable surface duplicates only descriptor `198` into a PHP stream,

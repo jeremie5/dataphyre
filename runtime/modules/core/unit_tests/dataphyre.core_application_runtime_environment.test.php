@@ -24,9 +24,15 @@ suite('Application runtime environment boundary')
 	->tag('core','runtime','environment','security','release')
 	->group('framework-coverage');
 
-test('child environment re-adds only fixed platform identity log and data values',static function(Context $t): void {
+test('child environment re-adds only fixed platform identity image-root log and data values',static function(Context $t): void {
 	$result=DataphyreApplicationRuntimeEnvironment::childEnvironment(
-		['APP_TOKEN'=>'secret','Z_VALUE'=>'last'],
+		[
+			'APP_TOKEN'=>'secret','Z_VALUE'=>'last',
+			'DATAPHYRE_RUNTIME_ROOT'=>'/tmp/tenant-runtime',
+			'DATAPHYRE_PROJECT_ROOT'=>'/tmp/tenant-project',
+			'DATAPHYRE_APPLICATION_ROOT'=>'/tmp/tenant-application',
+			'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>'/tmp/tenant-runtime-project',
+		],
 		'example-store','example_store','production','dep_'.str_repeat('a',40),
 		'/var/lib/dataphyre/application',
 	);
@@ -36,6 +42,10 @@ test('child environment re-adds only fixed platform identity log and data values
 	$t->same('production',$result['DATAPHYRE_ENVIRONMENT']);
 	$t->same('production',$result['DATAPHYRE_APPLICATION_ENVIRONMENT']);
 	$t->same('dep_'.str_repeat('a',40),$result['DATAPHYRE_APPLICATION_RELEASE']);
+	$t->same('/opt/dataphyre/runtime',$result['DATAPHYRE_RUNTIME_ROOT']);
+	$t->same('/app',$result['DATAPHYRE_PROJECT_ROOT']);
+	$t->same('/app',$result['DATAPHYRE_APPLICATION_ROOT']);
+	$t->same('/app',$result['DATAPHYRE_RUNTIME_PROJECT_ROOT']);
 	$t->same('/var/log/dataphyre',$result['DATAPHYRE_APPLICATION_LOG_DIRECTORY']);
 	$t->same('jsonl',$result['DATAPHYRE_APPLICATION_LOG_DRIVER']);
 	$t->same('dataphyre.application-log.v1',$result['DATAPHYRE_APPLICATION_LOG_FORMAT']);

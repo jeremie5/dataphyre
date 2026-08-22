@@ -23,6 +23,10 @@ final class DataphyreApplicationRuntimeEnvironment
 	private const FIXED_LOG_DRIVER='jsonl';
 	private const FIXED_LOG_FORMAT='dataphyre.application-log.v1';
 	private const FIXED_LOG_PATH='/var/log/dataphyre/application.jsonl';
+	private const FIXED_RUNTIME_ROOT='/opt/dataphyre/runtime';
+	private const FIXED_PROJECT_ROOT='/app';
+	private const FIXED_APPLICATION_ROOT='/app';
+	private const FIXED_RUNTIME_PROJECT_ROOT='/app';
 	private const DATABASE_BINDING_FIELDS=['DSN','HOST','PORT','NAME','USER','PASSWORD'];
 
 	/** @return array{release_id:string,environment_fingerprint:string,values:array<string,string>} */
@@ -85,6 +89,10 @@ final class DataphyreApplicationRuntimeEnvironment
 		$result['DATAPHYRE_ENVIRONMENT']=$environment;
 		$result['DATAPHYRE_APPLICATION_ENVIRONMENT']=$environment;
 		$result['DATAPHYRE_APPLICATION_RELEASE']=$releaseId;
+		$result['DATAPHYRE_RUNTIME_ROOT']=self::FIXED_RUNTIME_ROOT;
+		$result['DATAPHYRE_PROJECT_ROOT']=self::FIXED_PROJECT_ROOT;
+		$result['DATAPHYRE_APPLICATION_ROOT']=self::FIXED_APPLICATION_ROOT;
+		$result['DATAPHYRE_RUNTIME_PROJECT_ROOT']=self::FIXED_RUNTIME_PROJECT_ROOT;
 		$result['DATAPHYRE_APPLICATION_LOG_DIRECTORY']=self::FIXED_LOG_DIRECTORY;
 		$result['DATAPHYRE_APPLICATION_LOG_DRIVER']=self::FIXED_LOG_DRIVER;
 		$result['DATAPHYRE_APPLICATION_LOG_FORMAT']=self::FIXED_LOG_FORMAT;

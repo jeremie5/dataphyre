@@ -10,6 +10,11 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Restored the fixed managed-image runtime and application roots in every
+  post-exec child envelope. The broker intentionally supplies an empty public
+  environment, so applications now resolve `/opt/dataphyre/runtime` and `/app`
+  from root-owned private values that overwrite tenant lookalikes instead of
+  depending on inherited image environment.
 - Fixed the Cloud-managed seed child at a framework-owned `512M` PHP heap in
   its immutable seed-only argv. Tenant environment, seed metadata, and command
   input cannot alter it; non-seed one-shots are unchanged, while the private

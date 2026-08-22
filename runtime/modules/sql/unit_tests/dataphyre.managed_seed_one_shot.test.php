@@ -113,6 +113,26 @@ test('managed seed source fixes every executable and filesystem selection',stati
 	foreach(['seed_key','phase','getMessage'] as $forbidden) $t->isFalse(str_contains($seedEvidence,$forbidden));
 })->tag('source','allowlist','fixed-path','no-shell');
 
+test('root broker restores fixed image roots after the seed child execs with an empty public environment',static function(Context $t): void {
+	$child=DataphyreApplicationRuntimeEnvironment::childEnvironment(
+		[
+			'DATAPHYRE_RUNTIME_ROOT'=>'/tmp/forged-runtime',
+			'DATAPHYRE_PROJECT_ROOT'=>'/tmp/forged-project',
+			'DATAPHYRE_APPLICATION_ROOT'=>'/tmp/forged-application',
+			'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>'/tmp/forged-runtime-project',
+		],
+		'serve','serve','production','dep_'.str_repeat('a',40),
+	);
+	$t->same('/opt/dataphyre/runtime',$child['DATAPHYRE_RUNTIME_ROOT']);
+	$t->same('/app',$child['DATAPHYRE_PROJECT_ROOT']);
+	$t->same('/app',$child['DATAPHYRE_APPLICATION_ROOT']);
+	$t->same('/app',$child['DATAPHYRE_RUNTIME_PROJECT_ROOT']);
+	$processBroker=(string)file_get_contents(dirname(__DIR__,2).'/core/kernel/application_runtime_process_broker.php');
+	$oneShot=(string)file_get_contents(dirname(__DIR__,2).'/core/kernel/application_runtime_one_shot.php');
+	$t->contains('$workingDirectory,$publicEnvironment,',$processBroker);
+	$t->contains("'/app',[],'one-shot',".'$child',$oneShot);
+})->tag('one-shot','managed-seed','child-environment','fixed-root','empty-env','regression');
+
 test('root broker pins the managed seed PHP heap in seed-only immutable argv',static function(Context $t): void {
 	$core=dirname(__DIR__,2).'/core';
 	$oneShot=(string)file_get_contents($core.'/kernel/application_runtime_one_shot.php');

@@ -161,7 +161,6 @@ try{
 	$child=DataphyreApplicationRuntimeEnvironment::childEnvironment(
 		$envelope['values'],$cloudApplication,$frameworkApplication,$environment,$releaseId,$applicationDataRoot,
 	);
-	$child['DATAPHYRE_RUNTIME_PROJECT_ROOT']='/app';
 	$purpose=null;
 	$cachePhase=null;$cacheChallenge=null;
 	$seedProfile=null;$seedAllowDemo=null;$seedEvidenceKey=null;$seedEvidenceInput=null;
