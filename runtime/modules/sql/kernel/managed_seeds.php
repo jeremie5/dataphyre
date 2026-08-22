@@ -358,15 +358,19 @@ function dataphyre_managed_seed_main(array $argv): int
 		}
 		$stage='transaction';
 		$outcome=\Dataphyre\Database\DB::transaction(
-			static fn(): array=>dp_sql_seed_in_resolved_environment(
-				$environment,
-				static fn(): array=>\dataphyre\sql::without_deferred_queries(
-						static function() use ($options,$values,&$stage): array {
-							$manager=dp_sql_seed_manager($options);
-							return dataphyre_managed_seed_apply_profile($manager,$values['profile'],$stage);
-						},
-					),
-			),
+			static function() use ($environment,$options,$values,&$stage): array {
+				return dp_sql_seed_in_resolved_environment(
+					$environment,
+					static function() use ($options,$values,&$stage): array {
+						return \dataphyre\sql::without_deferred_queries(
+							static function() use ($options,$values,&$stage): array {
+								$manager=dp_sql_seed_manager($options);
+								return dataphyre_managed_seed_apply_profile($manager,$values['profile'],$stage);
+							},
+						);
+					},
+				);
+			},
 			$environment['cluster'],
 		);
 	}catch(Throwable $failure){

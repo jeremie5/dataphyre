@@ -10,6 +10,14 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Preserved the managed-seed lifecycle stage by reference across the outer
+  transaction and data-environment callbacks, so a redacted application
+  preflight or apply failure is classified as `seed_precondition_failed` or
+  `seed_apply_failed` instead of the generic `seed_operation_failed`.
+- Resolve the selected seed data environment to one explicit configured SQL
+  cluster, including the default cluster for `live`, before the outer managed
+  transaction starts. Seed callbacks and their ledger can now attest the same
+  concrete connection authority that Cloud selected.
 - Bound Cloud-selected PostgreSQL migration targets to one generic data
   environment before application SQL, with one tightly application-prefixed
   profile alias for already-immutable legacy migrations. Platforms no longer

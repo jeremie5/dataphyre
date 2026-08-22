@@ -135,11 +135,31 @@ function dp_sql_seed_prepare_runtime_environment(array $options): array {
 		$name,
 		static fn(array $current): array=>$current,
 	);
+	$cluster=dp_sql_seed_resolved_data_environment_cluster(
+		$name,
+		is_string($environment['cluster'] ?? null) ? $environment['cluster'] : null,
+	);
 	return [
 		'name'=>(string)$environment['name'],
-		'cluster'=>is_string($environment['cluster']) ? $environment['cluster'] : null,
+		'cluster'=>$cluster,
 		'cache_namespace'=>is_string($environment['cache_namespace']) ? $environment['cache_namespace'] : null,
 	];
+}
+
+/** Resolves every selected seed environment to one explicit configured cluster. */
+function dp_sql_seed_resolved_data_environment_cluster(string $name,?string $cluster=null): string {
+	$name=strtolower(trim($name));
+	$cluster=is_string($cluster) ? trim($cluster) : '';
+	$config=defined('DP_SQL_CFG') && is_array(DP_SQL_CFG) ? DP_SQL_CFG : [];
+	if($cluster===''){
+		$definition=$config['data_environments'][$name] ?? null;
+		$cluster=is_array($definition) ? trim((string)($definition['cluster'] ?? '')) : '';
+	}
+	if($cluster==='' && $name==='live') $cluster=trim((string)($config['default_cluster'] ?? ''));
+	if($cluster==='' || preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]*$/D',$cluster)!==1){
+		throw new RuntimeException('Seed data environment has no configured SQL cluster.');
+	}
+	return $cluster;
 }
 
 /** Runs work inside one already-resolved immutable data-environment frame. */
@@ -298,14 +318,8 @@ function dp_sql_seed_manager(array $options): SeedManager {
 	if($cluster!==null && $data_environment!==null){
 		throw new RuntimeException('Seed cluster and data environment cannot both be selected.');
 	}
-	if($data_environment!==null && $data_environment!=='live'){
-		$config=defined('DP_SQL_CFG') && is_array(DP_SQL_CFG) ? DP_SQL_CFG : [];
-		$definition=$config['data_environments'][$data_environment] ?? null;
-		$resolved=is_array($definition) ? trim((string)($definition['cluster'] ?? '')) : '';
-		if($resolved==='' || preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]*$/D',$resolved)!==1){
-			throw new RuntimeException('Seed data environment has no configured SQL cluster.');
-		}
-		$cluster=$resolved;
+	if($data_environment!==null){
+		$cluster=dp_sql_seed_resolved_data_environment_cluster($data_environment,$cluster);
 	}
 	$context=new SeedContext(null, null, [
 		'project_root'=>$project_root,

@@ -514,6 +514,13 @@ PHP);
 	$context=$contextProperty->getValue($environmentManager);
 	$t->same('sandbox',$context->cluster());
 	$t->same('sandbox',$context->attribute('data_environment'));
+	$liveEnvironmentManager=dp_sql_seed_manager(dp_sql_seed_options([
+		'seeds.php','list','--project-root='.$root,'--data-environment=live',
+	]));
+	$liveContextProperty=new ReflectionProperty($liveEnvironmentManager,'context');
+	$liveContext=$liveContextProperty->getValue($liveEnvironmentManager);
+	$t->same('primary',$liveContext->cluster());
+	$t->same('live',$liveContext->attribute('data_environment'));
 	$t->throws(static fn()=>dp_sql_seed_manager(dp_sql_seed_options([
 		'seeds.php','list','--project-root='.$root,'--cluster=primary','--data-environment=sandbox',
 	])), RuntimeException::class);

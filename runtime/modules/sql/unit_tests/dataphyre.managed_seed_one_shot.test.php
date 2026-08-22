@@ -79,6 +79,7 @@ test('managed seed source fixes every executable and filesystem selection',stati
 		'dataphyre.managed_seed_apply.v1','DATAPHYRE_MANAGED_SEED_MAXIMUM_OUTPUT_BYTES',
 		'dataphyre_managed_seed_apply_profile','dp_sql_seed_prepare_runtime_environment',
 		'dp_sql_seed_in_resolved_environment',
+		'static function() use ($environment,$options,$values,&$stage): array',
 		'if($requested===[])',
 	] as $required) $t->contains($required,$entrypoint);
 	$t->contains("'dataphyre_seed'=>[",$oneShot);
