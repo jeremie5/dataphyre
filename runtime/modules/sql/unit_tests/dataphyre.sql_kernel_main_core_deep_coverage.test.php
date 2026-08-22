@@ -561,6 +561,12 @@ test('sql kernel main core deep coverage resolves definitions deferred manifests
 		'file'=>'sentinel/kernel/sentinel.tables.php',
 		'definition_id'=>'events',
 	],$runtimeManifest['dataphyre.sentinel_events']);
+	$sql->invokeWithArguments('register_runtime_table_definitions_for_enabled_modules',[
+		static fn(string $module): bool=>$module==='vestra',
+	]);
+	$t->contains('dataphyre.vestra_objects',\dataphyre\sql::registered_table_definitions());
+	$t->instanceOf(Dataphyre\Database\TableDefinition::class,
+		\dataphyre\sql::table_definition('dataphyre.vestra_objects'));
 	$t->isFalse($sql->invokeWithArguments('register_runtime_table_definition',['missing_manifest_table',[
 		'missing_manifest_table'=>['file'=>'missing/module.tables.php','definition_id'=>'missing'],
 	]]));

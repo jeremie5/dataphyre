@@ -183,6 +183,35 @@ Without that normalization ext-pgsql stringifies PHP `false` as an empty
 string, which PostgreSQL correctly rejects for a boolean parameter. Other
 bound values, positional order, and `null` are preserved unchanged.
 
+### PostgreSQL warning boundaries and query failures
+
+Handled ext-pgsql calls (`pg_connect`, `pg_prepare`, `pg_execute`, `pg_query`,
+and `pg_send_query`) suppress the extension's native warning at the call site
+where its typed `false` result is handled. The SQL helpers still preserve that
+`false` result, read `pg_last_error($connection)` for exception text, and pass
+the failure through `sql::log_query_error(...)`; this changes output hygiene,
+not failure or no-row semantics. Result fetching and cleanup retain their
+existing behavior, including multipoint selection and endpoint iteration.
+
+The in-memory `sql::last_query_error()` value is either `null` or an array with
+this stable shape:
+
+```php
+[
+    'dbms'       => string,
+    'cluster'    => string,
+    'query'      => string,
+    'vars'       => array,
+    'exception'  => ?Throwable,
+    'message'    => string,
+]
+```
+
+The managed-seed one-shot has a stricter, separate output contract. Its root
+broker rejects any non-empty child `stderr`, including an ext-pgsql warning;
+warning suppression in the ordinary SQL helpers must never be treated as
+permission for managed-seed application code to write raw diagnostics.
+
 ## Optional Framework Layer
 
 Load it explicitly:
@@ -329,7 +358,7 @@ php runtime/modules/sql/kernel/materialize_registered_tables.php \
   --environment=production
 ```
 
-The command owns the runtime bootstrap and SQL hydration method. Callers cannot supply a script, callback, SQL statement, definition file, executable path, or data path. It drains deferred registrations, sorts and caps the registry, materializes each definition idempotently, and emits the `dataphyre.registered_table_materialization.v1` canonical JSON contract with counts and a SHA-256 of the sorted table set. Release preflight reads that inventory through the same producer class after ordinary application bootstrap, but does not hydrate or write; Cloud must run declared application migrations first, then the fixed materializer, and enforce the producer-defined cross-stage equality: materializer `registered_count` equals preflight `realtime_registration.evidence.registered_table_count`, and `sha256:` plus materializer `table_set_sha256` equals preflight `realtime_registration.evidence.registered_table_set_sha256`. Both contract fields must equal `dataphyre.registered_table_materialization.v1`; Cloud must not independently reproduce table sorting or normalization. Output is one canonical JSON line capped at 8 KiB. Any invalid registry, bootstrap termination, environment mismatch, or failed definition returns non-zero. In Cloud's fixed one-shot image the operation is `DATAPHYRE_ONE_SHOT_OPERATION=dataphyre_materialize_tables`; its exact child argv is `php runtime/modules/sql/kernel/materialize_registered_tables.php --project-root=/app --application=<framework-application> --environment=<environment>`. PID 1 optionally projects `DATAPHYRE_APPLICATION_DATA_ROOT=/var/lib/dataphyre/application` through the root-only envelope after proving that fixed mount is one private read-write directory owned by the application pool. Its absence is valid for PostgreSQL-backed materialization; the PostgreSQL migration operation never receives that mount. For PostgreSQL materialization, an optional fixed `DATAPHYRE_ONE_SHOT_DATABASE_PURPOSE` selects one complete managed binding and root reprojects it onto the canonical `DATAPHYRE_DATABASE_*` names before privilege drop; omission preserves existing canonical/default behavior. The purpose is carried only in the root-brokered child attestation, never public command argv. A non-primary purpose scopes hydration with `DataEnvironment::run(<purpose>, ...)`, requires a configured cluster override, and restores the previous environment on both success and failure. Primary and omitted purposes retain ordinary live hydration.
+The command owns the runtime bootstrap and SQL hydration method. Callers cannot supply a script, callback, SQL statement, definition file, executable path, or data path. It drains deferred application registrations and combines them with Dataphyre's fixed runtime-table manifest for every on-disk module enabled by the application's existing flight-sheet policy. Disabled or unavailable modules remain absent. This bounded projection is computed before hydration so a lazily loaded enabled module cannot first discover its framework table is missing from inside an application transaction. It does not introduce a second application manifest or hydrate tables during ordinary requests. The command sorts and caps the resulting inventory, materializes each definition idempotently, and emits the `dataphyre.registered_table_materialization.v1` canonical JSON contract with counts and a SHA-256 of the sorted table set. Release preflight reads that inventory through the same producer class after ordinary application bootstrap, but does not hydrate or write; Cloud must run declared application migrations first, then the fixed materializer, and enforce the producer-defined cross-stage equality: materializer `registered_count` equals preflight `realtime_registration.evidence.registered_table_count`, and `sha256:` plus materializer `table_set_sha256` equals preflight `realtime_registration.evidence.registered_table_set_sha256`. Both contract fields must equal `dataphyre.registered_table_materialization.v1`; Cloud must not independently reproduce table sorting or normalization. Output is one canonical JSON line capped at 8 KiB. Any invalid registry, unavailable definition for a present enabled module, bootstrap termination, environment mismatch, or failed definition returns non-zero. In Cloud's fixed one-shot image the operation is `DATAPHYRE_ONE_SHOT_OPERATION=dataphyre_materialize_tables`; its exact child argv is `php runtime/modules/sql/kernel/materialize_registered_tables.php --project-root=/app --application=<framework-application> --environment=<environment>`. PID 1 optionally projects `DATAPHYRE_APPLICATION_DATA_ROOT=/var/lib/dataphyre/application` through the root-only envelope after proving that fixed mount is one private read-write directory owned by the application pool. Its absence is valid for PostgreSQL-backed materialization; the PostgreSQL migration operation never receives that mount. For PostgreSQL materialization, an optional fixed `DATAPHYRE_ONE_SHOT_DATABASE_PURPOSE` selects one complete managed binding and root reprojects it onto the canonical `DATAPHYRE_DATABASE_*` names before privilege drop; omission preserves existing external/default configuration. The purpose is carried only in the root-brokered child attestation, never public command argv. A non-primary purpose scopes hydration with `DataEnvironment::run(<purpose>, ...)`, requires a configured cluster override, and restores the previous environment on both success and failure. Primary and omitted purposes retain ordinary live hydration.
 
 `DB::table('registered_table')` automatically uses the registered definition's generated `TableSchema` when one exists. This means ad hoc table queries can get the same field validation, primary-key metadata, projections, and casts as repositories without manually passing `usingSchema(...)`.
 

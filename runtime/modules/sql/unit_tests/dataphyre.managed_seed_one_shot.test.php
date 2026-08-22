@@ -404,6 +404,28 @@ test('root validator accepts only authenticated exact terminal evidence',static 
 	));
 })->tag('evidence','authentication','canonical','redaction','security');
 
+test('managed seed boundary rejects PostgreSQL warnings on stderr',static function(Context $t): void {
+	$key=random_bytes(32);
+	$payload=[
+		'application'=>'serve','contract'=>'dataphyre.managed_seed_apply.v1','data_environment'=>'live',
+		'environment'=>'production','error'=>['code'=>'seed_apply_failed'],'ok'=>false,'profile'=>'demo',
+	];
+	$unsigned=json_encode(dataphyre_one_shot_canonicalize_seed_evidence($payload),
+		JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+	$payload['evidence_mac']='sha256:'.hash_hmac('sha256',$unsigned,$key);
+	$line=json_encode(dataphyre_one_shot_canonicalize_seed_evidence($payload),
+		JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)."\n";
+	$validate=static fn(string $stderr): ?array=>dataphyre_one_shot_validate_seed_evidence(
+		$line,$stderr,false,$key,'serve','production','live','demo','0',
+	);
+	$t->isTrue(is_array($validate('')));
+	foreach([
+		"PHP Warning: pg_connect(): connection refused\n",
+		"Warning: pg_prepare(): prepared statement failed\n",
+		"PHP Warning: pg_query(): query failed\n",
+	] as $warning) $t->same(null,$validate($warning));
+})->tag('evidence','stderr','warnings','postgresql','security');
+
 test('seed pipe capture drains bounded raw streams without forwarding them',static function(Context $t): void {
 	$workspace=$t->workspace('managed-seed-pipe-capture');
 	$fixture=$workspace->file('raw-output.php',"<?php\n".

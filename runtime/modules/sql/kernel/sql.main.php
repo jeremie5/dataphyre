@@ -1087,6 +1087,28 @@ class sql {
 	}
 
 	/**
+	 * Lists the complete table set owned by the fixed release materializer.
+	 *
+	 * Ordinary application bootstrap registrations are combined with Dataphyre's
+	 * bounded built-in definitions for on-disk modules enabled by the active flight sheet.
+	 * This lets release preflight and materialization see the same framework tables
+	 * before a lazily loaded module first queries them inside an application
+	 * transaction. It does not hydrate tables and is not used by ordinary requests.
+	 *
+	 * @return list<string> Sorted materializable table locations.
+	 */
+	public static function materializable_table_definitions(): array {
+		if(!\class_exists(\dataphyre\module_registry::class)
+			|| !\method_exists(\dataphyre\module_registry::class,'module_definition')){
+			throw new \RuntimeException('Dataphyre module policy is unavailable.');
+		}
+		self::register_runtime_table_definitions_for_enabled_modules(
+			static fn(string $module): bool=>\dataphyre\module_registry::module_definition($module)!==false
+		);
+		return self::registered_table_definitions();
+	}
+
+	/**
 	 * Registers, loads, resolves, or hydrates SQL table definitions and missing schema structures.
 	 *
 	 * Prepared values remain separate from SQL text, write operations can invalidate caches, missing schema can hydrate from definitions, and failures are recorded through last_query_error().
@@ -1402,6 +1424,30 @@ class sql {
 			'definition_id'=>$entry['definition_id'] ?? null,
 		];
 		return true;
+	}
+
+	/**
+	 * Registers built-in definitions whose owning module is enabled and available.
+	 *
+	 * The callback is private so focused tests can exercise the fixed projection
+	 * without exposing a tenant-selectable materialization surface.
+	 *
+	 * @param callable(string):bool $moduleEnabled
+	 */
+	private static function register_runtime_table_definitions_for_enabled_modules(callable $moduleEnabled): void {
+		$manifest=self::runtime_table_definition_manifest();
+		foreach($manifest as $location=>$entry){
+			$file=(string)($entry['file'] ?? '');
+			$separator=\strpos($file,'/');
+			if($separator===false || $separator<1){
+				throw new \LogicException('Runtime table definition manifest is invalid.');
+			}
+			$module=\substr($file,0,$separator);
+			if($moduleEnabled($module)!==true) continue;
+			if(!self::register_runtime_table_definition((string)$location,$manifest)){
+				throw new \RuntimeException('Enabled runtime table definition is unavailable.');
+			}
+		}
 	}
 
 	/**

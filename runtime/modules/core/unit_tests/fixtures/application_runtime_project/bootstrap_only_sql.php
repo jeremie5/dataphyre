@@ -21,6 +21,9 @@ if(!\class_exists(__NAMESPACE__.'\\sql',false)){
 			}
 			return ['fixture.bootstrap_alpha','fixture.bootstrap_beta'];
 		}
+		public static function materializable_table_definitions(): array {
+			return self::registered_table_definitions();
+		}
 		public static function hydrate_table_definition(string $table): bool {
 			$context=\Dataphyre\InternalApplicationBootstrapOnly::context();
 			return ($context['purpose'] ?? null)===\Dataphyre\InternalApplicationBootstrapOnly::MATERIALIZER

@@ -64,7 +64,12 @@ contains the route count and a SHA-256 of the sorted paths, the scheduler
 definition count and a path-independent SHA-256 over task/dependency contents
 and scheduling semantics, and the bounded registered table-definition count
 and sorted-set SHA-256 produced by the fixed materializer authority. The table
-inventory is read-only: preflight does not hydrate tables or write schema.
+inventory combines deferred application registrations with the fixed runtime
+definitions for on-disk modules already enabled by the application flight
+sheet. Disabled or unavailable modules remain absent, and preflight does not
+hydrate tables or write schema. This lets Cloud materialize lazy enabled-module
+tables before an application transaction first reaches them without adding
+another manifest.
 Cloud must match that inventory, run declared application migrations to
 completion, and only then run the fixed registered-table materializer. The
 immutable migration manifest owns ordered bootstrap replay; current registered

@@ -12,7 +12,7 @@ namespace Dataphyre\Database;
 require_once \dirname(__DIR__,2).'/core/Framework/ApplicationEnvironmentIdentifier.php';
 
 /**
- * Fixed CLI boundary that materializes every table definition registered at boot.
+ * Fixed CLI boundary that materializes the complete release-owned table inventory.
  *
  * The command accepts only a project root, application id, and environment id.
  * It owns the runtime bootstrap and hydration method, emits bounded canonical JSON,
@@ -406,11 +406,11 @@ final class RegisteredTableMaterializationCommand {
 	/** @return list<string> */
 	private static function registeredTables(): array {
 		if(!\class_exists('dataphyre\\sql',false)) return [];
-		if(!\method_exists('dataphyre\\sql','registered_table_definitions')
+		if(!\method_exists('dataphyre\\sql','materializable_table_definitions')
 			|| !\method_exists('dataphyre\\sql','hydrate_table_definition')){
 			throw new \RuntimeException('SQL runtime is unavailable.');
 		}
-		return \dataphyre\sql::registered_table_definitions();
+		return \dataphyre\sql::materializable_table_definitions();
 	}
 
 	/** @return list<string> */

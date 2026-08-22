@@ -10,6 +10,11 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Included Dataphyre's bounded runtime table definitions for on-disk modules
+  already enabled by the application flight sheet in the fixed release
+  inventory, so preflight and every managed database purpose materialize lazy
+  module tables before application transactions without runtime auto-DDL or
+  another manifest.
 - Moved Vestra's implicit cache and upload staging directory to the writable
   system-temporary Dataphyre tree for immutable Cloud-managed application
   releases. Explicit runtime cache directories and ordinary local defaults are

@@ -76,6 +76,9 @@ namespace dataphyre {
 			\sort($tables,\SORT_STRING);
 			return $tables;
 		}
+		public static function materializable_table_definitions(): array {
+			return self::registered_table_definitions();
+		}
 		public static function hydrate_table_definition(string $table): bool {
 			$definition=self::$definitions[$table] ?? null;
 			if(!\is_string($definition) || !\is_file($definition)) return false;
@@ -293,7 +296,7 @@ test('registered table materialization source owns bootstrap hydration and one-s
 			'Command builtin must resolve only from the global namespace: '.$builtin);
 	}
 	$t->contains("require $".'resolved',$command);
-	$t->contains('registered_table_definitions',$command);
+	$t->contains('materializable_table_definitions',$command);
 	$t->contains('hydrate_table_definition($table)',$command);
 	$t->contains('if(\\realpath($script)===__FILE__){',$entrypoint);
 	$t->contains("$"."_SERVER['SCRIPT_FILENAME']=__FILE__",$entrypoint);

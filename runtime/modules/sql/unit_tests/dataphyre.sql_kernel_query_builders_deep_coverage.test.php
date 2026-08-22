@@ -152,10 +152,13 @@ namespace dataphyre {
 	final class DpKqThrowingIterator implements \IteratorAggregate {
 		public function getIterator(): \Traversable { throw new \RuntimeException('iterator failure'); }
 	}
-	function pg_connect(string $connection): object|false { return dp_kq_state()->get('pg_connect_ok', true) ? new DpKqPgConnection() : false; }
-	function pg_query(object $conn,string $query): object|false { dp_kq_state()->append('pg_queries', $query); $value=dp_kq_state()->shift('pg_query_results'); return $value===null ? new DpKqPgResult() : $value; }
-	function pg_prepare(object $conn,string $name,string $query): bool { dp_kq_state()->append('pg_queries', $query); $value=dp_kq_state()->shift('pg_prepare_results'); return $value===null ? true : (bool)$value; }
-	function pg_execute(object $conn,string $name,array $vars): object|false { dp_kq_state()->append('pg_execute_vars',$vars); $value=dp_kq_state()->shift('pg_execute_results'); return $value===null ? new DpKqPgResult() : $value; }
+	function dp_kq_emit_pg_warning(string $function): void {
+		if(dp_kq_state()->get('pg_emit_warnings', false)) trigger_error('fake '.$function.' warning', E_USER_WARNING);
+	}
+	function pg_connect(string $connection): object|false { dp_kq_emit_pg_warning(__FUNCTION__); return dp_kq_state()->get('pg_connect_ok', true) ? new DpKqPgConnection() : false; }
+	function pg_query(object $conn,string $query): object|false { dp_kq_emit_pg_warning(__FUNCTION__); dp_kq_state()->append('pg_queries', $query); $value=dp_kq_state()->shift('pg_query_results'); return $value===null ? new DpKqPgResult() : $value; }
+	function pg_prepare(object $conn,string $name,string $query): bool { dp_kq_emit_pg_warning(__FUNCTION__); dp_kq_state()->append('pg_queries', $query); $value=dp_kq_state()->shift('pg_prepare_results'); return $value===null ? true : (bool)$value; }
+	function pg_execute(object $conn,string $name,array $vars): object|false { dp_kq_emit_pg_warning(__FUNCTION__); dp_kq_state()->append('pg_execute_vars',$vars); $value=dp_kq_state()->shift('pg_execute_results'); return $value===null ? new DpKqPgResult() : $value; }
 	function pg_last_error(object $conn): string { return (string)dp_kq_state()->get('pg_last_error', 'fake pg error'); }
 	function pg_num_fields(object $result): int { return (int)dp_kq_state()->get('pg_num_fields', count($result->types)); }
 	function pg_affected_rows(object $result): int { return $result->affected; }
@@ -163,7 +166,7 @@ namespace dataphyre {
 	function pg_fetch_assoc(object $result): array|false { return is_array($result->rows) ? ($result->rows[$result->index++] ?? false) : false; }
 	function pg_field_num(object $result,string|int $field): int { $keys=array_keys($result->types); $index=array_search((string)$field,$keys,true); return $index===false ? (int)$field : $index; }
 	function pg_field_type(object $result,int $field): string { return array_values($result->types)[$field] ?? 'text'; }
-	function pg_send_query(object $conn,string $query): bool { dp_kq_state()->append('pg_queries', $query); $value=dp_kq_state()->shift('pg_send_results'); return $value===null ? true : (bool)$value; }
+	function pg_send_query(object $conn,string $query): bool { dp_kq_emit_pg_warning(__FUNCTION__); dp_kq_state()->append('pg_queries', $query); $value=dp_kq_state()->shift('pg_send_results'); return $value===null ? true : (bool)$value; }
 	function pg_get_result(object $conn): object|false { $value=dp_kq_state()->shift('pg_get_results'); return $value instanceof DpKqPgResult ? $value : false; }
 	function pg_result_error(object $result): string { return $result->error; }
 	function pg_free_result(object $result): bool { $value=dp_kq_state()->shift('pg_free_results'); return $value===null ? true : (bool)$value; }
@@ -241,6 +244,7 @@ namespace {
 			'pg_prepare_results'=>[],
 			'pg_execute_results'=>[],
 			'pg_execute_vars'=>[],
+			'pg_emit_warnings'=>false,
 			'pg_send_results'=>[],
 			'pg_get_results'=>[],
 			'pg_free_results'=>[],
@@ -603,4 +607,56 @@ SQL;
 		$state->put('pg_execute_results',[false]);$t->isFalse($class::postgresql_delete('primary','normal','WHERE id=?',[1]));
 		$state->put('pg_query_results',[false]);$t->isFalse($class::postgresql_delete('primary','normal','',null));
 	})->tag('sql','kernel','query-builders','deep-coverage')->group('framework-coverage');
+
+	test('PostgreSQL handled ext-pgsql boundaries suppress warnings without changing failure evidence',static function(Context $t): void {
+		$state=dp_kq_scenario($t);$class=\dataphyre\postgresql_query_builder::class;$conn=new DpKqPgConnection();
+		$source=(string)file_get_contents(dirname(__DIR__).'/kernel/postgresql_query.php');
+		$handled=['pg_connect','pg_execute','pg_prepare','pg_query','pg_send_query'];$seen=array_fill_keys($handled,0);$unsuppressed=[];
+		$tokens=token_get_all($source);
+		foreach($tokens as $index=>$token){
+			if(!is_array($token) || $token[0]!==T_STRING || !array_key_exists($token[1],$seen)) continue;
+			$next=$index+1;
+			while(isset($tokens[$next]) && is_array($tokens[$next]) && $tokens[$next][0]===T_WHITESPACE) $next++;
+			if(($tokens[$next]??null)!=='(') continue;
+			$seen[$token[1]]++;
+			$previous=$index-1;
+			while($previous>=0 && is_array($tokens[$previous]) && $tokens[$previous][0]===T_WHITESPACE) $previous--;
+			if(($tokens[$previous]??null)!=='@') $unsuppressed[]=$token[1].'@'.($token[2]??0);
+		}
+		foreach($handled as $function) $t->isTrue($seen[$function]>0,$function.' call inventory');
+		$t->same([],$unsuppressed);
+
+		$warningLeak=null;
+		set_error_handler(static function(int $severity,string $message) use (&$warningLeak): bool {
+			if((error_reporting() & $severity)!==0) $warningLeak=$message;
+			return true;
+		});
+		try{
+			$class::$conns=[];$state->put('pg_emit_warnings',true)->put('pg_connect_ok',false);
+			$t->isFalse($t->nonPublic($class)->invokeWithArguments('connect_to_endpoint',['one','primary']));
+			$class::$conns['primary']=$conn;
+			$state->put('pg_execute_results',[false]);
+			$t->isFalse($t->nonPublic($class)->invokeWithArguments('execute_prepared',[$conn,'warning_stmt',[]]));
+			$state->put('pg_prepare_results',[false]);
+			$t->isFalse($class::postgresql_query('primary','SELECT ?',[1],false,false));
+			$state->put('pg_execute_results',[false]);
+			$t->isFalse($class::postgresql_query('primary','SELECT ?',[1],false,false));
+			$state->put('pg_query_results',[false]);
+			$t->isFalse($class::postgresql_query('primary','SELECT 1',null,false,false));
+			$state->put('pg_send_results',[false]);
+			$t->isFalse($t->nonPublic($class)->capture('execute_multi_query_string',
+				conn:$conn,multi_query_string:'SELECT 1;',results:[],dbms_cluster:'primary',
+			)->result());
+		}finally{
+			restore_error_handler();
+		}
+		$t->same(null,$warningLeak);
+		$errors=$state->get('sql_errors');
+		$t->isTrue(is_array($errors) && count($errors)>=3);
+		$t->isTrue(count(array_filter($errors,static fn(mixed $error): bool=>is_array($error)
+			&& ($error[0] ?? null)==='PostgreSQL'
+			&& ($error[1] ?? null)==='primary'
+			&& ($error[4] ?? null) instanceof \Throwable
+			&& str_contains($error[4]->getMessage(),'fake pg error'),))>=3);
+	})->tag('sql','postgresql','warnings','failure-boundary','deep-coverage')->group('framework-coverage');
 }

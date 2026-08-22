@@ -196,7 +196,7 @@ class postgresql_query_builder {
 	 * @return object|false PostgreSQL result, or `false` on execution failure.
 	 */
 	private static function execute_prepared(object $conn,string $statement_name,array $vars): object|false {
-		return pg_execute($conn,$statement_name,self::normalize_pg_bound_values($vars));
+		return @pg_execute($conn,$statement_name,self::normalize_pg_bound_values($vars));
 	}
 
 	/** @param array<int|string, mixed> $vars @return array<int|string, mixed> */
@@ -271,7 +271,7 @@ class postgresql_query_builder {
 			.' password='.self::conninfo_value((string)$password)
 			.' options='.self::conninfo_value($connection_options)
 			.' connect_timeout=1';
-		if(!$conn=pg_connect($conn_string)){
+		if(!$conn=@pg_connect($conn_string)){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Failed connecting to $endpoint", $S="warning");
 			sql::flag_server_unavailable($endpoint);
 		}
@@ -306,13 +306,13 @@ class postgresql_query_builder {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
 		$has_write=sql::query_has_write(serialize($prepared_statements));
 		try{
-			if($has_write && !pg_query($conn, "BEGIN")){
+			if($has_write && !@pg_query($conn, "BEGIN")){
 				throw new \Exception("Failed initiating transaction");
 			}
 			foreach($prepared_statements as $index=>$statement){
 				$statement_name='stmt_'.bin2hex(random_bytes(6));
 				$query=self::mysql_compatibility_layer($statement['query']);
-				if(!pg_prepare($conn, $statement_name, $query)){
+				if(!@pg_prepare($conn, $statement_name, $query)){
 					throw new \Exception("Preparation of statement failed: ".pg_last_error($conn));
 				}
 				if(!$result=self::execute_prepared($conn,$statement_name,$statement['vars'])){
@@ -338,12 +338,12 @@ class postgresql_query_builder {
 					}
 				}
 			}
-			if($has_write && !pg_query($conn, "COMMIT")){
+			if($has_write && !@pg_query($conn, "COMMIT")){
 				throw new \Exception("Failed commiting transaction: ".pg_last_error($conn));
 			}
 		}catch(\Throwable $exception){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Query has failed and will be rolled back", "warning");
-			if($has_write && !pg_query($conn, "ROLLBACK")){
+			if($has_write && !@pg_query($conn, "ROLLBACK")){
 				throw new \Exception("Rollback failed: ".pg_last_error($conn));
 			}
 			sql::log_query_error('PostgreSQL', $dbms_cluster, $query, $statement['vars'] ?? [], $exception);
@@ -371,14 +371,14 @@ class postgresql_query_builder {
 		$has_write=sql::query_has_write(serialize($multi_query_string));
 		$index=0;
 		try{
-			if($has_write && !pg_query($conn, "BEGIN")){
+			if($has_write && !@pg_query($conn, "BEGIN")){
 				throw new \Exception("Failed initiating transaction");
 			}
 			foreach($queries as $query){
 				$query=trim($query);
 				if(empty($query))continue;
 				$query=self::mysql_compatibility_layer($query);
-				if(!pg_send_query($conn, $query)){
+				if(!@pg_send_query($conn, $query)){
 					throw new \Exception("Query failed: ".pg_last_error($conn));
 				}
 				while($result=pg_get_result($conn)){
@@ -402,12 +402,12 @@ class postgresql_query_builder {
 					$index++;
 				}
 			}
-			if($has_write && !pg_query($conn, "COMMIT")){
+			if($has_write && !@pg_query($conn, "COMMIT")){
 				throw new \Exception("Failed commiting transaction: ".pg_last_error($conn));
 			}
 		}catch(\Throwable $exception){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Query has failed and will be rolled back", "warning");
-			if($has_write && !pg_query($conn, "ROLLBACK")){
+			if($has_write && !@pg_query($conn, "ROLLBACK")){
 				throw new \Exception("Rollback failed: ".pg_last_error($conn));
 			}
 			sql::log_query_error('PostgreSQL', $dbms_cluster, $query, [], $exception);
@@ -762,7 +762,7 @@ class postgresql_query_builder {
 				$query=self::mysql_compatibility_layer($query);
 				if(is_array($vars)){
 					$statement_name='stmt_'.bin2hex(random_bytes(6));
-					if(!$stmt=pg_prepare($conn, $statement_name, $query)){
+					if(!$stmt=@pg_prepare($conn, $statement_name, $query)){
 						throw new \Exception("Failed to prepare statement: ".pg_last_error($conn));
 					}
 					if(!$result=self::execute_prepared($conn,$statement_name,$vars)){
@@ -771,7 +771,7 @@ class postgresql_query_builder {
 				}
 				else
 				{
-					if(!$result=pg_query($conn, $query)){
+					if(!$result=@pg_query($conn, $query)){
 						throw new \Exception("Query failed: ".pg_last_error($conn));
 					}
 				}
@@ -848,7 +848,7 @@ class postgresql_query_builder {
 		try{
 			if(is_array($vars) && count($vars)>0){
 				$statement_name='stmt_'.bin2hex(random_bytes(6));
-				if(!$stmt=pg_prepare($conn, $statement_name, $query)){
+				if(!$stmt=@pg_prepare($conn, $statement_name, $query)){
 					throw new \Exception("Failed to prepare statement: ($query) ".pg_last_error($conn));
 				}
 				if(!$result=self::execute_prepared($conn,$statement_name,$vars)){
@@ -857,7 +857,7 @@ class postgresql_query_builder {
 			}
 			else
 			{
-				if(!$result=pg_query($conn, $query)){
+				if(!$result=@pg_query($conn, $query)){
 					throw new \Exception("Query failed: ($query)".pg_last_error($conn));
 				}
 			}
@@ -905,7 +905,7 @@ class postgresql_query_builder {
 		try{
 			if(is_array($vars) && count($vars)>0){
 				$statement_name='stmt_'.bin2hex(random_bytes(6));
-				if(!$stmt=pg_prepare($conn, $statement_name, $query)){
+				if(!$stmt=@pg_prepare($conn, $statement_name, $query)){
 					throw new \Exception("Failed to prepare statement: ".pg_last_error($conn));
 				}
 				if(!$result=self::execute_prepared($conn,$statement_name,$vars)){
@@ -914,7 +914,7 @@ class postgresql_query_builder {
 			}
 			else
 			{
-				if(!$result=pg_query($conn, $query)){
+				if(!$result=@pg_query($conn, $query)){
 					throw new \Exception("Query failed: ".pg_last_error($conn));
 				}
 			}
@@ -961,7 +961,7 @@ class postgresql_query_builder {
 			try{
 				$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint, $dbms_cluster);
 				$statement_name='stmt_'.bin2hex(random_bytes(6));
-				if(!$stmt=pg_prepare($conn, $statement_name, $query)){
+				if(!$stmt=@pg_prepare($conn, $statement_name, $query)){
 					throw new \Exception("Failed to prepare statement: ".pg_last_error($conn));
 				}
 				if(!$result=self::execute_prepared($conn,$statement_name,$vars)){
@@ -1008,7 +1008,7 @@ class postgresql_query_builder {
 			try{
 				$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint, $dbms_cluster);
 				$statement_name='stmt_'.bin2hex(random_bytes(6));
-				if(!$stmt=pg_prepare($conn, $statement_name, $query)){
+				if(!$stmt=@pg_prepare($conn, $statement_name, $query)){
 					throw new \Exception("Failed to prepare statement: ".pg_last_error($conn));
 				}
 				if(!$result=self::execute_prepared($conn,$statement_name,$vars)){
@@ -1060,7 +1060,7 @@ class postgresql_query_builder {
 				$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint, $dbms_cluster);
 				if(!empty($vars)){
 					$statement_name='stmt_'.bin2hex(random_bytes(6));
-					if(!$stmt=pg_prepare($conn, $statement_name, $query)){
+					if(!$stmt=@pg_prepare($conn, $statement_name, $query)){
 						throw new \Exception("Failed to prepare statement: ".pg_last_error($conn));
 					}
 					if(!$result=self::execute_prepared($conn,$statement_name,$vars)){
@@ -1072,7 +1072,7 @@ class postgresql_query_builder {
 				}
 				else
 				{
-					if(!$result=pg_query($conn, $query)){
+					if(!$result=@pg_query($conn, $query)){
 						throw new \Exception("Query failed: ".pg_last_error($conn));
 					}
 					$affected_rows[]=pg_affected_rows($result);
