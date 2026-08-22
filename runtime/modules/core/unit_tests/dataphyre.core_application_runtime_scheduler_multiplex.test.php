@@ -17,24 +17,59 @@ suite('Managed scheduler callback multiplexing')
 	->isolation('case')->tag('core','runtime','scheduler','cadence','release')
 	->group('framework-coverage');
 
-test('fixed fan-out gives the 91-definition cadence a bounded measured window',static function(Context $t): void {
+test('callback fan-out follows the immutable VM CPU boundary beneath the gateway ceiling',static function(Context $t): void {
 	$kernel=dirname(__DIR__).'/kernel';
 	require_once $kernel.'/application_runtime_supervisor.php';
 	$gateway=(string)file_get_contents($kernel.'/application_runtime_scheduler_gateway.php');
 	$supervisor=(string)file_get_contents($kernel.'/application_runtime_supervisor.php');
-	$durationMilliseconds=1400;
-	$cadenceWindowMilliseconds=5000+1000; // declared five-second work plus the existing one-second evidence grace
-	$cycleDuration=static fn(int $definitions,int $capacity): int=>(int)ceil($definitions/$capacity)*$durationMilliseconds;
-	$t->same(32,dataphyre_runtime_scheduler_callback_concurrency());
+	$t->same(1,dataphyre_runtime_scheduler_callback_concurrency('0','max 100000'));
+	$t->same(12,dataphyre_runtime_scheduler_callback_concurrency('0-11','max 100000'));
+	$t->same(2,dataphyre_runtime_scheduler_callback_concurrency('0-11','250000 100000'));
+	$t->same(4,dataphyre_runtime_scheduler_callback_concurrency('0-2,2-3','max 100000'));
+	$t->same(32,dataphyre_runtime_scheduler_callback_concurrency('0-63','max 100000'));
+	$t->throws(static fn()=>dataphyre_runtime_scheduler_callback_concurrency('3-1','max 100000'),RuntimeException::class);
+	$t->throws(static fn()=>dataphyre_runtime_scheduler_callback_concurrency('0-3','unlimited'),RuntimeException::class);
+	$detected=dataphyre_runtime_scheduler_callback_concurrency();
+	$t->greaterThanOrEqual(1,$detected);
+	$t->lessThanOrEqual(32,$detected);
 	$t->contains('MAX_CHILDREN=32',$gateway);
 	$t->contains('stream_select($read,$write,$except,0,20000)',$supervisor);
-	$t->same(12,(int)($cycleDuration(91,8)/$durationMilliseconds),'eight children require twelve callback waves');
-	$t->greaterThan($cadenceWindowMilliseconds,$cycleDuration(91,8));
-	$t->lessThanOrEqual($cadenceWindowMilliseconds,$cycleDuration(91,32));
-	$t->same(3,(int)ceil(91/32),'the fixed topology drains 91 callbacks in three waves');
+	$t->contains("'scheduler_active_since_milliseconds'=>\$initialSchedulerActiveSince",$supervisor);
 	$t->contains('usort($due,static function',$supervisor);
 	$t->contains("strcmp(\$leftDefinition['name'],\$rightDefinition['name'])",$supervisor);
-})->tag('91-definitions','timing','capacity','cadence','deterministic');
+})->tag('cpu-affinity','cgroup-quota','capacity','cadence','deterministic');
+
+test('activation phases stable task names without making eligible work disappear',static function(Context $t): void {
+	$kernel=dirname(__DIR__).'/kernel';
+	$root=$t->tempDirectory('scheduler-activation-phase');
+	if(!chmod($root,0700)) throw new RuntimeException('Scheduler activation phase root mode could not be prepared.');
+	if(!defined('DATAPHYRE_INTERNAL_SCHEDULER_STATE_TEST_ROOT')) define('DATAPHYRE_INTERNAL_SCHEDULER_STATE_TEST_ROOT',$root);
+	require_once $kernel.'/application_runtime_scheduler_state.php';
+	$identity=[
+		'cloud_application'=>'fixture','framework_application'=>'Fixture','environment'=>'staging',
+	];
+	$definition=static fn(string $name): array=>[
+		'name'=>$name,'task_sha256'=>'sha256:'.hash('sha256',$name),'dependency_sha256'=>[],
+		'frequency_milliseconds'=>5000,'timeout_milliseconds'=>2000,'memory_limit'=>'128M',
+	];
+	$definitions=array_map($definition,[
+		'fixture.phase.alpha','fixture.phase.bravo','fixture.phase.charlie','fixture.phase.delta',
+	]);
+	$floor=1776073500000;
+	$schedule=DataphyreApplicationRuntimeSchedulerState::dueSchedule($identity,$definitions,$floor+5000,$floor);
+	$t->count(4,$schedule);
+	$dueAt=[];
+	foreach($schedule as $scheduled){
+		$t->same(true,$scheduled['first_execution']);
+		$t->greaterThanOrEqual($floor,$scheduled['due_at_milliseconds']);
+		$t->lessThan($floor+5000,$scheduled['due_at_milliseconds']);
+		$dueAt[$scheduled['definition']['name']]=$scheduled['due_at_milliseconds'];
+	}
+	$t->greaterThan(1,count(array_unique($dueAt)),'stable names are not collapsed onto one cold-start instant');
+	$t->same($schedule,DataphyreApplicationRuntimeSchedulerState::dueSchedule(
+		$identity,$definitions,$floor+6000,$floor,
+	),'the fixed activation floor keeps already-eligible work due');
+})->tag('activation','phase','cold-start','cadence','deterministic');
 
 test('durable claims outlive broker setup before a successor may reclaim work',static function(Context $t): void {
 	$kernel=dirname(__DIR__).'/kernel';
@@ -256,17 +291,18 @@ test('real multiplex transport isolates failure, USR2 drain, and TERM claim clea
 	$t->same(7,count($partial['result']['observations']));$t->same([],$partial['pending']);
 	foreach($partial['entries'] as $entry) $t->same(null,$entry['claim_nonce']);
 
+	$capacity=dataphyre_runtime_scheduler_callback_concurrency();
 	$warnings=[];
-	$drain=$run('fixture-usr2',91,null,32,null,$warnings);
-	$t->same([],$warnings,'the 32-callback USR2 drain is warning-free after idempotent socket teardown');
+	$drain=$run('fixture-usr2',91,null,$capacity,null,$warnings);
+	$t->same([],$warnings,'the CPU-bound callback drain is warning-free after idempotent socket teardown');
 	$t->isNull($drain['failure']);$t->same(false,$drain['runtime']['active']);
-	$t->same(32,count($drain['result']['observations']),'USR2 drains only already-dispatched callbacks');
-	$t->same(32,count($drain['entries']));
+	$t->same($capacity,count($drain['result']['observations']),'USR2 drains only already-dispatched callbacks');
+	$t->same($capacity,count($drain['entries']));
 	foreach($drain['entries'] as $entry) $t->same(null,$entry['claim_nonce']);
 
-	$term=$run('fixture-term',91,null,null,32);
+	$term=$run('fixture-term',91,null,null,$capacity);
 	$t->instanceOf(DataphyreManagedRuntimeGracefulShutdown::class,$term['failure']);
-	$t->same([],$term['pending']);$t->same(32,count($term['entries']));
+	$t->same([],$term['pending']);$t->same($capacity,count($term['entries']));
 	foreach($term['entries'] as $entry){
 		$t->notNull($entry['claim_nonce'],'TERM retains the claim until the gateway child is proven dead');
 		$t->greaterThan(time(),$entry['claim_expires_at']);

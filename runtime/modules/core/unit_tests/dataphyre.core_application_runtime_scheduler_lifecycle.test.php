@@ -288,10 +288,11 @@ test('durable scheduler state executes its complete claim success reconciliation
 		'definition'=>$task,'due_at_milliseconds'=>($now+2)*1000,'first_execution'=>false,
 	]],DataphyreApplicationRuntimeSchedulerState::dueSchedule($identity,[$task],($now+2)*1000));
 	$resumeFloor=($now+10)*1000;
+	$resumeDueAt=$resumeFloor+(int)(hexdec(substr(hash('sha256',$task['name']),0,8))%1000);
 	$t->same([[
-		'definition'=>$task,'due_at_milliseconds'=>$resumeFloor,'first_execution'=>false,
+		'definition'=>$task,'due_at_milliseconds'=>$resumeDueAt,'first_execution'=>false,
 	]],DataphyreApplicationRuntimeSchedulerState::dueSchedule(
-		$identity,[$task],$resumeFloor,$resumeFloor,
+		$identity,[$task],$resumeDueAt,$resumeFloor,
 	));
 	$t->throws(
 		static fn()=>DataphyreApplicationRuntimeSchedulerState::dueSchedule($identity,[$task],$resumeFloor,999),
@@ -625,7 +626,7 @@ test('activation resumes with an internal eligibility floor shared by dispatch a
 	$t->same([true,true,false],$persisted);
 })->tag('scheduler','activation','resume','eligibility-floor','cadence','regression');
 
-test('resume floor is the due timestamp used by both dispatch and cadence assessment',static function(Context $t): void {
+test('resume phase is the due timestamp used by both dispatch and cadence assessment',static function(Context $t): void {
 	$root=$t->tempDirectory('scheduler-resume-floor');
 	if(!chmod($root,0700)) throw new RuntimeException('Scheduler resume-floor state root mode could not be prepared.');
 	define('DATAPHYRE_INTERNAL_SCHEDULER_STATE_TEST_ROOT',$root);
@@ -647,8 +648,10 @@ test('resume floor is the due timestamp used by both dispatch and cadence assess
 	DataphyreApplicationRuntimeSchedulerState::recordSuccess(
 		$identity,$definition,$release,$generation,$lastSuccess,$claimNonce,
 	);
-	$resumeFloor=($lastSuccess+20)*1000;$cycleNow=$resumeFloor+1000;
-	$t->same($resumeFloor,DataphyreApplicationRuntimeSchedulerState::dueSchedule(
+	$resumeFloor=($lastSuccess+20)*1000;
+	$resumeDueAt=$resumeFloor+(int)(hexdec(substr(hash('sha256',$definition['name']),0,8))%5000);
+	$cycleNow=$resumeDueAt;
+	$t->same($resumeDueAt,DataphyreApplicationRuntimeSchedulerState::dueSchedule(
 		$identity,[$definition],$cycleNow,$resumeFloor,
 	)[0]['due_at_milliseconds']);
 	$registration=[
@@ -672,7 +675,7 @@ test('resume floor is the due timestamp used by both dispatch and cadence assess
 		},null,$clock,static function(array $evidence) use (&$reports): void {$reports[]=$evidence;},
 	);
 	$t->same(1,$calls);
-	$t->same('ok',$runtime['last_result'],'the floor prevents overdue recurrence evidence from failing the resumed cycle');
+	$t->same('ok',$runtime['last_result'],'the activation phase prevents overdue recurrence evidence from failing the resumed cycle');
 	$t->same([],$reports);
 })->tag('scheduler','activation','resume','eligibility-floor','cadence','integration','regression');
 

@@ -1065,17 +1065,57 @@ function dataphyre_runtime_serve_status(
 	}
 }
 
-/**
- * Fixed internal callback fan-out for one cadence cycle.
- *
- * The scheduler gateway is deliberately bounded at the same value.  Keeping
- * this in the framework (rather than accepting an environment setting) makes
- * the capacity part of the measured cadence topology and prevents a tenant or
- * deployment from trading away the privilege and resource boundaries.
- */
-function dataphyre_runtime_scheduler_callback_concurrency(): int
+/** Counts a canonical Linux CPU-list such as `0-3,6,8-11`. */
+function dataphyre_runtime_scheduler_allowed_cpu_count(string $allowed): int
 {
-	return 32;
+	$allowed=trim($allowed);
+	if($allowed==='' || strlen($allowed)>4096 || preg_match('/^[0-9,-]+$/D',$allowed)!==1){
+		throw new RuntimeException('Scheduler CPU allocation is invalid.');
+	}
+	$cpus=[];
+	foreach(explode(',',$allowed) as $range){
+		if(preg_match('/^([0-9]{1,5})(?:-([0-9]{1,5}))?$/D',$range,$matches)!==1){
+			throw new RuntimeException('Scheduler CPU allocation is invalid.');
+		}
+		$first=(int)$matches[1];$last=isset($matches[2]) && $matches[2]!=='' ? (int)$matches[2] : $first;
+		if($last<$first || $last>8191) throw new RuntimeException('Scheduler CPU allocation is invalid.');
+		for($cpu=$first;$cpu<=$last;$cpu++) $cpus[$cpu]=true;
+	}
+	if($cpus===[]) throw new RuntimeException('Scheduler CPU allocation is empty.');
+	return count($cpus);
+}
+
+/** Resolves the internal callback fan-out from the VM/cgroup CPU boundary. */
+function dataphyre_runtime_scheduler_callback_concurrency(
+	?string $allowedCpuList=null,
+	?string $cpuMax=null,
+): int {
+	static $detected=null;
+	$detect=$allowedCpuList===null && $cpuMax===null;
+	if($detect && is_int($detected)) return $detected;
+	if($allowedCpuList===null){
+		$status=@file_get_contents('/proc/self/status');
+		if(!is_string($status) || strlen($status)>1048576
+			|| preg_match('/^Cpus_allowed_list:\s*([0-9,-]+)\s*$/m',$status,$matches)!==1){
+			throw new RuntimeException('Scheduler CPU allocation is unavailable.');
+		}
+		$allowedCpuList=$matches[1];
+	}
+	if($cpuMax===null){
+		$bytes=@file_get_contents('/sys/fs/cgroup/cpu.max');
+		$cpuMax=is_string($bytes) && strlen($bytes)<=128 ? trim($bytes) : 'max 100000';
+	}
+	if(preg_match('/^(max|[1-9][0-9]{0,18}) ([1-9][0-9]{0,18})$/D',$cpuMax,$matches)!==1){
+		throw new RuntimeException('Scheduler CPU quota is invalid.');
+	}
+	$available=dataphyre_runtime_scheduler_allowed_cpu_count($allowedCpuList);
+	if($matches[1]!=='max'){
+		$quota=(int)$matches[1];$period=(int)$matches[2];
+		$available=min($available,max(1,intdiv($quota,$period)));
+	}
+	$capacity=max(1,min(32,$available));
+	if($detect) $detected=$capacity;
+	return $capacity;
 }
 
 /**
@@ -1981,6 +2021,12 @@ try {
 		'environment_fingerprint'=>$applicationEnvelope['environment_fingerprint'],
 	];
 	$generation='gen_'.bin2hex(random_bytes(16));
+	$initialSchedulerActive=$activationMode==='active'
+		? true
+		: DataphyreApplicationRuntimeActivationLatch::restore();
+	$initialSchedulerActiveSince=$initialSchedulerActive
+		? max(1000,(int)floor(microtime(true)*1000))
+		: null;
     $runtime=[
 		'cloud_application'=>$cloudApplication,
 		'framework_application'=>$application,
@@ -1989,9 +2035,7 @@ try {
 		'environment_fingerprint'=>$applicationEnvelope['environment_fingerprint'],
 		'generation'=>$generation,
         'activation_mode'=>$activationMode,
-		'active'=>$activationMode==='active'
-			? true
-			: DataphyreApplicationRuntimeActivationLatch::restore(),
+		'active'=>$initialSchedulerActive,
 		'web_fpm_pid'=>$children['web']['pid'],'web_gateway_pid'=>$children['web-http-gateway']['pid'],
 		'web_socket_identity'=>$webSocketIdentity,
 		'web_socket_directory_identity'=>$webSocketDirectoryIdentity,
@@ -2004,7 +2048,7 @@ try {
 		'realtime_pid'=>$children['realtime']['pid'],
 		'realtime_start_time_ticks'=>$children['realtime']['start_time_ticks'],
 		'count'=>0,'last_at'=>null,'last_result'=>'never','request_counter'=>0,
-		'scheduler_active_since_milliseconds'=>null,
+		'scheduler_active_since_milliseconds'=>$initialSchedulerActiveSince,
 		'scheduler_cycle_in_progress'=>false,'scheduler_registration'=>null,
 		'scheduler_noop_probe'=>null,
 		'scheduler_state_identity_sha256'=>DataphyreApplicationRuntimeSchedulerState::identitySha256($identity),

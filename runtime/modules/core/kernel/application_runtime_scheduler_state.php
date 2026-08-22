@@ -140,10 +140,19 @@ final class DataphyreApplicationRuntimeSchedulerState
 					? ($entry['last_success_at'] ?? null)
 					: null;
 				$firstExecution=!is_int($last) || $last<1;
+				$frequencyMilliseconds=(int)$definition['frequency_milliseconds'];
 				$dueAt=$firstExecution
-					? $nowMilliseconds
-					: ($last*1000)+(int)$definition['frequency_milliseconds'];
-				if($eligibilityFloorMilliseconds!==null) $dueAt=max($dueAt,$eligibilityFloorMilliseconds);
+					? ($eligibilityFloorMilliseconds ?? $nowMilliseconds)
+					: ($last*1000)+$frequencyMilliseconds;
+				if($eligibilityFloorMilliseconds!==null){
+					// A fresh or resumed generation must not cold-boot every application
+					// task at once. Spread each stable name inside at most one minute of
+					// its own cadence; the floor remains fixed for the activation, so a
+					// task that becomes eligible stays due until it owns a receipt.
+					$phaseWindow=max(1000,min(60000,$frequencyMilliseconds>0 ? $frequencyMilliseconds : 1000));
+					$phase=(int)(hexdec(substr(hash('sha256',$name),0,8))%$phaseWindow);
+					$dueAt=max($dueAt,$eligibilityFloorMilliseconds+$phase);
+				}
 				if($nowMilliseconds>=$dueAt){
 					$dueCount++;
 					if(!$claimed) $schedule[]=[
