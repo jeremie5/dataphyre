@@ -30,6 +30,7 @@ function dp_postgresql_command_fixture(Context $test, string $name): TempWorkspa
 		'journal_table'=>'schema_migrations',
 		'event_table'=>'schema_migration_events',
 		'advisory_lock'=>'fixture.postgresql_migrations',
+		'data_environment_session_setting'=>'fixture.change_control_environment',
 		'bootstrap_ids'=>['001_base'],
 		'bootstrap_cutoff'=>'001_base',
 		'manifest_public_path'=>'database/postgresql/manifest.json',
@@ -108,6 +109,85 @@ test('PostgreSQL migration command shares the broad public deployment environmen
 		);
 	}
 })->tag('sql','postgresql','migration','environment-identifier','broad-grammar','negative');
+
+test('PostgreSQL migration command binds one typed data environment before application SQL',static function(Context $t): void {
+	$workspace=dp_postgresql_command_fixture($t,'data-environment');
+	$pdo=$t->scriptedPdo('pgsql');
+	$received=null;
+	$run=dp_postgresql_command_run([
+		'postgresql_migrate.php',
+		'--project-root='.$workspace->root(),
+		'--app=fixture',
+		'--environment=production',
+		'--mode=bootstrap',
+	],[
+		'environment_values'=>[
+			'DATAPHYRE_DATABASE_DSN'=>'pgsql:host=database.internal;dbname=fixture',
+			'DATAPHYRE_INTERNAL_POSTGRESQL_MIGRATION_DATA_ENVIRONMENT'=>'sandbox',
+		],
+		'pdo_factory'=>static fn()=> $pdo,
+		'apply'=>static function(
+			PDO $connection,
+			PostgreSqlMigrationProfile $profile,
+			PostgreSqlMigrationManifest $manifest,
+			array $options,
+		) use (&$received): array {
+			$received=$connection;
+			return [
+				'transaction'=>'committed',
+				'transaction_scope'=>'per_migration',
+				'migrations'=>['001_base'],
+				'deployment_mode'=>'bootstrap',
+				'direction'=>'up',
+				'release_version'=>null,
+				'release_sha256'=>null,
+				'bootstrap_cutoff'=>$manifest->bootstrapCutoff(),
+				'pending_validation'=>['mode'=>'bootstrap','eligible'=>true,'errors'=>[]],
+			];
+		},
+	]);
+
+	$t->same(PostgreSqlMigrationCommand::EXIT_SUCCESS,$run['status']);
+	$t->same($pdo,$received);
+	$t->same([
+		'SELECT set_config(?, ?, false)',
+		'SELECT set_config(?, ?, false)',
+	],$pdo->preparedSql());
+	$t->same([
+		['dataphyre.data_environment','sandbox'],
+		['fixture.change_control_environment','sandbox'],
+	],array_map(
+		static fn($statement): mixed=>$statement->executions()[0] ?? null,
+		$pdo->statements(),
+	));
+	$t->isFalse(str_contains($run['out'],'sandbox'));
+	$t->same('', $run['error']);
+})->tag('sql','postgresql','migration','data-environment','session-context','security')->group('framework-coverage');
+
+test('PostgreSQL migration command rejects a forged internal data environment before connecting',static function(Context $t): void {
+	$workspace=dp_postgresql_command_fixture($t,'invalid-data-environment');
+	$arguments=[
+		'postgresql_migrate.php','--project-root='.$workspace->root(),'--app=fixture',
+		'--environment=production','--mode=bootstrap',
+	];
+	foreach(['Sandbox',' sandbox','sandbox/value',str_repeat('a',65)] as $dataEnvironment){
+		$connected=false;
+		$run=dp_postgresql_command_run($arguments,[
+			'environment_values'=>[
+				'DATAPHYRE_DATABASE_DSN'=>'pgsql:host=database.internal;dbname=fixture',
+				'DATAPHYRE_INTERNAL_POSTGRESQL_MIGRATION_DATA_ENVIRONMENT'=>$dataEnvironment,
+			],
+			'pdo_factory'=>static function() use (&$connected): PDO {
+				$connected=true;
+				throw new RuntimeException('must not connect');
+			},
+		]);
+		$t->same(PostgreSqlMigrationCommand::EXIT_CONFIGURATION,$run['status'],$dataEnvironment);
+		$t->same('database_configuration_invalid',$run['payload']['error']['code'],$dataEnvironment);
+		$t->same(false,$connected,$dataEnvironment);
+		$t->isFalse(str_contains($run['error'],$dataEnvironment),$dataEnvironment);
+	}
+})->tag('sql','postgresql','migration','data-environment','internal','negative','security')->group('framework-coverage');
 
 test('PostgreSQL migration command applies the native manifest with typed context and canonical secret-safe JSON', static function(Context $t): void {
 	$workspace=dp_postgresql_command_fixture($t, 'success');
@@ -225,6 +305,7 @@ test('PostgreSQL migration command rejects command paths scripts and untyped arg
 		['postgresql_migrate.php', '--framework-prerequisite=permission_roles'],
 		['postgresql_migrate.php', '--command=php -r secret-value'],
 		['postgresql_migrate.php', '--dry-run=true'],
+		['postgresql_migrate.php', '--data-environment=sandbox'],
 		['postgresql_migrate.php', '--project-root=/tmp', '--project-root=/tmp'],
 		[
 			'postgresql_migrate.php', '--project-root=/tmp', '--app=../../serve',

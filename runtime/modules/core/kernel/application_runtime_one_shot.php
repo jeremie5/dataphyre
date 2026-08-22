@@ -178,6 +178,10 @@ try{
 		if($operation==='dataphyre_materialize_tables'){
 			$child[DataphyreApplicationRuntimeChildEnvironment::ONE_SHOT_MATERIALIZER_DATABASE_PURPOSE]=$purpose;
 			ksort($child,SORT_STRING);
+		}elseif($operation==='dataphyre_postgresql_migrate'){
+			$child[DataphyreApplicationRuntimeChildEnvironment::ONE_SHOT_POSTGRESQL_DATA_ENVIRONMENT]=
+				$purpose==='primary' ? 'live' : $purpose;
+			ksort($child,SORT_STRING);
 		}
 	}
 	if($operation==='dataphyre_shared_cache_probe'){

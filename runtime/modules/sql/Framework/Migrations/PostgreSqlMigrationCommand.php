@@ -26,6 +26,7 @@ require_once dirname(__DIR__,3).'/core/Framework/ApplicationEnvironmentIdentifie
  */
 final class PostgreSqlMigrationCommand {
 	public const CONTRACT='dataphyre.postgresql_migration_command.v1';
+	private const DATA_ENVIRONMENT_VARIABLE='DATAPHYRE_INTERNAL_POSTGRESQL_MIGRATION_DATA_ENVIRONMENT';
 	public const MAX_EVIDENCE_BYTES=262144;
 	public const EXIT_SUCCESS=0;
 	public const EXIT_USAGE=64;
@@ -121,6 +122,7 @@ final class PostgreSqlMigrationCommand {
 
 		try{
 			[$dsn,$username,$password]=self::connectionValues($options, $runtime);
+			$dataEnvironment=self::dataEnvironment($runtime);
 		}catch(Throwable){
 			return self::failure(
 				$writeError,
@@ -147,6 +149,7 @@ final class PostgreSqlMigrationCommand {
 			if(!$pdo instanceof PDO){
 				throw new InvalidArgumentException('PostgreSQL migration connection factory returned an invalid value.');
 			}
+			self::applyDataEnvironment($pdo,$profile,$dataEnvironment);
 		}catch(Throwable){
 			return self::failure(
 				$writeError,
@@ -474,6 +477,45 @@ final class PostgreSqlMigrationCommand {
 		}
 		$value=getenv($name);
 		return is_string($value) ? $value : null;
+	}
+
+	private static function dataEnvironment(array $runtime): ?string {
+		$value=self::environmentValue($runtime,self::DATA_ENVIRONMENT_VARIABLE);
+		if($value===null){
+			return null;
+		}
+		if(
+			$value!==trim($value)
+			|| preg_match('/^[a-z0-9][a-z0-9._-]{0,63}$/D',$value)!==1
+		){
+			throw new InvalidArgumentException('PostgreSQL migration data environment is invalid.');
+		}
+		return $value;
+	}
+
+	private static function applyDataEnvironment(
+		PDO $pdo,
+		PostgreSqlMigrationProfile $profile,
+		?string $dataEnvironment,
+	): void {
+		if($dataEnvironment===null){
+			return;
+		}
+		$settings=['dataphyre.data_environment'];
+		$alias=$profile->dataEnvironmentSessionSetting();
+		if($alias!==null && !hash_equals($settings[0],$alias)){
+			$settings[]=$alias;
+		}
+		foreach($settings as $setting){
+			$statement=$pdo->prepare('SELECT set_config(?, ?, false)');
+			if(
+				!$statement instanceof \PDOStatement
+				|| !$statement->execute([$setting,$dataEnvironment])
+				|| !$statement->closeCursor()
+			){
+				throw new InvalidArgumentException('PostgreSQL migration data environment could not be applied.');
+			}
+		}
 	}
 
 	/** @param array<string,mixed> $options @return ?array{release_version:string,release_sha256:string} */

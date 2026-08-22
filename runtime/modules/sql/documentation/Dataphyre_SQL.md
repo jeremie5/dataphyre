@@ -964,6 +964,16 @@ and retains the normal floor checks; there is no CLI option to override that
 decision. Failure or process death rolls back journal creation and every phase,
 so the same fixed command can retry without a recovery state or flag.
 
+When a managed platform selects one typed database purpose, the root broker
+also binds the corresponding data environment to the migration session before
+any status or SQL work (`primary` maps to `live`). Migration SQL can read
+`current_setting('dataphyre.data_environment', true)`. An existing immutable
+migration that predates that generic name may declare one strictly
+application-prefixed `data_environment_session_setting` in the existing
+PostgreSQL migration profile; Dataphyre applies the same value to both names.
+This internal binding is not a public CLI option, cannot be supplied by tenant
+environment variables, and never requires an application release script.
+
 Non-dry-run automatic success includes an allowlisted
 `result.convergence_validation` object. Release infrastructure must require
 `eligible=true`, `compatibility_floor_satisfied=true`, and empty pending, selected, deferred, phase, and error

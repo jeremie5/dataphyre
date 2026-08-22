@@ -113,6 +113,9 @@ marker before privilege drop. An absent purpose preserves the existing
 canonical/default environment. SQLite migration, Artisan, and unrelated
 one-shot operations do not accept this control. For materialization, the root
 broker seals the purpose into its private child attestation rather than argv.
+A PostgreSQL migration receives only a root-derived child data environment
+(`primary` becomes `live`) and installs it as session context; neither the raw
+purpose nor the derived value enters argv or public evidence.
 A non-primary purpose runs hydration inside the existing SQL `DataEnvironment`
 of the same name and requires that environment to configure a cluster override;
 the context is restored on success or failure. Primary and omitted purposes
@@ -221,6 +224,16 @@ migration, or public release-preflight maximum. `SIGTERM` and `SIGINT` are
 converted to one group-wide `SIGTERM`; after 500 ms PID 1 escalates to
 group-wide `SIGKILL`, reaps adopted descendants, and exits without waiting on
 tenant-controlled descendants.
+The one-shot child always has UID/GID and supplementary group `10001`, empty
+inheritable, permitted, effective, and ambient capability sets, and
+`NoNewPrivs`. A container that grants PID 1 only `CAP_SETUID` and `CAP_SETGID`
+cannot remove those two bits from its bounding set without `CAP_SETPCAP`; in
+that topology the child may retain exactly `CapBnd=0xc0`. The bounding set is a
+ceiling rather than an active capability set, and `NoNewPrivs` prevents a later
+exec from gaining file or set-user-ID privileges. The broker therefore accepts
+only an empty bounding set or this exact inert `0xc0` residue for the one-shot
+role. It does not accept either bit in inheritable, permitted, effective, or
+ambient sets, and no other rootless role gains this exception.
 The fixed registered-table materialization operation accepts the private
 `/var/lib/dataphyre/application` mount only when the root launcher proves that
 it is one distinct read-write directory owned by UID/GID `10001`. That mount is

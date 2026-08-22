@@ -10,6 +10,16 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Bound Cloud-selected PostgreSQL migration targets to one generic data
+  environment before application SQL, with one tightly application-prefixed
+  profile alias for already-immutable legacy migrations. Platforms no longer
+  need application-specific migration wrappers or database-name inference to
+  distinguish live and sandbox targets.
+- Accepted the exact inert `CAP_SETUID|CAP_SETGID` bounding-set residue for a
+  root-brokered one-shot child when its UID/GID/groups are already `10001`, all
+  usable capability sets are empty, and `NoNewPrivs` is set. Container PID 1
+  does not need the broader `CAP_SETPCAP` merely to erase that ceiling; every
+  other rootless role and every active capability set remains unchanged.
 - Extended the application-neutral secret redactor to treat PIN and passcode
   fields as credential material, including normalized snake-case and camel-case
   variants, so structured diagnostics cannot disclose short access secrets.

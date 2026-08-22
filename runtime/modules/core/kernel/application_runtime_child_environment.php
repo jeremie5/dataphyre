@@ -24,6 +24,7 @@ final class DataphyreApplicationRuntimeChildEnvironment
 	public const MANAGED_BOOTSTRAP_CONTRACT='dataphyre.managed_runtime_bootstrap.v1';
 	public const ONE_SHOT_MATERIALIZER_BOOTSTRAP_CONTRACT='dataphyre.one_shot_materializer_bootstrap.v1';
 	public const ONE_SHOT_MATERIALIZER_DATABASE_PURPOSE='DATAPHYRE_INTERNAL_MATERIALIZER_DATABASE_PURPOSE';
+	public const ONE_SHOT_POSTGRESQL_DATA_ENVIRONMENT='DATAPHYRE_INTERNAL_POSTGRESQL_MIGRATION_DATA_ENVIRONMENT';
 	public const INHERITED_FD=198;
 	public const MAX_BYTES=524288;
 	public const MAX_ENTRIES=576;
@@ -562,9 +563,13 @@ final class DataphyreApplicationRuntimeChildEnvironment
 				&& ($identity['cap_ambient'] ?? null)==='0000000000000000'
 				&& ($identity['no_new_privileges'] ?? null)===true;
 		}
-		$boundingValid=$role==='scheduler'
-			? in_array($identity['cap_bounding'] ?? null,['0000000000000000','00000000000000e0'],true)
-			: ($identity['cap_bounding'] ?? null)==='0000000000000000';
+		$bounding=$identity['cap_bounding'] ?? null;
+		// A SETUID|SETGID-only PID 1 lacks CAP_SETPCAP, so this exact inactive one-shot ceiling can survive the drop.
+		$boundingValid=match($role){
+			'scheduler'=>\in_array($bounding,['0000000000000000','00000000000000e0'],true),
+			'one-shot'=>\in_array($bounding,['0000000000000000','00000000000000c0'],true),
+			default=>$bounding==='0000000000000000',
+		};
 		return ($identity['uid'] ?? null)===self::POOL_UID && ($identity['gid'] ?? null)===self::POOL_GID
 			&& ($identity['groups'] ?? null)===[self::POOL_GID]
 			&& ($identity['cap_inheritable'] ?? null)==='0000000000000000'

@@ -350,7 +350,8 @@ test('tenant values reject ascii controls while reserving every framework contro
 	$internals=$t->nonPublic(DataphyreApplicationRuntimeEnvironment::class);
 	foreach([
 		'DATAPHYRE_APPLICATION_RELEASE','DATAPHYRE_CLOUD_TOKEN','DATAPHYRE_FRAMEWORK_APPLICATION',
-		'DATAPHYRE_INTERNAL_VALUE','DATAPHYRE_ONE_SHOT_OPERATION','DATAPHYRE_PREFLIGHT_MODE',
+		'DATAPHYRE_INTERNAL_VALUE','DATAPHYRE_INTERNAL_POSTGRESQL_MIGRATION_DATA_ENVIRONMENT',
+		'DATAPHYRE_ONE_SHOT_OPERATION','DATAPHYRE_PREFLIGHT_MODE',
 		'DATAPHYRE_RUNTIME_ROOT','DATAPHYRE_SCHEDULER_STATE_ROOT','DATAPHYRE_PHP_BINARY',
 		'DATAPHYRE_ONE_SHOT_CACHE_PHASE','DATAPHYRE_ONE_SHOT_CACHE_CHALLENGE',
 		'DATAPHYRE_PROJECT_ROOT','PHP_INI_SCAN_DIR','LD_PRELOAD','DYLD_INSERT_LIBRARIES','PATH','HOME',
@@ -442,7 +443,11 @@ test('fixed root directory accepts overlay nlink one but rejects an impossible z
 test('source freezes the root-only canonical channel and fixed one-shot allowlist',static function(Context $t): void {
 	$kernel=dirname(__DIR__).'/kernel';
 	$environment=(string)file_get_contents($kernel.'/application_runtime_environment.php');
+	$childEnvironment=(string)file_get_contents($kernel.'/application_runtime_child_environment.php');
 	$oneShot=(string)file_get_contents($kernel.'/application_runtime_one_shot.php');
+	$migrationCommand=(string)file_get_contents(
+		dirname(__DIR__,2).'/sql/Framework/Migrations/PostgreSqlMigrationCommand.php'
+	);
 	$t->contains("getmypid()!==1",$environment);
 	$t->contains("posix_geteuid()!==0",$environment);
 	$t->contains("CHANNEL='/run/dataphyre/application-environment.json'",$environment);
@@ -481,6 +486,14 @@ test('source freezes the root-only canonical channel and fixed one-shot allowlis
 	$t->contains("$"."operation==='dataphyre_materialize_tables'",$oneShot);
 	$t->contains("'/modules/sql/kernel/managed_seeds.php'",$oneShot);
 	$t->contains("'--data-environment='.($"."purpose==='primary' ? 'live' : $"."purpose)",$oneShot);
+	$t->same(1,substr_count($oneShot,"'--data-environment='.($"."purpose==='primary' ? 'live' : $"."purpose)"));
+	$dataEnvironmentVariable='DATAPHYRE_INTERNAL_POSTGRESQL_MIGRATION_DATA_ENVIRONMENT';
+	$t->contains("ONE_SHOT_POSTGRESQL_DATA_ENVIRONMENT='".$dataEnvironmentVariable."'",$childEnvironment);
+	$t->contains("DATA_ENVIRONMENT_VARIABLE='".$dataEnvironmentVariable."'",$migrationCommand);
+	$t->same(1,substr_count($childEnvironment,$dataEnvironmentVariable));
+	$t->same(1,substr_count($migrationCommand,$dataEnvironmentVariable));
+	$t->contains('ONE_SHOT_POSTGRESQL_DATA_ENVIRONMENT]',$oneShot);
+	$t->contains("$"."purpose==='primary' ? 'live' : $"."purpose",$oneShot);
 	$t->isFalse(str_contains($oneShot,"in_array($"."operation,['dataphyre_postgresql_migrate'"));
 	$t->isFalse(str_contains($oneShot,"in_array($"."operation,['dataphyre_shared_cache_probe'"));
 	$t->contains('ApplicationReleasePreflightEvidence::COMMAND_TIMEOUT_MILLISECONDS',$oneShot);

@@ -152,6 +152,7 @@ $profile=PostgreSqlMigrationProfile::fromArray([
 	'event_table'=>'SchemaMigrationEvents',
 	'release_digest_column'=>'release_sha256',
 	'advisory_lock'=>'example_app.postgresql_migrations',
+	'data_environment_session_setting'=>'example_app.legacy_data_environment',
 	'bootstrap_ids'=>['001_schema_baseline'],
 	'bootstrap_cutoff'=>'001_schema_baseline',
 	'manifest_public_path'=>'database/postgresql/manifest.json',
@@ -173,6 +174,13 @@ may choose another neutral storage name. It cannot collide, case-insensitively,
 with the event journal's fixed columns: `event_id`, `operation_id`,
 `migration_id`, `direction`, `up_checksum_sha256`, `down_checksum_sha256`,
 `release_version`, or `occurred_at`.
+
+`data_environment_session_setting` is an optional compatibility alias for
+existing immutable SQL that already reads one application-owned custom
+PostgreSQL setting. It must be a lowercase custom setting below the
+`application_id` prefix, so it cannot select `search_path`, roles, timeouts, or
+another application's namespace. New migration SQL should read the framework
+setting `dataphyre.data_environment` directly.
 
 The profile implements `JsonSerializable`; `json_encode($profile)` returns the
 same normalized public configuration as `jsonSerialize()`.
@@ -200,7 +208,13 @@ there is no fresh-database, phase, SQL-path, or compatibility override in argv.
 Optional `--dry-run` performs the runner's transactional rehearsal. Release
 version and digest must be supplied together. Maintenance may additionally receive
 `--verified-minimum-active-release=<semver>`; that option is rejected in other
-modes.
+modes. Data-environment selection is intentionally not a public command option.
+The managed root broker derives it from the selected database purpose
+(`primary` becomes `live`) and carries it only in the single-use child
+environment. Before status, planning, or application SQL, the command installs
+that value as session-scoped `dataphyre.data_environment` and, when declared,
+the profile's compatibility alias. Application environment variables never
+choose it.
 
 The command reads only these fixed project files:
 
@@ -225,8 +239,8 @@ The fixed root one-shot launcher may optionally receive
 grammar, opaque binding marker, and complete six-field managed PostgreSQL
 binding, then reprojects that binding onto the canonical connection names
 before dropping privileges. When absent, the command continues to consume the
-existing canonical/default configuration. The purpose and credentials never
-enter child argv or command evidence.
+existing canonical/default configuration. The purpose, derived data environment,
+and credentials never enter child argv or command evidence.
 
 Every invocation emits one canonical JSON envelope with a stable key order,
 field allowlist, and 262,144-byte maximum. Success is written to stdout;

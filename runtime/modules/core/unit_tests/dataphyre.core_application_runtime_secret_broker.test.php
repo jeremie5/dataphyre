@@ -73,6 +73,26 @@ test('realtime and one-shot receive one post-exec envelope and retain no transpo
 })->tag('multi-role','lifecycle','proc','fd-enumeration','replay')
 	->skipUnless(dataphyre_secret_broker_exact_root_runtime(),'Requires the canonical root test image and native descriptor extension.');
 
+test('one-shot accepts the inert identity-drop bounding residue with no usable capabilities',static function(Context $t): void {
+	$parent=DataphyreApplicationRuntimeChildEnvironment::processIdentity(getmypid());
+	$secret='one-shot-bounding-'.bin2hex(random_bytes(32));$child=dataphyre_secret_broker_probe('one-shot',$secret);
+	$out=stream_get_contents($child['pipes'][1]);$err=stream_get_contents($child['pipes'][2]);
+	fclose($child['pipes'][1]);fclose($child['pipes'][2]);$exit=proc_close($child['resource']);
+	$t->same(0,$exit,$err);$result=json_decode((string)$out,true,8,JSON_THROW_ON_ERROR);
+	$t->same(true,$result['ok']);$t->same(true,$result['no_new_privileges']);
+	$t->same(10001,$result['uid']);$t->same(10001,$result['gid']);$t->same([10001],$result['groups']);
+	foreach(['cap_inheritable','cap_permitted','cap_eff','cap_ambient'] as $capability){
+		$t->same('0000000000000000',$result[$capability],$capability);
+	}
+	$t->isTrue(in_array($result['cap_bounding'],['0000000000000000','00000000000000c0'],true));
+	if(($parent['cap_bounding'] ?? null)==='00000000000000c0'){
+		$t->same('00000000000000c0',$result['cap_bounding']);
+	}
+	$t->isFalse(str_contains((string)$out,$secret));$t->isFalse(str_contains((string)$err,$secret));
+	sodium_memzero($secret);
+})->tag('one-shot','capabilities','bounding-set','container','exact-image')
+	->skipUnless(dataphyre_secret_broker_exact_root_runtime(),'Requires the canonical root test image and native descriptor extension.');
+
 test('managed web and scheduler contexts reject direct CLI execution before tenant bootstrap',static function(Context $t): void {
 	$project=(string)realpath(dirname(__DIR__,4));$fixture=__DIR__.'/fixtures/application_runtime_child_environment_probe.php';
 	foreach(['web','scheduler'] as $role){
@@ -432,6 +452,24 @@ test('every managed process capability set is part of the live privilege boundar
 	foreach(['cap_inheritable','cap_permitted','cap_eff','cap_bounding','cap_ambient'] as $capability){
 		$mutated=$web;$mutated[$capability]='0000000000000001';
 		$t->same(false,$boundary->invoke('identityMatchesPrivilegeBoundary',$mutated,'web-pool'),$capability);
+	}
+
+	$oneShot=$web;$oneShot['cap_bounding']='00000000000000c0';
+	$t->same(true,$boundary->invoke('identityMatchesPrivilegeBoundary',$oneShot,'one-shot'));
+	$oneShotWithEmptyBounding=$oneShot;$oneShotWithEmptyBounding['cap_bounding']=$zero;
+	$t->same(true,$boundary->invoke('identityMatchesPrivilegeBoundary',$oneShotWithEmptyBounding,'one-shot'));
+	foreach(['cap_inheritable','cap_permitted','cap_eff','cap_ambient'] as $capability){
+		$mutated=$oneShot;$mutated[$capability]='0000000000000001';
+		$t->same(false,$boundary->invoke('identityMatchesPrivilegeBoundary',$mutated,'one-shot'),$capability);
+	}
+	foreach([
+		'uid'=>0,'gid'=>0,'groups'=>[0],'cap_bounding'=>'00000000000000c1','no_new_privileges'=>false,
+	] as $field=>$value){
+		$mutated=$oneShot;$mutated[$field]=$value;
+		$t->same(false,$boundary->invoke('identityMatchesPrivilegeBoundary',$mutated,'one-shot'),$field);
+	}
+	foreach(['web','web-pool','web-http-gateway','realtime','scheduler','scheduler-gateway'] as $role){
+		$t->same(false,$boundary->invoke('identityMatchesPrivilegeBoundary',$oneShot,$role),$role);
 	}
 })->tag('capabilities','privilege-boundary','mutation','negative');
 

@@ -43,6 +43,7 @@ final class PostgreSqlMigrationProfile implements JsonSerializable {
 	private string $eventTable;
 	private string $releaseDigestColumn;
 	private string $advisoryLock;
+	private ?string $dataEnvironmentSessionSetting;
 	/** @var list<string> */
 	private array $bootstrapIds;
 	private string $bootstrapCutoff;
@@ -57,6 +58,7 @@ final class PostgreSqlMigrationProfile implements JsonSerializable {
 			'application_id', 'schema', 'journal_table', 'event_table',
 			'release_digest_column', 'advisory_lock', 'bootstrap_ids', 'bootstrap_cutoff',
 			'manifest_public_path', 'lock_timeout', 'statement_timeout',
+			'data_environment_session_setting',
 		];
 		$unknown=array_values(array_diff($keys, $allowed));
 		if($unknown!==[]){
@@ -97,6 +99,10 @@ final class PostgreSqlMigrationProfile implements JsonSerializable {
 		){
 			throw new InvalidArgumentException('PostgreSQL migration advisory lock key is invalid.');
 		}
+		$this->dataEnvironmentSessionSetting=self::normalizeDataEnvironmentSessionSetting(
+			$config['data_environment_session_setting'] ?? null,
+			$this->applicationId,
+		);
 		$bootstrapIds=$config['bootstrap_ids'] ?? [];
 		if(!is_array($bootstrapIds) || !array_is_list($bootstrapIds)){
 			throw new InvalidArgumentException('Migration bootstrap IDs must be a list.');
@@ -147,6 +153,7 @@ final class PostgreSqlMigrationProfile implements JsonSerializable {
 	public function eventTable(): string { return $this->eventTable; }
 	public function releaseDigestColumn(): string { return $this->releaseDigestColumn; }
 	public function advisoryLock(): string { return $this->advisoryLock; }
+	public function dataEnvironmentSessionSetting(): ?string { return $this->dataEnvironmentSessionSetting; }
 	/** @return list<string> */
 	public function bootstrapIds(): array { return $this->bootstrapIds; }
 	public function bootstrapCutoff(): string { return $this->bootstrapCutoff; }
@@ -190,7 +197,7 @@ final class PostgreSqlMigrationProfile implements JsonSerializable {
 
 	/** @return array<string,mixed> */
 	public function jsonSerialize(): array {
-		return [
+		$result=[
 			'application_id'=>$this->applicationId,
 			'schema'=>$this->schema,
 			'journal_table'=>$this->journalTable,
@@ -203,6 +210,10 @@ final class PostgreSqlMigrationProfile implements JsonSerializable {
 			'lock_timeout'=>$this->lockTimeout,
 			'statement_timeout'=>$this->statementTimeout,
 		];
+		if($this->dataEnvironmentSessionSetting!==null){
+			$result['data_environment_session_setting']=$this->dataEnvironmentSessionSetting;
+		}
+		return $result;
 	}
 
 	public static function validVersion(?string $version): bool {
@@ -304,6 +315,25 @@ final class PostgreSqlMigrationProfile implements JsonSerializable {
 		$value=strtolower(trim($value));
 		if(preg_match('/^(?:[1-9][0-9]{0,5})(?:ms|s|min)$/D', $value)!==1){
 			throw new InvalidArgumentException('PostgreSQL migration '.$label.' is invalid.');
+		}
+		return $value;
+	}
+
+	private static function normalizeDataEnvironmentSessionSetting(mixed $value,string $applicationId): ?string {
+		if($value===null){
+			return null;
+		}
+		if(!is_string($value)){
+			throw new InvalidArgumentException('PostgreSQL migration data-environment session setting is invalid.');
+		}
+		$value=trim($value);
+		$prefix=strtolower($applicationId).'.';
+		if(
+			strlen($value)>191
+			|| !str_starts_with($value,$prefix)
+			|| preg_match('/^[a-z][a-z0-9_]{0,62}(?:\.[a-z][a-z0-9_]{0,62}){1,2}$/D',$value)!==1
+		){
+			throw new InvalidArgumentException('PostgreSQL migration data-environment session setting is invalid.');
 		}
 		return $value;
 	}

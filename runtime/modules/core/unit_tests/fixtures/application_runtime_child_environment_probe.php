@@ -27,7 +27,10 @@ try{
 		'refetch_rejected'=>$refetchRejected,'descriptor_closed'=>$descriptorClosed,
 		'secret_absent_from_proc'=>is_string($secret) && !str_contains($environ,$secret) && !str_contains($cmdline,$secret),
 		'pre_exec_closer_rejected'=>dataphyre_close_unlisted_inherited_fds()===false,
-		'no_new_privileges'=>$identity['no_new_privileges'],'cap_eff'=>$identity['cap_eff'],
+		'no_new_privileges'=>$identity['no_new_privileges'],
+		'cap_inheritable'=>$identity['cap_inheritable'],'cap_permitted'=>$identity['cap_permitted'],
+		'cap_eff'=>$identity['cap_eff'],'cap_bounding'=>$identity['cap_bounding'],
+		'cap_ambient'=>$identity['cap_ambient'],
 		'uid'=>$identity['uid'],'gid'=>$identity['gid'],'groups'=>$identity['groups'],
 	];
 	if(is_string($secret)) sodium_memzero($secret);

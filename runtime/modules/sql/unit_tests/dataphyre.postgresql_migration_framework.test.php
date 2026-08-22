@@ -252,6 +252,7 @@ test('PostgreSQL migration profiles keep application policy explicit and immutab
 	$t->same('schema_migration_events', $profile->eventTable());
 	$t->same('release_sha256', $profile->releaseDigestColumn());
 	$t->same('fixture.postgresql_migrations', $profile->advisoryLock());
+	$t->same(null, $profile->dataEnvironmentSessionSetting());
 	$t->same(['001_base', '002_cutoff'], $profile->bootstrapIds());
 	$t->same('002_cutoff', $profile->bootstrapCutoff());
 	$t->same('migrations/postgresql/manifest.json', $profile->manifestPublicPath());
@@ -277,11 +278,20 @@ test('PostgreSQL migration profiles keep application policy explicit and immutab
 	$t->same('fixture', $profile->jsonSerialize()['application_id']);
 	$compatibilityProfile=dp_postgresql_migration_profile([
 		'release_digest_column'=>'artifact_digest_sha256',
+		'data_environment_session_setting'=>'fixture.change_control_environment',
 	]);
 	$t->same('artifact_digest_sha256', $compatibilityProfile->releaseDigestColumn());
 	$t->same(
 		'artifact_digest_sha256',
 		$compatibilityProfile->jsonSerialize()['release_digest_column']
+	);
+	$t->same(
+		'fixture.change_control_environment',
+		$compatibilityProfile->dataEnvironmentSessionSetting()
+	);
+	$t->same(
+		'fixture.change_control_environment',
+		$compatibilityProfile->jsonSerialize()['data_environment_session_setting']
 	);
 	$mixedCaseProfile=dp_postgresql_migration_profile([
 		'schema'=>'Fixture',
@@ -365,6 +375,11 @@ test('PostgreSQL migration profiles reject ambiguous or unsafe policy', static f
 		[['advisory_lock'=>''], 'advisory lock key'],
 		[['advisory_lock'=>str_repeat('x', 192)], 'advisory lock key'],
 		[['advisory_lock'=>"bad\nlock"], 'advisory lock key'],
+		[['data_environment_session_setting'=>false], 'data-environment session setting'],
+		[['data_environment_session_setting'=>'search_path'], 'data-environment session setting'],
+		[['data_environment_session_setting'=>'other.environment'], 'data-environment session setting'],
+		[['data_environment_session_setting'=>'fixture.bad-value'], 'data-environment session setting'],
+		[['data_environment_session_setting'=>'fixture.'.str_repeat('x',64)], 'data-environment session setting'],
 		[['bootstrap_ids'=>'not-a-list'], 'bootstrap IDs must be a list'],
 		[['bootstrap_ids'=>['002_wrong']], 'bootstrap IDs are invalid'],
 		[['bootstrap_ids'=>['001_one', '001_one']], 'bootstrap IDs are invalid'],
