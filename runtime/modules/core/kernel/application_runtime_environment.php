@@ -127,6 +127,17 @@ final class DataphyreApplicationRuntimeEnvironment
 			$values['DATAPHYRE_DATABASE_'.$field]=$value;
 		}
 		$values['DATAPHYRE_DATABASE_BINDING_PRIMARY_SHA256']=$marker;
+		foreach(array_keys($values) as $name){
+			if(!is_string($name)) continue;
+			if(preg_match('/^DATAPHYRE_DATABASE_BINDING_[A-Z][A-Z0-9_]{0,31}_SHA256$/D',$name)===1
+				&& $name!=='DATAPHYRE_DATABASE_BINDING_PRIMARY_SHA256'){
+				unset($values[$name]);
+				continue;
+			}
+			if(preg_match('/^DATAPHYRE_DATABASE_[A-Z][A-Z0-9_]{0,31}_(?:DSN|HOST|PORT|NAME|USER|PASSWORD)$/D',$name)===1){
+				unset($values[$name]);
+			}
+		}
 		ksort($values,SORT_STRING);
 		return $values;
 	}
@@ -139,6 +150,7 @@ final class DataphyreApplicationRuntimeEnvironment
 			'DATAPHYRE_APPLICATION_ID','DATAPHYRE_FRAMEWORK_APPLICATION','DATAPHYRE_ENVIRONMENT',
 			'DATAPHYRE_APPLICATION_RELEASE',
 			'DATAPHYRE_ONE_SHOT_OPERATION','DATAPHYRE_ONE_SHOT_DATABASE_PURPOSE',
+			'DATAPHYRE_ONE_SHOT_SEED_PROFILE','DATAPHYRE_ONE_SHOT_SEED_ALLOW_DEMO',
 			'DATAPHYRE_ONE_SHOT_CACHE_PHASE','DATAPHYRE_ONE_SHOT_CACHE_CHALLENGE',
 				'DATAPHYRE_RUNTIME_ACTIVATION_MODE',
 			'DATAPHYRE_RUNTIME_SCHEDULER_INTERVAL_SECONDS',

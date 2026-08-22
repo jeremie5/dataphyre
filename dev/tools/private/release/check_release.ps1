@@ -744,8 +744,10 @@ if (Test-Path $devDirectory -PathType Container) {
 			foreach ($managedRuntimeReleaseTerm in @(
 				'runtime/modules/core/kernel/application_runtime_php_fpm.conf',
 				'runtime/modules/core/kernel/application_runtime_release_probe.php',
+				'runtime/modules/core/kernel/application_runtime_seed_evidence.php',
 				'runtime/modules/core/kernel/application_runtime_scheduler_gateway.php',
-				'runtime/modules/core/kernel/application_runtime_web_gateway.php'
+				'runtime/modules/core/kernel/application_runtime_web_gateway.php',
+				'runtime/modules/sql/kernel/managed_seeds.php'
 			)) {
 				if ($checkPublicExportText -notmatch [regex]::Escape($managedRuntimeReleaseTerm)) {
 					Add-Failure "check_public_export.ps1 is missing managed-runtime release-closure term: $managedRuntimeReleaseTerm"

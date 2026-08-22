@@ -21,6 +21,11 @@ use JsonSerializable;
  * definitions automatically receive a checksum derived from their source file.
  */
 final class SeedDefinition implements JsonSerializable {
+	private const MAXIMUM_CONTENT_SOURCES=64;
+	private const MAXIMUM_CONTENT_SOURCE_FILE_BYTES=8388608;
+	private const MAXIMUM_CONTENT_SOURCE_FILES=4096;
+	private const MAXIMUM_CONTENT_SOURCE_AGGREGATE_BYTES=67108864;
+
 	private Closure $up;
 	private ?Closure $down;
 	private ?Closure $preflight;
@@ -95,23 +100,79 @@ final class SeedDefinition implements JsonSerializable {
 		);
 	}
 
-	/** Returns a copy associated with a source file and its content checksum. */
-	public function withSource(string $source, string $source_checksum): self {
+	/**
+	 * Returns a copy associated with a source file and its content checksum.
+	 *
+	 * Content sources are immutable regular files beneath the caller-selected
+	 * application root. The optional inventory is shared by SeedFileLoader so a
+	 * whole discovery operation has one count/byte budget and fingerprints a
+	 * repeated source only once.
+	 *
+	 * @param array<string,array{bytes:int,sha256:string}>|null $content_inventory
+	 */
+	public function withSource(
+		string $source,
+		string $source_checksum,
+		?string $content_root=null,
+		?array &$content_inventory=null,
+		?int &$content_bytes=null,
+	): self {
 		$source_checksum=strtolower(trim($source_checksum));
 		if(preg_match('/^[a-f0-9]{64}$/', $source_checksum)!==1){
 			throw new InvalidArgumentException('Seed source checksum must be a SHA-256 hexadecimal digest.');
 		}
+		$resolved_source=realpath($source);
+		if(!is_string($resolved_source) || is_link($source) || !is_file($resolved_source)){
+			throw new InvalidArgumentException('Seed source must be a regular non-symbolic file.');
+		}
+		$requested_root=$content_root ?? dirname($resolved_source);
+		$root=realpath($requested_root);
+		if(!is_string($root) || is_link($requested_root) || !is_dir($root)){
+			throw new InvalidArgumentException('Seed content root must be a regular non-symbolic directory.');
+		}
+		$root=self::normalizeAbsolutePath($root);
+		$resolved_source=self::normalizeAbsolutePath($resolved_source);
+		if(!self::isWithinRoot($resolved_source,$root)){
+			throw new InvalidArgumentException('Seed definition escaped its content root.');
+		}
+		if($content_inventory===null) $content_inventory=[];
+		if($content_bytes===null) $content_bytes=0;
 		$content_fingerprints=[];
 		foreach($this->content_sources as $content_source){
-			$resolved=self::absoluteContentSource($content_source, dirname($source));
-			if(!is_file($resolved)){
+			$candidate=self::lexicalAbsolutePath($content_source,dirname($resolved_source));
+			if(!self::isWithinRoot($candidate,$root) || self::containsSymbolicLink($candidate,$root)){
+				throw new InvalidArgumentException('Seed content source escaped its content root: '.$content_source);
+			}
+			$resolved=realpath($candidate);
+			if(!is_string($resolved) || is_link($candidate) || !is_file($resolved) || !is_readable($resolved)){
 				throw new InvalidArgumentException('Seed content source does not exist: '.$content_source);
 			}
-			$fingerprint=hash_file('sha256', $resolved);
-			if(!is_string($fingerprint)){
-				throw new InvalidArgumentException('Unable to fingerprint seed content source: '.$content_source);
+			$resolved=self::normalizeAbsolutePath($resolved);
+			if(!hash_equals($candidate,$resolved) || !self::isWithinRoot($resolved,$root)){
+				throw new InvalidArgumentException('Seed content source must resolve without indirection: '.$content_source);
 			}
-			$content_fingerprints[]=strtolower($fingerprint);
+			if(!isset($content_inventory[$resolved])){
+				$bytes=filesize($resolved);
+				if(!is_int($bytes) || $bytes<0 || $bytes>self::MAXIMUM_CONTENT_SOURCE_FILE_BYTES){
+					throw new InvalidArgumentException('Seed content source exceeded its byte bound: '.$content_source);
+				}
+				if(count($content_inventory)>=self::MAXIMUM_CONTENT_SOURCE_FILES
+					|| $content_bytes+$bytes>self::MAXIMUM_CONTENT_SOURCE_AGGREGATE_BYTES){
+					throw new InvalidArgumentException('Seed content source inventory exceeded its bound.');
+				}
+				$fingerprint=hash_file('sha256',$resolved);
+				clearstatcache(true,$resolved);
+				$bytes_after=filesize($resolved);
+				$fingerprint_after=hash_file('sha256',$resolved);
+				if(!is_string($fingerprint) || !is_string($fingerprint_after)
+					|| !is_int($bytes_after) || $bytes_after!==$bytes
+					|| !hash_equals($fingerprint,$fingerprint_after)){
+					throw new InvalidArgumentException('Seed content source changed while it was fingerprinted: '.$content_source);
+				}
+				$content_inventory[$resolved]=['bytes'=>$bytes,'sha256'=>strtolower($fingerprint)];
+				$content_bytes+=$bytes;
+			}
+			$content_fingerprints[]=$content_inventory[$resolved]['sha256'];
 		}
 		$checksum=hash('sha256', implode("\0", [
 			'dataphyre-seed-v1',
@@ -242,10 +303,18 @@ final class SeedDefinition implements JsonSerializable {
 		$normalized=[];
 		foreach($sources as $source){
 			$source=str_replace('\\', '/', trim((string)$source));
-			if($source===''){
-				throw new InvalidArgumentException('Seed content source paths cannot be empty.');
+			$windows_absolute=strlen($source)>=3 && ctype_alpha($source[0] ?? '')
+				&& $source[1]===':' && $source[2]==='/';
+			if($source==='' || strlen($source)>4096 || preg_match('/[\x00-\x1f\x7f]/D',$source)===1){
+				throw new InvalidArgumentException('Seed content source path is invalid.');
+			}
+			if($source[0]==='/' || $windows_absolute){
+				throw new InvalidArgumentException('Seed content source paths must be relative.');
 			}
 			$normalized[$source]=$source;
+			if(count($normalized)>self::MAXIMUM_CONTENT_SOURCES){
+				throw new InvalidArgumentException('Seed content source list exceeded its bound.');
+			}
 		}
 		return array_values($normalized);
 	}
@@ -263,12 +332,40 @@ final class SeedDefinition implements JsonSerializable {
 		return array_values($normalized);
 	}
 
-	private static function absoluteContentSource(string $source, string $base): string {
-		$windows_absolute=strlen($source)>=3 && ctype_alpha($source[0]) && $source[1]===':' && in_array($source[2], ['/', '\\'], true);
-		if($source[0]==='/' || $source[0]==='\\' || $windows_absolute){
-			return $source;
+	private static function lexicalAbsolutePath(string $source,string $base): string {
+		$path=self::normalizeAbsolutePath(rtrim($base,'/').'/'.$source);
+		$prefix=str_starts_with($path,'/') ? '/' : '';
+		$parts=[];
+		foreach(explode('/',trim($path,'/')) as $part){
+			if($part==='' || $part==='.') continue;
+			if($part==='..'){
+				if($parts===[]) throw new InvalidArgumentException('Seed content source path is invalid.');
+				array_pop($parts);
+				continue;
+			}
+			$parts[]=$part;
 		}
-		return rtrim($base, '/\\').'/'.ltrim($source, '/\\');
+		return $prefix.implode('/',$parts);
+	}
+
+	private static function normalizeAbsolutePath(string $path): string {
+		$normalized=str_replace('\\','/',$path);
+		return $normalized==='/' ? '/' : rtrim($normalized,'/');
+	}
+
+	private static function isWithinRoot(string $path,string $root): bool {
+		return hash_equals($path,$root) || str_starts_with($path,rtrim($root,'/').'/');
+	}
+
+	private static function containsSymbolicLink(string $path,string $root): bool {
+		if(!self::isWithinRoot($path,$root)) return true;
+		$relative=ltrim(substr($path,strlen($root)),'/');
+		$current=$root;
+		foreach($relative==='' ? [] : explode('/',$relative) as $part){
+			$current.='/'.$part;
+			if(is_link($current)) return true;
+		}
+		return false;
 	}
 
 	/** @param list<string> $dependencies */

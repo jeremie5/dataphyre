@@ -185,6 +185,65 @@ test('SQL seed definitions and file discovery explain content fingerprint failur
 	))->withSource($source, hash('sha256', 'source')), InvalidArgumentException::class);
 	$t->throws(static fn()=>new SeedDefinition('profile.bad', 1, static fn()=>null, null, '', [], '', null, ['bad profile']), InvalidArgumentException::class);
 	$t->throws(static fn()=>new SeedDefinition('content.bad', 1, static fn()=>null, null, '', [], '', null, ['default'], ['']), InvalidArgumentException::class);
+	$t->throws(static fn()=>new SeedDefinition(
+		'content.absolute',1,static fn()=>null,null,'',[],'',null,['default'],[$content],
+	),InvalidArgumentException::class);
+	$t->throws(static fn()=>new SeedDefinition(
+		'content.count',1,static fn()=>null,null,'',[],'',null,['default'],
+		array_map(static fn(int $index): string=>'content-'.$index.'.json',range(0,64)),
+	),InvalidArgumentException::class);
+	$t->throws(static fn()=>new SeedDefinition(
+		'content.path-bytes',1,static fn()=>null,null,'',[],'',null,['default'],[str_repeat('a',4097)],
+	),InvalidArgumentException::class);
+	$t->throws(static fn()=>new SeedDefinition(
+		'content.control',1,static fn()=>null,null,'',[],'',null,['default'],["payload\n.json"],
+	),InvalidArgumentException::class);
+	$lexical=(new \ReflectionClass(SeedFileLoader::class))->getMethod('lexicalAbsolutePath');
+	$t->same('C:/project/seeds/demo.seed.php',$lexical->invoke(null,'C:\\project\\catalog\\..\\seeds\\demo.seed.php'));
+	$t->throws(static fn()=>$lexical->invoke(null,'\\\\server\\share\\demo.seed.php'),RuntimeException::class);
+
+	$projectRoot=$root.'/project';
+	$projectSeed=$workspace->file('project/database/seeds/project.seed.php', <<<'PHP'
+<?php
+return ['id'=>'content.project','version'=>1,'up'=>static fn()=>null,'content_sources'=>['../../src/payload.json']];
+PHP);
+	$workspace->file('project/src/payload.json','{"project":true}');
+	$t->same('content.project@1',SeedFileLoader::load($projectSeed,$projectRoot)[0]->key());
+	$t->throws(static fn()=>SeedFileLoader::load($projectSeed),InvalidArgumentException::class);
+	$workspace->file('outside.json','{"outside":true}');
+	$outsideExecutionSentinel=$root.'/outside-executed.txt';
+	$outsideDefinition=$workspace->file('outside-executable.seed.php',
+		'<?php file_put_contents('.var_export($outsideExecutionSentinel,true).',"executed"); return ["id"=>"outside.execution","up"=>static fn()=>null];',
+	);
+	$t->throws(static fn()=>SeedFileLoader::load($outsideDefinition,$projectRoot),RuntimeException::class);
+	$t->isFalse(is_file($outsideExecutionSentinel));
+	$escaping=$workspace->file('project/database/seeds/escaping.seed.php',
+		'<?php return ["id"=>"content.escape","up"=>static fn()=>null,"content_sources"=>["../../../outside.json"]];',
+	);
+	$t->throws(static fn()=>SeedFileLoader::load($escaping,$projectRoot),InvalidArgumentException::class);
+	$oversizedContent=$projectRoot.'/src/oversized.bin';
+	$handle=fopen($oversizedContent,'wb');
+	if(!is_resource($handle) || !ftruncate($handle,8388609)){
+		throw new RuntimeException('Unable to create oversized seed fixture.');
+	}
+	fclose($handle);
+	$oversizedDefinition=$workspace->file('project/database/seeds/oversized-content.seed.php',
+		'<?php return ["id"=>"content.oversized","up"=>static fn()=>null,"content_sources"=>["../../src/oversized.bin"]];',
+	);
+	$t->throws(static fn()=>SeedFileLoader::load($oversizedDefinition,$projectRoot),InvalidArgumentException::class);
+	$linkContent=$projectRoot.'/src/link.json';
+	if(function_exists('symlink') && @symlink($projectRoot.'/src/payload.json',$linkContent)){
+		try{
+			$linkDefinition=$workspace->file('project/database/seeds/link-content.seed.php',
+				'<?php return ["id"=>"content.link","up"=>static fn()=>null,"content_sources"=>["../../src/link.json"]];',
+			);
+			$t->throws(static fn()=>SeedFileLoader::load($linkDefinition,$projectRoot),InvalidArgumentException::class);
+		}finally{@unlink($linkContent);}
+	}
+	$inventory=[];$aggregateBytes=67108864;
+	$t->throws(static fn()=>(new SeedDefinition(
+		'content.aggregate',1,static fn()=>null,null,'',[],'',null,['default'],['payload.json'],
+	))->withSource($source,hash('sha256','source'),$root,$inventory,$aggregateBytes),InvalidArgumentException::class);
 
 	$single=$workspace->file('single.seed.php', <<<'PHP'
 <?php
@@ -197,6 +256,30 @@ PHP);
 	$unreadable=$workspace->file('unreadable.seed.php', '<?php return ["id"=>"file.unreadable", "up"=>static fn()=>null];');
 	$failures->put('hash_file', [str_replace('\\', '/', $unreadable)]);
 	$t->throws(static fn()=>SeedFileLoader::load($unreadable), RuntimeException::class);
+	$t->throws(static fn()=>SeedFileLoader::load(array_fill(0,17,'')),RuntimeException::class);
+	$oversized=$workspace->file('oversized.seed.php','<?php '.str_repeat(' ',2097152));
+	$t->throws(static fn()=>SeedFileLoader::load($oversized),RuntimeException::class);
+	$tooMany=$workspace->file('too-many.seed.php', <<<'PHP'
+<?php
+$definitions=[];
+for($index=0;$index<4097;$index++){
+	$definitions[]=['id'=>'many.seed.'.$index,'version'=>1,'up'=>static fn()=>null];
+}
+return $definitions;
+PHP);
+	$t->throws(static fn()=>SeedFileLoader::load($tooMany),RuntimeException::class);
+	$link=$root.'/linked.seed.php';
+	if(function_exists('symlink') && @symlink($single,$link)){
+		try{$t->throws(static fn()=>SeedFileLoader::load($link),RuntimeException::class);}
+		finally{@unlink($link);}
+	}
+	$loaderSource=(string)file_get_contents(dirname(__DIR__).'/Framework/Seeds/SeedFileLoader.php');
+	$definitionSource=(string)file_get_contents(dirname(__DIR__).'/Framework/Seeds/SeedDefinition.php');
+	foreach(['MAXIMUM_INSPECTED_ENTRIES','MAXIMUM_SEED_FILES','MAXIMUM_SEED_FILE_BYTES',
+		'MAXIMUM_AGGREGATE_BYTES','MAXIMUM_DEFINITIONS'] as $bound) $t->contains($bound,$loaderSource);
+	foreach(['MAXIMUM_CONTENT_SOURCES','MAXIMUM_CONTENT_SOURCE_FILE_BYTES',
+		'MAXIMUM_CONTENT_SOURCE_FILES','MAXIMUM_CONTENT_SOURCE_AGGREGATE_BYTES',
+		'containsSymbolicLink','isWithinRoot'] as $bound) $t->contains($bound,$definitionSource);
 	$t->contains($root, str_replace('\\', '/', $single));
 })->tag('sql','seeds','files','fingerprints','failures')->maxMillis(5000);
 
@@ -341,15 +424,24 @@ test('SQL seed CLI renders help status rollback plans and rejects ambiguous opti
 	], new InMemorySeedLedger());
 	$t->same(0, dp_sql_seed_main(['seeds.php','--help'], true, $writeOut, $writeErr, $manager));
 	$t->contains('Usage:', $out);
+	$t->contains('--data-environment=<name>', $out);
 	$out='';
 	$t->same(0, dp_sql_seed_main(['seeds.php','status'], true, $writeOut, $writeErr, $manager));
 	$t->contains("cli.reversible@1\tpending", $out);
 	$t->throws(static fn()=>dp_sql_seed_options(['seeds.php','apply','again']), RuntimeException::class);
 	$t->throws(static fn()=>dp_sql_seed_options(['seeds.php','apply','--profile=bad profile']), RuntimeException::class);
+	$t->throws(static fn()=>dp_sql_seed_options(['seeds.php','apply','--data-environment=bad value']), RuntimeException::class);
 	$t->throws(static fn()=>dp_sql_seed_options(['seeds.php','apply','--unknown=value']), RuntimeException::class);
-	$options=dp_sql_seed_options(['seeds.php','apply','--ledger-table=custom_seed_ledger']);
+	$t->same(null,dp_sql_seed_bootstrap_path('/project','valid.app-name'));
+	$t->same(null,dp_sql_seed_bootstrap_path('/project','valid$app'));
+	$t->throws(static fn()=>dp_sql_seed_bootstrap_path('/project','../invalid'),RuntimeException::class);
+	$options=dp_sql_seed_options(['seeds.php','apply','--ledger-table=custom_seed_ledger','--data-environment=sandbox']);
 	$t->same('custom_seed_ledger', $options['ledger_table']);
+	$t->same('sandbox', $options['data_environment']);
 	$t->same('C:\\seed\\definition.php', dp_sql_seed_absolute_path('/project', 'C:\\seed\\definition.php'));
+	$t->throws(static fn()=>dp_sql_seed_manager(dp_sql_seed_options([
+		'seeds.php','apply','--project-root=/project','--profile=demo',
+	])),RuntimeException::class);
 
 	$manager->apply();
 	$dryRun=dp_sql_seed_rollback_command($manager, ['ids'=>['cli.reversible@1'], 'dry_run'=>true]);
@@ -367,6 +459,35 @@ test('SQL seed CLI renders help status rollback plans and rejects ambiguous opti
 	$t->contains("listed@1\tdefined\tyes\tListed seed", $out);
 })->tag('sql','seeds','cli','rendering','rollback')->maxMillis(5000);
 
+test('SQL seed CLI scopes managed profile execution to the configured data environment', static function(Context $t): void {
+	if(!class_exists('Dataphyre\\Database\\DataEnvironment',false)){
+		define_test_symbols(<<<'PHP'
+namespace Dataphyre\Database;
+final class DataEnvironment {
+	public static function run(string $name,callable $callback,array $overrides=[]): mixed {
+		\Dataphyre\Test\TestState::channel('sql.seed-data-environment')->append('names',$name);
+		return $callback();
+	}
+}
+PHP);
+	}
+	$state=$t->state('sql.seed-data-environment',['names'=>[]]);
+	$manager=new SeedManager([
+		new SeedDefinition('cli.environment',1,static fn()=>null),
+	],new InMemorySeedLedger());
+	$out='';$err='';
+	$status=dp_sql_seed_main(
+		['seeds.php','status','--data-environment=sandbox','--json'],
+		true,
+		static function(string $message) use (&$out): void {$out.=$message;},
+		static function(string $message) use (&$err): void {$err.=$message;},
+		$manager,
+	);
+	$t->same(0,$status,$err);$t->same('',$err);
+	$t->same(['sandbox'],$state->get('names'));
+	$t->same(true,json_decode($out,true,32,JSON_THROW_ON_ERROR)['ok'] ?? null);
+})->tag('sql','seeds','cli','data-environment','cache-namespace')->maxMillis(5000);
+
 test('SQL seed CLI resolves configured discovery roots and missing explicit bootstraps', static function(Context $t): void {
 	dp_seed_define_sql_facade();
 	$workspace=$t->workspace('sql-seed-manager-discovery');
@@ -378,11 +499,27 @@ PHP);
 	if(!defined('DP_CORE_CFG')) define('DP_CORE_CFG', ['datacenter'=>'coverage']);
 	if(!defined('DP_SQL_CFG')) define('DP_SQL_CFG', [
 		'default_cluster'=>'primary',
-		'datacenters'=>['coverage'=>['dbms_clusters'=>['primary'=>['dbms'=>'postgresql']]]],
+		'data_environments'=>['sandbox'=>['cluster'=>'sandbox','cache_namespace'=>'seed-sandbox']],
+		'datacenters'=>['coverage'=>['dbms_clusters'=>[
+			'primary'=>['dbms'=>'postgresql'],'sandbox'=>['dbms'=>'postgresql'],
+		]]],
 		'seeds'=>['paths'=>[], 'ledger_table'=>'configured_seed_ledger'],
 	]);
 	$manager=dp_sql_seed_manager(dp_sql_seed_options(['seeds.php','list','--project-root='.$root]));
 	$t->same(['configured.discovery@1'], array_column($manager->catalog(), 'key'));
+	$environmentManager=dp_sql_seed_manager(dp_sql_seed_options([
+		'seeds.php','list','--project-root='.$root,'--data-environment=sandbox',
+	]));
+	$contextProperty=new ReflectionProperty($environmentManager,'context');
+	$context=$contextProperty->getValue($environmentManager);
+	$t->same('sandbox',$context->cluster());
+	$t->same('sandbox',$context->attribute('data_environment'));
+	$t->throws(static fn()=>dp_sql_seed_manager(dp_sql_seed_options([
+		'seeds.php','list','--project-root='.$root,'--cluster=primary','--data-environment=sandbox',
+	])), RuntimeException::class);
+	$t->throws(static fn()=>dp_sql_seed_manager(dp_sql_seed_options([
+		'seeds.php','list','--project-root='.$root,'--data-environment=missing',
+	])), RuntimeException::class);
 	$t->throws(static fn()=>dp_sql_seed_manager(dp_sql_seed_options([
 		'seeds.php','list','--project-root='.$root,'--bootstrap=missing.php',
 	])), RuntimeException::class);

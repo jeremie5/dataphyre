@@ -366,6 +366,7 @@ class mysql_query_builder {
 	 */
 	public static function execute_multiquery(string $queue='', bool $hydration_retry=false) : null|bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		if(!sql::deferred_queries_allowed()) throw new \RuntimeException('Deferred SQL queue execution is unavailable inside an immediate-only boundary.');
 		if(!isset(self::$queued_queries[$queue]))return null;
 		$queued_queries=self::$queued_queries[$queue];
 		unset(self::$queued_queries[$queue]);
@@ -538,6 +539,7 @@ class mysql_query_builder {
 	 */
 	public static function mysql_query(string $dbms_cluster, string $query, ?array $vars, ?bool $associative, ?bool $multipoint=true) : bool|array {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		\dataphyre\sql::assert_immediate_transaction_driver_query($dbms_cluster, $query);
 		if(null!==$early_return=core::dialback("CALL_SQL_SIMPLE_SELECT",...func_get_args())) return $early_return;
 		$execute_query=function($conn) use ($query, $vars) {
 			if(is_array($vars)){
@@ -625,13 +627,15 @@ class mysql_query_builder {
 	 */
 	public static function mysql_select(string $dbms_cluster, string $select, string $location, ?string $params, ?array $vars, ?bool $associative) : bool|array {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		$query="SELECT ".$select." FROM ".$location." ".$params;
+		\dataphyre\sql::assert_immediate_transaction_driver_query($dbms_cluster, $query);
 		if(null!==$early_return=core::dialback("CALL_SQL_SIMPLE_SELECT",...func_get_args())) return $early_return;
 		$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster);
 		$query_result=false;
 		try{
 			if(is_array($vars)){
 				$datatypes=str_repeat("s", count($vars));
-				$stmt=$conn->prepare($query="SELECT ".$select." FROM ".$location." ".$params);
+				$stmt=$conn->prepare($query);
 				if($stmt===false){
 					throw new \RuntimeException('Query failed: '.$conn->error);
 				}
@@ -642,7 +646,7 @@ class mysql_query_builder {
 			}
 			else
 			{
-				$result=mysqli_query($conn,$query="SELECT ".$select." FROM ".$location." ".$params);
+				$result=mysqli_query($conn,$query);
 			}
 			if($result===false){
 				throw new \RuntimeException('Query failed: '.$conn->error);
@@ -682,9 +686,10 @@ class mysql_query_builder {
 	 */
 	public static function mysql_count(string $dbms_cluster, string $location, string $params, ?array $vars) : int|bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		$query="SELECT COUNT(*) as count FROM ".$location." ".$params;
+		\dataphyre\sql::assert_immediate_transaction_driver_query($dbms_cluster, $query);
 		if(null!==$early_return=core::dialback("CALL_SQL_SIMPLE_COUNT",...func_get_args())) return $early_return;
 		$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster);
-		$query="SELECT COUNT(*) as count FROM ".$location." ".$params;
 		if(is_array($vars)){
 			$datatypes=str_repeat("s", count($vars));
 			$stmt=$conn->prepare($query);
@@ -728,6 +733,8 @@ class mysql_query_builder {
 	 */
 	public static function mysql_update(string $dbms_cluster, string $location, string $fields, string $params, array $vars) : bool|int {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		$query="UPDATE ".$location." SET ".$fields." ".$params;
+		\dataphyre\sql::assert_immediate_transaction_driver_query($dbms_cluster, $query);
 		if(null!==$early_return=core::dialback("CALL_SQL_SIMPLE_UPDATE",...func_get_args())) return $early_return;
 		$datatypes='';
 		foreach($vars as &$value){
@@ -741,7 +748,6 @@ class mysql_query_builder {
 		shuffle($endpoints);
 		foreach($endpoints as $endpoint){
 			$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint, $dbms_cluster);
-			$query="UPDATE ".$location." SET ".$fields." ".$params;
 			try{
 				$stmt=$conn->prepare($query);
 				if($stmt===false){
@@ -780,19 +786,20 @@ class mysql_query_builder {
 	 */
 	public static function mysql_insert(string $dbms_cluster, string $location, string $fields, array $vars, string $returning='*') : array|bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		$fields_question_marks=rtrim(str_repeat('?,', count(explode(',', $fields))), ',');
+		$query="INSERT IGNORE INTO ".$location." (".$fields.") VALUES (".$fields_question_marks.") RETURNING ".$returning;
+		\dataphyre\sql::assert_immediate_transaction_driver_query($dbms_cluster, $query);
 		if(null!==$early_return=core::dialback("CALL_SQL_SIMPLE_INSERT",...func_get_args())) return $early_return;
 		$datatypes='';
 		foreach($vars as &$value){
 			$datatypes.=is_bool($value)?'i':(is_int($value)?'i':'s');
 			if(is_bool($value))$value=(int)$value;
 		}
-		$fields_question_marks=rtrim(str_repeat('?,', count(explode(',', $fields))), ',');
 		$is_multipoint=DP_SQL_CFG['tables'][$location]['multipoint_writes']??false;
 		$endpoints=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
 		shuffle($endpoints);
 		$result_key=false;
 		foreach($endpoints as $endpoint){
-			$query="INSERT IGNORE INTO ".$location." (".$fields.") VALUES (".$fields_question_marks.") RETURNING ".$returning;
 			try{
 				$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint, $dbms_cluster);
 				$stmt=$conn->prepare($query);
@@ -826,6 +833,8 @@ class mysql_query_builder {
 	 */
 	public static function mysql_delete(string $dbms_cluster, string $location, string $params, ?array $vars) : bool|int {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		$query="DELETE FROM ".$location." ".$params;
+		\dataphyre\sql::assert_immediate_transaction_driver_query($dbms_cluster, $query);
 		if(null!==$early_return=core::dialback("CALL_SQL_SIMPLE_DELETE",...func_get_args())) return $early_return;
 		$succeeded=0;
 		$affected_rows=[];
@@ -841,7 +850,6 @@ class mysql_query_builder {
 		shuffle($endpoints);
 		foreach($endpoints as $endpoint){
 			$conn=(!$is_multipoint && isset(self::$conns[$dbms_cluster])) ? self::$conns[$dbms_cluster] : self::connect_to_endpoint($endpoint, $dbms_cluster);
-			$query="DELETE FROM ".$location." ".$params;
 			try{
 				if(!empty($vars)){
 					$stmt=$conn->prepare($query);

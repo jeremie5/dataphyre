@@ -398,6 +398,7 @@ class sqlite_query_builder {
 	 */
 	public static function execute_multiquery(string $queue='', bool $hydration_retry=false) : null|bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		if(!sql::deferred_queries_allowed()) throw new \RuntimeException('Deferred SQL queue execution is unavailable inside an immediate-only boundary.');
 		if(!isset(self::$queued_queries[$queue]))return null;
 		$queued_queries=self::$queued_queries[$queue];
 		unset(self::$queued_queries[$queue]);
@@ -552,6 +553,7 @@ class sqlite_query_builder {
 	 */
 	public static function sqlite_query(string $dbms_cluster, string $query, ?array $vars, ?bool $associative, ?bool $multipoint=true) : bool|array {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		\dataphyre\sql::assert_immediate_transaction_driver_query($dbms_cluster, $query);
 		if(null !== $early_return=core::dialback("CALL_SQL_SIMPLE_SELECT", ...func_get_args())) return $early_return;
 		$execute_query=function($conn) use ($query, $vars, $associative){
 			if(is_array($vars)){
@@ -629,11 +631,13 @@ class sqlite_query_builder {
 	 */
 	public static function sqlite_select(string $dbms_cluster, string $select, string $location, ?string $params, ?array $vars, ?bool $associative) : bool|array {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		$query="SELECT ".$select." FROM ".$location." ".$params;
+		\dataphyre\sql::assert_immediate_transaction_driver_query($dbms_cluster, $query);
 		if(null !== $early_return=core::dialback("CALL_SQL_SIMPLE_SELECT", ...func_get_args())) return $early_return;
 		$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster);
 		try{
 			if(is_array($vars)){
-				if(false===$stmt=$conn->prepare($query="SELECT ".$select." FROM ".$location." ".$params)){
+				if(false===$stmt=$conn->prepare($query)){
 					throw new \Exception('Query preparation failed: '.$conn->lastErrorMsg());
 				}
 				foreach($vars as $index=>$var){
@@ -652,7 +656,7 @@ class sqlite_query_builder {
 			}
 			else
 			{
-				$result=$conn->query($query="SELECT ".$select." FROM ".$location." ".$params);
+				$result=$conn->query($query);
 				if($result===false){
 					throw new \Exception('Query execution failed: '.$conn->lastErrorMsg());
 				}
@@ -687,9 +691,10 @@ class sqlite_query_builder {
 	 */
 	public static function sqlite_count(string $dbms_cluster, string $location, string $params, ?array $vars) : int|bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		$query="SELECT COUNT(*) as count FROM ".$location." ".$params;
+		\dataphyre\sql::assert_immediate_transaction_driver_query($dbms_cluster, $query);
 		if(null !== $early_return=core::dialback("CALL_SQL_SIMPLE_COUNT", ...func_get_args())) return $early_return;
 		$conn=isset(self::$conns[$dbms_cluster]) ? self::$conns[$dbms_cluster] : self::connect_to_cluster($dbms_cluster);
-		$query="SELECT COUNT(*) as count FROM ".$location." ".$params;
 		try{
 			if(is_array($vars)){
 				if(false===$stmt=$conn->prepare($query)){
@@ -734,11 +739,12 @@ class sqlite_query_builder {
 	 */
 	public static function sqlite_update(string $dbms_cluster, string $location, string $fields, string $params, array $vars) : bool|int {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		$query="UPDATE ".$location." SET ".$fields." ".$params;
+		\dataphyre\sql::assert_immediate_transaction_driver_query($dbms_cluster, $query);
 		if(null !== $early_return=core::dialback("CALL_SQL_SIMPLE_UPDATE", ...func_get_args())) return $early_return;
 		$is_multipoint=DP_SQL_CFG['tables'][$location]['multipoint_writes'] ?? false;
 		$endpoints=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
 		shuffle($endpoints);
-		$query="UPDATE ".$location." SET ".$fields." ".$params;
 		$execute_update=function($conn) use ($query, $vars): int {
 			if(false===$stmt=$conn->prepare($query)){
 				throw new \Exception('Query preparation failed: '.$conn->lastErrorMsg());
@@ -787,12 +793,13 @@ class sqlite_query_builder {
 	 */
 	public static function sqlite_insert(string $dbms_cluster, string $location, string $fields, array $vars) : array|bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
-		if(null !== $early_return=core::dialback("CALL_SQL_SIMPLE_INSERT", ...func_get_args())) return $early_return;
 		$fields_question_marks=rtrim(str_repeat('?,', count($vars)), ',');
+		$query="INSERT OR IGNORE INTO ".$location." (".$fields.") VALUES (".$fields_question_marks.")";
+		\dataphyre\sql::assert_immediate_transaction_driver_query($dbms_cluster, $query);
+		if(null !== $early_return=core::dialback("CALL_SQL_SIMPLE_INSERT", ...func_get_args())) return $early_return;
 		$is_multipoint=DP_SQL_CFG['tables'][$location]['multipoint_writes'] ?? false;
 		$endpoints=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
 		shuffle($endpoints);
-		$query="INSERT OR IGNORE INTO ".$location." (".$fields.") VALUES (".$fields_question_marks.")";
 		$execute_insert=function($conn) use ($query, $vars){
 			if(false===$stmt=$conn->prepare($query)){
 				throw new \Exception('Query preparation failed: '.$conn->lastErrorMsg());
@@ -835,13 +842,14 @@ class sqlite_query_builder {
 	 */
 	public static function sqlite_delete(string $dbms_cluster, string $location, string $params, ?array $vars) : bool|int {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		$query="DELETE FROM ".$location." ".$params;
+		\dataphyre\sql::assert_immediate_transaction_driver_query($dbms_cluster, $query);
 		if(null !== $early_return=core::dialback("CALL_SQL_SIMPLE_DELETE", ...func_get_args())) return $early_return;
 		$succeeded=0;
 		$affected_rows=[];
 		$is_multipoint=DP_SQL_CFG['tables'][$location]['multipoint_writes'] ?? false;
 		$endpoints=DP_SQL_CFG['datacenters'][DP_CORE_CFG['datacenter']]['dbms_clusters'][$dbms_cluster]['endpoints'];
 		shuffle($endpoints);
-		$query="DELETE FROM ".$location." ".$params;
 		$execute_delete=function($conn) use ($query, $vars): int {
 			if(false===$stmt=$conn->prepare($query)){
 				throw new \Exception('Query preparation failed: '.$conn->lastErrorMsg());

@@ -281,7 +281,7 @@ PHP);
 		$t->throws(static fn()=>SeedFileLoader::load($root.'/bad.seed.php'), RuntimeException::class);
 
 		$delegated=$workspace->file('delegated-fixture.php', '<?php return ["version"=>1];');
-		$delegating=$workspace->file('delegating.seed.php', '<?php return ["id"=>"delegating", "version"=>1, "up"=>static fn()=>null, "checksum"=>'.var_export(str_repeat('a', 64), true).', "content_sources"=>['.var_export($delegated, true).']];');
+		$delegating=$workspace->file('delegating.seed.php', '<?php return ["id"=>"delegating", "version"=>1, "up"=>static fn()=>null, "checksum"=>'.var_export(str_repeat('a', 64), true).', "content_sources"=>["delegated-fixture.php"]];');
 		$delegatedBefore=SeedFileLoader::load($delegating)[0];
 		$workspace->file('delegated-fixture.php', '<?php return ["version"=>2];');
 	$delegatedAfter=SeedFileLoader::load($delegating)[0];

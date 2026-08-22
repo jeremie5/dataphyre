@@ -198,6 +198,20 @@ test('transaction context defers cache invalidation until outer commit and disca
 	$rolledBack->rollback();
 	$t->same([],$state->get('invalidations'));
 
+	$scopedEnvironment=new Transaction('primary');
+	$scopedEnvironment->begin();
+	\Dataphyre\Database\DataEnvironment::run(
+		'sandbox',
+		static fn()=>Transaction::deferCacheInvalidation('serve.sandbox-orders'),
+		['cluster'=>'primary','cache_namespace'=>'serve-sandbox'],
+	);
+	$pending=$t->nonPublic($scopedEnvironment)->readProperty('pendingCacheInvalidations');
+	$captured=reset($pending);
+	$t->same([
+		'name'=>'sandbox','cluster'=>'primary','cache_namespace'=>'serve-sandbox',
+	],$captured['environment'] ?? null);
+	$scopedEnvironment->rollback();
+
 	$outerCluster=new Transaction('primary');
 	$outerCluster->begin();
 	$independentCluster=new Transaction('other');

@@ -1134,8 +1134,8 @@ return new SeedDefinition(
 	description: 'Local multi-concept portfolio fixture',
 	profiles: ['demo'],
 	content_sources: [
-		__DIR__.'/../../src/Database/Seeders/DemoPortfolioSeeder.php',
-		__DIR__.'/../../src/Support/DemoFranchisePortfolio.php',
+		'../../src/Database/Seeders/DemoPortfolioSeeder.php',
+		'../../src/Support/DemoFranchisePortfolio.php',
 	],
 );
 ```
@@ -1168,8 +1168,12 @@ an ordinary apply and require both `--profile=demo` and the explicit
 `--allow-demo` acknowledgement. Applications must still fail closed on demo
 profiles in production/staging. `content_sources` fingerprints delegated seeder
 and fixture code in addition to the definition file, so changing executable
-seed behavior is detected as drift. Persistent programmatic definitions must
-provide an explicit content checksum when no seed file is available.
+seed behavior is detected as drift. Paths are relative to the definition and
+must resolve, without symbolic-link indirection, beneath the application root
+supplied to `SeedFileLoader`. One definition may name at most 64 files; discovery
+accepts at most 4,096 unique content files, 8 MiB per file, and 64 MiB in total.
+Persistent programmatic definitions must provide an explicit content checksum
+when no seed file is available.
 
 The standalone command discovers `applications/<app>/database/seeds` with
 `--app`, accepts repeatable `--path` values, or reads
@@ -1185,6 +1189,7 @@ php runtime/modules/sql/kernel/seeds.php apply --app=serve --dry-run
 php runtime/modules/sql/kernel/seeds.php apply --app=serve
 php runtime/modules/sql/kernel/seeds.php apply --app=serve --profile=demo --allow-demo --id=serve.demo-portfolio
 php runtime/modules/sql/kernel/seeds.php status --app=serve --cluster=primary --ledger-table=dataphyre_seed_ledger
+php runtime/modules/sql/kernel/seeds.php status --app=serve --data-environment=sandbox --json
 php runtime/modules/sql/kernel/seeds.php rollback --app=serve --id=serve.reversible-reference@1 --dry-run
 php runtime/modules/sql/kernel/seeds.php rollback --app=serve --id=serve.reversible-reference@1 --confirm
 php runtime/modules/sql/kernel/seeds.php status --path=applications/serve/database/seeds --bootstrap=applications/serve/database/seeds/bootstrap.php
@@ -1203,6 +1208,45 @@ ledger record fails, `SeedExecutionException` reports the exact
 throwable; the enclosing transaction still rolls back the entire batch. There
 is deliberately no reset-all command.
 
+Dataphyre Cloud runs one atomic whole-profile apply through the fixed
+`DATAPHYRE_ONE_SHOT_OPERATION=dataphyre_seed` broker. Root requires a typed
+managed-database purpose, projects that binding onto the canonical names, and
+removes every unselected named binding before dropping to UID/GID 10001. The
+broker accepts only one profile and the explicit demo acknowledgement bit. It invokes
+`runtime/modules/sql/kernel/managed_seeds.php`, which fixes `/app`,
+`/app/database/seeds`, its `bootstrap.php`, the framework seed kernel, the
+default ledger, and the entire selected non-empty profile. Its canonical
+`dataphyre.managed_seed_apply.v1` result contains only bounded counts, keyset
+digests, batch accounting, and convergence state; application and driver
+messages are never emitted. Callers cannot supply a mode, PHP file, executable,
+seed id, cluster, ledger table, path, rollback, reset, or shell command.
+`primary` uses the live/default SQL context; another purpose activates the
+application-configured `DataEnvironment` before seed definition discovery so
+its database cluster and cache namespace move together. Direct CLI may use
+`--data-environment=<name>` for the same application-neutral behavior, and may
+not combine it with `--cluster`.
+
+The fixed Cloud path requires the application-resolved cluster to be PostgreSQL.
+Its bootstrap is trusted, side-effect-free startup/autoload configuration. It
+runs under the selected environment identity before the database transaction and
+must not load Dataphyre SQL. The outer transaction then contains definition
+discovery, preflight and apply callbacks, ledger changes, convergence, selected
+environment unwind, and the deferred-query final check. While that boundary is
+active, public Framework, kernel, and driver entry points reject deferred queues,
+raw transaction control, another database cluster, and another Fiber; same-cluster
+Framework savepoints remain available. Application seed callbacks are trusted
+committed release code. Direct native connection handles/extensions, filesystem
+effects, and network effects are not made transactional by this SQL contract and
+must not be used as part of a Cloud seed's claimed atomic work.
+
+Convergence completes before commit, so `seed_convergence_failed` rolls the SQL
+batch back. Commit acknowledgement precedes root evidence forwarding; interruption
+or missing evidence in that narrow delivery window is outcome-unknown, not proof
+of rollback or success. Cloud retries the same immutable whole-profile operation:
+ledger checksums make a committed batch converge as an idempotent no-op. Cloud
+must not infer success from the child exit code without one validated canonical
+evidence object.
+
 Native mutation transactions are supported on MySQL and PostgreSQL. SQLite
 status/catalog operations remain portable, but apply/rollback fail before the
 seed callback until Dataphyre's SQLite kernel provides one persistent
@@ -1217,8 +1261,9 @@ use Dataphyre\Database\Seeds\SeedFileLoader;
 use Dataphyre\Database\Seeds\SeedManager;
 use Dataphyre\Database\Seeds\SqlSeedLedger;
 
+$applicationRoot=__DIR__;
 $manager=new SeedManager(
-	SeedFileLoader::load(__DIR__.'/database/seeds'),
+	SeedFileLoader::load($applicationRoot.'/database/seeds', $applicationRoot),
 	new SqlSeedLedger('dataphyre_seed_ledger', cluster: 'primary'),
 	new SeedContext(attributes: ['application'=>'serve'], cluster: 'primary'),
 );

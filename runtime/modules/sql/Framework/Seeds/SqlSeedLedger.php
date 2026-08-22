@@ -153,13 +153,20 @@ final class SqlSeedLedger implements SeedLedger {
 				$this->mutation_depth--;
 			}
 		};
+		$immediateOnly=static function() use ($guarded): mixed {
+			if(class_exists(\dataphyre\sql::class,false)
+				&& method_exists(\dataphyre\sql::class,'without_deferred_queries')){
+				return \dataphyre\sql::without_deferred_queries($guarded);
+			}
+			return $guarded();
+		};
 		if($this->transaction_executor!==null){
-			return ($this->transaction_executor)($guarded);
+			return ($this->transaction_executor)($immediateOnly);
 		}
 		if($this->dbms()==='sqlite'){
 			throw new RuntimeException('Atomic native seed apply/rollback is unavailable on SQLite until the Dataphyre SQLite kernel provides one persistent transaction connection. Supply a verified transaction executor or use MySQL/PostgreSQL.');
 		}
-		return $this->connection()->transaction($guarded);
+		return $this->connection()->transaction($immediateOnly);
 	}
 
 	private function query(string|array $query, ?array $vars=null, bool $associative=false): mixed {

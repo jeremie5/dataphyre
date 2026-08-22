@@ -54,15 +54,21 @@ function dp_sql_seed_main(
 		if(!in_array($command, ['list', 'status', 'apply', 'rollback'], true)){
 			throw new RuntimeException('Unknown seed command: '.$command);
 		}
-		$manager??=dp_sql_seed_manager($options);
-		$result=match($command){
-			'list'=>$manager->catalog(),
-			'status'=>$manager->status(),
-			'apply'=>($options['dry_run'] ?? false)
-				? ['dry_run'=>true, 'pending'=>$manager->planApply($options['ids'])]
-				: $manager->apply($options['ids']),
-			'rollback'=>dp_sql_seed_rollback_command($manager, $options),
+		$data_environment=$options['data_environment'] ?? null;
+		$execute=static function() use (&$manager,$options,$command): mixed {
+			$manager??=dp_sql_seed_manager($options);
+			return match($command){
+				'list'=>$manager->catalog(),
+				'status'=>$manager->status(),
+				'apply'=>($options['dry_run'] ?? false)
+					? ['dry_run'=>true, 'pending'=>$manager->planApply($options['ids'])]
+					: $manager->apply($options['ids']),
+				'rollback'=>dp_sql_seed_rollback_command($manager, $options),
+			};
 		};
+		$result=$manager===null
+			? dp_sql_seed_in_prepared_runtime($options,$execute)
+			: dp_sql_seed_in_data_environment($data_environment,$execute);
 		dp_sql_seed_write_result($command, $result, (bool)$options['json'], $write_out);
 		return 0;
 	}catch(Throwable $throwable){
@@ -81,7 +87,78 @@ function dp_sql_seed_main(
 
 (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? ''))===__FILE__) && exit(dp_sql_seed_main(is_array($_SERVER['argv'] ?? null) ? $_SERVER['argv'] : []));
 
-/** @return array{command:string,paths:list<string>,ids:list<string>,profiles:list<string>,app:?string,bootstrap:?string,project_root:?string,ledger_table:string,cluster:?string,json:bool,dry_run:bool,confirm:bool,allow_demo:bool} */
+/** Runs definition discovery, ledger access, and callbacks inside one configured data environment. */
+function dp_sql_seed_in_data_environment(mixed $data_environment,callable $execute): mixed {
+	if(!is_string($data_environment) || $data_environment==='' || $data_environment==='live') return $execute();
+	if(!class_exists(\Dataphyre\Database\DataEnvironment::class)){
+		throw new RuntimeException('Dataphyre data environments are unavailable for seed management.');
+	}
+	return \Dataphyre\Database\DataEnvironment::run($data_environment,$execute);
+}
+
+/**
+ * Establishes the selected environment identity before the fixed application bootstrap.
+ *
+ * The bootstrap is a trusted configuration/autoload phase and is not part of the seed
+ * transaction. It may not load Dataphyre SQL itself. Definition discovery, callbacks,
+ * ledger changes, and convergence execute later inside the configured environment.
+ */
+function dp_sql_seed_in_prepared_runtime(array $options,callable $execute): mixed {
+	$environment=dp_sql_seed_prepare_runtime_environment($options);
+	return dp_sql_seed_in_resolved_environment($environment,$execute);
+}
+
+/**
+ * Loads trusted startup/configuration under the selected identity, then resolves
+ * the configured environment after that temporary frame has been fully released.
+ *
+ * @return array{name:string,cluster:?string,cache_namespace:?string}
+ */
+function dp_sql_seed_prepare_runtime_environment(array $options): array {
+	$prepared=dp_sql_seed_resolve_runtime($options);
+	$data_environment=$options['data_environment'] ?? null;
+	$name=is_string($data_environment) && $data_environment!=='' ? $data_environment : 'live';
+	$dataEnvironmentFile=$prepared['runtime_root'].'/modules/sql/Framework/DataEnvironment.php';
+	if(is_link($dataEnvironmentFile) || !is_file($dataEnvironmentFile)
+		|| !hash_equals($dataEnvironmentFile,(string)realpath($dataEnvironmentFile))){
+		throw new RuntimeException('Dataphyre data-environment bootstrap is unavailable.');
+	}
+	require_once $dataEnvironmentFile;
+	\Dataphyre\Database\DataEnvironment::run(
+		$name,
+		static function() use ($prepared): void {
+			dp_sql_seed_boot_prepared_runtime($prepared,true);
+		},
+		['cluster'=>null,'cache_namespace'=>$name==='live' ? null : $name],
+	);
+	$environment=\Dataphyre\Database\DataEnvironment::run(
+		$name,
+		static fn(array $current): array=>$current,
+	);
+	return [
+		'name'=>(string)$environment['name'],
+		'cluster'=>is_string($environment['cluster']) ? $environment['cluster'] : null,
+		'cache_namespace'=>is_string($environment['cache_namespace']) ? $environment['cache_namespace'] : null,
+	];
+}
+
+/** Runs work inside one already-resolved immutable data-environment frame. */
+function dp_sql_seed_in_resolved_environment(array $environment,callable $execute): mixed {
+	$name=$environment['name'] ?? null;
+	$cluster=$environment['cluster'] ?? null;
+	$cacheNamespace=$environment['cache_namespace'] ?? null;
+	if(!is_string($name) || $name==='' || ($cluster!==null && !is_string($cluster))
+		|| ($cacheNamespace!==null && !is_string($cacheNamespace))){
+		throw new RuntimeException('Resolved seed data environment is invalid.');
+	}
+	return \Dataphyre\Database\DataEnvironment::run(
+		$name,
+		static fn(): mixed=>$execute(),
+		['cluster'=>$cluster,'cache_namespace'=>$cacheNamespace],
+	);
+}
+
+/** @return array{command:string,paths:list<string>,ids:list<string>,profiles:list<string>,app:?string,bootstrap:?string,project_root:?string,ledger_table:string,cluster:?string,data_environment:?string,json:bool,dry_run:bool,confirm:bool,allow_demo:bool} */
 function dp_sql_seed_options(array $argv): array {
 	$options=[
 		'command'=>'help',
@@ -93,6 +170,7 @@ function dp_sql_seed_options(array $argv): array {
 		'project_root'=>null,
 		'ledger_table'=>'dataphyre_seed_ledger',
 		'cluster'=>null,
+		'data_environment'=>null,
 		'json'=>false,
 		'dry_run'=>false,
 		'confirm'=>false,
@@ -166,6 +244,13 @@ function dp_sql_seed_options(array $argv): array {
 			case 'cluster':
 				$options[$name]=trim($value);
 				break;
+			case 'data-environment':
+				$value=strtolower(trim($value));
+				if(preg_match('/^[a-z0-9][a-z0-9._-]{0,63}$/D',$value)!==1){
+					throw new RuntimeException('Invalid seed data environment: '.$value);
+				}
+				$options['data_environment']=$value;
+				break;
 			case 'project-root':
 				$options['project_root']=trim($value);
 				break;
@@ -184,18 +269,12 @@ function dp_sql_seed_options(array $argv): array {
 
 /** @param array<string,mixed> $options */
 function dp_sql_seed_manager(array $options): SeedManager {
-	$runtime_root=dirname(__DIR__, 3);
-	$package_root=dirname($runtime_root);
-	$project_root=dp_sql_seed_project_root($package_root, $options['project_root'] ?? null);
-	$app=trim((string)($options['app'] ?? ''));
-	$bootstrap=dp_sql_seed_bootstrap_path($project_root, $app, $options['bootstrap'] ?? null);
-	if($bootstrap!==null){
-		if(!is_file($bootstrap)){
-			throw new RuntimeException('Seed bootstrap file does not exist: '.$bootstrap);
-		}
-		require_once $bootstrap;
+	$profiles=is_array($options['profiles'] ?? null) ? array_values($options['profiles']) : ['default'];
+	if(in_array('demo',$profiles,true) && ($options['allow_demo'] ?? false)!==true){
+		throw new RuntimeException('The demo seed profile requires explicit --allow-demo acknowledgement.');
 	}
-	dp_sql_seed_boot_sql($runtime_root);
+	$prepared=dp_sql_seed_prepare_runtime($options);
+	$project_root=$prepared['project_root'];$app=$prepared['application'];
 
 	$paths=$options['paths'] ?? [];
 	if($paths===[] && defined('DP_SQL_CFG') && is_array(DP_SQL_CFG['seeds']['paths'] ?? null)){
@@ -207,26 +286,81 @@ function dp_sql_seed_manager(array $options): SeedManager {
 			: $project_root.'/database/seeds';
 	}
 	$paths=array_map(static fn(string $path): string=>dp_sql_seed_absolute_path($project_root, $path), $paths);
-	$definitions=SeedFileLoader::load($paths);
+	$definitions=SeedFileLoader::load($paths,$project_root);
 	$ledger_table=(string)($options['ledger_table'] ?? 'dataphyre_seed_ledger');
 	if($ledger_table==='dataphyre_seed_ledger' && defined('DP_SQL_CFG')){
 		$ledger_table=(string)(DP_SQL_CFG['seeds']['ledger_table'] ?? $ledger_table);
 	}
-	$cluster=isset($options['cluster']) && is_string($options['cluster']) ? $options['cluster'] : null;
+	$cluster=isset($options['cluster']) && is_string($options['cluster']) ? trim($options['cluster']) : null;
+	$cluster=$cluster!=='' ? $cluster : null;
+	$data_environment=isset($options['data_environment']) && is_string($options['data_environment'])
+		? $options['data_environment'] : null;
+	if($cluster!==null && $data_environment!==null){
+		throw new RuntimeException('Seed cluster and data environment cannot both be selected.');
+	}
+	if($data_environment!==null && $data_environment!=='live'){
+		$config=defined('DP_SQL_CFG') && is_array(DP_SQL_CFG) ? DP_SQL_CFG : [];
+		$definition=$config['data_environments'][$data_environment] ?? null;
+		$resolved=is_array($definition) ? trim((string)($definition['cluster'] ?? '')) : '';
+		if($resolved==='' || preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]*$/D',$resolved)!==1){
+			throw new RuntimeException('Seed data environment has no configured SQL cluster.');
+		}
+		$cluster=$resolved;
+	}
 	$context=new SeedContext(null, null, [
 		'project_root'=>$project_root,
 		'application'=>$options['app'] ?? null,
 		'seed_paths'=>$paths,
 		'database_cluster'=>$cluster,
-		'seed_profiles'=>$options['profiles'] ?? ['default'],
+		'data_environment'=>$data_environment,
+		'seed_profiles'=>$profiles,
 		'allow_demo'=>($options['allow_demo'] ?? false)===true,
 	], $cluster);
 	return new SeedManager(
 		$definitions,
 		new SqlSeedLedger($ledger_table, $cluster, null, null, $context->dbms()),
 		$context,
-		$options['profiles'] ?? ['default'],
+		$profiles,
 	);
+}
+
+/** @param array<string,mixed> $options @return array{runtime_root:string,project_root:string,application:string,bootstrap:?string} */
+function dp_sql_seed_resolve_runtime(array $options): array {
+	$runtime_root=dirname(__DIR__,3);$package_root=dirname($runtime_root);
+	$project_root=dp_sql_seed_project_root($package_root,$options['project_root'] ?? null);
+	$app=trim((string)($options['app'] ?? ''));
+	$bootstrap=dp_sql_seed_bootstrap_path($project_root,$app,$options['bootstrap'] ?? null);
+	return ['runtime_root'=>$runtime_root,'project_root'=>$project_root,'application'=>$app,'bootstrap'=>$bootstrap];
+}
+
+/** Loads one already-resolved trusted application bootstrap, then boots Dataphyre SQL. */
+function dp_sql_seed_boot_prepared_runtime(array $prepared,bool $reject_sql_bootstrap=false): void {
+	$runtime_root=$prepared['runtime_root'] ?? null;$bootstrap=$prepared['bootstrap'] ?? null;
+	if(!is_string($runtime_root) || $runtime_root==='' || ($bootstrap!==null && !is_string($bootstrap))){
+		throw new RuntimeException('Seed runtime preparation is invalid.');
+	}
+	$sqlWasLoaded=class_exists('\dataphyre\sql',false);
+	if($bootstrap!==null){
+		if(is_link($bootstrap) || !is_file($bootstrap) || !is_readable($bootstrap)
+			|| !hash_equals(str_replace('\\','/',$bootstrap),str_replace('\\','/',(string)realpath($bootstrap)))){
+			throw new RuntimeException('Seed bootstrap must be one readable regular non-symbolic file.');
+		}
+		require_once $bootstrap;
+	}
+	if($reject_sql_bootstrap && !$sqlWasLoaded && class_exists('\dataphyre\sql',false)){
+		throw new RuntimeException('The application seed bootstrap loaded Dataphyre SQL before its managed transaction.');
+	}
+	dp_sql_seed_boot_sql($runtime_root);
+}
+
+/** @param array<string,mixed> $options @return array{runtime_root:string,project_root:string,application:string} */
+function dp_sql_seed_prepare_runtime(array $options): array {
+	$prepared=dp_sql_seed_resolve_runtime($options);
+	dp_sql_seed_boot_prepared_runtime($prepared);
+	return [
+		'runtime_root'=>$prepared['runtime_root'],'project_root'=>$prepared['project_root'],
+		'application'=>$prepared['application'],
+	];
 }
 
 /**
@@ -237,7 +371,7 @@ function dp_sql_seed_manager(array $options): SeedManager {
  */
 function dp_sql_seed_bootstrap_path(string $project_root, string $app, ?string $explicit=null): ?string {
 	$app=trim($app);
-	if($app!=='' && preg_match('/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/', $app)!==1){
+	if($app!=='' && preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$app)!==1){
 		throw new RuntimeException('Invalid seed application name: '.$app);
 	}
 	if($explicit!==null && trim($explicit)!==''){
@@ -359,6 +493,7 @@ function dp_sql_seed_usage(callable $write): void {
 	$write("  --bootstrap=<file>           Load an application-owned CLI SQL bootstrap\n");
 	$write("  --project-root=<path>        Override application/seed discovery root\n");
 	$write("  --cluster=<name>             Bind callbacks, ledger queries, and transaction to one cluster\n");
+	$write("  --data-environment=<name>    Bind cluster and cache namespace to one configured data environment\n");
 	$write("  --ledger-table=<name>        Override the portable seed ledger table\n");
 	$write("  --id=<id[,id@version]>       Select seeds; rollback requires exactly one\n");
 	$write("  --profile=<name>              Activate a non-default seed profile (repeatable)\n");

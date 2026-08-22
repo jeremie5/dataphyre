@@ -202,7 +202,7 @@ test('one-shot dispatcher resolves every fixed supported operation after the rea
 	$worker=$kernel.'/application_runtime_one_shot_worker.php';
 	$mismatchedTarget=$kernel.'/application_runtime_database_identity.php';
 	$state=$t->workspace('core-process-entrypoint-one-shot-operations');
-	foreach(['application_preflight','artisan_migrate','dataphyre_materialize_tables','dataphyre_postgresql_migrate','dataphyre_sqlite_migrate','dataphyre_shared_cache_probe'] as $operation){
+	foreach(['application_preflight','artisan_migrate','dataphyre_materialize_tables','dataphyre_postgresql_migrate','dataphyre_sqlite_migrate','dataphyre_seed','dataphyre_shared_cache_probe'] as $operation){
 		$part=$state->file($operation.'.coverage.json','');
 		if(!chown($part,10001) || !chgrp($part,10001) || !chmod($part,0600)){
 			throw new RuntimeException('One-shot operation coverage ownership could not be prepared.');

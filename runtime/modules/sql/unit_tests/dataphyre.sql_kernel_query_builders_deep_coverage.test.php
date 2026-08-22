@@ -31,6 +31,8 @@ namespace dataphyre {
 	}
 	if(!class_exists(sql::class,false)){
 		final class sql {
+			public static function deferred_queries_allowed(): bool { return true; }
+			public static function assert_immediate_transaction_driver_query(?string $cluster,?string $query=null): void { }
 			public static function query_has_write(string $query): bool { return preg_match('/\b(?:INSERT|UPDATE|DELETE|BEGIN)\b/i',$query)===1; }
 			public static function resolve_cluster(?string $configured=null): string {
 				$cluster=trim((string)($configured ?? (DP_SQL_CFG['default_cluster'] ?? '')));

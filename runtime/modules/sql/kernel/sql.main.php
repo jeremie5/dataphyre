@@ -48,6 +48,12 @@ if(RUN_MODE==='diagnostic'){ require_once(__DIR__.'/sql.diagnostic.php'); }
 class sql {
 
 	private static array $observers=[];
+	private static int $deferred_query_barrier_depth=0;
+	/** @var list<array{cluster:string,dbms:string,fiber:?\Fiber}> */
+	private static array $immediate_transaction_scopes=[];
+	/** @var ?array{cluster:string,expected:string,fiber:?\Fiber} */
+	private static ?array $framework_transaction_control=null;
+	private static int $framework_transaction_control_in_flight=0;
 	private static ?array $last_query_error=null;
 	private static array $table_definition_registry=[];
 	private static array $loaded_table_definition_files=[];
@@ -55,6 +61,294 @@ class sql {
 	/** @var array<string,float> Request-local database endpoint outage observations. */
 	private static array $unavailable_servers=[];
 	private const SERVER_UNAVAILABLE_SECONDS=5.0;
+
+	/** Returns whether deferred query registration/execution is allowed in this execution frame. */
+	public static function deferred_queries_allowed(): bool {
+		return self::$deferred_query_barrier_depth===0;
+	}
+
+	/**
+	 * Runs a callback with immediate SQL only and rejects every pre-existing or newly queued batch.
+	 *
+	 * This boundary never serializes queue names or content, and discards rejected work so
+	 * shutdown flushers cannot replay it after the surrounding transaction rolls back.
+	 */
+	public static function without_deferred_queries(callable $callback): mixed {
+		if(self::discard_deferred_queries()>0){
+			throw new \RuntimeException('Deferred SQL queues were already pending at an immediate-only boundary.');
+		}
+		$scope_started=self::begin_immediate_transaction_scope();
+		self::$deferred_query_barrier_depth++;
+		try{
+			$result=$callback();
+			if(self::discard_deferred_queries()>0){
+				throw new \RuntimeException('Deferred SQL queues are unavailable inside an immediate-only boundary.');
+			}
+			return $result;
+		}catch(\Throwable $failure){
+			self::discard_deferred_queries();
+			throw $failure;
+		}finally{
+			self::$deferred_query_barrier_depth--;
+			if($scope_started){
+				\array_pop(self::$immediate_transaction_scopes);
+			}
+		}
+	}
+
+	/**
+	 * Authorizes only Framework Transaction's private control bridge.
+	 *
+	 * Application callbacks cannot use this method to authorize raw COMMIT,
+	 * ROLLBACK, savepoint, or cross-cluster statements: the immediate caller must
+	 * be the final Framework Transaction class and its private bridge method.
+	 */
+	public static function framework_transaction_control(string $expected, ?string $cluster, callable $callback): mixed {
+		$caller=\debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS,2)[1] ?? [];
+		if(($caller['class'] ?? null)!==\Dataphyre\Database\Transaction::class
+			|| ($caller['function'] ?? null)!=='executeKernelTransactionControl'){
+			throw new \LogicException('SQL transaction control authority is internal to Framework Transaction.');
+		}
+		if(self::$immediate_transaction_scopes===[]){
+			return $callback();
+		}
+		self::assert_immediate_transaction_owner();
+		if(self::$framework_transaction_control_in_flight>0 || self::$framework_transaction_control!==null){
+			throw new \RuntimeException('Reentrant SQL transaction control is unavailable inside an immediate transaction scope.');
+		}
+		$expected=self::normalize_transaction_control($expected);
+		if($expected===''){
+			throw new \LogicException('Framework Transaction supplied an invalid control statement.');
+		}
+		self::$framework_transaction_control=[
+			'cluster'=>self::transaction_scope_cluster($cluster),
+			'expected'=>$expected,
+			'fiber'=>\Fiber::getCurrent(),
+		];
+		self::$framework_transaction_control_in_flight++;
+		try{
+			$result=$callback();
+			if(self::$framework_transaction_control!==null){
+				throw new \LogicException('Framework SQL transaction control authority was not consumed.');
+			}
+			return $result;
+		}finally{
+			self::$framework_transaction_control=null;
+			self::$framework_transaction_control_in_flight--;
+		}
+	}
+
+	/** Starts a same-Fiber, same-cluster SQL boundary when a Framework transaction is active. */
+	private static function begin_immediate_transaction_scope(): bool {
+		if(!\class_exists(\Dataphyre\Database\Transaction::class,false)
+			|| !\Dataphyre\Database\Transaction::hasActiveTransaction()){
+			return false;
+		}
+		$scope=[
+			'cluster'=>self::transaction_scope_cluster(\Dataphyre\Database\Transaction::activeCluster()),
+			'dbms'=>'unknown',
+			'fiber'=>\Fiber::getCurrent(),
+		];
+		$scope['dbms']=self::transaction_scope_dbms($scope['cluster']);
+		$current=\end(self::$immediate_transaction_scopes);
+		if(\is_array($current)
+			&& ($current['fiber']!==$scope['fiber'] || !\hash_equals($current['cluster'],$scope['cluster'])
+				|| !\hash_equals($current['dbms'],$scope['dbms']))){
+			throw new \RuntimeException('Immediate SQL transaction scopes cannot change Fiber or database cluster.');
+		}
+		self::$immediate_transaction_scopes[]=$scope;
+		return true;
+	}
+
+	/** Rejects SQL work resumed from a Fiber other than the transaction-scope owner. */
+	private static function assert_immediate_transaction_owner(): void {
+		$scope=\end(self::$immediate_transaction_scopes);
+		if(\is_array($scope) && $scope['fiber']!==\Fiber::getCurrent()){
+			throw new \RuntimeException('Immediate SQL transaction scopes cannot execute from another Fiber.');
+		}
+	}
+
+	/**
+	 * Rejects transaction escape before dialbacks, cache lookups, or drivers observe the query.
+	 *
+	 * @param string|array<mixed> $query
+	 */
+	private static function assert_immediate_transaction_query(string|array $query): void {
+		$scope=\end(self::$immediate_transaction_scopes);
+		if(!\is_array($scope)){
+			return;
+		}
+		self::assert_immediate_transaction_owner();
+		if(\is_array($query) && \array_key_exists('dbms_cluster_override',$query) && $query['dbms_cluster_override']!==null){
+			$override=$query['dbms_cluster_override'];
+			if(!\is_string($override) || \trim($override)==='' || !\hash_equals($override,\trim($override))){
+				throw new \RuntimeException('Immediate SQL transaction scopes require an exact non-empty cluster override.');
+			}
+			$cluster=self::transaction_scope_cluster($override);
+			if(!\hash_equals($scope['cluster'],$cluster)){
+				throw new \RuntimeException('Immediate SQL transaction scopes cannot change database cluster.');
+			}
+		}
+		$statements=[];
+		if(\is_array($query)){
+			$dbms=$scope['dbms'];
+			if(isset($query[$dbms]) && \is_string($query[$dbms])){
+				$statements[]=$query[$dbms];
+			}elseif($dbms==='unknown'){
+				foreach(['postgresql','mysql','sqlite'] as $candidate){
+					if(isset($query[$candidate]) && \is_string($query[$candidate])){$statements[]=$query[$candidate];}
+				}
+			}
+		}else{
+			$statements[]=$query;
+		}
+		$controls=[];
+		foreach($statements as $statement){
+			foreach(self::query_transaction_controls($statement,$scope['dbms']) as $control){
+				$controls[$control]=true;
+			}
+		}
+		if($controls===[]){
+			return;
+		}
+		$authority=self::$framework_transaction_control;
+		if(!\is_array($authority)
+			|| $authority['fiber']!==\Fiber::getCurrent()
+			|| !\hash_equals($scope['cluster'],$authority['cluster'])
+			|| \count($controls)!==1
+			|| !isset($controls[$authority['expected']])){
+			throw new \RuntimeException('Raw SQL transaction control is unavailable inside an immediate transaction scope.');
+		}
+		self::$framework_transaction_control=null;
+	}
+
+	/**
+	 * Guards public driver-builder entry points that can otherwise bypass sql::query().
+	 *
+	 * Kernel dispatch already consumed any one-shot Framework control authority;
+	 * direct application calls must independently pass the raw-control check.
+	 */
+	public static function assert_immediate_transaction_driver_query(?string $cluster, ?string $query=null): void {
+		$scope=\end(self::$immediate_transaction_scopes);
+		if(!\is_array($scope)){
+			return;
+		}
+		self::assert_immediate_transaction_owner();
+		if(!\is_string($cluster) || \trim($cluster)==='' || !\hash_equals($cluster,\trim($cluster))){
+			throw new \RuntimeException('Immediate SQL transaction driver calls require one exact cluster.');
+		}
+		if(!\hash_equals($scope['cluster'],self::transaction_scope_cluster($cluster))){
+			throw new \RuntimeException('Immediate SQL transaction scopes cannot change database cluster.');
+		}
+		if($query===null){
+			return;
+		}
+		$frames=\debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS,3);
+		$kernel=$frames[2] ?? [];
+		if(($kernel['class'] ?? null)===self::class && ($kernel['function'] ?? null)==='query'){
+			return;
+		}
+		self::assert_immediate_transaction_query($query);
+	}
+
+	/** Normalizes nullable/default cluster names for exact transaction-scope comparison. */
+	private static function transaction_scope_cluster(?string $cluster): string {
+		$cluster=\trim((string)$cluster);
+		if($cluster===''){
+			$cluster=\trim(self::resolve_query_cluster(DP_SQL_CFG['default_cluster'] ?? ''));
+		}
+		return $cluster!=='' ? $cluster : '__default__';
+	}
+
+	/** Resolves the configured driver for the enforced cluster without opening a connection. */
+	private static function transaction_scope_dbms(string $cluster): string {
+		$config=\defined('DP_SQL_CFG') && \is_array(DP_SQL_CFG) ? DP_SQL_CFG : [];
+		$core=\defined('DP_CORE_CFG') && \is_array(DP_CORE_CFG) ? DP_CORE_CFG : [];
+		if($cluster==='__default__'){$cluster=\trim((string)($config['default_cluster'] ?? ''));}
+		$datacenter=\trim((string)($core['datacenter'] ?? ''));
+		$dbms=\strtolower(\trim((string)($config['datacenters'][$datacenter]['dbms_clusters'][$cluster]['dbms'] ?? '')));
+		return \in_array($dbms,['mysql','postgresql','sqlite'],true) ? $dbms : 'unknown';
+	}
+
+	/** @return list<string> Canonical transaction-control statements outside DBMS-specific comments and quoted values. */
+	private static function query_transaction_controls(string $query,string $dbms): array {
+		$executable='';$length=\strlen($query);$index=0;$block_depth=0;
+		$mysql=$dbms==='mysql';$postgresql=$dbms==='postgresql' || $dbms==='unknown';
+		while($index<$length){
+			$character=$query[$index];$next=$index+1<$length ? $query[$index+1] : '';
+			if($character==='-' && $next==='-'){
+				$index+=2;while($index<$length && $query[$index]!=="\n" && $query[$index]!=="\r"){$index++;}
+				$executable.=' ';continue;
+			}
+			if($mysql && $character==='#'){
+				$index++;while($index<$length && $query[$index]!=="\n" && $query[$index]!=="\r"){$index++;}
+				$executable.=' ';continue;
+			}
+			if($character==='/' && $next==='*'){
+				$block_depth=1;$index+=2;
+				while($index<$length && $block_depth>0){
+					if($query[$index]==='/' && ($query[$index+1] ?? '')==='*'){$block_depth++;$index+=2;continue;}
+					if($query[$index]==='*' && ($query[$index+1] ?? '')==='/'){$block_depth--;$index+=2;continue;}
+					$index++;
+				}
+				if($block_depth>0){return ['invalid'];}
+				$executable.=' ';continue;
+			}
+			if($character==="'" || $character==='"' || $character==='`' || $character==='['){
+				$closing=$character==='[' ? ']' : $character;$index++;
+				while($index<$length){
+					if($mysql && $query[$index]==='\\'){$index+=2;continue;}
+					if($query[$index]===$closing){
+						if(($query[$index+1] ?? '')===$closing){$index+=2;continue;}
+						$index++;break;
+					}
+					$index++;
+				}
+				$executable.=' ';continue;
+			}
+			if($postgresql && $character==='$'
+				&& \preg_match('/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/',\substr($query,$index),$match)===1){
+				$delimiter=$match[0];$end=\strpos($query,$delimiter,$index+\strlen($delimiter));
+				if($end===false){return ['invalid'];}
+				$index=$end+\strlen($delimiter);$executable.=' ';continue;
+			}
+			$executable.=$character;$index++;
+		}
+		$controls=[];
+		foreach(\preg_split('/;/', $executable) ?: [] as $statement){
+			$control=self::normalize_transaction_control($statement);
+			if($control!==''){$controls[]=$control;}
+		}
+		return \array_values(\array_unique($controls));
+	}
+
+	/** Canonicalizes one transaction-control statement or returns an empty string for ordinary SQL. */
+	private static function normalize_transaction_control(string $statement): string {
+		$statement=\strtoupper(\trim((string)\preg_replace('/\s+/',' ',$statement)));
+		if(\preg_match('/^(?:BEGIN\b|START TRANSACTION\b)/',$statement)===1){return 'begin';}
+		if(\preg_match('/^(?:COMMIT\b|END\b)/',$statement)===1){return 'commit';}
+		if(\preg_match('/^(?:ROLLBACK\s*$|ABORT\b)/',$statement)===1){return 'rollback';}
+		if(\preg_match('/^(?:ROLLBACK\b|SAVEPOINT\b|RELEASE(?: SAVEPOINT)?\b|PREPARE TRANSACTION\b|SET (?:SESSION CHARACTERISTICS AS )?TRANSACTION\b|XA\b)/',$statement)===1){
+			return \strtolower($statement);
+		}
+		return '';
+	}
+
+	/** Clears all driver queues without exposing their names, callbacks, SQL, or bound values. */
+	private static function discard_deferred_queries(): int {
+		$discarded=0;
+		foreach([mysql_query_builder::class,postgresql_query_builder::class,sqlite_query_builder::class] as $builder){
+			if($builder::$queued_queries!==[]){$discarded++;$builder::$queued_queries=[];}
+		}
+		return $discarded;
+	}
+
+	/** Rejects a deferred callback before dialbacks or drivers can retain queued work. */
+	private static function assert_deferred_query_allowed(?callable $callback): void {
+		if($callback!==null && !self::deferred_queries_allowed()){
+			throw new \RuntimeException('Deferred SQL queues are unavailable inside an immediate-only boundary.');
+		}
+	}
 
 	/**
 	 * Resolves the cluster for the active execution-local data environment.
@@ -191,6 +485,10 @@ class sql {
 			}
 		}
 		foreach($_SESSION['db_cache'] as $location=>&$entries){
+			if(!is_array($entries)){
+				unset($_SESSION['db_cache'][$location]);
+				continue;
+			}
 			foreach($entries as $hash=>$entry){
 				if(time()-($entry[1] ?? 0)>$ttl_entry){
 					unset($entries[$hash]);
@@ -1409,6 +1707,9 @@ class sql {
 	 */
 	public static function execute_queue(string $queue='end') : null|bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		if(!self::deferred_queries_allowed()){
+			throw new \RuntimeException('Deferred SQL queue execution is unavailable inside an immediate-only boundary.');
+		}
 		$trace_started_at=microtime(true);
 		if(self::readonly_replay_enabled()===true){
 			self::readonly_replay_block('queue_execute', (string)$queue, [
@@ -1914,8 +2215,12 @@ class sql {
 					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Cleared shared cache for table $clear_cache_for");
 				}
 				elseif($cache_policy['type']==="session"){
-					$_SESSION['db_cache'][$cache_location]??=[];
-					$_SESSION['db_cache_count']-=count($_SESSION['db_cache'][$cache_location]);
+					$session_entries=$_SESSION['db_cache'][$cache_location] ?? [];
+					if(!is_array($session_entries)) $session_entries=[];
+					$_SESSION['db_cache_count']=max(
+						0,
+						(int)($_SESSION['db_cache_count'] ?? 0)-count($session_entries),
+					);
 					unset($_SESSION['db_cache'][$cache_location]);
 					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Cleared session cache for table $clear_cache_for");
 				}
@@ -2148,6 +2453,8 @@ class sql {
 	 */
 	public static function query(string|array $query, ?array $vars=null, ?bool $associative=false, ?bool $multipoint=false, null|bool|array|string $caching=[false], bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : mixed {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		self::assert_deferred_query_allowed($callback);
+		self::assert_immediate_transaction_query($query);
 		$caching=self::transaction_read_caching($caching);
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_SELECT", $query, $vars, $associative, $multipoint, $caching, $clear_cache, $queue, $callback)) return $early_return;
 			$trace_started_at=microtime(true);
@@ -2340,6 +2647,8 @@ class sql {
 	 */
 	public static function select(string|array $select, string $location, array|string|null $params=null, ?array $vars=null, ?bool $associative=false, null|bool|array|string $caching=[true], ?string $queue='end', ?callable $callback=null) : mixed { //bool|array|null
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		self::assert_deferred_query_allowed($callback);
+		self::assert_immediate_transaction_owner();
 		$caching=self::transaction_read_caching($caching);
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_SELECT", $select, $location, $params, $vars, $associative, $caching, $queue, $callback)) return $early_return;
 		$original_select=$select;
@@ -2539,6 +2848,8 @@ class sql {
 	 */
 	public static function count(string $location, array|string|null $params=null, ?array $vars=null, null|bool|array|string $caching=[true], ?string $queue='end', ?callable $callback=null) : int|bool|null {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		self::assert_deferred_query_allowed($callback);
+		self::assert_immediate_transaction_owner();
 		$caching=self::transaction_read_caching($caching);
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_COUNT", $location, $params, $vars, $caching, $queue, $callback)) return $early_return;
 		$original_location=$location;
@@ -2709,6 +3020,8 @@ class sql {
 	 */
 	public static function insert(string $location, string|array $fields, ?array $vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : mixed {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		self::assert_deferred_query_allowed($callback);
+		self::assert_immediate_transaction_owner();
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_INSERT",...func_get_args())) return $early_return;
 		$original_location=$location;
 		$original_fields=$fields;
@@ -2873,6 +3186,8 @@ class sql {
 	 */
 	public static function update(string $location, string|array $fields, null|string|array $params, ?array $vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : int|bool|null {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		self::assert_deferred_query_allowed($callback);
+		self::assert_immediate_transaction_owner();
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_UPDATE",...func_get_args())) return $early_return;
 		$original_location=$location;
 		$original_fields=$fields;
@@ -3052,6 +3367,8 @@ class sql {
 	 */
 	public static function delete(string $location, array|string|null $params=null, ?array $vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null) : int|bool|null {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
+		self::assert_deferred_query_allowed($callback);
+		self::assert_immediate_transaction_owner();
 		if(null!==$early_return=core::dialback("CALL_SQL_DB_DELETE",...func_get_args())) return $early_return;
 		$original_location=$location;
 		$original_params=$params;
@@ -3211,6 +3528,8 @@ class sql {
 	 */
 	public static function upsert(string $location, array $fields, string|array|null $update_params=null, ?array $update_vars=null, bool|null|array $clear_cache=false, ?string $queue='end', ?callable $callback=null): int|bool|null {
 		tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T=null, $S='function_call', $A=null);
+		self::assert_deferred_query_allowed($callback);
+		self::assert_immediate_transaction_owner();
 		if(null !== $early_return=core::dialback("CALL_SQL_DB_UPSERT", ...func_get_args())) return $early_return;
 		$original_location=$location;
 		$original_fields=$fields;

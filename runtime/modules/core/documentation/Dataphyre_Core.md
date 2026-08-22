@@ -105,7 +105,7 @@ identity query, binding mismatch, or response fails closed with exit 69 and
 `application_database_identity_failed`.
 
 The fixed one-shot PostgreSQL migration and registered-table materializer may
-receive the same optional typed purpose. Root accepts only
+receive an optional typed purpose; the fixed seed operation requires one. Root accepts only
 `[a-z][a-z0-9_]{0,31}`, requires its opaque binding marker and all six fixed
 `DSN`, `HOST`, `PORT`, `NAME`, `USER`, and `PASSWORD` values, and reprojects
 that binding onto the canonical `DATAPHYRE_DATABASE_*` names plus the primary
@@ -116,7 +116,35 @@ broker seals the purpose into its private child attestation rather than argv.
 A non-primary purpose runs hydration inside the existing SQL `DataEnvironment`
 of the same name and requires that environment to configure a cluster override;
 the context is restored on success or failure. Primary and omitted purposes
-retain ordinary live hydration behavior.
+retain ordinary live hydration behavior. Before the child starts, every
+unselected named binding and credential is removed; only the canonical selected
+binding and its primary marker remain. The seed operation requires one profile
+and an explicit demo acknowledgement bit. It atomically applies that entire
+non-empty profile through the configured PostgreSQL Dataphyre SQL connection.
+The application bootstrap is trusted, side-effect-free release startup code:
+it runs under the selected environment identity before the database transaction,
+may load only configuration/autoload support, and may not load Dataphyre SQL.
+Definition discovery, preflight and apply callbacks, ledger changes, convergence,
+environment unwind, and deferred-query rejection all finish inside the outer
+transaction before commit. The transaction boundary rejects raw transaction
+control, a different cluster or Fiber, and deferred queues; direct public driver
+entry points enforce the same owner, cluster, and transaction-control rules.
+Application callbacks remain trusted committed release code;
+direct extension/native-handle database access and non-database filesystem or
+network effects are outside the Dataphyre SQL atomicity guarantee. PID 1 captures
+both child streams, never forwards raw bytes,
+and accepts only one bounded canonical `dataphyre.managed_seed_apply.v1` object
+whose identities and exit status match the root-owned request; malformed,
+multiple, warning-bearing, oversized, missing, or forged output becomes a
+generic root-owned failure. The application root, seed directory, bootstrap,
+ledger, cluster, mode, and seed selection are not caller-controlled; `primary`
+maps to the `live` data environment and another purpose maps to the data
+environment of the same name. There is no shell, application script, rollback,
+reset, or arbitrary Artisan command in this path. Because commit precedes the
+root evidence write, an interruption or missing result after commit
+acknowledgement is outcome-unknown. A convergence failure happens before commit
+and rolls the SQL batch back. Cloud resolves only the ambiguous delivery window
+by retrying the same immutable, idempotent whole-profile operation.
 
 The application-owned `/health` response must be a JSON object with a top-level
 `missing_environment_keys` list. The list is canonical: sorted, unique, no more

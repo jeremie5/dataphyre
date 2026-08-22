@@ -58,7 +58,7 @@ final class Transaction {
 	 * Keys deduplicate repeated writes to the same table or named cache index inside
 	 * one unit of work.
 	 *
-	 * @var array<string,array{target:array|string,policy:array|bool|null}>
+	 * @var array<string,array{target:array|string,policy:array|bool|null,environment:?array{name:string,cluster:?string,cache_namespace:?string}}>
 	 */
 	private array $pendingCacheInvalidations=[];
 
@@ -201,10 +201,20 @@ final class Transaction {
 		if(!$transaction instanceof self || !$transaction->active){
 			return false;
 		}
-		$key=hash('sha256', serialize([$target, $cachePolicy]));
+		$environment=null;
+		if(class_exists(DataEnvironment::class,false) && DataEnvironment::active()){
+			$current=DataEnvironment::current();
+			$environment=[
+				'name'=>(string)$current['name'],
+				'cluster'=>is_string($current['cluster']) ? $current['cluster'] : null,
+				'cache_namespace'=>is_string($current['cache_namespace']) ? $current['cache_namespace'] : null,
+			];
+		}
+		$key=hash('sha256', serialize([$target, $cachePolicy, $environment]));
 		$transaction->pendingCacheInvalidations[$key]=[
 			'target'=>$target,
 			'policy'=>$cachePolicy,
+			'environment'=>$environment,
 		];
 		return true;
 	}
@@ -282,7 +292,7 @@ final class Transaction {
 		}
 		else
 		{
-			if(sql_begin($this->cluster)===false){
+			if($this->executeKernelTransactionControl('begin',fn(): bool=>sql_begin($this->cluster))===false){
 				throw SqlError::transactionException(
 					'Failed to begin the SQL transaction.',
 					$this->cluster,
@@ -329,7 +339,7 @@ final class Transaction {
 		}
 		else
 		{
-			if(sql_commit($this->cluster)===false){
+			if($this->executeKernelTransactionControl('commit',fn(): bool=>sql_commit($this->cluster))===false){
 				throw SqlError::transactionException(
 					'Failed to commit the SQL transaction.',
 					$this->cluster,
@@ -388,7 +398,7 @@ final class Transaction {
 		}
 		else
 		{
-			if(sql_rollback($this->cluster)===false){
+			if($this->executeKernelTransactionControl('rollback',fn(): bool=>sql_rollback($this->cluster))===false){
 				throw SqlError::transactionException(
 					'Failed to roll back the SQL transaction.',
 					$this->cluster,
@@ -723,12 +733,21 @@ final class Transaction {
 	 * @return bool True when sql_query() reports success.
 	 */
 	private function executeTransactionControl(string $sql): bool {
-		return false!==sql_query([
+		return false!==$this->executeKernelTransactionControl($sql,fn(): mixed=>sql_query([
 			'mysql'=>$sql,
 			'postgresql'=>$sql,
 			'sqlite'=>$sql,
 			'dbms_cluster_override'=>$this->cluster,
-		], null, false, false, false, false);
+		], null, false, false, false, false));
+	}
+
+	/** Runs one Framework-owned control statement through the kernel's guarded authority. */
+	private function executeKernelTransactionControl(string $expected,callable $callback): mixed {
+		if(class_exists(\dataphyre\sql::class,false)
+			&& method_exists(\dataphyre\sql::class,'framework_transaction_control')){
+			return \dataphyre\sql::framework_transaction_control($expected,$this->cluster,$callback);
+		}
+		return $callback();
 	}
 
 	/**
@@ -827,7 +846,21 @@ final class Transaction {
 		try{
 			foreach($invalidations as $invalidation){
 				try{
-					$result=\dataphyre\sql::invalidate_cache($invalidation['target'], $invalidation['policy']);
+					$invalidate=static fn(): bool=>\dataphyre\sql::invalidate_cache(
+						$invalidation['target'],
+						$invalidation['policy'],
+					);
+					$environment=$invalidation['environment'] ?? null;
+					$result=is_array($environment) && class_exists(DataEnvironment::class,false)
+						? DataEnvironment::run(
+							(string)$environment['name'],
+							static fn(): bool=>$invalidate(),
+							[
+								'cluster'=>$environment['cluster'],
+								'cache_namespace'=>$environment['cache_namespace'],
+							],
+						)
+						: $invalidate();
 					if($result===false){
 						tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, 'Commit-time SQL cache invalidation failed.', 'warning');
 					}

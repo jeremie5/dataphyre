@@ -75,7 +75,9 @@ test('typed managed database purpose projects one complete binding onto the cano
 	$t->same($marker,$projected['DATAPHYRE_DATABASE_BINDING_PRIMARY_SHA256']);
 	foreach(['DSN','HOST','PORT','NAME','USER','PASSWORD'] as $field){
 		$t->same($values['DATAPHYRE_DATABASE_SANDBOX_'.$field],$projected['DATAPHYRE_DATABASE_'.$field],$field);
+		$t->isFalse(array_key_exists('DATAPHYRE_DATABASE_SANDBOX_'.$field,$projected),$field.' named binding');
 	}
+	$t->isFalse(array_key_exists('DATAPHYRE_DATABASE_BINDING_SANDBOX_SHA256',$projected));
 	$keys=array_keys($projected);$sorted=$keys;sort($sorted,SORT_STRING);$t->same($sorted,$keys);
 	$t->same(
 		$values['DATAPHYRE_DATABASE_DSN'],
@@ -453,12 +455,18 @@ test('source freezes the root-only canonical channel and fixed one-shot allowlis
 	$t->contains("dataphyre.application_environment.v1",$environment);
 	$t->contains("JSON_UNESCAPED_LINE_TERMINATORS",$environment);
 	$t->contains("DATAPHYRE_ONE_SHOT_OPERATION",$environment);
-	$t->contains("database_identity|application_preflight|artisan_migrate|dataphyre_materialize_tables|dataphyre_postgresql_migrate|dataphyre_sqlite_migrate|dataphyre_shared_cache_probe",$oneShot);
+	$t->contains("database_identity|application_preflight|artisan_migrate|dataphyre_materialize_tables|dataphyre_postgresql_migrate|dataphyre_sqlite_migrate|dataphyre_seed|dataphyre_shared_cache_probe",$oneShot);
 	$t->contains('DATAPHYRE_ONE_SHOT_CACHE_MAXIMUM_MILLISECONDS=10000',$oneShot);
+	$t->contains('DATAPHYRE_ONE_SHOT_SEED_MAXIMUM_MILLISECONDS=900000',$oneShot);
+	foreach(['DATAPHYRE_ONE_SHOT_SEED_PROFILE','DATAPHYRE_ONE_SHOT_SEED_ALLOW_DEMO'] as $control){
+		$t->contains($control,$environment);$t->contains($control,$oneShot);
+	}
 	$t->contains("'--phase='.$"."cachePhase,'--challenge='.$"."cacheChallenge",$oneShot);
 	$t->contains("/modules/cache/kernel/shared_cache_probe.php",$oneShot);
 	$t->contains("/usr/bin/setpriv",$oneShot);
 	$t->contains("/usr/bin/setsid",$oneShot);
+	$t->contains("/usr/bin/prlimit",$oneShot);
+	$t->contains("--nproc=0:0",$oneShot);
 	$t->contains("--no-new-privs",$oneShot);
 	$t->contains("'--groups='.$"."gid",$oneShot);
 	$t->isFalse(str_contains($oneShot,'--init-groups'));
@@ -466,11 +474,13 @@ test('source freezes the root-only canonical channel and fixed one-shot allowlis
 	$t->contains("['migrate','--force','--no-interaction']",$oneShot);
 	$t->contains("in_array($"."operation,['dataphyre_materialize_tables','dataphyre_sqlite_migrate'],true)",$oneShot);
 	$t->contains("$"."operation==='dataphyre_sqlite_migrate' && $"."applicationDataRoot===null",$oneShot);
-	$t->contains("in_array($"."operation,['dataphyre_materialize_tables','dataphyre_postgresql_migrate'],true)",$oneShot);
+	$t->contains("in_array($"."operation,['dataphyre_materialize_tables','dataphyre_postgresql_migrate','dataphyre_seed'],true)",$oneShot);
 	$t->contains('projectManagedDatabasePurpose($child,$purpose)',$oneShot);
 	$t->contains("$"."purpose!==null && $"."operation!=='database_identity'",$oneShot);
 	$t->contains('DataphyreApplicationRuntimeChildEnvironment::ONE_SHOT_MATERIALIZER_DATABASE_PURPOSE]=$purpose',$oneShot);
 	$t->contains("$"."operation==='dataphyre_materialize_tables'",$oneShot);
+	$t->contains("'/modules/sql/kernel/managed_seeds.php'",$oneShot);
+	$t->contains("'--data-environment='.($"."purpose==='primary' ? 'live' : $"."purpose)",$oneShot);
 	$t->isFalse(str_contains($oneShot,"in_array($"."operation,['dataphyre_postgresql_migrate'"));
 	$t->isFalse(str_contains($oneShot,"in_array($"."operation,['dataphyre_shared_cache_probe'"));
 	$t->contains('ApplicationReleasePreflightEvidence::COMMAND_TIMEOUT_MILLISECONDS',$oneShot);
@@ -481,7 +491,7 @@ test('source freezes the root-only canonical channel and fixed one-shot allowlis
 	$t->contains("$"."terminationReason==='timeout'",$oneShot);
 	$t->contains('exit(124)',$oneShot);
 	$t->contains('pcntl_waitpid(-1',$oneShot);
-	foreach(['proc_open','shell_exec','system(','passthru','popen','eval('] as $forbidden){
+	foreach(['proc_open(','shell'.'_exec(','system(','passthru(','popen(','eval('] as $forbidden){
 		$t->isFalse(str_contains($oneShot,$forbidden));
 	}
 })->tag('source','one-shot','allowlist');

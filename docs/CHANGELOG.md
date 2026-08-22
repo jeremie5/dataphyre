@@ -68,6 +68,18 @@ All notable Dataphyre changes are tracked here.
   omitting the purpose preserves existing external/default configuration. A
   non-primary materializer also runs inside the purpose's configured SQL data
   environment and fails closed when it has no cluster override.
+- Added one fixed, shell-free managed seed one-shot. It consumes only the
+  selected root-only typed PostgreSQL binding, applies an entire non-empty
+  profile inside one guarded Dataphyre SQL transaction, captures rather than
+  forwarding application output, emits one bounded redacted convergence object,
+  and accepts no seed id, cluster, ledger, rollback, reset, script, mode, or
+  tenant command. Seed definition and delegated content discovery are confined
+  to regular non-symbolic files beneath the application root with explicit
+  count and byte ceilings. Convergence and environment unwind precede commit;
+  post-commit evidence-delivery ambiguity is an idempotent-retry outcome, never
+  an inferred rollback or success. Its bootstrap and callbacks are trusted
+  committed release code; the atomic guarantee covers Dataphyre SQL APIs, not
+  direct native handles or unrelated filesystem/network side effects.
 - Added Datadoc's producer-neutral static documentation engine, integrity-
   checked build and publication values, dependency-free responsive portal,
   local search and version protocols, preview-first universal CLI, exact-tree

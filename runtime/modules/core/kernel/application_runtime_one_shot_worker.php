@@ -8,7 +8,7 @@
 declare(strict_types=1);
 
 /** Fixed post-exec dispatcher for the only Cloud-supported application operations. */
-if(PHP_SAPI!=='cli' || ($argc ?? 0)<3 || ($argc ?? 0)>8) exit(64);
+if(PHP_SAPI!=='cli' || ($argc ?? 0)<3 || ($argc ?? 0)>9) exit(64);
 require_once __DIR__.'/application_runtime_child_environment.php';
 require_once dirname(__DIR__).'/Framework/InternalApplicationBootstrapOnly.php';
 try{DataphyreApplicationRuntimeChildEnvironment::consumeInherited('one-shot');}
@@ -17,7 +17,7 @@ $operation=$argv[1] ?? null;$target=$argv[2] ?? null;$arguments=array_slice($arg
 if(!in_array($operation,[
 	'database_identity','application_preflight','artisan_migrate',
 	'dataphyre_materialize_tables','dataphyre_postgresql_migrate','dataphyre_sqlite_migrate',
-	'dataphyre_shared_cache_probe',
+	'dataphyre_seed','dataphyre_shared_cache_probe',
 ],true) || !is_string($target) || is_link($target) || !is_file($target)) exit(64);
 $expected=match($operation){
 	'database_identity'=>__DIR__.'/application_runtime_database_identity.php',
@@ -26,6 +26,7 @@ $expected=match($operation){
 	'dataphyre_materialize_tables'=>dirname(__DIR__,3).'/modules/sql/kernel/materialize_registered_tables.php',
 	'dataphyre_postgresql_migrate'=>dirname(__DIR__,3).'/modules/sql/kernel/postgresql_migrate.php',
 	'dataphyre_sqlite_migrate'=>dirname(__DIR__,3).'/modules/sql/kernel/sqlite_migrate.php',
+	'dataphyre_seed'=>dirname(__DIR__,3).'/modules/sql/kernel/managed_seeds.php',
 	'dataphyre_shared_cache_probe'=>dirname(__DIR__,3).'/modules/cache/kernel/shared_cache_probe.php',
 };
 $real=realpath($target);$expectedReal=realpath($expected);

@@ -622,7 +622,8 @@ test('sql kernel main core deep coverage executes shutdown cache wrapper success
 	$t->same([],$session->get('db_cache'));
 	$session->put('db_cache',['broken'=>'not-an-array']);
 	$sql->invokeWithArguments('session_cache_shutdown');
-	$t->notEmpty($state->get('shutdown_logs'));
+	$t->same([],$state->get('shutdown_logs'));
+	$t->same([],$session->get('db_cache'));
 })->tag('sql','kernel','main','shutdown','deep-coverage')->group('framework-coverage');
 
 test('sql kernel transaction controls bypass the raw query cache on every cycle',static function(Context $t): void {
