@@ -241,6 +241,17 @@ closes both the PHP stream and native descriptor. The broker then closes its
 endpoint. There is no refetch, replay, same-process second read, sibling claim,
 PID-reuse acceptance, or tenant-readable fallback file.
 
+The root mount uses the exact
+`dataphyre.application_environment.v2` contract. In addition to the symbolic
+deployment key, it binds one platform-owned opaque environment-incarnation ID
+using the same bounded public identifier grammar as an application ID. PID 1
+requires that ID in its fixed root environment, compares it byte-for-byte with
+the sealed envelope, and rebrokers it to every child as
+`DATAPHYRE_APPLICATION_ENVIRONMENT_ID`. Applications may log that exact ID
+alongside `DATAPHYRE_APPLICATION_ENVIRONMENT`; they must never derive an
+incarnation ID from a reusable symbolic key. This is a fail-closed cutover:
+version 1 envelopes are rejected, with no dual-read or compatibility fallback.
+
 The final exec deliberately starts with an empty public environment. The
 private child envelope therefore restores the managed image's fixed
 `DATAPHYRE_RUNTIME_ROOT=/opt/dataphyre/runtime`,

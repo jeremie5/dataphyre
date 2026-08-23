@@ -1981,9 +1981,10 @@ try {
 	$cloudApplication=dataphyre_runtime_env('DATAPHYRE_APPLICATION_ID');
 	$application=dataphyre_runtime_env('DATAPHYRE_FRAMEWORK_APPLICATION');
 	$environment=dataphyre_runtime_env('DATAPHYRE_ENVIRONMENT');
+	$environmentId=dataphyre_runtime_env('DATAPHYRE_APPLICATION_ENVIRONMENT_ID');
 	$releaseId=dataphyre_runtime_env('DATAPHYRE_APPLICATION_RELEASE');
 	$applicationEnvelope=DataphyreApplicationRuntimeEnvironment::consume(
-		$cloudApplication,$application,$environment,$releaseId,
+		$cloudApplication,$application,$environment,$environmentId,$releaseId,
 	);
 	dataphyre_runtime_require_not_stopping($stopping);
 	$applicationEnvironment=$applicationEnvelope['values'];
@@ -2018,7 +2019,7 @@ try {
     $secretKey=sodium_crypto_sign_secretkey($keypair);
     $publicKey=sodium_crypto_sign_publickey($keypair);
 	$childEnvironment=DataphyreApplicationRuntimeEnvironment::childEnvironment(
-		$applicationEnvironment,$cloudApplication,$application,$environment,$releaseId,$applicationDataRoot,
+		$applicationEnvironment,$cloudApplication,$application,$environment,$environmentId,$releaseId,$applicationDataRoot,
 	);
 	$childEnvironment['DATAPHYRE_RUNTIME_PROJECT_ROOT']=$projectRoot;
 	$childEnvironment['DATAPHYRE_RUNTIME_APPLICATION']=$application;

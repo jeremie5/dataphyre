@@ -50,6 +50,16 @@ function dataphyre_one_shot_environment(): string
 	return $value;
 }
 
+/** Reads the opaque application-environment incarnation through its shared authority. */
+function dataphyre_one_shot_environment_id(): string
+{
+	$value=getenv('DATAPHYRE_APPLICATION_ENVIRONMENT_ID');
+	if(!is_string($value) || !\Dataphyre\PublicApplicationIdentifier::valid($value)){
+		throw new RuntimeException('One-shot environment instance identity is invalid.');
+	}
+	return $value;
+}
+
 /** Reads the opaque public application id through its shared authority. */
 function dataphyre_one_shot_cloud_application(): string
 {
@@ -146,10 +156,11 @@ try{
 	$cloudApplication=dataphyre_one_shot_cloud_application();
 	$frameworkApplication=dataphyre_one_shot_identity('DATAPHYRE_FRAMEWORK_APPLICATION','/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D');
 	$environment=dataphyre_one_shot_environment();
+	$environmentId=dataphyre_one_shot_environment_id();
 	$releaseId=dataphyre_one_shot_identity('DATAPHYRE_APPLICATION_RELEASE','/^dep_[a-f0-9]{40}$/D');
 	$uid=10001;$gid=10001;
 	$envelope=DataphyreApplicationRuntimeEnvironment::consume(
-		$cloudApplication,$frameworkApplication,$environment,$releaseId,
+		$cloudApplication,$frameworkApplication,$environment,$environmentId,$releaseId,
 	);
 	DataphyreApplicationRuntimeEnvironment::mountedApplicationLogRoot($uid);
 	$applicationDataRoot=in_array($operation,['dataphyre_materialize_tables','dataphyre_sqlite_migrate'],true)
@@ -159,7 +170,7 @@ try{
 		throw new RuntimeException('One-shot SQLite data mount is unavailable.');
 	}
 	$child=DataphyreApplicationRuntimeEnvironment::childEnvironment(
-		$envelope['values'],$cloudApplication,$frameworkApplication,$environment,$releaseId,$applicationDataRoot,
+		$envelope['values'],$cloudApplication,$frameworkApplication,$environment,$environmentId,$releaseId,$applicationDataRoot,
 	);
 	$purpose=null;
 	$cachePhase=null;$cacheChallenge=null;

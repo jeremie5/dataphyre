@@ -33,7 +33,7 @@ test('child environment re-adds only fixed platform identity image-root log and 
 			'DATAPHYRE_APPLICATION_ROOT'=>'/tmp/tenant-application',
 			'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>'/tmp/tenant-runtime-project',
 		],
-		'example-store','example_store','production','dep_'.str_repeat('a',40),
+		'example-store','example_store','production','Env:Opaque_42','dep_'.str_repeat('a',40),
 		'/var/lib/dataphyre/application',
 	);
 	$t->same('secret',$result['APP_TOKEN']);
@@ -41,6 +41,7 @@ test('child environment re-adds only fixed platform identity image-root log and 
 	$t->same('example_store',$result['DATAPHYRE_FRAMEWORK_APPLICATION']);
 	$t->same('production',$result['DATAPHYRE_ENVIRONMENT']);
 	$t->same('production',$result['DATAPHYRE_APPLICATION_ENVIRONMENT']);
+	$t->same('Env:Opaque_42',$result['DATAPHYRE_APPLICATION_ENVIRONMENT_ID']);
 	$t->same('dep_'.str_repeat('a',40),$result['DATAPHYRE_APPLICATION_RELEASE']);
 	$t->same('/opt/dataphyre/runtime',$result['DATAPHYRE_RUNTIME_ROOT']);
 	$t->same('/app',$result['DATAPHYRE_PROJECT_ROOT']);
@@ -55,7 +56,7 @@ test('child environment re-adds only fixed platform identity image-root log and 
 	$t->same($sorted,$keys);
 	$t->throws(
 		static fn()=>DataphyreApplicationRuntimeEnvironment::childEnvironment(
-			[],'example-app','example_app','production','dep_'.str_repeat('b',40),'/tmp/tenant-selected',
+			[],'example-app','example_app','production','Env:Opaque_42','dep_'.str_repeat('b',40),'/tmp/tenant-selected',
 		),
 		RuntimeException::class,
 	);
@@ -127,7 +128,7 @@ test('one public environment grammar survives the child boundary and rejects tra
 	foreach(['staging_blue','Staging.Blue','9-preview',str_repeat('a',128)] as $environment){
 		$t->isTrue(ApplicationEnvironmentIdentifier::valid($environment),$environment);
 		$child=DataphyreApplicationRuntimeEnvironment::childEnvironment(
-			[],'example-app','ExampleApp',$environment,'dep_'.str_repeat('a',40),
+			[],'example-app','ExampleApp',$environment,'Env:Opaque_42','dep_'.str_repeat('a',40),
 		);
 		$t->same($environment,$child['DATAPHYRE_ENVIRONMENT'],$environment);
 		$t->same($environment,$child['DATAPHYRE_APPLICATION_ENVIRONMENT'],$environment);
@@ -136,7 +137,7 @@ test('one public environment grammar survives the child boundary and rejects tra
 		$t->isFalse(ApplicationEnvironmentIdentifier::valid($environment),bin2hex($environment));
 		$t->throws(
 			static fn()=>DataphyreApplicationRuntimeEnvironment::childEnvironment(
-				[],'example-app','ExampleApp',$environment,'dep_'.str_repeat('a',40),
+				[],'example-app','ExampleApp',$environment,'Env:Opaque_42','dep_'.str_repeat('a',40),
 			),
 			RuntimeException::class,
 			bin2hex($environment),
@@ -149,7 +150,7 @@ test('one public application grammar survives the child boundary and rejects ali
 	foreach(['A','Store:North_2-Beta',':','_','-',str_repeat('Z',120)] as $application){
 		$t->isTrue(PublicApplicationIdentifier::valid($application),$application);
 		$child=DataphyreApplicationRuntimeEnvironment::childEnvironment(
-			[],$application,'ExampleApp','production','dep_'.str_repeat('a',40),
+			[],$application,'ExampleApp','production','Env:Opaque_42','dep_'.str_repeat('a',40),
 		);
 		$t->same($application,$child['DATAPHYRE_APPLICATION_ID'],$application);
 	}
@@ -157,13 +158,35 @@ test('one public application grammar survives the child boundary and rejects ali
 		$t->isFalse(PublicApplicationIdentifier::valid($application),bin2hex($application));
 		$t->throws(
 			static fn()=>DataphyreApplicationRuntimeEnvironment::childEnvironment(
-				[],$application,'ExampleApp','production','dep_'.str_repeat('a',40),
+				[],$application,'ExampleApp','production','Env:Opaque_42','dep_'.str_repeat('a',40),
 			),
 			RuntimeException::class,
 			bin2hex($application),
 		);
 	}
 })->tag('public-application-identifier','projection','exact-grammar','negative','regression');
+
+test('one opaque environment incarnation grammar survives the broker without aliasing the routing key',static function(Context $t): void {
+	$t->same(120,PublicApplicationIdentifier::MAX_BYTES);
+	foreach(['A','Env:Opaque_42',':','_','-',str_repeat('Z',120)] as $environmentId){
+		$t->isTrue(PublicApplicationIdentifier::valid($environmentId),$environmentId);
+		$child=DataphyreApplicationRuntimeEnvironment::childEnvironment(
+			[],'example-app','ExampleApp','production',$environmentId,'dep_'.str_repeat('a',40),
+		);
+		$t->same('production',$child['DATAPHYRE_APPLICATION_ENVIRONMENT'],$environmentId.' key');
+		$t->same($environmentId,$child['DATAPHYRE_APPLICATION_ENVIRONMENT_ID'],$environmentId.' id');
+	}
+	foreach(['','env.instance','env/instance','env instance','$env',"env\ninstance","env\0instance",'é',str_repeat('a',121)] as $environmentId){
+		$t->isFalse(PublicApplicationIdentifier::valid($environmentId),bin2hex($environmentId));
+		$t->throws(
+			static fn()=>DataphyreApplicationRuntimeEnvironment::childEnvironment(
+				[],'example-app','ExampleApp','production',$environmentId,'dep_'.str_repeat('a',40),
+			),
+			RuntimeException::class,
+			bin2hex($environmentId),
+		);
+	}
+})->tag('environment-instance-identifier','projection','exact-grammar','negative','regression');
 
 test('every fixed release runtime and migration boundary delegates environment validation to one authority',static function(Context $t): void {
 	$core=dirname(__DIR__);$modules=dirname($core);
@@ -274,12 +297,13 @@ test('every fixed runtime mount rejects a wrong group',static function(Context $
 test('canonical channel bytes preserve all valid utf8 including line separator code points',static function(Context $t): void {
 	$canonical=$t->nonPublic(DataphyreApplicationRuntimeEnvironment::class)->invoke(
 		'canonicalEnvelope',
-		'serve','serve','production','dep_'.str_repeat('a',40),
+		'serve','serve','production','Env:Opaque_42','dep_'.str_repeat('a',40),
 		'hmac-sha256:'.str_repeat('b',64),
 		['Z_VALUE'=>"line\u{2028}paragraph\u{2029}end",'A_VALUE'=>'https://example.invalid/a/b'],
 	);
-	$expected='{"contract":"dataphyre.application_environment.v1","cloud_application":"serve",'
-		.'"framework_application":"serve","environment":"production","release_id":"dep_'.str_repeat('a',40).'",'
+	$expected='{"contract":"dataphyre.application_environment.v2","cloud_application":"serve",'
+		.'"framework_application":"serve","environment":"production","environment_id":"Env:Opaque_42",'
+		.'"release_id":"dep_'.str_repeat('a',40).'",'
 		.'"environment_fingerprint":"hmac-sha256:'.str_repeat('b',64).'","values":{'
 		.'"A_VALUE":"https://example.invalid/a/b","Z_VALUE":"line'."\u{2028}".'paragraph'."\u{2029}".'end"}}'."\n";
 	$t->same($expected,$canonical);
@@ -291,26 +315,35 @@ test('canonical channel bytes preserve all valid utf8 including line separator c
 test('canonical channel decoder rejects malformed contracts entries and alternate encodings',static function(Context $t): void {
 	$internals=$t->nonPublic(DataphyreApplicationRuntimeEnvironment::class);
 	$release='dep_'.str_repeat('a',40);$fingerprint='hmac-sha256:'.str_repeat('b',64);
-	$arguments=['serve','Serve','Staging.Blue',$release,$fingerprint,['Z_VALUE'=>'last','A_VALUE'=>'first']];
+	$arguments=[
+		'serve','Serve','Staging.Blue','Env:Opaque_42',$release,$fingerprint,
+		['Z_VALUE'=>'last','A_VALUE'=>'first'],
+	];
 	$canonical=$internals->invoke('canonicalEnvelope',...$arguments);
 	$t->same([
-		'release_id'=>$release,'environment_fingerprint'=>$fingerprint,
+		'environment_id'=>'Env:Opaque_42','release_id'=>$release,'environment_fingerprint'=>$fingerprint,
 		'values'=>['A_VALUE'=>'first','Z_VALUE'=>'last'],
-	],$internals->invoke('decodeEnvelope',$canonical,'serve','Serve','Staging.Blue',$release));
+	],$internals->invoke('decodeEnvelope',$canonical,'serve','Serve','Staging.Blue','Env:Opaque_42',$release));
 	$t->throws(
-		static fn()=>$internals->invoke('decodeEnvelope',"{\n",'serve','Serve','Staging.Blue',$release),
+		static fn()=>$internals->invoke('decodeEnvelope',"{\n",'serve','Serve','Staging.Blue','Env:Opaque_42',$release),
 		RuntimeException::class,
 	);
-	$wrong=json_decode($canonical,true,8,JSON_THROW_ON_ERROR);$wrong['contract']='wrong';
+	foreach(['wrong','dataphyre.application_environment.v1'] as $unsupportedContract){
+		$wrong=json_decode($canonical,true,8,JSON_THROW_ON_ERROR);$wrong['contract']=$unsupportedContract;
+		$t->throws(static fn()=>$internals->invoke(
+			'decodeEnvelope',json_encode($wrong,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n",'serve','Serve','Staging.Blue','Env:Opaque_42',$release,
+		),RuntimeException::class,$unsupportedContract);
+	}
+	$wrongId=json_decode($canonical,true,8,JSON_THROW_ON_ERROR);$wrongId['environment_id']='Env:Other_43';
 	$t->throws(static fn()=>$internals->invoke(
-		'decodeEnvelope',json_encode($wrong,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n",'serve','Serve','Staging.Blue',$release,
+		'decodeEnvelope',json_encode($wrongId,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n",'serve','Serve','Staging.Blue','Env:Opaque_42',$release,
 	),RuntimeException::class);
 	$reserved=json_decode($canonical,true,8,JSON_THROW_ON_ERROR);$reserved['values']=['DATAPHYRE_RUNTIME_FORGED'=>'value'];
 	$t->throws(static fn()=>$internals->invoke(
-		'decodeEnvelope',json_encode($reserved,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n",'serve','Serve','Staging.Blue',$release,
+		'decodeEnvelope',json_encode($reserved,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n",'serve','Serve','Staging.Blue','Env:Opaque_42',$release,
 	),RuntimeException::class);
 	$t->throws(
-		static fn()=>$internals->invoke('decodeEnvelope',' '.$canonical,'serve','Serve','Staging.Blue',$release),
+		static fn()=>$internals->invoke('decodeEnvelope',' '.$canonical,'serve','Serve','Staging.Blue','Env:Opaque_42',$release),
 		RuntimeException::class,
 	);
 })->tag('canonical','decoder','contract','entry','negative');
@@ -374,10 +407,11 @@ test('tenant values reject ascii controls while reserving every framework contro
 
 test('root process accepts only the image-owned root home value',static function(Context $t): void {
 	$t->throws(static fn()=>DataphyreApplicationRuntimeEnvironment::consume(
-		'serve','Serve','production','dep_'.str_repeat('a',40),
+		'serve','Serve','production','Env:Opaque_42','dep_'.str_repeat('a',40),
 	),RuntimeException::class);
 	$fixed=[
 		'DATAPHYRE_APPLICATION_ID'=>'fixture','DATAPHYRE_FRAMEWORK_APPLICATION'=>'Fixture',
+		'DATAPHYRE_APPLICATION_ENVIRONMENT_ID'=>'Env:Opaque_42',
 		'DATAPHYRE_ENVIRONMENT'=>'production','DATAPHYRE_APPLICATION_RELEASE'=>'dep_'.str_repeat('a',40),
 		'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>'/app','PATH'=>'/usr/local/bin:/usr/bin:/bin',
 		'PHP_INI_DIR'=>'/usr/local/etc/php','HOSTNAME'=>'fixture','HOME'=>'/root',
@@ -467,7 +501,8 @@ test('source freezes the root-only canonical channel and fixed one-shot allowlis
 	$t->contains("assertFixedMount(self::CHANNEL,'ro')",$environment);
 	$t->contains("===0400",$environment);
 	$t->contains("($"."stat['nlink'] ?? 0)===1",$environment);
-	$t->contains("dataphyre.application_environment.v1",$environment);
+	$t->contains("dataphyre.application_environment.v2",$environment);
+	$t->contains('DATAPHYRE_APPLICATION_ENVIRONMENT_ID',$environment);
 	$t->contains("JSON_UNESCAPED_LINE_TERMINATORS",$environment);
 	$t->contains("DATAPHYRE_ONE_SHOT_OPERATION",$environment);
 	$t->contains("database_identity|application_preflight|artisan_migrate|dataphyre_materialize_tables|dataphyre_postgresql_migrate|dataphyre_sqlite_migrate|dataphyre_seed|dataphyre_shared_cache_probe",$oneShot);

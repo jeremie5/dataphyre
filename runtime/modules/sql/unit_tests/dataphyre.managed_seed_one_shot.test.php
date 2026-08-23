@@ -121,8 +121,9 @@ test('root broker restores fixed image roots after the seed child execs with an 
 			'DATAPHYRE_APPLICATION_ROOT'=>'/tmp/forged-application',
 			'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>'/tmp/forged-runtime-project',
 		],
-		'serve','serve','production','dep_'.str_repeat('a',40),
+		'serve','serve','production','Env:Managed_Seed_Probe','dep_'.str_repeat('a',40),
 	);
+	$t->same('Env:Managed_Seed_Probe',$child['DATAPHYRE_APPLICATION_ENVIRONMENT_ID']);
 	$t->same('/opt/dataphyre/runtime',$child['DATAPHYRE_RUNTIME_ROOT']);
 	$t->same('/app',$child['DATAPHYRE_PROJECT_ROOT']);
 	$t->same('/app',$child['DATAPHYRE_APPLICATION_ROOT']);

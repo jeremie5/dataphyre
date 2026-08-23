@@ -16,6 +16,16 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Made the exact preflight and realtime process probes use a test-owned Core
+  load cache, so unrelated host memory pressure cannot turn a release gate into
+  a load-shedding response.
+- Bound every managed application child to a platform-owned opaque environment
+  incarnation in the versioned root environment envelope. The reusable
+  environment key and exact incarnation ID remain separate, tenant values
+  cannot override either, and application logs can now retain the exact ID
+  needed to reject rows from a deleted/recreated environment. This is a
+  fail-closed v2-only cutover: v1 envelopes are rejected without dual-read or
+  compatibility fallback.
 - Suppressed every source-local templating cache mutation in managed runtime,
   release-preflight, and bootstrap-only contexts while retaining in-memory
   rendering, planning, and per-render binding reuse. Ordinary self-hosted

@@ -271,6 +271,7 @@ test('one-shot dispatcher resolves every fixed supported operation after the rea
 		'XDEBUG_MODE'=>'coverage','PHP_INI_SCAN_DIR'=>(string)getenv('PHP_INI_SCAN_DIR'),
 	],'one-shot',[
 		'DATAPHYRE_APPLICATION_ID'=>'Store:North_2-Beta','DATAPHYRE_FRAMEWORK_APPLICATION'=>'FixtureApp',
+		'DATAPHYRE_APPLICATION_ENVIRONMENT_ID'=>'Env:Shared_Cache_Probe',
 		'DATAPHYRE_ENVIRONMENT'=>'production','DATAPHYRE_APPLICATION_RELEASE'=>'dep_'.str_repeat('a',40),
 		'DATAPHYRE_CACHE_MEMCACHED_HOST'=>'cache.internal','DATAPHYRE_CACHE_MEMCACHED_PORT'=>'11211',
 	],5000);
@@ -706,6 +707,7 @@ test('health preflight router enters the ordinary application bootstrap with rec
 	$kernel=dirname(__DIR__).'/kernel';
 	$project=__DIR__.'/fixtures/application_runtime_project';
 	$state=$t->workspace('core-process-entrypoint-health-router');
+	$state->file('cache/load_level.php',"<?php return ['level'=>0,'timestamp'=>time(),'bottleneck'=>'test'];");
 	$sentinel=$state->file('sentinel.txt','unchanged');
 	$before=hash_file('sha256',$sentinel);
 	$result=$t->coveredPhpFixture(
@@ -744,6 +746,7 @@ test('realtime server main fails closed across fixed pool address bootstrap and 
 	$kernel=dirname(__DIR__).'/kernel';
 	$project=__DIR__.'/fixtures/application_runtime_project';
 	$state=$t->workspace('core-process-entrypoint-realtime-main');
+	$state->file('cache/load_level.php',"<?php return ['level'=>0,'timestamp'=>time(),'bottleneck'=>'test'];");
 	$result=$t->coveredPhpFixture(
 		__DIR__.'/fixtures/application_runtime_realtime_server_boundary.php',
 		[$kernel,$project,$runtimeRoot,$state->root()],
@@ -1099,7 +1102,8 @@ test('instrumented exact CGI scheduler child covers the signed scheduler router'
 	$publicKeyEncoded=sodium_bin2base64($publicKey,SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING);
 	$identity=[
 		'cloud_application'=>'runtime-probe','framework_application'=>'_Runtime$Probe',
-		'environment'=>'staging_blue','release_id'=>'dep_'.str_repeat('a',40),
+		'environment'=>'staging_blue','environment_id'=>'Env:Scheduler_Cgi',
+		'release_id'=>'dep_'.str_repeat('a',40),
 	];
 	$generation='gen_'.str_repeat('b',32);
 	$applicationEnvironment=[
@@ -1107,6 +1111,7 @@ test('instrumented exact CGI scheduler child covers the signed scheduler router'
 		'DATAPHYRE_FRAMEWORK_APPLICATION'=>$identity['framework_application'],
 		'DATAPHYRE_ENVIRONMENT'=>$identity['environment'],
 		'DATAPHYRE_APPLICATION_ENVIRONMENT'=>$identity['environment'],
+		'DATAPHYRE_APPLICATION_ENVIRONMENT_ID'=>$identity['environment_id'],
 		'DATAPHYRE_APPLICATION_RELEASE'=>$identity['release_id'],
 		'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>$project,
 		'DATAPHYRE_RUNTIME_APPLICATION'=>$identity['framework_application'],

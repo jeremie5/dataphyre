@@ -226,7 +226,7 @@ test('same worker restores sealed state then recycles and terminates without met
 	$managed=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('web',$project,$key);
 	$applicationEnvironment=DataphyreApplicationRuntimeEnvironment::childEnvironment(
 		['PROBE_SECRET'=>$secret],
-		'managed-fpm-probe','_Runtime$Probe','staging','dep_'.str_repeat('a',40),
+		'managed-fpm-probe','_Runtime$Probe','staging','Env:Managed_Fpm_Probe','dep_'.str_repeat('a',40),
 	);
 	$applicationEnvironment['DATAPHYRE_RUNTIME_PROJECT_ROOT']=$project;
 	$applicationEnvironment['DATAPHYRE_RUNTIME_APPLICATION']='_Runtime$Probe';
@@ -353,7 +353,7 @@ test('fixed rootless gateway and eight-worker FPM topology serves static and dyn
 	$key=random_bytes(32);$managed=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('web',$project,$key);
 	$applicationEnvironment=DataphyreApplicationRuntimeEnvironment::childEnvironment(
 		['DATAPHYRE_RUNTIME_TEST_WEB_SLEEP'=>'1'],'managed-fpm-topology','_Runtime$Probe','staging',
-		'dep_'.str_repeat('b',40),
+		'Env:Managed_Fpm_Topology','dep_'.str_repeat('b',40),
 	);
 	$applicationEnvironment['DATAPHYRE_RUNTIME_PROJECT_ROOT']=$project;
 	$applicationEnvironment['DATAPHYRE_RUNTIME_APPLICATION']='_Runtime$Probe';

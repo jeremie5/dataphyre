@@ -189,6 +189,7 @@ test('root broker activates the non-help one-shot materializer in the unprivileg
 		'DATAPHYRE_RUNTIME_APPLICATION'=>'_Runtime$Probe',
 		'DATAPHYRE_FRAMEWORK_APPLICATION'=>'_Runtime$Probe',
 		'DATAPHYRE_APPLICATION_ID'=>'Runtime:Probe_2',
+		'DATAPHYRE_APPLICATION_ENVIRONMENT_ID'=>'Env:Materializer_Probe',
 		'DATAPHYRE_ENVIRONMENT'=>'staging','DATAPHYRE_RUNTIME_ENVIRONMENT'=>'staging',
 		'DATAPHYRE_APPLICATION_RELEASE'=>'dep_'.str_repeat('a',40),
 		'DATAPHYRE_RUNTIME_TEST_FRAMEWORK_ROOT'=>$runtimeRoot,

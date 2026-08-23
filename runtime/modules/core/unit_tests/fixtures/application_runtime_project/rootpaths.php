@@ -27,6 +27,7 @@ $paths = [
     'database' => $fixtureRoot . '/database/',
     'config' => $fixtureRoot . '/config/',
     'tmp' => $stateRoot . '/tmp/',
+    'core_cache' => $stateRoot . '/cache/',
     'common_root' => $fixtureRoot . '/',
     'app_override_key' => $fixtureRoot . '/app_override_key',
     'common_dataphyre' => dirname($runtimeRoot) . '/',

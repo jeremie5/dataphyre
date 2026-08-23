@@ -252,6 +252,15 @@ present and otherwise preserve the current one-shot/realtime PHP attestation.
 only for a validated native web attestation. Source-local writes remain
 suppressed for both paths.
 
+Every managed child receives the validated v2 environment incarnation as
+`DATAPHYRE_APPLICATION_ENVIRONMENT_ID`. This opaque platform-owned identity is
+distinct from the reusable symbolic `DATAPHYRE_APPLICATION_ENVIRONMENT` key:
+recreating an environment may preserve the key, but it must produce a new
+incarnation ID. The supervisor projects the exact bounded public identifier
+from the sealed envelope; managed children must not trim, derive, or replace it.
+The managed pool accepts only `dataphyre.application_environment.v2`; it rejects
+version 1 envelopes and provides no dual-read or compatibility fallback.
+
 Ordinary HTTP bootstrap must not register or persist scheduler definitions.
 Web and realtime use `DATAPHYRE_SCHEDULER_ACTIVATION_MODE=record_only`; the
 separate signed scheduler registration remains the only managed inventory and
