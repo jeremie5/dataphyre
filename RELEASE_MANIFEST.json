@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-08-23T04:45:30Z",
+  "generated_at_utc": "2026-08-23T05:14:24Z",
   "copied_source_files": 3696,
   "skipped_source_files": 68,
   "export_file_count": 3696,
-  "export_tree_sha256": "4000c2d1deeffe9bca07c3a3ecc87dc9f95d7530b9314a73a07bdfb1fb9806ab",
+  "export_tree_sha256": "170f678b8c1741a60403f5734f46dac8ec669fc37141f473328ab496cec2d93b",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -1759,8 +1759,8 @@
     },
     {
       "path": "docs/CHANGELOG.md",
-      "bytes": 37602,
-      "sha256": "0bd8d77fd9d9baef0d5ad7e89dc0d3c97088976b3b802c2436cc8628e2180467"
+      "bytes": 37760,
+      "sha256": "0171220c057e5afe03747af3a6ab979ec323e176e41fc79e87dc9d81c2205603"
     },
     {
       "path": "docs/changelog/v2.0.md",
@@ -2729,8 +2729,8 @@
     },
     {
       "path": "runtime/modules/core/documentation/Dataphyre_Core.md",
-      "bytes": 72108,
-      "sha256": "baaf4281b0fe53ef212c42b87418a6290fcdca05c96664ef194aaebf1a2b4255"
+      "bytes": 72304,
+      "sha256": "b152bf650725d7a71249d0f27ce4628f0f7078e5f478499ca9c5e118d16c1d6b"
     },
     {
       "path": "runtime/modules/core/documentation/Dataphyre_Managed_PHP_Web_Pool.md",
@@ -3059,8 +3059,8 @@
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_supervisor.php",
-      "bytes": 108606,
-      "sha256": "30ba85642acf37099e8f6f2d84efe7b98f3c6a073364f293f2d9d42e58fddbdd"
+      "bytes": 109248,
+      "sha256": "62960e08330c918232f5fc344c84d9937e8e3d8ee6fea68d5552506477c19590"
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_web_gateway.php",
@@ -3169,8 +3169,8 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_scheduler_multiplex.test.php",
-      "bytes": 20839,
-      "sha256": "7f76d98c5b1c97a86062f16cac9193111666ed1cedc47a3ea9b0a6c3762b04ca"
+      "bytes": 21978,
+      "sha256": "ab8c49477324aac449fc517c00ec31a9b20b601430a19189847411505bbaaf06"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_secret_broker.test.php",

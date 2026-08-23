@@ -1234,6 +1234,26 @@ function dataphyre_runtime_scheduler_decode_callback_response(string $response):
 	return ['contract'=>'dataphyre.scheduler_callback.v1','ok'=>true];
 }
 
+function dataphyre_runtime_scheduler_select(
+	array &$read,
+	array &$write,
+	array &$except,
+	?bool &$stopRequested,
+	?callable $selector=null,
+): int {
+	$selector ??= static function(array &$read,array &$write,array &$except): int|false {
+		return @stream_select($read,$write,$except,0,20000);
+	};
+	$selected=$selector($read,$write,$except);
+	// An async TERM/INT may interrupt select or arrive as it returns ready.
+	// Stop authority must win before any socket settlement or cadence mutation.
+	dataphyre_runtime_require_not_stopping($stopRequested);
+	if($selected===false || !is_int($selected) || $selected<0){
+		throw new RuntimeException('Scheduler callback multiplex select failed.');
+	}
+	return $selected;
+}
+
 /**
  * Drains due callbacks through bounded non-blocking sockets.
  *
@@ -1435,8 +1455,7 @@ function dataphyre_runtime_run_scheduler_multiplexed_callbacks(
 			if(is_resource($statusListener)){
 				dataphyre_runtime_serve_status($statusListener,$runtime,$pendingRequests,$publicKey);
 			}
-			$selected=@stream_select($read,$write,$except,0,20000);
-			if($selected===false) throw new RuntimeException('Scheduler callback multiplex select failed.');
+			$selected=dataphyre_runtime_scheduler_select($read,$write,$except,$stopRequested);
 			foreach($write as $socket){
 				$key=$socketKeys[(int)get_resource_id($socket)] ?? null;
 				if(!is_string($key) || !isset($active[$key])) continue;

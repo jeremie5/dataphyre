@@ -19,7 +19,9 @@ All notable Dataphyre changes are tracked here.
 - Stopped classifying the scheduler gateway's own graceful shutdown interrupt
   as an application callback failure. An interrupted callback remains unproved
   with its claim leased until expiry, while genuine callback, transport,
-  timeout, and cleanup failures retain the bounded redacted diagnostic.
+  timeout, and cleanup failures retain the bounded redacted diagnostic. The
+  supervisor now also rechecks stop authority immediately after multiplex I/O,
+  so a TERM-interrupted select cannot manufacture failed cadence evidence.
 - Unified release-preflight and managed-runtime scheduler definition evidence
   behind one path-independent canonical producer, eliminating hash drift from
   seconds-versus-milliseconds encoding, dependency reordering, and the legacy

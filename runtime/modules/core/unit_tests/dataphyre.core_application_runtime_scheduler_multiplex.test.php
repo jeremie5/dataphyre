@@ -34,10 +34,36 @@ test('callback fan-out follows the immutable VM CPU boundary beneath the gateway
 	$t->lessThanOrEqual(32,$detected);
 	$t->contains('MAX_CHILDREN=32',$gateway);
 	$t->contains('stream_select($read,$write,$except,0,20000)',$supervisor);
+	$t->contains('dataphyre_runtime_scheduler_select($read,$write,$except,$stopRequested)',$supervisor);
 	$t->contains("'scheduler_active_since_milliseconds'=>\$initialSchedulerActiveSince",$supervisor);
 	$t->contains('usort($due,static function',$supervisor);
 	$t->contains("strcmp(\$leftDefinition['name'],\$rightDefinition['name'])",$supervisor);
 })->tag('cpu-affinity','cgroup-quota','capacity','cadence','deterministic');
+
+test('multiplex select gives graceful stop authority precedence over EINTR and ready sockets',static function(Context $t): void {
+	require_once dirname(__DIR__).'/kernel/application_runtime_supervisor.php';
+	$invoke=static function(bool $stop,int|false $result): int {
+		$read=[];$write=[];$except=[];$stopRequested=$stop;
+		$selector=static function(array &$read,array &$write,array &$except) use ($result): int|false {
+			return $result;
+		};
+		return dataphyre_runtime_scheduler_select($read,$write,$except,$stopRequested,$selector);
+	};
+	foreach([false,0,1] as $selected){
+		$t->throws(
+			static fn()=> $invoke(true,$selected),
+			DataphyreManagedRuntimeGracefulShutdown::class,
+			'TERM wins whether select reports EINTR, timeout, or readiness',
+		);
+	}
+	$t->throws(
+		static fn()=> $invoke(false,false),
+		RuntimeException::class,
+		'a genuine select failure retains its ordinary failure path',
+	);
+	$t->same(0,$invoke(false,0));
+	$t->same(1,$invoke(false,1));
+})->tag('term','eintr','select','claim-retention','deterministic');
 
 test('activation phases balance mixed cadences without making eligible work disappear',static function(Context $t): void {
 	$kernel=dirname(__DIR__).'/kernel';

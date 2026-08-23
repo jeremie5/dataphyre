@@ -411,6 +411,9 @@ Graceful runtime termination interrupts an in-flight scheduler gateway handler
 without classifying that framework-owned interruption as an application
 callback failure or emitting a failure diagnostic. The unproved claim remains
 leased until expiry so a successor cannot overlap the interrupted attempt.
+When termination arrives during callback multiplex I/O, the supervisor rechecks
+the stop authority immediately after the select boundary and before settling a
+socket or changing cadence evidence.
 Unexpected gateway, transport, timeout, cleanup, or callback failures continue
 to emit only the bounded redacted internal diagnostic and follow the ordinary
 failure/claim-release path.
