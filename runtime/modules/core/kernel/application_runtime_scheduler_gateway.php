@@ -208,7 +208,7 @@ final class DataphyreApplicationRuntimeSchedulerGateway
 			$failurePhase='gateway_transport';$failureKind='transport';
 			self::writeCompletedResponse($connection,$schedulerKind,$output,$request['method']==='HEAD');
 		}catch(Throwable $failure){
-			if(is_string($schedulerName)) self::reportFailure(
+			self::reportRequestFailure(
 				$schedulerName,$failurePhase,$failureKind,$failureExitCode,$failure,$childDiagnostic,
 			);
 			throw $failure;
@@ -258,6 +258,15 @@ final class DataphyreApplicationRuntimeSchedulerGateway
 			if(is_callable($writer)){$writer($line);return;}
 			@fwrite(STDERR,$line);
 		}catch(Throwable){}
+	}
+
+	/** @param null|array{failure_phase:string,exception_class:string} $child */
+	private static function reportRequestFailure(
+		?string $taskName,string $phase,string $kind,?int $exitCode,Throwable $failure,?array $child,
+		?callable $writer=null,
+	): void {
+		if($failure instanceof DataphyreApplicationRuntimeSchedulerGatewayInterrupted || !is_string($taskName)) return;
+		self::reportFailure($taskName,$phase,$kind,$exitCode,$failure,$child,$writer);
 	}
 
 	/** @return array{0:array{method:string,target:string,protocol:string,headers:array<string,string>},1:string} */

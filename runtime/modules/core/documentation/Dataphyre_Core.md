@@ -407,6 +407,14 @@ starving later definitions. Deactivation stops new claims after the current
 callback drains. Task paths, claims, callback output, signing keys, and
 credentials never enter status evidence.
 
+Graceful runtime termination interrupts an in-flight scheduler gateway handler
+without classifying that framework-owned interruption as an application
+callback failure or emitting a failure diagnostic. The unproved claim remains
+leased until expiry so a successor cannot overlap the interrupted attempt.
+Unexpected gateway, transport, timeout, cleanup, or callback failures continue
+to emit only the bounded redacted internal diagnostic and follow the ordinary
+failure/claim-release path.
+
 The private status contract `dataphyre.application_runtime.v6` exposes the
 supervisor identity, immutable application/release identity, activation mode,
 active state, `scheduler_cycle_in_progress`, the rootless HTTP gateway, FPM

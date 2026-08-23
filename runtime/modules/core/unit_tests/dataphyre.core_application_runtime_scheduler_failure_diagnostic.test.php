@@ -68,9 +68,16 @@ test('callback throwable diagnostics disclose only an allowlisted phase and shor
 test('root gateway records one bounded exit or timeout line without raw child bytes',static function(Context $t): void {
 	require_once dirname(__DIR__).'/kernel/application_runtime_scheduler_gateway.php';
 	$gateway=$t->nonPublic(DataphyreApplicationRuntimeSchedulerGateway::class);
+	$interruptedLines=[];
+	$gateway->invoke(
+		'reportRequestFailure','serve.retention','gateway_wait','exception',null,
+		new DataphyreApplicationRuntimeSchedulerGatewayInterrupted('Scheduler handler interrupted.'),null,
+		static function(string $line) use (&$interruptedLines): void {$interruptedLines[]=$line;},
+	);
+	$t->same([],$interruptedLines,'graceful gateway interruption is not a callback failure');
 	$lines=[];
 	$gateway->invoke(
-		'reportFailure','serve.retention','gateway_timeout','timeout',null,
+		'reportRequestFailure','serve.retention','gateway_timeout','timeout',null,
 		new RuntimeException('/private/runtime/path?token=unsafe'),null,
 		static function(string $line) use (&$lines): void {$lines[]=$line;},
 	);
@@ -177,7 +184,8 @@ test('router and gateway retain diagnostics only across their private stderr bou
 		$t->contains('DataphyreApplicationRuntimeSchedulerFailureDiagnostic::encodeLog',$gateway);
 	$t->contains("\$failurePhase='gateway_timeout';\$failureKind='timeout'",$gateway);
 	$t->contains("\$failurePhase='router_exit';\$failureKind='exit'",$gateway);
-	$t->contains('if(is_string($schedulerName)) self::reportFailure',$gateway);
+	$t->contains('self::reportRequestFailure(',$gateway);
+	$t->contains('instanceof DataphyreApplicationRuntimeSchedulerGatewayInterrupted',$gateway);
 		$t->contains('reportManagedFailure($failure_reporter,$failure_phase,$failure)',$runner);
 		$t->contains("'application_reported_phase'=>",$protocol);
 		$t->contains("'application_reported_exception_class'=>",$protocol);
