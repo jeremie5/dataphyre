@@ -13,12 +13,14 @@ require_once dirname(__DIR__,2).'/core/kernel/application_scheduler_definition_e
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
 /**
- * Registers and dispatches Dataphyre scheduler tasks through persisted runtime state.
+ * Registers and dispatches Dataphyre scheduler tasks through role-scoped runtime state.
  *
- * The scheduling kernel stores one JSON definition per scheduler under Dataphyre's cache/scheduling directory, tracks the
- * last successful run timestamp, and uses a running_lock file to prevent overlapping execution. Scheduler registration is
- * intentionally cheap: run() refreshes the definition and only schedules a shutdown dispatch when frequency, timeout,
- * server load, and lock state allow it.
+ * Legacy self-hosted scheduling stores one JSON definition per scheduler under Dataphyre's cache/scheduling directory,
+ * tracks the last successful run timestamp, and uses a running_lock file to prevent overlapping execution. Fixed managed
+ * web and realtime pools validate definitions without source-local state; isolated release preflight writes only beneath
+ * its private attested root; and the signed scheduler supervisor owns the managed in-memory inventory and dispatch.
+ * Self-hosted registration is intentionally cheap: run() refreshes the definition and only schedules a shutdown dispatch
+ * when frequency, timeout, server load, and lock state allow it.
  *
  * Names are limited to alphanumeric characters, dot, underscore, and dash so cache paths cannot escape the scheduler
  * directory. Task execution is delegated to the internal scheduler HTTP route with an internal traffic header rather than
@@ -51,8 +53,9 @@ class scheduling {
 	 * `default` preserves the historical request-driven scheduler. `record_only`
 	 * persists validated definitions without locks, timestamps, or callbacks.
 	 * `supervisor` permits dispatch only inside the framework-owned scheduler
-	 * loopback pool; ordinary web, health, and preflight requests still record
-	 * definitions but cannot run application tasks.
+	 * loopback pool. Managed web/realtime requests validate without source-local
+	 * state, while isolated release preflight records only private attested
+	 * evidence; neither can run application tasks.
 	 */
 	public static function use_activation_mode(?string $mode): void {
 		if(self::managed_pool() || self::bootstrap_context()!==null) return;

@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-08-23T06:20:25Z",
+  "generated_at_utc": "2026-08-23T06:30:21Z",
   "copied_source_files": 3696,
   "skipped_source_files": 46,
   "export_file_count": 3696,
-  "export_tree_sha256": "f4f1f89665f6a72dcc745ff27bbaf5dd0603b89b6ff8fdd950d520856718c336",
+  "export_tree_sha256": "990ef1c39ba16eb83257d0ebc12b4381b861623749d510a822664bd337c1ed8e",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -14879,8 +14879,8 @@
     },
     {
       "path": "runtime/modules/scheduling/kernel/scheduling.main.php",
-      "bytes": 43372,
-      "sha256": "914b12471329546f8a2da529561d530a46f7387cbfc29eb0ca75a3e31a45a677"
+      "bytes": 43712,
+      "sha256": "a410bc6fe75be95806d45fd944610013a07a6a3f71978f1cb69f07abd8088ff4"
     },
     {
       "path": "runtime/modules/scheduling/kernel/task_runner.php",
