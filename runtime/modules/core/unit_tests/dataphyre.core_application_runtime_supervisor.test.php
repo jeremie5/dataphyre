@@ -193,6 +193,7 @@ test('supervisor owns private status and signs cadence before privilege-dropped 
 	$t->contains("$" . "client['pong_deadline']", $realtimeServer);
 	$t->contains("$" . "this->routes[$" . "path]['authorize']", $realtimeServer);
 	$t->contains("PROBE_PATH='/dataphyre/runtime/realtime/probe'",$realtimeServer);
+	$t->contains("LIVENESS_PATH='/.dataphyre/live'",$realtimeServer);
 	$t->contains("'origin'=>'https://dataphyre.invalid'",$realtimeServer);
 	$t->contains("'application_authorization_rejections'=>true",$realtimeServer);
 	$t->contains("if($" . "pool!=='realtime') unset($" . "applicationEnvironment['DATAPHYRE_RUNTIME_REALTIME_PROBE_SECRET'])",$supervisor);
@@ -687,10 +688,12 @@ $invalid=false;
 try{\dataphyre\realtime::register('/events/../admin',static fn(): array=>[],static fn(): array=>[]);}catch(InvalidArgumentException){$invalid=true;}
 $reserved=false;
 try{\dataphyre\realtime::register('/dataphyre/runtime/realtime/probe',static fn(): array=>[],static fn(): array=>[]);}catch(InvalidArgumentException){$reserved=true;}
+$livenessReserved=false;
+try{\dataphyre\realtime::register('/.dataphyre/live',static fn(): array=>[],static fn(): array=>[]);}catch(InvalidArgumentException){$livenessReserved=true;}
 $evidence=\dataphyre\realtime::runtimeEvidence();
 $sealed=false;
 try{\dataphyre\realtime::register('/later',static fn(): array=>[],static fn(): array=>[]);}catch(LogicException){$sealed=true;}
-echo json_encode(compact('duplicate','invalid','reserved','sealed','evidence'),JSON_THROW_ON_ERROR);
+echo json_encode(compact('duplicate','invalid','reserved','livenessReserved','sealed','evidence'),JSON_THROW_ON_ERROR);
 PHP;
 	$result=$t->phpProcess(['-r',$script,$kernel]);
 	$t->processSucceeded($result);
@@ -698,6 +701,7 @@ PHP;
 	$t->same(true,$payload['duplicate']);
 	$t->same(true,$payload['invalid']);
 	$t->same(true,$payload['reserved']);
+	$t->same(true,$payload['livenessReserved']);
 	$t->same(true,$payload['sealed']);
 	$t->same(1,$payload['evidence']['route_count']);
 	$t->matches('/^sha256:[a-f0-9]{64}$/D',$payload['evidence']['registration_sha256']);

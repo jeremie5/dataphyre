@@ -12,13 +12,15 @@ if(!is_string($kernel)) exit(64);
 require_once $kernel.'/realtime.php';
 $authorize=static fn(array $handshake): false=>false;
 $events=static fn(array $authorization,?string $cursor): array=>['cursor'=>$cursor,'events'=>[]];
-$wrongPool=false;$invalid=false;$duplicate=false;$limit=false;$sealed=false;
+$wrongPool=false;$invalid=false;$livenessReserved=false;$duplicate=false;$limit=false;$sealed=false;
 putenv('DATAPHYRE_RUNTIME_POOL=web');
 try{\dataphyre\realtime::runtimeRoutes();}
 catch(LogicException){$wrongPool=true;}
 putenv('DATAPHYRE_RUNTIME_POOL=realtime-preflight');
 try{\dataphyre\realtime::register('/dataphyre/runtime/realtime/probe',$authorize,$events);}
 catch(InvalidArgumentException){$invalid=true;}
+try{\dataphyre\realtime::register('/.dataphyre/live',$authorize,$events);}
+catch(InvalidArgumentException){$livenessReserved=true;}
 \dataphyre\realtime::register('/route-000',$authorize,$events);
 try{\dataphyre\realtime::register('/route-000',$authorize,$events);}
 catch(InvalidArgumentException){$duplicate=true;}
@@ -30,4 +32,4 @@ catch(LogicException){$limit=true;}
 $evidence=\dataphyre\realtime::runtimeEvidence();
 try{\dataphyre\realtime::register('/route-after-seal',$authorize,$events);}
 catch(LogicException){$sealed=true;}
-echo json_encode(compact('wrongPool','invalid','duplicate','limit','sealed','evidence'),JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),"\n";
+echo json_encode(compact('wrongPool','invalid','livenessReserved','duplicate','limit','sealed','evidence'),JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),"\n";

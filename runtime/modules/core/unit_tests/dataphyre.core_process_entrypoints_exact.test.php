@@ -730,6 +730,7 @@ test('realtime registry rejects caller access duplicates limits and post-seal mu
 	$payload=$result->json();
 	$t->same(true,$payload['wrongPool']);
 	$t->same(true,$payload['invalid']);
+	$t->same(true,$payload['livenessReserved']);
 	$t->same(true,$payload['duplicate']);
 	$t->same(true,$payload['limit']);
 	$t->same(true,$payload['sealed']);
@@ -751,6 +752,7 @@ test('realtime server main fails closed across fixed pool address bootstrap and 
 	$t->processSucceeded($result,$result->stderr());
 	$t->same([
 		'probeConflict'=>true,
+		'livenessConflict'=>true,
 		'reservedOrigin'=>true,
 		'wrongPool'=>64,
 		'wrongAddress'=>64,
@@ -796,6 +798,29 @@ test('realtime server drains proxy streams and enforces maintenance bounds on li
 			'next_event_at'=>microtime(true)+60,'last_ping_at'=>microtime(true),'pong_deadline'=>null,
 		];
 	};
+	foreach([
+		'GET /.dataphyre/live HTTP/1.1'=>['200 OK',''],
+		'HEAD /.dataphyre/live HTTP/1.1'=>['405 Method Not Allowed',''],
+		'GET /.dataphyre/live?probe=1 HTTP/1.1'=>['404 Not Found',''],
+		'POST /.dataphyre/live HTTP/1.1'=>['405 Method Not Allowed',''],
+	] as $requestLine=>[$expectedStatus,$expectedBody]){
+		[$livenessStream,$livenessPeer]=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
+		$id=(int)$livenessStream;
+		$internals->writeProperty('clients',[
+			$id=>$client($livenessStream,[
+				'phase'=>'headers',
+				'header_buffer'=>$requestLine."\r\nHost: 127.0.0.1:8080\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+			]),
+		]);
+		$internals->invoke('dispatchInitialRequest',$id);
+		$livenessState=$internals->readProperty('clients')[$id];
+		$t->same('closing',$livenessState['phase'],$requestLine);
+		$t->same(null,$livenessState['backend'],$requestLine);
+		$t->contains("HTTP/1.1 {$expectedStatus}\r\n",$livenessState['write_buffer'],$requestLine);
+		$t->isTrue(str_ends_with($livenessState['write_buffer'],"\r\n\r\n".$expectedBody),$requestLine);
+		fclose($livenessPeer);fclose($livenessStream);
+	}
+	$internals->writeProperty('clients',[]);
 	[$clientStream,$clientPeer]=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
 	[$backendStream,$backendPeer]=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
 	foreach([$clientStream,$clientPeer,$backendStream,$backendPeer] as $stream) stream_set_blocking($stream,false);
@@ -2013,6 +2038,26 @@ test('covered realtime pool performs application and framework WebSocket roundtr
 				"Origin: {$origin}\r\n\r\n");
 			return [$socket,$readHead($socket)];
 		};
+
+		$liveness=$connect();
+		$writeAll($liveness,"GET /.dataphyre/live HTTP/1.1\r\nHost: 127.0.0.1:8080\r\nConnection: close\r\n\r\n");
+		$livenessHead=$readHead($liveness);
+		$t->matches('/^HTTP\/1\.1 200 OK\b/D',$livenessHead);
+		$t->contains("Content-Length: 0\r\n",$livenessHead);
+		$t->contains("Cache-Control: no-store\r\n",$livenessHead);
+		fclose($liveness);
+
+		$livenessHeadOnly=$connect();
+		$writeAll($livenessHeadOnly,"HEAD /.dataphyre/live HTTP/1.1\r\nHost: 127.0.0.1:8080\r\nConnection: close\r\n\r\n");
+		$t->matches('/^HTTP\/1\.1 405 Method Not Allowed\b/D',$readHead($livenessHeadOnly));fclose($livenessHeadOnly);
+
+		$livenessQuery=$connect();
+		$writeAll($livenessQuery,"GET /.dataphyre/live?probe=1 HTTP/1.1\r\nHost: 127.0.0.1:8080\r\nConnection: close\r\n\r\n");
+		$t->matches('/^HTTP\/1\.1 404 Not Found\b/D',$readHead($livenessQuery));fclose($livenessQuery);
+
+		$livenessMethod=$connect();
+		$writeAll($livenessMethod,"POST /.dataphyre/live HTTP/1.1\r\nHost: 127.0.0.1:8080\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+		$t->matches('/^HTTP\/1\.1 405 Method Not Allowed\b/D',$readHead($livenessMethod));fclose($livenessMethod);
 
 		[$probe,$probeHead]=$handshake('/dataphyre/runtime/realtime/probe','https://dataphyre.invalid');
 		$t->matches('/^HTTP\/1\.1 101\b/D',$probeHead);

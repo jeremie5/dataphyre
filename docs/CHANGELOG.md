@@ -74,6 +74,11 @@ All notable Dataphyre changes are tracked here.
 
 ### Added
 
+- Added one exact framework-owned `GET /.dataphyre/live` response at the fixed
+  public realtime ingress. It is an allocation-only empty response that never
+  crosses the private web gateway or performs request-time application/PHP-FPM
+  work; application `/health` readiness and root-only runtime status remain
+  separate fail-closed contracts.
 - Added bounded native multi-row SQL mutation planning for `TableRepository`,
   `RepositoryQuery`, and `TableQuery`. Compatible PostgreSQL/YugabyteDB and
   SQLite `createMany(...)` / `upsertMany(...)` calls now group equal row shapes,

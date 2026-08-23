@@ -12,6 +12,7 @@ require_once __DIR__.'/application_runtime_child_environment.php';
 
 /** Fixed public HTTP ingress and authenticated WebSocket runtime. */
 final class DataphyreApplicationRuntimeRealtimeServer {
+	private const LIVENESS_PATH='/.dataphyre/live';
 	private const PROBE_PATH='/dataphyre/runtime/realtime/probe';
 	private const PUBLIC_HOST='0.0.0.0';
 	private const PUBLIC_PORT=8080;
@@ -44,8 +45,8 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 
 	/** @param array<string,array{authorize:callable,events:callable}> $routes */
 	public function __construct(array $routes) {
-		if(isset($routes[self::PROBE_PATH])){
-			throw new RuntimeException('Application realtime path conflicts with the fixed framework probe.');
+		if(isset($routes[self::PROBE_PATH]) || isset($routes[self::LIVENESS_PATH])){
+			throw new RuntimeException('Application realtime path conflicts with a fixed framework endpoint.');
 		}
 		$registeredPaths=array_keys($routes);
 		sort($registeredPaths,SORT_STRING);
@@ -277,7 +278,29 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 			$this->upgradeWebsocket($id, $request);
 			return;
 		}
+		$path=parse_url($request['target'],PHP_URL_PATH);
+		if($path===self::LIVENESS_PATH){
+			if($request['target']!==self::LIVENESS_PATH){
+				$this->reject($id,404,'Not Found');
+				return;
+			}
+			if($request['method']!=='GET'){
+				$this->reject($id,405,'Method Not Allowed');
+				return;
+			}
+			$this->liveness($id);
+			return;
+		}
 		$this->startProxy($id, $request);
+	}
+
+	private function liveness(int $id): void {
+		if(!isset($this->clients[$id])) return;
+		$this->clients[$id]['write_buffer']="HTTP/1.1 200 OK\r\nContent-Length: 0\r\n".
+			"Cache-Control: no-store\r\nConnection: close\r\n\r\n";
+		$this->clients[$id]['close_after_write']=true;
+		$this->clients[$id]['phase']='closing';
+		$this->clients[$id]['header_buffer']='';
 	}
 
 	/** @param array{method:string,target:string,protocol:string,headers:array<string,string>} $request */

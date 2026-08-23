@@ -193,6 +193,16 @@ gateway. PID 1 exposes status and scheduler claims only on the root-only
 listener. Applications do not declare processes, commands, listeners, ports,
 pool sizes, or sidecars.
 
+The public realtime ingress answers only the exact framework-owned
+`GET /.dataphyre/live` request with a fixed empty `200` response before any
+request-time application bootstrap, private-gateway hop, or PHP-FPM work.
+Queries, other methods, and application attempts to register that path fail
+closed. The realtime process has already completed its ordinary application
+registration bootstrap before it binds the listener; this liveness signal is
+therefore distinct from both application-owned `/health` readiness and the
+root-only runtime status contract. Platforms must send a valid HTTP request,
+including `Host`, and must not substitute `/health` for this cheap edge check.
+
 The web gateway, FPM master and workers, and realtime role are UID/GID `10001`,
 have empty inheritable, permitted, effective, and ambient capability sets, and
 run with `NoNewPrivs`. Their root supervisor deliberately lacks `CAP_SETPCAP`,
@@ -326,8 +336,8 @@ cursor and a list of JSON-serializable events. Dataphyre owns client, header,
 frame, queue, callback-time, polling, ping/pong, and backpressure limits.
 Inbound application data frames are rejected; control ping, pong, and close
 frames follow the WebSocket protocol. The reserved
-`/dataphyre/runtime/realtime/probe` path is framework-owned and cannot be
-registered by applications.
+`/.dataphyre/live` and `/dataphyre/runtime/realtime/probe` paths are
+framework-owned and cannot be registered by applications.
 
 Inside a running exact candidate image, the platform runs:
 

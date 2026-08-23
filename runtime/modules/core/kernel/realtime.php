@@ -28,6 +28,7 @@ use LogicException;
  * is JSON encoded by the framework as one outbound WebSocket text message.
  */
 final class realtime {
+	private const FRAMEWORK_LIVENESS_PATH='/.dataphyre/live';
 	private const FRAMEWORK_PROBE_PATH='/dataphyre/runtime/realtime/probe';
 	/** @var array<string,array{authorize:callable,events:callable}> */
 	private static array $routes=[];
@@ -88,7 +89,8 @@ final class realtime {
 	}
 
 	private static function validPath(string $path): bool {
-		return $path!==self::FRAMEWORK_PROBE_PATH
+		return $path!==self::FRAMEWORK_LIVENESS_PATH
+			&& $path!==self::FRAMEWORK_PROBE_PATH
 			&& \strlen($path)>=2
 			&& \strlen($path)<=256
 			&& !\str_contains($path, '//')

@@ -16,12 +16,17 @@ require_once $kernel.'/application_runtime_realtime_server.php';
 
 $authorize=static fn(array $handshake): false=>false;
 $events=static fn(array $authorization,?string $cursor): array=>['cursor'=>$cursor,'events'=>[]];
-$probeConflict=false;$reservedOrigin=false;
+$probeConflict=false;$livenessConflict=false;$reservedOrigin=false;
 try{
 	new DataphyreApplicationRuntimeRealtimeServer([
 		'/dataphyre/runtime/realtime/probe'=>['authorize'=>$authorize,'events'=>$events],
 	]);
 }catch(RuntimeException){$probeConflict=true;}
+try{
+	new DataphyreApplicationRuntimeRealtimeServer([
+		'/.dataphyre/live'=>['authorize'=>$authorize,'events'=>$events],
+	]);
+}catch(RuntimeException){$livenessConflict=true;}
 try{
 	new DataphyreApplicationRuntimeRealtimeServer([
 		'/application'=>['authorize'=>static fn(array $handshake): bool=>true,'events'=>$events],
@@ -63,5 +68,5 @@ foreach([
 }
 
 echo json_encode(compact(
-	'probeConflict','reservedOrigin','wrongPool','wrongAddress','invalidBootstrap','bindFailure','parseRejections',
+	'probeConflict','livenessConflict','reservedOrigin','wrongPool','wrongAddress','invalidBootstrap','bindFailure','parseRejections',
 ),JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),"\n";
