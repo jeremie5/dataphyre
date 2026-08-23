@@ -8,6 +8,7 @@
 namespace dataphyre;
 
 require_once dirname(__DIR__,2).'/core/kernel/application_runtime_scheduler_protocol.php';
+require_once dirname(__DIR__,2).'/core/kernel/application_scheduler_definition_evidence.php';
 
 tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T="Module initialization");
 
@@ -105,13 +106,9 @@ class scheduling {
 		if(!is_array($state)){
 			return self::empty_runtime_tick_report(false);
 		}
-		$definitions=array_values($state['definitions']);
-		usort($definitions,static fn(array $left,array $right): int=>$left['name']<=>$right['name']);
-		$encoded=json_encode(
-			$definitions,
-			JSON_UNESCAPED_SLASHES|JSON_PRESERVE_ZERO_FRACTION|JSON_THROW_ON_ERROR,
-		);
-		$definition_count=count($definitions);
+		$inventory=\DataphyreApplicationSchedulerDefinitionEvidence::inventory(array_values($state['definitions']));
+		if(!is_array($inventory)) return self::empty_runtime_tick_report(false);
+		$definition_count=$inventory['definition_count'];
 		$ok=$state['registration_failure_count']===0
 			&& $state['registration_attempt_count']===$state['registration_accepted_count']
 			&& $state['registration_accepted_count']===$definition_count;
@@ -122,8 +119,8 @@ class scheduling {
 			'registration_accepted_count'=>$state['registration_accepted_count'],
 			'registration_failure_count'=>$state['registration_failure_count'],
 			'definition_count'=>$definition_count,
-			'definition_sha256'=>'sha256:'.hash('sha256',$encoded),
-			'definitions'=>$definitions,
+			'definition_sha256'=>$inventory['definition_sha256'],
+			'definitions'=>$inventory['definitions'],
 		];
 		$transport=json_encode($report,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
 		return strlen($transport)<=\DataphyreApplicationRuntimeSchedulerProtocol::MAX_TRANSPORT_BYTES
@@ -870,16 +867,17 @@ class scheduling {
 
 	/** @return array<string,mixed> */
 	private static function empty_runtime_tick_report(bool $ok): array {
-		$encoded=json_encode([],JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
+		$inventory=\DataphyreApplicationSchedulerDefinitionEvidence::inventory([])
+			?? throw new \RuntimeException('Empty scheduler evidence is invalid.');
 		return [
 			'contract'=>'dataphyre.scheduler_registration.v1',
 			'ok'=>$ok,
 			'registration_attempt_count'=>0,
 			'registration_accepted_count'=>0,
 			'registration_failure_count'=>0,
-			'definition_count'=>0,
-			'definition_sha256'=>'sha256:'.hash('sha256',$encoded),
-			'definitions'=>[],
+			'definition_count'=>$inventory['definition_count'],
+			'definition_sha256'=>$inventory['definition_sha256'],
+			'definitions'=>$inventory['definitions'],
 		];
 	}
 
@@ -918,34 +916,7 @@ class scheduling {
 
 	/** @return ?array{name:string,task_sha256:string,dependency_sha256:list<string>,frequency_milliseconds:int,timeout_milliseconds:int,memory_limit:string} */
 	private static function runtime_tick_definition(array $scheduler): ?array {
-		$name=(string)($scheduler['name'] ?? '');
-		$task=(string)($scheduler['file_path'] ?? '');
-		if(!self::valid_scheduler_name($name) || $task==='' || is_link($task) || !is_file($task)){
-			return null;
-		}
-		$task_hash=hash_file('sha256',$task);
-		if(!is_string($task_hash) || preg_match('/^[a-f0-9]{64}$/D',$task_hash)!==1){
-			return null;
-		}
-		$dependency_hashes=[];
-		foreach(($scheduler['dependencies'] ?? []) as $dependency){
-			if(!is_string($dependency) || $dependency==='' || is_link($dependency) || !is_file($dependency)){
-				return null;
-			}
-			$hash=hash_file('sha256',$dependency);
-			if(!is_string($hash) || preg_match('/^[a-f0-9]{64}$/D',$hash)!==1){
-				return null;
-			}
-			$dependency_hashes[]='sha256:'.$hash;
-		}
-		return [
-			'name'=>$name,
-			'task_sha256'=>'sha256:'.$task_hash,
-			'dependency_sha256'=>$dependency_hashes,
-			'frequency_milliseconds'=>max(0,min(2147483647,(int)ceil(((float)($scheduler['frequency'] ?? 0.0))*1000))),
-			'timeout_milliseconds'=>max(1000,min(300000,(int)ceil(((float)($scheduler['timeout'] ?? 1.0))*1000))),
-			'memory_limit'=>(string)($scheduler['memory_limit'] ?? ''),
-		];
+		return \DataphyreApplicationSchedulerDefinitionEvidence::definition($scheduler);
 	}
 
 	private static function managed_pool(): bool {

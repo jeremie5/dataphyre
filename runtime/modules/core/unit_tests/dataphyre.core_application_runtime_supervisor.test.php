@@ -754,7 +754,7 @@ test('realtime startup executes and requires every application invalid-origin re
 	$t->same(1,$rejectionCalls);
 })->tag('realtime','authorization','origin','exact-image','negative','security');
 
-test('realtime release preflight leaves application bytes unchanged and cannot dispatch schedules', static function(Context $t): void {
+test('realtime release preflight is immutable and matches managed runtime scheduler evidence', static function(Context $t): void {
 	$kernel=dirname(__DIR__) . '/kernel';
 	$project=__DIR__ . '/fixtures/application_runtime_project';
 	$snapshot=static function(string $root): array {
@@ -790,6 +790,7 @@ test('realtime release preflight leaves application bytes unchanged and cannot d
 		'DATAPHYRE_RUNTIME_TEST_FRAMEWORK_ROOT'=>dirname(__DIR__,3),
 		'DATAPHYRE_RUNTIME_TEST_STATE_ROOT'=>$state->root(),
 		'DATAPHYRE_RUNTIME_TEST_REALTIME_SIDE_EFFECT_PATH'=>$sideEffect,
+		'DATAPHYRE_RUNTIME_TEST_SCHEDULER_STATE_MUTATION'=>'valid-dependency',
 	]);
 	$t->processSucceeded($result);
 	$payload=$result->json();
@@ -810,6 +811,58 @@ test('realtime release preflight leaves application bytes unchanged and cannot d
 	$t->isFalse(file_exists($applicationSchedulerRoot.'/runtime.realtime.preflight/last_run'));
 	$t->isFalse(file_exists($sideEffect));
 	$t->same('',trim($result->stderr()));
+
+	$runtimeScript=<<<'PHP'
+namespace dataphyre {
+	function tracelog(mixed ...$arguments): void {}
+}
+namespace {
+	define('APP','runtime-canonical-evidence-fixture');
+	define('DATAPHYRE_INTERNAL_SCHEDULER_REGISTRATION',true);
+	define('DATAPHYRE_INTERNAL_MANAGED_SCHEDULER_ROLE','scheduler');
+	require $argv[1].'/modules/scheduling/kernel/scheduling.main.php';
+	$task=realpath($argv[2]);
+	$boundaryDefinition=[
+		'name'=>'runtime.boundary','file_path'=>$task,'frequency'=>1,'dependencies'=>[$task],
+		'timeout'=>1,'memory_limit'=>'-1','app_override'=>'legacy-override',
+	];
+	$compatible=\DataphyreApplicationSchedulerDefinitionEvidence::definition($boundaryDefinition);
+	$dot=$boundaryDefinition;$dot['name']='.';
+	$dotDot=$boundaryDefinition;$dotDot['name']='..';
+	$canonicalBoundaries=is_array($compatible) && $compatible['memory_limit']==='-1'
+		&& \DataphyreApplicationSchedulerDefinitionEvidence::definition($dot)===null
+		&& \DataphyreApplicationSchedulerDefinitionEvidence::definition($dotDot)===null
+		&& \DataphyreApplicationSchedulerDefinitionEvidence::inventory([$compatible,$compatible])===null;
+	$accepted=is_string($task) && \dataphyre\scheduling::run(
+		'runtime.realtime.preflight',$task,3600,30,'64M',[$task],'ignored-in-managed-runtime',
+	);
+	$report=\dataphyre\scheduling::runtime_registration_report();
+	if(!$canonicalBoundaries || $accepted!==true || ($report['ok'] ?? null)!==true) exit(70);
+	echo json_encode([
+		'canonical_boundaries'=>$canonicalBoundaries,
+		'definition_count'=>$report['definition_count'] ?? null,
+		'definition_sha256'=>$report['definition_sha256'] ?? null,
+		'definition_keys'=>array_keys($report['definitions'][0] ?? []),
+	],JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n";
+}
+PHP;
+	$runtimeWorkspace=$t->workspace('application-runtime-canonical-scheduler-evidence');
+	$runtimeTask=$runtimeWorkspace->file(
+		'relocated/scheduled_task.php',
+		(string)file_get_contents($project.'/scheduled_task.php'),
+	);
+	$runtime=$t->phpProcess([
+		'-r',$runtimeScript,dirname(__DIR__,3),$runtimeTask,
+	]);
+	$t->processSucceeded($runtime,$runtime->stderr());
+	$runtimePayload=$runtime->json();
+	$t->same(true,$runtimePayload['canonical_boundaries']);
+	$t->same(1,$runtimePayload['definition_count']);
+	$t->same([
+		'name','task_sha256','dependency_sha256','frequency_milliseconds','timeout_milliseconds','memory_limit',
+	],$runtimePayload['definition_keys']);
+	$t->same($payload['scheduler_definition_sha256'],$runtimePayload['definition_sha256']);
+	$t->same('',trim($runtime->stderr()));
 })->tag('realtime','preflight','scheduling','record-only','negative','security');
 
 test('realtime release preflight rejects an ignored partial scheduler registration', static function(Context $t): void {

@@ -145,6 +145,12 @@ Behavior:
   295-second aggregate application-work ceiling, whose monotonic deadline is
   fixed when the signed tick is accepted, before application bootstrap
 
+Release preflight and the managed runtime use one canonical, path-independent
+definition evidence producer. It hashes task contents and dependency contents
+in declared bootstrap order, records frequency and timeout as integer
+milliseconds, and excludes filesystem paths and the legacy application
+override from the evidence contract.
+
 ##### `valid_scheduler_name(string $name): bool`
 
 Checks whether a scheduler name is safe for the cache path and route segment.

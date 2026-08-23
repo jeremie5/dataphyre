@@ -16,6 +16,10 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Unified release-preflight and managed-runtime scheduler definition evidence
+  behind one path-independent canonical producer, eliminating hash drift from
+  seconds-versus-milliseconds encoding, dependency reordering, and the legacy
+  application override.
 - Included Dataphyre's bounded runtime table definitions for on-disk modules
   already enabled by the application flight sheet in the fixed release
   inventory, so preflight and every managed database purpose materialize lazy

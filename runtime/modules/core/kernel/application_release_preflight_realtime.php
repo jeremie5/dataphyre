@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 require_once \dirname(__DIR__).'/Framework/ApplicationEnvironmentIdentifier.php';
 require_once \dirname(__DIR__,2).'/sql/Framework/RegisteredTableMaterializationCommand.php';
+require_once __DIR__.'/application_scheduler_definition_evidence.php';
 
 const DATAPHYRE_REALTIME_PREFLIGHT_CONTRACT='dataphyre.application_realtime_registration.v1';
 
@@ -32,11 +33,14 @@ const DATAPHYRE_REALTIME_PREFLIGHT_CONTRACT='dataphyre.application_realtime_regi
 	$schedulerEvidence=static function(string $stateRoot): array {
 		$root=\rtrim($stateRoot,'/\\').'/cache/scheduling';
 		if(!\is_dir($root)){
-			$encoded=\json_encode([],\JSON_UNESCAPED_SLASHES|\JSON_THROW_ON_ERROR);
-			return ['definition_count'=>0,'definition_sha256'=>'sha256:'.\hash('sha256',$encoded)];
+			return \DataphyreApplicationSchedulerDefinitionEvidence::inventory([])
+				?? throw new \RuntimeException('Empty scheduler evidence is invalid.');
 		}
 		$definitions=[];$entries=\scandir($root);
-		if(!\is_array($entries) || \count($entries)>258) throw new \RuntimeException('Unable to inspect isolated scheduler definitions.');
+		if(!\is_array($entries)
+			|| \count($entries)>\DataphyreApplicationSchedulerDefinitionEvidence::MAX_DEFINITIONS+2){
+			throw new \RuntimeException('Unable to inspect isolated scheduler definitions.');
+		}
 		foreach($entries as $name){
 			if($name==='.' || $name==='..') continue;
 			$directory=$root.'/'.$name;$properties=$directory.'/properties.json';
@@ -55,24 +59,12 @@ const DATAPHYRE_REALTIME_PREFLIGHT_CONTRACT='dataphyre.application_realtime_regi
 				|| (!\is_int($decoded['timeout']) && !\is_float($decoded['timeout']))
 				|| !\is_string($decoded['memory_limit']) || \trim($decoded['memory_limit'])===''
 				|| !\is_string($decoded['app_override'])) throw new \RuntimeException('Isolated scheduler definition is malformed.');
-			$dependencyHashes=[];
-			foreach($decoded['dependencies'] as $dependency){
-				if(!\is_string($dependency) || !\is_file($dependency) || \is_link($dependency)){
-					throw new \RuntimeException('Isolated scheduler dependency is unavailable.');
-				}
-				$dependencyHash=\hash_file('sha256',$dependency) ?: throw new \RuntimeException('Unable to hash scheduler dependency.');
-				$dependencyHashes[]='sha256:'.$dependencyHash;
-			}
-			\sort($dependencyHashes,\SORT_STRING);
-			$taskHash=\hash_file('sha256',$decoded['file_path']) ?: throw new \RuntimeException('Unable to hash scheduler task.');
-			$definitions[]=['name'=>$name,'task_sha256'=>'sha256:'.$taskHash,'dependency_sha256'=>$dependencyHashes,
-				'frequency'=>(float)$decoded['frequency'],'timeout'=>(float)$decoded['timeout'],
-				'memory_limit'=>$decoded['memory_limit'],'app_override'=>$decoded['app_override']];
+			$definition=\DataphyreApplicationSchedulerDefinitionEvidence::definition($decoded);
+			if(!\is_array($definition)) throw new \RuntimeException('Isolated scheduler definition evidence is invalid.');
+			$definitions[]=$definition;
 		}
-		\usort($definitions,static fn(array $left,array $right): int=>$left['name']<=>$right['name']);
-		if(\count($definitions)>256) throw new \RuntimeException('Too many scheduler definitions were registered.');
-		$encoded=\json_encode($definitions,\JSON_UNESCAPED_SLASHES|\JSON_PRESERVE_ZERO_FRACTION|\JSON_THROW_ON_ERROR);
-		return ['definition_count'=>\count($definitions),'definition_sha256'=>'sha256:'.\hash('sha256',$encoded)];
+		return \DataphyreApplicationSchedulerDefinitionEvidence::inventory($definitions)
+			?? throw new \RuntimeException('Scheduler definition inventory is invalid.');
 	};
 
 $arguments=\is_array($_SERVER['argv'] ?? null) ? $_SERVER['argv'] : [];

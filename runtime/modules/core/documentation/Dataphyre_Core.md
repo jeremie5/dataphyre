@@ -63,7 +63,12 @@ Framework bootstrap in the fixed realtime-registration context. Evidence
 contains the route count and a SHA-256 of the sorted paths, the scheduler
 definition count and a path-independent SHA-256 over task/dependency contents
 and scheduling semantics, and the bounded registered table-definition count
-and sorted-set SHA-256 produced by the fixed materializer authority. The table
+and sorted-set SHA-256 produced by the fixed materializer authority. Preflight
+and the managed scheduler runtime call the same canonical definition
+producer: it records the task content hash, dependency content hashes in
+bootstrap order, integer-millisecond frequency and timeout, and memory limit.
+Filesystem paths and the legacy application override are excluded; managed
+scheduler execution already forces that override empty. The table
 inventory combines deferred application registrations with the fixed runtime
 definitions for on-disk modules already enabled by the application flight
 sheet. Disabled or unavailable modules remain absent, and preflight does not
