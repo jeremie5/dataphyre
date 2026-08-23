@@ -16,6 +16,12 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Prevented managed web and realtime bootstrap from persisting scheduler
+  definitions into the immutable application source tree. Those pools still
+  validate every definition, while release preflight keeps its private attested
+  state and the signed scheduler supervisor remains the sole managed runtime
+  inventory/dispatch owner. Explicit self-hosted `record_only` behavior is
+  unchanged.
 - Stopped classifying the scheduler gateway's own graceful shutdown interrupt
   as an application callback failure. An interrupted callback remains unproved
   with its claim leased until expiry, while genuine callback, transport,

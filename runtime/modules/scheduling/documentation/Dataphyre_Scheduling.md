@@ -37,8 +37,9 @@ The module does **not** provide a full queue abstraction. It is a scheduler that
 
 Applications register schedules unconditionally during their ordinary bootstrap.
 In Dataphyre's fixed managed runtime, the framework derives ownership from the
-fixed pool role: web and realtime processes persist definitions without claiming
-or dispatching work, while only the scheduler process may dispatch due tasks.
+fixed pool role: web and realtime processes validate definitions without writing
+source-local scheduler state, while the signed scheduler process alone records
+the canonical definition inventory and may dispatch due tasks.
 Applications must not branch on Dataphyre's internal pool or bootstrap variables.
 Outside the managed runtime, the legacy request-driven behavior remains available.
 
@@ -133,7 +134,7 @@ Parameters:
 - `$dependencies`: Files that must be required before the task file runs.
 - `$app_override`: Optional app override used when the internal scheduler request is dispatched.
 
-Behavior:
+Behavior outside managed web and realtime request pools:
 
 - the task definition is persisted to `cache/scheduling/<name>/properties.json`
 - a successful task publishes the `last_run` timestamp and exact
@@ -144,6 +145,13 @@ Behavior:
 - managed callbacks use a per-task signed wall-clock budget inside one
   295-second aggregate application-work ceiling, whose monotonic deadline is
   fixed when the signed tick is accepted, before application bootstrap
+
+Managed web and realtime bootstrap still normalizes and validates every
+definition, but returns without creating `cache/scheduling` or any definition
+file. Release preflight retains its private attested state root, and the signed
+scheduler supervisor retains its path-independent in-memory inventory. An
+explicit ordinary self-hosted `record_only` mode continues to persist definitions
+without creating dispatch claims.
 
 Release preflight and the managed runtime use one canonical, path-independent
 definition evidence producer. It hashes task contents and dependency contents

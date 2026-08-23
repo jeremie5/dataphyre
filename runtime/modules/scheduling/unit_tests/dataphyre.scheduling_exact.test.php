@@ -104,29 +104,41 @@ suite('Scheduling exact runtime behavior')
 	->through('validated definitions','frequency locks','bounded dispatch','task-runner state')
 	->isolation('case');
 
-test('fixed managed pool role alone owns scheduler activation and ordinary bootstrap stays unconditional',static function(Context $t): void {
+test('fixed managed request pools validate definitions without source writes while self-hosted record only persists',static function(Context $t): void {
 	\dataphyre\scheduling::use_activation_mode(null);
+	$t->environment(['DATAPHYRE_RUNTIME_POOL_ROLE'=>null]);
+	$workspace=$t->workspace('managed-web-registration');
+	\dataphyre\scheduling::use_state_root($workspace->root());
 	$t->environment([
 		'DATAPHYRE_SCHEDULER_ACTIVATION_MODE'=>null,
 		'DATAPHYRE_RUNTIME_POOL_ROLE'=>'web',
 	]);
 	$t->same('record_only',\dataphyre\scheduling::activation_mode());
 	$t->isFalse(\dataphyre\scheduling::dispatch_enabled());
-	$workspace=$t->workspace('managed-web-registration');
-	\dataphyre\scheduling::use_state_root($workspace->root());
 	$task=$workspace->file('tasks/run.php','<?php return true;');
 	$shutdownRegistrations=0;
-	$t->isTrue(\dataphyre\scheduling::run(
-		'managed.web',$task,0,30,'128M',[],'test-app',
-		static function() use (&$shutdownRegistrations): void {$shutdownRegistrations++;},
-	));
+	$definitionCount=128;
+	for($index=0;$index<$definitionCount;$index++){
+		$name='managed.web.'.str_pad((string)$index,3,'0',STR_PAD_LEFT);
+		$t->isTrue(\dataphyre\scheduling::run(
+			$name,$task,0,30,'128M',[],'test-app',
+			static function() use (&$shutdownRegistrations): void {$shutdownRegistrations++;},
+		));
+		$t->isFalse(is_file(\dataphyre\scheduling::scheduler_properties_file($name)));
+	}
+	$t->isFalse(\dataphyre\scheduling::run('../managed.web',$task,0,30,'128M',[]));
+	$t->isFalse(\dataphyre\scheduling::run('managed.web.missing-task',$workspace->path('tasks/missing.php'),0,30,'128M',[]));
 	$t->same(0,$shutdownRegistrations);
-	$t->isTrue(is_file(\dataphyre\scheduling::scheduler_properties_file('managed.web')));
-	$t->isFalse(is_file(\dataphyre\scheduling::running_lock_file('managed.web')));
-	$t->isFalse(is_file(\dataphyre\scheduling::last_run_file('managed.web')));
+	$t->isFalse(is_dir($workspace->path('cache/scheduling')));
 	$t->environment(['DATAPHYRE_RUNTIME_POOL_ROLE'=>'realtime']);
 	$t->same('record_only',\dataphyre\scheduling::activation_mode());
 	$t->isFalse(\dataphyre\scheduling::dispatch_enabled());
+	$t->isTrue(\dataphyre\scheduling::run('managed.realtime',$task,0,30,'128M',[]));
+	$t->isFalse(is_file(\dataphyre\scheduling::scheduler_properties_file('managed.realtime')));
+	$t->isFalse(\dataphyre\scheduling::run(
+		'managed.realtime.missing-dependency',$task,0,30,'128M',[$workspace->path('dependencies/missing.php')],
+	));
+	$t->isFalse(is_dir($workspace->path('cache/scheduling')));
 	$t->environment(['DATAPHYRE_RUNTIME_POOL_ROLE'=>'scheduler']);
 	$t->same('record_only',\dataphyre\scheduling::activation_mode());
 	$t->isFalse(\dataphyre\scheduling::dispatch_enabled());
@@ -136,6 +148,8 @@ test('fixed managed pool role alone owns scheduler activation and ordinary boots
 	\dataphyre\scheduling::use_activation_mode('record_only');
 	$t->same('record_only',\dataphyre\scheduling::activation_mode());
 	$t->isFalse(\dataphyre\scheduling::dispatch_enabled());
+	$t->isTrue(\dataphyre\scheduling::run('selfhosted.record-only',$task,0,30,'128M',[]));
+	$t->isTrue(is_file(\dataphyre\scheduling::scheduler_properties_file('selfhosted.record-only')));
 	\dataphyre\scheduling::use_state_root(null);
 	\dataphyre\scheduling::use_activation_mode(null);
 });

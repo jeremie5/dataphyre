@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-08-23T05:14:24Z",
+  "generated_at_utc": "2026-08-23T06:20:25Z",
   "copied_source_files": 3696,
-  "skipped_source_files": 68,
+  "skipped_source_files": 46,
   "export_file_count": 3696,
-  "export_tree_sha256": "170f678b8c1741a60403f5734f46dac8ec669fc37141f473328ab496cec2d93b",
+  "export_tree_sha256": "f4f1f89665f6a72dcc745ff27bbaf5dd0603b89b6ff8fdd950d520856718c336",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -1759,8 +1759,8 @@
     },
     {
       "path": "docs/CHANGELOG.md",
-      "bytes": 37760,
-      "sha256": "0171220c057e5afe03747af3a6ab979ec323e176e41fc79e87dc9d81c2205603"
+      "bytes": 38154,
+      "sha256": "ae1303860cc4a494092aca3c126967f40e28693700e8800709fa782735405933"
     },
     {
       "path": "docs/changelog/v2.0.md",
@@ -14854,8 +14854,8 @@
     },
     {
       "path": "runtime/modules/scheduling/documentation/Dataphyre_Scheduling.md",
-      "bytes": 13240,
-      "sha256": "7d684dc3bb20ed8377cc83abfbc01c7ff8479743d3a6aa76dd6eab097a4344e4"
+      "bytes": 13772,
+      "sha256": "05532bbe1c6204befb68ed22df1a493b043f2407131db7829d0e4372c925cd2f"
     },
     {
       "path": "runtime/modules/scheduling/Framework/Bootstrap.php",
@@ -14879,8 +14879,8 @@
     },
     {
       "path": "runtime/modules/scheduling/kernel/scheduling.main.php",
-      "bytes": 42899,
-      "sha256": "ab3986e1768c967554c7a7ea07c4026fe8267b5d051cea5fb4f92047f6e1deb0"
+      "bytes": 43372,
+      "sha256": "914b12471329546f8a2da529561d530a46f7387cbfc29eb0ca75a3e31a45a677"
     },
     {
       "path": "runtime/modules/scheduling/kernel/task_runner.php",
@@ -14889,8 +14889,8 @@
     },
     {
       "path": "runtime/modules/scheduling/unit_tests/dataphyre.scheduling_exact.test.php",
-      "bytes": 35501,
-      "sha256": "2d29bb76c9a79b61f9c867696cf3821f324b0463eaffcf31539bf07e17496705"
+      "bytes": 36382,
+      "sha256": "2fa590801317b2a1f0901cd26f441e92102758b5c029650db4c54b9f3c3424b9"
     },
     {
       "path": "runtime/modules/scheduling/unit_tests/dataphyre.scheduling_framework_bootstrap.test.php",

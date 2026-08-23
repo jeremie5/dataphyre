@@ -163,9 +163,10 @@ class scheduling {
     /**
      * Registers a scheduler definition and dispatches it after shutdown when it is due.
      *
-	 * The method validates the scheduler name, task file, and dependency files before writing properties.json. If the task
-	 * can run now, a running_lock file is created and a shutdown callback performs an internal HTTP request to the scheduler
-	 * route. The task runner updates last_run only after successful execution; the exclusive running lock prevents concurrent
+	 * The method validates the scheduler name, task file, and dependency files. Outside managed web/realtime pools it writes
+	 * properties.json; managed request pools accept the validated definition without source-local state. If the task can run
+	 * now, a running_lock file is created and a shutdown callback performs an internal HTTP request to the scheduler route.
+	 * The task runner updates last_run only after successful execution; the exclusive running lock prevents concurrent
 	 * requests from enqueueing the same task while its callback is pending.
      *
      * @param string $name Scheduler name used for cache paths and route dispatch.
@@ -176,7 +177,7 @@ class scheduling {
      * @param array<int, string> $dependencies Files that must exist before the scheduler is accepted.
      * @param ?string $app_override Application override to preserve in the internal dispatch request.
      * @param ?callable $shutdown_registrar Optional shutdown registrar used by embedded runtimes and tests.
-     * @return bool Whether the scheduler definition was accepted and persisted.
+	 * @return bool Whether the scheduler definition was accepted for the active runtime role.
      */
 	public static function run(string $name, string $file_path, float $frequency, float $timeout, string $memory_limit, array $dependencies, ?string $app_override=null, ?callable $shutdown_registrar=null) : bool {
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S='function_call', $A=null); // Log the function call
@@ -209,6 +210,13 @@ class scheduling {
 		if(self::activation_mode()==='supervisor'){
 			self::record_preflight_registration(true);
 			return self::record_runtime_tick_registration($scheduler,true);
+		}
+		// Managed web and realtime bootstrap validate application definitions but
+		// never own scheduler state. The signed supervisor registration is the
+		// sole managed-runtime inventory/dispatch authority, while explicit
+		// self-hosted record_only mode retains its legacy persisted definition.
+		if(self::managed_pool()){
+			return true;
 		}
 		if(self::persist_scheduler_definition($scheduler)!==true){
 			self::record_preflight_registration(false);
