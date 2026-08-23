@@ -15,6 +15,7 @@ if(ob_get_level()!==$routerOutputLevel) throw new RuntimeException('Framework ro
 header_remove();
 $routerPayload=json_decode($routerBody,true);
 $routerHealthy=is_array($routerPayload) && ($routerPayload['status'] ?? null)==='healthy';
+$frameworkSessionActive=session_status()===PHP_SESSION_ACTIVE && session_id()!=='';
 if(!class_exists(\dataphyre\sql::class,false)) require dirname(__DIR__,3).'/sql/kernel/sql.main.php';
 if(!class_exists(\dataphyre\tracelog::class,false)) require dirname(__DIR__,3).'/tracelog/kernel/tracelog.main.php';
 $databaseEndpoint='managed-fpm-database-endpoint';
@@ -58,6 +59,7 @@ if(preg_match('/^Groups:\s*([^\r\n]*)$/m',$status,$match)===1){
 $currentUmask=umask();umask($currentUmask);
 $result=[
 	'ok'=>$routerHealthy,
+	'framework_session_active'=>$frameworkSessionActive,
 	'router_body'=>$routerPayload,
 	'database_available_before'=>$databaseAvailableBefore,
 	'database_available_after'=>$databaseAvailableAfter,

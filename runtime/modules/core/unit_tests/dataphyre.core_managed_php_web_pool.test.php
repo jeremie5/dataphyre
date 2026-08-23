@@ -270,6 +270,7 @@ test('same worker restores sealed state then recycles and terminates without met
 		$t->same($results[0]['error_handler_fingerprint'],$results[2]['error_handler_fingerprint']);
 		foreach($results as $result){
 			$t->same(true,$result['ok']);$t->same($pool['pid'],$result['parent_pid']);
+			$t->same(true,$result['framework_session_active']);
 			$t->same('healthy',$result['router_body']['status'] ?? null);
 			$t->same([],$result['router_body']['missing_environment_keys'] ?? null);
 			$t->same(true,$result['tracelog_persisted']);

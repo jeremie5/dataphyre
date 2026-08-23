@@ -52,20 +52,24 @@ trait caching {
 	}
 
 	/**
-	 * Writes compiled template content into the render cache.
+	 * Writes compiled template content into the render cache when source-local
+	 * mutation is permitted.
 	 *
 	 * The target filename mirrors `load_from_cache()` by hashing the template
 	 * path with the active render signature. The cache directory is created on
 	 * demand because templating may bootstrap before runtime cache folders exist.
+	 * Managed and release bootstrap contexts return the candidate cache path
+	 * without creating or writing it.
 	 *
 	 * @param string $template_content Compiled template content to persist.
 	 * @param string $template_file Source template file path.
 	 *
-	 * @return string Absolute cache file path written for the template.
+	 * @return string Absolute candidate cache file path for the template.
 	 */
     private static function save_to_cache(string $template_content, string $template_file): string {
-        if(!is_dir(self::$cache_dir)) @mkdir(self::$cache_dir, 0777, true);
         $cache_file=self::$cache_dir.md5($template_file."\0".self::render_cache_signature()).'.php';
+        if(!self::source_local_cache_writes_allowed()) return $cache_file;
+        if(!is_dir(self::$cache_dir)) @mkdir(self::$cache_dir, 0777, true);
         file_put_contents($cache_file, $template_content);
         return $cache_file;
     }
@@ -132,6 +136,7 @@ trait caching {
 	 * @return void
 	 */
 	private static function store_in_cache(string $cache_key, string $content, int $duration): void {
+		if(!self::source_local_cache_writes_allowed()) return;
 		$cache_file=self::$cache_dir.$cache_key.'.cache';
 		if(!is_dir(self::$cache_dir)) @mkdir(self::$cache_dir, 0777, true);
 		file_put_contents($cache_file, json_encode([
@@ -216,6 +221,7 @@ trait caching {
 	 * @return void
 	 */
 	private static function save_plan_to_cache(string $cache_key, array $plan, ?int $source_mtime=null): void {
+		if(!self::source_local_cache_writes_allowed()) return;
 		$cache_dir=self::plan_cache_dir();
 		if(!is_dir($cache_dir)){
 			@mkdir($cache_dir, 0777, true);

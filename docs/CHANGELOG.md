@@ -16,6 +16,15 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Suppressed every source-local templating cache mutation in managed runtime,
+  release-preflight, and bootstrap-only contexts while retaining in-memory
+  rendering, planning, and per-render binding reuse. Ordinary self-hosted
+  compiled, fragment, plan, debug, documentation, and persistent binding caches
+  remain unchanged.
+- Kept synthetic managed realtime-registration and scheduler bootstrap
+  sessionless, preventing process-global PHP session files from surviving a
+  non-user runtime bootstrap while preserving ordinary managed web and
+  self-hosted request sessions.
 - Prevented managed web and realtime bootstrap from persisting scheduler
   definitions into the immutable application source tree. Those pools still
   validate every definition, while release preflight keeps its private attested

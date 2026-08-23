@@ -20,6 +20,14 @@ The kernel entrypoint is:
 );
 ```
 
+Ordinary self-hosted runtimes may persist compiled templates, plans, fragment
+caches, development documentation, debug logs, and explicit persistent binding
+caches under that directory. Managed runtime, release-preflight, and
+bootstrap-only contexts compile and plan in memory but do not create, mutate,
+or delete source-local templating cache state. Per-render in-memory binding
+reuse remains available; the persistent binding cache layer is disabled and is
+not advertised as persistent.
+
 Main kernel methods:
 
 - `render(string $template_file, array $data=[], array $theme_values=[], array $slots=[]): string`

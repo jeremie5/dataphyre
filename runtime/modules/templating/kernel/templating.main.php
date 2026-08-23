@@ -68,6 +68,12 @@ class templating {
 	private static $template_contracts=[];
 	private static $asset_policy=[];
 
+	/** Whether this process may persist templating cache state beside application source. */
+	private static function source_local_cache_writes_allowed(): bool {
+		return !\function_exists('dp_source_local_runtime_writes_allowed')
+			|| \dp_source_local_runtime_writes_allowed();
+	}
+
 	/**
 	 * Initializes the templating runtime for instance-style legacy callers.
 	 *
@@ -86,7 +92,8 @@ class templating {
 	 *
 	 * Default helpers and filters are registered without removing existing custom
 	 * entries. Cache directory, development mode, strict contract enforcement, and
-	 * asset policy are normalized, and the cache directory is created when missing.
+	 * asset policy are normalized. Ordinary source-local runtimes create the cache
+	 * directory when missing; managed and release bootstrap contexts stay in memory.
 	 *
 	 * @param bool $is_dev_mode Enable development-mode rendering behavior.
 	 * @param string|null $cache_dir Optional cache directory override.
@@ -118,7 +125,7 @@ class templating {
 		}
 		self::$asset_policy=self::normalize_asset_policy($asset_policy ?? self::$asset_policy);
 		self::$initialized=true;
-		if(!is_dir(self::$cache_dir)){
+		if(self::source_local_cache_writes_allowed() && !is_dir(self::$cache_dir)){
 			@mkdir(self::$cache_dir, 0777, true);
 		}
 	}
@@ -351,7 +358,7 @@ class templating {
 		}
 		if(isset($overrides['cache_dir']) && is_string($overrides['cache_dir']) && trim($overrides['cache_dir'])!==''){
 			self::$cache_dir=rtrim($overrides['cache_dir'], '/\\').'/';
-			if(!is_dir(self::$cache_dir)){
+			if(self::source_local_cache_writes_allowed() && !is_dir(self::$cache_dir)){
 				@mkdir(self::$cache_dir, 0777, true);
 			}
 		}

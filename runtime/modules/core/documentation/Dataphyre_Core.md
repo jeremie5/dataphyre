@@ -84,6 +84,9 @@ materializer is the first schema stage. Scheduling runs in `record_only` mode
 under a private temporary state root; application cache/config/log bytes are
 unchanged, no lock, cadence timestamp, task, or shutdown callback can be created, and an
 ignored invalid, duplicate, or unpersisted registration fails the preflight.
+Synthetic managed realtime-registration and scheduler bootstrap are
+sessionless; only a real managed web request starts the application's ordinary
+request-scoped PHP session. Self-hosted request behavior remains unchanged.
 Table names, callbacks, credentials, headers, task paths, and event payloads never enter the
 report. Cloud must add exact-image proof of the four direct runtime children,
 the eight FPM workers,

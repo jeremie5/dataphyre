@@ -147,6 +147,29 @@ test('templating main initialization binding transformations and legacy helpers 
 	$t->same('L:greeting', $templating->invokeWithArguments('parse_translations', ['{{ trans "greeting" }}']));
 })->tag('templating', 'coverage')->group('framework-coverage')->maxMillis(10000);
 
+test('managed templating compiles in memory without source-local cache writes',static function(Context $t): void {
+	$workspace=$t->workspace('templating-managed-source-write-boundary');
+	$template=$workspace->file('templates/managed.tpl','managed-body');
+	$probe=$t->phpProcess([
+		__DIR__.'/fixtures/templating_managed_source_write_boundary.php',
+		dirname(__DIR__,2),
+		$workspace->root(),
+		$template,
+	]);
+	$t->processSucceeded($probe);
+	$t->same('',$probe->stderr());
+	$t->same([
+		'write_allowed'=>false,
+		'rendered'=>'managed-body',
+		'development_rendered'=>'managed-body',
+		'plan_has_graph'=>true,
+		'binding_contents'=>['managed-binding','managed-binding'],
+		'binding_calls'=>2,
+		'clear_count'=>0,
+		'cache_paths_absent'=>true,
+	],$probe->json());
+})->tag('templating','main','managed-runtime','cache')->group('framework-coverage');
+
 test('templating main resolution manifests and contracts cover strict and recursive paths', static function(Context $t): void {
 	[$workspace,$root,$templating]=dp_templating_main_scenario($t,'contracts');
 	$main=$workspace->file('main.tpl','main');

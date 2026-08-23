@@ -105,9 +105,14 @@ tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Run mode is '.$runMode
 tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Client IP is '.REQUEST_IP_ADDRESS);
 
 \Dataphyre\CoreKernelBootstrap::configureSession(
-	$applicationBootstrapOnly!==null
-		? 'application-bootstrap-only'
-		: ($applicationReleasePreflight===null ? $runMode : 'application-release-preflight'),
+	\Dataphyre\CoreKernelBootstrap::sessionBootstrapMode(
+		$runMode,
+		\is_array($managedRuntimeBootstrap) && \is_string($managedRuntimeBootstrap['role'] ?? null)
+			? $managedRuntimeBootstrap['role']
+			: null,
+		$applicationReleasePreflight!==null,
+		$applicationBootstrapOnly!==null,
+	),
 	DP_CORE_CFG,
 	'session_status',
 	'ini_set',

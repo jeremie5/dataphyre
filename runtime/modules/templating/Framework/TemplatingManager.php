@@ -24,6 +24,12 @@ final class TemplatingManager {
 
 	private static ?self $instance=null;
 
+	/** Whether this process may mutate persistent templating state beside application source. */
+	private function sourceLocalCacheWritesAllowed(): bool {
+		return !\function_exists('dp_source_local_runtime_writes_allowed')
+			|| \dp_source_local_runtime_writes_allowed();
+	}
+
 	/**
 	 * Returns the process-local templating manager used by all facade calls.
 	 *
@@ -782,6 +788,9 @@ final class TemplatingManager {
 	 * @return int Templating value object, binding, render artifact, or manager result for the requested operation.
 	 */
 	public function clearBindingCache(string ...$names): int {
+		if($this->sourceLocalCacheWritesAllowed()!==true){
+			return 0;
+		}
 		$cacheDir=$this->bindingPersistentCacheRoot();
 		$itemsDir=$cacheDir.'items'.DIRECTORY_SEPARATOR;
 		$namesDir=$cacheDir.'names'.DIRECTORY_SEPARATOR;
@@ -1858,15 +1867,15 @@ final class TemplatingManager {
 		try{
 			$decoded=@unserialize($payload);
 		}catch(\Throwable){
-			@unlink($file);
+			if($this->sourceLocalCacheWritesAllowed()) @unlink($file);
 			return ['hit'=>false];
 		}
 		if(!is_array($decoded)){
-			@unlink($file);
+			if($this->sourceLocalCacheWritesAllowed()) @unlink($file);
 			return ['hit'=>false];
 		}
 		if((int)($decoded['expires_at'] ?? 0) < time()){
-			@unlink($file);
+			if($this->sourceLocalCacheWritesAllowed()) @unlink($file);
 			return ['hit'=>false];
 		}
 		return [
@@ -1887,6 +1896,9 @@ final class TemplatingManager {
 	private function storePersistentBindingValue(array $descriptor, BindingContext $context, mixed $value): ?string {
 		if(($descriptor['cacheable'] ?? false)!==true){
 			return null;
+		}
+		if($this->sourceLocalCacheWritesAllowed()!==true){
+			return 'Source-local persistent binding cache writes are disabled.';
 		}
 		$root=$this->bindingPersistentCacheRoot($context);
 		$itemsDir=$root.'items'.DIRECTORY_SEPARATOR;
@@ -1964,6 +1976,7 @@ final class TemplatingManager {
 	 * @return void The JSON index is updated best-effort.
 	 */
 	private function indexPersistentBindingCacheName(string $name, string $key, string $namesDir): void {
+		if($this->sourceLocalCacheWritesAllowed()!==true) return;
 		$file=$this->bindingPersistentCacheNameFile($name, $namesDir);
 		$existing=@file_get_contents($file);
 		$keys=json_decode(is_string($existing) ? $existing : '[]', true);
@@ -1981,6 +1994,7 @@ final class TemplatingManager {
 	 * @return int Number of cache files deleted.
 	 */
 	private function clearPersistentBindingCacheDirectories(string $itemsDir, string $namesDir): int {
+		if($this->sourceLocalCacheWritesAllowed()!==true) return 0;
 		$deleted=0;
 		foreach([$itemsDir, $namesDir] as $dir){
 			if(!is_dir($dir)){
@@ -2028,9 +2042,12 @@ final class TemplatingManager {
 	 * Determines whether persistent binding cache may be used for this render.
 	 *
 	 * @param BindingContext $context Render context carrying per-call state overrides.
-	 * @return bool False in development mode, true otherwise.
+	 * @return bool False in development or source-write-suppressed contexts, true otherwise.
 	 */
 	private function bindingPersistentCacheEnabled(BindingContext $context): bool {
+		if($this->sourceLocalCacheWritesAllowed()!==true){
+			return false;
+		}
 		$state=$context->overrides();
 		if(array_key_exists('is_dev_mode', $state)){
 			return (bool)$state['is_dev_mode']!==true;

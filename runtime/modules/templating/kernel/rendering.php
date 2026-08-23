@@ -224,7 +224,7 @@ trait rendering {
 			$template=self::parse_debug($template, $template_data);
 			$template=self::trim_whitespace($template);
 			$template=self::apply_postprocessing_hooks($template, $template_data);
-			if(self::$is_dev_mode){
+			if(self::$is_dev_mode && self::source_local_cache_writes_allowed()){
 				$docs_dir=self::$cache_dir.'docs/';
 				if(!is_dir($docs_dir)){
 					@mkdir($docs_dir, 0777, true);

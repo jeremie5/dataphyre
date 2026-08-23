@@ -73,8 +73,9 @@ trait debugging {
 	 * Renders a template while capturing debug logs to the template cache directory.
 	 *
 	 * debug logs are reset per invocation, full_render() owns template
-	 * compilation, and the collected log lines are persisted to `debug_logs.log`
-	 * under the configured cache directory. Directory creation is best-effort.
+	 * compilation, and ordinary source-local runtimes persist the collected lines
+	 * to `debug_logs.log` under the configured cache directory. Managed and release
+	 * bootstrap contexts retain them in memory. Directory creation is best-effort.
 	 *
 	 * @param string $template_file Template path or name to render.
 	 * @param array<string, mixed> $data Render data for the template.
@@ -83,8 +84,10 @@ trait debugging {
 	private static function debug_render(string $template_file, array $data): string {
 		self::$debug_logs=[];
 		$output=self::full_render($template_file, $data);
-		if(!is_dir(self::$cache_dir)) @mkdir(self::$cache_dir, 0777, true);
-		file_put_contents(self::$cache_dir.'/debug_logs.log', implode("\n", self::$debug_logs));
+		if(self::source_local_cache_writes_allowed()){
+			if(!is_dir(self::$cache_dir)) @mkdir(self::$cache_dir, 0777, true);
+			file_put_contents(self::$cache_dir.'/debug_logs.log', implode("\n", self::$debug_logs));
+		}
 		return $output;
 	}
 	

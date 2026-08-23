@@ -145,6 +145,12 @@ test('session plans and configuration distinguish disabled active insecure diagn
 	$t->same('120', CoreKernelBootstrap::sessionPlan(['core'=>['php_session'=>['cookie'=>['lifespan'=>120]]]])['lifespan']);
 	$t->same('180', CoreKernelBootstrap::sessionPlan(['php_session_lifespan'=>180])['lifespan']);
 	$t->same('900', CoreKernelBootstrap::sessionPlan([])['lifespan']);
+	$t->same('application-bootstrap-only', CoreKernelBootstrap::sessionBootstrapMode('request','web',false,true));
+	$t->same('application-release-preflight', CoreKernelBootstrap::sessionBootstrapMode('request','realtime',true,false));
+	$t->same('managed-runtime-registration', CoreKernelBootstrap::sessionBootstrapMode('request','realtime',false,false));
+	$t->same('managed-runtime-registration', CoreKernelBootstrap::sessionBootstrapMode('request','scheduler',false,false));
+	$t->same('request', CoreKernelBootstrap::sessionBootstrapMode('request','web',false,false));
+	$t->same('request', CoreKernelBootstrap::sessionBootstrapMode('request',null,false,false));
 
 	$ini=$t->spy()->willReturn(true);
 	$start=$t->spy()->willReturn(true);
@@ -152,6 +158,7 @@ test('session plans and configuration distinguish disabled active insecure diagn
 	$warn=$t->spy();
 	$unavailable=$t->spy();
 	CoreKernelBootstrap::configureSession('unit_test', [], static fn(): int=>PHP_SESSION_NONE, $ini, $start, $fail, $warn, $unavailable);
+	CoreKernelBootstrap::configureSession('managed-runtime-registration', [], static fn(): int=>PHP_SESSION_NONE, $ini, $start, $fail, $warn, $unavailable);
 	CoreKernelBootstrap::configureSession('request', [], static fn(): int=>PHP_SESSION_ACTIVE, $ini, $start, $fail, $warn, $unavailable);
 	CoreKernelBootstrap::configureSession('request', ['core'=>['php_session'=>['enabled'=>false]]], static fn(): int=>PHP_SESSION_NONE, $ini, $start, $fail, $warn, $unavailable);
 	$ini->assertCalledTimes($t, 0);

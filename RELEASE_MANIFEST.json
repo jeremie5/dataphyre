@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-08-23T06:30:21Z",
-  "copied_source_files": 3696,
+  "generated_at_utc": "2026-08-23T07:07:47Z",
+  "copied_source_files": 3697,
   "skipped_source_files": 46,
-  "export_file_count": 3696,
-  "export_tree_sha256": "990ef1c39ba16eb83257d0ebc12b4381b861623749d510a822664bd337c1ed8e",
+  "export_file_count": 3697,
+  "export_tree_sha256": "7b880e82e26c1cc0f0a71367fa71d81f5c92bcb210885eff4bf0aa1cdeb716a1",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -1759,8 +1759,8 @@
     },
     {
       "path": "docs/CHANGELOG.md",
-      "bytes": 38154,
-      "sha256": "ae1303860cc4a494092aca3c126967f40e28693700e8800709fa782735405933"
+      "bytes": 38731,
+      "sha256": "639737b36453cb5c847afae350e1ef5d5419d7bbc02d0476b1269864937c4680"
     },
     {
       "path": "docs/changelog/v2.0.md",
@@ -2729,13 +2729,13 @@
     },
     {
       "path": "runtime/modules/core/documentation/Dataphyre_Core.md",
-      "bytes": 72304,
-      "sha256": "b152bf650725d7a71249d0f27ce4628f0f7078e5f478499ca9c5e118d16c1d6b"
+      "bytes": 72527,
+      "sha256": "45e5fae62e1c37a116e577bf0593396396f45953db5d5ddcc001b2b938c3a11d"
     },
     {
       "path": "runtime/modules/core/documentation/Dataphyre_Managed_PHP_Web_Pool.md",
-      "bytes": 19502,
-      "sha256": "7b32bd267a88d7b546eaef6b9294f59fdaf4c15f333f68deb6f756f7d463d8f3"
+      "bytes": 19964,
+      "sha256": "42c19d3ccaf2cc9943d18837df5fead55237fe0de18728182483b253462603a1"
     },
     {
       "path": "runtime/modules/core/Framework/App.php",
@@ -2799,8 +2799,8 @@
     },
     {
       "path": "runtime/modules/core/Framework/CoreKernelBootstrap.php",
-      "bytes": 10521,
-      "sha256": "9c6a56ddeec34d2facc07164b72ee1406d3559ace8fda0325d9523c2aec3d6fe"
+      "bytes": 11019,
+      "sha256": "74d1fb00d0a7cbf2425183914dfc41f323cab9b54cf9a88b82739d7de0ecc845"
     },
     {
       "path": "runtime/modules/core/Framework/Csrf.php",
@@ -3099,8 +3099,8 @@
     },
     {
       "path": "runtime/modules/core/kernel/core.main.php",
-      "bytes": 7319,
-      "sha256": "8d676cfc791b282744e012e0b63a7239b855e612d2b94f41941092455415ef59"
+      "bytes": 7453,
+      "sha256": "ef567f18c2490d5bb25232c058e4085fbc436086de701fb7f29bfe7a6d31e1d9"
     },
     {
       "path": "runtime/modules/core/kernel/flight_sheet.php",
@@ -3269,8 +3269,8 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_kernel_bootstrap_exact.test.php",
-      "bytes": 15759,
-      "sha256": "6a67058b10df1aa814fb1b22547adb52831528be29c548e75a963165f333c623"
+      "bytes": 16573,
+      "sha256": "f667912c198763d12a794c3e8c5a990658492830e9f34f59ebc0a5bcfb201a21"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_kernel_bootstrap_policy_empty_coverage.test.php",
@@ -3294,13 +3294,13 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_managed_php_web_pool.test.php",
-      "bytes": 45617,
-      "sha256": "5ec072f1d96c12b252b9ad06c87f702f0eebda3036ae50fa526a9193b890a7b8"
+      "bytes": 45672,
+      "sha256": "782a82f1e84ec5ce6a9dca24aacb54656c3b269e675dfe3171d30a841bc306d1"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_process_entrypoints_exact.test.php",
-      "bytes": 125709,
-      "sha256": "16470c0a829f9c9458c241583b89fc3b108c583f67925ea96347017efbf9c10f"
+      "bytes": 126538,
+      "sha256": "15f01d8510ed1c895e1586cb20500d994a4605b8b9e1a47e2c5031e0780cea42"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_runtime_catalogs_deep_coverage.test.php",
@@ -3609,8 +3609,8 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/fixtures/application_runtime_fpm_probe.php",
-      "bytes": 7523,
-      "sha256": "a4f1a340c3e65552a9020bfd6295904b016393bb0dedb6760d8e4adc134b93f0"
+      "bytes": 7661,
+      "sha256": "d7c0a6d921b2a0036c896ae1a14c96b5ec165c13e532341410d9a0eb0e885376"
     },
     {
       "path": "runtime/modules/core/unit_tests/fixtures/application_runtime_one_shot_orphan_environment.json",
@@ -3684,8 +3684,8 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/fixtures/application_runtime_project/framework_bootstrap.php",
-      "bytes": 17804,
-      "sha256": "781bbd5333576a22735a7cf1b1f1f6643b8bd9030922ffa63a961e4595eb8587"
+      "bytes": 18366,
+      "sha256": "a9b6b082d23bb8a45d21a59218e664efe557683dde3360a5518c65d3e2bb5cc1"
     },
     {
       "path": "runtime/modules/core/unit_tests/fixtures/application_runtime_project/public/runtime.txt",
@@ -17549,8 +17549,8 @@
     },
     {
       "path": "runtime/modules/templating/documentation/Dataphyre_Templating.md",
-      "bytes": 34063,
-      "sha256": "74feca948eca51a58848a231fea350315aceef888ac6532a3f9d208265fbbdba"
+      "bytes": 34553,
+      "sha256": "867eb3dbfc085d36f880cfb0c5906e1fea931fa427213935d7f89bf90943ff35"
     },
     {
       "path": "runtime/modules/templating/Framework/AssetManifest.php",
@@ -17664,8 +17664,8 @@
     },
     {
       "path": "runtime/modules/templating/Framework/TemplatingManager.php",
-      "bytes": 95382,
-      "sha256": "a01c54839a033bfcd2b2334ef6cd4d61c94da90add03974ee6bbaf2a71330aa3"
+      "bytes": 96212,
+      "sha256": "d01958c7535e4c7165c1e5b3a821ff5b9b4260459ba63868fca40278e0c4e7c4"
     },
     {
       "path": "runtime/modules/templating/Framework/TemplatingState.php",
@@ -17674,8 +17674,8 @@
     },
     {
       "path": "runtime/modules/templating/kernel/caching.php",
-      "bytes": 8623,
-      "sha256": "6bd25cd1da3117f4c55ab37c9895d92d5f400cd17441368cc69c4e04e32534b7"
+      "bytes": 8969,
+      "sha256": "59f49cc8b43addbf46ec548b07d5a975ad01c97c96ce225e82c8a75954c8bcc2"
     },
     {
       "path": "runtime/modules/templating/kernel/component_management.php",
@@ -17689,8 +17689,8 @@
     },
     {
       "path": "runtime/modules/templating/kernel/debugging.php",
-      "bytes": 4119,
-      "sha256": "2b9bd5fbeab8125332bc3c6b56628f9e5f6455c7ed430849af29b0cd428fa199"
+      "bytes": 4261,
+      "sha256": "21ab59d5c9ed00772f6d4bdfa7399c8c6c1bf9d6448c474bfff482c214e2f415"
     },
     {
       "path": "runtime/modules/templating/kernel/event_system.php",
@@ -17714,8 +17714,8 @@
     },
     {
       "path": "runtime/modules/templating/kernel/rendering.php",
-      "bytes": 11789,
-      "sha256": "9a561b9dd9751251af5e982e9d98c16b1ac0e280fd727370d8b05b050021da04"
+      "bytes": 11834,
+      "sha256": "502360dc8c6cd07b239b09b6d8fc0a62fde31f053fb8214f825503a89d15490b"
     },
     {
       "path": "runtime/modules/templating/kernel/seo_accessibility.php",
@@ -17724,8 +17724,8 @@
     },
     {
       "path": "runtime/modules/templating/kernel/templating.main.php",
-      "bytes": 104650,
-      "sha256": "2e5e12e806086409511e9df27ff9c733950e85ea11314a6943d0b6c146d61ae6"
+      "bytes": 105104,
+      "sha256": "20cd21e0e74e95cfb42b92c601bfc8df01b2ced5e2cb5ca51840f36a531eb04b"
     },
     {
       "path": "runtime/modules/templating/unit_tests/dataphyre.search_query_binding_deep_coverage.test.php",
@@ -17754,13 +17754,13 @@
     },
     {
       "path": "runtime/modules/templating/unit_tests/dataphyre.templating_kernel_traits_deep_coverage.test.php",
-      "bytes": 6706,
-      "sha256": "1ffbd182bbc13d0018a2f185b2d3eb75c9ea7dc60317bed70603fa31e97fd168"
+      "bytes": 7182,
+      "sha256": "5748de3e496c42beb7acaaf90d8b6bbdfaeca38227b72e0413ffd292b073c679"
     },
     {
       "path": "runtime/modules/templating/unit_tests/dataphyre.templating_main_kernel_coverage.test.php",
-      "bytes": 31064,
-      "sha256": "851061156f7e399f0aa90044a6dab3fff744a93f9ddeeef78b8e72a11a3dc203"
+      "bytes": 31912,
+      "sha256": "76f57609aeb5eb654fe7a1ad955b111d4fe833da05d2ca62e721a317a0aa43e6"
     },
     {
       "path": "runtime/modules/templating/unit_tests/dataphyre.templating_manager_deep_coverage.test.php",
@@ -17816,6 +17816,11 @@
       "path": "runtime/modules/templating/unit_tests/fixtures/templating_localization_probe.php",
       "bytes": 392,
       "sha256": "77ea69f257c7cfa6e474ecd6957a355fae151d02a281f45f75f3e5287def5e44"
+    },
+    {
+      "path": "runtime/modules/templating/unit_tests/fixtures/templating_managed_source_write_boundary.php",
+      "bytes": 3078,
+      "sha256": "30532cb00995885e9c001adb15fe35176a4dec9f663084543d0956e737e8fd34"
     },
     {
       "path": "runtime/modules/templating/unit_tests/fixtures/templating_manager_probes.php",

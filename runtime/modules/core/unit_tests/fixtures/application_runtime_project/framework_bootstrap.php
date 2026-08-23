@@ -8,6 +8,16 @@
 declare(strict_types=1);
 
 require_once ROOTPATH['common_dataphyre_runtime'] . 'modules/core/kernel/core.main.php';
+$managedSessionEvidence=(string)getenv('DATAPHYRE_RUNTIME_TEST_SESSION_EVIDENCE');
+if($managedSessionEvidence!==''){
+	$sessionDirectory=rtrim((string)ini_get('session.save_path'),'/\\');
+	$sessionFiles=$sessionDirectory==='' ? false : glob($sessionDirectory.'/sess_*');
+	file_put_contents($managedSessionEvidence,json_encode([
+		'session_status_none'=>session_status()===PHP_SESSION_NONE,
+		'session_id_empty'=>session_id()==='',
+		'session_files_absent'=>is_array($sessionFiles) && $sessionFiles===[],
+	],JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),LOCK_EX);
+}
 \dataphyre\autoloader::register(ROOTPATH['common_dataphyre_runtime'] . 'modules');
 if (\dataphyre\core::load_framework_module('scheduling') !== true) {
     throw new RuntimeException('Scheduling module was not loaded.');

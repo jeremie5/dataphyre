@@ -254,7 +254,15 @@ suppressed for both paths.
 
 Ordinary HTTP bootstrap must not register or persist scheduler definitions.
 Web and realtime use `DATAPHYRE_SCHEDULER_ACTIVATION_MODE=record_only`; the
-separate signed scheduler registration remains the only persistence owner.
+separate signed scheduler registration remains the only managed inventory and
+dispatch owner.
+
+Managed web workers retain ordinary request-scoped PHP sessions after the
+native request reset. The synthetic realtime-registration and scheduler
+bootstraps are not user requests and do not call `session_start()` or create a
+process-global temporary session file through the Core bootstrap. Application
+code remains responsible for any explicit native session calls it makes.
+Self-hosted request and diagnostic session behavior is unchanged.
 
 ## Supervisor and status changes
 

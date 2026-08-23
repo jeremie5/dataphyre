@@ -1944,6 +1944,12 @@ test('covered realtime pool performs application and framework WebSocket roundtr
 	if(!chown($coveragePart,10001) || !chgrp($coveragePart,10001) || !chmod($coveragePart,0600)){
 		throw new RuntimeException('Realtime coverage transport ownership could not be prepared.');
 	}
+	$sessionRoot=$state->directory('sessions');
+	$sessionEvidence=$state->file('session-evidence.json','');
+	if(!chown($sessionRoot,10001) || !chgrp($sessionRoot,10001) || !chmod($sessionRoot,0700)
+		|| !chown($sessionEvidence,10001) || !chgrp($sessionEvidence,10001) || !chmod($sessionEvidence,0600)){
+		throw new RuntimeException('Realtime session evidence ownership could not be prepared.');
+	}
 	$publicEnvironment=[
 		'DATAPHYRE_TEST_COVERAGE_PART'=>$coveragePart,
 		'DATAPHYRE_TEST_COVERAGE_FRAMEWORK_ROOT'=>$frameworkRoot,
@@ -1965,13 +1971,14 @@ test('covered realtime pool performs application and framework WebSocket roundtr
 		'DATAPHYRE_RUNTIME_ENVIRONMENT'=>'staging_blue',
 		'DATAPHYRE_RUNTIME_TEST_FRAMEWORK_ROOT'=>$runtimeRoot,
 		'DATAPHYRE_RUNTIME_TEST_STATE_ROOT'=>$stateRoot,
+		'DATAPHYRE_RUNTIME_TEST_SESSION_EVIDENCE'=>$sessionEvidence,
 		'DATAPHYRE_SCHEDULER_STATE_ROOT'=>$stateRoot,
 		'DATAPHYRE_RUNTIME_TEST_REALTIME_TOKEN'=>$token,
 	];
 	$process=DataphyreApplicationRuntimeProcessBroker::spawn([
 		'/usr/bin/setpriv','--reuid=10001','--regid=10001','--groups=10001','--no-new-privs',
 		'--inh-caps=-all','--ambient-caps=-all','--bounding-set=-all','--pdeathsig=SIGKILL',
-		PHP_BINARY,$coverageBootstrap,$server,'realtime','0.0.0.0','8080',$project,
+		PHP_BINARY,'-d','session.save_path='.$sessionRoot,$coverageBootstrap,$server,'realtime','0.0.0.0','8080',$project,
 	],[0=>['file','/dev/null','r'],1=>['pipe','w'],2=>['pipe','w']],$frameworkRoot,$publicEnvironment,'realtime',
 		$applicationEnvironment,10000,$managed,
 	);
@@ -2185,6 +2192,15 @@ test('covered realtime pool performs application and framework WebSocket roundtr
 	}
 	if($failure!==null) throw new RuntimeException($failure->getMessage().' stdout='.$stdout.' stderr='.$stderr,0,$failure);
 	$t->same('',$stdout);$t->same('',$stderr);
+	$sessionEvidencePayload=is_file($sessionEvidence)
+		? json_decode((string)file_get_contents($sessionEvidence),true,16,JSON_THROW_ON_ERROR)
+		: null;
+	$t->same([
+		'session_status_none'=>true,
+		'session_id_empty'=>true,
+		'session_files_absent'=>true,
+	],$sessionEvidencePayload);
+	$t->same([],glob($sessionRoot.'/sess_*') ?: []);
 	$part=is_file($coveragePart) ? json_decode((string)file_get_contents($coveragePart),true) : null;
 	$t->isTrue(is_array($part),'the realtime server returned an exact Xdebug coverage part');
 	$t->same('xdebug',$part['engine'] ?? null);

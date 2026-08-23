@@ -155,6 +155,24 @@ final class CoreKernelBootstrap {
 		];
 	}
 
+	/** Selects whether this bootstrap represents a real user request with session state. */
+	public static function sessionBootstrapMode(
+		string $runMode,
+		?string $managedRole,
+		bool $releasePreflight,
+		bool $bootstrapOnly
+	): string {
+		if($bootstrapOnly){
+			return 'application-bootstrap-only';
+		}
+		if($releasePreflight){
+			return 'application-release-preflight';
+		}
+		return \in_array($managedRole, ['realtime','scheduler'], true)
+			? 'managed-runtime-registration'
+			: $runMode;
+	}
+
 	/** @param array<string,mixed> $config */
 	public static function configureSession(
 		string $runMode,

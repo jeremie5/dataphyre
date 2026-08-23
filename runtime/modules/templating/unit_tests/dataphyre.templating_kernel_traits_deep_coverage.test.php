@@ -75,6 +75,7 @@ namespace dataphyre {
 		use seo_accessibility;
 
 		public static bool $throwRender=false;
+		public static bool $cacheWritesAllowed=true;
 		public static bool $is_dev_mode=true;
 		public static string $cache_dir='';
 		public static array $debug_logs=[];
@@ -86,6 +87,7 @@ namespace dataphyre {
 			self::$debug_logs[]='rendered '.$template;
 			return 'rendered:'.$template.':'.(string)($data['name'] ?? '');
 		}
+		private static function source_local_cache_writes_allowed(): bool { return self::$cacheWritesAllowed; }
 
 		public static function runDebug(string $template, array $data=[]): string { return self::debug($template, $data); }
 		public static function runProfile(string $template, float $start): void { self::profile_render($template, $start); }
@@ -120,6 +122,11 @@ namespace {
 		Harness::$cache_dir=$t->workspace('templating-kernel')->directory('nested');
 		$t->same('rendered:debug.tpl:Grace', Harness::runDebugRender('debug.tpl', ['name'=>'Grace']));
 		$t->contains('rendered debug.tpl', (string)file_get_contents(Harness::$cache_dir.'/debug_logs.log'));
+		$blockedCache=$t->workspace('templating-kernel-blocked')->path('nested');
+		Harness::$cacheWritesAllowed=false;Harness::$cache_dir=$blockedCache;
+		$t->same('rendered:blocked.tpl:Ada',Harness::runDebugRender('blocked.tpl',['name'=>'Ada']));
+		$t->isFalse(file_exists($blockedCache));
+		Harness::$cacheWritesAllowed=true;
 
 		$form=Harness::runForm(
 			'{{form "profile"}}{{field "name" type="text" required}}{{field "missing" type="email"}}{{endForm}}',
