@@ -24,7 +24,7 @@ try{
 }finally{fclose($socket);}
 [$head,$payload]=array_pad(explode("\r\n\r\n",$response,2),2,'');
 $statusCode=preg_match('/^HTTP\/1\.[01]\s+(\d{3})\b/D',$head,$matches)===1 ? (int)$matches[1] : null;
-if(strlen($payload)>8336 || $statusCode!==200) exit(69);
+if(strlen($payload)>8341 || $statusCode!==200) exit(69);
 try{$decoded=json_decode($payload,true,32,JSON_THROW_ON_ERROR);}
 catch(Throwable){exit(65);}
 if(!is_array($decoded)
@@ -197,17 +197,17 @@ $registration=$decoded['scheduler_registration'] ?? null;
 $noop=$decoded['scheduler_noop_probe'] ?? null;
 $cadence=$decoded['business_cadence'] ?? null;
 $identity=[
-	'contract'=>'dataphyre.scheduler_state.v1',
-	'cloud_application'=>$decoded['cloud_application'] ?? null,
+	'contract'=>'dataphyre.scheduler_state.v2',
+	'deployment_application'=>$decoded['deployment_application'] ?? null,
 	'framework_application'=>$decoded['framework_application'] ?? null,
 	'environment'=>$decoded['environment'] ?? null,
 ];
 $expectedStateSha='sha256:'.hash(
 	'sha256',
-	"dataphyre.scheduler_state_identity.v1\0".json_encode($identity,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
+	"dataphyre.scheduler_state_identity.v2\0".json_encode($identity,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
 );
 $noopIdentity=[
-	'cloud_application'=>$decoded['cloud_application'] ?? null,
+	'deployment_application'=>$decoded['deployment_application'] ?? null,
 	'framework_application'=>$decoded['framework_application'] ?? null,
 	'environment'=>$decoded['environment'] ?? null,
 	'release_id'=>$decoded['release_id'] ?? null,
@@ -215,21 +215,21 @@ $noopIdentity=[
 ];
 $expectedNoopSha='sha256:'.hash(
 	'sha256',
-	"dataphyre.scheduler_noop_probe_identity.v1\0".json_encode($noopIdentity,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
+	"dataphyre.scheduler_noop_probe_identity.v2\0".json_encode($noopIdentity,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
 );
 $count=is_array($cadence) ? ($cadence['count'] ?? null) : null;
 $lastAt=is_array($cadence) ? ($cadence['last_at'] ?? null) : null;
 $lastResult=is_array($cadence) ? ($cadence['last_result'] ?? null) : null;
 $valid=is_array($decoded)
 	&& array_keys($decoded)===[
-		'contract','cloud_application','framework_application','environment','release_id',
+		'contract','deployment_application','framework_application','environment','release_id',
 		'environment_fingerprint','generation','supervisor_pid','supervisor_uid','supervisor_gid',
 		'activation_mode','active','scheduler_cycle_in_progress','control','web','scheduler','realtime',
 		'scheduler_registration','scheduler_noop_probe','scheduler_state_identity_sha256','business_cadence',
 	]
-	&& ($decoded['contract'] ?? null)==='dataphyre.application_runtime.v6'
-	&& is_string($decoded['cloud_application'] ?? null)
-	&& \Dataphyre\PublicApplicationIdentifier::valid($decoded['cloud_application'])
+	&& ($decoded['contract'] ?? null)==='dataphyre.application_runtime.v7'
+	&& is_string($decoded['deployment_application'] ?? null)
+	&& \Dataphyre\PublicApplicationIdentifier::valid($decoded['deployment_application'])
 	&& is_string($decoded['framework_application'] ?? null)
 	&& preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$decoded['framework_application'])===1
 	&& is_string($decoded['environment'] ?? null)
@@ -257,7 +257,7 @@ $valid=is_array($decoded)
 		'contract','ok','generation','request_counter','claim_consumed','worker_receipt','worker_reaped',
 		'replay_suppressed','count','last_at','previous_readback','state_identity_sha256',
 	]
-	&& ($noop['contract'] ?? null)==='dataphyre.scheduler_noop_probe.v1'
+	&& ($noop['contract'] ?? null)==='dataphyre.scheduler_noop_probe.v2'
 	&& ($noop['ok'] ?? null)===true && ($noop['generation'] ?? null)===$decoded['generation']
 	&& is_int($noop['request_counter'] ?? null) && $noop['request_counter']>=1 && $noop['request_counter']<=PHP_INT_MAX
 	&& ($noop['claim_consumed'] ?? null)===true && ($noop['worker_receipt'] ?? null)===true

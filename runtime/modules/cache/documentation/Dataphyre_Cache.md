@@ -98,7 +98,7 @@ command.
 reports whether a non-loopback shared endpoint is declared by the platform
 cache environment aliases. It performs no network operation and is safe under
 `--network none`. This fixed probe deliberately does not bootstrap application
-configuration: Cloud must project its deployment-owned Memcached endpoint as
+configuration: the hosting control plane must project its deployment-owned Memcached endpoint as
 `DATAPHYRE_CACHE_MEMCACHED_HOST` and optionally
 `DATAPHYRE_CACHE_MEMCACHED_PORT` through the root-only environment envelope.
 

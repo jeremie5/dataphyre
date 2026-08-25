@@ -46,7 +46,6 @@ test('representative sources name one lane and one verification contract', stati
 		'runtime/modules/profanity/datasets/en/product.php'=>['data-contract',false],
 		'runtime/modules/stripe/src/lib/Stripe.php'=>['dependency-upstream',false],
 		'runtime/modules/sql/third_party/adminer/adminer.php'=>['dependency-upstream',false],
-		'runtime/modules/'.'shopiro'.'_devapi/shopiro-client/src/ShopiroClient.php'=>['dependency-upstream',false],
 		'runtime/modules/panel/testing/panel_test_runner.php'=>['test-harness',false],
 		'runtime/modules/testing/unit_tests/example.test.php'=>['test-harness',false],
 		'runtime/modules/testing/tooling/code_worker.php'=>['coverage-self-transport',false],

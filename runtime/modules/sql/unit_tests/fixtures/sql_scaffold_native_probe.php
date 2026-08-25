@@ -16,7 +16,7 @@ if(!is_file($script) || !is_dir($project)){
 define('DATAPHYRE_SQL_SCAFFOLD_NO_DISPATCH', true);
 putenv('DATAPHYRE_PROJECT_ROOT='.$project);
 require $script;
-$application=$project.'/applications/serve/framework';
+$application=$project.'/applications/example_app/framework';
 if(!is_dir($application) && !mkdir($application, 0777, true) && !is_dir($application)){
 	throw new RuntimeException('Unable to create native scaffold application fixture.');
 }
@@ -28,13 +28,13 @@ $runtime=[
 ];
 $missing=dataphyre_sql_scaffold_command::run(['scaffold.php'], $runtime);
 $success=dataphyre_sql_scaffold_command::run([
-	'scaffold.php', 'serve', 'Widget', 'widgets', 'widget_id', 'widget_id,name',
+	'scaffold.php', 'example_app', 'Widget', 'widgets', 'widget_id', 'widget_id,name',
 ], $runtime);
 echo json_encode([
 	'missing_status'=>$missing,
 	'success_status'=>$success,
-	'entity_exists'=>is_file($project.'/applications/serve/framework/Record/WidgetRecord.php'),
-	'table_exists'=>is_file($project.'/applications/serve/framework/Schema/WidgetTableSchema.php'),
+	'entity_exists'=>is_file($project.'/applications/example_app/framework/Record/WidgetRecord.php'),
+	'table_exists'=>is_file($project.'/applications/example_app/framework/Schema/WidgetTableSchema.php'),
 	'output'=>$output,
 	'errors'=>$errors,
 ], JSON_THROW_ON_ERROR);

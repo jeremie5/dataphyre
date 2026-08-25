@@ -32,7 +32,7 @@ if(!str_starts_with($request,"GET /dataphyre/runtime/status HTTP/1.1\r\n")){
 	fclose($connection);fclose($listener);exit(65);
 }
 $body=json_encode([
-	'contract'=>'dataphyre.application_runtime.v6','active'=>true,
+	'contract'=>'dataphyre.application_runtime.v7','active'=>true,
 	'business_cadence'=>['count'=>1,'last_at'=>'2026-08-15T12:00:00Z','last_result'=>'ok'],
 ],JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
 $response="HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n{$body}";

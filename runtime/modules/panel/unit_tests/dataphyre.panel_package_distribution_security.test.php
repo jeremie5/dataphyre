@@ -35,7 +35,7 @@ if(!function_exists('Dataphyre\\Panel\\link')){
 }
 
 /** @return array{secret:string,public:string,key_id:string,publisher:string,verifier:PanelPackageSignatureVerifier,policy:PanelPackageTrustPolicy} */
-function dp_panel_distribution_authority(string $keyId='release', string $publisher='shopiro'): array {
+function dp_panel_distribution_authority(string $keyId='release', string $publisher='example_publisher'): array {
 	$keypair=sodium_crypto_sign_keypair();
 	$public=sodium_crypto_sign_publickey($keypair);
 	$secret=sodium_crypto_sign_secretkey($keypair);
@@ -94,7 +94,7 @@ function dp_panel_distribution_entry(array $authority, string $id, string $versi
 function dp_panel_distribution_signed_index(array $authority, array $entries, int $sequence=7, int $now=1800000000, array $overrides=[]): array {
 	$index=array_replace([
 		'format'=>PanelPackageRegistryIndex::FORMAT,
-		'registry'=>'shopiro_packages','publisher'=>$authority['publisher'],'sequence'=>$sequence,
+		'registry'=>'example_registry','publisher'=>$authority['publisher'],'sequence'=>$sequence,
 		'generated_at'=>gmdate(DATE_ATOM, $now-60),'expires_at'=>gmdate(DATE_ATOM, $now+3600),
 		'packages'=>$entries,'transparency'=>['log'=>'fixture','checkpoint'=>$sequence],
 	], $overrides);
@@ -436,25 +436,25 @@ test('first-party transparency revocation and publisher evidence gate registry r
 	$authority=dp_panel_distribution_authority();$now=1800000000;$clockInstant=gmdate('Y-m-d\TH:i:s.000000\Z',$now);$clock=static function()use(&$clockInstant):string{return$clockInstant;};
 	$logSigner=static fn(string $payload,string $keyId,string $role):string=>base64_encode(sodium_crypto_sign_detached($payload,$authority['secret']));
 	$logVerifier=static function(string $payload,string $keyId,string $signature,string $role)use($authority):bool{$decoded=base64_decode($signature,true);return$keyId===$authority['key_id']&&is_string($decoded)&&sodium_crypto_sign_verify_detached($decoded,$payload,$authority['public']);};
-	$root=$t->workspace('panel-package-first-party-marketplace')->directory('state');$log=new \Dataphyre\Panel\PanelPackageTransparencyLog($root.'/log','shopiro_public_log',$authority['key_id'],$logSigner,$clock);
-	$networkVerifier=new \Dataphyre\Panel\PanelPackageTransparencyVerifier($logVerifier,['shopiro_public_log'],[],['allow_trust_on_first_use'=>true,'clock'=>$clock]);$network=new \Dataphyre\Panel\PanelPackageMarketplaceTrustNetwork($root.'/network',$networkVerifier,$clock,86400);
-	$attestation=['attestation_id'=>'shopiro_identity_release','publisher'=>'shopiro','issuer'=>'independent_lab','category'=>'identity','signal'=>'verified','evidence_hash'=>str_repeat('a',64),'issued_at'=>$clockInstant,'valid_until'=>gmdate('Y-m-d\TH:i:s.000000\Z',$now+86400)];
+	$root=$t->workspace('panel-package-first-party-marketplace')->directory('state');$log=new \Dataphyre\Panel\PanelPackageTransparencyLog($root.'/log','example_public_log',$authority['key_id'],$logSigner,$clock);
+	$networkVerifier=new \Dataphyre\Panel\PanelPackageTransparencyVerifier($logVerifier,['example_public_log'],[],['allow_trust_on_first_use'=>true,'clock'=>$clock]);$network=new \Dataphyre\Panel\PanelPackageMarketplaceTrustNetwork($root.'/network',$networkVerifier,$clock,86400);
+	$attestation=['attestation_id'=>'example_identity_release','publisher'=>'example_publisher','issuer'=>'independent_lab','category'=>'identity','signal'=>'verified','evidence_hash'=>str_repeat('a',64),'issued_at'=>$clockInstant,'valid_until'=>gmdate('Y-m-d\TH:i:s.000000\Z',$now+86400)];
 	$network->ingest($log->append('publisher_attestation',$attestation));
 	$bundle=dp_panel_distribution_bundle($authority,'transparent_pack');$entry=dp_panel_distribution_entry($authority,'transparent_pack','1.0.0',$bundle['body'],[],['transparency'=>[]]);
-	$log->append('package_release',PanelPackageRegistryIndex::packageTransparencySubject('shopiro_packages',7,$entry),['consistency_from_size'=>1]);
+	$log->append('package_release',PanelPackageRegistryIndex::packageTransparencySubject('example_registry',7,$entry),['consistency_from_size'=>1]);
 	$unsigned=dp_panel_distribution_signed_index($authority,[$entry],7,$now,['transparency'=>[]]);unset($unsigned['signature']);
 	$log->append('registry_index',PanelPackageRegistryIndex::indexTransparencySubject($unsigned),['consistency_from_size'=>2]);
 	$entry['transparency']=$log->receipt(1,1)->jsonSerialize();$unsigned['packages']=[$entry];$unsigned['transparency']=$log->receipt(2,1)->jsonSerialize();
 	$payload=PanelPackageRegistryIndex::signaturePayload($unsigned,$authority['verifier']);$unsigned['signature']=['algorithm'=>'ed25519','key_id'=>$authority['key_id'],'publisher'=>$authority['publisher'],'digest'=>hash('sha256',$payload),'signature'=>base64_encode(sodium_crypto_sign_detached($payload,$authority['secret']))];
 	$network->ingest($entry['transparency']);$network->ingest($unsigned['transparency']);$t->isTrue($network->health()['complete']);
-	$distributionVerifier=new \Dataphyre\Panel\PanelPackageTransparencyVerifier($logVerifier,['shopiro_public_log'],[],['allow_trust_on_first_use'=>true,'clock'=>$clock]);$proofCalls=[];$transparencyHook=static function(string $kind,array $subject,array $proof)use($distributionVerifier,&$proofCalls):bool{$ok=$distributionVerifier($kind,$subject,$proof);$proofCalls[]=['kind'=>$kind,'subject'=>$subject,'ok'=>$ok];return$ok;};
+	$distributionVerifier=new \Dataphyre\Panel\PanelPackageTransparencyVerifier($logVerifier,['example_public_log'],[],['allow_trust_on_first_use'=>true,'clock'=>$clock]);$proofCalls=[];$transparencyHook=static function(string $kind,array $subject,array $proof)use($distributionVerifier,&$proofCalls):bool{$ok=$distributionVerifier($kind,$subject,$proof);$proofCalls[]=['kind'=>$kind,'subject'=>$subject,'ok'=>$ok];return$ok;};
 	$security=['now'=>$now,'require_transparency'=>true,'transparency_verifier'=>$transparencyHook,'require_revocation_check'=>true,'revocation_checker'=>$network->revocations(),'require_publisher_trust'=>true,'publisher_trust_resolver'=>$network->publishers()];
 	$index=PanelPackageRegistryIndex::make($unsigned,$authority['verifier'],$authority['policy'],$security);$t->isTrue($index->ok(),implode('; ',$index->errors()).' '.json_encode($proofCalls));$t->isFalse($index->entries()[0]['revoked']);$t->same('observed',$index->entries()[0]['publisher_trust']['status']);
 	$resolution=PanelPackageResolver::make($index)->resolve(['transparent_pack'=>'*']);$t->isTrue($resolution->ok());$locator=$index->entries()[0]['artifact']['locator'];$transport=new DpPanelDistributionTransport([$locator=>['ok'=>true,'status'=>200,'body'=>$bundle['body'],'content_type'=>PanelPackageRegistryIndex::BUNDLE_CONTENT_TYPE]]);$cache=PanelPackageArtifactCache::make($t->workspace('panel-package-first-party-cache')->directory('cache'));
 		$acquired=PanelPackageAcquisitionPlan::make($resolution,$transport,$cache,$authority['verifier'],$authority['policy'],$security)->acquire();$t->isTrue($acquired->ok());
 		$t->same(1,$acquired->toArray()['activation_gate_count']);$t->isFalse($acquired->toArray()['activation_gates_serialized']);
 		$install=$acquired->installPlan('transparent_pack');$t->notNull($install);$t->isTrue($install->manifest()['activation_gate']['allowed']);
-		$clockInstant=gmdate('Y-m-d\TH:i:s.000000\Z',$now+60);$revocation=['revocation_id'=>'transparent_pack_incident','scope'=>'artifact','publisher'=>'shopiro','artifact_sha256'=>hash('sha256',$bundle['body']),'reason'=>'supply_chain_incident','effective_at'=>$clockInstant];$network->ingest($log->append('revocation',$revocation,['consistency_from_size'=>3]));$security['now']=$now+60;
+		$clockInstant=gmdate('Y-m-d\TH:i:s.000000\Z',$now+60);$revocation=['revocation_id'=>'transparent_pack_incident','scope'=>'artifact','publisher'=>'example_publisher','artifact_sha256'=>hash('sha256',$bundle['body']),'reason'=>'supply_chain_incident','effective_at'=>$clockInstant];$network->ingest($log->append('revocation',$revocation,['consistency_from_size'=>3]));$security['now']=$now+60;
 		$activationRoot=$t->workspace('panel-package-revoked-after-acquisition')->directory('target');$activationBlocked=$install->apply($activationRoot);$t->isFalse($activationBlocked->ok());$t->same([],$activationBlocked->written());$t->isFalse(is_file($activationRoot.'/src/Feature.php'));$t->isFalse($activationBlocked->toArray()['meta']['activation_gate_passed']);
 		$blocked=PanelPackageAcquisitionPlan::make($resolution,$transport,$cache,$authority['verifier'],$authority['policy'],$security)->acquire();$t->isFalse($blocked->ok());$t->contains('revoked',implode(' ',$blocked->errors()));
 });
@@ -515,7 +515,7 @@ test('zz distribution guarded branches stay fail closed under malformed adapters
 	$bundle=dp_panel_distribution_bundle($authority, 'coverage_pack');
 	$entry=dp_panel_distribution_entry($authority, 'coverage_pack', '1.0.0', $bundle['body']);
 	$index=dp_panel_distribution_index($authority, [$entry], $now);
-	$t->same('shopiro', $index->publisher());
+	$t->same('example_publisher', $index->publisher());
 
 	$invalidJson=PanelPackageRegistryIndex::make('{', $authority['verifier'], $authority['policy'], ['now'=>$now]);
 	$t->isFalse($invalidJson->ok());
@@ -646,7 +646,7 @@ test('zz distribution guarded branches stay fail closed under malformed adapters
 	$t->isFalse(PanelPackageAcquisitionPlan::make($badManifestResolution, $badManifestTransport, PanelPackageArtifactCache::make($workspace->directory('bad-manifest-cache')), $authority['verifier'], $authority['policy'], ['now'=>$now])->acquire()->ok());
 
 	$mismatchBundle=dp_panel_distribution_bundle($authority, 'requirements_pack', '1.0.0', [], [
-		'requirements'=>['php'=>'>=8.1.0'],'meta'=>['publisher'=>'shopiro','diagnostic_ratio'=>1.5],
+		'requirements'=>['php'=>'>=8.1.0'],'meta'=>['publisher'=>'example_publisher','diagnostic_ratio'=>1.5],
 	]);
 	$mismatchEntry=dp_panel_distribution_entry($authority, 'requirements_pack', '1.0.0', $mismatchBundle['body']);
 	$mismatchIndex=dp_panel_distribution_index($authority, [$mismatchEntry], $now);

@@ -23,9 +23,13 @@ All notable Dataphyre changes are tracked here.
   incarnation in the versioned root environment envelope. The reusable
   environment key and exact incarnation ID remain separate, tenant values
   cannot override either, and application logs can now retain the exact ID
-  needed to reject rows from a deleted/recreated environment. This is a
-  fail-closed v2-only cutover: v1 envelopes are rejected without dual-read or
-  compatibility fallback.
+  needed to reject rows from a deleted/recreated environment.
+- Replaced the hosting-product-specific `cloud_application` wire field with the
+  generic `deployment_application` identity. The environment envelope is now
+  `dataphyre.application_environment.v3`, runtime status is
+  `dataphyre.application_runtime.v7`, and scheduler request, state, and no-op
+  identity contracts are v2. This is a fail-closed cutover: predecessor
+  versions are rejected without dual-read or compatibility fallback.
 - Suppressed every source-local templating cache mutation in managed runtime,
   release-preflight, and bootstrap-only contexts while retaining in-memory
   rendering, planning, and per-render binding reuse. Ordinary self-hosted
@@ -57,7 +61,7 @@ All notable Dataphyre changes are tracked here.
   module tables before application transactions without runtime auto-DDL or
   another manifest.
 - Moved Vestra's implicit cache and upload staging directory to the writable
-  system-temporary Dataphyre tree for immutable Cloud-managed application
+  system-temporary Dataphyre tree for immutable managed application
   releases. Explicit runtime cache directories and ordinary local defaults are
   unchanged, and the local Vestra loader now shares the exact writer resolver.
   Vestra tenant/rate environment values are now last-resort fallbacks that cannot
@@ -69,7 +73,7 @@ All notable Dataphyre changes are tracked here.
   environment, so applications now resolve `/opt/dataphyre/runtime` and `/app`
   from root-owned private values that overwrite tenant lookalikes instead of
   depending on inherited image environment.
-- Fixed the Cloud-managed seed child at a framework-owned `512M` PHP heap in
+- Fixed the host-managed seed child at a framework-owned `512M` PHP heap in
   its immutable seed-only argv. Tenant environment, seed metadata, and command
   input cannot alter it; non-seed one-shots are unchanged, while the private
   KVM workload and host cgroup remain the outer resource boundary.
@@ -80,8 +84,8 @@ All notable Dataphyre changes are tracked here.
 - Resolve the selected seed data environment to one explicit configured SQL
   cluster, including the default cluster for `live`, before the outer managed
   transaction starts. Seed callbacks and their ledger can now attest the same
-  concrete connection authority that Cloud selected.
-- Bound Cloud-selected PostgreSQL migration targets to one generic data
+  concrete connection authority that the hosting platform selected.
+- Bound platform-selected PostgreSQL migration targets to one generic data
   environment before application SQL, with one tightly application-prefixed
   profile alias for already-immutable legacy migrations. Platforms no longer
   need application-specific migration wrappers or database-name inference to
@@ -105,6 +109,14 @@ All notable Dataphyre changes are tracked here.
 
 ### Added
 
+- Added optional per-application `test_rootpaths` metadata to
+  `applications/dataphyre.apps.json`. Repositories can declare bounded shared
+  test include roots without a named application topology in the public runner;
+  paths are repository-confined, protected roots cannot be replaced, and the
+  canonical map participates in code-case discovery cache fingerprints.
+- Removed named consuming-application fixtures and exclusions from the public
+  framework. The portable MCP configuration audit now rejects application-local
+  repository paths generically, without embedding a customer or product name.
 - Added one exact framework-owned `GET /.dataphyre/live` response at the fixed
   public realtime ingress. It is an allocation-only empty response that never
   crosses the private web gateway or performs request-time application/PHP-FPM

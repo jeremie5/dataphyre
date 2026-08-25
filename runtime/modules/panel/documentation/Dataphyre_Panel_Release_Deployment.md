@@ -29,7 +29,7 @@ $profile=PanelReleaseDeploymentProfile::kubernetes(
     'production_primary',
     [
         'cluster_ref'=>'primary',
-        'namespace'=>'shopiro',
+        'namespace'=>'example-app',
         'workload_kind'=>'Deployment',
         'workload'=>'panel',
         'container'=>'web',

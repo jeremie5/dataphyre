@@ -48,7 +48,7 @@ function dp_panel_record_sections_resource(): Resource {
 			['title'=>'External','href'=>'https://example.test/path','type'=>'Docs','external'=>false],
 		])
 		->contactsUsing(static fn(): array=>[
-			['name'=>'Ada','role'=>'Owner','email'=>'ada@example.test','phone'=>'+1 555','company'=>'Shopiro','location'=>'Toronto','status'=>'verified','url'=>'/panel/people/ada'],
+			['name'=>'Ada','role'=>'Owner','email'=>'ada@example.test','phone'=>'+1 555','company'=>'Example Publisher','location'=>'Toronto','status'=>'verified','url'=>'/panel/people/ada'],
 			['label'=>'No details','state'=>'blocked'],
 		])
 		->locationsUsing(static fn(): array=>[

@@ -120,7 +120,6 @@ final class CoverageLanes {
 			['target'=>'runtime/modules/stripe/src/**','reason'=>'bundled Stripe SDK source is third-party code with its own upstream verification boundary','lane'=>'dependency-upstream'],
 			['target'=>'runtime/modules/'.'cj'.'dropshipping/'.'cj'.'dropshipping-client/**','reason'=>'bundled CJ client source is third-party code with its own upstream verification boundary','lane'=>'dependency-upstream'],
 			['target'=>'runtime/modules/sql/third_party/adminer/**','reason'=>'bundled Adminer source is third-party code with its own upstream verification boundary','lane'=>'dependency-upstream'],
-			['target'=>'runtime/modules/'.'shopiro'.'_devapi/shopiro-client/**','reason'=>'bundled Shopiro API client is a separately versioned upstream package with its own verification boundary','lane'=>'dependency-upstream'],
 		];
 	}
 
@@ -136,8 +135,7 @@ final class CoverageLanes {
 	private static function isDependency(string $path): bool {
 		return str_starts_with($path,'runtime/modules/stripe/src/')
 			|| str_starts_with($path,'runtime/modules/'.'cj'.'dropshipping/'.'cj'.'dropshipping-client/')
-			|| str_starts_with($path,'runtime/modules/sql/third_party/adminer/')
-			|| str_starts_with($path,'runtime/modules/'.'shopiro'.'_devapi/shopiro-client/');
+			|| str_starts_with($path,'runtime/modules/sql/third_party/adminer/');
 	}
 
 	private static function isHarness(string $path): bool {

@@ -3224,6 +3224,10 @@ TXT;
 			]));
 		}
 		$fingerprint_parts=[$this->code_case_runtime_fingerprint, is_file($test_file) ? (string)hash_file('sha256', $test_file) : 'missing-test'];
+		$fingerprint_parts[]='rootpath:'.hash(
+			'sha256',
+			json_encode($this->rootpathFor($test),JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
+		);
 		foreach($this->testBootstrapFiles($test) as $bootstrap_file){
 			$fingerprint_parts[]=$bootstrap_file.':'.(is_file($bootstrap_file) ? (string)hash_file('sha256', $bootstrap_file) : 'missing-bootstrap');
 		}
@@ -3547,17 +3551,48 @@ TXT;
 		$paths['themes']=$app_root.'/themes/';
 		$paths['dataphyre']=$this->dataphyreRootForApp($app_root);
 		$paths['app']=$name;
-		$shopiro_root=$this->root.'/applications/shopiro/';
-		if(is_dir($shopiro_root)){
-			$paths['shopiro_root']=$shopiro_root;
-			$paths['shopiro_shared']=$shopiro_root.'shared/';
-			$paths['common_debug']=$shopiro_root.'shared/debug/';
-			$paths['common_backend']=$shopiro_root.'shared/backend/';
-			$paths['common_themes']=$shopiro_root.'shared/themes/';
-			if(in_array($name, ['shopirocs'], true)){
-				$paths['themes']=$shopiro_root.'shared/themes/';
-			}
+		return array_replace($paths,$this->applicationTestRootpaths($name));
+	}
+
+	/** @return array<string,string> */
+	private function applicationTestRootpaths(string $name): array {
+		if(!$this->applications_enabled){return [];}
+		$declared=[];
+		foreach($this->applications() as $application){
+			if(!is_array($application) || ($application['name'] ?? null)!==$name){continue;}
+			$declared=$application['test_rootpaths'] ?? [];
+			break;
 		}
+		if(!is_array($declared) || ($declared!==[] && array_is_list($declared))){
+			throw new RuntimeException("Application '{$name}' test_rootpaths must be an object.");
+		}
+		$protected=array_fill_keys(array_merge(self::PROTECTED_ROOTPATH_KEYS,['backend','views','dataphyre']),true);
+		$root=str_replace('\\','/',(string)(realpath($this->root) ?: $this->root));
+		$root_prefix=rtrim($root,'/').'/';
+		$paths=[];
+		foreach($declared as $key=>$relative){
+			if(!is_string($key) || preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/D',$key)!==1){
+				throw new RuntimeException("Application '{$name}' test_rootpaths keys must be PHP-style identifiers.");
+			}
+			if(isset($protected[$key])){
+				throw new RuntimeException("Application '{$name}' test_rootpaths cannot replace protected rootpath '{$key}'.");
+			}
+			if(!is_string($relative) || trim($relative)==='' || preg_match('/[\\x00-\\x1f\\x7f]/D',$relative)===1){
+				throw new RuntimeException("Application '{$name}' test_rootpaths values must be non-empty relative directory paths.");
+			}
+			$normalized=str_replace('\\','/',trim($relative));
+			if(str_starts_with($normalized,'/') || preg_match('/^[A-Za-z]:/D',$normalized)===1){
+				throw new RuntimeException("Application '{$name}' test_rootpaths values must be repository-relative.");
+			}
+			$relative_path=$this->cleanRelativePath($normalized);
+			$candidate=(string)realpath($this->root.'/'.$relative_path);
+			$candidate=str_replace('\\','/',$candidate);
+			if($relative_path==='' || !is_dir($candidate) || $candidate===$root || !str_starts_with($candidate.'/',$root_prefix)){
+				throw new RuntimeException("Application '{$name}' test_rootpath '{$key}' must resolve to a repository-owned directory.");
+			}
+			$paths[$key]=rtrim($candidate,'/').'/';
+		}
+		ksort($paths,SORT_STRING);
 		return $paths;
 	}
 

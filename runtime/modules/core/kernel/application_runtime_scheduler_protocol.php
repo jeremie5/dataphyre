@@ -13,7 +13,7 @@ require_once dirname(__DIR__).'/Framework/PublicApplicationIdentifier.php';
 /** Domain-separated, one-time scheduler requests issued only by root PID 1. */
 final class DataphyreApplicationRuntimeSchedulerProtocol
 {
-	public const CONTRACT='dataphyre.scheduler_request.v1';
+	public const CONTRACT='dataphyre.scheduler_request.v2';
 	public const MAX_TRANSPORT_BYTES=524288;
 	public const MAX_REQUEST_BYTES=4096;
 	public const MAX_ENVIRONMENT_ENTRIES=576;
@@ -36,7 +36,7 @@ final class DataphyreApplicationRuntimeSchedulerProtocol
 			'kind'=>$kind,
 			'timestamp'=>$timestamp ?? time(),
 			'nonce'=>$nonce ?? bin2hex(random_bytes(16)),
-			'cloud_application'=>$identity['cloud_application'] ?? '',
+			'deployment_application'=>$identity['deployment_application'] ?? '',
 			'framework_application'=>$identity['framework_application'] ?? '',
 			'environment'=>$identity['environment'] ?? '',
 			'release_id'=>$identity['release_id'] ?? '',
@@ -60,7 +60,7 @@ final class DataphyreApplicationRuntimeSchedulerProtocol
 	public static function verify(array $candidate,string $publicKey,?int $now=null): bool
 	{
 		if(array_keys($candidate)!==[
-			'contract','kind','timestamp','nonce','cloud_application','framework_application','environment',
+			'contract','kind','timestamp','nonce','deployment_application','framework_application','environment',
 			'release_id','generation','counter','scheduler_name','definition_sha256','budget_milliseconds','signature',
 		] || strlen($publicKey)!==SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES){
 			return false;
@@ -82,7 +82,7 @@ final class DataphyreApplicationRuntimeSchedulerProtocol
 	public static function matchesCanonicalJson(array $candidate,string $raw): bool
 	{
 		if($raw==='' || strlen($raw)>self::MAX_REQUEST_BYTES || array_keys($candidate)!==[
-			'contract','kind','timestamp','nonce','cloud_application','framework_application','environment',
+			'contract','kind','timestamp','nonce','deployment_application','framework_application','environment',
 			'release_id','generation','counter','scheduler_name','definition_sha256','budget_milliseconds','signature',
 		]) return false;
 		try{$canonical=json_encode($candidate,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);}
@@ -108,14 +108,14 @@ final class DataphyreApplicationRuntimeSchedulerProtocol
 	private static function validUnsigned(array $candidate): bool
 	{
 		if(array_keys($candidate)!==[
-			'contract','kind','timestamp','nonce','cloud_application','framework_application','environment',
+			'contract','kind','timestamp','nonce','deployment_application','framework_application','environment',
 			'release_id','generation','counter','scheduler_name','definition_sha256','budget_milliseconds',
 		] || ($candidate['contract'] ?? null)!==self::CONTRACT
 			|| !in_array($candidate['kind'] ?? null,['registration','callback','noop'],true)
 			|| !is_int($candidate['timestamp'] ?? null) || $candidate['timestamp']<1000000000
 			|| !is_string($candidate['nonce'] ?? null) || preg_match('/^[a-f0-9]{32}$/D',$candidate['nonce'])!==1
-			|| !is_string($candidate['cloud_application'] ?? null)
-			|| !\Dataphyre\PublicApplicationIdentifier::valid($candidate['cloud_application'])
+			|| !is_string($candidate['deployment_application'] ?? null)
+			|| !\Dataphyre\PublicApplicationIdentifier::valid($candidate['deployment_application'])
 			|| !is_string($candidate['framework_application'] ?? null)
 			|| preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$candidate['framework_application'])!==1
 			|| !is_string($candidate['environment'] ?? null)

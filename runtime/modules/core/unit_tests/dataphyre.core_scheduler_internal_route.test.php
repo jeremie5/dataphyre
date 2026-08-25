@@ -17,14 +17,14 @@ test('managed scheduler accepts only the canonical signed and claim-bound CGI ro
 	$secret=sodium_crypto_sign_secretkey($keypair);
 	$public=sodium_crypto_sign_publickey($keypair);
 	$identity=[
-		'cloud_application'=>'serve',
-		'framework_application'=>'Serve',
+		'deployment_application'=>'fixture-app',
+		'framework_application'=>'FixtureApp',
 		'environment'=>'production',
 		'release_id'=>'dep_'.str_repeat('a',40),
 	];
 	$request=DataphyreApplicationRuntimeSchedulerProtocol::issue(
 		'callback',$identity,'gen_'.str_repeat('b',32),7,$secret,
-		'tenant-beta.lifecycle','sha256:'.str_repeat('c',64),30000,
+		'fixture.lifecycle','sha256:'.str_repeat('c',64),30000,
 		1776073500,str_repeat('d',32),
 	);
 	$raw=json_encode($request,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);

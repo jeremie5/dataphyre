@@ -47,7 +47,7 @@ test('SDK schema grammar is closed bounded executable and deterministic',static 
 })->tag('panel','sdk','schema','validation','scorched-earth')->isolation('case')->maxMillis(5000);
 
 test('SDK contracts bind host routes protocols events and Studio artifacts without credentials',static function(Context $t):void {
-	$contract=PanelSdkProtocolCatalog::firstParty('shopiro-ops','3.2.1',[
+	$contract=PanelSdkProtocolCatalog::firstParty('example-ops','3.2.1',[
 		'data_surface'=>'/api/panel/data-surfaces/{surface}','command'=>'/api/panel/commands','events'=>'/api/panel/events','studio_artifact'=>'/api/panel/studio/{document}',
 	],['bindings'=>['platform'=>str_repeat('b',64)],'metadata'=>['environment'=>'public']]);
 	$t->same(4,count($contract->operations()));$t->same(['data_surface_window','dispatch_command','get_studio_artifact','list_events'],array_keys($contract->operations()));$t->notNull($contract->operation('data_surface_window'));$t->same(['surface'],$contract->operation('data_surface_window')?->pathParameters());$t->same(['panel.data_surface.read'],$contract->operation('data_surface_window')?->scopes());$t->same(['panel.event'],array_keys($contract->events()));$t->same(['panel.studio.artifact'],array_keys($contract->artifacts()));

@@ -74,8 +74,8 @@ test('templating manager renders plans inspects and restores temporary state', s
 	$t->isFalse($state->hasTemplateContract('missing.tpl'));
 	$t->same(null, $state->templateContract('missing.tpl'));
 
-	$manager->addGlobal('company', 'Shopiro');
-	$t->same('Shopiro', $manager->globals()['company']);
+	$manager->addGlobal('company', 'Example Publisher');
+	$t->same('Example Publisher', $manager->globals()['company']);
 	$manager->clearGlobals();
 	$t->isFalse(array_key_exists('company', $manager->globals()));
 	$manager->setStrictMode(false);

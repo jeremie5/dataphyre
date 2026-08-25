@@ -1028,16 +1028,17 @@ without `--audit-only` or `--update-baselines`; it cannot create, replace, or
 self-approve references. Do not combine baseline generation and comparison in
 the same CI run.
 
-ShopiCore's live example remains a separate consuming-application integration
-fixture. It is useful for proving application routes, identity, and seed data,
-but it is not the authoritative source for the framework browser gate.
+An application's live example remains a separate consuming-application
+integration fixture. It is useful for proving application routes, identity,
+and seed data, but it is not the authoritative source for the framework browser
+gate.
 
-For a sibling ShopiCore checkout, the source-tree router pins that external
+For a sibling application checkout, the source-tree router can pin that external
 showroom to the Dataphyre checkout under test. Start it from the Dataphyre root:
 
 ```powershell
 $env:DP_PANEL_LIVE_EXAMPLE_ENTRY = (Resolve-Path `
-  '..\ShopiCore\applications\shopiro\shared\debug\dataphyre-panel-live-example\index.php').Path
+  '..\consumer-application\path\to\panel-live-example\index.php').Path
 $env:DP_PANEL_RUNTIME_ROOT = (Resolve-Path '.').Path
 php -S 127.0.0.1:8097 source-checkout-maintainer-tool
 ```
@@ -1073,5 +1074,30 @@ default; `--parallel-json` only parallelizes JSON tests under
 `--parallel-json-allow` path prefixes after that specific diagnostic lane is
 known to tolerate concurrent workers.
 
-Application tests receive the application rootpath map, including declared
-sibling application include roots when the project has them installed.
+Application tests receive the application rootpath map. Repositories that need
+sibling or shared include roots declare them per application in
+`applications/dataphyre.apps.json`; the runner contains no named-application
+topology:
+
+```json
+{
+  "applications": [
+    {
+      "name": "catalog",
+      "path": "applications/catalog",
+      "test_rootpaths": {
+        "common_backend": "applications/shared/backend",
+        "common_themes": "applications/shared/themes"
+      }
+    }
+  ]
+}
+```
+
+`test_rootpaths` keys must be PHP-style identifiers. Values are existing
+repository-relative directories, remain confined to the repository after
+symbolic-link resolution, and cannot replace protected framework, application,
+backend, view, or Dataphyre roots. A declared `themes` key may replace the
+application's default themes directory when that is an explicit repository
+contract. The canonical rootpath map participates in code-case discovery cache
+fingerprints, so changing this registry metadata cannot reuse stale discovery.

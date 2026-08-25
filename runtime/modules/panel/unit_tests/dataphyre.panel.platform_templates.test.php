@@ -75,7 +75,7 @@ test('notification and media centers render durable actions accessible upload co
 })->tag('panel','platform','notifications','media','template')->maxMillis(1000);
 
 test('package catalog pagination preserves validated search filters and availability choices',static function(Context $t):void{
-	$result=PanelPlatformTemplate::packages(PanelPackageRegistryCatalog::empty('shopiro_packages'),[
+	$result=PanelPlatformTemplate::packages(PanelPackageRegistryCatalog::empty('example_registry'),[
 		'query'=>'workflow',
 		'limit'=>5,
 		'filters'=>[

@@ -99,10 +99,10 @@ test('panel package manifest builds fluent metadata requirements links and norma
 	$t->same($manifest,$manifest->link('Ignored','   '));
 	$t->same($manifest,$manifest->link('','https://example.test/docs'));
 	$t->same($manifest,$manifest->link(' Repository ',' https://example.test/repository '));
-	$t->same($manifest,$manifest->support(['email'=>'support@example.test','owner'=>'Shopiro']));
+	$t->same($manifest,$manifest->support(['email'=>'support@example.test','owner'=>'Example Publisher']));
 	$t->same($manifest,$manifest->support('Issue Tracker','https://example.test/issues'));
 	$t->same($manifest,$manifest->support(' ', 'ignored'));
-	$t->same($manifest,$manifest->signature(['publisher'=>'shopiro','digest'=>'sha256:test']));
+	$t->same($manifest,$manifest->signature(['publisher'=>'example_publisher','digest'=>'sha256:test']));
 	$t->same($manifest,$manifest->signature('Key ID','release-key'));
 	$t->same($manifest,$manifest->signature(' ', 'ignored'));
 	$t->same($manifest,$manifest->meta(['source'=>'fluent','override'=>'first']));

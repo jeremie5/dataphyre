@@ -72,10 +72,10 @@ scheduler execution already forces that override empty. The table
 inventory combines deferred application registrations with the fixed runtime
 definitions for on-disk modules already enabled by the application flight
 sheet. Disabled or unavailable modules remain absent, and preflight does not
-hydrate tables or write schema. This lets Cloud materialize lazy enabled-module
+hydrate tables or write schema. This lets a hosting control plane materialize lazy enabled-module
 tables before an application transaction first reaches them without adding
 another manifest.
-Cloud must match that inventory, run declared application migrations to
+The hosting control plane must match that inventory, run declared application migrations to
 completion, and only then run the fixed registered-table materializer. The
 immutable migration manifest owns ordered bootstrap replay; current registered
 definitions describe the resulting schema and must not precreate future tables
@@ -88,7 +88,7 @@ Synthetic managed realtime-registration and scheduler bootstrap are
 sessionless; only a real managed web request starts the application's ordinary
 request-scoped PHP session. Self-hosted request behavior remains unchanged.
 Table names, callbacks, credentials, headers, task paths, and event payloads never enter the
-report. Cloud must add exact-image proof of the four direct runtime children,
+report. The hosting control plane must add exact-image proof of the four direct runtime children,
 the eight FPM workers,
 scheduler callback execution with claim-bound success receipts and lock
 cleanup, a framework listener roundtrip, execution and
@@ -106,12 +106,12 @@ engines absent means the migration check is not applicable.
 When `DATAPHYRE_DATABASE_BINDING_PRIMARY_SHA256` is present, release preflight
 invokes the same fixed `application_runtime_database_identity.php
 --purpose=primary` probe used by the one-shot runtime. The probe accepts only
-the Cloud-projected primary binding, opens its PostgreSQL connection, and
+the platform-projected primary binding, opens its PostgreSQL connection, and
 returns a purpose- and binding-bound connection hash derived from the binding
 marker plus `current_database()` and `current_user`. The public preflight
 evidence contains only that opaque connection hash, declaration state, and
 purpose; it never contains a DSN, host, user, password, config path, query
-output, or database error. Cloud compares the hash with its independent
+output, or database error. The hosting control plane compares the hash with its independent
 exact-image connection proof before migration and promotion. An absent marker
 makes `database_runtime` not applicable; an invalid marker, driver, connection,
 identity query, binding mismatch, or response fails closed with exit 69 and
@@ -159,7 +159,7 @@ environment of the same name. There is no shell, application script, rollback,
 reset, or arbitrary Artisan command in this path. Because commit precedes the
 root evidence write, an interruption or missing result after commit
 acknowledgement is outcome-unknown. A convergence failure happens before commit
-and rolls the SQL batch back. Cloud resolves only the ambiguous delivery window
+and rolls the SQL batch back. The hosting control plane resolves only the ambiguous delivery window
 by retrying the same immutable, idempotent whole-profile operation.
 
 The application-owned `/health` response must be a JSON object with a top-level
@@ -178,7 +178,7 @@ means invalid typed invocation or runtime, `66` means the project is
 unavailable, `69` means a dependency could not be verified, `70` means
 executable verification failed, `75` means the application did not become
 healthy, and `78` means application, migration, or environment configuration
-is invalid. Dataphyre Cloud must run this exact command inside the exact built
+is invalid. A hosting control plane must run this exact command inside the exact built
 candidate and preserve source, image, environment, and traffic identity before
 promotion; a local pass is a prediction, not proof that a different image will
 work.
@@ -217,7 +217,7 @@ root scheduler gateway retains `CAP_KILL`,
 create one fresh UID/GID `10001`, capability-free `php-cgi` process for each
 accepted signed scheduler request, and `CAP_KILL` solely to terminate that
 child's complete owned process group after success, failure, or timeout.
-Normal image PHP configuration and extensions remain active; Cloud must not
+Normal image PHP configuration and extensions remain active; the hosting control plane must not
 launch any role with `-n`.
 
 The root supervisor needs only that same `CAP_KILL`, `CAP_SETUID`, and
@@ -242,7 +242,7 @@ endpoint. There is no refetch, replay, same-process second read, sibling claim,
 PID-reuse acceptance, or tenant-readable fallback file.
 
 The root mount uses the exact
-`dataphyre.application_environment.v2` contract. In addition to the symbolic
+`dataphyre.application_environment.v3` contract. In addition to the symbolic
 deployment key, it binds one platform-owned opaque environment-incarnation ID
 using the same bounded public identifier grammar as an application ID. PID 1
 requires that ID in its fixed root environment, compares it byte-for-byte with
@@ -261,7 +261,7 @@ identity. These values are framework-owned and
 overwrite same-named input; tenant configuration cannot redirect application
 bootstrap to another runtime or project tree. The managed supervisor may
 replace only `DATAPHYRE_RUNTIME_PROJECT_ROOT` with the root-owned project path
-it already resolved and validated; fixed Cloud images use `/app`, while local
+it already resolved and validated; fixed managed images use `/app`, while local
 and test supervisors keep the same private-envelope contract at their mounted
 project root.
 
@@ -393,7 +393,7 @@ durable timestamp precision; neither is application-configurable. This does not
 change a definition's cadence or callback timeout. Canonical evidence is bounded
 to 2048 bytes and the fixed command budget is 30 seconds.
 
-TLS terminates at the Dataphyre Cloud edge. The fixed container ingress accepts
+TLS terminates at the hosting platform edge. The fixed container ingress accepts
 the edge's plain HTTP connection and must never be published directly without
 that platform TLS and traffic-identity boundary.
 
@@ -432,7 +432,7 @@ Unexpected gateway, transport, timeout, cleanup, or callback failures continue
 to emit only the bounded redacted internal diagnostic and follow the ordinary
 failure/claim-release path.
 
-The private status contract `dataphyre.application_runtime.v6` exposes the
+The private status contract `dataphyre.application_runtime.v7` exposes the
 supervisor identity, immutable application/release identity, activation mode,
 active state, `scheduler_cycle_in_progress`, the rootless HTTP gateway, FPM
 master and eight worker identities, fixed socket and native-generation hashes,

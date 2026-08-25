@@ -60,7 +60,7 @@ test('supervisor owns private status and signs cadence before privilege-dropped 
 	$t->isFalse(str_contains($supervisor,'tcp://127.0.0.1:8082'));
     $t->contains('sodium_crypto_sign_keypair()', $supervisor);
     $t->contains('sodium_crypto_sign_detached', $protocol);
-	$t->contains('dataphyre.scheduler_request.v1',$protocol);
+	$t->contains('dataphyre.scheduler_request.v2',$protocol);
 	foreach(['register','callback','noop'] as $operation){
 		$t->contains('/dataphyre/runtime/scheduler/'.$operation,$supervisor);
 		$t->contains('/dataphyre/runtime/scheduler/'.$operation,$router);
@@ -70,7 +70,7 @@ test('supervisor owns private status and signs cadence before privilege-dropped 
 	$t->contains('/dataphyre/runtime/scheduler/claim',$schedulerGateway);
 	$t->isFalse(str_contains($router,'/dataphyre/runtime/scheduler/claim'));
 	$t->contains('DataphyreApplicationRuntimeSchedulerProtocol::consume',$supervisor);
-	$t->contains('dataphyre.application_runtime.v6',$supervisor);
+	$t->contains('dataphyre.application_runtime.v7',$supervisor);
 	$t->contains("'scheduler_cycle_in_progress'=>",$supervisor);
 	$t->contains("require_once __DIR__.'/application_runtime_activation_latch.php'",$supervisor);
 	$t->contains('DataphyreApplicationRuntimeActivationLatch::restore()',$supervisor);
@@ -124,8 +124,8 @@ test('supervisor owns private status and signs cadence before privilege-dropped 
 	$openMode=strpos($supervisor,'!@chmod($directory,0711)',$restoreGroup===false ? 0 : $restoreGroup);
 	$t->isTrue(is_int($lockBoundary) && is_int($revokeMode) && is_int($restoreGroup) && is_int($openMode)
 		&& $lockBoundary<$revokeMode && $revokeMode<$restoreGroup && $restoreGroup<$openMode);
-	$t->contains("($" . "decoded['contract'] ?? null)==='dataphyre.application_runtime.v6'",$probe);
-	foreach(['cloud_application','framework_application','environment','release_id','environment_fingerprint'] as $identity){
+	$t->contains("($" . "decoded['contract'] ?? null)==='dataphyre.application_runtime.v7'",$probe);
+	foreach(['deployment_application','framework_application','environment','release_id','environment_fingerprint'] as $identity){
 		$t->contains("'{$identity}'=>",$supervisor);
 		$t->contains("$" . "decoded['{$identity}']",$probe);
 	}
@@ -527,7 +527,7 @@ test('supervisor helpers enforce their exact bounded environment private HTTP an
 		"HTTP/1.1 {$status} Fixture\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n".$body;
 	$keypair=sodium_crypto_sign_keypair();$secretKey=sodium_crypto_sign_secretkey($keypair);$publicKey=sodium_crypto_sign_publickey($keypair);
 	$identity=[
-		'cloud_application'=>'Store:North_2-Beta','framework_application'=>'Fixture','environment'=>'staging',
+		'deployment_application'=>'Store:North_2-Beta','framework_application'=>'Fixture','environment'=>'staging',
 		'release_id'=>'dep_'.str_repeat('a',40),'environment_fingerprint'=>'hmac-sha256:'.str_repeat('b',64),
 	];
 	$generation='gen_'.str_repeat('c',32);$pending=[];$runtime=['active'=>true];$activation=null;$nextTick=0.0;
@@ -948,7 +948,7 @@ test('deactivation requested during a tick remains inactive and cannot trigger a
 	];
 	$pendingRequests=[];$activationRequested=null;$nextTick=0.0;
 	$identity=[
-		'cloud_application'=>str_repeat('Z',120),'framework_application'=>'Fixture','environment'=>'staging',
+		'deployment_application'=>str_repeat('Z',120),'framework_application'=>'Fixture','environment'=>'staging',
 		'release_id'=>'dep_'.str_repeat('b',40),'environment_fingerprint'=>'hmac-sha256:'.str_repeat('d',64),
 	];
 	$stateFile=$state->path('state.json');
@@ -1207,10 +1207,10 @@ PHP;
     $t->same(['status'=>404,'body'=>'{"ok":false}'],$result->json());
 })->tag('negative','single-use-environment','scheduler');
 
-test('status probe accepts the exact v6 maximum and rejects one additional byte', static function(Context $t): void {
+test('status probe accepts the exact v7 maximum and rejects one additional byte', static function(Context $t): void {
 	$kernel=dirname(__DIR__).'/kernel';$probe=$kernel.'/application_runtime_status_probe.php';
 	require_once $kernel.'/application_runtime_supervisor.php';
-	require_once __DIR__.'/fixtures/application_runtime_status_v6_max_payload.php';
+	require_once __DIR__.'/fixtures/application_runtime_status_v7_max_payload.php';
 	if(!is_dir('/run/dataphyre') && !mkdir('/run/dataphyre',0700)){
 		throw new RuntimeException('Status boundary runtime parent could not be created.');
 	}
@@ -1251,17 +1251,17 @@ test('status probe accepts the exact v6 maximum and rejects one additional byte'
 	};
 	$fixedPortLock=dataphyre_application_runtime_fixed_port_lock();
 	try{
-		$maximum=dataphyre_test_application_runtime_status_v6_max_payload();
+		$maximum=dataphyre_test_application_runtime_status_v7_max_payload();
 		$t->same(true,\Dataphyre\ApplicationEnvironmentIdentifier::valid(str_repeat('e',128)));
 		$t->same(false,\Dataphyre\ApplicationEnvironmentIdentifier::valid(str_repeat('e',129)));
-		$t->same(8336,strlen($maximum));
+		$t->same(8341,strlen($maximum));
 		$accepted=$runProbe($maximum);$t->processSucceeded($accepted);
-		$t->same($maximum."\n",$accepted->stdout());$t->same(8337,strlen($accepted->stdout()));
+		$t->same($maximum."\n",$accepted->stdout());$t->same(8342,strlen($accepted->stdout()));
 		$t->same('',$accepted->stderr());
 		$rejected=$runProbe($maximum.' ');$t->processFailed($rejected,69);
 		$t->same('',$rejected->stdout());$t->same('',$rejected->stderr());
 	}finally{dataphyre_application_runtime_fixed_port_unlock($fixedPortLock);}
-})->tag('status-probe','v6','maximum','boundary','positive','negative');
+})->tag('status-probe','v7','maximum','boundary','positive','negative');
 
 test('status probe owns one fixed socket and refuses caller-selected arguments', static function(Context $t): void {
     $probe=dirname(__DIR__) . '/kernel/application_runtime_status_probe.php';

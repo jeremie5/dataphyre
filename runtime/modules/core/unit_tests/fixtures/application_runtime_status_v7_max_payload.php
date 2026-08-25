@@ -7,10 +7,10 @@
  */
 declare(strict_types=1);
 
-function dataphyre_test_application_runtime_status_v6_max_payload(): string
+function dataphyre_test_application_runtime_status_v7_max_payload(): string
 {
 	$integer=PHP_INT_MAX;$ticks=str_repeat('9',32);$zero='0000000000000000';$inactiveCeiling='00000000000000e0';
-	$cloud=str_repeat('a',120);$framework=str_repeat('f',128);$environment=str_repeat('e',128);
+	$deployment=str_repeat('a',120);$framework=str_repeat('f',128);$environment=str_repeat('e',128);
 	$release='dep_'.str_repeat('f',40);$fingerprint='hmac-sha256:'.str_repeat('f',64);$generation='gen_'.str_repeat('f',32);
 	$socket=static fn(string $path,string $mode,string $directoryMode,int $uid,int $gid): array=>[
 		'transport'=>'unix','socket_path_sha256'=>'sha256:'.hash('sha256',$path),
@@ -37,18 +37,18 @@ function dataphyre_test_application_runtime_status_v6_max_payload(): string
 		'generation'=>$generation,'master_pid'=>$masterPid,'master_start_time_ticks'=>$ticks,
 	],JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
 	$identity=[
-		'contract'=>'dataphyre.scheduler_state.v1','cloud_application'=>$cloud,
+		'contract'=>'dataphyre.scheduler_state.v2','deployment_application'=>$deployment,
 		'framework_application'=>$framework,'environment'=>$environment,
 	];
 	$noopIdentity=[
-		'cloud_application'=>$cloud,'framework_application'=>$framework,'environment'=>$environment,
+		'deployment_application'=>$deployment,'framework_application'=>$framework,'environment'=>$environment,
 		'release_id'=>$release,'environment_fingerprint'=>$fingerprint,
 	];
 	$control=$socket('/run/dataphyre/control/runtime.sock','0600','0700',0,0);
 	$schedulerSocket=$socket('/run/dataphyre/scheduler/gateway.sock','0600','0700',0,0);
 	$webSocket=$socket('/run/dataphyre/web/php-fpm.sock','0600','0711',10001,10001);
 	$payload=json_encode([
-		'contract'=>'dataphyre.application_runtime.v6','cloud_application'=>$cloud,'framework_application'=>$framework,
+		'contract'=>'dataphyre.application_runtime.v7','deployment_application'=>$deployment,'framework_application'=>$framework,
 		'environment'=>$environment,'release_id'=>$release,'environment_fingerprint'=>$fingerprint,'generation'=>$generation,
 		'supervisor_pid'=>1,'supervisor_uid'=>0,'supervisor_gid'=>0,'activation_mode'=>'active','active'=>false,
 		'scheduler_cycle_in_progress'=>false,'control'=>$control,
@@ -84,17 +84,17 @@ function dataphyre_test_application_runtime_status_v6_max_payload(): string
 			'definition_sha256'=>'sha256:'.str_repeat('f',64),
 		],
 		'scheduler_noop_probe'=>[
-			'contract'=>'dataphyre.scheduler_noop_probe.v1','ok'=>true,'generation'=>$generation,
+			'contract'=>'dataphyre.scheduler_noop_probe.v2','ok'=>true,'generation'=>$generation,
 			'request_counter'=>$integer,'claim_consumed'=>true,'worker_receipt'=>true,'worker_reaped'=>true,
 			'replay_suppressed'=>true,'count'=>$integer,'last_at'=>'9999-12-31T23:59:59Z','previous_readback'=>false,
 			'state_identity_sha256'=>'sha256:'.hash(
-				'sha256',"dataphyre.scheduler_noop_probe_identity.v1\0".json_encode(
+				'sha256',"dataphyre.scheduler_noop_probe_identity.v2\0".json_encode(
 					$noopIdentity,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR,
 				),
 			),
 		],
 		'scheduler_state_identity_sha256'=>'sha256:'.hash(
-			'sha256',"dataphyre.scheduler_state_identity.v1\0".json_encode(
+			'sha256',"dataphyre.scheduler_state_identity.v2\0".json_encode(
 				$identity,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR,
 			),
 		),
@@ -102,6 +102,6 @@ function dataphyre_test_application_runtime_status_v6_max_payload(): string
 			'count'=>$integer,'last_at'=>'9999-12-31T23:59:59Z','last_result'=>'failed',
 		],
 	],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-	if(strlen($payload)!==8336) throw new LogicException('Canonical v6 status payload length drifted.');
+	if(strlen($payload)!==8341) throw new LogicException('Canonical v7 status payload length drifted.');
 	return $payload;
 }

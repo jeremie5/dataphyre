@@ -120,19 +120,19 @@ test('scaffold dispatch and command statuses describe no-dispatch web help valid
 	$t->contains('Usage:', $scenario->errors());
 
 	$status=dataphyre_sql_scaffold_command::run([
-		'scaffold.php', '--application=serve', '--entity=Order', '--table=orders',
+		'scaffold.php', '--application=example_app', '--entity=Order', '--table=orders',
 		'--primary-key=order_id', '--columns=order_id,tenant_id,name', '--force',
 	], $scenario->runtime());
 	$t->same(0, $status);
-	$t->contains('Scaffolded Order for serve', $scenario->output());
-	$t->same(['/project', 'serve', 'Order', 'orders', 'order_id', ['order_id','tenant_id','name'], true], $scenario->scaffolds()[0]);
+	$t->contains('Scaffolded Order for example_app', $scenario->output());
+	$t->same(['/project', 'example_app', 'Order', 'orders', 'order_id', ['order_id','tenant_id','name'], true], $scenario->scaffolds()[0]);
 });
 
 test('scaffold argument column and project-root helpers normalize every supported CLI shape', static function(Context $t): void {
 	$t->same([
 		['force'=>true, 'columns'=>'id,name'],
-		['serve', 'Order'],
-	], parse_cli_arguments(['serve', '--force', '--columns=id,name', '--', 'Order']));
+		['example_app', 'Order'],
+	], parse_cli_arguments(['example_app', '--force', '--columns=id,name', '--', 'Order']));
 	$t->same(['id','name','tenant_id'], parse_columns([' id,name ', '', 'tenant_id']));
 	$t->same(['id','name'], parse_columns('id, name'));
 

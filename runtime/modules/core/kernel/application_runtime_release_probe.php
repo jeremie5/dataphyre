@@ -206,7 +206,7 @@ final class DataphyreApplicationRuntimeReleaseProbe
 	{
 		$decoded=json_decode($body,true,32,JSON_THROW_ON_ERROR);
 		$cadence=is_array($decoded) ? ($decoded['business_cadence'] ?? null) : null;
-		if(!is_array($decoded) || ($decoded['contract'] ?? null)!=='dataphyre.application_runtime.v6'
+		if(!is_array($decoded) || ($decoded['contract'] ?? null)!=='dataphyre.application_runtime.v7'
 			|| ($decoded['active'] ?? null)!==true || !is_array($cadence)
 			|| array_keys($cadence)!==['count','last_at','last_result']
 			|| !is_int($cadence['count'] ?? null) || $cadence['count']<0

@@ -297,12 +297,12 @@ test('every fixed runtime mount rejects a wrong group',static function(Context $
 test('canonical channel bytes preserve all valid utf8 including line separator code points',static function(Context $t): void {
 	$canonical=$t->nonPublic(DataphyreApplicationRuntimeEnvironment::class)->invoke(
 		'canonicalEnvelope',
-		'serve','serve','production','Env:Opaque_42','dep_'.str_repeat('a',40),
+		'example-app','ExampleApp','production','Env:Opaque_42','dep_'.str_repeat('a',40),
 		'hmac-sha256:'.str_repeat('b',64),
 		['Z_VALUE'=>"line\u{2028}paragraph\u{2029}end",'A_VALUE'=>'https://example.invalid/a/b'],
 	);
-	$expected='{"contract":"dataphyre.application_environment.v2","cloud_application":"serve",'
-		.'"framework_application":"serve","environment":"production","environment_id":"Env:Opaque_42",'
+	$expected='{"contract":"dataphyre.application_environment.v3","deployment_application":"example-app",'
+		.'"framework_application":"ExampleApp","environment":"production","environment_id":"Env:Opaque_42",'
 		.'"release_id":"dep_'.str_repeat('a',40).'",'
 		.'"environment_fingerprint":"hmac-sha256:'.str_repeat('b',64).'","values":{'
 		.'"A_VALUE":"https://example.invalid/a/b","Z_VALUE":"line'."\u{2028}".'paragraph'."\u{2029}".'end"}}'."\n";
@@ -316,34 +316,34 @@ test('canonical channel decoder rejects malformed contracts entries and alternat
 	$internals=$t->nonPublic(DataphyreApplicationRuntimeEnvironment::class);
 	$release='dep_'.str_repeat('a',40);$fingerprint='hmac-sha256:'.str_repeat('b',64);
 	$arguments=[
-		'serve','Serve','Staging.Blue','Env:Opaque_42',$release,$fingerprint,
+		'example-app','ExampleApp','Staging.Blue','Env:Opaque_42',$release,$fingerprint,
 		['Z_VALUE'=>'last','A_VALUE'=>'first'],
 	];
 	$canonical=$internals->invoke('canonicalEnvelope',...$arguments);
 	$t->same([
 		'environment_id'=>'Env:Opaque_42','release_id'=>$release,'environment_fingerprint'=>$fingerprint,
 		'values'=>['A_VALUE'=>'first','Z_VALUE'=>'last'],
-	],$internals->invoke('decodeEnvelope',$canonical,'serve','Serve','Staging.Blue','Env:Opaque_42',$release));
+	],$internals->invoke('decodeEnvelope',$canonical,'example-app','ExampleApp','Staging.Blue','Env:Opaque_42',$release));
 	$t->throws(
-		static fn()=>$internals->invoke('decodeEnvelope',"{\n",'serve','Serve','Staging.Blue','Env:Opaque_42',$release),
+		static fn()=>$internals->invoke('decodeEnvelope',"{\n",'example-app','ExampleApp','Staging.Blue','Env:Opaque_42',$release),
 		RuntimeException::class,
 	);
 	foreach(['wrong','dataphyre.application_environment.v1'] as $unsupportedContract){
 		$wrong=json_decode($canonical,true,8,JSON_THROW_ON_ERROR);$wrong['contract']=$unsupportedContract;
 		$t->throws(static fn()=>$internals->invoke(
-			'decodeEnvelope',json_encode($wrong,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n",'serve','Serve','Staging.Blue','Env:Opaque_42',$release,
+			'decodeEnvelope',json_encode($wrong,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n",'example-app','ExampleApp','Staging.Blue','Env:Opaque_42',$release,
 		),RuntimeException::class,$unsupportedContract);
 	}
 	$wrongId=json_decode($canonical,true,8,JSON_THROW_ON_ERROR);$wrongId['environment_id']='Env:Other_43';
 	$t->throws(static fn()=>$internals->invoke(
-		'decodeEnvelope',json_encode($wrongId,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n",'serve','Serve','Staging.Blue','Env:Opaque_42',$release,
+		'decodeEnvelope',json_encode($wrongId,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n",'example-app','ExampleApp','Staging.Blue','Env:Opaque_42',$release,
 	),RuntimeException::class);
 	$reserved=json_decode($canonical,true,8,JSON_THROW_ON_ERROR);$reserved['values']=['DATAPHYRE_RUNTIME_FORGED'=>'value'];
 	$t->throws(static fn()=>$internals->invoke(
-		'decodeEnvelope',json_encode($reserved,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n",'serve','Serve','Staging.Blue','Env:Opaque_42',$release,
+		'decodeEnvelope',json_encode($reserved,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n",'example-app','ExampleApp','Staging.Blue','Env:Opaque_42',$release,
 	),RuntimeException::class);
 	$t->throws(
-		static fn()=>$internals->invoke('decodeEnvelope',' '.$canonical,'serve','Serve','Staging.Blue','Env:Opaque_42',$release),
+		static fn()=>$internals->invoke('decodeEnvelope',' '.$canonical,'example-app','ExampleApp','Staging.Blue','Env:Opaque_42',$release),
 		RuntimeException::class,
 	);
 })->tag('canonical','decoder','contract','entry','negative');
@@ -407,7 +407,7 @@ test('tenant values reject ascii controls while reserving every framework contro
 
 test('root process accepts only the image-owned root home value',static function(Context $t): void {
 	$t->throws(static fn()=>DataphyreApplicationRuntimeEnvironment::consume(
-		'serve','Serve','production','Env:Opaque_42','dep_'.str_repeat('a',40),
+		'example-app','ExampleApp','production','Env:Opaque_42','dep_'.str_repeat('a',40),
 	),RuntimeException::class);
 	$fixed=[
 		'DATAPHYRE_APPLICATION_ID'=>'fixture','DATAPHYRE_FRAMEWORK_APPLICATION'=>'Fixture',
@@ -501,7 +501,7 @@ test('source freezes the root-only canonical channel and fixed one-shot allowlis
 	$t->contains("assertFixedMount(self::CHANNEL,'ro')",$environment);
 	$t->contains("===0400",$environment);
 	$t->contains("($"."stat['nlink'] ?? 0)===1",$environment);
-	$t->contains("dataphyre.application_environment.v2",$environment);
+	$t->contains("dataphyre.application_environment.v3",$environment);
 	$t->contains('DATAPHYRE_APPLICATION_ENVIRONMENT_ID',$environment);
 	$t->contains("JSON_UNESCAPED_LINE_TERMINATORS",$environment);
 	$t->contains("DATAPHYRE_ONE_SHOT_OPERATION",$environment);
@@ -546,7 +546,7 @@ test('source freezes the root-only canonical channel and fixed one-shot allowlis
 	$t->isFalse(str_contains($oneShot,"in_array($"."operation,['dataphyre_postgresql_migrate'"));
 	$t->isFalse(str_contains($oneShot,"in_array($"."operation,['dataphyre_shared_cache_probe'"));
 	$t->contains('ApplicationReleasePreflightEvidence::COMMAND_TIMEOUT_MILLISECONDS',$oneShot);
-	$t->contains('dataphyre_one_shot_cloud_application()',$oneShot);
+	$t->contains('dataphyre_one_shot_deployment_application()',$oneShot);
 	$t->contains('PublicApplicationIdentifier::valid',$oneShot);
 	$t->contains("@posix_kill(-$"."processGroup,SIGTERM)",$oneShot);
 	$t->contains("@posix_kill(-$"."processGroup,SIGKILL)",$oneShot);

@@ -377,7 +377,6 @@ test('coverage aggregation scopes line engines and enforces only requested polic
 	$t->isTrue($access->invoke('coverageSourceExcluded', 'runtime/modules/stripe/src/lib/Stripe.php'));
 	$t->isTrue($access->invoke('coverageSourceExcluded', 'runtime/modules/'.'cj'.'dropshipping/'.'cj'.'dropshipping-client/src/CJClient.php'));
 	$t->isTrue($access->invoke('coverageSourceExcluded', 'runtime/modules/sql/third_party/adminer/adminer.php'));
-	$t->isTrue($access->invoke('coverageSourceExcluded', 'runtime/modules/'.'shopiro'.'_devapi/shopiro-client/src/ShopiroClient.php'));
 	$t->isTrue($access->invoke('coverageSourceExcluded', 'runtime/modules/fulltext_engine/stopwords/en_stopwords.php'));
 	$t->isTrue($access->invoke('coverageSourceExcluded', 'runtime/modules/profanity/datasets/en/product.php'));
 	$t->isTrue($access->invoke('coverageSourceExcluded', 'runtime/modules/panel/testing/panel_test_runner.php'));

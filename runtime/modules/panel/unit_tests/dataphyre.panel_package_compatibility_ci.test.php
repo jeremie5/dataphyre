@@ -42,8 +42,8 @@ function dp_panel_compat_manifest(string $id,string $version='1.0.0',array $requ
 	return PanelPackageManifest::from([
 		'id'=>$id,'label'=>ucwords(str_replace('_',' ',$id)),'version'=>$version,'type'=>'plugin','status'=>'stable',
 		'requirements'=>array_replace(['php'=>'>=8.3.0','panel'=>'^2.0.0','reactor'=>'^2.0.0','modules'=>[],'themes'=>['default']],$requirements),
-		'provides'=>[$id.'_feature'],'support'=>['owner'=>'shopiro'],'meta'=>['publisher'=>'shopiro'],
-		'signature'=>['algorithm'=>'ed25519','key_id'=>'release','publisher'=>'shopiro','digest'=>$digest,'signature'=>base64_encode('fixture-'.$id)],
+		'provides'=>[$id.'_feature'],'support'=>['owner'=>'example_publisher'],'meta'=>['publisher'=>'example_publisher'],
+		'signature'=>['algorithm'=>'ed25519','key_id'=>'release','publisher'=>'example_publisher','digest'=>$digest,'signature'=>base64_encode('fixture-'.$id)],
 	]);
 }
 
@@ -63,7 +63,7 @@ function dp_panel_compat_verification(PanelPackageManifest $manifest,bool $ok=tr
 }
 
 function dp_panel_compat_trust(): PanelPackageTrustPolicy {
-	return PanelPackageTrustPolicy::make(['require_signature'=>true,'allow_unknown_publishers'=>false,'trusted_publishers'=>['shopiro'],'trusted_keys'=>['release'],'allowed_statuses'=>['stable']]);
+	return PanelPackageTrustPolicy::make(['require_signature'=>true,'allow_unknown_publishers'=>false,'trusted_publishers'=>['example_publisher'],'trusted_keys'=>['release'],'allowed_statuses'=>['stable']]);
 }
 
 function dp_panel_compat_install(PanelPackageManifest $manifest,array $runtime): PanelPackageInstallPlan {
@@ -77,13 +77,13 @@ function dp_panel_compat_registry(array $packages,int $now=1800000000): PanelPac
 	$verifier=PanelPackageSignatureVerifier::make(['release'=>['algorithm'=>'ed25519','public_key'=>base64_encode($public)]]);
 	$entries=[];
 	foreach($packages as $key=>$definition){$manifest=$definition['manifest']->toArray();$id=(string)($definition['id'] ?? $key);$body=json_encode($manifest,JSON_THROW_ON_ERROR);$entries[]=[
-		'id'=>$id,'version'=>$manifest['version'],'status'=>'stable','publisher'=>'shopiro','key_id'=>'release','dependencies'=>$definition['dependencies'],'requirements'=>$manifest['requirements'],'yanked'=>false,
+		'id'=>$id,'version'=>$manifest['version'],'status'=>'stable','publisher'=>'example_publisher','key_id'=>'release','dependencies'=>$definition['dependencies'],'requirements'=>$manifest['requirements'],'yanked'=>false,
 		'artifact'=>['locator'=>'registry://'.$id.'/'.$manifest['version'],'sha256'=>hash('sha256',$body),'bytes'=>strlen($body),'content_type'=>PanelPackageRegistryIndex::BUNDLE_CONTENT_TYPE],
 		'transparency'=>[],
 	];}
-	$body=['format'=>PanelPackageRegistryIndex::FORMAT,'registry'=>'compatibility_ci','publisher'=>'shopiro','sequence'=>4,'generated_at'=>gmdate(DATE_ATOM,$now-30),'expires_at'=>gmdate(DATE_ATOM,$now+3600),'packages'=>$entries,'transparency'=>[]];
+	$body=['format'=>PanelPackageRegistryIndex::FORMAT,'registry'=>'compatibility_ci','publisher'=>'example_publisher','sequence'=>4,'generated_at'=>gmdate(DATE_ATOM,$now-30),'expires_at'=>gmdate(DATE_ATOM,$now+3600),'packages'=>$entries,'transparency'=>[]];
 	$payload=PanelPackageRegistryIndex::signaturePayload($body,$verifier);
-	$body['signature']=['algorithm'=>'ed25519','key_id'=>'release','publisher'=>'shopiro','digest'=>hash('sha256',$payload),'signature'=>base64_encode(sodium_crypto_sign_detached($payload,$secret))];
+	$body['signature']=['algorithm'=>'ed25519','key_id'=>'release','publisher'=>'example_publisher','digest'=>hash('sha256',$payload),'signature'=>base64_encode(sodium_crypto_sign_detached($payload,$secret))];
 	return PanelPackageRegistryIndex::make($body,$verifier,dp_panel_compat_trust(),['now'=>$now]);
 }
 
@@ -161,9 +161,9 @@ test('compatibility cases keep manifest feature dependency lock distribution pub
 	$yankedManifest=dp_panel_compat_manifest('yanked_pack');
 	$yanked=PanelPackageCompatibilityCase::make([
 		'manifest'=>$yankedManifest,'runtime'=>dp_panel_compat_runtime(),'dependencies'=>['dependency_pack'=>'^1.0.0'],'available_packages'=>['dependency_pack'=>'1.2.0'],
-		'distribution'=>['type'=>'panel_package_registry_index','ok'=>true,'publisher'=>'shopiro','packages'=>[
-			['id'=>'yanked_pack','version'=>'1.0.0','publisher'=>'shopiro','key_id'=>'release','dependencies'=>[],'yanked'=>true],
-			['id'=>'dependency_pack','version'=>'1.2.0','publisher'=>'shopiro','key_id'=>'release','dependencies'=>[],'yanked'=>true],
+		'distribution'=>['type'=>'panel_package_registry_index','ok'=>true,'publisher'=>'example_publisher','packages'=>[
+			['id'=>'yanked_pack','version'=>'1.0.0','publisher'=>'example_publisher','key_id'=>'release','dependencies'=>[],'yanked'=>true],
+			['id'=>'dependency_pack','version'=>'1.2.0','publisher'=>'example_publisher','key_id'=>'release','dependencies'=>[],'yanked'=>true],
 		]],
 	]);
 	$t->isTrue($yanked->blocked());$t->isTrue(in_array('distribution:yanked',$yanked->failures(),true));$t->isTrue(in_array('distribution:dependency:dependency_pack',$yanked->failures(),true));

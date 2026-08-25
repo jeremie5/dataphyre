@@ -152,7 +152,7 @@ $plan=$automation->plan(
 	[
 		'generated_at'=>$clock->now(),
 		'deadline_at'=>$clock->now()->modify('+10 minutes'),
-		'subject'=>'tenant:shopiro',
+		'subject'=>'tenant:example',
 		'input'=>['region'=>'ca'],
 	]
 );

@@ -70,14 +70,14 @@ test('root gateway records one bounded exit or timeout line without raw child by
 	$gateway=$t->nonPublic(DataphyreApplicationRuntimeSchedulerGateway::class);
 	$interruptedLines=[];
 	$gateway->invoke(
-		'reportRequestFailure','serve.retention','gateway_wait','exception',null,
+		'reportRequestFailure','fixture.retention','gateway_wait','exception',null,
 		new DataphyreApplicationRuntimeSchedulerGatewayInterrupted('Scheduler handler interrupted.'),null,
 		static function(string $line) use (&$interruptedLines): void {$interruptedLines[]=$line;},
 	);
 	$t->same([],$interruptedLines,'graceful gateway interruption is not a callback failure');
 	$lines=[];
 	$gateway->invoke(
-		'reportRequestFailure','serve.retention','gateway_timeout','timeout',null,
+		'reportRequestFailure','fixture.retention','gateway_timeout','timeout',null,
 		new RuntimeException('/private/runtime/path?token=unsafe'),null,
 		static function(string $line) use (&$lines): void {$lines[]=$line;},
 	);
@@ -90,7 +90,7 @@ test('root gateway records one bounded exit or timeout line without raw child by
 	$timeout=json_decode(trim(substr($lines[0],strlen($prefix))),true,8,JSON_THROW_ON_ERROR);
 	$t->same([
 		'contract'=>'dataphyre.internal_scheduler_failure.v1',
-		'task_name'=>'serve.retention',
+		'task_name'=>'fixture.retention',
 		'failure_phase'=>'gateway_timeout',
 		'failure_kind'=>'timeout',
 		'exit_code'=>null,
@@ -105,12 +105,12 @@ test('root gateway records one bounded exit or timeout line without raw child by
 	);
 	$lines=[];
 	$gateway->invoke(
-		'reportFailure','serve.retention','router_exit','exit',75,
+		'reportFailure','fixture.retention','router_exit','exit',75,
 		new RuntimeException('Application scheduler process failed.'),$child,
 		static function(string $line) use (&$lines): void {$lines[]=$line;},
 	);
 	$exit=json_decode(trim(substr($lines[0],strlen($prefix))),true,8,JSON_THROW_ON_ERROR);
-	$t->same('serve.retention',$exit['task_name']);
+	$t->same('fixture.retention',$exit['task_name']);
 	$t->same('router_exit',$exit['failure_phase']);
 	$t->same('exit',$exit['failure_kind']);
 	$t->same(75,$exit['exit_code']);
@@ -124,7 +124,7 @@ test('root gateway records one bounded exit or timeout line without raw child by
 		'failure_phase'=>'task_cleanup','exception_class'=>'RuntimeException',
 	];
 	$record=DataphyreApplicationRuntimeSchedulerFailureDiagnostic::logRecord(
-		'serve.retention','router_exit','exit',75,new RuntimeException('ignored'),$forged,
+		'fixture.retention','router_exit','exit',75,new RuntimeException('ignored'),$forged,
 	);
 	$t->same('router_exit',$record['failure_phase']);
 	$t->same('exit',$record['failure_kind']);

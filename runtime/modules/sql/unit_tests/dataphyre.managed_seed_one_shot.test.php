@@ -25,7 +25,7 @@ require_once $managedSeedCoreKernel.'/application_runtime_environment.php';
 require_once $managedSeedRoot.'/kernel/managed_seeds.php';
 require_once $managedSeedRoot.'/kernel/seeds.php';
 
-suite('Cloud-managed SQL seed one-shot contract')
+suite('Host-managed SQL seed one-shot contract')
 	->contract('sql.managed-seed-one-shot',1)
 	->layer('integration')
 	->risk('critical')
@@ -40,7 +40,7 @@ test('managed seed entrypoint rejects invalid identity before application bootst
 	$t->processFailed($t->phpProcess([$entrypoint]),64);
 	$arguments=[
 		$entrypoint,
-		'--project-root=/app','--application=serve','--environment=production',
+		'--project-root=/app','--application=ExampleApp','--environment=production',
 		'--profile=demo','--data-environment=live','--allow-demo=1',
 	];
 	$mismatch=$t->phpProcess($arguments,environment:[
@@ -48,12 +48,12 @@ test('managed seed entrypoint rejects invalid identity before application bootst
 	]);
 	$t->processFailed($mismatch,78);$t->same('',$mismatch->stdout());$t->same('',$mismatch->stderr());
 	$missingProject=$t->phpProcess($arguments,environment:[
-		'DATAPHYRE_FRAMEWORK_APPLICATION'=>'serve','DATAPHYRE_ENVIRONMENT'=>'production',
+		'DATAPHYRE_FRAMEWORK_APPLICATION'=>'ExampleApp','DATAPHYRE_ENVIRONMENT'=>'production',
 	]);
 	$t->processFailed($missingProject,66);$t->same('',$missingProject->stdout());$t->same('',$missingProject->stderr());
 	$duplicate=$arguments;$duplicate[6]='--profile=demo';
 	$t->processFailed($t->phpProcess($duplicate,environment:[
-		'DATAPHYRE_FRAMEWORK_APPLICATION'=>'serve','DATAPHYRE_ENVIRONMENT'=>'production',
+		'DATAPHYRE_FRAMEWORK_APPLICATION'=>'ExampleApp','DATAPHYRE_ENVIRONMENT'=>'production',
 	]),64);
 })->tag('entrypoint','negative','identity');
 
@@ -121,7 +121,7 @@ test('root broker restores fixed image roots after the seed child execs with an 
 			'DATAPHYRE_APPLICATION_ROOT'=>'/tmp/forged-application',
 			'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>'/tmp/forged-runtime-project',
 		],
-		'serve','serve','production','Env:Managed_Seed_Probe','dep_'.str_repeat('a',40),
+		'example-app','ExampleApp','production','Env:Managed_Seed_Probe','dep_'.str_repeat('a',40),
 	);
 	$t->same('Env:Managed_Seed_Probe',$child['DATAPHYRE_APPLICATION_ENVIRONMENT_ID']);
 	$t->same('/opt/dataphyre/runtime',$child['DATAPHYRE_RUNTIME_ROOT']);
@@ -360,55 +360,55 @@ test('root validator accepts only authenticated exact terminal evidence',static 
 		],
 	];
 	$success=[
-		'application'=>'serve','contract'=>'dataphyre.managed_seed_apply.v1','data_environment'=>'live',
+		'application'=>'ExampleApp','contract'=>'dataphyre.managed_seed_apply.v1','data_environment'=>'live',
 		'demo_acknowledged'=>true,'environment'=>'production','ok'=>true,'profile'=>'demo','result'=>$result,
 	];
 	$line=$sign($success,$key);
 	$validated=dataphyre_one_shot_validate_seed_evidence(
-		$line,'',false,$key,'serve','production','live','demo','1',
+		$line,'',false,$key,'ExampleApp','production','live','demo','1',
 	);
 	$t->isTrue(is_array($validated));$t->same(true,$validated['ok']);
 	$t->isFalse(str_contains($validated['line'],'evidence_mac'));
 	$failureLine=$sign([
-		'application'=>'serve','contract'=>'dataphyre.managed_seed_apply.v1','data_environment'=>'live',
+		'application'=>'ExampleApp','contract'=>'dataphyre.managed_seed_apply.v1','data_environment'=>'live',
 		'environment'=>'production','error'=>['code'=>'seed_apply_failed'],'ok'=>false,'profile'=>'demo',
 	],$key);
 	$failure=dataphyre_one_shot_validate_seed_evidence(
-		$failureLine,'',false,$key,'serve','production','live','demo','1',
+		$failureLine,'',false,$key,'ExampleApp','production','live','demo','1',
 	);
 	$t->isTrue(is_array($failure));$t->same(false,$failure['ok']);
 
 	$t->same(null,dataphyre_one_shot_validate_seed_evidence(
-		$line,'',false,random_bytes(32),'serve','production','live','demo','1',
+		$line,'',false,random_bytes(32),'ExampleApp','production','live','demo','1',
 	));
 	$t->same(null,dataphyre_one_shot_validate_seed_evidence(
-		$line,'raw-secret',false,$key,'serve','production','live','demo','1',
+		$line,'raw-secret',false,$key,'ExampleApp','production','live','demo','1',
 	));
 	$t->same(null,dataphyre_one_shot_validate_seed_evidence(
-		$line."noise\n",'',false,$key,'serve','production','live','demo','1',
+		$line."noise\n",'',false,$key,'ExampleApp','production','live','demo','1',
 	));
 	$t->same(null,dataphyre_one_shot_validate_seed_evidence(
-		$line,'',true,$key,'serve','production','live','demo','1',
+		$line,'',true,$key,'ExampleApp','production','live','demo','1',
 	));
 	$impossible=$success;$impossible['result']['requested_profile_definition_count']=0;
 	$t->same(null,dataphyre_one_shot_validate_seed_evidence(
-		$sign($impossible,$key),'',false,$key,'serve','production','live','demo','1',
+		$sign($impossible,$key),'',false,$key,'ExampleApp','production','live','demo','1',
 	));
 	$forged=[
-		'application'=>'serve','contract'=>'dataphyre.managed_seed_apply.v1','data_environment'=>'live',
+		'application'=>'ExampleApp','contract'=>'dataphyre.managed_seed_apply.v1','data_environment'=>'live',
 		'environment'=>'production','error'=>['code'=>'seed_apply_failed','seed_key'=>'asecret123@1'],
 		'evidence_mac'=>'sha256:'.str_repeat('0',64),'ok'=>false,'profile'=>'demo',
 	];
 	$forgedLine=json_encode(dataphyre_one_shot_canonicalize_seed_evidence($forged),JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES)."\n";
 	$t->same(null,dataphyre_one_shot_validate_seed_evidence(
-		$forgedLine,'',false,$key,'serve','production','live','demo','1',
+		$forgedLine,'',false,$key,'ExampleApp','production','live','demo','1',
 	));
 })->tag('evidence','authentication','canonical','redaction','security');
 
 test('managed seed boundary rejects PostgreSQL warnings on stderr',static function(Context $t): void {
 	$key=random_bytes(32);
 	$payload=[
-		'application'=>'serve','contract'=>'dataphyre.managed_seed_apply.v1','data_environment'=>'live',
+		'application'=>'ExampleApp','contract'=>'dataphyre.managed_seed_apply.v1','data_environment'=>'live',
 		'environment'=>'production','error'=>['code'=>'seed_apply_failed'],'ok'=>false,'profile'=>'demo',
 	];
 	$unsigned=json_encode(dataphyre_one_shot_canonicalize_seed_evidence($payload),
@@ -417,7 +417,7 @@ test('managed seed boundary rejects PostgreSQL warnings on stderr',static functi
 	$line=json_encode(dataphyre_one_shot_canonicalize_seed_evidence($payload),
 		JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)."\n";
 	$validate=static fn(string $stderr): ?array=>dataphyre_one_shot_validate_seed_evidence(
-		$line,$stderr,false,$key,'serve','production','live','demo','0',
+		$line,$stderr,false,$key,'ExampleApp','production','live','demo','0',
 	);
 	$t->isTrue(is_array($validate('')));
 	foreach([
@@ -453,7 +453,7 @@ test('seed pipe capture drains bounded raw streams without forwarding them',stat
 	$t->isTrue($overflow);$t->same(200019,$total);
 	$t->lessThanOrEqual(DATAPHYRE_ONE_SHOT_SEED_MAXIMUM_CAPTURE_BYTES,strlen($stdout)+strlen($stderr));
 	$t->same(null,dataphyre_one_shot_validate_seed_evidence(
-		$stdout,$stderr,$overflow,random_bytes(32),'serve','production','live','demo','1',
+		$stdout,$stderr,$overflow,random_bytes(32),'ExampleApp','production','live','demo','1',
 	));
 })->tag('output','pipe','bounded','deadlock','security');
 
@@ -466,7 +466,7 @@ test('authenticated terminal emission hard-stops before application shutdown cod
 		'$level=dataphyre_managed_seed_install_output_boundary(); $pending=true;'."\n".
 		'register_shutdown_function(static fn()=>fwrite(STDOUT,"late-secret-sentinel"));'."\n".
 		'dataphyre_managed_seed_terminate($level,['.
-		'"application"=>"serve","contract"=>"dataphyre.managed_seed_apply.v1","data_environment"=>"live",'.
+		'"application"=>"ExampleApp","contract"=>"dataphyre.managed_seed_apply.v1","data_environment"=>"live",'.
 		'"environment"=>"production","error"=>["code"=>"seed_operation_failed"],"ok"=>false,"profile"=>"demo"'.
 		'],$pending,$key);'."\n");
 	$pipes=[];
@@ -484,7 +484,7 @@ test('authenticated terminal emission hard-stops before application shutdown cod
 		dataphyre_one_shot_drain_seed_stream($pipes[2] ?? null,$stderr,$total,$overflow);
 		if(str_ends_with($stdout,"\n")){
 			$validated=dataphyre_one_shot_validate_seed_evidence(
-				$stdout,$stderr,$overflow,$key,'serve','production','live','demo','1',
+				$stdout,$stderr,$overflow,$key,'ExampleApp','production','live','demo','1',
 			);
 			if(is_array($validated)){
 				$status=proc_get_status($process);

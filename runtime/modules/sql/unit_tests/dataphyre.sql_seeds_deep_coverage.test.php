@@ -129,14 +129,14 @@ test('SQL seed value objects expose every validation and native context outcome'
 	);
 	$native->put('sql_result', [['ok'=>true]]);
 	$t->same([['ok'=>true]], (new SeedContext())->query('SELECT 1'));
-	$native->put('write_targets', ['serve.orders']);
-	$t->same([['ok'=>true]], (new SeedContext())->query('UPDATE serve.orders SET status=?', ['paid']));
+	$native->put('write_targets', ['fixture.orders']);
+	$t->same([['ok'=>true]], (new SeedContext())->query('UPDATE fixture.orders SET status=?', ['paid']));
 	$calls=$native->get('sql_calls');
-	$t->same(['serve.orders'], $calls[array_key_last($calls)][5] ?? null);
-	(new SeedContext(static fn()=>true))->query('UPDATE serve.orders SET status=?', ['paid']);
-	$t->same([['serve.orders']], $native->get('invalidations'));
-	(new SeedContext(static fn()=>true))->query('UPDATE serve.orders SET status=?', ['paid'], false, false);
-	$t->same([['serve.orders']], $native->get('invalidations'));
+	$t->same(['fixture.orders'], $calls[array_key_last($calls)][5] ?? null);
+	(new SeedContext(static fn()=>true))->query('UPDATE fixture.orders SET status=?', ['paid']);
+	$t->same([['fixture.orders']], $native->get('invalidations'));
+	(new SeedContext(static fn()=>true))->query('UPDATE fixture.orders SET status=?', ['paid'], false, false);
+	$t->same([['fixture.orders']], $native->get('invalidations'));
 
 	if(!defined('DP_CORE_CFG')) define('DP_CORE_CFG', ['datacenter'=>'coverage']);
 	if(!defined('DP_SQL_CFG')) define('DP_SQL_CFG', [

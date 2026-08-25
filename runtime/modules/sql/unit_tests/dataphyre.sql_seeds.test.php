@@ -461,25 +461,25 @@ test('SQL seed CLI safely auto-discovers conventional application bootstraps', s
 	$state=$t->state('sql.seeds',['bootstrap_loaded'=>null]);
 	$workspace=$t->workspace('sql-seed-bootstrap');
 	$root=str_replace('\\', '/', $workspace->root());
-		$conventional=str_replace('\\', '/', $workspace->file('applications/serve/database/seeds/bootstrap.php', <<<'PHP'
+		$conventional=str_replace('\\', '/', $workspace->file('applications/example_app/database/seeds/bootstrap.php', <<<'PHP'
 <?php
 \dp_seed_mark_bootstrap_loaded('conventional');
 if(!class_exists('\dataphyre\sql', false)){
 	\Dataphyre\Test\define_test_symbols('namespace dataphyre; final class sql {}');
 }
 PHP));
-		$workspace->file('applications/serve/database/seeds/demo.seed.php', <<<'PHP'
+		$workspace->file('applications/example_app/database/seeds/demo.seed.php', <<<'PHP'
 <?php
 return ['id'=>'bootstrap.demo','version'=>1,'up'=>static fn()=>null];
 PHP);
 		$explicit=str_replace('\\', '/', $workspace->file('explicit-bootstrap.php', '<?php return true;'));
-		$t->same($conventional, dp_sql_seed_bootstrap_path($root, 'serve'));
-		$t->same($explicit, dp_sql_seed_bootstrap_path($root, 'serve', 'explicit-bootstrap.php'));
+		$t->same($conventional, dp_sql_seed_bootstrap_path($root, 'example_app'));
+		$t->same($explicit, dp_sql_seed_bootstrap_path($root, 'example_app', 'explicit-bootstrap.php'));
 		$t->same(null, dp_sql_seed_bootstrap_path($root, 'missing'));
 		$t->same(null, dp_sql_seed_bootstrap_path($root, ''));
 		$t->throws(static fn()=>dp_sql_seed_bootstrap_path($root, '../outside'), RuntimeException::class);
 		$t->throws(static fn()=>dp_sql_seed_bootstrap_path($root, '../outside', 'explicit-bootstrap.php'), RuntimeException::class);
-		$options=dp_sql_seed_options(['seeds.php','list','--app=serve','--project-root='.$root]);
+		$options=dp_sql_seed_options(['seeds.php','list','--app=example_app','--project-root='.$root]);
 		$manager=dp_sql_seed_manager($options);
 		$t->same('conventional',$state->get('bootstrap_loaded'));
 		$t->same(['bootstrap.demo@1'], array_column($manager->catalog(), 'key'));

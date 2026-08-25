@@ -308,7 +308,7 @@ test('PostgreSQL migration command rejects command paths scripts and untyped arg
 		['postgresql_migrate.php', '--data-environment=sandbox'],
 		['postgresql_migrate.php', '--project-root=/tmp', '--project-root=/tmp'],
 		[
-			'postgresql_migrate.php', '--project-root=/tmp', '--app=../../serve',
+			'postgresql_migrate.php', '--project-root=/tmp', '--app=../../example_app',
 			'--environment=production', '--mode=rolling',
 		],
 	] as $arguments){

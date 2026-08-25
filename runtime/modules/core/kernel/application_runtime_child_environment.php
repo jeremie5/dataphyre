@@ -648,7 +648,7 @@ final class DataphyreApplicationRuntimeChildEnvironment
 	}
 
 	/**
-	 * PHP stream wrappers duplicate php://fd descriptors. The Cloud image ships
+	 * PHP stream wrappers duplicate php://fd descriptors. The managed image ships
 	 * this fixed extension so the inherited native capability can be closed too.
 	 */
 	private static function closeNativeDescriptor(int $fd): void

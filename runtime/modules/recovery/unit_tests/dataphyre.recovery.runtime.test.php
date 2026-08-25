@@ -60,7 +60,7 @@ test('recovery manager emits RFC problem details compatibility and incident obse
 		scope:['scope_type'=>'store','store_id'=>17,'environment'=>'sandbox'],
 		locale:'fr-CA',
 		requestMethod:'POST',
-		requestPath:'/serve/api/orders',
+		requestPath:'/fixture/api/orders',
 		correlationId:'caller-correlation-1234'
 	);
 	$problem=$manager->problem('provider_down', $context, [], [
@@ -116,19 +116,19 @@ test('recovery facade requires explicit application ownership and can be reset',
 })->tag('recovery','framework','facade')->maxMillis(5000);
 
 test('recovery context honors exact, hierarchical, and global permission grants', static function(Context $t): void {
-	$exact=new RecoveryContext(permissions:['serve.settings.general.manage']);
-	$t->same(true, $exact->can('serve.settings.general.manage'));
-	$t->same(false, $exact->can('serve.settings.policy.manage'));
-	$t->same(true, $exact->canAll(['serve.settings.general.manage']));
-	$t->same(false, $exact->canAll(['serve.settings.general.manage','serve.settings.policy.manage']));
+	$exact=new RecoveryContext(permissions:['fixture.settings.general.manage']);
+	$t->same(true, $exact->can('fixture.settings.general.manage'));
+	$t->same(false, $exact->can('fixture.settings.policy.manage'));
+	$t->same(true, $exact->canAll(['fixture.settings.general.manage']));
+	$t->same(false, $exact->canAll(['fixture.settings.general.manage','fixture.settings.policy.manage']));
 
-	$hierarchical=new RecoveryContext(permissions:['serve.settings.*']);
-	$t->same(true, $hierarchical->can('serve.settings.general.manage'));
-	$t->same(false, $hierarchical->can('serve.service_requests.create'));
+	$hierarchical=new RecoveryContext(permissions:['fixture.settings.*']);
+	$t->same(true, $hierarchical->can('fixture.settings.general.manage'));
+	$t->same(false, $hierarchical->can('fixture.service_requests.create'));
 
 	$global=new RecoveryContext(permissions:['*']);
-	$t->same(true, $global->can('serve.settings.policy.manage'));
-	$t->same(true, $global->can('serve.service_requests.create'));
+	$t->same(true, $global->can('fixture.settings.policy.manage'));
+	$t->same(true, $global->can('fixture.service_requests.create'));
 })->tag('recovery','framework','permissions','security')->maxMillis(5000);
 
 test('recovery kernel facade exposes bounded defaults', static function(Context $t): void {

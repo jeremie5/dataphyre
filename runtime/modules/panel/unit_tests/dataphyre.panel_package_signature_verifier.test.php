@@ -30,7 +30,7 @@ function dp_panel_signed_package(string $id='signed-package'): array {
 	$keypair=sodium_crypto_sign_keypair();
 	$public=sodium_crypto_sign_publickey($keypair);
 	$secret=sodium_crypto_sign_secretkey($keypair);
-	$manifest=PanelPackageManifest::make($id, 'Signed package')->version('1.2.3')->support('owner', 'shopiro');
+	$manifest=PanelPackageManifest::make($id, 'Signed package')->version('1.2.3')->support('owner', 'example_publisher');
 	$template=PanelPackageTemplate::make($manifest)
 		->plugin(false)
 		->provider(false)
@@ -42,7 +42,7 @@ function dp_panel_signed_package(string $id='signed-package'): array {
 		'release-2026'=>[
 			'algorithm'=>'ed25519',
 			'public_key'=>base64_encode($public),
-			'meta'=>['owner'=>'Shopiro'],
+			'meta'=>['owner'=>'Example Publisher'],
 		],
 	], ['meta'=>['environment'=>'test']]);
 	$payload=$verifier->payload($template);
@@ -52,7 +52,7 @@ function dp_panel_signed_package(string $id='signed-package'): array {
 		'key_id'=>'release-2026',
 		'digest'=>'sha256:'.hash('sha256', $payload),
 		'signature'=>rtrim(strtr(base64_encode($signature), '+/', '-_'), '='),
-		'publisher'=>'shopiro',
+		'publisher'=>'example_publisher',
 	]);
 	return [$manifest, $template, $verifier];
 }

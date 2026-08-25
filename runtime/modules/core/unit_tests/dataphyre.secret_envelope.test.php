@@ -23,29 +23,29 @@ test('secret envelopes round trip strings and canonical JSON with purpose-bound 
 	$ring=SecretKeyRing::fromSecrets(str_repeat('primary-', 8));
 	$vault=new SecretEnvelope($ring);
 	$context=['tenant_id'=>10, 'scope'=>['kind'=>'store', 'id'=>66], 'environment'=>'sandbox'];
-	$string=$vault->sealString('sk_test_private', 'serve.payment.stripe', $context);
-	$t->same('sk_test_private', $vault->openString($string['ciphertext'], 'serve.payment.stripe', $context));
+	$string=$vault->sealString('sk_test_private', 'fixture.payment.stripe', $context);
+	$t->same('sk_test_private', $vault->openString($string['ciphertext'], 'fixture.payment.stripe', $context));
 	$t->same(64, strlen($string['fingerprint']));
 	$t->same($ring->primaryId(), $string['key_id']);
 	$t->same(false, str_contains($string['ciphertext'], 'sk_test_private'));
-	$t->isTrue($vault->matchesString('sk_test_private', $string['fingerprint'], $string['ciphertext'], 'serve.payment.stripe', $context));
-	$t->isFalse($vault->matchesString('different', $string['fingerprint'], $string['ciphertext'], 'serve.payment.stripe', $context));
+	$t->isTrue($vault->matchesString('sk_test_private', $string['fingerprint'], $string['ciphertext'], 'fixture.payment.stripe', $context));
+	$t->isFalse($vault->matchesString('different', $string['fingerprint'], $string['ciphertext'], 'fixture.payment.stripe', $context));
 
-	$first=$vault->sealJson(['z'=>2, 'a'=>['b'=>true, 'a'=>'value']], 'serve.integration.bundle', $context);
-	$second=$vault->sealJson(['a'=>['a'=>'value', 'b'=>true], 'z'=>2], 'serve.integration.bundle', ['environment'=>'sandbox', 'scope'=>['id'=>66, 'kind'=>'store'], 'tenant_id'=>10]);
+	$first=$vault->sealJson(['z'=>2, 'a'=>['b'=>true, 'a'=>'value']], 'fixture.integration.bundle', $context);
+	$second=$vault->sealJson(['a'=>['a'=>'value', 'b'=>true], 'z'=>2], 'fixture.integration.bundle', ['environment'=>'sandbox', 'scope'=>['id'=>66, 'kind'=>'store'], 'tenant_id'=>10]);
 	$t->same($first['fingerprint'], $second['fingerprint']);
-	$t->same(['a'=>['a'=>'value', 'b'=>true], 'z'=>2], $vault->openJson($first['ciphertext'], 'serve.integration.bundle', $context));
+	$t->same(['a'=>['a'=>'value', 'b'=>true], 'z'=>2], $vault->openJson($first['ciphertext'], 'fixture.integration.bundle', $context));
 })->tag('core', 'secrets', 'encryption', 'security')->maxMillis(1000);
 
 test('secret envelopes fail closed for context substitution tampering malformed input and unavailable key versions', static function(Context $t): void {
 	$vault=new SecretEnvelope(SecretKeyRing::fromSecrets(str_repeat('context-', 8)));
-	$sealed=$vault->sealString('private', 'serve.provider.key', ['tenant_id'=>10, 'store_id'=>66]);
+	$sealed=$vault->sealString('private', 'fixture.provider.key', ['tenant_id'=>10, 'store_id'=>66]);
 	$last=substr($sealed['ciphertext'], -1);
 	$tampered=substr($sealed['ciphertext'], 0, -1).($last==='A' ? 'B' : 'A');
 	foreach([
-		static fn()=>$vault->openString($sealed['ciphertext'], 'serve.provider.key', ['tenant_id'=>10, 'store_id'=>67]),
-		static fn()=>$vault->openString($tampered, 'serve.provider.key', ['tenant_id'=>10, 'store_id'=>66]),
-		static fn()=>$vault->openString('plaintext', 'serve.provider.key', []),
+		static fn()=>$vault->openString($sealed['ciphertext'], 'fixture.provider.key', ['tenant_id'=>10, 'store_id'=>67]),
+		static fn()=>$vault->openString($tampered, 'fixture.provider.key', ['tenant_id'=>10, 'store_id'=>66]),
+		static fn()=>$vault->openString('plaintext', 'fixture.provider.key', []),
 		static fn()=>$vault->openString($sealed['ciphertext'], '../unsafe purpose', []),
 	] as $operation){
 		$thrown=false;
@@ -60,12 +60,12 @@ test('secret key rotation reads old envelopes and marks them for rewrites withou
 	$old=str_repeat('old-secret-', 4);
 	$new=str_repeat('new-secret-', 4);
 	$oldVault=new SecretEnvelope(SecretKeyRing::fromSecrets($old));
-	$oldEnvelope=$oldVault->sealString('rotate-me', 'serve.rotation', ['tenant_id'=>4]);
+	$oldEnvelope=$oldVault->sealString('rotate-me', 'fixture.rotation', ['tenant_id'=>4]);
 	$rotatedRing=SecretKeyRing::fromSecrets($new, [$old]);
 	$rotatedVault=new SecretEnvelope($rotatedRing);
-	$t->same('rotate-me', $rotatedVault->openString($oldEnvelope['ciphertext'], 'serve.rotation', ['tenant_id'=>4]));
+	$t->same('rotate-me', $rotatedVault->openString($oldEnvelope['ciphertext'], 'fixture.rotation', ['tenant_id'=>4]));
 	$t->isTrue($rotatedVault->needsRotation($oldEnvelope['ciphertext']));
-	$newEnvelope=$rotatedVault->sealString('rotate-me', 'serve.rotation', ['tenant_id'=>4]);
+	$newEnvelope=$rotatedVault->sealString('rotate-me', 'fixture.rotation', ['tenant_id'=>4]);
 	$t->isFalse($rotatedVault->needsRotation($newEnvelope['ciphertext']));
 	$t->same(2, count($rotatedRing->keyIds()));
 	$t->same(false, str_contains(json_encode($rotatedRing->keyIds()) ?: '', 'old-secret'));
@@ -74,12 +74,12 @@ test('secret key rotation reads old envelopes and marks them for rewrites withou
 test('secret envelopes reject cross-type payloads malformed framing and non-canonical values', static function(Context $t): void {
 	$ring=SecretKeyRing::fromSecrets(str_repeat('boundary-', 8));
 	$vault=new SecretEnvelope($ring);
-	$string=$vault->sealString('string-value', 'serve.boundary', ['list'=>[1, ['nested'=>true]]]);
-	$json=$vault->sealJson(['json'=>'value'], 'serve.boundary');
-	$t->same($string['fingerprint'], $vault->fingerprintString('string-value', 'serve.boundary', ['list'=>[1, ['nested'=>true]]]));
-	$t->throws(static fn()=>$vault->openString($json['ciphertext'], 'serve.boundary'), SecretException::class);
-	$t->throws(static fn()=>$vault->openJson($string['ciphertext'], 'serve.boundary', ['list'=>[1, ['nested'=>true]]]), SecretException::class);
-	$t->isFalse($vault->matchesString('value', str_repeat('a', 64), 'plaintext', 'serve.boundary'));
+	$string=$vault->sealString('string-value', 'fixture.boundary', ['list'=>[1, ['nested'=>true]]]);
+	$json=$vault->sealJson(['json'=>'value'], 'fixture.boundary');
+	$t->same($string['fingerprint'], $vault->fingerprintString('string-value', 'fixture.boundary', ['list'=>[1, ['nested'=>true]]]));
+	$t->throws(static fn()=>$vault->openString($json['ciphertext'], 'fixture.boundary'), SecretException::class);
+	$t->throws(static fn()=>$vault->openJson($string['ciphertext'], 'fixture.boundary', ['list'=>[1, ['nested'=>true]]]), SecretException::class);
+	$t->isFalse($vault->matchesString('value', str_repeat('a', 64), 'plaintext', 'fixture.boundary'));
 	$t->isTrue($vault->needsRotation('plaintext'));
 
 	$id=$ring->primaryId();
@@ -94,9 +94,9 @@ test('secret envelopes reject cross-type payloads malformed framing and non-cano
 	] as $malformed){
 		$t->throws(static fn()=>$vault->inspect($malformed), SecretException::class);
 	}
-	$t->throws(static fn()=>$vault->openString('dpsecret:v1:'.$id.':'.$encode('x'), 'serve.boundary'), SecretException::class);
-	$t->throws(static fn()=>$vault->sealJson(['invalid'=>INF], 'serve.boundary'), SecretException::class);
-	$t->throws(static fn()=>$vault->sealJson(['invalid'=>new stdClass()], 'serve.boundary'), SecretException::class);
+	$t->throws(static fn()=>$vault->openString('dpsecret:v1:'.$id.':'.$encode('x'), 'fixture.boundary'), SecretException::class);
+	$t->throws(static fn()=>$vault->sealJson(['invalid'=>INF], 'fixture.boundary'), SecretException::class);
+	$t->throws(static fn()=>$vault->sealJson(['invalid'=>new stdClass()], 'fixture.boundary'), SecretException::class);
 })->tag('core', 'secrets', 'boundary', 'fail-closed', 'exact-coverage')->maxMillis(1000);
 
 test('secret envelope cryptographic failure boundaries fail closed', static function(Context $t): void {

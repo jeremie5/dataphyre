@@ -78,7 +78,7 @@ function dp_panel_adapter_pack_surface(string $name, array $services=[]): PanelI
 test('adapter packs preview and install every target kind in deterministic secret-free order',static function(Context $t):void {
 	$panel=dp_panel_adapter_pack_surface('adapter_pack_all_targets');
 	$secret='adapter-pack-secret-value';
-	$pack=PanelAdapterPack::make('all_targets','2.1.0',['label'=>'All targets','publisher'=>'Shopiro Ltd.'])
+	$pack=PanelAdapterPack::make('all_targets','2.1.0',['label'=>'All targets','publisher'=>'Example Publisher'])
 		->binding(PanelAdapterPackBinding::make(
 			'service','platform:probe.service',JsonSerializable::class,
 			static fn(PanelAdapterPackContext $context,array $config):JsonSerializable=>new PanelAdapterPackTestValue((string)$config['token']),
@@ -436,14 +436,14 @@ test('adapter binding context activation and pack APIs close every typed contrac
 	$pack=PanelAdapterPack::make('value_contracts','1.4.0',[
 		'label'=>" Value\ncontracts ",
 		'description'=>'Typed contracts',
-		'publisher'=>'Shopiro',
+		'publisher'=>'Example Publisher',
 		'required_plugins'=>['alpha','beta','alpha'],
 	]);
 	$t->same(['alpha','beta'],$pack->dependencies());
 	$t->same(['alpha','beta'],$pack->requiredPlugins());
 	$t->same('Value contracts',$pack->label());
 	$t->same('Typed contracts',$pack->description());
-	$t->same('Shopiro',$pack->publisher());
+	$t->same('Example Publisher',$pack->publisher());
 	$t->throws(static fn()=>PanelAdapterPack::make('unknown_option','1.0.0',['extra'=>true]),InvalidArgumentException::class);
 	$t->throws(static fn()=>PanelAdapterPack::make('self_required','1.0.0',['required_plugins'=>['self_required']]),InvalidArgumentException::class);
 	$t->throws(static fn()=>PanelAdapterPack::make('bad_requirements','1.0.0',['required_plugins'=>'alpha']),InvalidArgumentException::class);

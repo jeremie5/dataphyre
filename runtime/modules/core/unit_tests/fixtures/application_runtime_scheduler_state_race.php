@@ -11,9 +11,9 @@ if(PHP_SAPI!=='cli' || ($argc ?? 0)!==5) exit(64);
 define('DATAPHYRE_INTERNAL_SCHEDULER_STATE_TEST_ROOT',$argv[4]);
 require $argv[1].'/application_runtime_scheduler_state.php';
 $now=(int)$argv[3];
-$identity=['cloud_application'=>'serve_shop','framework_application'=>'Serve','environment'=>'9-preview'];
+$identity=['deployment_application'=>'fixture-shop','framework_application'=>'FixtureApp','environment'=>'9-preview'];
 $definition=[
-	'name'=>'serve.race','task_sha256'=>'sha256:'.hash('sha256','task'),
+	'name'=>'fixture.race','task_sha256'=>'sha256:'.hash('sha256','task'),
 	'dependency_sha256'=>['sha256:'.hash('sha256','dependency')],
 	'frequency_milliseconds'=>1000,'timeout_milliseconds'=>2000,'memory_limit'=>'128M',
 ];

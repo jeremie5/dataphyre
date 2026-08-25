@@ -141,8 +141,8 @@ test('each inspection boundary reads as a release diagnostic contract',static fu
 		$t->isFalse($missing['prediction']['likely_to_deploy']);
 		$t->same('application_environment_keys_missing',$missing['prediction']['reason_code']);
 		$t->same([
-			'SERVE_SIGNING_KEY',
-			'SERVE_STAFF_SESSION_SECRET',
+			'FIXTURE_APP_SIGNING_KEY',
+			'FIXTURE_APP_STAFF_SESSION_SECRET',
 		],$missing['preflight']['checks'][3]['evidence']['missing_environment_keys']);
 		$t->same(503,$missing['preflight']['checks'][3]['evidence']['http_status']);
 		$databaseRuntime=$contract['database_runtime_success'];

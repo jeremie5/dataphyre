@@ -862,13 +862,8 @@ trait dataphyre_mcp_client_setup_surfaces {
 				$passes[]='cwd_present';
 			}
 			$serialized=json_encode($server, JSON_UNESCAPED_SLASHES) ?: '';
-			$app_pattern='/'.implode('|', [
-				'sho'.'piro',
-				'applications\\/sho'.'piro',
-				'tools\\/sho'.'piro',
-				'\\.local\\/sho'.'piro',
-			]).'/i';
-			if(preg_match($app_pattern, $serialized)===1){
+			$application_local_path_pattern='~(?:applications|tools|\\.local)[/\\\\]+[^/\\\\"\\s]+(?:[/\\\\]+|["\\s])~i';
+			if(preg_match($application_local_path_pattern, $serialized)===1){
 				$issues[]=[
 					'id'=>'product_local_path',
 					'severity'=>'error',

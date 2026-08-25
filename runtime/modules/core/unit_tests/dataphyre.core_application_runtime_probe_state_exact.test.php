@@ -28,12 +28,12 @@ test('probe state is exact root-owned durable and rejects identity or filesystem
 	$runningAsRoot=function_exists('posix_geteuid') && posix_geteuid()===0;
 	if(!$runningAsRoot){$t->same(false,$payload['supported']);return;}
 	$t->same(true,$payload['supported']);
-	$t->same('dataphyre.scheduler_noop_probe.v1',$payload['first']['contract']);
+	$t->same('dataphyre.scheduler_noop_probe.v2',$payload['first']['contract']);
 	$t->same(1,$payload['first']['count']);
 	$t->same('2026-04-13T09:45:00Z',$payload['first']['last_at']);
 	$t->same(false,$payload['first']['previous_readback']);
 	$t->matches('/^sha256:[a-f0-9]{64}$/D',$payload['first']['state_identity_sha256']);
-	$t->same('dataphyre.scheduler_noop_probe.v1',$payload['second']['contract']);
+	$t->same('dataphyre.scheduler_noop_probe.v2',$payload['second']['contract']);
 	$t->same(2,$payload['second']['count']);
 	$t->same('2026-04-13T09:45:01Z',$payload['second']['last_at']);
 	$t->same(true,$payload['second']['previous_readback']);

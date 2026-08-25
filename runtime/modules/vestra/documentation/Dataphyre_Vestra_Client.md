@@ -75,7 +75,7 @@ The owning kernel exposes the merged readonly config as `DP_VESTRA_CFG`.
 An explicitly supplied runtime `cache_directory` remains authoritative for
 Vestra staging and for the local loader route. Without that override, ordinary
 local and self-managed runtimes retain the existing
-`ROOTPATH['common_dataphyre']/cache/vestra` default. Immutable Cloud-managed
+`ROOTPATH['common_dataphyre']/cache/vestra` default. Immutable managed
 releases (`DATAPHYRE_APPLICATION_RELEASE=dep_<40 lowercase hex>`) instead use
 the process' system temporary directory under `dataphyre/vestra`; their source
 tree may be read-only, while the application UID can create and remove staging

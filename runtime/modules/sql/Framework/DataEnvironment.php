@@ -20,8 +20,8 @@ namespace Dataphyre\Database;
  * Applications define environments in `DP_SQL_CFG['data_environments']`:
  *
  *     'sandbox'=>[
- *         'cluster'=>'ServeSandbox',
- *         'cache_namespace'=>'serve-sandbox',
+ *         'cluster'=>'fixture-cluster',
+ *         'cache_namespace'=>'fixture-sandbox',
  *     ],
  *
  * Explicit cluster contexts continue to win over the ambient environment.

@@ -227,19 +227,35 @@ test('host application roots registry and bootstrap rules are self describing', 
 	$workspace=$t->workspace('runner-app-roots');
 	$workspace->directory('runtime/modules/catalog/testing');
 	$module_bootstrap=$workspace->file('runtime/modules/catalog/testing/bootstrap.php', '<?php declare(strict_types=1);');
-	$workspace->directory('applications/shopiro/shared/themes');
-	$workspace->directory('applications/shopiro/shared/debug');
-	$workspace->directory('applications/shopiro/shared/backend');
+	$workspace->directory('applications/shared/themes');
+	$workspace->directory('applications/shared/debug');
+	$workspace->directory('applications/shared/backend');
 	$app_root=$workspace->directory('applications/catalog');
+	$themed_root=$workspace->directory('applications/themed');
 	$workspace->directory('applications/catalog/backend/dataphyre');
 	$app_bootstrap=$workspace->file('applications/catalog/testing/bootstrap.php', '<?php declare(strict_types=1);');
+	$applications=[
+		[
+			'name'=>'catalog','path'=>'applications/catalog',
+			'test_rootpaths'=>[
+				'shared_root'=>'applications/shared',
+				'common_debug'=>'applications/shared/debug',
+				'common_backend'=>'applications/shared/backend',
+				'common_themes'=>'applications/shared/themes',
+			],
+		],
+		[
+			'name'=>'themed','path'=>'applications/themed',
+			'test_rootpaths'=>['themes'=>'applications/shared/themes'],
+		],
+	];
 	$registry=$workspace->file('applications/dataphyre.apps.json', json_encode([
-		'applications'=>[['name'=>'catalog', 'path'=>'applications/catalog']],
+		'applications'=>$applications,
 	]));
 	$runner=new DataphyreUnitTestRunner($workspace->root(), [], ['applications_registry'=>$registry]);
 	$access=$t->nonPublic($runner);
 
-	$t->same([['name'=>'catalog', 'path'=>'applications/catalog']], $access->invoke('applications'));
+	$t->same($applications, $access->invoke('applications'));
 	$t->same($app_root.'/backend/dataphyre/', $access->invoke('dataphyreRootForApp', $app_root));
 	$direct=$workspace->directory('applications/direct/dataphyre');
 	$t->same(dirname($direct).'/dataphyre/', $access->invoke('dataphyreRootForApp', dirname($direct)));
@@ -259,9 +275,19 @@ test('host application roots registry and bootstrap rules are self describing', 
 	$app_paths=$access->invoke('rootpathFor', $app);
 	$t->same('catalog', $app_paths['app']);
 	$t->same($app_root.'/', $app_paths['root']);
-	$t->same(str_replace('\\', '/', $workspace->root()).'/applications/shopiro/', $app_paths['shopiro_root']);
-	$shopirocs_paths=$access->invoke('rootpathFor', array_replace($app, ['owner'=>'shopirocs']));
-	$t->same(str_replace('\\', '/', $workspace->root()).'/applications/shopiro/shared/themes/', $shopirocs_paths['themes']);
+	$t->same(str_replace('\\', '/', $workspace->root()).'/applications/shared/', $app_paths['shared_root']);
+	$t->same(str_replace('\\', '/', $workspace->root()).'/applications/shared/debug/', $app_paths['common_debug']);
+	$t->same(str_replace('\\', '/', $workspace->root()).'/applications/shared/backend/', $app_paths['common_backend']);
+	$t->same(str_replace('\\', '/', $workspace->root()).'/applications/shared/themes/', $app_paths['common_themes']);
+	$themed_paths=$access->invoke('rootpathFor', array_replace($app, ['owner'=>'themed','app_root'=>$themed_root]));
+	$t->same(str_replace('\\', '/', $workspace->root()).'/applications/shared/themes/', $themed_paths['themes']);
+	$fingerprint_before=$access->invoke('codeCaseFingerprint',$app);
+	$workspace->directory('applications/shared-v2/backend');
+	$changed_applications=$applications;
+	$changed_applications[0]['test_rootpaths']['common_backend']='applications/shared-v2/backend';
+	$workspace->file('applications/dataphyre.apps.json',json_encode(['applications'=>$changed_applications]));
+	$changed_runner=new DataphyreUnitTestRunner($workspace->root(), [], ['applications_registry'=>$registry]);
+	$t->notSame($fingerprint_before,$t->nonPublic($changed_runner)->invoke('codeCaseFingerprint',$app));
 
 	$t->isFalse($access->invoke('shouldLoadFrameworkModule', $app));
 	$t->isFalse($access->invoke('shouldLoadFrameworkModule', $framework));
@@ -273,6 +299,24 @@ test('host application roots registry and bootstrap rules are self describing', 
 	$invalid_registry=$workspace->file('applications/invalid.json', '{"wrong":[]}');
 	$invalid_runner=new DataphyreUnitTestRunner($workspace->root(), [], ['applications_registry'=>$invalid_registry]);
 	$t->throwsLike(static fn()=>$t->nonPublic($invalid_runner)->invoke('applications'), RuntimeException::class, 'Invalid applications');
+	$protected_registry=$workspace->file('applications/protected.json', json_encode(['applications'=>[[
+		'name'=>'catalog','path'=>'applications/catalog','test_rootpaths'=>['root'=>'applications/shared'],
+	]]]));
+	$protected_runner=new DataphyreUnitTestRunner($workspace->root(), [], ['applications_registry'=>$protected_registry]);
+	$t->throwsLike(
+		static fn()=>$t->nonPublic($protected_runner)->invoke('rootpathFor',$app),
+		RuntimeException::class,
+		'cannot replace protected rootpath',
+	);
+	$outside_registry=$workspace->file('applications/outside.json', json_encode(['applications'=>[[
+		'name'=>'catalog','path'=>'applications/catalog','test_rootpaths'=>['shared_root'=>'../outside'],
+	]]]));
+	$outside_runner=new DataphyreUnitTestRunner($workspace->root(), [], ['applications_registry'=>$outside_registry]);
+	$t->throwsLike(
+		static fn()=>$t->nonPublic($outside_runner)->invoke('rootpathFor',$app),
+		RuntimeException::class,
+		'traversal is not allowed',
+	);
 });
 
 test('selection watches filters and changed reasons describe why every test was selected', static function(Context $t): void {
@@ -308,7 +352,7 @@ PHP);
 		'path:runtime/modules/**/Panel.php', 'runtime/modules/**/Panel.php',
 		'app:cat?log',
 	] as $watch){$t->isTrue($access->invoke('watchTargetMatches', $watch, $selection), $watch);}
-	foreach(['testing', 'module:sql', 'app:shopiro', 'path:missing/**', 'missing'] as $watch){
+	foreach(['testing', 'module:sql', 'app:missing', 'path:missing/**', 'missing'] as $watch){
 		$t->isFalse($access->invoke('watchTargetMatches', $watch, $selection), $watch);
 	}
 	$t->same(['panel'], $access->invoke('watchChangedModules', $selection));

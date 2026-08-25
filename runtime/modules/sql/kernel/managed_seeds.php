@@ -7,13 +7,13 @@
  */
 declare(strict_types=1);
 
-/** Fixed Cloud seed dispatcher. No executable, path, ledger, cluster, or seed id is caller-selected. */
+/** Fixed managed seed dispatcher. No executable, path, ledger, cluster, or seed id is caller-selected. */
 const DATAPHYRE_MANAGED_SEED_MAXIMUM_OUTPUT_BYTES=16384;
 const DATAPHYRE_MANAGED_SEED_MAXIMUM_DEFINITIONS=4096;
 const DATAPHYRE_MANAGED_SEED_EVIDENCE_KEY_BYTES=32;
 const DATAPHYRE_MANAGED_SEED_HARD_STOP_SIGNAL=9;
 
-/** Fixed output handler: application output can never become Cloud evidence. */
+/** Fixed output handler: application output can never become host evidence. */
 function dataphyre_managed_seed_swallow_output(string $chunk): string
 {
 	return '';
@@ -284,7 +284,7 @@ function dataphyre_managed_seed_terminate(
 	while(true) usleep(1000000);
 }
 
-/** Runs the only Cloud-supported seed action: one atomic, idempotent whole-profile apply. */
+/** Runs the only managed-runtime seed action: one atomic, idempotent whole-profile apply. */
 function dataphyre_managed_seed_main(array $argv): int
 {
 	if(PHP_SAPI!=='cli' || count($argv)!==7) return 64;
@@ -354,7 +354,7 @@ function dataphyre_managed_seed_main(array $argv): int
 		$environment=dp_sql_seed_prepare_runtime_environment($options);
 		if(strtolower((string)\Dataphyre\Database\DB::clusterDbms($environment['cluster']))!=='postgresql'){
 			$stage='bootstrap';
-			throw new RuntimeException('Cloud-managed seed apply requires the configured PostgreSQL cluster.');
+			throw new RuntimeException('Managed seed apply requires the configured PostgreSQL cluster.');
 		}
 		$stage='transaction';
 		$outcome=\Dataphyre\Database\DB::transaction(

@@ -6186,16 +6186,16 @@ self-verified before it can become a publication:
 ```php
 $registry=Panel::filesystemPackageRegistry(
 	$privateRegistryRoot,
-	'shopiro_packages',
-	'shopiro',
+	'example_packages',
+	'example_org',
 );
 
 $publisher=Panel::packageRegistryPublisher(
-	'shopiro_packages',
-	'shopiro',
-	'shopiro-registry-2027',
+	'example_packages',
+	'example_org',
+	'example-registry-2027',
 	'ed25519',
-	$hostKeyService->detachedSigner('shopiro-registry-2027'),
+	$hostKeyService->detachedSigner('example-registry-2027'),
 	$signatureVerifier,
 	$trustPolicy,
 	$trustedClock,
@@ -6262,8 +6262,8 @@ and is mountable with the rest of the production platform pages:
 $platform=PanelPlatform::defaults([
 	'state_root'=>$privateStateRoot,
 	'packages'=>[
-		'registry_id'=>'shopiro_packages',
-		'publisher'=>'shopiro',
+		'registry_id'=>'example_packages',
+		'publisher'=>'example_org',
 		'snapshot_retention'=>256,
 	],
 ]);
@@ -8821,16 +8821,16 @@ node runtime/modules/panel/testing/panel_release_gate.js --lanes=asset `
 ```
 
 `--css-file` and `--js-file` are a pair. Interaction and visual lanes still
-require a mounted `--base-url`; ShopiCore's live example is the primary
-integration fixture, while other consuming applications can supply their own
-routes, authentication, and seed state.
+require a mounted `--base-url`; each consuming application supplies its own
+integration fixture, routes, authentication, and seed state.
 
-From a Dataphyre source checkout with ShopiCore in a sibling directory, launch
-that live fixture through the adapter which forces the current Dataphyre root:
+From a Dataphyre source checkout with a consuming application in a sibling
+directory, launch its live fixture through the adapter which forces the current
+Dataphyre root:
 
 ```bash
 export DP_PANEL_LIVE_EXAMPLE_ENTRY="$(realpath \
-  ../ShopiCore/applications/shopiro/shared/debug/dataphyre-panel-live-example/index.php)"
+  ../consumer-application/path/to/panel-live-example/index.php)"
 export DP_PANEL_RUNTIME_ROOT="$(pwd)"
 php -S 127.0.0.1:8097 source-checkout-maintainer-tool
 ```
@@ -8839,7 +8839,7 @@ The equivalent PowerShell setup is:
 
 ```powershell
 $env:DP_PANEL_LIVE_EXAMPLE_ENTRY = (Resolve-Path `
-  '..\ShopiCore\applications\shopiro\shared\debug\dataphyre-panel-live-example\index.php').Path
+  '..\consumer-application\path\to\panel-live-example\index.php').Path
 $env:DP_PANEL_RUNTIME_ROOT = (Resolve-Path '.').Path
 php -S 127.0.0.1:8097 source-checkout-maintainer-tool
 ```

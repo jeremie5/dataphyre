@@ -61,7 +61,7 @@ function dataphyre_one_shot_environment_id(): string
 }
 
 /** Reads the opaque public application id through its shared authority. */
-function dataphyre_one_shot_cloud_application(): string
+function dataphyre_one_shot_deployment_application(): string
 {
 	$value=getenv('DATAPHYRE_APPLICATION_ID');
 	if(!is_string($value) || !\Dataphyre\PublicApplicationIdentifier::valid($value)){
@@ -153,14 +153,14 @@ try{
 		'DATAPHYRE_ONE_SHOT_OPERATION',
 		'/^(?:database_identity|application_preflight|artisan_migrate|dataphyre_materialize_tables|dataphyre_postgresql_migrate|dataphyre_sqlite_migrate|dataphyre_seed|dataphyre_shared_cache_probe)$/D',
 	);
-	$cloudApplication=dataphyre_one_shot_cloud_application();
+	$deploymentApplication=dataphyre_one_shot_deployment_application();
 	$frameworkApplication=dataphyre_one_shot_identity('DATAPHYRE_FRAMEWORK_APPLICATION','/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D');
 	$environment=dataphyre_one_shot_environment();
 	$environmentId=dataphyre_one_shot_environment_id();
 	$releaseId=dataphyre_one_shot_identity('DATAPHYRE_APPLICATION_RELEASE','/^dep_[a-f0-9]{40}$/D');
 	$uid=10001;$gid=10001;
 	$envelope=DataphyreApplicationRuntimeEnvironment::consume(
-		$cloudApplication,$frameworkApplication,$environment,$environmentId,$releaseId,
+		$deploymentApplication,$frameworkApplication,$environment,$environmentId,$releaseId,
 	);
 	DataphyreApplicationRuntimeEnvironment::mountedApplicationLogRoot($uid);
 	$applicationDataRoot=in_array($operation,['dataphyre_materialize_tables','dataphyre_sqlite_migrate'],true)
@@ -170,7 +170,7 @@ try{
 		throw new RuntimeException('One-shot SQLite data mount is unavailable.');
 	}
 	$child=DataphyreApplicationRuntimeEnvironment::childEnvironment(
-		$envelope['values'],$cloudApplication,$frameworkApplication,$environment,$environmentId,$releaseId,$applicationDataRoot,
+		$envelope['values'],$deploymentApplication,$frameworkApplication,$environment,$environmentId,$releaseId,$applicationDataRoot,
 	);
 	$purpose=null;
 	$cachePhase=null;$cacheChallenge=null;

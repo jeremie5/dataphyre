@@ -138,11 +138,11 @@ test('permission engine resolves subjects roles caches explanations tracing and 
 	$t->isTrue($engine->explain($subject,'orders.edit')['allowed']);
 	$t->same(['viewer','editor'], $engine->setFor($subject)->roles());
 	$t->isTrue($engine->setFor($subject)===$engine->setFor($subject));
-	$store66=['id'=>905, 'tenant_id'=>10, 'permissions'=>['serve.store.view']];
-	$store30=['id'=>905, 'tenant_id'=>10, 'permissions'=>['serve.kds.operate']];
-	$t->isTrue($engine->allowsAll($store66, 'serve.store.view', ['tenant_id'=>10, 'brand_id'=>20, 'store_id'=>66]));
-	$t->isFalse($engine->allowsAll($store30, 'serve.store.view', ['tenant_id'=>10, 'brand_id'=>20, 'store_id'=>30]));
-	$t->isFalse($engine->allowsAll($store30, 'serve.store.view', ['tenant_id'=>10, 'brand_id'=>20, 'store_id'=>66]));
+	$store66=['id'=>905, 'tenant_id'=>10, 'permissions'=>['fixture.store.view']];
+	$store30=['id'=>905, 'tenant_id'=>10, 'permissions'=>['fixture.operations.use']];
+	$t->isTrue($engine->allowsAll($store66, 'fixture.store.view', ['tenant_id'=>10, 'brand_id'=>20, 'store_id'=>66]));
+	$t->isFalse($engine->allowsAll($store30, 'fixture.store.view', ['tenant_id'=>10, 'brand_id'=>20, 'store_id'=>30]));
+	$t->isFalse($engine->allowsAll($store30, 'fixture.store.view', ['tenant_id'=>10, 'brand_id'=>20, 'store_id'=>66]));
 	$t->same(['permissions'=>['profile.view','role.editor'],'roles'=>['viewer','editor']], $engine->rulesFor($subject));
 	$compiled=$engine->compile(['direct.view'],['admin']);
 	$t->isTrue($compiled->allows('orders.create'));

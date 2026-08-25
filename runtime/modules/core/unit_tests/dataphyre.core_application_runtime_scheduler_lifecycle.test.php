@@ -22,7 +22,7 @@ test('signed scheduler requests are canonical and one-time',static function(Cont
 	$keypair=sodium_crypto_sign_keypair();
 	$secret=sodium_crypto_sign_secretkey($keypair);$public=sodium_crypto_sign_publickey($keypair);
 	$identity=[
-		'cloud_application'=>'Store:North_2-Beta','framework_application'=>'Serve','environment'=>'Staging.Blue',
+		'deployment_application'=>'Fixture:North_2-Beta','framework_application'=>'FixtureApp','environment'=>'Staging.Blue',
 		'release_id'=>'dep_'.str_repeat('a',40),
 	];
 	$request=DataphyreApplicationRuntimeSchedulerProtocol::issue(
@@ -60,11 +60,11 @@ test('public application and environment identities cross signed requests durabl
 	$keypair=sodium_crypto_sign_keypair();$secret=sodium_crypto_sign_secretkey($keypair);
 	$public=sodium_crypto_sign_publickey($keypair);
 	foreach([
-		['Store:North_2-Beta','Staging.Blue'],
+		['Fixture:North_2-Beta','Staging.Blue'],
 		[str_repeat('Z',120),'staging_blue'],
-	] as [$cloudApplication,$environment]){
+	] as [$deploymentApplication,$environment]){
 		$identity=[
-			'cloud_application'=>$cloudApplication,'framework_application'=>'Serve','environment'=>$environment,
+			'deployment_application'=>$deploymentApplication,'framework_application'=>'FixtureApp','environment'=>$environment,
 			'release_id'=>'dep_'.str_repeat('a',40),
 			'environment_fingerprint'=>'hmac-sha256:'.str_repeat('b',64),
 		];
@@ -80,9 +80,9 @@ test('public application and environment identities cross signed requests durabl
 			$environment,
 		);
 	}
-	foreach(['','app.name','app/name',"app\nname","app\0name",str_repeat('a',121)] as $cloudApplication){
+	foreach(['','app.name','app/name',"app\nname","app\0name",str_repeat('a',121)] as $deploymentApplication){
 		$identity=[
-			'cloud_application'=>$cloudApplication,'framework_application'=>'Serve','environment'=>'Staging.Blue',
+			'deployment_application'=>$deploymentApplication,'framework_application'=>'FixtureApp','environment'=>'Staging.Blue',
 			'release_id'=>'dep_'.str_repeat('a',40),
 			'environment_fingerprint'=>'hmac-sha256:'.str_repeat('b',64),
 		];
@@ -91,22 +91,22 @@ test('public application and environment identities cross signed requests durabl
 				'noop',$identity,'gen_'.str_repeat('c',32),1,$secret,null,null,null,1776073500,str_repeat('d',32),
 			),
 			InvalidArgumentException::class,
-			bin2hex($cloudApplication),
+			bin2hex($deploymentApplication),
 		);
 		$t->throws(
 			static fn()=>DataphyreApplicationRuntimeSchedulerState::identitySha256($identity),
 			RuntimeException::class,
-			bin2hex($cloudApplication),
+			bin2hex($deploymentApplication),
 		);
 		$t->throws(
 			static fn()=>$t->nonPublic(DataphyreApplicationRuntimeProbeState::class)->invoke('identitySha256',$identity),
 			RuntimeException::class,
-			bin2hex($cloudApplication),
+			bin2hex($deploymentApplication),
 		);
 	}
 	foreach(['.','..',"staging\nblue","staging\0blue"] as $environment){
 		$identity=[
-			'cloud_application'=>'serve_shop','framework_application'=>'Serve','environment'=>$environment,
+			'deployment_application'=>'fixture-app','framework_application'=>'FixtureApp','environment'=>$environment,
 			'release_id'=>'dep_'.str_repeat('a',40),
 			'environment_fingerprint'=>'hmac-sha256:'.str_repeat('b',64),
 		];
@@ -140,12 +140,12 @@ test('scheduler state rejects an invalid explicit test root before filesystem ac
 	);
 })->tag('scheduler-state','test-root','negative');
 
-test('v6 status remains bounded with seventy-one private definitions',static function(Context $t): void {
+test('v7 status remains bounded with seventy-one private definitions',static function(Context $t): void {
 	$kernel=dirname(__DIR__).'/kernel';
 	require_once $kernel.'/application_runtime_supervisor.php';
 	$definitions=[];
 	for($i=1;$i<=71;$i++) $definitions[]=[
-		'name'=>'serve.task.'.str_pad((string)$i,3,'0',STR_PAD_LEFT),
+		'name'=>'fixture.task.'.str_pad((string)$i,3,'0',STR_PAD_LEFT),
 		'task_sha256'=>'sha256:'.hash('sha256','task'.$i),
 		'dependency_sha256'=>['sha256:'.hash('sha256','dependency'.$i)],
 		'frequency_milliseconds'=>1000,'timeout_milliseconds'=>2000,'memory_limit'=>'128M',
@@ -161,7 +161,7 @@ test('v6 status remains bounded with seventy-one private definitions',static fun
 	$t->lessThan(8193,strlen($encoded));
 	$t->same(71,$summary['definition_count']);
 	$t->isFalse(array_key_exists('definitions',$summary));
-})->tag('status','bounds','serve-71','registration');
+})->tag('status','bounds','fixture-71','registration');
 
 test('managed source executes only inside the fresh claimed scheduler CGI and contains no second worker',static function(Context $t): void {
 	$core=dirname(__DIR__).'/kernel';$scheduling=dirname(__DIR__,2).'/scheduling/kernel';
@@ -261,9 +261,9 @@ test('durable scheduler state executes its complete claim success reconciliation
 	define('DATAPHYRE_INTERNAL_SCHEDULER_STATE_TEST_ROOT',$root);
 	require_once $kernel.'/application_runtime_scheduler_state.php';
 	$internals=$t->nonPublic(DataphyreApplicationRuntimeSchedulerState::class);
-	$identity=['cloud_application'=>'serve_shop','framework_application'=>'Serve','environment'=>'Staging.Blue'];
+	$identity=['deployment_application'=>'fixture-app','framework_application'=>'FixtureApp','environment'=>'Staging.Blue'];
 	$release='dep_'.str_repeat('a',40);$generation='gen_'.str_repeat('b',32);
-	$definition=static fn(string $name='serve.task',int $frequency=1000): array=>[
+	$definition=static fn(string $name='fixture.task',int $frequency=1000): array=>[
 		'name'=>$name,'task_sha256'=>'sha256:'.hash('sha256','task-'.$name),
 		'dependency_sha256'=>['sha256:'.hash('sha256','dependency-'.$name)],
 		'frequency_milliseconds'=>$frequency,'timeout_milliseconds'=>2000,'memory_limit'=>'128M',
@@ -368,7 +368,7 @@ test('durable scheduler state executes its complete claim success reconciliation
 
 	$stateFile=$root.'/state.json';$lockFile=$root.'/state.lock';
 	$empty=[
-		'contract'=>'dataphyre.scheduler_state.v1','cloud_application'=>$identity['cloud_application'],
+		'contract'=>'dataphyre.scheduler_state.v2','deployment_application'=>$identity['deployment_application'],
 		'framework_application'=>$identity['framework_application'],'environment'=>$identity['environment'],'entries'=>[],
 	];
 	$writeState=static function(string $bytes) use ($stateFile): void {
@@ -393,7 +393,7 @@ test('durable scheduler state executes its complete claim success reconciliation
 	$writeState(json_encode($wrong,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n");
 	$t->throws(static fn()=>DataphyreApplicationRuntimeSchedulerState::stateSha256($identity),RuntimeException::class);
 	$invalidEntry=$empty;
-	$invalidEntry['entries']['serve.task']=[
+	$invalidEntry['entries']['fixture.task']=[
 		'definition_sha256'=>'sha256:'.str_repeat('a',64),'last_success_at'=>1,
 		'release_id'=>$release,'generation'=>$generation,'claim_nonce'=>$nonce,'claim_expires_at'=>0,
 	];
@@ -469,7 +469,7 @@ test('serial cold callbacks fail cadence even when every worker receipt succeeds
 		'scheduler_registration'=>$schedulerRegistration,
 	];
 	$identity=[
-		'cloud_application'=>'fixture','framework_application'=>'Fixture','environment'=>'staging',
+		'deployment_application'=>'fixture','framework_application'=>'FixtureApp','environment'=>'staging',
 		'release_id'=>'dep_'.str_repeat('a',40),'environment_fingerprint'=>'hmac-sha256:'.str_repeat('b',64),
 	];
 	$definitions=[
@@ -545,7 +545,7 @@ test('preclaimed due work cannot certify a claimed-only or partially observed cy
 	define('DATAPHYRE_INTERNAL_SCHEDULER_STATE_TEST_ROOT',$root);
 	require_once dirname(__DIR__).'/kernel/application_runtime_supervisor.php';
 	$identity=[
-		'cloud_application'=>'fixture','framework_application'=>'Fixture','environment'=>'staging',
+		'deployment_application'=>'fixture','framework_application'=>'FixtureApp','environment'=>'staging',
 		'release_id'=>'dep_'.str_repeat('a',40),'environment_fingerprint'=>'hmac-sha256:'.str_repeat('b',64),
 	];
 	$generation='gen_'.str_repeat('c',32);$nowSeconds=1776073500;$nowMilliseconds=$nowSeconds*1000;
@@ -652,7 +652,7 @@ test('resume phase is the due timestamp used by both dispatch and cadence assess
 	define('DATAPHYRE_INTERNAL_SCHEDULER_STATE_TEST_ROOT',$root);
 	require_once dirname(__DIR__).'/kernel/application_runtime_supervisor.php';
 	$identity=[
-		'cloud_application'=>'fixture','framework_application'=>'Fixture','environment'=>'staging',
+		'deployment_application'=>'fixture','framework_application'=>'FixtureApp','environment'=>'staging',
 		'release_id'=>'dep_'.str_repeat('a',40),'environment_fingerprint'=>'hmac-sha256:'.str_repeat('b',64),
 	];
 	$definition=[

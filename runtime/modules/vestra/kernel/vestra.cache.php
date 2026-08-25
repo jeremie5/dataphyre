@@ -20,7 +20,7 @@ final class dataphyre_vestra_cache_directory {
 		if(self::usesManagedDefault($runtime)){
 			$temporary=array_key_exists('system_temp_directory', $runtime)
 				? trim((string)$runtime['system_temp_directory'])
-				: trim(sys_get_temp_dir()); // dataphyre-test-architecture: exempt[unmanaged-system-temporary-directory] reason="Cloud-managed immutable releases need one UID-writable staging root outside their read-only source tree."
+				: trim(sys_get_temp_dir()); // dataphyre-test-architecture: exempt[unmanaged-system-temporary-directory] reason="Immutable managed releases need one UID-writable staging root outside their read-only source tree."
 			return $temporary==='' ? '' : self::withTrailingSeparator($temporary)
 				.'dataphyre'.DIRECTORY_SEPARATOR.'vestra'.DIRECTORY_SEPARATOR;
 		}

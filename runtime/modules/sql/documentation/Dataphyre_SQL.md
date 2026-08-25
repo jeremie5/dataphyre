@@ -358,7 +358,7 @@ php runtime/modules/sql/kernel/materialize_registered_tables.php \
   --environment=production
 ```
 
-The command owns the runtime bootstrap and SQL hydration method. Callers cannot supply a script, callback, SQL statement, definition file, executable path, or data path. It drains deferred application registrations and combines them with Dataphyre's fixed runtime-table manifest for every on-disk module enabled by the application's existing flight-sheet policy. Disabled or unavailable modules remain absent. This bounded projection is computed before hydration so a lazily loaded enabled module cannot first discover its framework table is missing from inside an application transaction. It does not introduce a second application manifest or hydrate tables during ordinary requests. The command sorts and caps the resulting inventory, materializes each definition idempotently, and emits the `dataphyre.registered_table_materialization.v1` canonical JSON contract with counts and a SHA-256 of the sorted table set. Release preflight reads that inventory through the same producer class after ordinary application bootstrap, but does not hydrate or write; Cloud must run declared application migrations first, then the fixed materializer, and enforce the producer-defined cross-stage equality: materializer `registered_count` equals preflight `realtime_registration.evidence.registered_table_count`, and `sha256:` plus materializer `table_set_sha256` equals preflight `realtime_registration.evidence.registered_table_set_sha256`. Both contract fields must equal `dataphyre.registered_table_materialization.v1`; Cloud must not independently reproduce table sorting or normalization. Output is one canonical JSON line capped at 8 KiB. Any invalid registry, unavailable definition for a present enabled module, bootstrap termination, environment mismatch, or failed definition returns non-zero. In Cloud's fixed one-shot image the operation is `DATAPHYRE_ONE_SHOT_OPERATION=dataphyre_materialize_tables`; its exact child argv is `php runtime/modules/sql/kernel/materialize_registered_tables.php --project-root=/app --application=<framework-application> --environment=<environment>`. PID 1 optionally projects `DATAPHYRE_APPLICATION_DATA_ROOT=/var/lib/dataphyre/application` through the root-only envelope after proving that fixed mount is one private read-write directory owned by the application pool. Its absence is valid for PostgreSQL-backed materialization; the PostgreSQL migration operation never receives that mount. For PostgreSQL materialization, an optional fixed `DATAPHYRE_ONE_SHOT_DATABASE_PURPOSE` selects one complete managed binding and root reprojects it onto the canonical `DATAPHYRE_DATABASE_*` names before privilege drop; omission preserves existing external/default configuration. The purpose is carried only in the root-brokered child attestation, never public command argv. A non-primary purpose scopes hydration with `DataEnvironment::run(<purpose>, ...)`, requires a configured cluster override, and restores the previous environment on both success and failure. Primary and omitted purposes retain ordinary live hydration.
+The command owns the runtime bootstrap and SQL hydration method. Callers cannot supply a script, callback, SQL statement, definition file, executable path, or data path. It drains deferred application registrations and combines them with Dataphyre's fixed runtime-table manifest for every on-disk module enabled by the application's existing flight-sheet policy. Disabled or unavailable modules remain absent. This bounded projection is computed before hydration so a lazily loaded enabled module cannot first discover its framework table is missing from inside an application transaction. It does not introduce a second application manifest or hydrate tables during ordinary requests. The command sorts and caps the resulting inventory, materializes each definition idempotently, and emits the `dataphyre.registered_table_materialization.v1` canonical JSON contract with counts and a SHA-256 of the sorted table set. Release preflight reads that inventory through the same producer class after ordinary application bootstrap, but does not hydrate or write; the hosting control plane must run declared application migrations first, then the fixed materializer, and enforce the producer-defined cross-stage equality: materializer `registered_count` equals preflight `realtime_registration.evidence.registered_table_count`, and `sha256:` plus materializer `table_set_sha256` equals preflight `realtime_registration.evidence.registered_table_set_sha256`. Both contract fields must equal `dataphyre.registered_table_materialization.v1`; the control plane must not independently reproduce table sorting or normalization. Output is one canonical JSON line capped at 8 KiB. Any invalid registry, unavailable definition for a present enabled module, bootstrap termination, environment mismatch, or failed definition returns non-zero. In the fixed managed one-shot image the operation is `DATAPHYRE_ONE_SHOT_OPERATION=dataphyre_materialize_tables`; its exact child argv is `php runtime/modules/sql/kernel/materialize_registered_tables.php --project-root=/app --application=<framework-application> --environment=<environment>`. PID 1 optionally projects `DATAPHYRE_APPLICATION_DATA_ROOT=/var/lib/dataphyre/application` through the root-only envelope after proving that fixed mount is one private read-write directory owned by the application pool. Its absence is valid for PostgreSQL-backed materialization; the PostgreSQL migration operation never receives that mount. For PostgreSQL materialization, an optional fixed `DATAPHYRE_ONE_SHOT_DATABASE_PURPOSE` selects one complete managed binding and root reprojects it onto the canonical `DATAPHYRE_DATABASE_*` names before privilege drop; omission preserves existing external/default configuration. The purpose is carried only in the root-brokered child attestation, never public command argv. A non-primary purpose scopes hydration with `DataEnvironment::run(<purpose>, ...)`, requires a configured cluster override, and restores the previous environment on both success and failure. Primary and omitted purposes retain ordinary live hydration.
 
 `DB::table('registered_table')` automatically uses the registered definition's generated `TableSchema` when one exists. This means ad hoc table queries can get the same field validation, primary-key metadata, projections, and casts as repositories without manually passing `usingSchema(...)`.
 
@@ -1163,10 +1163,10 @@ lifecycle metadata:
 
 use Dataphyre\Database\Seeds\SeedContext;
 use Dataphyre\Database\Seeds\SeedDefinition;
-use Serve\Database\Seeders\DemoPortfolioSeeder;
+use ExampleApp\Database\Seeders\DemoPortfolioSeeder;
 
 return new SeedDefinition(
-	id: 'serve.demo-portfolio',
+	id: 'example_app.demo-portfolio',
 	version: 1,
 	up: static fn(SeedContext $context)=>(new DemoPortfolioSeeder())->apply($context),
 	preflight: static fn(SeedContext $context)=>(new DemoPortfolioSeeder())->preflight($context),
@@ -1217,21 +1217,21 @@ when no seed file is available.
 The standalone command discovers `applications/<app>/database/seeds` with
 `--app`, accepts repeatable `--path` values, or reads
 `DP_SQL_CFG['seeds']['paths']`. Applications with custom SQL/autoload setup can
-provide a side-effect-free CLI bootstrap file. With `--app=serve`, Dataphyre
-automatically loads `applications/serve/database/seeds/bootstrap.php` when it
+provide a side-effect-free CLI bootstrap file. With `--app=example_app`, Dataphyre
+automatically loads `applications/example_app/database/seeds/bootstrap.php` when it
 exists; an explicit `--bootstrap` path overrides the convention:
 
 ```bash
-php runtime/modules/sql/kernel/seeds.php list --app=serve
-php runtime/modules/sql/kernel/seeds.php status --app=serve --json
-php runtime/modules/sql/kernel/seeds.php apply --app=serve --dry-run
-php runtime/modules/sql/kernel/seeds.php apply --app=serve
-php runtime/modules/sql/kernel/seeds.php apply --app=serve --profile=demo --allow-demo --id=serve.demo-portfolio
-php runtime/modules/sql/kernel/seeds.php status --app=serve --cluster=primary --ledger-table=dataphyre_seed_ledger
-php runtime/modules/sql/kernel/seeds.php status --app=serve --data-environment=sandbox --json
-php runtime/modules/sql/kernel/seeds.php rollback --app=serve --id=serve.reversible-reference@1 --dry-run
-php runtime/modules/sql/kernel/seeds.php rollback --app=serve --id=serve.reversible-reference@1 --confirm
-php runtime/modules/sql/kernel/seeds.php status --path=applications/serve/database/seeds --bootstrap=applications/serve/database/seeds/bootstrap.php
+php runtime/modules/sql/kernel/seeds.php list --app=example_app
+php runtime/modules/sql/kernel/seeds.php status --app=example_app --json
+php runtime/modules/sql/kernel/seeds.php apply --app=example_app --dry-run
+php runtime/modules/sql/kernel/seeds.php apply --app=example_app
+php runtime/modules/sql/kernel/seeds.php apply --app=example_app --profile=demo --allow-demo --id=example_app.demo-portfolio
+php runtime/modules/sql/kernel/seeds.php status --app=example_app --cluster=primary --ledger-table=dataphyre_seed_ledger
+php runtime/modules/sql/kernel/seeds.php status --app=example_app --data-environment=sandbox --json
+php runtime/modules/sql/kernel/seeds.php rollback --app=example_app --id=example_app.reversible-reference@1 --dry-run
+php runtime/modules/sql/kernel/seeds.php rollback --app=example_app --id=example_app.reversible-reference@1 --confirm
+php runtime/modules/sql/kernel/seeds.php status --path=applications/example_app/database/seeds --bootstrap=applications/example_app/database/seeds/bootstrap.php
 ```
 
 The default ledger is `dataphyre_seed_ledger` with the composite identity
@@ -1247,7 +1247,7 @@ ledger record fails, `SeedExecutionException` reports the exact
 throwable; the enclosing transaction still rolls back the entire batch. There
 is deliberately no reset-all command.
 
-Dataphyre Cloud runs one atomic whole-profile apply through the fixed
+A hosting control plane runs one atomic whole-profile apply through the fixed
 `DATAPHYRE_ONE_SHOT_OPERATION=dataphyre_seed` broker. Root requires a typed
 managed-database purpose, projects that binding onto the canonical names, and
 removes every unselected named binding before dropping to UID/GID 10001. The
@@ -1277,7 +1277,7 @@ retain their existing PHP limit. This is a bounded framework execution default,
 not a tenant-isolation boundary: the private KVM workload and its host-owned
 cgroup remain the outer memory authority.
 
-The fixed Cloud path requires the application-resolved cluster to be PostgreSQL.
+The fixed managed path requires the application-resolved cluster to be PostgreSQL.
 Its bootstrap is trusted, side-effect-free startup/autoload configuration. It
 runs under the selected environment identity before the database transaction and
 must not load Dataphyre SQL. The outer transaction then contains definition
@@ -1288,13 +1288,14 @@ raw transaction control, another database cluster, and another Fiber; same-clust
 Framework savepoints remain available. Application seed callbacks are trusted
 committed release code. Direct native connection handles/extensions, filesystem
 effects, and network effects are not made transactional by this SQL contract and
-must not be used as part of a Cloud seed's claimed atomic work.
+must not be used as part of a managed seed's claimed atomic work.
 
 Convergence completes before commit, so `seed_convergence_failed` rolls the SQL
 batch back. Commit acknowledgement precedes root evidence forwarding; interruption
 or missing evidence in that narrow delivery window is outcome-unknown, not proof
-of rollback or success. Cloud retries the same immutable whole-profile operation:
-ledger checksums make a committed batch converge as an idempotent no-op. Cloud
+of rollback or success. The hosting control plane retries the same immutable
+whole-profile operation: ledger checksums make a committed batch converge as an
+idempotent no-op. The control plane
 must not infer success from the child exit code without one validated canonical
 evidence object.
 
@@ -1316,7 +1317,7 @@ $applicationRoot=__DIR__;
 $manager=new SeedManager(
 	SeedFileLoader::load($applicationRoot.'/database/seeds', $applicationRoot),
 	new SqlSeedLedger('dataphyre_seed_ledger', cluster: 'primary'),
-	new SeedContext(attributes: ['application'=>'serve'], cluster: 'primary'),
+	new SeedContext(attributes: ['application'=>'example_app'], cluster: 'primary'),
 );
 
 $pending=$manager->planApply();

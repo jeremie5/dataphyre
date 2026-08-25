@@ -103,8 +103,8 @@ test('verification run-mode key and configured-memory decisions are deterministi
 	$exists=$t->spy()->willReturnInOrder(false, true);
 	$install=$t->spy()->willReturn(true);
 	$clear=$t->spy();
-	$t->isTrue(CoreKernelBootstrap::ensureVerified('/application/', 'serve', $exists, $install, $clear));
-	$install->assertCalledWith($t, ['serve']);
+	$t->isTrue(CoreKernelBootstrap::ensureVerified('/application/', 'fixture-app', $exists, $install, $clear));
+	$install->assertCalledWith($t, ['fixture-app']);
 	$clear->assertCalledWith($t, ['/application/cache/verified']);
 	$alreadyExists=$t->spy()->willReturn(true);
 	CoreKernelBootstrap::ensureVerified('/application', null, $alreadyExists, $install, $clear);

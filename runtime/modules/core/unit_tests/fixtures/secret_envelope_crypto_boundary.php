@@ -46,15 +46,15 @@ namespace {
 		$vault=new SecretEnvelope($ring);
 		switch((string)($argv[1] ?? '')){
 			case 'encrypt-failure':
-				$vault->sealString('value', 'serve.crypto-boundary');
+				$vault->sealString('value', 'fixture.crypto-boundary');
 				break;
 			case 'malformed-decrypted-payload':
 				$id=$ring->primaryId();
 				$payload=rtrim(strtr(base64_encode(str_repeat('x', 29)), '+/', '-_'), '=');
-				$vault->openString('dpsecret:v1:'.$id.':'.$payload, 'serve.crypto-boundary');
+				$vault->openString('dpsecret:v1:'.$id.':'.$payload, 'fixture.crypto-boundary');
 				break;
 			case 'derivation-failure':
-				$vault->fingerprintString('value', 'serve.crypto-boundary');
+				$vault->fingerprintString('value', 'fixture.crypto-boundary');
 				break;
 			case 'unavailable-crypto':
 				break;

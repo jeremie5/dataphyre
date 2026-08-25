@@ -134,18 +134,18 @@ final class SharedCacheProbeCommand {
 		return ['phase'=>$options['phase'],'challenge'=>$options['challenge']];
 	}
 
-	/** @param array<string,mixed> $runtime @return array{cloud_application:string,framework_application:string,environment:string,release_id:string} */
+	/** @param array<string,mixed> $runtime @return array{deployment_application:string,framework_application:string,environment:string,release_id:string} */
 	private static function identity(array $runtime): array {
 		$values=$runtime['environment_values'] ?? null;
 		$read=static fn(string $name): mixed=>is_array($values) ? ($values[$name] ?? null) : getenv($name);
 		$identity=[
-			'cloud_application'=>$read('DATAPHYRE_APPLICATION_ID'),
+			'deployment_application'=>$read('DATAPHYRE_APPLICATION_ID'),
 			'framework_application'=>$read('DATAPHYRE_FRAMEWORK_APPLICATION'),
 			'environment'=>$read('DATAPHYRE_ENVIRONMENT'),
 			'release_id'=>$read('DATAPHYRE_APPLICATION_RELEASE'),
 		];
-		if(!is_string($identity['cloud_application'])
-			|| !PublicApplicationIdentifier::valid($identity['cloud_application'])
+		if(!is_string($identity['deployment_application'])
+			|| !PublicApplicationIdentifier::valid($identity['deployment_application'])
 			|| !is_string($identity['framework_application'])
 			|| preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$identity['framework_application'])!==1
 			|| !is_string($identity['environment']) || !ApplicationEnvironmentIdentifier::valid($identity['environment'])

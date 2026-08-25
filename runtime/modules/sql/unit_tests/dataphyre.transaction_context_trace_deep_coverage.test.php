@@ -164,13 +164,13 @@ test('transaction context exposes cluster affinity and isolates bookkeeping betw
 test('transaction context defers cache invalidation until outer commit and discards rolled back work',static function(Context $t): void {
 	$state=dp_tx_scenario($t);
 	$t->isFalse(Transaction::hasActiveTransaction());
-	$t->isFalse(Transaction::deferCacheInvalidation('serve.orders'));
+	$t->isFalse(Transaction::deferCacheInvalidation('fixture.orders'));
 
 	$outer=new Transaction('primary');
 	$outer->begin();
 	$t->isTrue(Transaction::hasActiveTransaction());
-	$t->isTrue(Transaction::deferCacheInvalidation('serve.orders',['type'=>'shared_cache']));
-	$t->isTrue(Transaction::deferCacheInvalidation('serve.orders',['type'=>'shared_cache']));
+	$t->isTrue(Transaction::deferCacheInvalidation('fixture.orders',['type'=>'shared_cache']));
+	$t->isTrue(Transaction::deferCacheInvalidation('fixture.orders',['type'=>'shared_cache']));
 
 	$committedSavepoint=new Transaction('primary');
 	$committedSavepoint->begin();
@@ -180,21 +180,21 @@ test('transaction context defers cache invalidation until outer commit and disca
 
 	$rolledBackSavepoint=new Transaction('primary');
 	$rolledBackSavepoint->begin();
-	$t->isTrue(Transaction::deferCacheInvalidation('serve.customers'));
+	$t->isTrue(Transaction::deferCacheInvalidation('fixture.customers'));
 	$rolledBackSavepoint->rollback();
 	$t->same([],$state->get('invalidations'));
 
 	$outer->commit();
 	$t->isFalse(Transaction::hasActiveTransaction());
 	$t->same([
-		['serve.orders',['type'=>'shared_cache']],
+		['fixture.orders',['type'=>'shared_cache']],
 		[['orders.summary','tenant.42'],null],
 	],$state->get('invalidations'));
 
 	$state->put('invalidations',[]);
 	$rolledBack=new Transaction('primary');
 	$rolledBack->begin();
-	$t->isTrue(Transaction::deferCacheInvalidation('serve.orders'));
+	$t->isTrue(Transaction::deferCacheInvalidation('fixture.orders'));
 	$rolledBack->rollback();
 	$t->same([],$state->get('invalidations'));
 
@@ -202,13 +202,13 @@ test('transaction context defers cache invalidation until outer commit and disca
 	$scopedEnvironment->begin();
 	\Dataphyre\Database\DataEnvironment::run(
 		'sandbox',
-		static fn()=>Transaction::deferCacheInvalidation('serve.sandbox-orders'),
-		['cluster'=>'primary','cache_namespace'=>'serve-sandbox'],
+		static fn()=>Transaction::deferCacheInvalidation('fixture.sandbox-orders'),
+		['cluster'=>'primary','cache_namespace'=>'fixture-sandbox'],
 	);
 	$pending=$t->nonPublic($scopedEnvironment)->readProperty('pendingCacheInvalidations');
 	$captured=reset($pending);
 	$t->same([
-		'name'=>'sandbox','cluster'=>'primary','cache_namespace'=>'serve-sandbox',
+		'name'=>'sandbox','cluster'=>'primary','cache_namespace'=>'fixture-sandbox',
 	],$captured['environment'] ?? null);
 	$scopedEnvironment->rollback();
 
@@ -231,12 +231,12 @@ test('transaction context defers cache invalidation until outer commit and disca
 	$innerPrimary=new Transaction('primary');
 	$innerPrimary->begin();
 	$t->isTrue($innerPrimary->isNested());
-	$t->isTrue(Transaction::deferCacheInvalidation('serve.customers'));
+	$t->isTrue(Transaction::deferCacheInvalidation('fixture.customers'));
 	$innerPrimary->commit();
 	$outerOther->commit();
 	$t->same([],$state->get('invalidations'));
 	$outerPrimary->commit();
-	$t->same([['serve.customers',null]],$state->get('invalidations'));
+	$t->same([['fixture.customers',null]],$state->get('invalidations'));
 })->tag('sql','transaction','cache','invalidation','regression')->group('framework-coverage');
 
 test('transaction context trace deep coverage reports begin commit rollback and savepoint failures',static function(Context $t): void {

@@ -31,7 +31,7 @@ final class DataphyreApplicationRuntimeEnvironment
 
 	/** @return array{environment_id:string,release_id:string,environment_fingerprint:string,values:array<string,string>} */
 	public static function consume(
-		string $cloudApplication,
+		string $deploymentApplication,
 		string $frameworkApplication,
 		string $environment,
 		string $environmentId,
@@ -41,7 +41,7 @@ final class DataphyreApplicationRuntimeEnvironment
 		if(getmypid()!==1 || !function_exists('posix_geteuid') || posix_geteuid()!==0){
 			throw new RuntimeException('Application environment may only be consumed by root PID 1.');
 		}
-		if(!\Dataphyre\PublicApplicationIdentifier::valid($cloudApplication)
+		if(!\Dataphyre\PublicApplicationIdentifier::valid($deploymentApplication)
 			|| preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$frameworkApplication)!==1
 			|| !\Dataphyre\ApplicationEnvironmentIdentifier::valid($environment)
 			|| !\Dataphyre\PublicApplicationIdentifier::valid($environmentId)){
@@ -67,14 +67,14 @@ final class DataphyreApplicationRuntimeEnvironment
 			@fclose($handle);
 		}
 		return self::decodeEnvelope(
-			$bytes,$cloudApplication,$frameworkApplication,$environment,$environmentId,$releaseId,
+			$bytes,$deploymentApplication,$frameworkApplication,$environment,$environmentId,$releaseId,
 		);
 	}
 
 	/** @param array<string,string> $values @return array<string,string> */
 	public static function childEnvironment(
 		array $values,
-		string $cloudApplication,
+		string $deploymentApplication,
 		string $frameworkApplication,
 		string $environment,
 		string $environmentId,
@@ -82,7 +82,7 @@ final class DataphyreApplicationRuntimeEnvironment
 		?string $applicationDataRoot=null,
 	): array
 	{
-		if(!\Dataphyre\PublicApplicationIdentifier::valid($cloudApplication)){
+		if(!\Dataphyre\PublicApplicationIdentifier::valid($deploymentApplication)){
 			throw new RuntimeException('Public application identifier is invalid.');
 		}
 		if(!\Dataphyre\ApplicationEnvironmentIdentifier::valid($environment)){
@@ -92,7 +92,7 @@ final class DataphyreApplicationRuntimeEnvironment
 			throw new RuntimeException('Application environment instance identifier is invalid.');
 		}
 		$result=$values;
-		$result['DATAPHYRE_APPLICATION_ID']=$cloudApplication;
+		$result['DATAPHYRE_APPLICATION_ID']=$deploymentApplication;
 		$result['DATAPHYRE_FRAMEWORK_APPLICATION']=$frameworkApplication;
 		$result['DATAPHYRE_ENVIRONMENT']=$environment;
 		$result['DATAPHYRE_APPLICATION_ENVIRONMENT']=$environment;
@@ -294,18 +294,18 @@ final class DataphyreApplicationRuntimeEnvironment
 
 	/** @return array{environment_id:string,release_id:string,environment_fingerprint:string,values:array<string,string>} */
 	private static function decodeEnvelope(
-		string $bytes,string $cloudApplication,string $frameworkApplication,string $environment,
+		string $bytes,string $deploymentApplication,string $frameworkApplication,string $environment,
 		string $environmentId,string $releaseId,
 	): array {
 		try{$decoded=json_decode($bytes,true,8,JSON_THROW_ON_ERROR);}
 		catch(Throwable){throw new RuntimeException('Application environment channel JSON is invalid.');}
 		if(!is_array($decoded) || array_keys($decoded)!==[
-			'contract','cloud_application','framework_application','environment','environment_id','release_id',
+			'contract','deployment_application','framework_application','environment','environment_id','release_id',
 			'environment_fingerprint','values',
 		]
-			|| ($decoded['contract'] ?? null)!=='dataphyre.application_environment.v2'
-			|| !is_string($decoded['cloud_application'] ?? null)
-			|| !hash_equals($cloudApplication,$decoded['cloud_application'])
+			|| ($decoded['contract'] ?? null)!=='dataphyre.application_environment.v3'
+			|| !is_string($decoded['deployment_application'] ?? null)
+			|| !hash_equals($deploymentApplication,$decoded['deployment_application'])
 			|| !is_string($decoded['framework_application'] ?? null)
 			|| !hash_equals($frameworkApplication,$decoded['framework_application'])
 			|| !is_string($decoded['environment'] ?? null) || !hash_equals($environment,$decoded['environment'])
@@ -330,7 +330,7 @@ final class DataphyreApplicationRuntimeEnvironment
 		}
 		ksort($result,SORT_STRING);
 		$canonical=self::canonicalEnvelope(
-			$cloudApplication,$frameworkApplication,$environment,$environmentId,$releaseId,
+			$deploymentApplication,$frameworkApplication,$environment,$environmentId,$releaseId,
 			$decoded['environment_fingerprint'],$result,
 		);
 		if(!hash_equals($canonical,$bytes)){
@@ -347,7 +347,7 @@ final class DataphyreApplicationRuntimeEnvironment
 
 	/** @param array<string,string> $values */
 	private static function canonicalEnvelope(
-		string $cloudApplication,
+		string $deploymentApplication,
 		string $frameworkApplication,
 		string $environment,
 		string $environmentId,
@@ -357,8 +357,8 @@ final class DataphyreApplicationRuntimeEnvironment
 	): string {
 		ksort($values,SORT_STRING);
 		return json_encode([
-			'contract'=>'dataphyre.application_environment.v2',
-			'cloud_application'=>$cloudApplication,
+			'contract'=>'dataphyre.application_environment.v3',
+			'deployment_application'=>$deploymentApplication,
 			'framework_application'=>$frameworkApplication,
 			'environment'=>$environment,
 			'environment_id'=>$environmentId,

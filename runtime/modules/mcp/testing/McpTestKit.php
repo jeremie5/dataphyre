@@ -1012,7 +1012,7 @@ final class McpClientConfigBuilder {
 	public function useModuleBootstrap(): self {return $this->args(self::MODULE_BOOTSTRAP);}
 	public function allowUnsafe(): self {$this->config['mcpServers']['dataphyre']['args'][]='--allow-unsafe';return $this;}
 	public function productLocal(?string $path=null): self {
-		$this->config['mcpServers']['dataphyre']['private_path']=$path ?? ('applications/'.'sho'.'piro/backend');
+		$this->config['mcpServers']['dataphyre']['private_path']=$path ?? 'applications/example/backend';
 		return $this;
 	}
 	public function withoutServer(): self {$this->config['mcpServers']=[];return $this;}
@@ -1108,6 +1108,18 @@ final class McpClientSetupBoundaryHarness {
 			->cwd('')
 			->productLocal();
 		$nonPhp=McpClientConfigBuilder::valid()->command('node');
+		$applicationLocal=[];
+		foreach([
+			'underscore'=>'applications/_internal/backend',
+			'hidden'=>'applications/.hidden/backend',
+			'hyphen'=>'applications/-fixture/backend',
+			'windows'=>'C:\\workspace\\applications\\_internal\\backend',
+		] as $name=>$path){
+			$applicationLocal[$name]=self::auditEvidence($this->kernel->invoke(
+				'mcp_client_config_audit',
+				['config'=>McpClientConfigBuilder::valid()->productLocal($path)->toArray()],
+			));
+		}
 		return [
 			'valid'=>self::auditEvidence($this->kernel->invoke('mcp_client_config_audit',['config_json'=>McpClientConfigBuilder::valid()->toJson()])),
 			'windows_php'=>self::auditEvidence($this->kernel->invoke('mcp_client_config_audit',['config'=>McpClientConfigBuilder::valid()->command('C:\\php\\php.exe')->toArray()])),
@@ -1116,6 +1128,7 @@ final class McpClientSetupBoundaryHarness {
 			'missing_server'=>self::auditEvidence($this->kernel->invoke('mcp_client_config_audit',['config'=>McpClientConfigBuilder::valid()->withoutServer()->toArray()])),
 			'broken'=>self::auditEvidence($this->kernel->invoke('mcp_client_config_audit',['config'=>$broken->toArray()])),
 			'non_php'=>self::auditEvidence($this->kernel->invoke('mcp_client_config_audit',['config'=>$nonPhp->toArray()])),
+			'application_local_variants'=>$applicationLocal,
 		];
 	}
 
@@ -1475,10 +1488,10 @@ final class McpInspectionBoundaryHarness {
 		$unsafeMissingKeys=$base['checks'];
 		$unsafeMissingKeys[3]['evidence']['missing_environment_keys']=['ZZZ_SECRET','AAA_SECRET'];
 		$valueBearingMissingKey=$base['checks'];
-		$valueBearingMissingKey[3]['evidence']['missing_environment_keys']=['SERVE_SIGNING_KEY=SECRET_VALUE_MUST_NOT_LEAK'];
+		$valueBearingMissingKey[3]['evidence']['missing_environment_keys']=['FIXTURE_APP_SIGNING_KEY=SECRET_VALUE_MUST_NOT_LEAK'];
 		$tooManyMissingKeys=$base['checks'];
 		$tooManyMissingKeys[3]['evidence']['missing_environment_keys']=array_map(
-			static fn(int $index): string=>sprintf('SERVE_KEY_%02d',$index),
+			static fn(int $index): string=>sprintf('FIXTURE_APP_KEY_%02d',$index),
 			range(0,64)
 		);
 		$unhealthyPassed=$base['checks'];
@@ -2050,7 +2063,7 @@ final class McpInspectionBoundaryHarness {
 						'attempts'=>3,
 						'http_status'=>503,
 						'response_contract_valid'=>true,
-						'missing_environment_keys'=>['SERVE_SIGNING_KEY','SERVE_STAFF_SESSION_SECRET'],
+						'missing_environment_keys'=>['FIXTURE_APP_SIGNING_KEY','FIXTURE_APP_STAFF_SESSION_SECRET'],
 					],
 				],
 			],
@@ -2374,7 +2387,7 @@ final class McpInspectionBoundaryHarness {
 				],
 			],
 			'failures'=>[],
-			'claim_boundary'=>'This verdict covers local configuration bootstrap, the native PostgreSQL migration dry-run or isolated SQL-only SQLite apply when declared, application startup against the same database state, GET /health, and deterministic realtime callback, scheduler definition, and registered table-definition inventories. A release platform must run this same command inside the exact candidate image and separately prove the ordered schema stages (declared application migrations first, then fixed registered-table materialization), the three fixed process identities, scheduler callback execution, a framework listener roundtrip, execution and strict invalid-Origin rejection by every registered application authorization callback, WebSocket ping/pong and close, signal lifecycle, persistent application-data binding, and source, image, environment, database, and traffic identity.',
+			'claim_boundary'=>\Dataphyre\Release\ApplicationReleasePreflightEvidence::claimBoundary(),
 		], $overrides);
 	}
 

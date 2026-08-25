@@ -47,6 +47,11 @@ generated caches and logs are disposable and ignored by Git.
 
 ## Dataphyre Cloud parity
 
+Dataphyre is the public PHP application framework. Dataphyre Cloud is a
+separate hosting service that consumes the framework's generic deployment
+primitives; Cloud control-plane policy and customer-specific release behavior
+do not belong in this repository.
+
 The same repository must deploy without changing application semantics. Local
 Compose supplies the release-contract inputs—environment, secrets, services,
 health checks, migrations, and immutable dependency revisions—that Dataphyre

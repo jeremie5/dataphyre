@@ -98,6 +98,10 @@ test('each client setup boundary reads as a portable setup contract',static func
 		$t->isTrue($contract['non_php']['passed']);
 		$t->same(['non_php_command'],$contract['non_php']['warning_ids']);
 		$t->containsAll(['server_arg_present','unsafe_not_enabled','cwd_present','no_product_local_paths'],$contract['non_php']['passes']);
+		foreach($contract['application_local_variants'] as $variant){
+			$t->isFalse($variant['passed']);
+			$t->same(['product_local_path'],$variant['issue_ids']);
+		}
 		return;
 	}
 

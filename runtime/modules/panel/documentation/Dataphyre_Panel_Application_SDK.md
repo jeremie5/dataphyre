@@ -18,7 +18,7 @@ only for routes explicitly supplied by the host:
 use Dataphyre\Panel\PanelDeveloperToolkit;
 
 $contract=PanelDeveloperToolkit::sdkContract(
-    'shopiro-operations',
+    'example-operations',
     '1.0.0',
     [
         'data_surface'=>'/api/panel/data-surfaces/{surface}',

@@ -39,7 +39,7 @@ function dp_panel_registry_operator_authority(): array {
 	$secret=sodium_crypto_sign_secretkey($keypair);
 	$public=sodium_crypto_sign_publickey($keypair);
 	$keyId='registry_release';
-	$publisher='shopiro';
+	$publisher='example_publisher';
 	$verifier=PanelPackageSignatureVerifier::make([
 		$keyId=>['algorithm'=>'ed25519','public_key'=>base64_encode($public)],
 	]);
@@ -74,7 +74,7 @@ function dp_panel_registry_operator_template(array $authority, string $id, strin
 
 function dp_panel_registry_operator_publisher(array $authority, int $now): PanelPackageRegistryPublisher {
 	return PanelPackageRegistryPublisher::make(
-		'shopiro_packages',$authority['publisher'],$authority['keyId'],'ed25519',
+		'example_registry',$authority['publisher'],$authority['keyId'],'ed25519',
 		static fn(string $payload): string=>base64_encode(sodium_crypto_sign_detached($payload, $authority['secret'])),
 		$authority['verifier'],$authority['policy'],static fn(): int=>$now,
 		['ttl_seconds'=>3600,'max_packages'=>100,'max_bundle_bytes'=>1048576]
@@ -94,7 +94,7 @@ test('package catalog query inputs normalize booleans and clamp only canonical l
 test('registry publisher and filesystem operator close the signed publish discover resolve acquire loop', static function(Context $t): void {
 	$authority=dp_panel_registry_operator_authority();$now=1800000000;
 	$root=$t->tempDirectory('panel-package-registry-operator');
-	$store=PanelFilesystemPackageRegistry::make($root, 'shopiro_packages', $authority['publisher']);
+	$store=PanelFilesystemPackageRegistry::make($root, 'example_registry', $authority['publisher']);
 	$publisher=dp_panel_registry_operator_publisher($authority, $now);
 	$orders100=dp_panel_registry_operator_template($authority, 'orders_pack', '1.0.0', 'orders-v1-marker');
 	$orders110=dp_panel_registry_operator_template($authority, 'orders_pack', '1.1.0', 'orders-v11-marker');
@@ -104,7 +104,7 @@ test('registry publisher and filesystem operator close the signed publish discov
 		['template'=>$orders110,'listing'=>['tags'=>['commerce','recommended'],'categories'=>['operations']]],
 		['template'=>$risk,'yanked'=>true,'listing'=>['tags'=>['risk'],'categories'=>['governance']]],
 	], 1, $store->locatorFactory());
-	$t->same('shopiro_packages', $publication->registry());
+	$t->same('example_registry', $publication->registry());
 	$t->same(1, $publication->sequence());
 	$t->same(3, $publication->toArray()['package_count']);
 	$t->notContains('<?php /* orders-v11-marker */', json_encode($publication, JSON_THROW_ON_ERROR));
@@ -157,7 +157,7 @@ test('registry publisher and filesystem operator close the signed publish discov
 test('registry operator rejects rollback equivocation foreign locators malformed listings and tampered objects', static function(Context $t): void {
 	$authority=dp_panel_registry_operator_authority();$now=1800000000;
 	$root=$t->tempDirectory('panel-package-registry-adversarial');
-	$store=PanelFilesystemPackageRegistry::make($root, 'shopiro_packages', $authority['publisher']);
+	$store=PanelFilesystemPackageRegistry::make($root, 'example_registry', $authority['publisher']);
 	$publisher=dp_panel_registry_operator_publisher($authority, $now);
 	$template=dp_panel_registry_operator_template($authority, 'secure_pack', '1.0.0', 'secure-marker');
 	$first=$publisher->publish([['template'=>$template,'listing'=>['tags'=>['security']]]], 4, $store->locatorFactory());
@@ -180,17 +180,17 @@ test('registry operator rejects rollback equivocation foreign locators malformed
 	$unsafeEntry=$second->index()['packages'][0];
 	$unsafeEntry['artifact']['body']='artifact-body-must-never-enter-catalog';
 	$t->throws(
-		static fn()=>new PanelPackageRegistryCatalog('shopiro_packages',5,$second->digest(),[$unsafeEntry]),
+		static fn()=>new PanelPackageRegistryCatalog('example_registry',5,$second->digest(),[$unsafeEntry]),
 		InvalidArgumentException::class
 	);
 	unset($unsafeEntry['artifact']['body']);
 	$unsafeEntry['listing']['body']='listing-body-must-never-enter-catalog';
 	$unsafeEntry['requirements']['body']='requirement-body-must-never-enter-catalog';
-	$safeCatalog=new PanelPackageRegistryCatalog('shopiro_packages',5,$second->digest(),[$unsafeEntry]);
+	$safeCatalog=new PanelPackageRegistryCatalog('example_registry',5,$second->digest(),[$unsafeEntry]);
 	$t->notContains('must-never-enter-catalog',json_encode($safeCatalog->search(),JSON_THROW_ON_ERROR));
 	$unsafeEntry['yanked']='true';
 	$t->throws(
-		static fn()=>new PanelPackageRegistryCatalog('shopiro_packages',5,$second->digest(),[$unsafeEntry]),
+		static fn()=>new PanelPackageRegistryCatalog('example_registry',5,$second->digest(),[$unsafeEntry]),
 		InvalidArgumentException::class
 	);
 
@@ -214,7 +214,7 @@ test('registry operator rejects rollback equivocation foreign locators malformed
 	$t->isTrue(file_put_contents($object, 'tampered')!==false);
 	$response=$store->fetch($artifact['locator'], ['sha256'=>$artifact['sha256'],'content_type'=>PanelPackageRegistryIndex::BUNDLE_CONTENT_TYPE]);
 	$t->isFalse($response['ok']);$t->same(503, $response['status']);
-	$t->isFalse($store->fetch('panel-registry://shopiro_packages/objects/sha256/'.str_repeat('a', 64))['ok']);
+	$t->isFalse($store->fetch('panel-registry://example_registry/objects/sha256/'.str_repeat('a', 64))['ok']);
 	$t->isFalse($store->fetch($store->indexLocator(), ['content_type'=>'text/plain'])['ok']);
 })->tag('panel','packages','registry','security','adversarial','scorched-earth')->isolation('case')->maxMillis(8000);
 
@@ -294,7 +294,7 @@ test('registry distribution is exposed through Panel surfaces and the production
 
 test('registry publication value rejects every malformed byte and descriptor boundary', static function(Context $t): void {
 	$authority=dp_panel_registry_operator_authority();$now=1800000000;
-	$store=PanelFilesystemPackageRegistry::make($t->tempDirectory('panel-registry-publication-value'),'shopiro_packages',$authority['publisher']);
+	$store=PanelFilesystemPackageRegistry::make($t->tempDirectory('panel-registry-publication-value'),'example_registry',$authority['publisher']);
 	$template=dp_panel_registry_operator_template($authority,'publication_pack','1.0.0','publication-marker');
 	$publication=dp_panel_registry_operator_publisher($authority,$now)->publish([$template],1,$store->locatorFactory());
 	$index=$publication->index();$body=$publication->body();$artifacts=$publication->artifacts();$digest=array_key_first($artifacts);
@@ -309,7 +309,7 @@ test('registry publication value rejects every malformed byte and descriptor bou
 	$badArtifact=$artifacts;$badArtifact[$digest]['bytes']++;
 	$t->throws(static fn()=>new PanelPackageRegistryPublication($index,$body,$badArtifact),InvalidArgumentException::class);
 	$t->throws(static fn()=>new PanelPackageRegistryPublication($index,$body,[]),InvalidArgumentException::class);
-	$badPackage=$index;$badPackage['packages'][0]['artifact']['locator']='panel-registry://shopiro_packages/objects/sha256/'.str_repeat('f',64);
+	$badPackage=$index;$badPackage['packages'][0]['artifact']['locator']='panel-registry://example_registry/objects/sha256/'.str_repeat('f',64);
 	$badPackageBody=$canonical->invoke('canonicalJson',$badPackage);
 	$t->throws(static fn()=>new PanelPackageRegistryPublication($badPackage,$badPackageBody,$artifacts),InvalidArgumentException::class);
 
@@ -325,7 +325,7 @@ test('registry publisher fails closed across signer package locator artifact and
 	$template=dp_panel_registry_operator_template($authority,'publisher_pack','1.0.0','publisher-marker');
 	$locator=static fn(array $artifact):string=>'https://packages.example.test/'.$artifact['sha256'];
 	$signer=static fn(string $payload):string=>base64_encode(sodium_crypto_sign_detached($payload,$authority['secret']));
-	$t->throws(static fn()=>PanelPackageRegistryPublisher::make('shopiro_packages',$authority['publisher'],$authority['keyId'],'unsupported',$signer,$authority['verifier'],$authority['policy']),InvalidArgumentException::class);
+	$t->throws(static fn()=>PanelPackageRegistryPublisher::make('example_registry',$authority['publisher'],$authority['keyId'],'unsupported',$signer,$authority['verifier'],$authority['policy']),InvalidArgumentException::class);
 	$publisher=dp_panel_registry_operator_publisher($authority,$now);
 	$t->throws(static fn()=>$publisher->publish([],1,$locator),LengthException::class);
 	$t->throws(static fn()=>$publisher->publish([$template],1,$locator,['unknown'=>true]),InvalidArgumentException::class);
@@ -338,7 +338,7 @@ test('registry publisher fails closed across signer package locator artifact and
 	]));
 	$t->throws(static fn()=>$publisher->publish([$unsigned],1,$locator),LogicException::class);
 	$wrongAuthority=PanelPackageRegistryPublisher::make(
-		'shopiro_packages',$authority['publisher'],'another_registry_key','ed25519',$signer,
+		'example_registry',$authority['publisher'],'another_registry_key','ed25519',$signer,
 		$authority['verifier'],$authority['policy'],static fn():int=>$now
 	);
 	$t->throws(static fn()=>$wrongAuthority->publish([$template],1,$locator),LogicException::class);
@@ -346,13 +346,13 @@ test('registry publisher fails closed across signer package locator artifact and
 	$t->throws(static fn()=>$publisher->publish([$template],1,static fn():string=>''),InvalidArgumentException::class);
 
 	$throwingSigner=PanelPackageRegistryPublisher::make(
-		'shopiro_packages',$authority['publisher'],$authority['keyId'],'ed25519',
+		'example_registry',$authority['publisher'],$authority['keyId'],'ed25519',
 		static function():string{throw new RuntimeException('signer unavailable');},
 		$authority['verifier'],$authority['policy'],static fn():int=>$now
 	);
 	$t->throws(static fn()=>$throwingSigner->publish([$template],1,$locator),RuntimeException::class);
 	$emptySigner=PanelPackageRegistryPublisher::make(
-		'shopiro_packages',$authority['publisher'],$authority['keyId'],'ed25519',static fn():string=>'',
+		'example_registry',$authority['publisher'],$authority['keyId'],'ed25519',static fn():string=>'',
 		$authority['verifier'],$authority['policy'],static fn():int=>$now
 	);
 	$t->throws(static fn()=>$emptySigner->publish([$template],1,$locator),UnexpectedValueException::class);
@@ -378,13 +378,13 @@ test('registry publisher fails closed across signer package locator artifact and
 
 test('registry catalog validates construction metadata factories cursors and safe serialization', static function(Context $t): void {
 	$authority=dp_panel_registry_operator_authority();$now=1800000000;
-	$store=PanelFilesystemPackageRegistry::make($t->tempDirectory('panel-registry-catalog-contracts'),'shopiro_packages',$authority['publisher']);
+	$store=PanelFilesystemPackageRegistry::make($t->tempDirectory('panel-registry-catalog-contracts'),'example_registry',$authority['publisher']);
 	$template=dp_panel_registry_operator_template($authority,'catalog_pack','1.0.0','catalog-marker');
 	$publication=dp_panel_registry_operator_publisher($authority,$now)->publish([$template],1,$store->locatorFactory());
 	$entry=$publication->index()['packages'][0];$digest=$publication->digest();
 
 	$t->throws(static fn()=>new PanelPackageRegistryCatalog('Bad Registry',1,$digest,[$entry]),InvalidArgumentException::class);
-	$t->throws(static fn()=>new PanelPackageRegistryCatalog('shopiro_packages',1,$digest,[$entry,$entry]),InvalidArgumentException::class);
+	$t->throws(static fn()=>new PanelPackageRegistryCatalog('example_registry',1,$digest,[$entry,$entry]),InvalidArgumentException::class);
 	$fromPublication=PanelPackageRegistryCatalog::fromPublication($publication);
 	$t->same('catalog_pack',$fromPublication->latest('catalog_pack')['id']);
 	$verified=PanelPackageRegistryIndex::make($publication->body(),$authority['verifier'],$authority['policy'],['now'=>$now]);
@@ -396,26 +396,26 @@ test('registry catalog validates construction metadata factories cursors and saf
 	$t->throws(static fn()=>$fromPublication->search('',['unknown_filter'=>'x']),InvalidArgumentException::class);
 
 	$invalid=$entry;$invalid['dependencies']=[['invalid']];
-	$t->throws(static fn()=>new PanelPackageRegistryCatalog('shopiro_packages',1,$digest,[$invalid]),InvalidArgumentException::class);
+	$t->throws(static fn()=>new PanelPackageRegistryCatalog('example_registry',1,$digest,[$invalid]),InvalidArgumentException::class);
 	$invalid=$entry;$invalid['dependencies']=['Bad Name'=>'*'];
-	$t->throws(static fn()=>new PanelPackageRegistryCatalog('shopiro_packages',1,$digest,[$invalid]),InvalidArgumentException::class);
+	$t->throws(static fn()=>new PanelPackageRegistryCatalog('example_registry',1,$digest,[$invalid]),InvalidArgumentException::class);
 	$invalid=$entry;$invalid['dependencies']=['base_pack'=>''];
-	$t->throws(static fn()=>new PanelPackageRegistryCatalog('shopiro_packages',1,$digest,[$invalid]),InvalidArgumentException::class);
+	$t->throws(static fn()=>new PanelPackageRegistryCatalog('example_registry',1,$digest,[$invalid]),InvalidArgumentException::class);
 	$valid=$entry;$valid['dependencies']=['base_pack'=>'^1.0.0'];$valid['requirements']=['php'=>'>=8.4','panel'=>null,'modules'=>['core'=>'*'],'themes'=>[]];
-	$metadataCatalog=new PanelPackageRegistryCatalog('shopiro_packages',1,$digest,[$valid]);
+	$metadataCatalog=new PanelPackageRegistryCatalog('example_registry',1,$digest,[$valid]);
 	$t->same(['base_pack'=>'^1.0.0'],$metadataCatalog->latest('catalog_pack')['dependencies']);
 	$t->same('>=8.4',$metadataCatalog->latest('catalog_pack')['requirements']['php']);
 	$invalid=$entry;$invalid['requirements']=['not-a-map'];
-	$t->throws(static fn()=>new PanelPackageRegistryCatalog('shopiro_packages',1,$digest,[$invalid]),InvalidArgumentException::class);
+	$t->throws(static fn()=>new PanelPackageRegistryCatalog('example_registry',1,$digest,[$invalid]),InvalidArgumentException::class);
 	$invalid=$entry;$invalid['requirements']=['php'=>[]];
-	$t->throws(static fn()=>new PanelPackageRegistryCatalog('shopiro_packages',1,$digest,[$invalid]),InvalidArgumentException::class);
+	$t->throws(static fn()=>new PanelPackageRegistryCatalog('example_registry',1,$digest,[$invalid]),InvalidArgumentException::class);
 	$invalid=$entry;$invalid['listing']['label']=[];
-	$t->throws(static fn()=>new PanelPackageRegistryCatalog('shopiro_packages',1,$digest,[$invalid]),InvalidArgumentException::class);
+	$t->throws(static fn()=>new PanelPackageRegistryCatalog('example_registry',1,$digest,[$invalid]),InvalidArgumentException::class);
 	$invalid=$entry;$invalid['listing']['links']=[['label'=>'Unsafe','target'=>'http://example.test']];
-	$t->throws(static fn()=>new PanelPackageRegistryCatalog('shopiro_packages',1,$digest,[$invalid]),InvalidArgumentException::class);
+	$t->throws(static fn()=>new PanelPackageRegistryCatalog('example_registry',1,$digest,[$invalid]),InvalidArgumentException::class);
 
 	$second=$entry;$second['id']='second_pack';$second['listing']['label']='Second pack';
-	$two=new PanelPackageRegistryCatalog('shopiro_packages',1,$digest,[$entry,$second]);
+	$two=new PanelPackageRegistryCatalog('example_registry',1,$digest,[$entry,$second]);
 	$firstPage=$two->search('',[],null,1);
 	$t->notNull($firstPage['next_cursor']);
 	$t->throws(static fn()=>$two->search('different-query',[],$firstPage['next_cursor'],1),LogicException::class);
@@ -426,31 +426,31 @@ test('registry catalog validates construction metadata factories cursors and saf
 
 test('filesystem registry fails closed across unsafe roots objects locks and persisted states', static function(Context $t): void {
 	$authority=dp_panel_registry_operator_authority();$now=1800000000;
-	$t->throws(static fn()=>new PanelFilesystemPackageRegistry('','shopiro_packages',$authority['publisher']),InvalidArgumentException::class);
+	$t->throws(static fn()=>new PanelFilesystemPackageRegistry('','example_registry',$authority['publisher']),InvalidArgumentException::class);
 	$blockedParent=$t->tempDirectory('panel-registry-blocked-parent').'/file';file_put_contents($blockedParent,'not-a-directory');
-	$t->throws(static fn()=>new PanelFilesystemPackageRegistry($blockedParent.'/registry','shopiro_packages',$authority['publisher']),RuntimeException::class);
+	$t->throws(static fn()=>new PanelFilesystemPackageRegistry($blockedParent.'/registry','example_registry',$authority['publisher']),RuntimeException::class);
 	$filesystem=$t->state('panel.package-registry.filesystem');
 	$unwritable=$t->tempDirectory('panel-registry-unwritable');
 	try{
 		$filesystem->put('deny_writable_path',$unwritable);
-		$t->throws(static fn()=>new PanelFilesystemPackageRegistry($unwritable,'shopiro_packages',$authority['publisher']),RuntimeException::class);
+		$t->throws(static fn()=>new PanelFilesystemPackageRegistry($unwritable,'example_registry',$authority['publisher']),RuntimeException::class);
 	}
 	finally{$filesystem->forget('deny_writable_path');}
 	$unsafeRoot=$t->tempDirectory('panel-registry-unsafe-subdir');$linkTarget=$t->tempDirectory('panel-registry-link-target');symlink($linkTarget,$unsafeRoot.'/objects');
-	$t->throws(static fn()=>new PanelFilesystemPackageRegistry($unsafeRoot,'shopiro_packages',$authority['publisher']),RuntimeException::class);
+	$t->throws(static fn()=>new PanelFilesystemPackageRegistry($unsafeRoot,'example_registry',$authority['publisher']),RuntimeException::class);
 
 	$template=dp_panel_registry_operator_template($authority,'filesystem_pack','1.0.0','filesystem-marker');
 	$foreignStore=PanelFilesystemPackageRegistry::make($t->tempDirectory('panel-registry-foreign'),'foreign_registry',$authority['publisher']);
-	$foreignPublication=dp_panel_registry_operator_publisher($authority,$now)->publish([$template],1,static fn(array $artifact):string=>'panel-registry://shopiro_packages/objects/sha256/'.$artifact['sha256']);
+	$foreignPublication=dp_panel_registry_operator_publisher($authority,$now)->publish([$template],1,static fn(array $artifact):string=>'panel-registry://example_registry/objects/sha256/'.$artifact['sha256']);
 	$t->throws(static fn()=>$foreignStore->commit($foreignPublication),LogicException::class);
 
-	$bodyRoot=$t->tempDirectory('panel-registry-index-body');$bodyStore=PanelFilesystemPackageRegistry::make($bodyRoot,'shopiro_packages',$authority['publisher']);
+	$bodyRoot=$t->tempDirectory('panel-registry-index-body');$bodyStore=PanelFilesystemPackageRegistry::make($bodyRoot,'example_registry',$authority['publisher']);
 	$t->same(null,$bodyStore->indexBody());
 	$bodyPublication=dp_panel_registry_operator_publisher($authority,$now)->publish([$template],1,$bodyStore->locatorFactory());
 	$bodyStore->commit($bodyPublication);
 	$t->same($bodyPublication->body(),$bodyStore->indexBody());
 
-	$identityRoot=$t->tempDirectory('panel-registry-root-identity');$identityStore=PanelFilesystemPackageRegistry::make($identityRoot,'shopiro_packages',$authority['publisher']);
+	$identityRoot=$t->tempDirectory('panel-registry-root-identity');$identityStore=PanelFilesystemPackageRegistry::make($identityRoot,'example_registry',$authority['publisher']);
 	$identityPublication=dp_panel_registry_operator_publisher($authority,$now)->publish([$template],1,$identityStore->locatorFactory());
 	$moved=$identityRoot.'-moved';rename($identityRoot,$moved);
 	try{
@@ -459,26 +459,26 @@ test('filesystem registry fails closed across unsafe roots objects locks and per
 	}
 	finally{rename($moved,$identityRoot);}
 
-	$directoryRoot=$t->tempDirectory('panel-registry-object-directory');$directoryStore=PanelFilesystemPackageRegistry::make($directoryRoot,'shopiro_packages',$authority['publisher']);
+	$directoryRoot=$t->tempDirectory('panel-registry-object-directory');$directoryStore=PanelFilesystemPackageRegistry::make($directoryRoot,'example_registry',$authority['publisher']);
 	$directoryPublication=dp_panel_registry_operator_publisher($authority,$now)->publish([$template],1,$directoryStore->locatorFactory());
 	$artifact=array_values($directoryPublication->artifacts())[0];$prefix=substr($artifact['sha256'],0,2);$outside=$t->tempDirectory('panel-registry-object-outside');
 	symlink($outside,$directoryRoot.'/objects/sha256/'.$prefix);
 	$t->throws(static fn()=>$directoryStore->commit($directoryPublication),RuntimeException::class);
 
-	$renameRoot=$t->tempDirectory('panel-registry-object-rename');$renameStore=PanelFilesystemPackageRegistry::make($renameRoot,'shopiro_packages',$authority['publisher']);
+	$renameRoot=$t->tempDirectory('panel-registry-object-rename');$renameStore=PanelFilesystemPackageRegistry::make($renameRoot,'example_registry',$authority['publisher']);
 	$renamePublication=dp_panel_registry_operator_publisher($authority,$now)->publish([$template],1,$renameStore->locatorFactory());
 	$artifact=array_values($renamePublication->artifacts())[0];$prefix=substr($artifact['sha256'],0,2);$objectDirectory=$renameRoot.'/objects/sha256/'.$prefix;mkdir($objectDirectory);
 	mkdir($objectDirectory.'/'.$artifact['sha256'].'.object');
 	$t->throws(static fn()=>$renameStore->commit($renamePublication),RuntimeException::class);
 
-	$lockRoot=$t->tempDirectory('panel-registry-object-lock');$lockStore=PanelFilesystemPackageRegistry::make($lockRoot,'shopiro_packages',$authority['publisher']);
+	$lockRoot=$t->tempDirectory('panel-registry-object-lock');$lockStore=PanelFilesystemPackageRegistry::make($lockRoot,'example_registry',$authority['publisher']);
 	$lockPublication=dp_panel_registry_operator_publisher($authority,$now)->publish([$template],1,$lockStore->locatorFactory());
 	mkdir($lockRoot.'/.objects.lock');
 	$t->throws(static fn()=>$lockStore->commit($lockPublication),RuntimeException::class);
 
-	$stateStore=PanelFilesystemPackageRegistry::make($t->tempDirectory('panel-registry-state-validation'),'shopiro_packages',$authority['publisher']);
+	$stateStore=PanelFilesystemPackageRegistry::make($t->tempDirectory('panel-registry-state-validation'),'example_registry',$authority['publisher']);
 	$statePrivate=$t->nonPublic($stateStore);
 	$t->throws(static fn()=>$statePrivate->invoke('assertState',['schema'=>'bad']),UnexpectedValueException::class);
-	$invalidPublished=['schema'=>'panel_filesystem_package_registry','version'=>1,'registry'=>'shopiro_packages','publisher'=>$authority['publisher'],'sequence'=>1,'publication_count'=>1,'index'=>null,'packages'=>[]];
+	$invalidPublished=['schema'=>'panel_filesystem_package_registry','version'=>1,'registry'=>'example_registry','publisher'=>$authority['publisher'],'sequence'=>1,'publication_count'=>1,'index'=>null,'packages'=>[]];
 	$t->throws(static fn()=>$statePrivate->invoke('assertState',$invalidPublished),UnexpectedValueException::class);
 })->tag('panel','packages','registry','filesystem','coverage','adversarial')->isolation('case')->maxMillis(12000);

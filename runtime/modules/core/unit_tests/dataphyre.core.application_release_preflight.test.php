@@ -836,7 +836,7 @@ test('application release preflight preserves only bounded safe missing environm
 			'attempts'=>3,
 			'http_status'=>503,
 			'response_contract_valid'=>true,
-			'missing_environment_keys'=>['SERVE_STAFF_SESSION_SECRET', 'SERVE_SIGNING_KEY'],
+			'missing_environment_keys'=>['FIXTURE_APP_STAFF_SESSION_SECRET', 'FIXTURE_APP_SIGNING_KEY'],
 			'response_body'=>'SECRET_VALUE_MUST_NOT_LEAK',
 		],
 	]);
@@ -844,8 +844,8 @@ test('application release preflight preserves only bounded safe missing environm
 	$t->same(false, $run['payload']['likely_to_deploy']);
 	$t->same('failed', $run['payload']['checks'][3]['status']);
 	$t->same([
-		'SERVE_SIGNING_KEY',
-		'SERVE_STAFF_SESSION_SECRET',
+		'FIXTURE_APP_SIGNING_KEY',
+		'FIXTURE_APP_STAFF_SESSION_SECRET',
 	], $run['payload']['checks'][3]['evidence']['missing_environment_keys']);
 	$t->same(true, $run['payload']['checks'][3]['evidence']['response_contract_valid']);
 	$t->isFalse(str_contains($run['output'], 'SECRET_VALUE_MUST_NOT_LEAK'));
@@ -856,17 +856,17 @@ test('application release preflight preserves only bounded safe missing environm
 			'attempts'=>1,
 			'http_status'=>200,
 			'response_contract_valid'=>true,
-			'missing_environment_keys'=>['SERVE_SIGNING_KEY'],
+			'missing_environment_keys'=>['FIXTURE_APP_SIGNING_KEY'],
 		],
 	]);
 	$t->same(ApplicationReleasePreflightCommand::EXIT_HEALTH, $twoHundredMissing['status']);
 	$t->same(false, $twoHundredMissing['payload']['likely_to_deploy']);
 	$t->same('application_environment_keys_missing', $twoHundredMissing['payload']['failures'][0]['code']);
-	$t->same(['SERVE_SIGNING_KEY'], $twoHundredMissing['payload']['checks'][3]['evidence']['missing_environment_keys']);
+	$t->same(['FIXTURE_APP_SIGNING_KEY'], $twoHundredMissing['payload']['checks'][3]['evidence']['missing_environment_keys']);
 
 	$validBody=json_encode([
 		'ok'=>false,
-		'missing_environment_keys'=>['SERVE_STAFF_SESSION_SECRET', 'SERVE_SIGNING_KEY'],
+		'missing_environment_keys'=>['FIXTURE_APP_STAFF_SESSION_SECRET', 'FIXTURE_APP_SIGNING_KEY'],
 		'private_detail'=>'PRIVATE_HEALTH_DETAIL_MUST_NOT_LEAK',
 	], JSON_THROW_ON_ERROR);
 	$valid=dp_application_preflight_read_health_response(
@@ -876,26 +876,26 @@ test('application release preflight preserves only bounded safe missing environm
 	$t->same(503, $valid['http_status'] ?? null);
 	$t->same(true, $valid['response_contract_valid'] ?? null);
 	$t->same([
-		'SERVE_SIGNING_KEY',
-		'SERVE_STAFF_SESSION_SECRET',
+		'FIXTURE_APP_SIGNING_KEY',
+		'FIXTURE_APP_STAFF_SESSION_SECRET',
 	], $valid['missing_environment_keys'] ?? null);
 	$t->isFalse(str_contains(json_encode($valid, JSON_THROW_ON_ERROR), 'PRIVATE_HEALTH_DETAIL_MUST_NOT_LEAK'));
 
 	$tooMany=[];
-	for($index=0;$index<65;$index++) $tooMany[]=sprintf('SERVE_KEY_%02d', $index);
+	for($index=0;$index<65;$index++) $tooMany[]=sprintf('FIXTURE_APP_KEY_%02d', $index);
 	$unsafeBodies=[
-		'malformed'=>'{"missing_environment_keys":["SERVE_SIGNING_KEY"]',
+		'malformed'=>'{"missing_environment_keys":["FIXTURE_APP_SIGNING_KEY"]',
 		'incomplete'=>json_encode(['ok'=>true], JSON_THROW_ON_ERROR),
 		'oversized'=>json_encode([
-			'missing_environment_keys'=>['SERVE_SIGNING_KEY'],
+			'missing_environment_keys'=>['FIXTURE_APP_SIGNING_KEY'],
 			'padding'=>str_repeat('x', 65536),
 		], JSON_THROW_ON_ERROR),
 		'too_many'=>json_encode(['missing_environment_keys'=>$tooMany], JSON_THROW_ON_ERROR),
-		'duplicate'=>json_encode(['missing_environment_keys'=>['SERVE_SIGNING_KEY', 'SERVE_SIGNING_KEY']], JSON_THROW_ON_ERROR),
+		'duplicate'=>json_encode(['missing_environment_keys'=>['FIXTURE_APP_SIGNING_KEY', 'FIXTURE_APP_SIGNING_KEY']], JSON_THROW_ON_ERROR),
 		'object_instead_of_list'=>'{"missing_environment_keys":{}}',
-		'value_bearing'=>json_encode(['missing_environment_keys'=>[['name'=>'SERVE_SIGNING_KEY', 'value'=>'secret']]], JSON_THROW_ON_ERROR),
-		'value_in_name'=>json_encode(['missing_environment_keys'=>['SERVE_SIGNING_KEY=secret']], JSON_THROW_ON_ERROR),
-		'invalid_name'=>json_encode(['missing_environment_keys'=>['serve_signing_key']], JSON_THROW_ON_ERROR),
+		'value_bearing'=>json_encode(['missing_environment_keys'=>[['name'=>'FIXTURE_APP_SIGNING_KEY', 'value'=>'secret']]], JSON_THROW_ON_ERROR),
+		'value_in_name'=>json_encode(['missing_environment_keys'=>['FIXTURE_APP_SIGNING_KEY=secret']], JSON_THROW_ON_ERROR),
+		'invalid_name'=>json_encode(['missing_environment_keys'=>['fixture_app_signing_key']], JSON_THROW_ON_ERROR),
 		'overlong_name'=>json_encode(['missing_environment_keys'=>['S'.str_repeat('X', 120)]], JSON_THROW_ON_ERROR),
 	];
 	foreach($unsafeBodies as $case=>$body){
@@ -1338,12 +1338,12 @@ PHP);
 	$missing->file('framework_bootstrap.php',<<<'PHP'
 <?php
 header('Content-Type: application/json');
-echo '{"missing_environment_keys":["SERVE_SIGNING_KEY"]}';
+echo '{"missing_environment_keys":["FIXTURE_APP_SIGNING_KEY"]}';
 PHP);
 	$dataRoot=$access->invoke('createIsolatedStateRoot');
 	$missingHealth=$access->invoke('runHealth',$missing->root(),'fixture','staging','/health',2,$dataRoot);
 	$t->same('application_environment_keys_missing',$missingHealth['code']);
-	$t->same(['SERVE_SIGNING_KEY'],$missingHealth['missing_environment_keys']);
+	$t->same(['FIXTURE_APP_SIGNING_KEY'],$missingHealth['missing_environment_keys']);
 	$access->invoke('removeIsolatedStateRoot',$dataRoot);
 
 	$rejected=dp_application_preflight_fixture($t,'native-rejected-health');

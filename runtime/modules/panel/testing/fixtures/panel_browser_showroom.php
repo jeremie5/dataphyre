@@ -393,8 +393,8 @@ namespace {
 			'fleet'=>[
 				'available'=>true,
 				'federation'=>['node_count'=>2,'drift_count'=>0,'nodes'=>[
-					['id'=>'shopiro-ca-01','environment'=>'production','region'=>'ca-central','capability_count'=>24,'expires_at'=>'2026-07-17T16:00:00Z'],
-					['id'=>'shopiro-eu-01','environment'=>'production','region'=>'eu-west','capability_count'=>22,'expires_at'=>'2026-07-17T15:45:00Z'],
+					['id'=>'example-ca-01','environment'=>'production','region'=>'ca-central','capability_count'=>24,'expires_at'=>'2026-07-17T16:00:00Z'],
+					['id'=>'example-eu-01','environment'=>'production','region'=>'eu-west','capability_count'=>22,'expires_at'=>'2026-07-17T15:45:00Z'],
 				]],
 				'releases'=>['deployment_count'=>14,'rings'=>[
 					['name'=>'canary','traffic_basis_points'=>500,'health_gate_count'=>6,'paused'=>true],
@@ -403,7 +403,7 @@ namespace {
 				]],
 				'marketplace'=>['reviews'=>[
 					['package_id'=>'dataphyre/warehouse-bridge','package_version'=>'4.2.0','status'=>'review','risk_score'=>28,'finding_count'=>2,'approval_count'=>1,'required_approvals'=>2],
-					['package_id'=>'shopiro/operator-toolkit','package_version'=>'1.7.4','status'=>'approved','risk_score'=>6,'finding_count'=>0,'approval_count'=>2,'required_approvals'=>2],
+					['package_id'=>'example_publisher/operator-toolkit','package_version'=>'1.7.4','status'=>'approved','risk_score'=>6,'finding_count'=>0,'approval_count'=>2,'required_approvals'=>2],
 				]],
 			],
 		];

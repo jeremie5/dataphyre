@@ -13,7 +13,7 @@ require_once dirname(__DIR__).'/Framework/PublicApplicationIdentifier.php';
 /** Root-only durable cadence state; application pools never receive this path. */
 final class DataphyreApplicationRuntimeSchedulerState
 {
-	private const CONTRACT='dataphyre.scheduler_state.v1';
+	private const CONTRACT='dataphyre.scheduler_state.v2';
 	private const ROOT='/var/lib/dataphyre/scheduler-state';
 	private const MAX_BYTES=262144;
 	/*
@@ -344,7 +344,7 @@ final class DataphyreApplicationRuntimeSchedulerState
 		unset($state['entries']);
 		return 'sha256:'.hash(
 			'sha256',
-			"dataphyre.scheduler_state_identity.v1\0".json_encode($state,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
+			"dataphyre.scheduler_state_identity.v2\0".json_encode($state,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
 		);
 	}
 
@@ -377,9 +377,9 @@ final class DataphyreApplicationRuntimeSchedulerState
 		try{$state=json_decode($bytes,true,32,JSON_THROW_ON_ERROR);}
 		catch(Throwable){throw new RuntimeException('Scheduler state JSON is invalid.');}
 		if(!is_array($state) || array_keys($state)!==[
-			'contract','cloud_application','framework_application','environment','entries',
+			'contract','deployment_application','framework_application','environment','entries',
 		] || ($state['contract'] ?? null)!==self::CONTRACT
-			|| ($state['cloud_application'] ?? null)!==$empty['cloud_application']
+			|| ($state['deployment_application'] ?? null)!==$empty['deployment_application']
 			|| ($state['framework_application'] ?? null)!==$empty['framework_application']
 			|| ($state['environment'] ?? null)!==$empty['environment']
 			|| !is_array($state['entries']) || count($state['entries'])>512){
@@ -414,17 +414,17 @@ final class DataphyreApplicationRuntimeSchedulerState
 	/** @param array<string,string> $identity @return array<string,mixed> */
 	private static function emptyState(array $identity): array
 	{
-		$cloud=$identity['cloud_application'] ?? '';
+		$deployment=$identity['deployment_application'] ?? '';
 		$framework=$identity['framework_application'] ?? '';
 		$environment=$identity['environment'] ?? '';
-		if(!is_string($cloud) || !\Dataphyre\PublicApplicationIdentifier::valid($cloud)
+		if(!is_string($deployment) || !\Dataphyre\PublicApplicationIdentifier::valid($deployment)
 			|| preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$framework)!==1
 			|| !\Dataphyre\ApplicationEnvironmentIdentifier::valid($environment)){
 			throw new RuntimeException('Scheduler state identity is invalid.');
 		}
 		return [
 			'contract'=>self::CONTRACT,
-			'cloud_application'=>$cloud,
+			'deployment_application'=>$deployment,
 			'framework_application'=>$framework,
 			'environment'=>$environment,
 			'entries'=>[],

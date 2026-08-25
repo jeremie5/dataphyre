@@ -129,8 +129,8 @@ test('changed-run watches express module path application and framework impact d
 	$selection=[
 		'exact'=>[],
 		'modules'=>['panel'],
-		'apps'=>['shopiro'],
-		'paths'=>['runtime/modules/panel/Framework/Core/Panel.php', 'applications/shopiro/src/Orders.php'],
+		'apps'=>['catalog'],
+		'paths'=>['runtime/modules/panel/Framework/Core/Panel.php', 'applications/catalog/src/Orders.php'],
 		'all_framework'=>false,
 		'all_code'=>false,
 	];
@@ -138,7 +138,7 @@ test('changed-run watches express module path application and framework impact d
 	$t->isTrue($access->invoke('watchTargetMatches', 'module:*', $selection));
 	$t->isTrue($access->invoke('watchTargetMatches', 'module:panel', $selection));
 	$t->isTrue($access->invoke('watchTargetMatches', 'path:runtime/modules/**/Panel.php', $selection));
-	$t->isTrue($access->invoke('watchTargetMatches', 'app:shop*', $selection));
+	$t->isTrue($access->invoke('watchTargetMatches', 'app:cat*', $selection));
 	$t->isTrue($access->invoke('watchTargetMatches', 'framework', $selection));
 	$t->isFalse($access->invoke('watchTargetMatches', 'module:sql', $selection));
 });

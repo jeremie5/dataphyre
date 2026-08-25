@@ -3088,7 +3088,7 @@ SQL
 
 test('PostgreSQL schema inspection tracks compound column alterations and catalog identifiers', static function(Context $t): void {
 	$inspector=new PostgreSqlSchemaInspector(dp_postgresql_migration_profile());
-	$longIndex='idx_serve_change_control_source_projection_receipts_resource_hold';
+	$longIndex='idx_fixture_change_control_source_projection_receipts_resource_hold';
 	$expected=$inspector->expectedSchema([[
 		'name'=>'001_setup',
 		'sql'=><<<SQL

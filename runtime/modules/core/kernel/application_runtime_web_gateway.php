@@ -381,7 +381,7 @@ final class DataphyreApplicationRuntimeWebGateway
 		$path=$question===false ? $target : substr($target,0,$question);
 		$query=$question===false ? '' : substr($target,$question+1);
 		$environment=[
-			'GATEWAY_INTERFACE'=>'CGI/1.1','SERVER_SOFTWARE'=>'Dataphyre-Cloud',
+			'GATEWAY_INTERFACE'=>'CGI/1.1','SERVER_SOFTWARE'=>'Dataphyre-Application-Gateway',
 			// FPM suppresses a HEAD response body before the gateway can measure the
 			// GET representation. Execute it as GET and discard the body at ingress.
 			'SERVER_PROTOCOL'=>$request['protocol'],'REQUEST_METHOD'=>$request['method']==='HEAD' ? 'GET' : $request['method'],'REQUEST_URI'=>$target,

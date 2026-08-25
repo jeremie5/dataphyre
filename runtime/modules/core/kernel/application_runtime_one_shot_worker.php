@@ -7,7 +7,7 @@
  */
 declare(strict_types=1);
 
-/** Fixed post-exec dispatcher for the only Cloud-supported application operations. */
+/** Fixed post-exec dispatcher for the only managed-runtime application operations. */
 if(PHP_SAPI!=='cli' || ($argc ?? 0)<3 || ($argc ?? 0)>9) exit(64);
 require_once __DIR__.'/application_runtime_child_environment.php';
 require_once dirname(__DIR__).'/Framework/InternalApplicationBootstrapOnly.php';

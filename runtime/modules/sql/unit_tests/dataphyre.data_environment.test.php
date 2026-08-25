@@ -23,14 +23,14 @@ test('data environment scopes SQL clusters and cache namespaces without leaking 
 	$t->same('orders/one', DataEnvironment::cachePath('orders/one'));
 
 	$result=DataEnvironment::run('Sandbox', static function(array $environment) use ($t): string {
-		$t->same(['name'=>'sandbox', 'cluster'=>null, 'cache_namespace'=>'serve-sandbox'], $environment);
+		$t->same(['name'=>'sandbox', 'cluster'=>null, 'cache_namespace'=>'fixture-sandbox'], $environment);
 		$t->isTrue(DataEnvironment::active());
 		$t->isTrue(DataEnvironment::is('sandbox'));
 		$t->same('sandbox', DataEnvironment::name());
 		$t->same(null, DataEnvironment::clusterOverride());
-		$t->same('serve-sandbox', DataEnvironment::cacheNamespace());
-		$t->same('serve-sandbox::orders', DataEnvironment::cacheKey('orders'));
-		$t->same('serve-sandbox/orders', DataEnvironment::cachePath('orders'));
+		$t->same('fixture-sandbox', DataEnvironment::cacheNamespace());
+		$t->same('fixture-sandbox::orders', DataEnvironment::cacheKey('orders'));
+		$t->same('fixture-sandbox/orders', DataEnvironment::cachePath('orders'));
 
 		return DataEnvironment::run('preview', static function(): string {
 			if(DataEnvironment::name()!=='preview' || DataEnvironment::cacheKey('orders')!=='preview::orders'){
@@ -38,7 +38,7 @@ test('data environment scopes SQL clusters and cache namespaces without leaking 
 			}
 			return 'nested-result';
 		});
-	}, ['cluster'=>null, 'cache_namespace'=>'serve-sandbox']);
+	}, ['cluster'=>null, 'cache_namespace'=>'fixture-sandbox']);
 
 	$t->same('nested-result', $result);
 	$t->same('live', DataEnvironment::name());

@@ -13,7 +13,7 @@ require_once dirname(__DIR__).'/Framework/PublicApplicationIdentifier.php';
 /** Release-local evidence for the fixed scheduler listener no-op roundtrip. */
 final class DataphyreApplicationRuntimeProbeState
 {
-	private const CONTRACT='dataphyre.scheduler_noop_probe.v1';
+	private const CONTRACT='dataphyre.scheduler_noop_probe.v2';
 	private const DIRECTORY='/var/lib/dataphyre/runtime-control';
 	private const FILE=self::DIRECTORY.'/scheduler-probe.json';
 
@@ -47,14 +47,14 @@ final class DataphyreApplicationRuntimeProbeState
 	private static function identitySha256(array $identity): string
 	{
 		$canonical=[
-			'cloud_application'=>$identity['cloud_application'] ?? '',
+			'deployment_application'=>$identity['deployment_application'] ?? '',
 			'framework_application'=>$identity['framework_application'] ?? '',
 			'environment'=>$identity['environment'] ?? '',
 			'release_id'=>$identity['release_id'] ?? '',
 			'environment_fingerprint'=>$identity['environment_fingerprint'] ?? '',
 		];
-		if(!is_string($canonical['cloud_application'])
-			|| !\Dataphyre\PublicApplicationIdentifier::valid($canonical['cloud_application'])
+		if(!is_string($canonical['deployment_application'])
+			|| !\Dataphyre\PublicApplicationIdentifier::valid($canonical['deployment_application'])
 			|| preg_match('/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}|[A-Za-z_][A-Za-z0-9_$]{0,62})$/D',$canonical['framework_application'])!==1
 			|| !\Dataphyre\ApplicationEnvironmentIdentifier::valid($canonical['environment'])
 			|| preg_match('/^dep_[a-f0-9]{40}$/D',$canonical['release_id'])!==1
@@ -63,7 +63,7 @@ final class DataphyreApplicationRuntimeProbeState
 		}
 		return 'sha256:'.hash(
 			'sha256',
-			"dataphyre.scheduler_noop_probe_identity.v1\0".json_encode($canonical,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
+			"dataphyre.scheduler_noop_probe_identity.v2\0".json_encode($canonical,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
 		);
 	}
 

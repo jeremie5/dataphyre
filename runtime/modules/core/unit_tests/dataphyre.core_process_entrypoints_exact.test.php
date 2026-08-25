@@ -270,7 +270,7 @@ test('one-shot dispatcher resolves every fixed supported operation after the rea
 		'DATAPHYRE_TEST_COVERAGE_RESULT_ROOT'=>$frameworkRoot,
 		'XDEBUG_MODE'=>'coverage','PHP_INI_SCAN_DIR'=>(string)getenv('PHP_INI_SCAN_DIR'),
 	],'one-shot',[
-		'DATAPHYRE_APPLICATION_ID'=>'Store:North_2-Beta','DATAPHYRE_FRAMEWORK_APPLICATION'=>'FixtureApp',
+		'DATAPHYRE_APPLICATION_ID'=>'Fixture:North_2-Beta','DATAPHYRE_FRAMEWORK_APPLICATION'=>'FixtureApp',
 		'DATAPHYRE_APPLICATION_ENVIRONMENT_ID'=>'Env:Shared_Cache_Probe',
 		'DATAPHYRE_ENVIRONMENT'=>'production','DATAPHYRE_APPLICATION_RELEASE'=>'dep_'.str_repeat('a',40),
 		'DATAPHYRE_CACHE_MEMCACHED_HOST'=>'cache.internal','DATAPHYRE_CACHE_MEMCACHED_PORT'=>'11211',
@@ -371,8 +371,8 @@ test('status and realtime probes accept one canonical supervisor roundtrip over 
 	$frameworkRoot=dirname(__DIR__,4);
 	$kernel=dirname(__DIR__).'/kernel';
 	$state=$t->workspace('core-process-entrypoint-status-server');
-	$cloudApplication='Store:North_2-Beta';
-	$frameworkApplication='Serve';
+	$deploymentApplication='Fixture:North_2-Beta';
+	$frameworkApplication='FixtureApp';
 	$environment='staging_blue';
 	$releaseId='dep_'.str_repeat('a',40);
 	$environmentFingerprint='hmac-sha256:'.str_repeat('b',64);
@@ -436,15 +436,15 @@ test('status and realtime probes accept one canonical supervisor roundtrip over 
 		],
 	];
 	$stateIdentity=[
-		'contract'=>'dataphyre.scheduler_state.v1','cloud_application'=>$cloudApplication,
+		'contract'=>'dataphyre.scheduler_state.v2','deployment_application'=>$deploymentApplication,
 		'framework_application'=>$frameworkApplication,'environment'=>$environment,
 	];
 	$noopIdentity=[
-		'cloud_application'=>$cloudApplication,'framework_application'=>$frameworkApplication,
+		'deployment_application'=>$deploymentApplication,'framework_application'=>$frameworkApplication,
 		'environment'=>$environment,'release_id'=>$releaseId,'environment_fingerprint'=>$environmentFingerprint,
 	];
 	$status=[
-		'contract'=>'dataphyre.application_runtime.v6','cloud_application'=>$cloudApplication,
+		'contract'=>'dataphyre.application_runtime.v7','deployment_application'=>$deploymentApplication,
 		'framework_application'=>$frameworkApplication,'environment'=>$environment,'release_id'=>$releaseId,
 		'environment_fingerprint'=>$environmentFingerprint,'generation'=>$generation,
 		'supervisor_pid'=>1,'supervisor_uid'=>0,'supervisor_gid'=>0,'activation_mode'=>'active','active'=>true,
@@ -464,15 +464,15 @@ test('status and realtime probes accept one canonical supervisor roundtrip over 
 			'definition_count'=>1,'definition_sha256'=>'sha256:'.str_repeat('d',64),
 		],
 		'scheduler_noop_probe'=>[
-			'contract'=>'dataphyre.scheduler_noop_probe.v1','ok'=>true,'generation'=>$generation,
+			'contract'=>'dataphyre.scheduler_noop_probe.v2','ok'=>true,'generation'=>$generation,
 			'request_counter'=>1,'claim_consumed'=>true,'worker_receipt'=>true,'worker_reaped'=>true,
 			'replay_suppressed'=>true,'count'=>1,'last_at'=>'2026-08-13T12:00:00Z','previous_readback'=>false,
 			'state_identity_sha256'=>'sha256:'.hash(
-				'sha256',"dataphyre.scheduler_noop_probe_identity.v1\0".json_encode($noopIdentity,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
+				'sha256',"dataphyre.scheduler_noop_probe_identity.v2\0".json_encode($noopIdentity,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
 			),
 		],
 		'scheduler_state_identity_sha256'=>'sha256:'.hash(
-			'sha256',"dataphyre.scheduler_state_identity.v1\0".json_encode($stateIdentity,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
+			'sha256',"dataphyre.scheduler_state_identity.v2\0".json_encode($stateIdentity,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
 		),
 		'business_cadence'=>['count'=>1,'last_at'=>'2026-08-13T12:00:00Z','last_result'=>'ok'],
 	];
@@ -1101,13 +1101,13 @@ test('instrumented exact CGI scheduler child covers the signed scheduler router'
 	$publicKey=sodium_crypto_sign_publickey($keypair);$privateKey=random_bytes(32);
 	$publicKeyEncoded=sodium_bin2base64($publicKey,SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING);
 	$identity=[
-		'cloud_application'=>'runtime-probe','framework_application'=>'_Runtime$Probe',
+		'deployment_application'=>'runtime-probe','framework_application'=>'_Runtime$Probe',
 		'environment'=>'staging_blue','environment_id'=>'Env:Scheduler_Cgi',
 		'release_id'=>'dep_'.str_repeat('a',40),
 	];
 	$generation='gen_'.str_repeat('b',32);
 	$applicationEnvironment=[
-		'DATAPHYRE_APPLICATION_ID'=>$identity['cloud_application'],
+		'DATAPHYRE_APPLICATION_ID'=>$identity['deployment_application'],
 		'DATAPHYRE_FRAMEWORK_APPLICATION'=>$identity['framework_application'],
 		'DATAPHYRE_ENVIRONMENT'=>$identity['environment'],
 		'DATAPHYRE_APPLICATION_ENVIRONMENT'=>$identity['environment'],
@@ -1142,7 +1142,7 @@ test('instrumented exact CGI scheduler child covers the signed scheduler router'
 			'REMOTE_ADDR'=>'127.0.0.1','REMOTE_PORT'=>'41000','REQUEST_METHOD'=>$method,
 			'REQUEST_URI'=>$target,'SCRIPT_FILENAME'=>$router,'SCRIPT_NAME'=>$path,
 			'SERVER_ADDR'=>'127.0.0.1','SERVER_NAME'=>'runtime.test','SERVER_PORT'=>(string)$port,
-			'SERVER_PROTOCOL'=>'HTTP/1.1','SERVER_SOFTWARE'=>'Dataphyre-Cloud',
+			'SERVER_PROTOCOL'=>'HTTP/1.1','SERVER_SOFTWARE'=>'Dataphyre-Application-Gateway',
 			'DATAPHYRE_TEST_COVERAGE_PART'=>$part,
 			'DATAPHYRE_TEST_COVERAGE_FRAMEWORK_ROOT'=>$frameworkRoot,
 			'DATAPHYRE_TEST_COVERAGE_RESULT_ROOT'=>$frameworkRoot,'XDEBUG_MODE'=>'coverage',
@@ -1364,7 +1364,7 @@ test('separated web and scheduler gateway helpers enforce framing claims budgets
 	$keypair=sodium_crypto_sign_keypair();$secret=sodium_crypto_sign_secretkey($keypair);
 	$public=sodium_crypto_sign_publickey($keypair);
 	$identity=[
-		'cloud_application'=>'serve','framework_application'=>'Serve','environment'=>'staging_blue',
+		'deployment_application'=>'fixture-app','framework_application'=>'FixtureApp','environment'=>'staging_blue',
 		'release_id'=>'dep_'.str_repeat('a',40),
 	];
 	$publicEnvironment=['DATAPHYRE_RUNTIME_SCHEDULER_PUBLIC_KEY'=>sodium_bin2base64(
@@ -1378,7 +1378,7 @@ test('separated web and scheduler gateway helpers enforce framing claims budgets
 			'noop',$identity,'gen_'.str_repeat('b',32),2,$secret,timestamp:time()-100,nonce:str_repeat('d',32),
 		),
 		'callback'=>DataphyreApplicationRuntimeSchedulerProtocol::issue(
-			'callback',$identity,'gen_'.str_repeat('b',32),3,$secret,'serve.task',
+			'callback',$identity,'gen_'.str_repeat('b',32),3,$secret,'fixture.task',
 			'sha256:'.str_repeat('e',64),12345,time()-100,str_repeat('f',32),
 		),
 	] as $kind=>$candidate){
@@ -1649,7 +1649,7 @@ test('unexpected scheduler gateway death terminates the handler and no-spawn CGI
 	$descendantPath=$state->path('descendant.json');$signing=sodium_crypto_sign_keypair();
 	$secretKey=sodium_crypto_sign_secretkey($signing);$publicKey=sodium_crypto_sign_publickey($signing);$managedKey=random_bytes(32);
 	$managed=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('scheduler',$project,$managedKey);
-	$identity=['cloud_application'=>'serve','framework_application'=>'Serve','environment'=>'staging_blue','release_id'=>'dep_'.str_repeat('a',40)];
+	$identity=['deployment_application'=>'fixture-app','framework_application'=>'FixtureApp','environment'=>'staging_blue','release_id'=>'dep_'.str_repeat('a',40)];
 	$body=json_encode(DataphyreApplicationRuntimeSchedulerProtocol::issue(
 		'noop',$identity,'gen_'.str_repeat('b',32),10,$secretKey,timestamp:time(),nonce:str_repeat('7',32),
 	),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
@@ -1781,7 +1781,7 @@ test('unprivileged scheduler and control UDS attempts allocate no handler while 
 	$signing=sodium_crypto_sign_keypair();$secretKey=sodium_crypto_sign_secretkey($signing);
 	$publicKey=sodium_crypto_sign_publickey($signing);$managedKey=random_bytes(32);
 	$managed=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('scheduler',$project,$managedKey);
-	$identity=['cloud_application'=>'serve','framework_application'=>'Serve','environment'=>'staging_blue','release_id'=>'dep_'.str_repeat('a',40)];
+	$identity=['deployment_application'=>'fixture-app','framework_application'=>'FixtureApp','environment'=>'staging_blue','release_id'=>'dep_'.str_repeat('a',40)];
 	$applicationEnvironment=[
 		'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>$project,
 		'DATAPHYRE_RUNTIME_SCHEDULER_PUBLIC_KEY'=>sodium_bin2base64($publicKey,SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING),

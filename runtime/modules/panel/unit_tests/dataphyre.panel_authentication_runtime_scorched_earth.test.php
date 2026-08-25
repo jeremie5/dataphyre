@@ -93,7 +93,7 @@ test('panel filesystem authentication store atomically persists snapshots and de
 
 test('panel authentication manager provisions confirms and replay-protects totp and recovery codes',static function(Context $t):void{
 	[$manager]=dp_panel_auth_manager();$secret=PanelTotp::base32Encode('12345678901234567890');$timestamp=1234567890;
-	$enrollment=$manager->provisionTotp('u1','Primary',['id'=>'factor-1','secret'=>$secret,'issuer'=>'Shopiro','account'=>'operator@example.test','recovery_codes'=>6,'now'=>$timestamp]);
+	$enrollment=$manager->provisionTotp('u1','Primary',['id'=>'factor-1','secret'=>$secret,'issuer'=>'Example Publisher','account'=>'operator@example.test','recovery_codes'=>6,'now'=>$timestamp]);
 	$serialized=json_encode($enrollment,JSON_THROW_ON_ERROR);$t->notContains($secret,$serialized);foreach($enrollment->recoveryCodes()as$recovery){$t->notContains($recovery,$serialized);}
 	$t->contains('otpauth://totp/',$enrollment->provisioningUri());
 	$code=PanelTotp::at($secret,$timestamp);$t->isTrue($manager->confirmTotp('factor-1',$code,$timestamp)->verified());

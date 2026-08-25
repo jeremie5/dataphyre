@@ -668,7 +668,7 @@ DELETE FROM [fs_override] WHERE id=1;
 -- UPDATE session_override SET value=1
 SQL, true)
 	);
-	$t->same(['serve.orders'],\dataphyre\sql::query_write_targets('MERGE INTO "serve"."orders" target USING source ON true WHEN MATCHED THEN UPDATE SET status=1'));
+	$t->same(['fixture.orders'],\dataphyre\sql::query_write_targets('MERGE INTO "fixture"."orders" target USING source ON true WHEN MATCHED THEN UPDATE SET status=1'));
 	$t->same([],\dataphyre\sql::query_write_targets('SELECT \'INSERT INTO shared_override\'',true));
 })->tag('sql','kernel','raw','cache','invalidation','regression')->group('framework-coverage');
 

@@ -39,7 +39,7 @@ $cleanup=static function() use($root,$directory,$file,$hardlink): bool {
 	return !file_exists($root) && !is_link($root);
 };
 $identity=[
-	'cloud_application'=>'serve_shop','framework_application'=>'Serve','environment'=>'Staging.Blue',
+	'deployment_application'=>'fixture-shop','framework_application'=>'FixtureApp','environment'=>'Staging.Blue',
 	'release_id'=>'dep_'.str_repeat('a',40),
 	'environment_fingerprint'=>'hmac-sha256:'.str_repeat('b',64),
 ];

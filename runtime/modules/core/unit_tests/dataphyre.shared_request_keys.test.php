@@ -26,26 +26,26 @@ test('shared request keys are purpose context secret and time bound', static fun
 	$secret=$workspace->file('secrets/app_override_key', "unit-secret\n");
 	$timestamp=1_750_000_000;
 	$period=60;
-	$token=dp_shared_request_key($secret, 'app_override', 'serve', $timestamp, $period);
+	$token=dp_shared_request_key($secret, 'app_override', 'fixture-app', $timestamp, $period);
 	$t->matches('/^[a-f0-9]{64}$/D', (string)$token);
-	$t->isTrue(dp_verify_shared_request_key((string)$token, $secret, 'app_override', 'serve', 0, $timestamp, $period));
-	$t->isTrue(dp_verify_shared_request_key((string)$token, $secret, 'app_override', 'serve', 1, $timestamp+$period, $period));
-	$t->isFalse(dp_verify_shared_request_key((string)$token, $secret, 'other', 'serve', 1, $timestamp, $period));
+	$t->isTrue(dp_verify_shared_request_key((string)$token, $secret, 'app_override', 'fixture-app', 0, $timestamp, $period));
+	$t->isTrue(dp_verify_shared_request_key((string)$token, $secret, 'app_override', 'fixture-app', 1, $timestamp+$period, $period));
+	$t->isFalse(dp_verify_shared_request_key((string)$token, $secret, 'other', 'fixture-app', 1, $timestamp, $period));
 	$t->isFalse(dp_verify_shared_request_key((string)$token, $secret, 'app_override', 'other', 1, $timestamp, $period));
-	$t->isFalse(dp_verify_shared_request_key((string)$token, $secret, 'app_override', 'serve', 1, $timestamp+(2*$period), $period));
+	$t->isFalse(dp_verify_shared_request_key((string)$token, $secret, 'app_override', 'fixture-app', 1, $timestamp+(2*$period), $period));
 	$other=$workspace->file('secrets/other', 'other-secret');
-	$t->isFalse(dp_verify_shared_request_key((string)$token, $other, 'app_override', 'serve', 1, $timestamp, $period));
+	$t->isFalse(dp_verify_shared_request_key((string)$token, $other, 'app_override', 'fixture-app', 1, $timestamp, $period));
 });
 
 test('application override values accept scoped signatures and retain legacy compatibility', static function(Context $t): void {
 	$workspace=$t->workspace('shared-request-app-override');
 	$secret=$workspace->file('secrets/app_override_key', 'override-secret');
-	$token=dp_shared_request_key($secret, 'app_override', 'serve');
-	$t->same('serve', dp_app_override_application('serve,'.(string)$token, $secret));
-	$t->same('serve', dp_app_override_application('serve,override-secret', $secret));
+	$token=dp_shared_request_key($secret, 'app_override', 'fixture-app');
+	$t->same('fixture-app', dp_app_override_application('fixture-app,'.(string)$token, $secret));
+	$t->same('fixture-app', dp_app_override_application('fixture-app,override-secret', $secret));
 	$t->isFalse(dp_app_override_application('other,'.(string)$token, $secret));
-	$t->isFalse(dp_app_override_application('../serve,'.(string)$token, $secret));
-	$t->isFalse(dp_app_override_application('serve', $secret));
+	$t->isFalse(dp_app_override_application('../fixture-app,'.(string)$token, $secret));
+	$t->isFalse(dp_app_override_application('fixture-app', $secret));
 });
 
 test('shared request keys fail closed for malformed inputs and unavailable secrets', static function(Context $t): void {

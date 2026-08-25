@@ -614,8 +614,8 @@ function dataphyre_runtime_spawn(
 function dataphyre_runtime_status(array $runtime): array
 {
     return [
-		'contract'=>'dataphyre.application_runtime.v6',
-		'cloud_application'=>$runtime['cloud_application'],
+		'contract'=>'dataphyre.application_runtime.v7',
+		'deployment_application'=>$runtime['deployment_application'],
 		'framework_application'=>$runtime['framework_application'],
 		'environment'=>$runtime['environment'],
 		'release_id'=>$runtime['release_id'],
@@ -1978,13 +1978,13 @@ try {
 	DataphyreApplicationRuntimeEnvironment::assertCleanRootEnvironment();
 	dataphyre_runtime_require_managed_web_runtime();
 	dataphyre_runtime_require_not_stopping($stopping);
-	$cloudApplication=dataphyre_runtime_env('DATAPHYRE_APPLICATION_ID');
+	$deploymentApplication=dataphyre_runtime_env('DATAPHYRE_APPLICATION_ID');
 	$application=dataphyre_runtime_env('DATAPHYRE_FRAMEWORK_APPLICATION');
 	$environment=dataphyre_runtime_env('DATAPHYRE_ENVIRONMENT');
 	$environmentId=dataphyre_runtime_env('DATAPHYRE_APPLICATION_ENVIRONMENT_ID');
 	$releaseId=dataphyre_runtime_env('DATAPHYRE_APPLICATION_RELEASE');
 	$applicationEnvelope=DataphyreApplicationRuntimeEnvironment::consume(
-		$cloudApplication,$application,$environment,$environmentId,$releaseId,
+		$deploymentApplication,$application,$environment,$environmentId,$releaseId,
 	);
 	dataphyre_runtime_require_not_stopping($stopping);
 	$applicationEnvironment=$applicationEnvelope['values'];
@@ -2019,7 +2019,7 @@ try {
     $secretKey=sodium_crypto_sign_secretkey($keypair);
     $publicKey=sodium_crypto_sign_publickey($keypair);
 	$childEnvironment=DataphyreApplicationRuntimeEnvironment::childEnvironment(
-		$applicationEnvironment,$cloudApplication,$application,$environment,$environmentId,$releaseId,$applicationDataRoot,
+		$applicationEnvironment,$deploymentApplication,$application,$environment,$environmentId,$releaseId,$applicationDataRoot,
 	);
 	$childEnvironment['DATAPHYRE_RUNTIME_PROJECT_ROOT']=$projectRoot;
 	$childEnvironment['DATAPHYRE_RUNTIME_APPLICATION']=$application;
@@ -2084,7 +2084,7 @@ try {
 	}
 
 	$identity=[
-		'cloud_application'=>$cloudApplication,
+		'deployment_application'=>$deploymentApplication,
 		'framework_application'=>$application,
 		'environment'=>$environment,
 		'release_id'=>$releaseId,
@@ -2098,7 +2098,7 @@ try {
 		? max(1000,(int)floor(microtime(true)*1000))
 		: null;
     $runtime=[
-		'cloud_application'=>$cloudApplication,
+		'deployment_application'=>$deploymentApplication,
 		'framework_application'=>$application,
 		'environment'=>$environment,
 		'release_id'=>$releaseId,
@@ -2140,7 +2140,7 @@ try {
 	);
 	$probeState=DataphyreApplicationRuntimeProbeState::record($identity,time());
 	$runtime['scheduler_noop_probe']=[
-		'contract'=>'dataphyre.scheduler_noop_probe.v1','ok'=>true,
+		'contract'=>'dataphyre.scheduler_noop_probe.v2','ok'=>true,
 		'generation'=>$generation,'request_counter'=>$noopCounter,
 		'claim_consumed'=>true,'worker_receipt'=>true,'worker_reaped'=>true,'replay_suppressed'=>true,
 		'count'=>$probeState['count'],'last_at'=>$probeState['last_at'],

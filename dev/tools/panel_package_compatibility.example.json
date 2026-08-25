@@ -33,12 +33,12 @@
           "themes": ["default"]
         },
         "provides": ["package_support"],
-        "support": {"owner": "shopiro"},
-        "meta": {"publisher": "shopiro"},
+        "support": {"owner": "example_publisher"},
+        "meta": {"publisher": "example_publisher"},
         "signature": {
           "algorithm": "ed25519",
           "key_id": "release",
-          "publisher": "shopiro",
+          "publisher": "example_publisher",
           "digest": "1111111111111111111111111111111111111111111111111111111111111111",
           "signature": "c2lnbmF0dXJlLXBhY2thZ2Utc3VwcG9ydA=="
         }
@@ -55,14 +55,14 @@
       "distribution": {
         "type": "panel_package_registry_index",
         "ok": true,
-        "publisher": "shopiro",
+        "publisher": "example_publisher",
         "packages": [
-          {"id": "operator_tools", "version": "2.4.0", "publisher": "shopiro", "key_id": "release", "dependencies": {"package_support": "^1.1.0"}, "yanked": false},
-          {"id": "package_support", "version": "1.1.0", "publisher": "shopiro", "key_id": "release", "dependencies": {}, "yanked": false}
+          {"id": "operator_tools", "version": "2.4.0", "publisher": "example_publisher", "key_id": "release", "dependencies": {"package_support": "^1.1.0"}, "yanked": false},
+          {"id": "package_support", "version": "1.1.0", "publisher": "example_publisher", "key_id": "release", "dependencies": {}, "yanked": false}
         ]
       },
       "verification": {"ok": true, "package": "package_support", "algorithm": "ed25519", "key_id": "release", "digest": "1111111111111111111111111111111111111111111111111111111111111111"},
-      "trust": {"trusted": true, "package": "package_support", "publisher": "shopiro"},
+      "trust": {"trusted": true, "package": "package_support", "publisher": "example_publisher"},
       "install_plan": {"type": "panel_package_install_plan", "ready": true, "blocked": false, "package": {"id": "package_support", "version": "1.1.0"}, "summary": {"conflicts": 0}}
     },
     {
@@ -80,12 +80,12 @@
           "themes": ["default"]
         },
         "provides": ["operator_tools"],
-        "support": {"owner": "shopiro"},
-        "meta": {"publisher": "shopiro"},
+        "support": {"owner": "example_publisher"},
+        "meta": {"publisher": "example_publisher"},
         "signature": {
           "algorithm": "ed25519",
           "key_id": "release",
-          "publisher": "shopiro",
+          "publisher": "example_publisher",
           "digest": "2222222222222222222222222222222222222222222222222222222222222222",
           "signature": "c2lnbmF0dXJlLW9wZXJhdG9yLXRvb2xz"
         }
@@ -103,14 +103,14 @@
       "distribution": {
         "type": "panel_package_registry_index",
         "ok": true,
-        "publisher": "shopiro",
+        "publisher": "example_publisher",
         "packages": [
-          {"id": "operator_tools", "version": "2.4.0", "publisher": "shopiro", "key_id": "release", "dependencies": {"package_support": "^1.1.0"}, "yanked": false},
-          {"id": "package_support", "version": "1.1.0", "publisher": "shopiro", "key_id": "release", "dependencies": {}, "yanked": false}
+          {"id": "operator_tools", "version": "2.4.0", "publisher": "example_publisher", "key_id": "release", "dependencies": {"package_support": "^1.1.0"}, "yanked": false},
+          {"id": "package_support", "version": "1.1.0", "publisher": "example_publisher", "key_id": "release", "dependencies": {}, "yanked": false}
         ]
       },
       "verification": {"ok": true, "package": "operator_tools", "algorithm": "ed25519", "key_id": "release", "digest": "2222222222222222222222222222222222222222222222222222222222222222"},
-      "trust": {"trusted": true, "package": "operator_tools", "publisher": "shopiro"},
+      "trust": {"trusted": true, "package": "operator_tools", "publisher": "example_publisher"},
       "install_plan": {"type": "panel_package_install_plan", "ready": true, "blocked": false, "package": {"id": "operator_tools", "version": "2.4.0"}, "summary": {"conflicts": 0}}
     }
   ],

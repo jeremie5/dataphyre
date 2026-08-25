@@ -72,7 +72,7 @@ test('activation phases balance mixed cadences without making eligible work disa
 	if(!defined('DATAPHYRE_INTERNAL_SCHEDULER_STATE_TEST_ROOT')) define('DATAPHYRE_INTERNAL_SCHEDULER_STATE_TEST_ROOT',$root);
 	require_once $kernel.'/application_runtime_scheduler_state.php';
 	$identity=[
-		'cloud_application'=>'fixture','framework_application'=>'Fixture','environment'=>'staging',
+		'deployment_application'=>'fixture','framework_application'=>'Fixture','environment'=>'staging',
 	];
 	$definition=static fn(string $name,int $frequency): array=>[
 		'name'=>$name,'task_sha256'=>'sha256:'.hash('sha256',$name),'dependency_sha256'=>[],
@@ -110,7 +110,7 @@ test('recurrence remains on the activation phase after completion times converge
 	if(!chmod($root,0700)) throw new RuntimeException('Scheduler recurring phase root mode could not be prepared.');
 	if(!defined('DATAPHYRE_INTERNAL_SCHEDULER_STATE_TEST_ROOT')) define('DATAPHYRE_INTERNAL_SCHEDULER_STATE_TEST_ROOT',$root);
 	require_once $kernel.'/application_runtime_scheduler_state.php';
-	$identity=['cloud_application'=>'fixture','framework_application'=>'Fixture','environment'=>'staging'];
+	$identity=['deployment_application'=>'fixture','framework_application'=>'Fixture','environment'=>'staging'];
 	$definitions=[];
 	foreach(['alpha','bravo','charlie'] as $name) $definitions[]=[
 		'name'=>'fixture.recurrence.'.$name,'task_sha256'=>'sha256:'.hash('sha256',$name),'dependency_sha256'=>[],
@@ -140,7 +140,7 @@ test('durable claims outlive broker setup before a successor may reclaim work',s
 	if(!defined('DATAPHYRE_INTERNAL_SCHEDULER_STATE_TEST_ROOT')) define('DATAPHYRE_INTERNAL_SCHEDULER_STATE_TEST_ROOT',$root);
 	require_once $kernel.'/application_runtime_scheduler_state.php';
 	$identity=[
-		'cloud_application'=>'Store:North_2-Beta','framework_application'=>'Serve','environment'=>'Staging.Blue',
+		'deployment_application'=>'Store:North_2-Beta','framework_application'=>'FixtureApp','environment'=>'Staging.Blue',
 	];
 	$definition=[
 		'name'=>'fixture.broker-lease','task_sha256'=>'sha256:'.str_repeat('a',64),'dependency_sha256'=>[],
@@ -244,7 +244,7 @@ test('real multiplex transport isolates failure, USR2 drain, and TERM claim clea
 	$socketPath=DataphyreApplicationRuntimeSchedulerGateway::SOCKET;$socketDirectory=dirname($socketPath);
 	if(!is_dir($socketDirectory) && !mkdir($socketDirectory,0700,true)) throw new RuntimeException('Scheduler socket directory could not be created.');
 	$identity=[
-		'cloud_application'=>'Store:North_2-Beta','framework_application'=>'Serve','environment'=>'Staging.Blue',
+		'deployment_application'=>'Store:North_2-Beta','framework_application'=>'FixtureApp','environment'=>'Staging.Blue',
 		'release_id'=>'dep_'.str_repeat('a',40),'environment_fingerprint'=>'hmac-sha256:'.str_repeat('b',64),
 	];
 
