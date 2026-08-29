@@ -115,13 +115,17 @@ final class Client {
 	 *
 	 * Propagation can read from the filesystem and write to configured storage. When
 	 * encryption is enabled, the manager applies the configured encryption workflow
-	 * before or during storage.
+	 * before or during storage. Optional object expiry settings use the Control
+	 * reserve/upload path and are rejected for remote origins when node fetch cannot
+	 * guarantee the requested TTL.
 	 *
 	 * @param string $file Local file path to propagate.
 	 * @param bool $encryption Whether the propagated object should be encrypted.
+	 * @param array<string,mixed> $options Optional `object_expires_in_secs` and/or
+	 * `object_expires_at` propagation settings.
 	 * @return array<string,mixed>|false Stored Vestra Fabric reference on success, or false when propagation fails.
 	 */
-	public static function propagate(string $file, bool $encryption=false): bool|array {
-		return self::manager()->propagate($file, $encryption);
+	public static function propagate(string $file, bool $encryption=false, array $options=[]): bool|array {
+		return self::manager()->propagate($file, $encryption, $options);
 	}
 }

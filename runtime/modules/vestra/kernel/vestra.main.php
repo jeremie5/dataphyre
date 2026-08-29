@@ -18,6 +18,8 @@ require_once dirname(__DIR__, 3).'/http.php';
 class vestra {
 	/** Public deployment capability marker for split access/write Control credentials. */
 	public const SEPARATE_CONTROL_CREDENTIALS_VERSION=1;
+	/** Maximum object lifetime accepted by propagation requests (ten years). */
+	public const MAX_PROPAGATION_OBJECT_EXPIRY_IN_SECS=315360000;
 
 	/** @var array<string,mixed> */
 	private static array $runtime=[];
@@ -226,12 +228,23 @@ class vestra {
 		return ['new_html'=>is_string($result) ? $result : $html, 'changes'=>$changes];
 	}
 
-	/** Propagates a local file or remote origin into Vestra object storage. */
-	public static function propagate(string $file, bool $encryption=false): bool|array {
+	/**
+	 * Propagates a local file or remote origin into Vestra object storage.
+	 *
+	 * Expiring objects are supported only through the local reserve/upload path,
+	 * where Vestra Control can carry the object lifetime into the reservation and
+	 * node upload. The node-origin fetch path has no TTL contract, so remote
+	 * expiring propagation fails closed.
+	 *
+	 * @param array<string,mixed> $options Optional object expiry options.
+	 * @return bool|array<string,mixed> Vestra Fabric reference, or false on failure.
+	 */
+	public static function propagate(string $file, bool $encryption=false, array $options=[]): bool|array {
 		self::trace(__FUNCTION__, func_get_args());
-		$dialback=self::dialback('CALL_VESTRA_PROPAGATE', $file, $encryption);
-		if($dialback!==null){
-			return is_array($dialback) ? $dialback : false;
+		$expiryOptions=self::normalizePropagationOptions($options);
+		if($expiryOptions===false){
+			self::log('Vestra propagation object expiry options are invalid.');
+			return false;
 		}
 		$file=trim($file);
 		if($file===''){
@@ -239,6 +252,19 @@ class vestra {
 			return false;
 		}
 		$isRemote=filter_var($file, FILTER_VALIDATE_URL)!==false;
+		if($isRemote && $expiryOptions!==[]){
+			self::log('Vestra remote-origin propagation cannot guarantee object expiry.');
+			return false;
+		}
+		$dialback=$expiryOptions===[]
+			? self::dialback('CALL_VESTRA_PROPAGATE', $file, $encryption)
+			: self::dialback('CALL_VESTRA_PROPAGATE', $file, $encryption, $expiryOptions);
+		if($dialback!==null){
+			if(!is_array($dialback) || ($expiryOptions!==[] && !isset($dialback['object_expires_at']))){
+				return false;
+			}
+			return $dialback;
+		}
 		$hash='';
 		$stage='';
 		$metadata=[];
@@ -254,7 +280,7 @@ class vestra {
 				self::log('Vestra propagation could not hash the source file.');
 				return false;
 			}
-			if(!$encryption){
+			if(!$encryption && $expiryOptions===[]){
 				$known=self::sql('select', 'object_id,reference', 'dataphyre.vestra_objects', 'WHERE hash=?', [$hash], false, false);
 				$knownReference=is_array($known) ? ($known['reference'] ?? null) : null;
 				if(is_string($knownReference)){
@@ -302,9 +328,14 @@ class vestra {
 			$bytes=max(1, (int)(self::fs('size', $stage) ?: 0));
 		}
 		$reference=!$isRemote && $stage!==''
-			? self::reserveAndUpload($stage, $hash, $tenant, $bytes, self::fileContentType($stage))
+			? self::reserveAndUpload($stage, $hash, $tenant, $bytes, self::fileContentType($stage), $expiryOptions)
 			: false;
 		if(!is_array($reference)){
+			if($expiryOptions!==[]){
+				self::cleanupStage($stage);
+				self::log('Vestra expiring propagation requires a successful Control reserve/upload.');
+				return false;
+			}
 			$origin=$isRemote ? $file : self::localOriginUrl(basename($stage));
 			$response=self::objectRequest('POST', '/objects/fetch', [
 				'origin'=>$origin,
@@ -315,6 +346,12 @@ class vestra {
 		if(!is_array($reference)){
 			self::cleanupStage($stage);
 			self::log('Vestra propagation did not receive a usable object reference.');
+			return false;
+		}
+		$referenceExpiry=self::propagationEpochValue($reference['object_expires_at'] ?? null);
+		if($expiryOptions!==[] && (!is_int($referenceExpiry) || $referenceExpiry<=self::clock())){
+			self::cleanupStage($stage);
+			self::log('Vestra expiring propagation did not receive object expiry from Control.');
 			return false;
 		}
 		if($metadata!==[]){
@@ -724,6 +761,7 @@ class vestra {
 			throw new \LogicException('Vestra HTTP boundary must be callable.');
 		}
 		$response=$http($request);
+		self::observeHttp($request, $response);
 		if(!is_array($response)){
 			self::log('Vestra HTTP transport failed.');
 			return false;
@@ -735,6 +773,65 @@ class vestra {
 			return false;
 		}
 		return $response;
+	}
+
+	/**
+	 * Publishes bounded transport metadata to an optional runtime observer.
+	 * Request URLs, headers, bodies, files, tokens, and provider payloads never
+	 * cross this boundary.
+	 */
+	private static function observeHttp(array $request,mixed $response): void {
+		$observer=self::$runtime['http_observer'] ?? null;
+		if(!is_callable($observer)) return;
+		$purpose=strtolower(trim((string)($request['purpose'] ?? '')));
+		$event=[
+			'purpose'=>in_array($purpose,['control','object','upload'],true) ? $purpose : 'unknown',
+			'endpoint_class'=>self::observerEndpointClass($request['url'] ?? null),
+			'transport_ok'=>is_array($response),
+			'http_status'=>is_array($response) ? max(0,(int)($response['status'] ?? 0)) : 0,
+		];
+		if(is_array($response)){
+			$decoded=is_array($response['json'] ?? null)
+				? $response['json']
+				: json_decode((string)($response['body'] ?? ''),true);
+			if(is_array($decoded)){
+				if(is_bool($decoded['ok'] ?? null)) $event['provider_ok']=$decoded['ok'];
+				$error=is_array($decoded['error'] ?? null) ? $decoded['error'] : [];
+				foreach(['status','code','reason'] as $key){
+					$value=self::observerScalar($decoded[$key] ?? ($error[$key] ?? null));
+					if($value!=='') $event['provider_'.$key]=$value;
+				}
+				$errors=is_array($decoded['errors'] ?? null) ? $decoded['errors'] : [];
+				$value=self::observerScalar($errors[0] ?? null);
+				if($value!=='') $event['provider_error']=$value;
+			}
+		}
+		try{ $observer($event); }catch(\Throwable){}
+	}
+
+	private static function observerScalar(mixed $value): string {
+		if(!is_scalar($value)) return '';
+		$value=trim((string)$value);
+		return preg_match('/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$/D',$value)===1 ? $value : '';
+	}
+
+	private static function observerEndpointClass(mixed $value): string {
+		if(!is_string($value) || trim($value)==='') return 'invalid';
+		$value=trim($value);
+		if(str_starts_with($value,'/')) return 'relative';
+		$parts=parse_url($value);
+		if(!is_array($parts)) return 'invalid';
+		$scheme=strtolower((string)($parts['scheme'] ?? ''));
+		$host=strtolower(rtrim((string)($parts['host'] ?? ''),'.'));
+		if(!in_array($scheme,['http','https'],true) || $host==='') return 'invalid';
+		if($host==='localhost' || str_ends_with($host,'.localhost') || $host==='::1' || str_starts_with($host,'127.')){
+			return $scheme.'_loopback';
+		}
+		if(filter_var($host,FILTER_VALIDATE_IP)!==false
+			&& filter_var($host,FILTER_VALIDATE_IP,FILTER_FLAG_NO_PRIV_RANGE|FILTER_FLAG_NO_RES_RANGE)===false){
+			return $scheme.'_private';
+		}
+		return $scheme.'_external';
 	}
 
 	/**
@@ -1276,19 +1373,126 @@ class vestra {
 		if($referenceMetadata!==[]){
 			$reference['metadata']=$referenceMetadata;
 		}
+		$objectExpiresAt=self::responseObjectExpiresAt($response, $source, $data, $metadata);
+		if($objectExpiresAt!==null){
+			$reference['object_expires_at']=$objectExpiresAt;
+		}
 		return $identity!=='' ? self::applyReferenceTenantIdentity($reference, $identity) : $reference;
 	}
 
+	/** Extracts the object lifetime that Vestra Control returned with a write. */
+	private static function responseObjectExpiresAt(array $response, array $source, array $data, array $metadata): ?int {
+		$containers=[$source, $data, $response, $metadata];
+		foreach($containers as $container){
+			$value=$container['object_expires_at'] ?? null;
+			$epoch=self::epochValue($value);
+			if($epoch!==null){
+				return $epoch;
+			}
+			foreach(['reference','object','reservation'] as $nestedKey){
+				$nested=$container[$nestedKey] ?? null;
+				if(!is_array($nested)){
+					continue;
+				}
+				$epoch=self::epochValue($nested['object_expires_at'] ?? ($nestedKey==='reservation' ? ($nested['expires_at'] ?? null) : null));
+				if($epoch!==null){
+					return $epoch;
+				}
+			}
+		}
+		return null;
+	}
+
+	/** @return int|false|null */
+	private static function epochValue(mixed $value): int|false|null {
+		if(is_int($value)){
+			return $value>0 ? $value : null;
+		}
+		if(is_string($value)){
+			$value=trim($value);
+			if($value===''){
+				return null;
+			}
+			if(preg_match('/^\+?[0-9]+$/', $value)===1){
+				$epoch=filter_var($value, FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
+				return is_int($epoch) ? $epoch : false;
+			}
+			$parsed=strtotime($value);
+			return $parsed!==false && $parsed>0 ? $parsed : false;
+		}
+		return null;
+	}
+
+	/** Parses the integer Unix epoch accepted by propagation options. */
+	private static function propagationEpochValue(mixed $value): int|false {
+		if(is_int($value)){
+			return $value>0 ? $value : false;
+		}
+		if(!is_string($value) || preg_match('/^\+?[0-9]+$/', trim($value))!==1){
+			return false;
+		}
+		$epoch=filter_var(trim($value), FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
+		return is_int($epoch) ? $epoch : false;
+	}
+
+	/**
+	 * Validates and normalizes optional propagation object expiry settings.
+	 *
+	 * @param array<string,mixed> $options
+	 * @return array<string,int>|false
+	 */
+	private static function normalizePropagationOptions(array $options): array|false {
+		$normalized=[];
+		$now=self::clock();
+		if(array_key_exists('object_expires_in_secs', $options)){
+			$ttl=self::boundedPositiveInteger($options['object_expires_in_secs'], self::MAX_PROPAGATION_OBJECT_EXPIRY_IN_SECS);
+			if($ttl===false){
+				return false;
+			}
+			$normalized['object_expires_in_secs']=$ttl;
+		}
+		if(array_key_exists('object_expires_at', $options)){
+			$epoch=self::propagationEpochValue($options['object_expires_at']);
+			if(!is_int($epoch) || $epoch<=$now || $epoch>$now+self::MAX_PROPAGATION_OBJECT_EXPIRY_IN_SECS){
+				return false;
+			}
+			$normalized['object_expires_at']=$epoch;
+		}
+		return $normalized;
+	}
+
+	private static function boundedPositiveInteger(mixed $value, int $maximum): int|false {
+		if(is_int($value)){
+			return $value>0 && $value<=$maximum ? $value : false;
+		}
+		if(!is_string($value) || preg_match('/^\+?[0-9]+$/', trim($value))!==1){
+			return false;
+		}
+		$normalized=filter_var(trim($value), FILTER_VALIDATE_INT, ['options'=>['min_range'=>1,'max_range'=>$maximum]]);
+		return is_int($normalized) ? $normalized : false;
+	}
+
 	/** @return array<string,mixed>|false */
-	private static function reserveAndUpload(string $file, string $hash, string $tenant, int $bytes, string $contentType): array|false {
+	private static function reserveAndUpload(string $file, string $hash, string $tenant, int $bytes, string $contentType, array $options=[]): array|false {
+		$normalizedOptions=self::normalizePropagationOptions($options);
+		if($normalizedOptions===false){
+			return false;
+		}
+		$options=$normalizedOptions;
 		$canonical=self::canonicalTenant($tenant);
 		$controlPath=self::tenantControlPath($tenant, 'objects/reserve');
 		if($canonical==='' || self::controlApiToken($controlPath, $tenant)===''){
 			return false;
 		}
 		$key=self::safeObjectKey($file, $hash);
-		$idempotencyKey='dataphyre_'.$canonical.'_'.substr(hash('sha256', implode('|', [$canonical,$key,(string)$bytes,$hash])), 0, 40);
-		$response=self::controlRequest('POST', $controlPath, [
+		$idempotencyIdentity=[$canonical,$key,(string)$bytes,$hash];
+		foreach(['object_expires_in_secs','object_expires_at'] as $expiryKey){
+			if(array_key_exists($expiryKey, $options)){
+				$idempotencyIdentity[]=$expiryKey.'='.(string)$options[$expiryKey];
+			}
+		}
+		$idempotencyKey='dataphyre_'.$canonical.'_'.substr(hash('sha256', implode('|', $idempotencyIdentity)), 0, 40);
+		$payload=[
 			'object_key'=>$key,
 			'name'=>$key,
 			'content_type'=>$contentType,
@@ -1298,7 +1502,13 @@ class vestra {
 			'method'=>'PUT',
 			'checksum_sha256'=>$hash,
 			'idempotency_key'=>$idempotencyKey,
-		], $tenant, 'form', $idempotencyKey);
+		];
+		foreach(['object_expires_in_secs','object_expires_at'] as $expiryKey){
+			if(array_key_exists($expiryKey, $options)){
+				$payload[$expiryKey]=$options[$expiryKey];
+			}
+		}
+		$response=self::controlRequest('POST', $controlPath, $payload, $tenant, 'form', $idempotencyKey);
 		if(!is_array($response) || ($response['ok'] ?? true)===false){
 			return false;
 		}
@@ -1608,8 +1818,8 @@ class vestra {
 		return self::referenceFromResponse($response, $hash);
 	}
 
-	private static function fabric_reserve_upload(string $file, string $hash, string $tenant, int $bytes, string $contentType): array|false {
-		return self::reserveAndUpload($file, $hash, $tenant, $bytes, $contentType);
+	private static function fabric_reserve_upload(string $file, string $hash, string $tenant, int $bytes, string $contentType, array $options=[]): array|false {
+		return self::reserveAndUpload($file, $hash, $tenant, $bytes, $contentType, $options);
 	}
 
 	private static function uuid(): string {

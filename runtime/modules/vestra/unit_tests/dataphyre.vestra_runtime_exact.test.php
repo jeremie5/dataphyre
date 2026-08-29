@@ -139,6 +139,25 @@ test('direct upload follows reserve guidance streams once and materializes its r
 	], DpVestraRuntimeScenario::open($t)->directUploadContract());
 });
 
+test('propagation expiry options reach Control payloads and references while remote expiry fails closed', static function(Context $t): void {
+	$contract=DpVestraRuntimeScenario::open($t)->propagationExpiryContract();
+	$t->same(41, $contract['ttl_id']);
+	$t->same(1700000600, $contract['ttl_expiry']);
+	$t->same(600, (int)$contract['ttl_payload']['object_expires_in_secs']);
+	$t->same(1700000600, $contract['ttl_stored_expiry']);
+	$t->same(0, $contract['ttl_hash_queries']);
+	$t->same(42, $contract['at_id']);
+	$t->same(1700000700, $contract['at_expiry']);
+	$t->same(1700000700, (int)$contract['at_payload']['object_expires_at']);
+	$t->same(1700000700, $contract['at_stored_expiry']);
+	$t->same(0, $contract['at_hash_queries']);
+	$t->isFalse($contract['invalid']);
+	$t->same(0, $contract['invalid_calls']);
+	$t->isFalse($contract['remote']);
+	$t->same(0, $contract['remote_calls']);
+	$t->isFalse($contract['ttl_idempotency']===$contract['at_idempotency']);
+});
+
 test('transport failures distinguish invalid boundaries unavailable HTTP statuses and malformed JSON', static function(Context $t): void {
 	$failures=DpVestraRuntimeScenario::open($t)->transportFailureContract();
 	$t->throws($failures['invalid_boundary'], LogicException::class);
@@ -146,6 +165,27 @@ test('transport failures distinguish invalid boundaries unavailable HTTP statuse
 	$t->isFalse($failures['status']);
 	$t->isFalse($failures['json']);
 	$t->isTrue($failures['logged']);
+});
+
+test('transport observer exposes bounded provider metadata without request or response payloads', static function(Context $t): void {
+	$observed=DpVestraRuntimeScenario::open($t)->transportObserverContract();
+	$t->same([
+		'purpose'=>'object',
+		'endpoint_class'=>'https_external',
+		'transport_ok'=>true,
+		'http_status'=>200,
+		'provider_ok'=>false,
+		'provider_status'=>'denied_by_control_plane_policy',
+		'provider_code'=>'VES_CONTROL_SCOPE_DENIED',
+		'provider_reason'=>'scope_denied',
+		'provider_error'=>'scope_not_allowed',
+	],$observed['rejected']);
+	$t->same(['purpose'=>'object','endpoint_class'=>'https_external','transport_ok'=>false,'http_status'=>0],$observed['transport']);
+	$t->same('http_loopback',$observed['loopback']['endpoint_class']);
+	foreach(['url','headers','body','file','detail','token'] as $forbidden){
+		$t->missingKey($forbidden,$observed['rejected']);
+		$t->missingKey($forbidden,$observed['transport']);
+	}
 });
 
 test('URL rejection and fallback policy covers malformed references persisted objects and context dialbacks', static function(Context $t): void {

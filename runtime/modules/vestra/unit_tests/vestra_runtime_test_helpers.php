@@ -31,6 +31,8 @@ final class DpVestraRuntimeScenario {
 	private array $httpQueue=[];
 	/** @var list<array<string,mixed>> */
 	private array $httpCalls=[];
+	/** @var list<array<string,mixed>> */
+	private array $httpObservations=[];
 	/** @var list<mixed> */
 	private array $sqlSelectQueue=[];
 	/** @var list<array{operation:string,arguments:array}> */
@@ -65,6 +67,7 @@ final class DpVestraRuntimeScenario {
 		$this->config=$this->defaultConfig();
 		$this->httpQueue=[];
 		$this->httpCalls=[];
+		$this->httpObservations=[];
 		$this->sqlSelectQueue=[];
 		$this->sqlCalls=[];
 		$this->logs=[];
@@ -88,6 +91,7 @@ final class DpVestraRuntimeScenario {
 			'env'=>fn(string $name): string|false=>$this->environment[$name] ?? false,
 			'legacy_config'=>fn(string $name): mixed=>$this->legacy[$name] ?? null,
 			'http'=>fn(array $request): mixed=>$this->respond($request),
+			'http_observer'=>function(array $event): void { $this->httpObservations[]=$event; },
 			'sql_select'=>fn(mixed ...$arguments): mixed=>$this->observeSql('select', $arguments),
 			'sql_insert'=>fn(mixed ...$arguments): mixed=>$this->observeSql('insert', $arguments),
 			'sql_update'=>fn(mixed ...$arguments): mixed=>$this->observeSql('update', $arguments),
@@ -421,6 +425,79 @@ final class DpVestraRuntimeScenario {
 	}
 
 	/** @return array<string,mixed> */
+	public function propagationExpiryContract(): array {
+		$file=$this->file('sources/expiring.png', 'expiring image');
+		$this->reset()->withDialback('CALL_VESTRA_PROPAGATE', null);
+		$this->queueJson('/objects/reserve', [
+			'ok'=>true,
+			'object_expires_at'=>1700000600,
+			'data'=>[
+				'object_id'=>41,
+				'object_expires_at'=>1700000600,
+				'upload'=>['url'=>'/uploads/41','method'=>'PUT'],
+			],
+		]);
+		$this->queueHttp('/uploads/41', ['status'=>201,'json'=>['asset_url'=>'https://persisted.test/41'],'body'=>'']);
+		$ttlReference=\dataphyre\vestra::propagate($file, false, ['object_expires_in_secs'=>600]);
+		$ttlReserve=array_values(array_filter($this->httpCalls, static fn(array $call): bool=>($call['purpose'] ?? '')==='control'))[0] ?? [];
+		$ttlPayload=[];
+		if(is_string($ttlReserve['body'] ?? null)){
+			parse_str($ttlReserve['body'], $ttlPayload);
+		}
+		$ttlStored=array_values(array_filter($this->sqlCalls, static fn(array $call): bool=>($call['operation'] ?? '')==='insert'))[0] ?? [];
+		$ttlStoredFields=$ttlStored['arguments'][1] ?? [];
+		$ttlStoredReference=json_decode((string)($ttlStoredFields['reference'] ?? ''), true);
+		$ttlHashQueries=count(array_filter($this->sqlCalls, static fn(array $call): bool=>($call['operation'] ?? '')==='select' && str_contains((string)($call['arguments'][3] ?? ''), 'hash=?')));
+
+		$this->reset()->withDialback('CALL_VESTRA_PROPAGATE', null);
+		$this->queueJson('/objects/reserve', [
+			'ok'=>true,
+			'object_expires_at'=>1700000700,
+			'data'=>[
+				'object_id'=>42,
+				'object_expires_at'=>1700000700,
+				'upload'=>['url'=>'/uploads/42','method'=>'PUT'],
+			],
+		]);
+		$this->queueHttp('/uploads/42', ['status'=>201,'json'=>[],'body'=>'']);
+		$atReference=\dataphyre\vestra::propagate($file, false, ['object_expires_at'=>1700000700]);
+		$atReserve=array_values(array_filter($this->httpCalls, static fn(array $call): bool=>($call['purpose'] ?? '')==='control'))[0] ?? [];
+		$atPayload=[];
+		if(is_string($atReserve['body'] ?? null)){
+			parse_str($atReserve['body'], $atPayload);
+		}
+		$atStored=array_values(array_filter($this->sqlCalls, static fn(array $call): bool=>($call['operation'] ?? '')==='insert'))[0] ?? [];
+		$atStoredFields=$atStored['arguments'][1] ?? [];
+		$atStoredReference=json_decode((string)($atStoredFields['reference'] ?? ''), true);
+		$atHashQueries=count(array_filter($this->sqlCalls, static fn(array $call): bool=>($call['operation'] ?? '')==='select' && str_contains((string)($call['arguments'][3] ?? ''), 'hash=?')));
+
+		$this->reset()->withDialback('CALL_VESTRA_PROPAGATE', null);
+		$invalid=\dataphyre\vestra::propagate($file, false, ['object_expires_in_secs'=>0]);
+		$invalidCalls=$this->httpCalls;
+		$this->reset()->withDialback('CALL_VESTRA_PROPAGATE', null);
+		$remote=\dataphyre\vestra::propagate('https://origin.test/remote.png', false, ['object_expires_in_secs'=>600]);
+		$remoteCalls=$this->httpCalls;
+		return [
+			'ttl_id'=>$ttlReference['object_id'] ?? null,
+			'ttl_expiry'=>$ttlReference['object_expires_at'] ?? null,
+			'ttl_payload'=>$ttlPayload,
+			'ttl_idempotency'=>$ttlReserve['headers']['Idempotency-Key'] ?? null,
+			'ttl_stored_expiry'=>is_array($ttlStoredReference) ? ($ttlStoredReference['object_expires_at'] ?? null) : null,
+			'ttl_hash_queries'=>$ttlHashQueries,
+			'at_id'=>$atReference['object_id'] ?? null,
+			'at_expiry'=>$atReference['object_expires_at'] ?? null,
+			'at_payload'=>$atPayload,
+			'at_idempotency'=>$atReserve['headers']['Idempotency-Key'] ?? null,
+			'at_stored_expiry'=>is_array($atStoredReference) ? ($atStoredReference['object_expires_at'] ?? null) : null,
+			'at_hash_queries'=>$atHashQueries,
+			'invalid'=>$invalid,
+			'invalid_calls'=>count($invalidCalls),
+			'remote'=>$remote,
+			'remote_calls'=>count($remoteCalls),
+		];
+	}
+
+	/** @return array<string,mixed> */
 	public function transportFailureContract(): array {
 		$invalidBoundary=function(): mixed {
 			$this->reset(['http'=>'invalid'])->withDialback('CALL_VESTRA_PROPAGATE', null);
@@ -434,6 +511,29 @@ final class DpVestraRuntimeScenario {
 		$this->reset()->withDialback('CALL_VESTRA_PROPAGATE', null)->queueHttp('/objects/fetch', ['status'=>200,'body'=>'not-json']);
 		$json=\dataphyre\vestra::propagate('https://origin.test/file');
 		return ['invalid_boundary'=>$invalidBoundary,'transport'=>$transport,'status'=>$status,'json'=>$json,'logged'=>count($this->logs)>0];
+	}
+
+	/** @return array<string,mixed> */
+	public function transportObserverContract(): array {
+		$this->reset()->withDialback('CALL_VESTRA_PROPAGATE', null)->queueJson('/objects/fetch', [
+			'ok'=>false,
+			'error'=>[
+				'status'=>'denied_by_control_plane_policy',
+				'code'=>'VES_CONTROL_SCOPE_DENIED',
+				'reason'=>'scope_denied',
+			],
+			'errors'=>['scope_not_allowed','must-not-cross-observer'],
+			'detail'=>'must-not-cross-observer',
+		]);
+		\dataphyre\vestra::propagate('https://origin.test/file');
+		$rejected=$this->httpObservations[0] ?? [];
+		$this->reset()->withDialback('CALL_VESTRA_PROPAGATE', null)->queueHttp('/objects/fetch', false);
+		\dataphyre\vestra::propagate('https://origin.test/file');
+		$transport=$this->httpObservations[0] ?? [];
+		$this->reset()->withDialback('CALL_VESTRA_PROPAGATE', null)->withConfig(['base_url'=>'http://127.0.0.1:17821/'])->queueHttp('/objects/fetch', false);
+		\dataphyre\vestra::propagate('https://origin.test/file');
+		$loopback=$this->httpObservations[0] ?? [];
+		return ['rejected'=>$rejected,'transport'=>$transport,'loopback'=>$loopback];
 	}
 
 	/** @return array<string,mixed> */

@@ -68,6 +68,13 @@ The owning kernel exposes the merged readonly config as `DP_VESTRA_CFG`.
   - Local-development escape hatch for unsigned `/v/...` URLs. Keep this `false`
     for signed Fabric deployments.
 
+Test and release harnesses may install an `http_observer` through
+`vestra::configureRuntime()`. The observer receives only bounded metadata:
+request purpose, non-identifying endpoint class, transport availability, numeric HTTP status, provider `ok`,
+and short scalar `status`, `code`, `reason`, or first error-code fields. URLs, headers, bodies,
+files, tokens, and complete provider payloads are intentionally excluded. An
+observer exception is ignored and never changes request behavior.
+
 Credential inheritance is fail closed per tenant profile. Omitting `api_token`,
 `write_api_token`, `tenant_read_token`, `write_token`, or `node_token` from a
 profile preserves its flat module, legacy application config, and `VESTRA_*`
@@ -140,8 +147,16 @@ The kernel surface is centered around `\dataphyre\vestra`.
 - `ingest_resources(string $html, ?int $resource_limit=null, array $known_changes=[]): array`
   - Rewrites ingestable HTML resources to Vestra URLs and returns `new_html` plus
     `changes`, a URL-to-reference map.
-- `propagate(string $file, bool $encryption=false): bool|array`
+- `propagate(string $file, bool $encryption=false, array $options=[]): bool|array`
   - Pushes a local file or remote URL to Vestra and returns the propagated reference.
+    The optional `$options` map accepts `object_expires_in_secs` (a positive
+    integer up to `315360000`) and/or `object_expires_at` (a future Unix epoch
+    within the same ten-year bound). Expiring writes are sent through the local
+    Control reserve/upload path; the client does not fall back to node-origin
+    fetch because that path cannot guarantee object TTL. A successful expiring
+    response retains Control's normalized `object_expires_at` in the returned
+    and persisted reference. Expiring writes also bypass permanent hash
+    deduplication, and the expiry values participate in reservation idempotency.
 
 #### Storage References
 
@@ -162,6 +177,24 @@ Framework-level storage references are JSON objects:
   }
 }
 ```
+
+Expiring propagation example:
+
+```php
+$reference=\Dataphyre\Vestra\Client::propagate(
+    $localFile,
+    false,
+    ['object_expires_in_secs'=>600]
+);
+```
+
+`object_expires_at` may be supplied instead when the application owns the exact
+future epoch. Both fields may be supplied when the caller needs to preserve the
+request's original lifetime intent; Vestra Control returns the canonical
+`object_expires_at`. Invalid, non-positive, past, or over-bound expiry values are
+rejected before a write is attempted. Remote URLs with either expiry option are
+rejected because the node `/objects/fetch` contract does not carry or enforce an
+object lifetime.
 
 Applications should keep ownership data, such as store id or product id, in their
 own tables. Vestra tenant should represent the application content boundary, not

@@ -36,9 +36,9 @@ namespace dataphyre {
 			return ['new_html'=>str_replace('old', 'new', $html), 'changes'=>[['from'=>'old', 'to'=>'new']]];
 		}
 
-		public static function propagate(string $file, bool $encryption=false): array|false {
-			self::$calls[]=['propagate', $file, $encryption];
-			return ['path'=>$file, 'encrypted'=>$encryption];
+		public static function propagate(string $file, bool $encryption=false, array $options=[]): array|false {
+			self::$calls[]=['propagate', $file, $encryption, $options];
+			return ['path'=>$file, 'encrypted'=>$encryption, 'options'=>$options];
 		}
 	}
 }
@@ -89,7 +89,7 @@ namespace {
 		$ingested=$manager->ingest('<img src="old">', 3, ['old'=>['cached'=>true]]);
 		$t->instanceOf(IngestionResult::class, $ingested);
 		$t->same('<img src="new">', $ingested->html());
-		$t->same(['path'=>'fixture.png', 'encrypted'=>true], $manager->propagate('fixture.png', true));
+		$t->same(['path'=>'fixture.png', 'encrypted'=>true, 'options'=>['object_expires_in_secs'=>60]], $manager->propagate('fixture.png', true, ['object_expires_in_secs'=>60]));
 
 		$t->same($manager, Client::manager());
 		$t->isTrue(Client::configured());
@@ -100,7 +100,7 @@ namespace {
 		$t->same('https://objects.test/asset.webp', Client::asset_url($reference, 'webp'));
 		$t->same(5, Client::updateUseCount($reference, 1));
 		$t->instanceOf(IngestionResult::class, Client::ingest('old'));
-		$t->same(['path'=>'client.png', 'encrypted'=>false], Client::propagate('client.png'));
+		$t->same(['path'=>'client.png', 'encrypted'=>false, 'options'=>[]], Client::propagate('client.png'));
 
 		VestraManager::flush();
 		$t->isFalse($manager===VestraManager::instance());

@@ -132,13 +132,17 @@ final class VestraManager {
 	 * Pushes a file path or remote URL into Vestra object storage.
 	 *
 	 * Local files may be copied into the Vestra cache and de-duplicated by the kernel.
-	 * Remote URLs are passed to the Vestra API as origins.
+	 * Remote URLs are passed to the Vestra API as origins. Optional object expiry
+	 * settings are honored only when the local file uses the Control reserve/upload
+	 * path; remote-origin expiry fails closed when the node cannot guarantee TTL.
 	 *
 	 * @param string $file Local file path or remote URL.
 	 * @param bool $encryption True when the Vestra should store the resource encrypted.
+	 * @param array<string,mixed> $options Optional `object_expires_in_secs` and/or
+	 * `object_expires_at` propagation settings.
 	 * @return array<string,mixed>|false Vestra Fabric reference, or false on failure.
 	 */
-	public function propagate(string $file, bool $encryption=false): bool|array {
-		return \dataphyre\vestra::propagate($file, $encryption);
+	public function propagate(string $file, bool $encryption=false, array $options=[]): bool|array {
+		return \dataphyre\vestra::propagate($file, $encryption, $options);
 	}
 }
