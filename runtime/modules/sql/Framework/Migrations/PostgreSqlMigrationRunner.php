@@ -582,54 +582,59 @@ final class PostgreSqlMigrationRunner {
 			$this->acquireLock();
 			$state=$this->status($manifest);
 			$pendingValidation=$this->freshDatabaseEvidence($manifest, $state);
-			if($pendingValidation['eligible']!==true){
-				throw new RuntimeException(
-					'Automatic migration convergence requires one proven-fresh application schema.'
-				);
-			}
-			$this->materializeFrameworkMigrationPrerequisites();
-			$this->ensureJournal();
-			$insert=$this->prepare(
-				'INSERT INTO '.$this->profile->journalQualified().
-					' (migration_name, checksum_sha256, applied_at) '.
-					'VALUES (?, ?, CURRENT_TIMESTAMP)'
-			);
-			foreach($manifest->entries() as $entry){
-				$this->executeSql(
-					$entry['up']['sql'],
-					'Migration up SQL failed: '.$entry['id'].'.'
-				);
-				$this->executeStatement(
-					$insert,
-					[$entry['id'], $entry['up']['sha256']],
-					'Migration journal insert failed: '.$entry['id'].'.'
-				);
-				$this->recordEvent($operationId, $entry, 'up', $identity);
-				$executed[]=$entry['id'];
-			}
-			$after=$this->status($manifest);
-			$convergenceValidation=$this->deploymentEvidence(
-				$manifest,
-				$after,
-				'rolling'
-			);
-			$convergenceValidation['mode']='automatic';
-			$convergenceValidation['required_minimum_active_release']=
+			$requiredMinimumActiveRelease=
 				$pendingValidation['required_minimum_active_release'];
-			$convergenceValidation['compatibility_floor_satisfied']=true;
-			$convergenceValidation['fresh_database_proven']=true;
-			if(
-				$convergenceValidation['eligible']!==true
-				|| $convergenceValidation['errors']!==[]
-				|| $convergenceValidation['pending_migrations']!==[]
-				|| $convergenceValidation['pending_phases']!==[]
-				|| $convergenceValidation['selected_migrations']!==[]
-				|| $convergenceValidation['selected_phases']!==[]
-				|| $convergenceValidation['deferred_migrations']!==[]
-			){
-				throw new RuntimeException(
-					'Automatic migration convergence did not reach the immutable manifest head.'
+			if($pendingValidation['eligible']!==true){
+				$convergenceValidation=self::automaticConvergenceEvidence(
+					$this->deploymentEvidence($manifest, $state, 'rolling'),
+					$requiredMinimumActiveRelease,
+					false
 				);
+				if(
+					!self::automaticConvergenceComplete($convergenceValidation)
+					|| !self::lockedStateMatchesManifestHead(
+						$manifest,
+						$state,
+						$requiredMinimumActiveRelease
+					)
+				){
+					throw new RuntimeException(
+						'Automatic migration convergence requires one proven-fresh application schema.'
+					);
+				}
+				$pendingValidation=$convergenceValidation;
+			}else{
+				$this->materializeFrameworkMigrationPrerequisites();
+				$this->ensureJournal();
+				$insert=$this->prepare(
+					'INSERT INTO '.$this->profile->journalQualified().
+						' (migration_name, checksum_sha256, applied_at) '.
+						'VALUES (?, ?, CURRENT_TIMESTAMP)'
+				);
+				foreach($manifest->entries() as $entry){
+					$this->executeSql(
+						$entry['up']['sql'],
+						'Migration up SQL failed: '.$entry['id'].'.'
+					);
+					$this->executeStatement(
+						$insert,
+						[$entry['id'], $entry['up']['sha256']],
+						'Migration journal insert failed: '.$entry['id'].'.'
+					);
+					$this->recordEvent($operationId, $entry, 'up', $identity);
+					$executed[]=$entry['id'];
+				}
+				$after=$this->status($manifest);
+				$convergenceValidation=self::automaticConvergenceEvidence(
+					$this->deploymentEvidence($manifest, $after, 'rolling'),
+					$requiredMinimumActiveRelease,
+					true
+				);
+				if(!self::automaticConvergenceComplete($convergenceValidation)){
+					throw new RuntimeException(
+						'Automatic migration convergence did not reach the immutable manifest head.'
+					);
+				}
 			}
 			$this->commit();
 		}catch(Throwable $exception){
@@ -645,8 +650,7 @@ final class PostgreSqlMigrationRunner {
 			'operation_id'=>$operationId,
 			'release_version'=>$identity['release_version'],
 			'release_sha256'=>$identity['release_sha256'],
-			'required_minimum_active_release'=>
-				$pendingValidation['required_minimum_active_release'],
+			'required_minimum_active_release'=>$requiredMinimumActiveRelease,
 			'verified_minimum_active_release'=>null,
 			'normalized_legacy_aliases'=>[],
 			'bootstrap_cutoff'=>$manifest->bootstrapCutoff(),
@@ -1243,6 +1247,52 @@ final class PostgreSqlMigrationRunner {
 			'Dataphyre could not inspect the application schema identity.'
 		);
 		return (int)$statement->fetchColumn()===1;
+	}
+
+	/** @param array<string,mixed> $validation @return array<string,mixed> */
+	private static function automaticConvergenceEvidence(
+		array $validation,
+		?string $requiredMinimumActiveRelease,
+		bool $freshDatabaseProven
+	): array {
+		$validation['mode']='automatic';
+		$validation['required_minimum_active_release']=$requiredMinimumActiveRelease;
+		$validation['compatibility_floor_satisfied']=true;
+		$validation['fresh_database_proven']=$freshDatabaseProven;
+		return $validation;
+	}
+
+	/** @param array<string,mixed> $validation */
+	private static function automaticConvergenceComplete(array $validation): bool {
+		return ($validation['bootstrap_cutoff_status'] ?? null)==='applied'
+			&& ($validation['eligible'] ?? null)===true
+			&& ($validation['compatibility_floor_satisfied'] ?? null)===true
+			&& ($validation['errors'] ?? null)===[]
+			&& ($validation['pending_migrations'] ?? null)===[]
+			&& ($validation['pending_phases'] ?? null)===[]
+			&& ($validation['selected_migrations'] ?? null)===[]
+			&& ($validation['selected_phases'] ?? null)===[]
+			&& ($validation['deferred_migrations'] ?? null)===[];
+	}
+
+	/** @param array<string,mixed> $state */
+	private static function lockedStateMatchesManifestHead(
+		PostgreSqlMigrationManifest $manifest,
+		array $state,
+		?string $requiredMinimumActiveRelease
+	): bool {
+		$entries=$manifest->entries();
+		$head=$entries[array_key_last($entries)]['id'] ?? null;
+		return ($state['journal_exists'] ?? null)===true
+			&& ($state['event_journal_exists'] ?? null)===true
+			&& ($state['applied_count'] ?? null)===count($entries)
+			&& ($state['applied_head'] ?? null)===$head
+			&& ($state['pending_count'] ?? null)===0
+			&& ($state['pending_contract_count'] ?? null)===0
+			&& ($state['drift_count'] ?? null)===0
+			&& ($state['schema_drift_count'] ?? null)===0
+			&& ($state['minimum_compatible_release'] ?? null)===
+				$requiredMinimumActiveRelease;
 	}
 
 	/**

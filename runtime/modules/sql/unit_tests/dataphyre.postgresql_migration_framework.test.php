@@ -2193,6 +2193,67 @@ test('PostgreSQL migration runner atomically converges fresh bootstrap expand an
 	);
 })->tag('sql', 'migration', 'postgresql', 'runner', 'automatic', 'fresh', 'convergence', 'atomic', 'transaction')->group('framework-coverage')->maxMillis(10000);
 
+test('PostgreSQL fresh convergence accepts only an exact manifest head committed by the lock winner', static function(Context $t): void {
+	$manifest=dp_postgresql_migration_no_schema_manifest($t, 'runner-fresh-lock-race');
+	$entries=$manifest->entries();
+	$rows=array_map(
+		static fn(array $entry): array=>[
+			'migration_name'=>$entry['id'],
+			'checksum_sha256'=>$entry['up']['sha256'],
+			'applied_at'=>'2026-08-27 00:00:00+00',
+		],
+		$entries
+	);
+	$lock=new ScriptedPdoStatement([], true);
+	$pdo=$t->scriptedPdo('pgsql')
+		->queueStatement($lock)
+		->queueScalar(1)
+		->queueRows($rows)
+		->queueScalar(1)
+		->queueScalar(1);
+
+	$result=(new PostgreSqlMigrationRunner(
+		$pdo,
+		dp_postgresql_migration_profile()
+	))->applyFreshDatabase($manifest);
+
+	$t->same('committed', $result['transaction']);
+	$t->same([], $result['migrations']);
+	$t->same('automatic', $result['pending_validation']['mode']);
+	$t->same(true, $result['pending_validation']['eligible']);
+	$t->same(false, $result['pending_validation']['fresh_database_proven']);
+	$t->same([], $result['pending_validation']['pending_migrations']);
+	$t->same(true, $result['convergence_validation']['eligible']);
+	$t->same(false, $result['convergence_validation']['fresh_database_proven']);
+	$t->same('2.0.0', $result['required_minimum_active_release']);
+	$t->same(1, array_count_values($pdo->operationNames())['begin'] ?? 0);
+	$t->same(1, array_count_values($pdo->operationNames())['commit'] ?? 0);
+	$t->same(0, array_count_values($pdo->operationNames())['rollback'] ?? 0);
+	$t->same(['fixture.postgresql_migrations'], $lock->executions()[0] ?? null);
+	$t->isFalse((bool)array_filter(
+		array_column($pdo->operations(), 'sql'),
+		static fn(?string $sql): bool=>is_string($sql)
+			&& str_contains($sql, 'INSERT INTO fixture.postgresql_migrations')
+	));
+
+	$missingEventJournal=$t->scriptedPdo('pgsql')
+		->queueStatement(new ScriptedPdoStatement([], true))
+		->queueScalar(1)
+		->queueRows($rows)
+		->queueScalar(0)
+		->queueScalar(1);
+	$t->throws(
+		static fn()=>(new PostgreSqlMigrationRunner(
+			$missingEventJournal,
+			dp_postgresql_migration_profile()
+		))->applyFreshDatabase($manifest),
+		RuntimeException::class,
+		'Automatic migration convergence requires one proven-fresh application schema.'
+	);
+	$t->same(0, array_count_values($missingEventJournal->operationNames())['commit'] ?? 0);
+	$t->same(1, array_count_values($missingEventJournal->operationNames())['rollback'] ?? 0);
+})->tag('sql', 'migration', 'postgresql', 'runner', 'automatic', 'fresh', 'concurrency', 'advisory-lock', 'idempotent', 'fail-closed')->group('framework-coverage')->maxMillis(10000);
+
 test('PostgreSQL fresh convergence rolls back failed framework prerequisites before application SQL', static function(Context $t): void {
 	$manifest=dp_postgresql_migration_no_schema_manifest($t, 'runner-fresh-prerequisite-failure');
 	$entries=$manifest->entries();
