@@ -3094,7 +3094,12 @@ class sql {
 				];
 			};
 		}
-		if(DP_SQL_CFG['safe_delete']===true && (!is_string($params) || stripos($params, 'WHERE')===false)){
+		// `safe_delete` is optional for application-provided partial SQL configs.
+		// Keep the fail-safe default when it is omitted instead of reading the
+		// optional key directly (which emits a PHP warning and weakens the
+		// configuration compatibility contract).
+		$safeDelete=DP_SQL_CFG['safe_delete'] ?? true;
+		if($safeDelete===true && (!is_string($params) || stripos($params, 'WHERE')===false)){
 			self::log_query_error($dbms, 'N/A', 'delete safety check for '.$location, [], new \Exception("Query attempted to delete all rows of a table while safe_delete is enabled."));
 			return false;
 		}

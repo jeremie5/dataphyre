@@ -164,6 +164,15 @@ its own connection defaults. The value is appended to the defaults and is
 escaped as one libpq connection option; applications remain responsible for
 choosing safe, bounded options for their process.
 
+### Safe deletes
+
+`DP_SQL_CFG['safe_delete']` is optional when an application supplies a partial SQL
+configuration. When the key is omitted (or explicitly `null`), the kernel keeps
+the fail-safe default enabled and refuses deletes without a `WHERE` clause. Set
+the value to `false` only when an application deliberately permits an unbounded
+delete; otherwise leave it absent to retain protection without configuration
+warnings.
+
 These are the lowest-overhead path and fit hot paths or specialized queries.
 
 ## Optional Framework Layer
