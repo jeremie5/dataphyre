@@ -20,18 +20,19 @@ $failure=[
 $write=static function(array $payload): void {
 	fwrite(STDOUT,json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n");
 };
-if(!in_array(PHP_SAPI,['cli','phpdbg'],true) || ($argc ?? 0)!==1){
+if(!in_array(PHP_SAPI,['cli','phpdbg'],true) || ($argc ?? 0)!==1
+	|| !function_exists('posix_geteuid') || posix_geteuid()!==0){
 	$write($failure);
 	exit(64);
 }
-$socket=@stream_socket_client('tcp://127.0.0.1:8082',$errno,$error,2,STREAM_CLIENT_CONNECT);
+$socket=@stream_socket_client('unix:///run/dataphyre/control/runtime.sock',$errno,$error,2,STREAM_CLIENT_CONNECT);
 if(!is_resource($socket)){
 	$write($failure);
 	exit(69);
 }
 try{
 	stream_set_timeout($socket,5,0);
-	$request="GET /dataphyre/runtime/realtime/probe HTTP/1.1\r\nHost: 127.0.0.1:8082\r\nConnection: close\r\n\r\n";
+	$request="GET /dataphyre/runtime/realtime/probe HTTP/1.1\r\nHost: dataphyre-control\r\nConnection: close\r\n\r\n";
 	$offset=0;
 	while($offset<strlen($request)){
 		$written=fwrite($socket,substr($request,$offset));

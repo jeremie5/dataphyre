@@ -76,7 +76,7 @@ RUN set -eux; \
 	docker-php-ext-enable dataphyre_environment_fd; \
 	cd /; \
 	rm -rf /tmp/dataphyre-environment-fd; \
-	php -r 'exit(extension_loaded("dataphyre_environment_fd") && phpversion("dataphyre_environment_fd") === "1.2.0" && function_exists("dataphyre_open_inherited_environment_fd") && function_exists("dataphyre_close_inherited_fd") && function_exists("dataphyre_close_unlisted_inherited_fds") && function_exists("dataphyre_managed_pool_request_context") ? 0 : 1);'
+	php -r 'exit(extension_loaded("dataphyre_environment_fd") && phpversion("dataphyre_environment_fd") === "1.2.0" && function_exists("dataphyre_open_inherited_environment_fd") && function_exists("dataphyre_close_inherited_fd") && function_exists("dataphyre_close_unlisted_inherited_fds") && function_exists("dataphyre_enable_scheduler_child_subreaper") && function_exists("dataphyre_managed_pool_request_context") ? 0 : 1);'
 
 # Keep the test image's CLI/phpdbg toolchain while adding the exact matching FPM
 # SAPI binary needed to exercise Dataphyre's persistent managed-web boundary.

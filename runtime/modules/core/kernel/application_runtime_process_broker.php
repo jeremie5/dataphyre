@@ -23,7 +23,8 @@ final class DataphyreApplicationRuntimeProcessBroker
 	 * @param array<string,string> $applicationEnvironment
 	 * @param null|array<string,string> $managedBootstrap Reserved framework context, never application values.
 	 * @param null|string $standardInput Fixed child input delivered and closed before the environment acknowledgement.
-	 * @return array{resource:resource,pid:int,pipes:array<int,resource>,identity:array}
+	 * @param bool $newSession Starts the final child as its own process-group/session leader.
+	 * @return array{resource:resource,pid:int,pipes:array<int,resource>,identity:array,process_group_id:?int}
 	 */
 	public static function spawn(
 		array $command,
@@ -35,6 +36,7 @@ final class DataphyreApplicationRuntimeProcessBroker
 		int $timeoutMilliseconds=5000,
 		?array $managedBootstrap=null,
 		?string $standardInput=null,
+		bool $newSession=false,
 	): array {
 		if(!function_exists('posix_geteuid') || posix_geteuid()!==0 || $command===[]
 			|| !is_string($command[0] ?? null) || !str_starts_with($command[0],'/')
@@ -59,35 +61,112 @@ final class DataphyreApplicationRuntimeProcessBroker
 		[$brokerChannel,$childChannel]=DataphyreApplicationRuntimeChildEnvironment::socketPair();
 		$descriptors[DataphyreApplicationRuntimeChildEnvironment::INHERITED_FD]=$childChannel;
 		ksort($descriptors,SORT_NUMERIC);
-		$pipes=[];$process=null;
+		$pipes=[];$process=null;$cleanupTarget=null;
 		try{
+			$preExecCommand=[PHP_BINARY,$preExec];
+			if($newSession) $preExecCommand[]='--dataphyre-new-session';
 			$process=@proc_open(
-				[PHP_BINARY,$preExec,...$command],$descriptors,$pipes,$workingDirectory,$publicEnvironment,
+				[...$preExecCommand,...$command],$descriptors,$pipes,$workingDirectory,$publicEnvironment,
 				['bypass_shell'=>true,'suppress_errors'=>true],
 				);
 				@fclose($childChannel);
 				if(!is_resource($process)) throw new RuntimeException('Application process could not be started.');
 				$status=proc_get_status($process);$pid=(int)($status['pid'] ?? 0);
+				if($pid<2) throw new RuntimeException('Application process identity is unavailable.');
+				if($newSession) $cleanupTarget=self::establishProcessGroup($process,$pid,$timeoutMilliseconds);
 				if($standardInput!==null){
 					self::writeStandardInput($process,$pipes,$standardInput,$timeoutMilliseconds);
 				}
 			$identity=DataphyreApplicationRuntimeChildEnvironment::broker(
 				$brokerChannel,$pid,getmypid(),$role,$applicationEnvironment,$timeoutMilliseconds,$managedBootstrap,
 			);
-			return ['resource'=>$process,'pid'=>$pid,'pipes'=>$pipes,'identity'=>$identity];
+				return [
+					'resource'=>$process,'pid'=>$pid,'pipes'=>$pipes,'identity'=>$identity,
+					'process_group_id'=>$cleanupTarget['process_group_id'] ?? null,
+				];
 		}catch(Throwable $failure){
 			if(is_resource($brokerChannel)) @fclose($brokerChannel);
 			if(is_resource($childChannel)) @fclose($childChannel);
+			$cleanupFailure=null;
 			if(is_resource($process)){
-				$status=proc_get_status($process);
-				if(is_array($status) && ($status['running'] ?? false)===true && (int)($status['pid'] ?? 0)>1){
-					@posix_kill((int)$status['pid'],SIGKILL);
-				}
-				@proc_close($process);
+				try{
+					if(is_array($cleanupTarget)) self::cleanupEstablishedProcessGroup($cleanupTarget);
+					else{
+						$status=proc_get_status($process);
+						if(is_array($status) && ($status['running'] ?? false)===true && (int)($status['pid'] ?? 0)>1){
+							@posix_kill((int)$status['pid'],SIGKILL);
+						}
+					}
+				}catch(Throwable $caught){$cleanupFailure=$caught;}
 			}
 			foreach($pipes as $pipe) if(is_resource($pipe)) @fclose($pipe);
+			if(is_resource($process)) @proc_close($process);
+			if($cleanupFailure!==null){
+				throw new RuntimeException('Application process broker cleanup failed: '.$cleanupFailure->getMessage(),0,$failure);
+			}
 			throw $failure;
 		}
+	}
+
+	/** @return array{pid:int,start_time_ticks:string,process_group_id:int} */
+	private static function establishProcessGroup(mixed $process,int $pid,int $timeoutMilliseconds): array
+	{
+		if(!function_exists('posix_getpgid')) throw new RuntimeException('Application process-group support is unavailable.');
+		$deadline=hrtime(true)+($timeoutMilliseconds*1_000_000);
+		do{
+			$status=proc_get_status($process);
+			if(!is_array($status) || ($status['running'] ?? false)!==true || (int)($status['pid'] ?? 0)!==$pid){
+				throw new RuntimeException('Application process exited before establishing its fixed process group.');
+			}
+			if(@posix_getpgid($pid)===$pid){
+				$identity=DataphyreApplicationRuntimeChildEnvironment::processIdentity($pid);
+				if(($identity['parent_pid'] ?? null)!==getmypid()){
+					throw new RuntimeException('Application process-group parent identity is invalid.');
+				}
+				return ['pid'=>$pid,'start_time_ticks'=>$identity['start_time_ticks'],'process_group_id'=>$pid];
+			}
+			usleep(1000);
+		}while(hrtime(true)<$deadline);
+		throw new RuntimeException('Application process did not establish its fixed process group.');
+	}
+
+	/** @param array{pid:int,start_time_ticks:string,process_group_id:int} $target */
+	private static function cleanupEstablishedProcessGroup(array $target): void
+	{
+		$pid=$target['pid'] ?? null;$start=$target['start_time_ticks'] ?? null;$group=$target['process_group_id'] ?? null;
+		if(!is_int($pid) || $pid<2 || !is_string($start) || preg_match('/^[0-9]+$/D',$start)!==1
+			|| !is_int($group) || $group!==$pid){
+			throw new RuntimeException('Application process-group cleanup target is invalid.');
+		}
+		try{$identity=DataphyreApplicationRuntimeChildEnvironment::processIdentity($pid);}
+		catch(Throwable){$identity=null;}
+		if(is_array($identity) && !hash_equals($start,(string)($identity['start_time_ticks'] ?? ''))){
+			throw new RuntimeException('Application process-group cleanup identity changed.');
+		}
+		if(self::runnableProcessGroupMembers($group)!==[]) @posix_kill(-$group,SIGKILL);
+		$deadline=microtime(true)+0.5;
+		while(self::runnableProcessGroupMembers($group)!==[] && microtime(true)<$deadline) usleep(10000);
+		if(self::runnableProcessGroupMembers($group)!==[]){
+			throw new RuntimeException('Application process group survived broker cleanup.');
+		}
+	}
+
+	/** @return list<int> */
+	private static function runnableProcessGroupMembers(int $group): array
+	{
+		$entries=@scandir('/proc');
+		if(!is_array($entries) || count($entries)>65536){
+			throw new RuntimeException('Application process-group inventory is unavailable.');
+		}
+		$members=[];
+		foreach($entries as $entry){
+			if(!ctype_digit($entry) || ($pid=(int)$entry)<2) continue;
+			$stat=@file_get_contents('/proc/'.$entry.'/stat');$separator=is_string($stat) ? strrpos($stat,') ') : false;
+			if(!is_int($separator)) continue;
+			$fields=explode(' ',substr($stat,$separator+2));
+			if((int)($fields[2] ?? 0)===$group && !in_array($fields[0] ?? '',['Z','X'],true)) $members[]=$pid;
+		}
+		sort($members,SORT_NUMERIC);return $members;
 	}
 
 	/** @param array<int,resource> $pipes */

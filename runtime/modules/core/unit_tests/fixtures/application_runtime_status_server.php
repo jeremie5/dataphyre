@@ -7,17 +7,21 @@
  */
 declare(strict_types=1);
 
+require_once dirname(__DIR__,2).'/kernel/application_runtime_supervisor.php';
+
 $ready=(string)($argv[1] ?? '');
 $responses=array_slice($argv,2);
 if($ready==='' || $responses===[]){
 	fwrite(STDERR,"Status server fixture arguments are invalid.\n");
 	exit(64);
 }
-$listener=@stream_socket_server('tcp://127.0.0.1:8082',$errorNumber,$error,STREAM_SERVER_BIND|STREAM_SERVER_LISTEN);
-if(!is_resource($listener)){
-	fwrite(STDERR,"Status server fixture could not bind: {$errorNumber} {$error}\n");
-	exit(69);
-}
+$control=dataphyre_runtime_bind_control_socket();$listener=$control['listener'];
+register_shutdown_function(static function() use ($control): void {
+	dataphyre_runtime_cleanup_root_socket(
+		'/run/dataphyre/control','/run/dataphyre/control/runtime.sock',
+		$control['identity'],$control['directory_identity'],
+	);
+});
 if(file_put_contents($ready,"ready\n",LOCK_EX)===false){
 	fclose($listener);
 	exit(70);

@@ -243,13 +243,14 @@ final class DataphyreApplicationRuntimeChildEnvironment
 	}
 	/**
 	 * Consumes the root gateway envelope without activating application bootstrap.
-	 * The returned typed context may only be rebrokered to a fresh final CGI child.
+	 * The scheduler context may only be rebrokered to a fresh final CGI child;
+	 * the web gateway accepts only its fixed, capability-free role projection.
 	 *
-	 * @return array{values:array<string,string>,managed_bootstrap:array<string,string>}
+	 * @return array{values:array<string,string>,managed_bootstrap:?array<string,string>}
 	 */
 	public static function consumeGateway(string $role,int $fd=self::INHERITED_FD): array
 	{
-		if(!in_array($role,['web-gateway','scheduler-gateway'],true) || PHP_SAPI!=='cli'){
+		if(!in_array($role,['web-http-gateway','scheduler-gateway'],true) || PHP_SAPI!=='cli'){
 			throw new RuntimeException('Managed runtime gateway role is invalid.');
 		}
 		$consumed=self::consumeEnvelope($role,$fd);
@@ -348,7 +349,7 @@ final class DataphyreApplicationRuntimeChildEnvironment
 		return ['pid'=>$pid,'start_time_ticks'=>$self['start_time_ticks'],'ancestry'=>$ancestry];
 	}
 
-	/** @return array{parent_pid:int,start_time_ticks:string,uid:int,gid:int,groups:list<int>,cap_eff:string,no_new_privileges:bool} */
+	/** @return array{parent_pid:int,start_time_ticks:string,uid:int,gid:int,groups:list<int>,cap_inheritable:string,cap_permitted:string,cap_eff:string,cap_bounding:string,cap_ambient:string,no_new_privileges:bool} */
 	public static function processIdentity(int $pid): array
 	{
 		if($pid<1) throw new RuntimeException('Process identity is invalid.');
@@ -358,12 +359,13 @@ final class DataphyreApplicationRuntimeChildEnvironment
 		return self::parseProcessIdentity($stat,$status,$close);
 	}
 
-	/** @return array{parent_pid:int,start_time_ticks:string,uid:int,gid:int,groups:list<int>,cap_eff:string,no_new_privileges:bool} */
+	/** @return array{parent_pid:int,start_time_ticks:string,uid:int,gid:int,groups:list<int>,cap_inheritable:string,cap_permitted:string,cap_eff:string,cap_bounding:string,cap_ambient:string,no_new_privileges:bool} */
 	private static function parseProcessIdentity(string $stat,string $status,int $close): array
 	{
 		$fields=preg_split('/\s+/',trim(substr($stat,$close+2))) ?: [];
 		$matches=[];
-		if(!isset($fields[1],$fields[19]) || preg_match('/^[0-9]+$/D',$fields[1])!==1
+		if(!isset($fields[0],$fields[1],$fields[19]) || in_array($fields[0],['Z','X'],true)
+			|| preg_match('/^[0-9]+$/D',$fields[1])!==1
 			|| preg_match('/^[0-9]+$/D',$fields[19])!==1
 			|| preg_match('/^Uid:\s+(\d+)\s+/m',$status,$matches)!==1){
 			throw new RuntimeException('Process identity is invalid.');
@@ -374,12 +376,20 @@ final class DataphyreApplicationRuntimeChildEnvironment
 		if(preg_match('/^Groups:\s*([^\r\n]*)$/m',$status,$matches)!==1) throw new RuntimeException('Process identity is invalid.');
 		$groups=array_values(array_map('intval',preg_split('/\s+/',trim($matches[1]),-1,PREG_SPLIT_NO_EMPTY) ?: []));
 		sort($groups,SORT_NUMERIC);$groups=array_values(array_unique($groups));
-		if(preg_match('/^CapEff:\s+([a-f0-9]+)\s*$/mi',$status,$matches)!==1) throw new RuntimeException('Process identity is invalid.');
-		$capEff=str_pad(strtolower($matches[1]),16,'0',STR_PAD_LEFT);
+		$capabilities=[];
+		foreach([
+			'cap_inheritable'=>'CapInh','cap_permitted'=>'CapPrm','cap_eff'=>'CapEff',
+			'cap_bounding'=>'CapBnd','cap_ambient'=>'CapAmb',
+		] as $key=>$field){
+			if(preg_match('/^'.preg_quote($field,'/').':\s+([a-f0-9]+)\s*$/mi',$status,$matches)!==1){
+				throw new RuntimeException('Process identity is invalid.');
+			}
+			$capabilities[$key]=str_pad(strtolower($matches[1]),16,'0',STR_PAD_LEFT);
+		}
 		if(preg_match('/^NoNewPrivs:\s+([01])\s*$/m',$status,$matches)!==1) throw new RuntimeException('Process identity is invalid.');
 		return [
 			'parent_pid'=>(int)$fields[1],'start_time_ticks'=>$fields[19],'uid'=>$uid,'gid'=>$gid,
-			'groups'=>$groups,'cap_eff'=>$capEff,'no_new_privileges'=>$matches[1]==='1',
+			'groups'=>$groups,...$capabilities,'no_new_privileges'=>$matches[1]==='1',
 		];
 	}
 
@@ -463,7 +473,7 @@ final class DataphyreApplicationRuntimeChildEnvironment
 	private static function validateManagedBootstrap(?array $context,string $transportRole,array $values): void
 	{
 		$expectedRole=match($transportRole){
-			'web','web-pool','web-gateway'=>'web','scheduler','scheduler-gateway'=>'scheduler','realtime'=>'realtime',
+			'web','web-pool'=>'web','scheduler','scheduler-gateway'=>'scheduler','realtime'=>'realtime',
 			default=>null,
 		};
 		if($expectedRole===null){
@@ -538,13 +548,31 @@ final class DataphyreApplicationRuntimeChildEnvironment
 	private static function privilegeBoundary(int $pid,string $role): bool
 	{
 		try{$identity=self::processIdentity($pid);}catch(Throwable){return false;}
-		if(in_array($role,['web-gateway','scheduler-gateway'],true)){
-			return $identity['uid']===0 && $identity['gid']===0 && $identity['groups']===[0]
-				&& $identity['cap_eff']==='00000000000000c0' && $identity['no_new_privileges']===true;
+		return self::identityMatchesPrivilegeBoundary($identity,$role);
+	}
+
+	private static function identityMatchesPrivilegeBoundary(array $identity,string $role): bool
+	{
+		if($role==='scheduler-gateway'){
+			return ($identity['uid'] ?? null)===0 && ($identity['gid'] ?? null)===0 && ($identity['groups'] ?? null)===[0]
+				&& ($identity['cap_inheritable'] ?? null)==='0000000000000000'
+				&& ($identity['cap_permitted'] ?? null)==='00000000000000e0'
+				&& ($identity['cap_eff'] ?? null)==='00000000000000e0'
+				&& ($identity['cap_bounding'] ?? null)==='00000000000000e0'
+				&& ($identity['cap_ambient'] ?? null)==='0000000000000000'
+				&& ($identity['no_new_privileges'] ?? null)===true;
 		}
-		return $identity['uid']===self::POOL_UID && $identity['gid']===self::POOL_GID
-			&& $identity['groups']===[self::POOL_GID]
-			&& $identity['cap_eff']==='0000000000000000' && $identity['no_new_privileges']===true;
+		$boundingValid=$role==='scheduler'
+			? in_array($identity['cap_bounding'] ?? null,['0000000000000000','00000000000000e0'],true)
+			: ($identity['cap_bounding'] ?? null)==='0000000000000000';
+		return ($identity['uid'] ?? null)===self::POOL_UID && ($identity['gid'] ?? null)===self::POOL_GID
+			&& ($identity['groups'] ?? null)===[self::POOL_GID]
+			&& ($identity['cap_inheritable'] ?? null)==='0000000000000000'
+			&& ($identity['cap_permitted'] ?? null)==='0000000000000000'
+			&& ($identity['cap_eff'] ?? null)==='0000000000000000'
+			&& $boundingValid
+			&& ($identity['cap_ambient'] ?? null)==='0000000000000000'
+			&& ($identity['no_new_privileges'] ?? null)===true;
 	}
 
 	private static function canonicalAck(string $nonce,int $pid,string $startTimeTicks): string
@@ -594,7 +622,7 @@ final class DataphyreApplicationRuntimeChildEnvironment
 
 	private static function validateRole(string $role): void
 	{
-		if(!in_array($role,['web','web-pool','scheduler','realtime','one-shot','web-gateway','scheduler-gateway'],true)){
+		if(!in_array($role,['web','web-pool','scheduler','realtime','one-shot','web-http-gateway','scheduler-gateway'],true)){
 			throw new RuntimeException('Child environment role is invalid.');
 		}
 	}

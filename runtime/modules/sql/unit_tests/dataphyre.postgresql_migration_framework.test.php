@@ -2026,6 +2026,280 @@ test('PostgreSQL migration runner applies maintenance suffixes under caller-veri
 	$t->same('commit', $pdo->operationNames()[array_key_last($pdo->operationNames())]);
 })->tag('sql', 'migration', 'postgresql', 'runner', 'apply', 'maintenance')->group('framework-coverage')->maxMillis(10000);
 
+test('PostgreSQL migration runner proves only an absent application schema eligible for fresh convergence', static function(Context $t): void {
+	$manifest=dp_postgresql_migration_no_schema_manifest($t, 'runner-fresh-evidence');
+	$entries=$manifest->entries();
+	$freshState=[
+		'journal_exists'=>false,
+		'event_journal_exists'=>false,
+		'applied_count'=>0,
+		'applied_head'=>null,
+		'pending_count'=>count($entries),
+		'drift_count'=>0,
+		'migrations'=>array_map(
+			static fn(array $entry): array=>['id'=>$entry['id'], 'status'=>'pending'],
+			$entries
+		),
+	];
+	$freshRunner=new PostgreSqlMigrationRunner(
+		$t->scriptedPdo('pgsql')->queueScalar(0),
+		dp_postgresql_migration_profile()
+	);
+	$fresh=$freshRunner->freshDatabaseEvidence($manifest, $freshState);
+	$t->same(true, $fresh['eligible']);
+	$t->same(true, $fresh['fresh_database_proven']);
+	$t->same(array_column($entries, 'id'), $fresh['pending_migrations']);
+	$t->same(array_column($entries, 'id'), $fresh['selected_migrations']);
+	$t->same([], $fresh['deferred_migrations']);
+	$t->same([
+		'bootstrap'=>2,
+		'rolling_contract'=>1,
+		'rolling_expand'=>2,
+	], $fresh['selected_phases']);
+	$t->same('2.0.0', $fresh['required_minimum_active_release']);
+	$t->same(true, $fresh['compatibility_floor_satisfied']);
+
+	$nonPristineState=$freshState;
+	$nonPristineState['journal_exists']=true;
+	$nonPristineState['event_journal_exists']=true;
+	$nonPristineState['applied_count']=4;
+	$nonPristineState['applied_head']='004_irreversible';
+	$nonPristineState['pending_count']=1;
+	foreach($nonPristineState['migrations'] as &$migration){
+		if($migration['id']!=='005_contract'){
+			$migration['status']='applied';
+		}
+	}
+	unset($migration);
+	$nonPristineRunner=new PostgreSqlMigrationRunner(
+		$t->scriptedPdo('pgsql')->queueScalar(1),
+		dp_postgresql_migration_profile()
+	);
+	$nonPristine=$nonPristineRunner->freshDatabaseEvidence($manifest, $nonPristineState);
+	$t->same(false, $nonPristine['eligible']);
+	$t->same(false, $nonPristine['fresh_database_proven']);
+	$t->contains('fresh_database_migration_journal_exists', implode(',', $nonPristine['errors']));
+	$t->contains('fresh_database_application_schema_exists', implode(',', $nonPristine['errors']));
+	$rolling=$nonPristineRunner->deploymentEvidence($manifest, $nonPristineState, 'rolling');
+	$t->same(false, $rolling['eligible']);
+	$t->contains(
+		'pending_contract_requires_compatibility_finalization:005_contract',
+		implode(',', $rolling['errors'])
+	);
+	$maintenance=$nonPristineRunner->deploymentEvidence($manifest, $nonPristineState, 'maintenance');
+	$t->same(false, $maintenance['eligible']);
+	$t->same(false, $maintenance['compatibility_floor_satisfied']);
+	$t->contains(
+		'pending_contract_requires_verified_minimum_active_release:005_contract:2.0.0',
+		implode(',', $maintenance['errors'])
+	);
+})->tag('sql', 'migration', 'postgresql', 'runner', 'automatic', 'fresh', 'compatibility-floor', 'fail-closed')->group('framework-coverage')->maxMillis(10000);
+
+test('PostgreSQL migration runner atomically converges fresh bootstrap expand and contract phases', static function(Context $t): void {
+	$manifest=dp_postgresql_migration_no_schema_manifest($t, 'runner-fresh-convergence');
+	$entries=$manifest->entries();
+	$rows=array_map(
+		static fn(array $entry): array=>[
+			'migration_name'=>$entry['id'],
+			'checksum_sha256'=>$entry['up']['sha256'],
+			'applied_at'=>'2026-08-15 00:00:00+00',
+		],
+		$entries
+	);
+	$lock=new ScriptedPdoStatement([], true);
+	$journalInsert=new ScriptedPdoStatement();
+	$events=array_map(static fn(): ScriptedPdoStatement=>new ScriptedPdoStatement(), $entries);
+	$pdo=$t->scriptedPdo('pgsql')
+		->queueStatement($lock)
+		->queueScalar(0)
+		->queueScalar(0)
+		->queueScalar(0)
+		->queueStatement($journalInsert);
+	foreach($events as $event){
+		$pdo->queueStatement($event);
+	}
+	$pdo
+		->queueScalar(1)
+		->queueRows($rows)
+		->queueScalar(1);
+
+	$result=(new PostgreSqlMigrationRunner(
+		$pdo,
+		dp_postgresql_migration_profile()
+	))->applyFreshDatabase($manifest);
+
+	$t->same('committed', $result['transaction']);
+	$t->same('deployment', $result['transaction_scope']);
+	$t->same('automatic', $result['deployment_mode']);
+	$t->same(array_column($entries, 'id'), $result['migrations']);
+	$t->same(array_column($entries, 'id'), $result['pending_validation']['selected_migrations']);
+	$t->same([], $result['pending_validation']['deferred_migrations']);
+	$t->same(true, $result['pending_validation']['fresh_database_proven']);
+	$t->same(true, $result['convergence_validation']['eligible']);
+	$t->same([], $result['convergence_validation']['pending_migrations']);
+	$t->same([], $result['convergence_validation']['pending_phases']);
+	$t->same([], $result['convergence_validation']['selected_migrations']);
+	$t->same([], $result['convergence_validation']['selected_phases']);
+	$t->same([], $result['convergence_validation']['deferred_migrations']);
+	$t->same([], $result['convergence_validation']['errors']);
+	$t->same(true, $result['convergence_validation']['fresh_database_proven']);
+	$t->same(true, $result['convergence_validation']['compatibility_floor_satisfied']);
+	$t->same('2.0.0', $result['convergence_validation']['required_minimum_active_release']);
+	$t->same(1, array_count_values($pdo->operationNames())['begin'] ?? 0);
+	$t->same(1, array_count_values($pdo->operationNames())['commit'] ?? 0);
+	$t->same(0, array_count_values($pdo->operationNames())['rollback'] ?? 0);
+	$t->count(count($entries), $journalInsert->executions());
+	foreach($events as $offset=>$event){
+		$t->same($entries[$offset]['id'], $event->executions()[0][1] ?? null);
+	}
+	$t->same(
+		['fixture.postgresql_migrations'],
+		$lock->executions()[0] ?? null
+	);
+	$t->contains('pg_advisory_xact_lock', $result['lock']);
+	$sql=array_values(array_filter(array_column($pdo->operations(), 'sql')));
+	$rolesCreate=array_search(
+		true,
+		array_map(
+			static fn(string $statement): bool=>str_contains(
+				$statement,
+				'CREATE TABLE IF NOT EXISTS "dataphyre"."permission_roles"'
+			),
+			$sql
+		),
+		true
+	);
+	$rolePermissionsCreate=array_search(
+		true,
+		array_map(
+			static fn(string $statement): bool=>str_contains(
+				$statement,
+				'CREATE TABLE IF NOT EXISTS "dataphyre"."permission_role_permissions"'
+			),
+			$sql
+		),
+		true
+	);
+	$firstApplicationMigration=array_search($entries[0]['up']['sql'], $sql, true);
+	$t->isTrue(is_int($rolesCreate));
+	$t->isTrue(is_int($rolePermissionsCreate));
+	$t->isTrue(is_int($firstApplicationMigration));
+	$t->isTrue($rolesCreate<$firstApplicationMigration);
+	$t->isTrue($rolePermissionsCreate<$firstApplicationMigration);
+	$t->contains('"metadata_json" TEXT', is_int($rolesCreate) ? $sql[$rolesCreate] : '');
+	$t->contains(
+		'CONSTRAINT "uniq_permission_role_permissions" UNIQUE',
+		is_int($rolePermissionsCreate) ? $sql[$rolePermissionsCreate] : ''
+	);
+})->tag('sql', 'migration', 'postgresql', 'runner', 'automatic', 'fresh', 'convergence', 'atomic', 'transaction')->group('framework-coverage')->maxMillis(10000);
+
+test('PostgreSQL fresh convergence rolls back failed framework prerequisites before application SQL', static function(Context $t): void {
+	$manifest=dp_postgresql_migration_no_schema_manifest($t, 'runner-fresh-prerequisite-failure');
+	$entries=$manifest->entries();
+	$failure=new RuntimeException('fixture framework prerequisite failure');
+	$pdo=$t->scriptedPdo('pgsql')
+		->queueStatement(new ScriptedPdoStatement([], true))
+		->queueScalar(0)
+		->queueScalar(0)
+		->queueScalar(0)
+		->queueExecResult(0)
+		->queueExecResult(0)
+		->queueExecFailure($failure);
+
+	$t->throws(
+		static fn()=>(new PostgreSqlMigrationRunner(
+			$pdo,
+			dp_postgresql_migration_profile()
+		))->applyFreshDatabase($manifest),
+		RuntimeException::class,
+		'fixture framework prerequisite failure'
+	);
+	$t->same(1, array_count_values($pdo->operationNames())['begin'] ?? 0);
+	$t->same(0, array_count_values($pdo->operationNames())['commit'] ?? 0);
+	$t->same(1, array_count_values($pdo->operationNames())['rollback'] ?? 0);
+	$t->same(false, $pdo->inTransaction());
+	$t->isFalse(in_array($entries[0]['up']['sql'], array_column($pdo->operations(), 'sql'), true));
+	$t->isFalse((bool)array_filter(
+		array_column($pdo->operations(), 'sql'),
+		static fn(?string $sql): bool=>is_string($sql) && str_contains($sql, 'schema_migrations')
+	));
+
+	$retryState=[
+		'journal_exists'=>false,
+		'event_journal_exists'=>false,
+		'applied_count'=>0,
+		'applied_head'=>null,
+		'pending_count'=>count($entries),
+		'drift_count'=>0,
+		'migrations'=>array_map(
+			static fn(array $entry): array=>['id'=>$entry['id'], 'status'=>'pending'],
+			$entries
+		),
+	];
+	$retry=(new PostgreSqlMigrationRunner(
+		$t->scriptedPdo('pgsql')->queueScalar(0),
+		dp_postgresql_migration_profile()
+	))->freshDatabaseEvidence($manifest, $retryState);
+	$t->same(true, $retry['eligible']);
+	$t->same(true, $retry['fresh_database_proven']);
+})->tag('sql', 'migration', 'postgresql', 'runner', 'automatic', 'fresh', 'framework-prerequisite', 'failure', 'rollback', 'retry')->group('framework-coverage')->maxMillis(10000);
+
+test('PostgreSQL fresh convergence rolls back all phases on failure and remains retryable without a recovery flag', static function(Context $t): void {
+	$manifest=dp_postgresql_migration_no_schema_manifest($t, 'runner-fresh-failure');
+	$entries=$manifest->entries();
+	$lock=new ScriptedPdoStatement([], true);
+	$journalInsert=new ScriptedPdoStatement();
+	$firstEvent=new ScriptedPdoStatement();
+	$failedEvent=(new ScriptedPdoStatement())->failExecuteWith(
+		new RuntimeException('fixture event failure')
+	);
+	$pdo=$t->scriptedPdo('pgsql')
+		->queueStatement($lock)
+		->queueScalar(0)
+		->queueScalar(0)
+		->queueScalar(0)
+		->queueStatement($journalInsert)
+		->queueStatement($firstEvent)
+		->queueStatement($failedEvent);
+
+	$t->throws(
+		static fn()=>(new PostgreSqlMigrationRunner(
+			$pdo,
+			dp_postgresql_migration_profile()
+		))->applyFreshDatabase($manifest),
+		RuntimeException::class,
+		'fixture event failure'
+	);
+	$t->same(1, array_count_values($pdo->operationNames())['begin'] ?? 0);
+	$t->same(0, array_count_values($pdo->operationNames())['commit'] ?? 0);
+	$t->same(1, array_count_values($pdo->operationNames())['rollback'] ?? 0);
+	$t->same(false, $pdo->inTransaction());
+	$t->count(2, $journalInsert->executions());
+	$t->count(1, $firstEvent->executions());
+	$t->count(1, $failedEvent->executions());
+	$t->same(['fixture.postgresql_migrations'], $lock->executions()[0] ?? null);
+	$t->isFalse(in_array($entries[2]['up']['sql'], array_column($pdo->operations(), 'sql'), true));
+
+	$retryState=[
+		'journal_exists'=>false,
+		'event_journal_exists'=>false,
+		'applied_count'=>0,
+		'applied_head'=>null,
+		'pending_count'=>count($entries),
+		'drift_count'=>0,
+		'migrations'=>array_map(
+			static fn(array $entry): array=>['id'=>$entry['id'], 'status'=>'pending'],
+			$entries
+		),
+	];
+	$retry=(new PostgreSqlMigrationRunner(
+		$t->scriptedPdo('pgsql')->queueScalar(0),
+		dp_postgresql_migration_profile()
+	))->freshDatabaseEvidence($manifest, $retryState);
+	$t->same(true, $retry['eligible']);
+	$t->same(true, $retry['fresh_database_proven']);
+})->tag('sql', 'migration', 'postgresql', 'runner', 'automatic', 'fresh', 'failure', 'cleanup', 'retry')->group('framework-coverage')->maxMillis(10000);
+
 test('PostgreSQL migration runner applies rolling prefixes and commits no-op deployments', static function(Context $t): void {
 	$manifest=dp_postgresql_migration_no_schema_manifest(
 		$t,
@@ -2091,6 +2365,22 @@ test('PostgreSQL migration runner applies rolling prefixes and commits no-op dep
 	$t->count(2, $journalInsert->executions());
 	$t->same('003_expand', $firstEvent->executions()[0][1] ?? null);
 	$t->same('004_irreversible', $secondEvent->executions()[0][1] ?? null);
+	$rollingSql=array_values(array_filter(array_column($rollingPdo->operations(), 'sql')));
+	$rolesCreate=array_search(
+		true,
+		array_map(
+			static fn(string $statement): bool=>str_contains(
+				$statement,
+				'CREATE TABLE IF NOT EXISTS "dataphyre"."permission_roles"'
+			),
+			$rollingSql
+		),
+		true
+	);
+	$firstRollingMigration=array_search($entries[2]['up']['sql'], $rollingSql, true);
+	$t->isTrue(is_int($rolesCreate));
+	$t->isTrue(is_int($firstRollingMigration));
+	$t->isTrue($rolesCreate<$firstRollingMigration);
 
 	$allRows=array_map(
 		static fn(array $entry): array=>[
@@ -2125,7 +2415,68 @@ test('PostgreSQL migration runner applies rolling prefixes and commits no-op dep
 	$t->same([], $noOp['pending_validation']['pending_migrations']);
 	$t->same([], $unusedInsert->executions());
 	$t->same('commit', $noOpPdo->operationNames()[array_key_last($noOpPdo->operationNames())]);
+	$t->isFalse((bool)array_filter(
+		array_column($noOpPdo->operations(), 'sql'),
+		static fn(?string $sql): bool=>is_string($sql)
+			&& str_contains($sql, 'dataphyre"."permission_roles')
+	));
 })->tag('sql', 'migration', 'postgresql', 'runner', 'apply', 'rolling')->group('framework-coverage')->maxMillis(10000);
+
+test('PostgreSQL established rolling migration rejects partial framework prerequisites atomically', static function(Context $t): void {
+	$manifest=dp_postgresql_migration_no_schema_manifest(
+		$t,
+		'runner-rolling-partial-framework-prerequisite',
+		false,
+		false,
+		false,
+		true
+	);
+	$entries=$manifest->entries();
+	$beforeRows=array_map(
+		static fn(array $entry): array=>[
+			'migration_name'=>$entry['id'],
+			'checksum_sha256'=>$entry['up']['sha256'],
+			'applied_at'=>'2026-08-15 00:00:00+00',
+		],
+		array_slice($entries, 0, 2)
+	);
+	$pdo=$t->scriptedPdo('pgsql')
+		->queueStatement(new ScriptedPdoStatement([], true))
+		->queueScalar(1)
+		->queueRows([
+			['migration_name'=>'001_base'],
+			['migration_name'=>'002_cutoff'],
+		])
+		->queueStatement(new ScriptedPdoStatement())
+		->queueScalar(1)
+		->queueRows($beforeRows)
+		->queueScalar(1);
+	foreach(range(1, 5) as $_){
+		$pdo->queueExecResult(0);
+	}
+	$pdo->queueExecFailure(new RuntimeException(
+		'fixture partial framework prerequisite'
+	));
+
+	$t->throws(
+		static fn()=>(new PostgreSqlMigrationRunner(
+			$pdo,
+			dp_postgresql_migration_profile()
+		))->apply($manifest, 'rolling'),
+		RuntimeException::class,
+		'fixture partial framework prerequisite'
+	);
+	$t->same(1, array_count_values($pdo->operationNames())['begin'] ?? 0);
+	$t->same(0, array_count_values($pdo->operationNames())['commit'] ?? 0);
+	$t->same(1, array_count_values($pdo->operationNames())['rollback'] ?? 0);
+	$t->same(false, $pdo->inTransaction());
+	$t->isFalse(in_array($entries[2]['up']['sql'], array_column($pdo->operations(), 'sql'), true));
+	$t->isFalse((bool)array_filter(
+		array_column($pdo->operations(), 'sql'),
+		static fn(?string $sql): bool=>is_string($sql)
+			&& str_contains($sql, 'CREATE TABLE IF NOT EXISTS "fixture"."schema_migrations"')
+	));
+})->tag('sql', 'migration', 'postgresql', 'runner', 'rolling', 'framework-prerequisite', 'partial', 'fail-closed', 'atomic')->group('framework-coverage')->maxMillis(10000);
 
 test('PostgreSQL migration runner rolls back dry runs and rejects locked-state drift', static function(Context $t): void {
 	$manifest=dp_postgresql_migration_no_schema_manifest($t, 'runner-apply-branches', true);
@@ -2678,6 +3029,47 @@ SQL;
 		'SERIAL expansion must remain migration-side so a catalog domain cannot be falsely equated.'
 	);
 })->tag('sql', 'migration', 'postgresql', 'schema')->group('framework-coverage');
+
+test('PostgreSQL schema projection preserves statement order for replacement objects', static function(Context $t): void {
+	$inspector=new PostgreSqlSchemaInspector(dp_postgresql_migration_profile());
+	$expected=$inspector->expectedSchema([[
+		'name'=>'001_replacement_base',
+		'sql'=><<<'SQL'
+CREATE TABLE fixture.replaceable (
+	id BIGINT PRIMARY KEY,
+	state TEXT NOT NULL,
+	revision_value TEXT,
+	CONSTRAINT replaceable_state_check CHECK (state IN ('old'))
+);
+CREATE INDEX fixture.replaceable_state_idx ON fixture.replaceable(state);
+SQL
+	],[
+		'name'=>'002_replacements',
+		'sql'=><<<'SQL'
+ALTER TABLE fixture.replaceable
+	DROP CONSTRAINT IF EXISTS replaceable_state_check;
+ALTER TABLE fixture.replaceable
+	ADD CONSTRAINT replaceable_state_check CHECK (state IN ('ready','done'));
+DROP INDEX fixture.replaceable_state_idx;
+CREATE INDEX fixture.replaceable_state_idx ON fixture.replaceable(id DESC);
+ALTER TABLE fixture.replaceable DROP COLUMN revision_value;
+ALTER TABLE fixture.replaceable ADD COLUMN revision_value BIGINT NOT NULL;
+CREATE INDEX fixture.replaceable_transient_idx ON fixture.replaceable(state);
+DROP INDEX fixture.replaceable_transient_idx;
+SQL
+	]]);
+
+	$t->same(
+		"state in('ready', 'done')",
+		$expected['checks']['fixture.replaceable.replaceable_state_check']['expression']
+	);
+	$t->same(['id desc'], $expected['indexes']['fixture.replaceable_state_idx']['keys']);
+	$t->same(
+		['type'=>'bigint', 'nullable'=>false],
+		$expected['tables']['fixture.replaceable']['columns']['revision_value']
+	);
+	$t->isFalse(isset($expected['indexes']['fixture.replaceable_transient_idx']));
+})->tag('sql', 'migration', 'postgresql', 'schema', 'statement-order')->group('framework-coverage');
 
 test('PostgreSQL schema inspection tracks compound column alterations and catalog identifiers', static function(Context $t): void {
 	$inspector=new PostgreSqlSchemaInspector(dp_postgresql_migration_profile());

@@ -175,6 +175,16 @@ warnings.
 
 These are the lowest-overhead path and fit hot paths or specialized queries.
 
+### PostgreSQL JSON operators and shared placeholders
+
+The PostgreSQL kernel lexes SQL before translating Dataphyre's shared `?`
+bound-value placeholders to PostgreSQL's `$N` form. Quoted literals, comments,
+dollar-quoted bodies, and PostgreSQL JSON existence/path operators (`?`, `?|`,
+`?&`, and `@?`) remain untouched. This keeps raw and versioned SQL portable
+through the same compatibility layer while preserving ordinary prepared-query
+binding. The rule belongs in the framework because JSONB operator syntax is a
+PostgreSQL language contract, not an application-specific migration exception.
+
 ## Optional Framework Layer
 
 Load it explicitly:
@@ -312,7 +322,7 @@ Hydration creates missing tables and expected indexes from registered definition
 
 `TableSchema` participates in the same contract. Repositories and `DB::table(...)->usingSchema(...)` use `TableSchema` for validating columns, projections, and primary-key metadata, but `TableSchema::hydrateTable()` delegates creation to the registered table definition. This keeps validation and DDL aligned around module-owned definitions instead of allowing ad hoc table creation.
 
-Release preparation must run declared application migrations to completion before materializing the current registered framework/application table definitions. The immutable migration manifest owns ordered bootstrap replay; precreating tables or indexes from the current registry can corrupt that historical replay. When no migrations are declared, materialization is the first schema stage. Dataphyre exposes one fixed, shell-free command for the post-migration stage:
+Release preparation must run declared application migrations to completion before materializing the current registered framework/application table definitions. The immutable migration manifest owns ordered bootstrap replay; precreating tables or indexes from the current registry can corrupt that historical replay. The fixed PostgreSQL migration runner has one deliberately narrower internal exception: before any nonempty fresh or established migration selection, it materializes the framework-owned Permission role authority tables that application migrations may reference (`dataphyre.permission_roles` and `dataphyre.permission_role_permissions`). Their existing Permission `TableDefinition` factories remain authoritative, every declared column is checked before application SQL, and no application id, migration id, manifest field, or command option selects the set. Fresh convergence, rolling, and maintenance keep the prerequisite DDL in the migration batch's lock-bound transaction; a partial definition fails before application SQL. This is not a separately callable stage and it does not pre-hydrate the rest of the registry. A fully applied no-op leaves the registry untouched. When no migrations are declared, materialization is the first schema stage. Dataphyre exposes one fixed, shell-free command for the post-migration stage:
 
 ```bash
 php runtime/modules/sql/kernel/materialize_registered_tables.php \
@@ -943,6 +953,26 @@ After the bootstrap cutoff, `maintenance` mode selects the complete pending
 expand/contract suffix transactionally. Selecting maintenance is the
 application's assertion that its drain/barrier is already established;
 Dataphyre does not verify that operational state.
+
+The fixed `--mode=automatic` command has one narrower framework-owned rule for
+a genuinely new database. If the application schema and both migration
+journals are absent, all manifest entries are pending, and drift is zero,
+Dataphyre re-proves that state under the profile's transaction-scoped advisory lock and
+converges the ordered bootstrap, expand, and contract phases in one managed
+transaction. Schema absence makes the contract floor vacuously safe because no older
+application process can be using an application schema that does not exist.
+An existing, unjournalled, partially migrated, or drifted schema is not fresh
+and retains the normal floor checks; there is no CLI option to override that
+decision. Failure or process death rolls back journal creation and every phase,
+so the same fixed command can retry without a recovery state or flag.
+
+Non-dry-run automatic success includes an allowlisted
+`result.convergence_validation` object. Release infrastructure must require
+`eligible=true`, `compatibility_floor_satisfied=true`, and empty pending, selected, deferred, phase, and error
+collections rather than treating process exit zero as convergence. The
+canonical command envelope is capped at 262,144 bytes. Fresh convergence
+certifies the migration journal and supported schema contract only; it does not
+claim application health, seed completion, traffic safety, or rollback safety.
 
 Maintenance contract evidence requires a caller-verified minimum active release:
 

@@ -76,18 +76,6 @@ if($pool==='scheduler'){
 	exit(is_array($report) && ($report['ok'] ?? null)===true ? 0 : 75);
 }
 
-$publicRoot=$realProjectRoot.'/public';
-if($pool==='web' && is_dir($publicRoot) && $requestPath!=='/'){
-	$candidate=realpath($publicRoot.'/'.ltrim($requestPath,'/'));
-	$prefix=rtrim($publicRoot,DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR;
-	if(is_string($candidate) && strncmp($candidate,$prefix,strlen($prefix))===0
-		&& is_file($candidate) && strtolower(pathinfo($candidate,PATHINFO_EXTENSION))!=='php'){
-		$mime=function_exists('mime_content_type') ? mime_content_type($candidate) : false;
-		if(is_string($mime) && $mime!=='') header('Content-Type: '.$mime);
-		header('Content-Length: '.filesize($candidate));readfile($candidate);return;
-	}
-}
-
 $_SERVER['DATAPHYRE_PROJECT_ROOT']=$realProjectRoot;
 $_SERVER['HTTP_X_DATAPHYRE_APPLICATION']=(string)(getenv('DATAPHYRE_RUNTIME_APPLICATION') ?: '');
 $_SERVER['HTTP_X_TRAFFIC_SOURCE']='internal_traffic';

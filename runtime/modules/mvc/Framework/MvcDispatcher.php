@@ -250,6 +250,10 @@ final class MvcDispatcher {
 	 * @return void Cache write failures are handled by RouteCompiler::tryWriteManifestFile().
 	 */
 	private function writeManifestCache(string $file, array $manifest): void {
+		if(\function_exists('dp_source_local_runtime_writes_allowed')
+			&& !\dp_source_local_runtime_writes_allowed()){
+			return;
+		}
 		RouteCompiler::tryWriteManifestFile($file, $manifest);
 	}
 

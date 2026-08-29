@@ -28,20 +28,23 @@ test('supervisor owns private status and signs cadence before privilege-dropped 
     $supervisor=(string)file_get_contents($kernel . '/application_runtime_supervisor.php');
     $router=(string)file_get_contents($kernel . '/application_runtime_router.php');
     $probe=(string)file_get_contents($kernel . '/application_runtime_status_probe.php');
-	$gateway=(string)file_get_contents($kernel . '/application_runtime_cgi_gateway.php');
+	$webGateway=(string)file_get_contents($kernel . '/application_runtime_web_gateway.php');
+	$schedulerGateway=(string)file_get_contents($kernel . '/application_runtime_scheduler_gateway.php');
+	$fpmConfig=(string)file_get_contents($kernel . '/application_runtime_php_fpm.conf');
 	$childEnvironment=(string)file_get_contents($kernel . '/application_runtime_child_environment.php');
 	$latch=(string)file_get_contents($kernel . '/application_runtime_activation_latch.php');
 	$protocol=(string)file_get_contents($kernel . '/application_runtime_scheduler_protocol.php');
 	$realtime=(string)file_get_contents($kernel . '/realtime.php');
 	$realtimeServer=(string)file_get_contents($kernel . '/application_runtime_realtime_server.php');
 	$realtimeProbe=(string)file_get_contents($kernel . '/application_runtime_realtime_probe.php');
+	$releaseProbe=(string)file_get_contents($kernel . '/application_runtime_release_probe.php');
     $fixture=(string)file_get_contents(__DIR__ . '/fixtures/application_runtime_project/framework_bootstrap.php');
 
     $t->contains("getmypid() !== 1", $supervisor);
     $t->contains("posix_geteuid() !== 0", $supervisor);
 	$t->contains("$" . "webHost='127.0.0.1';$" . "webPort=8083", $supervisor);
-	$t->contains("$" . "schedulerHost='127.0.0.1';$" . "schedulerPort=8081", $supervisor);
-	$t->contains("$" . "statusHost='127.0.0.1';$" . "statusPort=8082", $supervisor);
+	$t->contains("$" . "schedulerSocket=DataphyreApplicationRuntimeSchedulerGateway::SOCKET", $supervisor);
+	$t->contains("$" . "controlSocket='/run/dataphyre/control/runtime.sock'", $supervisor);
 	$t->contains("$" . "realtimeHost='0.0.0.0';$" . "realtimePort=8080", $supervisor);
 	foreach([
 		'DATAPHYRE_RUNTIME_WEB_HOST','DATAPHYRE_RUNTIME_WEB_PORT',
@@ -52,7 +55,9 @@ test('supervisor owns private status and signs cadence before privilege-dropped 
 		$t->isFalse(str_contains($supervisor,"dataphyre_runtime_env('{$setting}'"));
 		$t->isFalse(str_contains($supervisor,"dataphyre_runtime_integer('{$setting}'"));
 	}
-    $t->contains("stream_socket_server('tcp://'", $supervisor);
+	$t->contains("stream_socket_server('unix://'", $supervisor);
+	$t->isFalse(str_contains($supervisor,'tcp://127.0.0.1:8081'));
+	$t->isFalse(str_contains($supervisor,'tcp://127.0.0.1:8082'));
     $t->contains('sodium_crypto_sign_keypair()', $supervisor);
     $t->contains('sodium_crypto_sign_detached', $protocol);
 	$t->contains('dataphyre.scheduler_request.v1',$protocol);
@@ -62,10 +67,10 @@ test('supervisor owns private status and signs cadence before privilege-dropped 
 	}
     $t->isFalse(str_contains($supervisor, 'DATAPHYRE_RUNTIME_TICK_PRIVATE_KEY'));
     $t->isFalse(str_contains($router, '/dataphyre/runtime/status'));
-	$t->contains('/dataphyre/runtime/scheduler/claim',$gateway);
+	$t->contains('/dataphyre/runtime/scheduler/claim',$schedulerGateway);
 	$t->isFalse(str_contains($router,'/dataphyre/runtime/scheduler/claim'));
 	$t->contains('DataphyreApplicationRuntimeSchedulerProtocol::consume',$supervisor);
-	$t->contains('dataphyre.application_runtime.v4',$supervisor);
+	$t->contains('dataphyre.application_runtime.v6',$supervisor);
 	$t->contains("'scheduler_cycle_in_progress'=>",$supervisor);
 	$t->contains("require_once __DIR__.'/application_runtime_activation_latch.php'",$supervisor);
 	$t->contains('DataphyreApplicationRuntimeActivationLatch::restore()',$supervisor);
@@ -87,11 +92,30 @@ test('supervisor owns private status and signs cadence before privilege-dropped 
 	$t->contains("===0600",$latch);
 	$t->isFalse(str_contains($latch,'getenv('));
 	$t->contains('dataphyre.scheduler_registration.v1',$supervisor);
-	$t->contains('dataphyre.scheduler_callback.v1',$gateway);
+	$t->contains('dataphyre.scheduler_callback.v1',$schedulerGateway);
 	$t->contains('execute_managed_registration()',$router);
 	$t->contains('DataphyreApplicationRuntimeSchedulerState::recordSuccess',$supervisor);
 	$t->contains('DataphyreApplicationRuntimeSchedulerState::releaseClaim',$supervisor);
-	$t->contains("($" . "decoded['contract'] ?? null)==='dataphyre.application_runtime.v4'",$probe);
+	$t->contains('DataphyreManagedRuntimeGracefulShutdown',$supervisor);
+	$t->contains('dataphyre_runtime_require_not_stopping',$supervisor);
+	$termHandler=strpos($supervisor,'pcntl_signal(SIGTERM,$stop)');
+	$intHandler=strpos($supervisor,'pcntl_signal(SIGINT,$stop)');
+	$usrOneHandler=strpos($supervisor,'pcntl_signal(SIGUSR1,');
+	$usrTwoHandler=strpos($supervisor,'pcntl_signal(SIGUSR2,');
+	$firstStartupBoundary=strpos($supervisor,'DataphyreApplicationRuntimeEnvironment::assertCleanRootEnvironment();');
+	$firstRoleSpawn=strpos($supervisor,"$" . "children['web']=dataphyre_runtime_spawn(");
+	$t->isTrue(
+		is_int($termHandler) && is_int($intHandler) && is_int($usrOneHandler) && is_int($usrTwoHandler)
+		&& is_int($firstStartupBoundary) && is_int($firstRoleSpawn)
+		&& max($termHandler,$intHandler,$usrOneHandler,$usrTwoHandler)<$firstStartupBoundary
+		&& $firstStartupBoundary<$firstRoleSpawn,
+		'all four PID 1 signal dispositions are installed before startup work and child creation',
+	);
+	$t->same(1,substr_count($supervisor,'pcntl_signal(SIGTERM,$stop)'));
+	$t->same(1,substr_count($supervisor,'pcntl_signal(SIGINT,$stop)'));
+	$t->isFalse(str_contains($supervisor,"@chown('/run/dataphyre'"));
+	$t->isFalse(str_contains($supervisor,"@chgrp('/run/dataphyre'"));
+	$t->contains("($" . "decoded['contract'] ?? null)==='dataphyre.application_runtime.v6'",$probe);
 	foreach(['cloud_application','framework_application','environment','release_id','environment_fingerprint'] as $identity){
 		$t->contains("'{$identity}'=>",$supervisor);
 		$t->contains("$" . "decoded['{$identity}']",$probe);
@@ -106,20 +130,45 @@ test('supervisor owns private status and signs cadence before privilege-dropped 
         $t->isFalse(str_contains($source,$obsoleteDescriptor));
         $t->isFalse(str_contains($source,$obsoleteStream));
     }
-    $t->contains("'method'=>'POST'",$fixture);
-    $t->contains('http://127.0.0.1:8082/dataphyre/runtime/status',$fixture);
-    $t->contains("$" . "forgedStatusCode>=200",$fixture);
+	$t->contains('unix:///run/dataphyre/control/runtime.sock',$fixture);
+	$t->contains("$" . "forged=is_resource($" . "forgedSocket)",$fixture);
     $t->isFalse(str_contains($probe, "PHP_SAPI !== 'cli') {"));
 	$t->contains("$" . "setpriv='/usr/bin/setpriv'",$supervisor);
 	$t->contains("'--no-new-privs'",$supervisor);
 	$t->contains("'--reuid=0'",$supervisor);
-	$t->contains('application_runtime_cgi_gateway.php',$supervisor);
+	$t->contains("'--bounding-set=-all,+kill,+setuid,+setgid'",$supervisor);
+	$t->contains("in_array(\$pool,['web','web-http-gateway','scheduler'],true)",$supervisor);
+	$t->contains("@posix_kill(-\$group,\$signal)",$supervisor);
+	$t->contains('application_runtime_web_gateway.php',$supervisor);
+	$t->contains('application_runtime_scheduler_gateway.php',$supervisor);
+	$t->contains('application_runtime_php_fpm.conf',$supervisor);
+	$t->isFalse(is_file($kernel.'/application_runtime_cgi_gateway.php'));
 	$t->isFalse(str_contains($supervisor,'PHP_CLI_SERVER_WORKERS'));
-	$t->contains("['web','scheduler','realtime']",$supervisor);
+	$t->contains("['realtime','scheduler','web']",$supervisor);
 	$t->contains("$" . "pool==='realtime'",$supervisor);
+	$webSpawn=strpos($supervisor,"$" . "children['web']=dataphyre_runtime_spawn(");
+	$webLock=strpos($supervisor,'dataphyre_runtime_wait_for_web_pool(',$webSpawn===false ? 0 : $webSpawn);
+	$realtimeSpawn=strpos($supervisor,"$" . "children['realtime']=dataphyre_runtime_spawn(");
+	$t->isTrue(is_int($webSpawn) && is_int($webLock) && is_int($realtimeSpawn)
+		&& $webSpawn<$webLock && $webLock<$realtimeSpawn,'FPM is locked and attested before realtime can bootstrap');
 	$t->isFalse(is_file($kernel.'/application_runtime_pool_launcher.php'));
-	$t->contains("'/usr/local/bin/php-cgi'",$gateway);
-	$t->isFalse(str_contains($gateway,"'-n'"));
+	$t->contains("'/usr/local/bin/php-cgi'",$schedulerGateway);
+	$t->isFalse(str_contains($webGateway,"'/usr/local/bin/php-cgi'"));
+	$t->contains("'execution_model'=>'persistent-php-fpm'",$supervisor);
+	$t->contains('listen = /run/dataphyre/web/php-fpm.sock',$fpmConfig);
+	$t->contains('error_log = /var/log/dataphyre/php-fpm-error.log',$fpmConfig);
+	$t->isFalse(str_contains($fpmConfig,'/proc/self/fd/2'));
+	$t->contains('pm.max_children = 8',$fpmConfig);
+	$t->contains('pm.max_requests = 500',$fpmConfig);
+	$t->contains('application_runtime_fpm_environment.php',$fpmConfig);
+	$t->contains('dataphyre.application_runtime_release_probe.v1',$releaseProbe);
+	$t->contains('WARMUP_REQUEST_COUNT=3',$releaseProbe);
+	$t->contains('WARM_REQUEST_COUNT=20',$releaseProbe);
+	$t->contains('WARM_P95_BUDGET_MILLISECONDS=750',$releaseProbe);
+	$t->contains('CONCURRENT_REQUEST_COUNT=8',$releaseProbe);
+	$t->contains('CONCURRENT_BUDGET_MILLISECONDS=3000',$releaseProbe);
+	$t->contains("$" . "cadence['count']<1 || $" . "cadence['last_result']!=='ok'",$releaseProbe);
+	$t->isFalse(str_contains($schedulerGateway,"'-n'"));
 	$t->contains('public const INHERITED_FD=198',$childEnvironment);
 	$t->contains('dataphyre_open_inherited_environment_fd',$childEnvironment);
 	$t->contains('final class realtime', $realtime);
@@ -136,25 +185,27 @@ test('supervisor owns private status and signs cadence before privilege-dropped 
 	$t->contains("'application_authorization_rejections'=>true",$realtimeServer);
 	$t->contains("if($" . "pool!=='realtime') unset($" . "applicationEnvironment['DATAPHYRE_RUNTIME_REALTIME_PROBE_SECRET'])",$supervisor);
 	$t->contains('dataphyre.application_realtime_probe.v1',$realtimeProbe);
-	$t->contains("tcp://127.0.0.1:8082",$realtimeProbe);
+	$t->contains("unix:///run/dataphyre/control/runtime.sock",$realtimeProbe);
 	$t->contains("GET /dataphyre/runtime/realtime/probe HTTP/1.1",$realtimeProbe);
 	$t->isFalse(str_contains($realtimeProbe,'getenv('));
 	$t->isFalse(str_contains($realtimeServer, 'shell_exec'));
 	$t->isFalse(str_contains($realtimeServer, 'exec('));
 
 	foreach([
-		'supervisor_uid','supervisor_gid','supplementary_gids','cap_eff','no_new_privileges',
-		'role','listen_host','listen_port','parent_pid',
+		'supervisor_uid','supervisor_gid','supplementary_gids','cap_inheritable','cap_permitted',
+		'cap_eff','cap_bounding','cap_ambient','no_new_privileges',
+		'role','listen_host','listen_port','parent_pid','start_time_ticks','process_group_id',
 	] as $evidence) {
         $t->contains($evidence, $supervisor);
         $t->contains($evidence, $probe);
 	}
 	foreach([$supervisor,$realtimeServer,$realtimeProbe] as $source) $t->contains('registration_sha256',$source);
 	$t->contains("($" . "decoded['supervisor_pid'] ?? null)===1",$probe);
+	$t->contains("'persistent-php-fpm'",$probe);
 	$t->contains("'one-request-per-process-cgi'",$probe);
 	$t->contains("'single-exec-realtime'",$probe);
 	$t->contains("($" . "value['no_new_privileges'] ?? null)===true",$probe);
-	$t->contains("$" . "validPool($" . "decoded['realtime'] ?? null,'realtime','0.0.0.0',8080)",$probe);
+	$t->contains("$" . "validRealtimePool($" . "decoded['realtime'] ?? null)",$probe);
 })->tag('source-contract');
 
 test('supervisor helpers enforce their exact bounded environment private HTTP and frame contracts',static function(Context $t): void {
@@ -206,8 +257,8 @@ test('supervisor helpers enforce their exact bounded environment private HTTP an
 		$invalidRuntime=['request_counter'=>$counter];
 		$t->throws(static function() use (&$invalidRuntime): void {dataphyre_runtime_next_scheduler_counter($invalidRuntime);},RuntimeException::class);
 	}
-	$t->throws(static fn()=>dataphyre_runtime_pool_identity(getmypid(),'invalid','127.0.0.1',8083),RuntimeException::class);
-	$t->throws(static fn()=>dataphyre_runtime_pool_identity(999999,'web','127.0.0.1',8083),RuntimeException::class);
+	$t->throws(static fn()=>dataphyre_runtime_pool_identity(getmypid(),'1','invalid','127.0.0.1',8083),RuntimeException::class);
+	$t->throws(static fn()=>dataphyre_runtime_pool_identity(999999,'1','web','127.0.0.1',8083),RuntimeException::class);
 
 	$readRequest=static function(string $wire): ?array {
 		$pair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
@@ -232,6 +283,19 @@ test('supervisor helpers enforce their exact bounded environment private HTTP an
 		['method'=>'POST','path'=>'/dataphyre/runtime/scheduler/claim','body'=>'{}'],
 		$readRequest("POST /dataphyre/runtime/scheduler/claim HTTP/1.1\r\nContent-Length: 2\r\n\r\n{}"),
 	);
+	$dripPair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);$dripPid=pcntl_fork();
+	if($dripPid===-1) throw new RuntimeException('Private request deadline fixture could not fork.');
+	if($dripPid===0){
+		fclose($dripPair[0]);
+		foreach(str_split("GET /dataphyre/runtime/status HTTP/1.1\r\n") as $byte){
+			if(@fwrite($dripPair[1],$byte)!==1) break;usleep(100000);
+		}
+		fclose($dripPair[1]);exit(0);
+	}
+	fclose($dripPair[1]);$dripStarted=hrtime(true);
+	$t->same(null,dataphyre_runtime_read_private_request($dripPair[0]));
+	$dripElapsed=(hrtime(true)-$dripStarted)/1_000_000_000;fclose($dripPair[0]);pcntl_waitpid($dripPid,$dripStatus);
+	$t->isTrue($dripElapsed>=0.20 && $dripElapsed<0.75,'private request absolute deadline elapsed '.$dripElapsed.' seconds');
 
 	$respond=static function(int $status,array $payload): string {
 		$pair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
@@ -245,6 +309,28 @@ test('supervisor helpers enforce their exact bounded environment private HTTP an
 	$readOnly=fopen('/dev/null','rb');
 	$t->throws(static fn()=>dataphyre_runtime_private_response($readOnly,200,['ok'=>true]),Throwable::class);
 	fclose($readOnly);
+	$blockedPair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);$blockedSocket=socket_import_stream($blockedPair[0]);
+	if($blockedSocket instanceof Socket) socket_set_option($blockedSocket,SOL_SOCKET,SO_SNDBUF,4096);
+	$blockedStarted=hrtime(true);
+	$t->throws(
+		static fn()=>dataphyre_runtime_private_response($blockedPair[0],200,['body'=>str_repeat('x',400000)]),
+		DataphyreManagedRuntimeControlPeerFailure::class,
+	);
+	$blockedElapsed=(hrtime(true)-$blockedStarted)/1_000_000_000;fclose($blockedPair[0]);fclose($blockedPair[1]);
+	$t->isTrue($blockedElapsed>=0.20 && $blockedElapsed<0.75,'private response absolute deadline elapsed '.$blockedElapsed.' seconds');
+	$burst=$t->workspace('private-control-burst');$burstSocket=$burst->path('control.sock');
+	$burstListener=stream_socket_server('unix://'.$burstSocket,$burstErrorNumber,$burstError,STREAM_SERVER_BIND|STREAM_SERVER_LISTEN);
+	if(!is_resource($burstListener)) throw new RuntimeException("Private burst fixture could not bind: {$burstErrorNumber} {$burstError}");
+	$burstClients=[];
+	for($index=0;$index<6;$index++){
+		$client=stream_socket_client('unix://'.$burstSocket,$burstErrorNumber,$burstError,1,STREAM_CLIENT_CONNECT);
+		if(!is_resource($client)) throw new RuntimeException('Private burst fixture could not connect.');
+		fwrite($client,"TRACE / HTTP/1.1\r\n\r\n");$burstClients[]=$client;
+	}
+	$burstRuntime=[];$burstPending=[];dataphyre_runtime_serve_status($burstListener,$burstRuntime,$burstPending,str_repeat('x',32));
+	$queued=[];while(is_resource($queuedConnection=@stream_socket_accept($burstListener,0))){$queued[]=$queuedConnection;}
+	$t->count(2,$queued,'one status poll accepted only its fixed four-peer budget');
+	foreach([...$burstClients,...$queued] as $client) fclose($client);fclose($burstListener);@unlink($burstSocket);
 
 	$frameStream=fopen('php://temp','w+');
 	dataphyre_runtime_write_websocket_frame($frameStream,0x9,'ping');rewind($frameStream);
@@ -267,15 +353,131 @@ test('supervisor helpers enforce their exact bounded environment private HTTP an
 	$t->throws(static fn()=>$readFrame(
 		str_repeat('x',65536),chr(0x82).chr(127).pack('N2',0,65536),
 	),RuntimeException::class);
+	if(!is_dir('/run/dataphyre') && !mkdir('/run/dataphyre',0700)){
+		throw new RuntimeException('Supervisor helper runtime parent could not be created.');
+	}
+	if(!chown('/run/dataphyre',0) || !chgrp('/run/dataphyre',0) || !chmod('/run/dataphyre',0700)){
+		throw new RuntimeException('Supervisor helper runtime parent could not be prepared.');
+	}
+	$bindWebSocket=static function(): array {
+		$preparation=dataphyre_runtime_prepare_web_socket();$socket='/run/dataphyre/web/php-fpm.sock';
+		$previousUmask=umask(0077);
+		try{$listener=stream_socket_server('unix://'.$socket,$errorNumber,$error,STREAM_SERVER_BIND|STREAM_SERVER_LISTEN);}
+		finally{umask($previousUmask);}
+		if(!is_resource($listener) || !chown($socket,10001) || !chgrp($socket,10001) || !chmod($socket,0600)){
+			throw new RuntimeException('Web cleanup transition fixture could not bind.');
+		}
+		$stat=lstat($socket);
+		return [
+			$listener,['dev'=>$stat['dev'],'ino'=>$stat['ino']],
+			$preparation['directory'],$preparation['parent'],
+		];
+	};
+	foreach([0000,0100,0200,0300,0400,0500,0600,0700] as $partialMode){
+		if(!mkdir('/run/dataphyre/web',0700) || !chown('/run/dataphyre/web',0)
+			|| !chgrp('/run/dataphyre/web',0) || !chmod('/run/dataphyre/web',$partialMode)){
+			throw new RuntimeException('Web restrictive-umask restart fixture could not be prepared.');
+		}
+		$preparation=dataphyre_runtime_prepare_web_socket();$prepared=lstat('/run/dataphyre/web');
+		$t->same(0700,($prepared['mode'] ?? 0)&0777);$t->same(10001,$prepared['uid']);$t->same(10001,$prepared['gid']);
+		dataphyre_runtime_cleanup_web_socket(null,$preparation['directory'],$preparation['parent']);
+		$t->isFalse(file_exists('/run/dataphyre/web'));
+	}
+	foreach([[10001,10001,0700],[10001,0,0700],[0,10001,0700],[0,0,0700],[0,0,0711]] as [$uid,$gid,$mode]){
+		[$listener,$socketIdentity,$directoryIdentity,$parentIdentity]=$bindWebSocket();
+		if(!chown('/run/dataphyre/web',$uid) || !chgrp('/run/dataphyre/web',$gid) || !chmod('/run/dataphyre/web',$mode)){
+			throw new RuntimeException('Web cleanup transition state could not be prepared.');
+		}
+		dataphyre_runtime_cleanup_web_socket($socketIdentity,$directoryIdentity,$parentIdentity);
+		$t->isFalse(file_exists('/run/dataphyre/web/php-fpm.sock'));
+		$t->isFalse(file_exists('/run/dataphyre/web'));fclose($listener);
+		$t->same(0700,(lstat('/run/dataphyre')['mode'] ?? 0)&0777);
+	}
+	[$listener,$socketIdentity,$directoryIdentity,$parentIdentity]=$bindWebSocket();
+	dataphyre_runtime_cleanup_web_socket(
+		$socketIdentity,['dev'=>$directoryIdentity['dev'],'ino'=>$directoryIdentity['ino']+1],$parentIdentity,
+	);
+	$t->isTrue(file_exists('/run/dataphyre/web/php-fpm.sock'));
+	$t->isTrue(file_exists('/run/dataphyre/web'));
+	dataphyre_runtime_cleanup_web_socket(
+		['dev'=>$socketIdentity['dev'],'ino'=>$socketIdentity['ino']+1],$directoryIdentity,$parentIdentity,
+	);
+	$t->isTrue(file_exists('/run/dataphyre/web/php-fpm.sock'));
+	$t->isTrue(file_exists('/run/dataphyre/web'));
+	dataphyre_runtime_cleanup_web_socket($socketIdentity,$directoryIdentity,$parentIdentity);fclose($listener);
+	$t->isFalse(file_exists('/run/dataphyre/web/php-fpm.sock'));
+	$t->isFalse(file_exists('/run/dataphyre/web'));
+
+	$parentOriginal='/run/dataphyre-parent-original';$parentSentinel='/run/dataphyre-parent-sentinel';
+	$parentStat=lstat('/run/dataphyre');$parentIdentity=['dev'=>$parentStat['dev'],'ino'=>$parentStat['ino']];
+	if(!rename('/run/dataphyre',$parentOriginal) || !mkdir($parentSentinel,0755) || !symlink($parentSentinel,'/run/dataphyre')){
+		throw new RuntimeException('Web cleanup parent symlink fixture could not be prepared.');
+	}
+	dataphyre_runtime_cleanup_web_socket(null,null,$parentIdentity);
+	$t->same(0755,(lstat($parentSentinel)['mode'] ?? 0)&0777,'cleanup does not follow a substituted parent symlink');
+	if(!unlink('/run/dataphyre') || !rename($parentOriginal,'/run/dataphyre') || !rmdir($parentSentinel)){
+		throw new RuntimeException('Web cleanup parent symlink fixture could not be restored.');
+	}
+	if(!rename('/run/dataphyre',$parentOriginal) || !mkdir('/run/dataphyre',0711)
+		|| !chown('/run/dataphyre',0) || !chgrp('/run/dataphyre',0) || !chmod('/run/dataphyre',0711)){
+		throw new RuntimeException('Web cleanup parent replacement fixture could not be prepared.');
+	}
+	dataphyre_runtime_cleanup_web_socket(null,null,$parentIdentity);
+	$t->same(0711,(lstat('/run/dataphyre')['mode'] ?? 0)&0777,'cleanup does not mutate a replacement parent inode');
+	if(!rmdir('/run/dataphyre') || !rename($parentOriginal,'/run/dataphyre')){
+		throw new RuntimeException('Web cleanup parent replacement fixture could not be restored.');
+	}
+
+	[$listener,$socketIdentity,$directoryIdentity,$parentIdentity]=$bindWebSocket();
+	if(!rename('/run/dataphyre/web','/run/dataphyre/web-original') || !mkdir('/run/dataphyre/web',0711)
+		|| !chown('/run/dataphyre/web',0) || !chgrp('/run/dataphyre/web',0) || !chmod('/run/dataphyre/web',0711)){
+		throw new RuntimeException('Web cleanup directory replacement fixture could not be prepared.');
+	}
+	$replacementDirectory=lstat('/run/dataphyre/web');
+	dataphyre_runtime_cleanup_web_socket($socketIdentity,$directoryIdentity,$parentIdentity);
+	$unchangedReplacement=lstat('/run/dataphyre/web');
+	$t->same($replacementDirectory['ino'],$unchangedReplacement['ino']);
+	$t->same(0711,($unchangedReplacement['mode'] ?? 0)&0777,'cleanup does not mutate a replacement web directory');
+	if(!rmdir('/run/dataphyre/web') || !rename('/run/dataphyre/web-original','/run/dataphyre/web')){
+		throw new RuntimeException('Web cleanup directory replacement fixture could not be restored.');
+	}
+	dataphyre_runtime_cleanup_web_socket($socketIdentity,$directoryIdentity,$parentIdentity);fclose($listener);
+
+	[$listener,$socketIdentity,$directoryIdentity,$parentIdentity]=$bindWebSocket();
+	if(!rename('/run/dataphyre/web/php-fpm.sock','/run/dataphyre/web/php-fpm.original.sock')){
+		throw new RuntimeException('Web cleanup socket replacement fixture could not preserve the original socket.');
+	}
+	$replacementListener=stream_socket_server(
+		'unix:///run/dataphyre/web/php-fpm.sock',$errorNumber,$error,STREAM_SERVER_BIND|STREAM_SERVER_LISTEN,
+	);
+	if(!is_resource($replacementListener) || !chown('/run/dataphyre/web/php-fpm.sock',10001)
+		|| !chgrp('/run/dataphyre/web/php-fpm.sock',10001) || !chmod('/run/dataphyre/web/php-fpm.sock',0600)){
+		throw new RuntimeException('Web cleanup socket replacement fixture could not bind.');
+	}
+	$replacementSocket=lstat('/run/dataphyre/web/php-fpm.sock');
+	dataphyre_runtime_cleanup_web_socket($socketIdentity,$directoryIdentity,$parentIdentity);
+	$unchangedSocket=lstat('/run/dataphyre/web/php-fpm.sock');
+	$t->same($replacementSocket['ino'],$unchangedSocket['ino'],'cleanup does not unlink a replacement web socket');
+	fclose($replacementListener);unlink('/run/dataphyre/web/php-fpm.sock');
+	if(!rename('/run/dataphyre/web/php-fpm.original.sock','/run/dataphyre/web/php-fpm.sock')){
+		throw new RuntimeException('Web cleanup socket replacement fixture could not be restored.');
+	}
+	dataphyre_runtime_cleanup_web_socket($socketIdentity,$directoryIdentity,$parentIdentity);fclose($listener);
+	$t->isFalse(file_exists('/run/dataphyre/web'));
 
 	$serveResponse=static function(string $wire,callable $client) use ($t): mixed {
-		$listener=stream_socket_server('tcp://127.0.0.1:0',$errorNumber,$error);
-		if(!is_resource($listener)) throw new RuntimeException("Supervisor response fixture could not bind: {$errorNumber} {$error}");
-		$address=(string)stream_socket_get_name($listener,false);
-		$separator=strrpos($address,':');$port=(int)substr($address,$separator===false ? 0 : $separator+1);
+		$directory='/run/dataphyre/scheduler';$socket=DataphyreApplicationRuntimeSchedulerGateway::SOCKET;
+		$directoryIdentity=dataphyre_runtime_prepare_root_socket($directory,$socket);$previousUmask=umask(0077);
+		try{$listener=stream_socket_server('unix://'.$socket,$errorNumber,$error,STREAM_SERVER_BIND|STREAM_SERVER_LISTEN);}
+		finally{umask($previousUmask);}
+		if(!is_resource($listener) || !chmod($socket,0600)) throw new RuntimeException('Supervisor response fixture could not bind.');
+		$stat=lstat($socket);$socketIdentity=['dev'=>$stat['dev'],'ino'=>$stat['ino']];
 		$pid=pcntl_fork();
 		if($pid===-1){fclose($listener);throw new RuntimeException('Supervisor response fixture could not fork.');}
 		if($pid===0){
+			register_shutdown_function(static function() use ($directory,$socket,$socketIdentity,$directoryIdentity): void {
+				dataphyre_runtime_cleanup_root_socket($directory,$socket,$socketIdentity,$directoryIdentity);
+			});
 			$connection=@stream_socket_accept($listener,3);
 			if(is_resource($connection)){
 				stream_set_timeout($connection,2,0);$request='';
@@ -293,7 +495,7 @@ test('supervisor helpers enforce their exact bounded environment private HTTP an
 			fclose($listener);exit(0);
 		}
 		fclose($listener);
-		try{return $client($port);}
+		try{return $client($socket);}
 		finally{pcntl_waitpid($pid,$status);$t->same(0,pcntl_wexitstatus($status));}
 	};
 	$response=static fn(int $status,string $body): string=>
@@ -304,44 +506,60 @@ test('supervisor helpers enforce their exact bounded environment private HTTP an
 		'release_id'=>'dep_'.str_repeat('a',40),'environment_fingerprint'=>'hmac-sha256:'.str_repeat('b',64),
 	];
 	$generation='gen_'.str_repeat('c',32);$pending=[];$runtime=['active'=>true];$activation=null;$nextTick=0.0;
-	$statusListener=stream_socket_server('tcp://127.0.0.1:0',$errorNumber,$error);
+	$statusState=$t->workspace('supervisor-helper-status');$statusSocket=$statusState->path('control.sock');
+	$statusListener=stream_socket_server('unix://'.$statusSocket,$errorNumber,$error,STREAM_SERVER_BIND|STREAM_SERVER_LISTEN);
 	if(!is_resource($statusListener)) throw new RuntimeException("Supervisor status fixture could not bind: {$errorNumber} {$error}");
 	stream_set_blocking($statusListener,false);
-	$callbackResult=$serveResponse($response(200,'{"contract":"dataphyre.scheduler_callback.v1","ok":true}'),static fn(int $port): array=>
+	$callbackResult=$serveResponse($response(200,'{"contract":"dataphyre.scheduler_callback.v1","ok":true}'),static fn(string $socket): array=>
 		dataphyre_runtime_scheduler_request(
-			$port,'callback',$identity,$generation,1,$secretKey,$publicKey,$statusListener,$runtime,$pending,
+			$socket,'callback',$identity,$generation,1,$secretKey,$publicKey,$statusListener,$runtime,$pending,
 			$activation,$nextTick,'fixture.callback','sha256:'.str_repeat('d',64),1000,
 		)
 	);
 	$t->same(['contract'=>'dataphyre.scheduler_callback.v1','ok'=>true],$callbackResult);$t->same([],$pending);
-	$reservation=stream_socket_server('tcp://127.0.0.1:0',$errorNumber,$error);
-	if(!is_resource($reservation)) throw new RuntimeException('Supervisor unavailable-port fixture could not bind.');
-	$reservedAddress=(string)stream_socket_get_name($reservation,false);fclose($reservation);
-	$reservedSeparator=strrpos($reservedAddress,':');$unavailablePort=(int)substr($reservedAddress,$reservedSeparator===false ? 0 : $reservedSeparator+1);
+	$stopRequested=true;$stopIssued=null;
+	$observedWebSocket=null;$observedWebDirectory=null;$observedSchedulerSocket=null;
+	$t->throws(static function() use (&$stopRequested,&$observedWebSocket,&$observedWebDirectory): void {
+		dataphyre_runtime_wait_for_web_pool(999999,$observedWebSocket,$observedWebDirectory,$stopRequested);
+	},DataphyreManagedRuntimeGracefulShutdown::class);
+	$t->throws(static function() use (&$stopRequested,&$observedSchedulerSocket): void {
+		dataphyre_runtime_wait_for_scheduler_socket(999999,$observedSchedulerSocket,$stopRequested);
+	},DataphyreManagedRuntimeGracefulShutdown::class);
+	$t->same(null,$observedWebSocket);$t->same(null,$observedWebDirectory);$t->same(null,$observedSchedulerSocket);
+	$t->throws(static function() use (
+		$identity,$generation,$secretKey,$publicKey,$statusListener,&$runtime,&$pending,&$activation,&$nextTick,
+		&$stopIssued,&$stopRequested,
+	): void {
+		dataphyre_runtime_scheduler_request(
+			DataphyreApplicationRuntimeSchedulerGateway::SOCKET,'noop',$identity,$generation,2,$secretKey,$publicKey,
+			$statusListener,$runtime,$pending,$activation,$nextTick,null,null,null,$stopIssued,$stopRequested,
+		);
+	},DataphyreManagedRuntimeGracefulShutdown::class);
+	$t->same(null,$stopIssued);$t->same([],$pending);$stopRequested=false;
 	$t->throws(static fn()=>dataphyre_runtime_scheduler_request(
-		$unavailablePort,'noop',$identity,$generation,2,$secretKey,$publicKey,$statusListener,$runtime,$pending,
+		DataphyreApplicationRuntimeSchedulerGateway::SOCKET,'noop',$identity,$generation,3,$secretKey,$publicKey,$statusListener,$runtime,$pending,
 		$activation,$nextTick,
 	),RuntimeException::class);
 	$t->same([],$pending);
 	$t->throws(static fn()=>$serveResponse(
 		$response(200,str_repeat('x',DataphyreApplicationRuntimeSchedulerProtocol::MAX_TRANSPORT_BYTES+1)),
-		static fn(int $port): array=>dataphyre_runtime_scheduler_request(
-			$port,'noop',$identity,$generation,3,$secretKey,$publicKey,$statusListener,$runtime,$pending,
+		static fn(string $socket): array=>dataphyre_runtime_scheduler_request(
+			$socket,'noop',$identity,$generation,3,$secretKey,$publicKey,$statusListener,$runtime,$pending,
 			$activation,$nextTick,
 		),
 	),RuntimeException::class);
 	$t->throws(static fn()=>$serveResponse(
 		$response(500,'{}'),
-		static fn(int $port): array=>dataphyre_runtime_scheduler_request(
-			$port,'noop',$identity,$generation,4,$secretKey,$publicKey,$statusListener,$runtime,$pending,
+		static fn(string $socket): array=>dataphyre_runtime_scheduler_request(
+			$socket,'noop',$identity,$generation,4,$secretKey,$publicKey,$statusListener,$runtime,$pending,
 			$activation,$nextTick,
 		),
 	),RuntimeException::class);
 	foreach(['noop','callback','registration'] as $index=>$kind){
 		$t->throws(static fn()=>$serveResponse(
 			$response(200,'{"ok":true}'),
-			static fn(int $port): array=>dataphyre_runtime_scheduler_request(
-				$port,$kind,$identity,$generation,5+$index,$secretKey,$publicKey,$statusListener,$runtime,$pending,
+			static fn(string $socket): array=>dataphyre_runtime_scheduler_request(
+				$socket,$kind,$identity,$generation,5+$index,$secretKey,$publicKey,$statusListener,$runtime,$pending,
 				$activation,$nextTick,
 				$kind==='callback' ? 'fixture.callback' : null,
 				$kind==='callback' ? 'sha256:'.str_repeat('d',64) : null,
@@ -358,11 +576,11 @@ test('supervisor helpers enforce their exact bounded environment private HTTP an
 		);
 		$t->same(null,$serveResponse(
 			$response(404,'{"ok":false}'),
-			static function(int $port) use (
+			static function(string $socket) use (
 				$issued,$statusListener,&$runtime,&$pending,$publicKey,&$activation,&$nextTick,
 			): mixed {
 				dataphyre_runtime_require_scheduler_replay_rejection(
-					$port,$issued,$statusListener,$runtime,$pending,$publicKey,$activation,$nextTick,
+					$socket,$issued,$statusListener,$runtime,$pending,$publicKey,$activation,$nextTick,
 				);
 				return null;
 			},
@@ -370,20 +588,20 @@ test('supervisor helpers enforce their exact bounded environment private HTTP an
 	}
 	$invalidIssued=$issued;$invalidIssued['signature']=str_repeat('A',86);
 	$t->throws(static fn()=>dataphyre_runtime_require_scheduler_replay_rejection(
-		1,$invalidIssued,$statusListener,$runtime,$pending,$publicKey,$activation,$nextTick,
+		'/invalid-scheduler.sock',$invalidIssued,$statusListener,$runtime,$pending,$publicKey,$activation,$nextTick,
 	),RuntimeException::class);
 	$t->throws(static fn()=>$serveResponse(
 		$response(200,'{"ok":true}'),
-		static function(int $port) use (
+		static function(string $socket) use (
 			$issued,$statusListener,&$runtime,&$pending,$publicKey,&$activation,&$nextTick,
 		): mixed {
 			dataphyre_runtime_require_scheduler_replay_rejection(
-				$port,$issued,$statusListener,$runtime,$pending,$publicKey,$activation,$nextTick,
+				$socket,$issued,$statusListener,$runtime,$pending,$publicKey,$activation,$nextTick,
 			);
 			return null;
 		},
 	),RuntimeException::class);
-	fclose($statusListener);sodium_memzero($secretKey);
+	fclose($statusListener);@unlink($statusSocket);sodium_memzero($secretKey);
 
 	$fixedPortLock=dataphyre_application_runtime_fixed_port_lock();
 	try{
@@ -626,6 +844,7 @@ test('deactivation requested during a tick remains inactive and cannot trigger a
 		'cloud_application'=>str_repeat('Z',120),'framework_application'=>'Fixture','environment'=>'staging',
 		'release_id'=>'dep_'.str_repeat('b',40),'environment_fingerprint'=>'hmac-sha256:'.str_repeat('d',64),
 	];
+	$stateFile=$state->path('state.json');
 	$requests=[];$persisted=[];
 	$persist=static function(bool $active) use (&$persisted,&$runtime): void {
 		$persisted[]=['active'=>$active,'in_progress'=>$runtime['scheduler_cycle_in_progress']];
@@ -636,7 +855,7 @@ test('deactivation requested during a tick remains inactive and cannot trigger a
 		return ['contract'=>'dataphyre.scheduler_callback.v1','ok'=>true];
 	};
 	dataphyre_runtime_run_scheduler_cycle(
-		8081,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$runtime,$pendingRequests,3,
+		DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$runtime,$pendingRequests,3,
 		$activationRequested,$nextTick,$request,$persist,
 	);
 	$remaining=max(0.0,$nextTick-microtime(true));
@@ -665,21 +884,49 @@ test('deactivation requested during a tick remains inactive and cannot trigger a
 
 	$invalidRuntime=$cycleRuntime([]);$invalidActivation=null;$invalidNextTick=0.0;
 	dataphyre_runtime_run_scheduler_cycle(
-		8081,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$invalidRuntime,$pendingRequests,3,
+		DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$invalidRuntime,$pendingRequests,3,
 		$invalidActivation,$invalidNextTick,static fn(): never=>throw new RuntimeException('unreachable'),$persist,
 	);
 	$t->same('failed',$invalidRuntime['last_result']);$t->same(false,$invalidRuntime['scheduler_cycle_in_progress']);
 
 	$failedDefinition=[
-		'name'=>'fixture.failure','task_sha256'=>'sha256:'.str_repeat('a',64),'dependency_sha256'=>[],
+		'name'=>'fixture.failure-first','task_sha256'=>'sha256:'.str_repeat('a',64),'dependency_sha256'=>[],
 		'frequency_milliseconds'=>1000,'timeout_milliseconds'=>2000,'memory_limit'=>'128M',
 	];
-	$failedRuntime=$cycleRuntime($registrationFor([$failedDefinition]));$failedActivation=null;$failedNextTick=0.0;
+	$failedSecond=$failedDefinition;$failedSecond['name']='fixture.failure-second';$failedRequests=0;
+	$failedRuntime=$cycleRuntime($registrationFor([$failedDefinition,$failedSecond]));$failedActivation=null;$failedNextTick=0.0;
 	dataphyre_runtime_run_scheduler_cycle(
-		8081,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$failedRuntime,$pendingRequests,3,
-		$failedActivation,$failedNextTick,static fn(): never=>throw new RuntimeException('fixture callback failure'),$persist,
+		DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$failedRuntime,$pendingRequests,3,
+		$failedActivation,$failedNextTick,static function() use (&$failedRequests): array {
+			$failedRequests++;
+			if($failedRequests===1) throw new RuntimeException('fixture callback failure');
+			return ['contract'=>'dataphyre.scheduler_callback.v1','ok'=>true];
+		},$persist,
 	);
-	$t->same('failed',$failedRuntime['last_result']);$t->same(1,$failedRuntime['count']);
+	$t->same(2,$failedRequests);$t->same('failed',$failedRuntime['last_result']);$t->same(1,$failedRuntime['count']);
+
+	$stopFirst=$failedDefinition;$stopFirst['name']='fixture.graceful-stop-first';
+	$stopSecond=$failedDefinition;$stopSecond['name']='fixture.graceful-stop-second';$stopRequests=0;$stopRequested=false;
+	$stopRuntime=$cycleRuntime($registrationFor([$stopFirst,$stopSecond]));$stopActivation=null;$stopNextTick=0.0;
+	$stopCallback=static function() use (&$stopRequests,&$stopRequested): never {
+		$stopRequests++;$stopRequested=true;dataphyre_runtime_require_not_stopping($stopRequested);
+		throw new RuntimeException('unreachable after graceful stop');
+	};
+	$gracefulFailure=null;
+	try{
+		dataphyre_runtime_run_scheduler_cycle(
+			DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$stopRuntime,$pendingRequests,3,
+			$stopActivation,$stopNextTick,$stopCallback,$persist,stopRequested:$stopRequested,
+		);
+	}catch(DataphyreManagedRuntimeGracefulShutdown $failure){$gracefulFailure=$failure;}
+	$t->same('Managed runtime shutdown requested.',$gracefulFailure?->getMessage());
+	$t->same(1,$stopRequests);$t->same(0,$stopRuntime['count']);$t->same(null,$stopRuntime['last_at']);
+	$t->same('never',$stopRuntime['last_result']);$t->same(false,$stopRuntime['scheduler_cycle_in_progress']);
+	$stoppedState=json_decode((string)file_get_contents($stateFile),true,32,JSON_THROW_ON_ERROR);
+	$stoppedEntry=$stoppedState['entries'][$stopFirst['name']] ?? null;
+	$t->same(null,$stoppedEntry['claim_nonce'] ?? null);$t->same(null,$stoppedEntry['claim_expires_at'] ?? null);
+	$t->same(null,$stoppedEntry['last_success_at'] ?? null);
+	$t->isFalse(isset($stoppedState['entries'][$stopSecond['name']]),'graceful stop prevents a second due callback claim');
 
 	$raceFirst=$failedDefinition;$raceFirst['name']='fixture.race-first';
 	$raceSecond=$failedDefinition;$raceSecond['name']='fixture.race-second';
@@ -693,7 +940,7 @@ test('deactivation requested during a tick remains inactive and cannot trigger a
 		return ['contract'=>'dataphyre.scheduler_callback.v1','ok'=>true];
 	};
 	dataphyre_runtime_run_scheduler_cycle(
-		8081,$identity,$raceGeneration,'secret','public',null,$raceRuntime,$pendingRequests,3,
+		DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,$raceGeneration,'secret','public',null,$raceRuntime,$pendingRequests,3,
 		$raceActivation,$raceNextTick,$predecessorClaim,$persist,
 	);
 	$t->same(1,$raceRequests);$t->same('ok',$raceRuntime['last_result']);
@@ -701,21 +948,115 @@ test('deactivation requested during a tick remains inactive and cannot trigger a
 		$identity,$raceSecond,$identity['release_id'],$raceGeneration,$raceNonce,
 	);
 
-	$cleanupDefinition=$failedDefinition;$cleanupDefinition['name']='fixture.cleanup-failure';
-	$cleanupRuntime=$cycleRuntime($registrationFor([$cleanupDefinition]));$cleanupActivation=null;$cleanupNextTick=0.0;
-	$stateFile=$state->path('state.json');
-	$corruptClaim=static function() use ($stateFile,$cleanupDefinition): array {
+	$cleanupDefinition=$failedDefinition;$cleanupDefinition['name']='fixture.cleanup-failure-first';
+	$cleanupSecond=$failedDefinition;$cleanupSecond['name']='fixture.cleanup-failure-second';$cleanupRequests=0;
+	$cleanupRuntime=$cycleRuntime($registrationFor([$cleanupDefinition,$cleanupSecond]));$cleanupActivation=null;$cleanupNextTick=0.0;
+	$corruptClaim=static function() use ($stateFile,$cleanupDefinition,&$cleanupRequests): never {
+		$cleanupRequests++;
 		$current=json_decode((string)file_get_contents($stateFile),true,32,JSON_THROW_ON_ERROR);
 		$current['entries'][$cleanupDefinition['name']]['claim_nonce']=str_repeat('0',64);
 		file_put_contents($stateFile,json_encode($current,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n",LOCK_EX);
 		chmod($stateFile,0600);
-		return ['contract'=>'invalid','ok'=>false];
+		throw new RuntimeException('application callback detail must remain private');
 	};
-	dataphyre_runtime_run_scheduler_cycle(
-		8081,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$cleanupRuntime,$pendingRequests,3,
-		$cleanupActivation,$cleanupNextTick,$corruptClaim,$persist,
-	);
-	$t->same('failed',$cleanupRuntime['last_result']);$t->same(false,$cleanupRuntime['scheduler_cycle_in_progress']);
+	$cleanupFailure=null;
+	try{
+		dataphyre_runtime_run_scheduler_cycle(
+			DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$cleanupRuntime,$pendingRequests,3,
+			$cleanupActivation,$cleanupNextTick,$corruptClaim,$persist,
+		);
+	}catch(DataphyreManagedRuntimeGenerationUnavailable $failure){$cleanupFailure=$failure;}
+	$t->same(1,$cleanupRequests);$t->same(false,$cleanupRuntime['scheduler_cycle_in_progress']);$t->same(0,$cleanupRuntime['count']);
+	$t->same('Managed runtime scheduler claim cleanup failed.',$cleanupFailure?->getMessage());
+	$t->same('application callback detail must remain private',$cleanupFailure?->getPrevious()?->getMessage());
+
+	$generationDefinition=$failedDefinition;$generationDefinition['name']='fixture.generation-loss-first';
+	$generationSecond=$failedDefinition;$generationSecond['name']='fixture.generation-loss-second';$generationRequests=0;
+	$generationRuntime=$cycleRuntime($registrationFor([$generationDefinition,$generationSecond]));
+	$generationActivation=null;$generationNextTick=0.0;
+	$loseGeneration=static function() use ($stateFile,$generationDefinition,&$generationRequests): never {
+		$generationRequests++;
+		$current=json_decode((string)file_get_contents($stateFile),true,32,JSON_THROW_ON_ERROR);
+		$current['entries'][$generationDefinition['name']]['claim_nonce']=str_repeat('0',64);
+		file_put_contents($stateFile,json_encode($current,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n",LOCK_EX);
+		chmod($stateFile,0600);
+		throw new DataphyreManagedRuntimeGenerationUnavailable('generation-specific private detail');
+	};
+	$generationFailure=null;
+	try{
+		dataphyre_runtime_run_scheduler_cycle(
+			DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$generationRuntime,$pendingRequests,3,
+			$generationActivation,$generationNextTick,$loseGeneration,$persist,
+		);
+	}catch(DataphyreManagedRuntimeGenerationUnavailable $failure){$generationFailure=$failure;}
+	$t->same(1,$generationRequests);$t->same(false,$generationRuntime['scheduler_cycle_in_progress']);$t->same(0,$generationRuntime['count']);
+	$t->same('Managed runtime generation failed and its current scheduler claim cleanup also failed.',$generationFailure?->getMessage());
+	$t->same('generation-specific private detail',$generationFailure?->getPrevious()?->getMessage());
+
+	$ownedChildren=[];
+	try{
+		foreach(['web','scheduler','realtime','web-http-gateway'] as $role){
+			$command=$role==='realtime' ? ['/bin/sleep','30'] : ['/usr/bin/setsid','/bin/sleep','30'];
+			$pipes=[];$resource=proc_open( // dataphyre-test-architecture: exempt[raw-process-control] reason="Owned-role generation-loss proof must kill and inspect an exact direct child while its scheduler callback is in progress."
+				$command,[0=>['file','/dev/null','r'],1=>['file','/dev/null','w'],2=>['file','/dev/null','w']],$pipes,
+			);
+			if(!is_resource($resource)) throw new RuntimeException('Owned-role fixture could not spawn.');
+			$status=proc_get_status($resource);$pid=$status['pid'] ?? null;
+			if(!is_int($pid) || $pid<2) throw new RuntimeException('Owned-role fixture identity is invalid.');
+			$deadline=microtime(true)+1.0;
+			do{
+				$childIdentity=DataphyreApplicationRuntimeChildEnvironment::processIdentity($pid);
+				$group=$role==='realtime' ? null : @posix_getpgid($pid);
+				if($role==='realtime' || $group===$pid) break;
+				usleep(10000);
+			}while(microtime(true)<$deadline);
+			if($role!=='realtime' && $group!==$pid) throw new RuntimeException('Owned-role fixture process group is invalid.');
+			$ownedChildren[$role]=[
+				'resource'=>$resource,'pid'=>$pid,'pool'=>$role,
+				'start_time_ticks'=>$childIdentity['start_time_ticks'],'process_group_id'=>$role==='realtime' ? null : $pid,
+			];
+		}
+		$ownedFirst=$failedDefinition;$ownedFirst['name']='fixture.owned-generation-first';
+		$ownedSecond=$failedDefinition;$ownedSecond['name']='fixture.owned-generation-second';$ownedRequests=0;
+		$ownedRuntime=$cycleRuntime($registrationFor([$ownedFirst,$ownedSecond]));$ownedActivation=null;$ownedNextTick=0.0;
+		$killSchedulerThenConnect=static function(
+			string $socketPath,string $kind,array $requestIdentity,string $requestGeneration,int $counter,
+			string $secretKey,string $publicKey,mixed $statusListener,array &$requestRuntime,array &$requestPending,
+			?bool &$requestActivation,float &$requestNextTick,?string $schedulerName=null,
+			?string $definitionSha256=null,?int $budgetMilliseconds=null,?array &$issuedEvidence=null,
+			?bool &$stopRequested=null,
+		) use (&$ownedChildren,&$ownedRequests): array {
+			$ownedRequests++;$scheduler=$ownedChildren['scheduler'];@posix_kill(-$scheduler['pid'],SIGKILL);
+			$deadline=microtime(true)+1.0;
+			do{
+				$status=proc_get_status($scheduler['resource']);
+				if(($status['running'] ?? true)!==true) break;
+				usleep(10000);
+			}while(microtime(true)<$deadline);
+			$requestRuntime['managed_generation']=true;$requestRuntime['owned_children']=$ownedChildren;
+			return dataphyre_runtime_scheduler_request(
+				$socketPath,$kind,$requestIdentity,$requestGeneration,$counter,$secretKey,$publicKey,
+				$statusListener,$requestRuntime,$requestPending,$requestActivation,$requestNextTick,
+				$schedulerName,$definitionSha256,$budgetMilliseconds,$issuedEvidence,$stopRequested,
+			);
+		};
+		$ownedFailure=null;
+		try{
+			dataphyre_runtime_run_scheduler_cycle(
+				DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$ownedRuntime,$pendingRequests,3,
+				$ownedActivation,$ownedNextTick,$killSchedulerThenConnect,$persist,
+			);
+		}catch(DataphyreManagedRuntimeGenerationUnavailable $failure){$ownedFailure=$failure;}
+		$t->same(1,$ownedRequests);$t->same(false,$ownedRuntime['scheduler_cycle_in_progress']);$t->same(0,$ownedRuntime['count']);
+		$t->same('scheduler runtime pool exited unexpectedly.',$ownedFailure?->getMessage());
+		$ownedState=json_decode((string)file_get_contents($stateFile),true,32,JSON_THROW_ON_ERROR);
+		$t->same(null,$ownedState['entries'][$ownedFirst['name']]['claim_nonce'] ?? null);
+		$t->same(null,$ownedState['entries'][$ownedFirst['name']]['last_success_at'] ?? null);
+		$t->isFalse(isset($ownedState['entries'][$ownedSecond['name']]),'gateway death prevents a second due callback attempt');
+	}finally{
+		foreach($ownedChildren as $child) dataphyre_runtime_signal_child($child,SIGKILL);
+		foreach($ownedChildren as $child) if(is_resource($child['resource'])) proc_close($child['resource']);
+	}
 
 	$deactivateDefinition=$failedDefinition;$deactivateDefinition['name']='fixture.deactivate-at-cycle-end';
 	$deactivateRuntime=$cycleRuntime($registrationFor([$deactivateDefinition]));$deactivateActivation=null;$deactivateNextTick=0.0;
@@ -724,7 +1065,7 @@ test('deactivation requested during a tick remains inactive and cannot trigger a
 		return ['contract'=>'dataphyre.scheduler_callback.v1','ok'=>true];
 	};
 	dataphyre_runtime_run_scheduler_cycle(
-		8081,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$deactivateRuntime,$pendingRequests,3,
+		DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$deactivateRuntime,$pendingRequests,3,
 		$deactivateActivation,$deactivateNextTick,$deactivate,$persist,
 	);
 	$t->same(false,$deactivateRuntime['active']);$t->same('ok',$deactivateRuntime['last_result']);
@@ -756,23 +1097,73 @@ PHP;
     $t->same(['status'=>404,'body'=>'{"ok":false}'],$result->json());
 })->tag('negative','single-use-environment','scheduler');
 
-test('status probe owns one fixed address and refuses caller-selected arguments', static function(Context $t): void {
+test('status probe accepts the exact v6 maximum and rejects one additional byte', static function(Context $t): void {
+	$kernel=dirname(__DIR__).'/kernel';$probe=$kernel.'/application_runtime_status_probe.php';
+	require_once $kernel.'/application_runtime_supervisor.php';
+	require_once __DIR__.'/fixtures/application_runtime_status_v6_max_payload.php';
+	if(!is_dir('/run/dataphyre') && !mkdir('/run/dataphyre',0700)){
+		throw new RuntimeException('Status boundary runtime parent could not be created.');
+	}
+	if(!chown('/run/dataphyre',0) || !chgrp('/run/dataphyre',0) || !chmod('/run/dataphyre',0700)){
+		throw new RuntimeException('Status boundary runtime parent could not be prepared.');
+	}
+	$runProbe=static function(string $body) use ($t,$probe): mixed {
+		$control=dataphyre_runtime_bind_control_socket();$listener=$control['listener'];$pid=pcntl_fork();
+		if($pid===-1){fclose($listener);throw new RuntimeException('Status boundary server could not fork.');}
+		if($pid===0){
+			register_shutdown_function(static function() use ($control): void {
+				dataphyre_runtime_cleanup_root_socket(
+					'/run/dataphyre/control','/run/dataphyre/control/runtime.sock',
+					$control['identity'],$control['directory_identity'],
+				);
+			});
+			$connection=@stream_socket_accept($listener,3);$request='';
+			if(is_resource($connection)){
+				stream_set_timeout($connection,2,0);
+				while(!str_contains($request,"\r\n\r\n")){
+					$chunk=fread($connection,4096);if(!is_string($chunk) || $chunk==='') break;$request.=$chunk;
+				}
+				$response="HTTP/1.1 200 OK\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n".$body;
+				$offset=0;while($offset<strlen($response)){
+					$written=@fwrite($connection,substr($response,$offset));
+					if(!is_int($written) || $written<1) break;$offset+=$written;
+				}
+				fclose($connection);
+			}
+			fclose($listener);exit(0);
+		}
+		fclose($listener);
+		try{return $t->phpProcess([$probe]);}
+		finally{
+			pcntl_waitpid($pid,$status);
+			$t->same(0,pcntl_wexitstatus($status),'status boundary server exits cleanly');
+		}
+	};
+	$fixedPortLock=dataphyre_application_runtime_fixed_port_lock();
+	try{
+		$maximum=dataphyre_test_application_runtime_status_v6_max_payload();
+		$t->same(true,\Dataphyre\ApplicationEnvironmentIdentifier::valid(str_repeat('e',128)));
+		$t->same(false,\Dataphyre\ApplicationEnvironmentIdentifier::valid(str_repeat('e',129)));
+		$t->same(8336,strlen($maximum));
+		$accepted=$runProbe($maximum);$t->processSucceeded($accepted);
+		$t->same($maximum."\n",$accepted->stdout());$t->same(8337,strlen($accepted->stdout()));
+		$t->same('',$accepted->stderr());
+		$rejected=$runProbe($maximum.' ');$t->processFailed($rejected,69);
+		$t->same('',$rejected->stdout());$t->same('',$rejected->stderr());
+	}finally{dataphyre_application_runtime_fixed_port_unlock($fixedPortLock);}
+})->tag('status-probe','v6','maximum','boundary','positive','negative');
+
+test('status probe owns one fixed socket and refuses caller-selected arguments', static function(Context $t): void {
     $probe=dirname(__DIR__) . '/kernel/application_runtime_status_probe.php';
 	$fixedPortLock=dataphyre_application_runtime_fixed_port_lock();
 	try{
-		$ignoredOverride=$t->phpProcess([$probe], environment:[
-			'DATAPHYRE_RUNTIME_STATUS_HOST'=>'::1',
-			'DATAPHYRE_RUNTIME_STATUS_PORT'=>'1',
-		]);
-		$t->processFailed($ignoredOverride,69);
-		$t->same('',$ignoredOverride->stdout());
-		$t->same('',$ignoredOverride->stderr());
+		$unavailable=$t->phpProcess([$probe]);
+		$t->processFailed($unavailable,69);
+		$t->same('',$unavailable->stdout());
+		$t->same('',$unavailable->stderr());
 	}finally{dataphyre_application_runtime_fixed_port_unlock($fixedPortLock);}
 
-    $argument=$t->phpProcess([$probe,'--status-port=1'], environment:[
-        'DATAPHYRE_RUNTIME_STATUS_HOST'=>'127.0.0.1',
-        'DATAPHYRE_RUNTIME_STATUS_PORT'=>'8082',
-    ]);
+    $argument=$t->phpProcess([$probe,'--status-port=1']);
     $t->processFailed($argument,64);
     $t->same('',$argument->stdout());
     $t->same('',$argument->stderr());

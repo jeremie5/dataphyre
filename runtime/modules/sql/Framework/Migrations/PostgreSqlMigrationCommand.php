@@ -26,6 +26,7 @@ require_once dirname(__DIR__,3).'/core/Framework/ApplicationEnvironmentIdentifie
  */
 final class PostgreSqlMigrationCommand {
 	public const CONTRACT='dataphyre.postgresql_migration_command.v1';
+	public const MAX_EVIDENCE_BYTES=262144;
 	public const EXIT_SUCCESS=0;
 	public const EXIT_USAGE=64;
 	public const EXIT_MANIFEST=65;
@@ -64,7 +65,7 @@ final class PostgreSqlMigrationCommand {
 			);
 		}
 		if($options['help']===true){
-			self::writeJson($writeOut, [
+			if(!self::writeJson($writeOut, [
 				'contract'=>self::CONTRACT,
 				'exit_status'=>self::EXIT_SUCCESS,
 				'ok'=>true,
@@ -75,7 +76,9 @@ final class PostgreSqlMigrationCommand {
 					'DATAPHYRE_ENVIRONMENT (optional exact-match guard)',
 				],
 				'usage'=>self::usage(),
-			]);
+			])){
+				return self::EXIT_MIGRATION;
+			}
 			return self::EXIT_SUCCESS;
 		}
 
@@ -154,21 +157,28 @@ final class PostgreSqlMigrationCommand {
 			);
 		}
 
+		$automaticRequested=$options['mode']==='automatic';
+		$options['automatic_requested']=$automaticRequested;
+		$options['fresh_database_convergence']=false;
 		try{
 			if($options['mode']==='automatic'){
-				$selectMode=$runtime['automatic_mode_selector'] ?? static fn(
-					PDO $connection,
-					PostgreSqlMigrationProfile $migrationProfile,
-					PostgreSqlMigrationManifest $migrationManifest
-				): string=>self::automaticMode(
-					$migrationManifest,
-					(new PostgreSqlMigrationRunner($connection, $migrationProfile))->status($migrationManifest)
-				);
-				$selectedMode=$selectMode($pdo, $profile, $manifest);
-				if(!in_array($selectedMode, ['bootstrap', 'rolling'], true)){
-					throw new InvalidArgumentException('Automatic migration mode selection returned an invalid value.');
+				$selectMode=$runtime['automatic_mode_selector'] ?? null;
+				if(is_callable($selectMode)){
+					$selectedMode=$selectMode($pdo, $profile, $manifest);
+					if(!in_array($selectedMode, ['bootstrap', 'rolling'], true)){
+						throw new InvalidArgumentException('Automatic migration mode selection returned an invalid value.');
+					}
+					$options['mode']=$selectedMode;
+				}else{
+					$automaticRunner=new PostgreSqlMigrationRunner($pdo, $profile);
+					$automaticState=$automaticRunner->status($manifest);
+					$fresh=$automaticRunner->freshDatabaseEvidence($manifest, $automaticState);
+					if($options['dry_run']===false && ($fresh['eligible'] ?? null)===true){
+						$options['fresh_database_convergence']=true;
+					}else{
+						$options['mode']=self::automaticMode($manifest, $automaticState);
+					}
 				}
-				$options['mode']=$selectedMode;
 			}
 			$apply=$runtime['apply'] ?? static function(
 				PDO $connection,
@@ -177,6 +187,12 @@ final class PostgreSqlMigrationCommand {
 				array $commandOptions
 			): array {
 				$runner=new PostgreSqlMigrationRunner($connection, $migrationProfile);
+				if(($commandOptions['fresh_database_convergence'] ?? false)===true){
+					return $runner->applyFreshDatabase(
+						$migrationManifest,
+						self::releaseIdentity($commandOptions)
+					);
+				}
 				$plan=$runner->deploymentEvidence(
 					$migrationManifest,
 					$runner->status($migrationManifest),
@@ -196,13 +212,28 @@ final class PostgreSqlMigrationCommand {
 						'pending_validation'=>$plan,
 					];
 				}
-				return $runner->apply(
+				$result=$runner->apply(
 					$migrationManifest,
 					$commandOptions['mode'],
 					$commandOptions['dry_run'],
 					self::releaseIdentity($commandOptions),
 					$commandOptions['verified_minimum_active_release']
 				);
+				if(
+					($commandOptions['automatic_requested'] ?? false)===true
+					&& $commandOptions['dry_run']===false
+				){
+					$convergence=$runner->deploymentEvidence(
+						$migrationManifest,
+						$runner->status($migrationManifest),
+						'rolling'
+					);
+					if(self::emptyConvergenceInventory($convergence)){
+						$convergence['compatibility_floor_satisfied']=true;
+					}
+					$result['convergence_validation']=$convergence;
+				}
+				return $result;
 			};
 			$result=$apply($pdo, $profile, $manifest, $options);
 			if(!is_array($result)){
@@ -230,15 +261,40 @@ final class PostgreSqlMigrationCommand {
 				]
 			);
 		}
+		if(
+			$automaticRequested
+			&& $options['dry_run']===false
+			&& !self::automaticConvergenceComplete($result)
+		){
+			return self::failure(
+				$writeError,
+				self::EXIT_MIGRATION,
+				'migration_convergence_incomplete',
+				'The automatic PostgreSQL migration pass did not reach the immutable manifest head.',
+				[
+					...$context,
+					'manifest'=>self::manifestEvidence($manifest),
+					'result'=>self::resultEvidence($result),
+				]
+			);
+		}
 
-		self::writeJson($writeOut, [
+		if(!self::writeJson($writeOut, [
 			...$context,
 			'contract'=>self::CONTRACT,
 			'exit_status'=>self::EXIT_SUCCESS,
 			'manifest'=>self::manifestEvidence($manifest),
 			'ok'=>true,
 			'result'=>self::resultEvidence($result),
-		]);
+		])){
+			return self::failure(
+				$writeError,
+				self::EXIT_MIGRATION,
+				'migration_evidence_too_large',
+				'The PostgreSQL migration evidence exceeded its fixed public boundary.',
+				$context
+			);
+		}
 		return self::EXIT_SUCCESS;
 	}
 
@@ -471,6 +527,33 @@ final class PostgreSqlMigrationCommand {
 		};
 	}
 
+	/** @param array<string,mixed> $result */
+	private static function automaticConvergenceComplete(array $result): bool {
+		$validation=$result['convergence_validation'] ?? null;
+		return is_array($validation)
+			&& !array_is_list($validation)
+			&& ($validation['bootstrap_cutoff_status'] ?? null)==='applied'
+			&& ($validation['eligible'] ?? null)===true
+			&& ($validation['compatibility_floor_satisfied'] ?? null)===true
+			&& ($validation['errors'] ?? null)===[]
+			&& ($validation['pending_migrations'] ?? null)===[]
+			&& ($validation['pending_phases'] ?? null)===[]
+			&& ($validation['selected_migrations'] ?? null)===[]
+			&& ($validation['selected_phases'] ?? null)===[]
+			&& ($validation['deferred_migrations'] ?? null)===[];
+	}
+
+	/** @param array<string,mixed> $validation */
+	private static function emptyConvergenceInventory(array $validation): bool {
+		return ($validation['eligible'] ?? null)===true
+			&& ($validation['errors'] ?? null)===[]
+			&& ($validation['pending_migrations'] ?? null)===[]
+			&& ($validation['pending_phases'] ?? null)===[]
+			&& ($validation['selected_migrations'] ?? null)===[]
+			&& ($validation['selected_phases'] ?? null)===[]
+			&& ($validation['deferred_migrations'] ?? null)===[];
+	}
+
 	/** @return array<string,mixed> */
 	private static function manifestEvidence(PostgreSqlMigrationManifest $manifest): array {
 		$summary=$manifest->publicSummary();
@@ -500,10 +583,13 @@ final class PostgreSqlMigrationCommand {
 			'normalized_legacy_aliases',
 			'bootstrap_cutoff',
 			'pending_validation',
+			'convergence_validation',
 		];
 		$evidence=array_intersect_key($result, array_fill_keys($allowed, true));
-		if(array_key_exists('pending_validation', $evidence)){
-			$evidence['pending_validation']=self::pendingEvidence($evidence['pending_validation']);
+		foreach(['pending_validation', 'convergence_validation'] as $validation){
+			if(array_key_exists($validation, $evidence)){
+				$evidence[$validation]=self::pendingEvidence($evidence[$validation]);
+			}
 		}
 		return $evidence;
 	}
@@ -527,6 +613,7 @@ final class PostgreSqlMigrationCommand {
 			'required_minimum_active_release',
 			'verified_minimum_active_release',
 			'compatibility_floor_satisfied',
+			'fresh_database_proven',
 			'rolling_scan',
 		];
 		$evidence=array_intersect_key($pending, array_fill_keys($allowed, true));
@@ -559,7 +646,7 @@ final class PostgreSqlMigrationCommand {
 		string $message,
 		array $context=[]
 	): int {
-		self::writeJson($write, [
+		$written=self::writeJson($write, [
 			...$context,
 			'contract'=>self::CONTRACT,
 			'error'=>[
@@ -569,15 +656,31 @@ final class PostgreSqlMigrationCommand {
 			'exit_status'=>$status,
 			'ok'=>false,
 		]);
+		if(!$written){
+			self::writeJson($write, [
+				'contract'=>self::CONTRACT,
+				'error'=>[
+					'code'=>'migration_evidence_too_large',
+					'message'=>'The PostgreSQL migration evidence exceeded its fixed public boundary.',
+				],
+				'exit_status'=>$status,
+				'ok'=>false,
+			]);
+		}
 		return $status;
 	}
 
 	/** @param callable(string):mixed $write @param array<string,mixed> $payload */
-	private static function writeJson(callable $write, array $payload): void {
-		$write(json_encode(
+	private static function writeJson(callable $write, array $payload): bool {
+		$line=json_encode(
 			self::canonicalize($payload),
 			JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE|JSON_UNESCAPED_SLASHES
-		).PHP_EOL);
+		).PHP_EOL;
+		if(strlen($line)>self::MAX_EVIDENCE_BYTES){
+			return false;
+		}
+		$write($line);
+		return true;
 	}
 
 	private static function canonicalize(mixed $value): mixed {

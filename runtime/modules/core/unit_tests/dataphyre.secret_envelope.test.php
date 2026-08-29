@@ -132,11 +132,19 @@ test('secret key rings validate external material and reject unavailable version
 test('secret redaction recursively protects API keys tokens credentials envelopes and fingerprints', static function(Context $t): void {
 	$redacted=SecretRedactor::redact([
 		'apiKey'=>'key',
-		'nested'=>['client_secret'=>'secret', 'safe'=>'visible', 'authorization_code_ciphertext'=>'cipher'],
+		'nested'=>[
+			'client_secret'=>'secret',
+			'managerPin'=>'1234',
+			'device_passcode'=>'5678',
+			'safe'=>'visible',
+			'authorization_code_ciphertext'=>'cipher',
+		],
 		'custom'=>'hide-me',
 	], ['custom']);
 	$t->same('[REDACTED]', $redacted['apiKey']);
 	$t->same('[REDACTED]', $redacted['nested']['client_secret']);
+	$t->same('[REDACTED]', $redacted['nested']['managerPin']);
+	$t->same('[REDACTED]', $redacted['nested']['device_passcode']);
 	$t->same('[REDACTED]', $redacted['nested']['authorization_code_ciphertext']);
 	$t->same('[REDACTED]', $redacted['custom']);
 	$t->same('visible', $redacted['nested']['safe']);

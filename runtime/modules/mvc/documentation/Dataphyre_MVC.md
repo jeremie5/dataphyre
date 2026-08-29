@@ -81,6 +81,12 @@ writing because PHP cannot safely export closures. Cache files are written via
 `Dataphyre\Routing\RouteCompiler`, which also owns route source discovery,
 manifest signatures, manifest reads, and exportability checks.
 
+Managed runtime, application-release preflight, and bootstrap-only processes
+may read a valid manifest already baked into the application image, but they
+never write a missing or stale manifest back into the source tree. They compile
+the same manifest in process instead. Warm the cache explicitly during an
+ordinary source-owned build when a persistent manifest is desired.
+
 ### API metadata bridge
 
 An MVC route may carry compiled Dataphyre API metadata while MVC continues to
@@ -714,13 +720,66 @@ $routes->post('/orders/{order}/refund', 'OrderController@refund')
 	->middleware('can_any:orders.refund,orders.force_refund');
 ```
 
-MVC registers a default `throttle` middleware alias for in-process rate limits:
+MVC registers a default `throttle` middleware alias for cross-worker fixed-window
+rate limits:
 
 ```php
 $routes->get('/api/orders', 'OrderController@index')->middleware('throttle:60,60,orders');
+$routes->post('/login', 'LoginController@store')
+	->middleware('throttle:5,60,credential-entry,credentials.email');
 ```
 
-The parameters are `max_attempts`, `decay_seconds`, and optional bucket name.
+The parameters are `max_attempts`, `decay_seconds`, optional bucket name, and an
+optional request body/query dot path. Values below one normalize to one and the
+window is capped at 365 days. Without a bucket, the effective method and path
+scope the counter. A non-empty bucket is a true application-wide logical scope:
+different paths and HTTP methods that use the same bucket, limit, and window
+share the counter. This supports one abuse budget across several related
+endpoints without coupling the framework to application route names.
+
+Throttle identity always includes the client IP. A server-side
+`throttle_identity` request attribute supplies a stable caller or tenant/subject
+identity; otherwise the authenticated Access subject is used when available,
+then an anonymous marker. The optional request field adds a credential-target
+dimension, such as a username, while the stored key retains only SHA-256
+digests. Request fields use their exact trimmed scalar value, so middleware
+should attach a normalized `throttle_identity` when application identity is
+case-insensitive or composite. Place middleware that attaches that attribute
+before `throttle`; never populate it from an untrusted request parameter. Use a
+stable account or credential identifier as the request field, never a password,
+PIN, token, or other submitted secret whose changing value would create a fresh
+counter.
+
+Forwarding headers are not trusted directly. A server-side `client_address`
+attribute containing `Dataphyre\ClientAddress` is accepted. Otherwise throttle
+uses the core trusted-proxy resolver when its transport peer matches the current
+request envelope, then safely falls back to that request's `REMOTE_ADDR`.
+Configure `core.client_ip_identification.trusted_proxies` and
+`trusted_ip_headers` for proxy deployments. `Request::ip()` and a raw
+`X-Forwarded-For` value are intentionally not throttle identity sources.
+
+The default `SharedCacheThrottleStore` requires a healthy shared Dataphyre Cache
+backend and `cache::incrementShared()`. Counter creation and increment are
+atomic, and the first creator establishes the fixed-window expiration. If no
+shared backend is available or it fails mid-operation, throttle returns a
+no-store `503` and does not invoke application code. Cache's request-local
+availability fallback is never accepted for security policy.
+
+Applications may bind `Dataphyre\Mvc\ThrottleStore` in the MVC container to an
+atomic database or other durable implementation. `increment()` must expose one
+counter to every participating worker, apply the supplied TTL when creating it,
+and return `false` on unavailable state. `LocalThrottleStore` is an explicit
+test or genuinely single-process option only:
+
+```php
+$app->container()->singleton(ThrottleStore::class, DatabaseThrottleStore::class);
+
+// Tests or a documented single-process host only.
+$app->container()->instance(ThrottleStore::class, new LocalThrottleStore());
+```
+
+`ThrottleMiddleware::flush()` clears only explicit local counters; it never
+flushes shared Cache data belonging to the rest of the application.
 
 MVC registers a default `cache` middleware alias for response cache headers and
 conditional `304 Not Modified` handling:

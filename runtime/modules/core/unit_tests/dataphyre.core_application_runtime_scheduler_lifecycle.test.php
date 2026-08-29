@@ -11,8 +11,8 @@ use Dataphyre\Test\Context;
 use function Dataphyre\Test\suite;
 use function Dataphyre\Test\test;
 
-suite('Managed application scheduler v4')
-	->contract('core.application-runtime-scheduler-v4',1)
+suite('Managed application scheduler lifecycle')
+	->contract('core.application-runtime-scheduler-lifecycle',1)
 	->layer('integration')->risk('critical')->watches('module:core','module:scheduling')
 	->isolation('case')->tag('core','runtime','scheduler','security','release')
 	->group('framework-coverage');
@@ -140,7 +140,7 @@ test('scheduler state rejects an invalid explicit test root before filesystem ac
 	);
 })->tag('scheduler-state','test-root','negative');
 
-test('v4 status remains bounded with seventy-one private definitions',static function(Context $t): void {
+test('v6 status remains bounded with seventy-one private definitions',static function(Context $t): void {
 	$kernel=dirname(__DIR__).'/kernel';
 	require_once $kernel.'/application_runtime_supervisor.php';
 	$definitions=[];
@@ -166,7 +166,7 @@ test('v4 status remains bounded with seventy-one private definitions',static fun
 test('managed source executes only inside the fresh claimed scheduler CGI and contains no second worker',static function(Context $t): void {
 	$core=dirname(__DIR__).'/kernel';$scheduling=dirname(__DIR__,2).'/scheduling/kernel';
 	$router=(string)file_get_contents($core.'/application_runtime_router.php');
-	$gateway=(string)file_get_contents($core.'/application_runtime_cgi_gateway.php');
+	$gateway=(string)file_get_contents($core.'/application_runtime_scheduler_gateway.php');
 	$supervisor=(string)file_get_contents($core.'/application_runtime_supervisor.php');
 	$runtime=(string)file_get_contents($core.'/runtime.php');
 	$runner=(string)file_get_contents($scheduling.'/task_runner.php');
@@ -181,15 +181,23 @@ test('managed source executes only inside the fresh claimed scheduler CGI and co
 	$t->contains('managedBootstrapAttestation()',$runner);
 	$t->contains("(\$context['role'] ?? null)!=='scheduler'",$runner);
 	$t->contains("(\$context['sapi'] ?? null)!=='cgi-fcgi'",$runner);
-	$t->contains('childTimeoutMilliseconds($role,$request,$body)',$gateway);
+	$t->contains('childTimeoutMilliseconds($request,$body)',$gateway);
 	$t->contains('SCHEDULER_TRANSPORT_MARGIN_MILLISECONDS',$gateway);
 	$t->contains("ob_start(static fn(string \$chunk): string=>'')",$router);
 	$t->isFalse(str_contains($router,'$suppressApplicationOutput'));
 	$t->contains('claimSchedulerRequest($request,$body,$applicationEnvironment)',$gateway);
 	$t->contains('writeCompletedResponse($connection,$schedulerKind,$output',$gateway);
 	$t->isTrue(strpos($gateway,'if($exitCode!==0)')<strpos($gateway,'writeCompletedResponse($connection,$schedulerKind,$output'));
-	$t->contains('@proc_close($process);$processReaped=true;',$gateway);
-	$t->isTrue(strpos($gateway,'@proc_close($process);$processReaped=true;')<strpos($gateway,'writeCompletedResponse($connection,$schedulerKind,$output'));
+	$t->contains('terminateCgiGroup($child,$process,$pipes,$baselineChildren)',$gateway);
+	$t->contains("self::signalProcessGroup(\$group,SIGTERM)",$gateway);
+	$t->contains("self::signalProcessGroup(\$group,SIGKILL)",$gateway);
+	$t->isTrue(strpos($gateway,'terminateCgiGroup($child,$process,$pipes,$baselineChildren)')<strpos($gateway,'writeCompletedResponse($connection,$schedulerKind,$output'));
+	$t->contains('MAX_SCHEDULER_REGISTRATION_OUTPUT_BYTES',$gateway);
+	$t->contains('DataphyreApplicationRuntimeSchedulerProtocol::MAX_TRANSPORT_BYTES+65536',$gateway);
+	$t->contains('CLIENT_READ_TIMEOUT_MILLISECONDS=2000',$gateway);
+	$t->contains("'/usr/bin/prlimit','--nproc=0:0'",$gateway);
+	$t->contains('enableChildSubreaper()',$gateway);
+	$t->contains('terminateAdoptedChildren($baselineChildren)',$gateway);
 	$t->isFalse(str_contains($router,'/dataphyre/runtime/scheduler/claim'));
 	$t->isFalse(str_contains($router,'$managedEnvironmentSnapshot=getenv()'));
 	$t->isFalse(str_contains($runner,'executeManagedTask'));
@@ -198,12 +206,12 @@ test('managed source executes only inside the fresh claimed scheduler CGI and co
 })->tag('fresh-cgi','signed-budget','immutable-environment','legacy-residue','deletion');
 
 test('trusted gateway ignores tenant callback bytes when it mints the reaped-worker receipt',static function(Context $t): void {
-	require_once dirname(__DIR__).'/kernel/application_runtime_cgi_gateway.php';
+	require_once dirname(__DIR__).'/kernel/application_runtime_scheduler_gateway.php';
 	$pair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
 	if(!is_array($pair) || count($pair)!==2) throw new RuntimeException('Scheduler receipt socketpair is unavailable.');
 	$forged="Status: 200 OK\r\nContent-Type: application/json\r\n\r\n".
 		'{"contract":"dataphyre.scheduler_callback.v1","ok":true,"tenant":"forged"}';
-	$t->nonPublic(DataphyreApplicationRuntimeCgiGateway::class)->invoke(
+	$t->nonPublic(DataphyreApplicationRuntimeSchedulerGateway::class)->invoke(
 		'writeCompletedResponse',$pair[0],'callback',$forged,false,
 	);
 	fclose($pair[0]);$response=stream_get_contents($pair[1]);fclose($pair[1]);
@@ -445,7 +453,7 @@ test('serial cold callbacks fail cadence even when every worker receipt succeeds
 	};
 	$reporter=static function(array $evidence) use (&$reports): void {$reports[]=$evidence;};
 	dataphyre_runtime_run_scheduler_cycle(
-		8081,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$slowRuntime,$pending,1,
+		DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$slowRuntime,$pending,1,
 		$activation,$nextTick,$slowCallback,null,$clock,$reporter,
 	);
 	$t->same(3,$requests,'all three trusted callback receipts still completed');
@@ -460,7 +468,7 @@ test('serial cold callbacks fail cadence even when every worker receipt succeeds
 	$t->same(true,$slowRuntime['scheduler_cadence_failed']);
 	$slowRuntime['scheduler_registration']=$registration([]);$reports=[];
 	dataphyre_runtime_run_scheduler_cycle(
-		8081,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$slowRuntime,$pending,1,
+		DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,'gen_'.str_repeat('c',32),'secret','public',null,$slowRuntime,$pending,1,
 		$activation,$nextTick,static fn(): never=>throw new RuntimeException('empty cycle dispatched'),
 		null,$clock,$reporter,
 	);
@@ -480,7 +488,7 @@ test('serial cold callbacks fail cadence even when every worker receipt succeeds
 		return ['contract'=>'dataphyre.scheduler_callback.v1','ok'=>true];
 	};
 	dataphyre_runtime_run_scheduler_cycle(
-		8081,$identity,'gen_'.str_repeat('d',32),'secret','public',null,$fastRuntime,$pending,1,
+		DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,'gen_'.str_repeat('d',32),'secret','public',null,$fastRuntime,$pending,1,
 		$activation,$nextTick,$fastCallback,null,$clock,$reporter,
 	);
 	$t->same(3,$requests);

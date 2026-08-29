@@ -236,6 +236,10 @@ class cache {
 		return self::result_is('Memcached::RES_DATA_EXISTS', 12);
 	}
 
+	private static function result_is_not_stored(): bool {
+		return self::result_is('Memcached::RES_NOTSTORED', 14);
+	}
+
 	/**
 	 * Health-checks the selected backend and reports whether it is process-shared.
 	 *
@@ -335,6 +339,52 @@ class cache {
 	/** Increments a numeric value, creating a missing counter from zero. */
 	public static function increment(string|int $key, int $offset=1): int|false {
 		return self::counter($key, $offset, false);
+	}
+
+	/**
+	 * Atomically increments a counter only when a process-shared backend is active.
+	 *
+	 * Unlike increment(), this security-policy primitive never degrades the
+	 * operation to request-local memory. A missing counter is created at the
+	 * requested offset with the supplied expiration; concurrent creators use
+	 * Memcached add semantics so every successful caller contributes exactly one
+	 * increment and the first writer establishes the lifetime.
+	 *
+	 * @param string|int $key Counter key.
+	 * @param int $offset Non-negative amount to add.
+	 * @param int $expiration Memcached-compatible expiration for a newly created counter.
+	 * @return int|false Updated shared count, or false when shared state is unavailable.
+	 */
+	public static function incrementShared(string|int $key, int $offset=1, int $expiration=0): int|false {
+		if(self::$started===false){
+			self::start();
+		}
+		if(self::$memory_fallback || !is_object(self::$memcached)){
+			return false;
+		}
+		$key=self::key($key);
+		$offset=max(0, $offset);
+		$expiration=max(0, $expiration);
+		try{
+			$result=self::$memcached->increment($key, $offset);
+			if($result!==false){
+				return (int)$result;
+			}
+			if(self::result_is_not_found()){
+				if(self::$memcached->add($key, $offset, $expiration)===true){
+					return $offset;
+				}
+				if(self::result_is_data_exists() || self::result_is_not_stored()){
+					$result=self::$memcached->increment($key, $offset);
+					if($result!==false){
+						return (int)$result;
+					}
+				}
+			}
+		}catch(\Throwable){
+		}
+		self::use_memory_fallback('Memcached shared counter operation failed');
+		return false;
 	}
 
 	/** Decrements a numeric value without allowing it to fall below zero. */

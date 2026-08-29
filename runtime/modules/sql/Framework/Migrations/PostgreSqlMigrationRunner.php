@@ -9,11 +9,14 @@ declare(strict_types=1);
 
 namespace Dataphyre\Database\Migrations;
 
+use Dataphyre\Database\TableDefinition;
 use InvalidArgumentException;
 use PDO;
 use PDOStatement;
 use RuntimeException;
 use Throwable;
+
+require_once dirname(__DIR__).'/TableDefinition.php';
 
 /**
  * PostgreSQL migration state machine.
@@ -26,6 +29,16 @@ use Throwable;
 final class PostgreSqlMigrationRunner {
 	public const MAX_ROLLING_SQL_BYTES=8*1024*1024;
 	public const MAX_ROLLING_STATEMENTS=2048;
+	private const FRAMEWORK_MIGRATION_PREREQUISITES=[
+		[
+			'table'=>'dataphyre.permission_roles',
+			'definition_id'=>'roles',
+		],
+		[
+			'table'=>'dataphyre.permission_role_permissions',
+			'definition_id'=>'role_permissions',
+		],
+	];
 
 	private PostgreSqlSchemaInspector $inspector;
 
@@ -459,6 +472,191 @@ final class PostgreSqlMigrationRunner {
 	}
 
 	/**
+	 * Prove that the application schema has never entered migration authority.
+	 *
+	 * A missing application schema, missing journals, zero applied history, and
+	 * one complete all-pending manifest are the only circumstances in which the
+	 * fixed automatic command may safely collapse bootstrap, expand, and contract
+	 * phases. This is deliberately stricter than an empty journal: an unjournaled
+	 * application schema is not a fresh database.
+	 *
+	 * @param array<string,mixed> $state
+	 * @return array<string,mixed>
+	 */
+	public function freshDatabaseEvidence(
+		PostgreSqlMigrationManifest $manifest,
+		array $state
+	): array {
+		$baseline=$this->deploymentEvidence($manifest, $state, 'bootstrap');
+		$pendingIds=array_column($manifest->entries(), 'id');
+		$pendingPhases=array_count_values(array_column($manifest->entries(), 'phase'));
+		ksort($pendingPhases, SORT_STRING);
+		$errors=$baseline['errors'];
+		if(($state['journal_exists'] ?? null)!==false){
+			$errors[]='fresh_database_migration_journal_exists';
+		}
+		if(($state['event_journal_exists'] ?? null)!==false){
+			$errors[]='fresh_database_event_journal_exists';
+		}
+		if(($state['applied_count'] ?? null)!==0 || ($state['applied_head'] ?? null)!==null){
+			$errors[]='fresh_database_has_applied_history';
+		}
+		if(
+			($state['pending_count'] ?? null)!==count($pendingIds)
+			|| ($baseline['pending_migrations'] ?? null)!==$pendingIds
+		){
+			$errors[]='fresh_database_manifest_is_not_fully_pending';
+		}
+		if($this->applicationSchemaExists()){
+			$errors[]='fresh_database_application_schema_exists';
+		}
+		$errors=array_values(array_unique($errors));
+		$eligible=$errors===[];
+		$requiredMinimumActiveRelease=null;
+		foreach($manifest->entries() as $entry){
+			$floor=$entry['phase']==='rolling_contract'
+				? $entry['minimum_compatible_release']
+				: null;
+			if(
+				is_string($floor)
+				&& (
+					$requiredMinimumActiveRelease===null
+					|| PostgreSqlMigrationProfile::compareVersions(
+						$floor,
+						$requiredMinimumActiveRelease
+					)>0
+				)
+			){
+				$requiredMinimumActiveRelease=$floor;
+			}
+		}
+
+		return [
+			'mode'=>'automatic',
+			'bootstrap_cutoff'=>$manifest->bootstrapCutoff(),
+			'bootstrap_cutoff_status'=>$baseline['bootstrap_cutoff_status'],
+			'pending_migrations'=>$pendingIds,
+			'pending_phases'=>$pendingPhases,
+			'selected_migrations'=>$eligible ? $pendingIds : [],
+			'selected_phases'=>$eligible ? $pendingPhases : [],
+			'deferred_migrations'=>$eligible ? [] : $pendingIds,
+			'eligible'=>$eligible,
+			'errors'=>$errors,
+			'required_minimum_active_release'=>$requiredMinimumActiveRelease,
+			'verified_minimum_active_release'=>null,
+			'compatibility_floor_satisfied'=>$eligible,
+			'fresh_database_proven'=>$eligible,
+			'rolling_scan'=>[
+				'performed'=>false,
+				'migration_count'=>0,
+				'issue_count'=>0,
+				'issues'=>[],
+			],
+		];
+	}
+
+	/**
+	 * Converge one proven-fresh application schema through all manifest phases.
+	 *
+	 * One transaction-scoped advisory lock and one deployment transaction cover
+	 * the proof, journal creation, every manifest phase, and final convergence
+	 * proof. There is no caller override for freshness or compatibility: this
+	 * method re-proves both after acquiring the lock and is reachable from the
+	 * fixed automatic command only.
+	 *
+	 * @param ?array{release_version:?string,release_sha256:?string} $releaseIdentity
+	 * @return array<string,mixed>
+	 */
+	public function applyFreshDatabase(
+		PostgreSqlMigrationManifest $manifest,
+		?array $releaseIdentity=null
+	): array {
+		$identity=self::releaseIdentity($releaseIdentity);
+		$executed=[];
+		$operationId=bin2hex(random_bytes(16));
+		$pendingValidation=null;
+		$convergenceValidation=null;
+		try{
+			$this->begin();
+			$this->configureTransaction();
+			$this->acquireLock();
+			$state=$this->status($manifest);
+			$pendingValidation=$this->freshDatabaseEvidence($manifest, $state);
+			if($pendingValidation['eligible']!==true){
+				throw new RuntimeException(
+					'Automatic migration convergence requires one proven-fresh application schema.'
+				);
+			}
+			$this->materializeFrameworkMigrationPrerequisites();
+			$this->ensureJournal();
+			$insert=$this->prepare(
+				'INSERT INTO '.$this->profile->journalQualified().
+					' (migration_name, checksum_sha256, applied_at) '.
+					'VALUES (?, ?, CURRENT_TIMESTAMP)'
+			);
+			foreach($manifest->entries() as $entry){
+				$this->executeSql(
+					$entry['up']['sql'],
+					'Migration up SQL failed: '.$entry['id'].'.'
+				);
+				$this->executeStatement(
+					$insert,
+					[$entry['id'], $entry['up']['sha256']],
+					'Migration journal insert failed: '.$entry['id'].'.'
+				);
+				$this->recordEvent($operationId, $entry, 'up', $identity);
+				$executed[]=$entry['id'];
+			}
+			$after=$this->status($manifest);
+			$convergenceValidation=$this->deploymentEvidence(
+				$manifest,
+				$after,
+				'rolling'
+			);
+			$convergenceValidation['mode']='automatic';
+			$convergenceValidation['required_minimum_active_release']=
+				$pendingValidation['required_minimum_active_release'];
+			$convergenceValidation['compatibility_floor_satisfied']=true;
+			$convergenceValidation['fresh_database_proven']=true;
+			if(
+				$convergenceValidation['eligible']!==true
+				|| $convergenceValidation['errors']!==[]
+				|| $convergenceValidation['pending_migrations']!==[]
+				|| $convergenceValidation['pending_phases']!==[]
+				|| $convergenceValidation['selected_migrations']!==[]
+				|| $convergenceValidation['selected_phases']!==[]
+				|| $convergenceValidation['deferred_migrations']!==[]
+			){
+				throw new RuntimeException(
+					'Automatic migration convergence did not reach the immutable manifest head.'
+				);
+			}
+			$this->commit();
+		}catch(Throwable $exception){
+			$this->rollbackAfterFailure($exception);
+		}
+
+		return [
+			'transaction'=>'committed',
+			'transaction_scope'=>'deployment',
+			'migrations'=>$executed,
+			'deployment_mode'=>'automatic',
+			'direction'=>'up',
+			'operation_id'=>$operationId,
+			'release_version'=>$identity['release_version'],
+			'release_sha256'=>$identity['release_sha256'],
+			'required_minimum_active_release'=>
+				$pendingValidation['required_minimum_active_release'],
+			'verified_minimum_active_release'=>null,
+			'normalized_legacy_aliases'=>[],
+			'bootstrap_cutoff'=>$manifest->bootstrapCutoff(),
+			'lock'=>$this->profile->lockEvidence(),
+			'pending_validation'=>$pendingValidation,
+			'convergence_validation'=>$convergenceValidation,
+		];
+	}
+
+	/**
 	 * Apply the deployment mode's selected pending migration set.
 	 *
 	 * Bootstrap history is committed one migration at a time while one
@@ -523,6 +721,9 @@ final class PostgreSqlMigrationRunner {
 					'Pending migrations are not eligible for '.$mode.' deployment: '.
 					implode(', ', $pendingValidation['errors'])
 				);
+			}
+			if($pendingValidation['selected_migrations']!==[]){
+				$this->materializeFrameworkMigrationPrerequisites();
 			}
 			$this->ensureJournal();
 			$statuses=[];
@@ -1030,6 +1231,120 @@ final class PostgreSqlMigrationRunner {
 			'Dataphyre could not inspect the migration journal.'
 		);
 		return (int)$statement->fetchColumn()===1;
+	}
+
+	private function applicationSchemaExists(): bool {
+		$statement=$this->prepare(
+			'SELECT CASE WHEN to_regnamespace(?) IS NULL THEN 0 ELSE 1 END'
+		);
+		$this->executeStatement(
+			$statement,
+			[$this->profile->schema()],
+			'Dataphyre could not inspect the application schema identity.'
+		);
+		return (int)$statement->fetchColumn()===1;
+	}
+
+	/**
+	 * Materialize the fixed Dataphyre-owned schema needed by application migrations.
+	 *
+	 * The fresh automatic runner invokes this only after re-proving a pristine
+	 * application schema under its transaction-scoped advisory lock. Established
+	 * rolling and maintenance batches invoke it after their normal locked-state and
+	 * eligibility proof. It uses the permission module's ordinary TableDefinition
+	 * factories, not application SQL or caller-selected paths. The full registered-
+	 * table materializer still runs after application migrations; this method owns
+	 * only framework tables that application migrations may safely reference while
+	 * establishing their cross-schema contracts.
+	 */
+	private function materializeFrameworkMigrationPrerequisites(): void {
+		if(!$this->pdo->inTransaction()){
+			throw new RuntimeException(
+				'Framework migration prerequisites require the active migration transaction.'
+			);
+		}
+		$definitionFile=realpath(
+			dirname(__DIR__,3).'/permission/kernel/permission.tables.php'
+		);
+		if(
+			!is_string($definitionFile)
+			|| !is_file($definitionFile)
+			|| !is_readable($definitionFile)
+		){
+			throw new RuntimeException(
+				'Dataphyre framework migration prerequisite definitions are unavailable.'
+			);
+		}
+		$definitions=require $definitionFile;
+		if(!is_array($definitions)){
+			throw new RuntimeException(
+				'Dataphyre framework migration prerequisite definitions are invalid.'
+			);
+		}
+
+		foreach(self::FRAMEWORK_MIGRATION_PREREQUISITES as $prerequisite){
+			$table=$prerequisite['table'];
+			$definitionId=$prerequisite['definition_id'];
+			$factory=$definitions[$definitionId] ?? null;
+			if(!is_callable($factory)){
+				throw new RuntimeException(
+					'Dataphyre framework migration prerequisite definition is unavailable: '.$table.'.'
+				);
+			}
+			$definition=$factory($table);
+			if(
+				!$definition instanceof TableDefinition
+				|| !hash_equals($table, $definition->table())
+				|| $definition->columns()===[]
+			){
+				throw new RuntimeException(
+					'Dataphyre framework migration prerequisite definition is invalid: '.$table.'.'
+				);
+			}
+			$queries=$definition->createQueries();
+			if($queries===[]){
+				throw new RuntimeException(
+					'Dataphyre framework migration prerequisite has no PostgreSQL schema: '.$table.'.'
+				);
+			}
+			foreach($queries as $query){
+				$sql=$query['postgresql'] ?? null;
+				if(!is_string($sql) || trim($sql)===''){
+					throw new RuntimeException(
+						'Dataphyre framework migration prerequisite SQL is invalid: '.$table.'.'
+					);
+				}
+				$this->executeSql(
+					$sql,
+					'Dataphyre could not materialize framework migration prerequisite: '.$table.'.'
+				);
+			}
+			$this->assertFrameworkMigrationPrerequisite($definition);
+		}
+	}
+
+	/** Fail closed when an existing framework table is only partially materialized. */
+	private function assertFrameworkMigrationPrerequisite(TableDefinition $definition): void {
+		$parts=explode('.', $definition->table());
+		if(count($parts)!==2){
+			throw new RuntimeException(
+				'Dataphyre framework migration prerequisite identity is invalid.'
+			);
+		}
+		$table=implode('.', array_map(
+			fn(string $part): string=>$this->quotedIdentifier($part),
+			$parts
+		));
+		$columns=implode(', ', array_map(
+			fn(string $column): string=>$this->quotedIdentifier($column),
+			$definition->columns()
+		));
+		$delimiter='$dataphyre_framework_prerequisite$';
+		$this->executeSql(
+			'DO '.$delimiter."\nBEGIN\n\tPERFORM ".$columns.' FROM '.$table.
+				" WHERE FALSE;\nEND;\n".$delimiter,
+			'Dataphyre framework migration prerequisite is incomplete: '.$definition->table().'.'
+		);
 	}
 
 	/** @return list<array{from:string,to:string}> */

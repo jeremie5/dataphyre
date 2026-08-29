@@ -143,6 +143,17 @@ test('testing mvc bridge and harness cover loader autoload config dispatch app a
 	$private->invoke('loadHttpFramework');
 	$private->invoke('loadRoutingFramework');
 	$private->invoke('loadTemplatingResponseTypes');
+	$bridgeSource=(string)file_get_contents(dirname(__DIR__).'/tooling/TestKit/DataphyreModuleBridge.php');
+	$t->contains("'ThrottleStore.php'",$bridgeSource);
+	$t->contains("'SharedCacheThrottleStore.php'",$bridgeSource);
+	$t->contains("'LocalThrottleStore.php'",$bridgeSource);
+	$t->isTrue(interface_exists('Dataphyre\\Mvc\\ThrottleStore',false));
+	$t->isTrue(class_exists('Dataphyre\\Mvc\\SharedCacheThrottleStore',false));
+	$t->isTrue(class_exists('Dataphyre\\Mvc\\LocalThrottleStore',false));
+	$t->isTrue(class_exists('Dataphyre\\Mvc\\ThrottleMiddleware',false));
+	$t->instanceOf('Dataphyre\\Mvc\\ThrottleStore',new \Dataphyre\Mvc\LocalThrottleStore());
+	$t->instanceOf('Dataphyre\\Mvc\\SharedCacheThrottleStore',new \Dataphyre\Mvc\SharedCacheThrottleStore());
+	$t->instanceOf('Dataphyre\\Mvc\\ThrottleMiddleware',new \Dataphyre\Mvc\ThrottleMiddleware());
 
 	$workspace=$t->workspace('testing-bridge-mvc');
 	$base=$workspace->root();

@@ -214,3 +214,19 @@ test('mvc dispatcher reads writes and reuses a signed manifest cache', static fu
 	]);
 	$t->same('static-controller', $second->dispatcher()->dispatch(Request::create('GET', '/cached'))->body);
 })->tag('mvc', 'dispatcher', 'coverage')->group('framework-coverage');
+
+test('mvc dispatcher compiles in memory without source-local writes in managed contexts', static function(Context $t): void {
+	$manifest=$t->workspace('mvc-managed-manifest')->path('manifest.php');
+	$probe=$t->phpProcess([
+		__DIR__.'/fixtures/mvc_manifest_cache_write_boundary.php',
+		dirname(__DIR__, 2),
+		$manifest,
+	]);
+	$t->processSucceeded($probe);
+	$t->same('', $probe->stderr());
+	$t->same([
+		'status'=>200,
+		'body'=>'compiled-in-memory',
+		'manifest_exists'=>false,
+	], $probe->json());
+})->tag('mvc', 'dispatcher', 'managed-runtime', 'cache')->group('framework-coverage');

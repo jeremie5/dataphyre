@@ -23,7 +23,7 @@ if(!is_resource($process)) exit(70);
 $status=proc_get_status($process);$pid=is_array($status) ? (int)($status['pid'] ?? 0) : 0;
 $rejected=false;$message='';
 try{
-	dataphyre_runtime_pool_identity($pid,'web','127.0.0.1',8083);
+	dataphyre_runtime_pool_identity($pid,'1','web','127.0.0.1',8083);
 }catch(RuntimeException $failure){$rejected=true;$message=$failure->getMessage();}
 @posix_kill($pid,SIGTERM);proc_close($process);
 echo json_encode(['rejected'=>$rejected,'message'=>$message],JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),"\n";

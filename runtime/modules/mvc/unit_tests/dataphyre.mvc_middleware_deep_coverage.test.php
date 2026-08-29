@@ -11,8 +11,23 @@ namespace dataphyre {
 	if(!class_exists(access::class, false)){
 		final class access {
 			public static bool $logged=false;
+			public static bool|int|string $userid=false;
+			public static string $authType='session';
 			public static function logged_in(?string $authType=null): bool {
+				self::$authType=$authType ?? self::$authType;
 				return self::$logged;
+			}
+			public static function userid(?string $authType=null): bool|int|string {
+				self::$authType=$authType ?? self::$authType;
+				return self::$logged ? self::$userid : false;
+			}
+			public static function auth_context(?string $authType=null): array {
+				self::$authType=$authType ?? self::$authType;
+				return [
+					'auth_type'=>self::$authType,
+					'logged_in'=>self::$logged,
+					'userid'=>self::userid(self::$authType),
+				];
 			}
 		}
 	}
@@ -28,9 +43,42 @@ namespace dataphyre {
 			}
 		}
 	}
+
+	if(!class_exists(cache::class, false)){
+		final class cache {
+			public static bool $shared=false;
+			public static bool $dropAfterIncrement=false;
+			public static int $count=0;
+			public static array $calls=[];
+
+			public static function reset(): void {
+				self::$shared=false;
+				self::$dropAfterIncrement=false;
+				self::$count=0;
+				self::$calls=[];
+			}
+
+			public static function isShared(): bool {
+				return self::$shared;
+			}
+
+			public static function incrementShared(string $key, int $offset=1, int $expiration=0): int|false {
+				if(self::$shared===false){
+					return false;
+				}
+				self::$calls[]=['key'=>$key, 'offset'=>$offset, 'expiration'=>$expiration];
+				self::$count+=$offset;
+				if(self::$dropAfterIncrement){
+					self::$shared=false;
+				}
+				return self::$count;
+			}
+		}
+	}
 }
 
 namespace {
+	use Dataphyre\ClientAddress;
 	use Dataphyre\Http\Request;
 	use Dataphyre\Http\Response;
 	use Dataphyre\Mvc\AccessMiddleware;
@@ -38,14 +86,17 @@ namespace {
 	use Dataphyre\Mvc\CsrfMiddleware;
 	use Dataphyre\Mvc\GuestMiddleware;
 	use Dataphyre\Mvc\HttpException;
+	use Dataphyre\Mvc\LocalThrottleStore;
 	use Dataphyre\Mvc\MvcApplication;
 	use Dataphyre\Mvc\PermissionAnyMiddleware;
 	use Dataphyre\Mvc\PermissionMiddleware;
 	use Dataphyre\Mvc\Session;
 	use Dataphyre\Mvc\SessionMiddleware;
+	use Dataphyre\Mvc\SharedCacheThrottleStore;
 	use Dataphyre\Mvc\SignedUrl;
 	use Dataphyre\Mvc\SignedUrlMiddleware;
 	use Dataphyre\Mvc\ThrottleMiddleware;
+	use Dataphyre\Mvc\ThrottleStore;
 	use Dataphyre\Test\Context;
 	use function Dataphyre\Test\test;
 
@@ -58,6 +109,7 @@ namespace {
 	}
 	$dp_mvc_middleware_modules_root=rtrim((string)(ROOTPATH['common_dataphyre_runtime'] ?? ''), '/\\').'/modules';
 	require_once $dp_mvc_middleware_modules_root.'/core/kernel/autoloader.php';
+	require_once $dp_mvc_middleware_modules_root.'/core/Framework/ClientAddress.php';
 	\dataphyre\autoloader::register($dp_mvc_middleware_modules_root);
 	\dataphyre\autoloader::register_framework_modules(['http', 'routing', 'mvc']);
 
@@ -148,27 +200,163 @@ namespace {
 		$t->throws(static fn()=>(new SignedUrlMiddleware())->handle(Request::create('GET', '/no-secret'), $next), RuntimeException::class);
 	})->tag('mvc', 'middleware', 'deep-coverage')->group('framework-coverage');
 
-	test('mvc throttle middleware covers accepted exhausted expired and fallback identity buckets', static function(Context $t): void {
+	test('mvc throttle middleware shares logical buckets across routes with bounded composite identities', static function(Context $t): void {
 		ThrottleMiddleware::flush();
-		$middleware=new ThrottleMiddleware();
-		$request=Request::create('GET', '/limited', [], [], [], ['REMOTE_ADDR'=>'127.0.0.1']);
-		$first=$middleware->handle($request, static fn(): string=>'first', 1, 60);
+		$now=120;
+		$middleware=new ThrottleMiddleware(new LocalThrottleStore(), static function()use(&$now): int {
+			return $now;
+		});
+		$request=Request::create(
+			'POST',
+			'/login',
+			[],
+			['account'=>['name'=>'person@example.test']],
+			[],
+			['REMOTE_ADDR'=>'192.0.2.10'],
+			['X-Forwarded-For'=>'203.0.113.200']
+		);
+		$request->setAttribute('throttle_identity', 'tenant-a:visitor');
+		$first=$middleware->handle($request, static fn(): string=>'first', 1, 60, 'credential-entry', 'account.name');
 		$t->same(200, $first->status);
 		$t->same('0', $first->headers['X-RateLimit-Remaining']);
-		$limited=$middleware->handle($request, static fn(): string=>'never', 1, 60);
+		$t->same('180', $first->headers['X-RateLimit-Reset']);
+
+		$secondRoute=Request::create(
+			'PUT',
+			'/account/recover',
+			[],
+			['account'=>['name'=>'person@example.test']],
+			[],
+			['REMOTE_ADDR'=>'192.0.2.10'],
+			['X-Forwarded-For'=>'198.51.100.99']
+		);
+		$secondRoute->setAttribute('throttle_identity', 'tenant-a:visitor');
+		$limited=$middleware->handle($secondRoute, static fn(): string=>'never', 1, 60, 'credential-entry', 'account.name');
 		$t->same(429, $limited->status);
 		$t->same('0', $limited->headers['X-RateLimit-Remaining']);
+		$t->same('60', $limited->headers['Retry-After']);
 
 		$internals=$t->nonPublic($middleware);
-		$key=$internals->invoke('key', $request, null, 60);
-		$t->nonPublic(ThrottleMiddleware::class)->replacePropertyForTest('buckets', [
-			$key=>['count'=>99, 'reset_at'=>time()-1],
+		$key=$internals->invoke('key', $request, 'credential-entry', 'account.name', 1, 60, 120);
+		$t->contains('dataphyre:mvc:throttle:v2:', $key);
+		$t->notContains('person@example.test', $key);
+		$t->notContains('192.0.2.10', $key);
+		$t->notContains('credential-entry', $key);
+		$trustedProxyRequest=Request::create('POST', '/login', [], [], [], [
+			'REMOTE_ADDR'=>'10.0.0.20',
 		]);
-		$reset=$middleware->handle($request, static fn(): string=>'reset', 1, 60);
+		$trustedProxyRequest->setAttribute('client_address', new ClientAddress(
+			'203.0.113.45',
+			'10.0.0.20',
+			'header',
+			'HTTP_X_FORWARDED_FOR',
+			true
+		));
+		$t->same('203.0.113.45', $internals->invoke('clientIp', $trustedProxyRequest));
+
+		$differentTarget=Request::create('POST', '/login', [], [
+			'account'=>['name'=>'other@example.test'],
+		], [], ['REMOTE_ADDR'=>'192.0.2.10']);
+		$differentTarget->setAttribute('throttle_identity', 'tenant-a:visitor');
+		$t->same(200, $middleware->handle(
+			$differentTarget,
+			static fn(): string=>'target',
+			1,
+			60,
+			'credential-entry',
+			'account.name'
+		)->status);
+
+		$differentActor=Request::create('POST', '/login', [], [
+			'account'=>['name'=>'person@example.test'],
+		], [], ['REMOTE_ADDR'=>'192.0.2.10']);
+		$differentActor->setAttribute('throttle_identity', 'tenant-a:other-visitor');
+		$t->same(200, $middleware->handle(
+			$differentActor,
+			static fn(): string=>'actor',
+			1,
+			60,
+			'credential-entry',
+			'account.name'
+		)->status);
+
+		$differentClient=Request::create('POST', '/login', [], [
+			'account'=>['name'=>'person@example.test'],
+		], [], ['REMOTE_ADDR'=>'192.0.2.11']);
+		$differentClient->setAttribute('throttle_identity', 'tenant-a:visitor');
+		$t->same(200, $middleware->handle(
+			$differentClient,
+			static fn(): string=>'client',
+			1,
+			60,
+			'credential-entry',
+			'account.name'
+		)->status);
+
+		$now=180;
+		$reset=$middleware->handle($request, static fn(): string=>'reset', 1, 60, 'credential-entry', 'account.name');
 		$t->same(200, $reset->status);
-		$fallback=Request::create('POST', '/fallback', [], [], [], [], ['X-Forwarded-For'=>'203.0.113.1']);
-		$fallbackKey=$internals->invoke('key', $fallback, 'custom', 1);
-		$t->contains('custom|POST|203.0.113.1|1', $fallbackKey);
 		ThrottleMiddleware::flush();
-	})->tag('mvc', 'middleware', 'deep-coverage')->group('framework-coverage');
+	})->tag('mvc', 'middleware', 'throttle', 'identity', 'concurrency')->group('framework-coverage');
+
+	test('mvc throttle middleware uses authenticated subjects and fails closed without policy storage', static function(Context $t): void {
+		ThrottleMiddleware::flush();
+		\dataphyre\access::$logged=true;
+		\dataphyre\access::$userid='user-42';
+		$middleware=new ThrottleMiddleware(new LocalThrottleStore(), static fn(): int=>300);
+		$first=Request::create('GET', '/profile', [], [], [], ['REMOTE_ADDR'=>'198.51.100.4']);
+		$second=Request::create('DELETE', '/sessions/current', [], [], [], ['REMOTE_ADDR'=>'198.51.100.4']);
+		$t->same(200, $middleware->handle($first, static fn(): string=>'first', 1, 60, 'account-actions')->status);
+		$t->same(429, $middleware->handle($second, static fn(): string=>'never', 1, 60, 'account-actions')->status);
+
+		$ran=false;
+		$unavailableStore=new class implements ThrottleStore {
+			public function increment(string $key, int $ttlSeconds): int|false {
+				return false;
+			}
+		};
+		$unavailable=(new ThrottleMiddleware($unavailableStore, static fn(): int=>300))->handle(
+			Request::create('GET', '/strict', [], [], [], ['REMOTE_ADDR'=>'203.0.113.8']),
+			static function()use(&$ran): string {
+				$ran=true;
+				return 'unsafe';
+			},
+			10,
+			60,
+			'strict-policy'
+		);
+		$t->same(503, $unavailable->status);
+		$t->same('no-store', $unavailable->headers['Cache-Control']);
+		$t->same('0', $unavailable->headers['X-RateLimit-Remaining']);
+		$t->isFalse($ran);
+		$throwingStore=new class implements ThrottleStore {
+			public function increment(string $key, int $ttlSeconds): int|false {
+				throw new RuntimeException('simulated policy-store outage');
+			}
+		};
+		$t->same(503, (new ThrottleMiddleware($throwingStore, static fn(): int=>300))->handle(
+			Request::create('GET', '/strict', [], [], [], ['REMOTE_ADDR'=>'203.0.113.8']),
+			static fn(): string=>'unsafe',
+			10,
+			60,
+			'strict-policy'
+		)->status);
+		\dataphyre\access::$logged=false;
+		\dataphyre\access::$userid=false;
+		ThrottleMiddleware::flush();
+	})->tag('mvc', 'middleware', 'throttle', 'authentication', 'fail-closed')->group('framework-coverage');
+
+	test('mvc shared cache throttle store rejects local fallback and mid-operation degradation', static function(Context $t): void {
+		\dataphyre\cache::reset();
+		$store=new SharedCacheThrottleStore();
+		$t->isFalse($store->increment('opaque-key', 60));
+		$t->same([], \dataphyre\cache::$calls);
+
+		\dataphyre\cache::$shared=true;
+		$t->same(1, $store->increment('opaque-key', 60));
+		$t->same(60, \dataphyre\cache::$calls[0]['expiration'] ?? null);
+		\dataphyre\cache::$dropAfterIncrement=true;
+		$t->isFalse($store->increment('opaque-key', 60));
+		\dataphyre\cache::reset();
+	})->tag('mvc', 'middleware', 'throttle', 'cache', 'fail-closed')->group('framework-coverage');
 }

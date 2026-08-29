@@ -13,6 +13,7 @@ use function Dataphyre\Test\suite;
 use function Dataphyre\Test\test;
 
 require_once dirname(__DIR__).'/kernel/application_runtime_process_broker.php';
+require_once dirname(__DIR__).'/kernel/application_runtime_supervisor.php';
 require_once dirname(__DIR__,2).'/testing/tooling/TestKit/CoverageParts.php';
 require_once __DIR__.'/fixtures/application_runtime_fixed_port_lock.php';
 
@@ -39,6 +40,61 @@ function dataphyre_process_entrypoints_exact_native_runtime(array $executables=[
 		|| !function_exists('dataphyre_managed_pool_request_context')) return false;
 	foreach($executables as $executable) if(!is_executable($executable)) return false;
 	return true;
+}
+
+/** @return array{created:bool,mode:?int} */
+function dataphyre_process_entrypoints_prepare_runtime_parent(): array
+{
+	$path='/run/dataphyre';$created=false;$mode=null;
+	if(file_exists($path) || is_link($path)){
+		$stat=lstat($path);
+		if(is_link($path) || !is_array($stat) || (($stat['mode'] ?? 0)&0170000)!==0040000
+			|| ($stat['uid'] ?? -1)!==0 || ($stat['gid'] ?? -1)!==0){
+			throw new RuntimeException('Exact runtime fixture parent is invalid.');
+		}
+		$mode=($stat['mode'] ?? 0)&0777;
+		if(!chmod($path,0700)) throw new RuntimeException('Exact runtime fixture parent could not be locked.');
+	}else{
+		if(!mkdir($path,0700) || !chown($path,0) || !chgrp($path,0) || !chmod($path,0700)){
+			throw new RuntimeException('Exact runtime fixture parent could not be created.');
+		}
+		$created=true;
+	}
+	return ['created'=>$created,'mode'=>$mode];
+}
+
+function dataphyre_process_entrypoints_restore_runtime_parent(array $state): void
+{
+	if(($state['created'] ?? false)===true) @rmdir('/run/dataphyre');
+	elseif(is_int($state['mode'] ?? null)) @chmod('/run/dataphyre',$state['mode']);
+}
+
+/** @return array{pid:int,identity:array{dev:int,ino:int},directory_identity:array{dev:int,ino:int}} */
+function dataphyre_process_entrypoints_start_claim_server(): array
+{
+	$control=dataphyre_runtime_bind_control_socket();$listener=$control['listener'];
+	$pid=pcntl_fork();
+	if($pid===-1){fclose($listener);throw new RuntimeException('Scheduler claim fixture could not fork.');}
+	if($pid===0){
+		register_shutdown_function(static function() use ($control): void {
+			dataphyre_runtime_cleanup_root_socket(
+				'/run/dataphyre/control','/run/dataphyre/control/runtime.sock',
+				$control['identity'],$control['directory_identity'],
+			);
+		});
+		$claim=stream_socket_accept($listener,5);fclose($listener);
+		if(!is_resource($claim)) exit(2);
+		stream_set_timeout($claim,5,0);$wire='';
+		do{$chunk=fread($claim,16384);if(!is_string($chunk) || $chunk==='') break;$wire.=$chunk;}while(!str_contains($wire,"\r\n\r\n"));
+		[$head,$claimBody]=array_pad(explode("\r\n\r\n",$wire,2),2,'');
+		preg_match('/\r\nContent-Length:\s*([0-9]+)\r\n/i',"\r\n{$head}\r\n",$lengthMatch);$length=(int)($lengthMatch[1] ?? 0);
+		while(strlen($claimBody)<$length){$chunk=fread($claim,$length-strlen($claimBody));if(!is_string($chunk) || $chunk==='') break;$claimBody.=$chunk;}
+		$response='{"ok":true}';fwrite($claim,"HTTP/1.1 200 OK\r\nContent-Length: ".strlen($response)."\r\nConnection: close\r\n\r\n{$response}");
+		fclose($claim);exit(strlen($claimBody)===$length ? 0 : 3);
+	}
+	fclose($listener);return [
+		'pid'=>$pid,'identity'=>$control['identity'],'directory_identity'=>$control['directory_identity'],
+	];
 }
 
 test('fixed CLI entrypoints execute their real help or fail-closed invocation boundary',static function(Context $t): void {
@@ -72,6 +128,7 @@ test('fixed CLI entrypoints execute their real help or fail-closed invocation bo
 		],78],
 		'realtime status roundtrip'=>[$kernel.'/application_runtime_realtime_probe.php',['--caller-selected'],64],
 		'runtime status contract'=>[$kernel.'/application_runtime_status_probe.php',['--caller-selected'],64],
+		'runtime release gate'=>[$kernel.'/application_runtime_release_probe.php',['--caller-selected'],64],
 		'pid one supervisor'=>[$kernel.'/application_runtime_supervisor.php',[],77],
 	];
 	$results=[];
@@ -301,8 +358,10 @@ test('realtime release child performs the ordinary framework bootstrap and retur
 	$t->same('',$result->stderr());
 })->tag('realtime','bootstrap','registration','scheduling');
 
-test('status and realtime probes accept one canonical supervisor roundtrip over the fixed loopback port',static function(Context $t): void {
+test('status and realtime probes accept one canonical supervisor roundtrip over the root-only control socket',static function(Context $t): void {
 	$fixedPortLock=dataphyre_application_runtime_fixed_port_lock();
+	$parentState=dataphyre_process_entrypoints_prepare_runtime_parent();$server=null;
+	try{
 	$frameworkRoot=dirname(__DIR__,4);
 	$kernel=dirname(__DIR__).'/kernel';
 	$state=$t->workspace('core-process-entrypoint-status-server');
@@ -312,16 +371,64 @@ test('status and realtime probes accept one canonical supervisor roundtrip over 
 	$releaseId='dep_'.str_repeat('a',40);
 	$environmentFingerprint='hmac-sha256:'.str_repeat('b',64);
 	$generation='gen_'.str_repeat('c',32);
-	$pool=static function(int $pid,string $role,string $host,int $port): array {
-		$privileged=in_array($role,['web','scheduler'],true);
-		return [
-			'running'=>true,'pid'=>$pid,'uid'=>$privileged ? 0 : 10001,'gid'=>$privileged ? 0 : 10001,
+	$pool=static function(int $pid,string $role): array {
+		$privileged=$role==='scheduler';
+		$common=[
+			'running'=>true,'pid'=>$pid,'start_time_ticks'=>(string)(200000+$pid),
+			'uid'=>$privileged ? 0 : 10001,'gid'=>$privileged ? 0 : 10001,
 			'supplementary_gids'=>[$privileged ? 0 : 10001],
-			'cap_eff'=>$privileged ? '00000000000000c0' : '0000000000000000',
-			'no_new_privileges'=>true,'role'=>$role,'listen_host'=>$host,'listen_port'=>$port,
-			'parent_pid'=>1,'execution_model'=>$privileged ? 'one-request-per-process-cgi' : 'single-exec-realtime',
+			'cap_inheritable'=>'0000000000000000',
+			'cap_permitted'=>$privileged ? '00000000000000e0' : '0000000000000000',
+			'cap_eff'=>$privileged ? '00000000000000e0' : '0000000000000000',
+			'cap_bounding'=>$privileged ? '00000000000000e0' : '0000000000000000',
+			'cap_ambient'=>'0000000000000000','no_new_privileges'=>true,'role'=>$role,
 		];
+		return $privileged ? [
+			...$common,'transport'=>'unix',
+			'socket_path_sha256'=>'sha256:'.hash('sha256','/run/dataphyre/scheduler/gateway.sock'),
+			'socket_device'=>1,'socket_inode'=>1201,'socket_uid'=>0,'socket_gid'=>0,'socket_mode'=>'0600',
+			'socket_directory_device'=>1,'socket_directory_inode'=>1202,
+			'socket_directory_uid'=>0,'socket_directory_gid'=>0,'socket_directory_mode'=>'0700',
+			'parent_pid'=>1,'execution_model'=>'one-request-per-process-cgi',
+		] : [...$common,'listen_host'=>'0.0.0.0','listen_port'=>8080,'parent_pid'=>1,'execution_model'=>'single-exec-realtime'];
 	};
+	$webProcess=static fn(int $pid,string $role,int $parent,int $group): array=>[
+		'running'=>true,'pid'=>$pid,'start_time_ticks'=>(string)(100000+$pid),
+		'uid'=>10001,'gid'=>10001,'supplementary_gids'=>[10001],
+		'cap_inheritable'=>'0000000000000000','cap_permitted'=>'0000000000000000',
+		'cap_eff'=>'0000000000000000','cap_bounding'=>'0000000000000000','cap_ambient'=>'0000000000000000',
+		'no_new_privileges'=>true,'role'=>$role,'parent_pid'=>$parent,'process_group_id'=>$group,
+	];
+	$webGateway=$webProcess(101,'web-http-gateway',1,101);
+	$webGateway=[
+		'running'=>$webGateway['running'],'pid'=>$webGateway['pid'],'start_time_ticks'=>$webGateway['start_time_ticks'],
+		'uid'=>$webGateway['uid'],'gid'=>$webGateway['gid'],'supplementary_gids'=>$webGateway['supplementary_gids'],
+		'cap_inheritable'=>$webGateway['cap_inheritable'],'cap_permitted'=>$webGateway['cap_permitted'],
+		'cap_eff'=>$webGateway['cap_eff'],'cap_bounding'=>$webGateway['cap_bounding'],'cap_ambient'=>$webGateway['cap_ambient'],
+		'no_new_privileges'=>$webGateway['no_new_privileges'],
+		'role'=>$webGateway['role'],'listen_host'=>'127.0.0.1','listen_port'=>8083,
+		'parent_pid'=>$webGateway['parent_pid'],'process_group_id'=>$webGateway['process_group_id'],
+	];
+	$webMaster=$webProcess(102,'web-pool',1,102);$webWorkers=[];
+	for($pid=110;$pid<118;$pid++) $webWorkers[]=$webProcess($pid,'web-worker',102,102);
+	$nativeGenerationPayload=json_encode([
+		'contract'=>'dataphyre.managed_php_web_generation.v1','environment_fingerprint'=>$environmentFingerprint,
+		'generation'=>$generation,'master_pid'=>102,'master_start_time_ticks'=>$webMaster['start_time_ticks'],
+	],JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
+	$web=[
+		'execution_model'=>'persistent-php-fpm','http_gateway'=>$webGateway,'fpm_master'=>$webMaster,'workers'=>$webWorkers,
+		'socket_path_sha256'=>'sha256:'.hash('sha256','/run/dataphyre/web/php-fpm.sock'),
+		'socket_device'=>1,'socket_inode'=>1301,'socket_uid'=>10001,'socket_gid'=>10001,'socket_mode'=>'0600',
+		'socket_directory_device'=>1,'socket_directory_inode'=>1302,
+		'socket_directory_uid'=>0,'socket_directory_gid'=>0,'socket_directory_mode'=>'0711',
+		'native_envelope_generation_sha256'=>'sha256:'.hash(
+			'sha256',"dataphyre.managed_php_web_generation.v1\0".$nativeGenerationPayload,
+		),
+		'recycle_policy'=>[
+			'process_manager'=>'static','max_children'=>8,'max_requests'=>500,
+			'request_terminate_timeout_seconds'=>300,
+		],
+	];
 	$stateIdentity=[
 		'contract'=>'dataphyre.scheduler_state.v1','cloud_application'=>$cloudApplication,
 		'framework_application'=>$frameworkApplication,'environment'=>$environment,
@@ -331,14 +438,20 @@ test('status and realtime probes accept one canonical supervisor roundtrip over 
 		'environment'=>$environment,'release_id'=>$releaseId,'environment_fingerprint'=>$environmentFingerprint,
 	];
 	$status=[
-		'contract'=>'dataphyre.application_runtime.v4','cloud_application'=>$cloudApplication,
+		'contract'=>'dataphyre.application_runtime.v6','cloud_application'=>$cloudApplication,
 		'framework_application'=>$frameworkApplication,'environment'=>$environment,'release_id'=>$releaseId,
 		'environment_fingerprint'=>$environmentFingerprint,'generation'=>$generation,
 		'supervisor_pid'=>1,'supervisor_uid'=>0,'supervisor_gid'=>0,'activation_mode'=>'active','active'=>true,
 		'scheduler_cycle_in_progress'=>false,
-		'web'=>$pool(101,'web','127.0.0.1',8083),
-		'scheduler'=>$pool(102,'scheduler','127.0.0.1',8081),
-		'realtime'=>$pool(103,'realtime','0.0.0.0',8080),
+		'control'=>[
+			'transport'=>'unix','socket_path_sha256'=>'sha256:'.hash('sha256','/run/dataphyre/control/runtime.sock'),
+			'socket_device'=>1,'socket_inode'=>1401,'socket_uid'=>0,'socket_gid'=>0,'socket_mode'=>'0600',
+			'socket_directory_device'=>1,'socket_directory_inode'=>1402,
+			'socket_directory_uid'=>0,'socket_directory_gid'=>0,'socket_directory_mode'=>'0700',
+		],
+		'web'=>$web,
+		'scheduler'=>$pool(120,'scheduler'),
+		'realtime'=>$pool(121,'realtime'),
 		'scheduler_registration'=>[
 			'contract'=>'dataphyre.scheduler_registration.v1','ok'=>true,
 			'registration_attempt_count'=>1,'registration_accepted_count'=>1,'registration_failure_count'=>0,
@@ -387,7 +500,7 @@ test('status and realtime probes accept one canonical supervisor roundtrip over 
 	],timeout_millis:15000);
 	$deadline=microtime(true)+5.0;
 	while(!is_file($ready) && microtime(true)<$deadline) usleep(10000);
-	$t->isTrue(is_file($ready),'the fixed loopback fixture is listening');
+	$t->isTrue(is_file($ready),'the root-only control-socket fixture is listening');
 
 	$statusResult=$t->coveredPhpProcess(
 		[$kernel.'/application_runtime_status_probe.php'],
@@ -444,7 +557,7 @@ test('status and realtime probes accept one canonical supervisor roundtrip over 
 	);
 	$t->processFailed($realtimeFailedResult,70);
 	$t->same($realtimeFailed,$realtimeFailedResult->json());
-	$t->processSucceeded($server->wait(10000));
+	$t->processSucceeded($server->wait(10000));$server=null;
 
 	$unavailable=$t->coveredPhpProcess(
 		[$kernel.'/application_runtime_status_probe.php'],
@@ -458,7 +571,11 @@ test('status and realtime probes accept one canonical supervisor roundtrip over 
 	);
 	$t->processFailed($unavailableRealtime,69);
 	$t->same(false,$unavailableRealtime->json()['ok']);
-	dataphyre_application_runtime_fixed_port_unlock($fixedPortLock);
+	}finally{
+		if($server!==null) $server->terminate();
+		dataphyre_process_entrypoints_restore_runtime_parent($parentState);
+		dataphyre_application_runtime_fixed_port_unlock($fixedPortLock);
+	}
 })->tag('status','realtime','loopback','positive','canonical');
 
 test('realtime release child rejects invalid invocation partial registration and malformed isolated scheduler state',static function(Context $t): void {
@@ -1048,15 +1165,19 @@ test('instrumented exact CGI scheduler child covers the signed scheduler router'
 		'Requires the canonical root test image with environment_fd 1.2, setpriv, and matching PHP CGI.',
 	);
 
-test('CGI gateway helpers enforce signed scheduler claims framing budgets and trusted responses',static function(Context $t): void {
+test('separated web and scheduler gateway helpers enforce framing claims budgets and trusted responses',static function(Context $t): void {
 	$fixedPortLock=dataphyre_application_runtime_fixed_port_lock();
+	$parentState=dataphyre_process_entrypoints_prepare_runtime_parent();
+	try{
 	$kernel=dirname(__DIR__).'/kernel';
-	require_once $kernel.'/application_runtime_cgi_gateway.php';
-	$internals=$t->nonPublic(DataphyreApplicationRuntimeCgiGateway::class);
-	$readRequest=static function(string $wire) use ($internals): array {
+	require_once $kernel.'/application_runtime_web_gateway.php';
+	require_once $kernel.'/application_runtime_scheduler_gateway.php';
+	$webInternals=$t->nonPublic(DataphyreApplicationRuntimeWebGateway::class);
+	$schedulerInternals=$t->nonPublic(DataphyreApplicationRuntimeSchedulerGateway::class);
+	$readRequest=static function(string $wire) use ($webInternals): array {
 		$pair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
 		fwrite($pair[1],$wire);stream_socket_shutdown($pair[1],STREAM_SHUT_WR);
-		try{return $internals->invoke('readRequest',$pair[0]);}
+		try{return $webInternals->invoke('readRequest',$pair[0]);}
 		finally{fclose($pair[0]);fclose($pair[1]);}
 	};
 	[$contentRequest,$contentBody]=$readRequest(
@@ -1065,13 +1186,20 @@ test('CGI gateway helpers enforce signed scheduler claims framing budgets and tr
 	);
 	$t->same('hello',$contentBody);
 	$t->same('POST',$contentRequest['method']);
+	[$hopRequest,$hopBody]=$readRequest(
+		"POST /hop HTTP/1.1\r\nHost: example.test\r\nContent-Length: 1\r\nConnection: X-Hop, close\r\n".
+		"X-Hop: secret\r\nKeep-Alive: timeout=5\r\nProxy-Connection: keep-alive\r\nTE: trailers\r\nTrailer: X-Later\r\nUpgrade: h2c\r\n\r\nx",
+	);
+	$t->same('x',$hopBody);
+	foreach(['connection','content-length','x-hop','keep-alive','proxy-connection','te','trailer','upgrade'] as $hopName){
+		$t->isFalse(array_key_exists($hopName,$hopRequest['headers']));
+	}
 	[$chunkRequest,$chunkBody]=$readRequest(
 		"POST /chunk HTTP/1.1\r\nHost: example.test\r\nTransfer-Encoding: chunked\r\n\r\n".
 		"5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n",
 	);
 	$t->same('hello world',$chunkBody);$t->same('/chunk',$chunkRequest['target']);
-	$t->same(null,$internals->invoke('decodeChunked',''));
-	$readFragmented=static function(array $parts) use ($internals): array {
+	$readFragmented=static function(array $parts) use ($webInternals): array {
 		$pair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);$pid=pcntl_fork();
 		if($pid===-1){fclose($pair[0]);fclose($pair[1]);throw new RuntimeException('Fragmented CGI request writer could not fork.');}
 		if($pid===0){
@@ -1080,7 +1208,7 @@ test('CGI gateway helpers enforce signed scheduler claims framing budgets and tr
 			fclose($pair[1]);exit(0);
 		}
 		fclose($pair[1]);
-		try{return $internals->invoke('readRequest',$pair[0]);}
+		try{return $webInternals->invoke('readRequest',$pair[0]);}
 		finally{fclose($pair[0]);pcntl_waitpid($pid,$status);}
 	};
 	[, $fragmentedBody]=$readFragmented([
@@ -1094,28 +1222,51 @@ test('CGI gateway helpers enforce signed scheduler claims framing budgets and tr
 	foreach([
 		"POST / HTTP/1.1\r\nHost: example.test\r\nContent-Length: 2\r\n\r\nabc",
 		"POST / HTTP/1.1\r\nHost: example.test\r\nTransfer-Encoding: gzip\r\n\r\n",
+		"POST / HTTP/1.1\r\nHost: example.test\r\nConnection: invalid token\r\n\r\n",
+		"POST / HTTP/1.1\r\nHost: example.test\r\nConnection: Host\r\n\r\n",
+		"POST / HTTP/1.1\r\nHost: example.test\r\nTransfer-Encoding: chunked\r\n\r\n10000000\r\n",
 		"POST / HTTP/1.1\r\nHost: example.test\r\nTransfer-Encoding: chunked\r\n\r\nz\r\n",
 		"POST / HTTP/1.1\r\nHost: example.test\r\nTransfer-Encoding: chunked\r\n\r\n1\r\naX\r\n0\r\n\r\n",
 	] as $invalidWire){
 		$t->throws(static fn()=>$readRequest($invalidWire),RuntimeException::class);
 	}
+	$expectStarted=hrtime(true);
+	$t->throws(static fn()=>$readRequest(
+		"POST / HTTP/1.1\r\nHost: example.test\r\nExpect: 100-continue\r\nContent-Length: 4\r\n\r\n",
+	),DataphyreApplicationRuntimeGatewayInput::class);
+	$t->lessThan(101,(int)ceil((hrtime(true)-$expectStarted)/1_000_000));
 
-	$environment=$internals->invoke(
-		'cgiEnvironment',$contentRequest,$contentBody,'[::1]:12345','127.0.0.1',8083,__FILE__,dirname(__DIR__,4),
+	$environment=$webInternals->invoke(
+		'requestEnvironment',$contentRequest,strlen($contentBody),'[::1]:12345','127.0.0.1',8083,__FILE__,dirname(__DIR__,4),
 	);
 	$t->same('::1',$environment['REMOTE_ADDR']);$t->same('12345',$environment['REMOTE_PORT']);
 	$t->same('text/plain',$environment['CONTENT_TYPE']);$t->same('yes',$environment['HTTP_X_PUBLIC']);
 	$t->same('mode=exact',$environment['QUERY_STRING']);
 	$t->same(false,array_key_exists('HTTP_CONNECTION',$environment));
-	$router=(string)realpath(__DIR__.'/fixtures/application_runtime_cgi_probe.php');
+	$router=(string)realpath(__DIR__.'/fixtures/application_runtime_scheduler_cgi_probe.php');
 	$project=(string)realpath(dirname(__DIR__,4));
 	$managed=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('scheduler',$project,random_bytes(32));
-	$schedulerServe=static function(string $peer) use ($internals,$router,$project,$managed): string {
+	$readSchedulerWire=static function(string $wire) use ($schedulerInternals): array {
+		$pair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
+		fwrite($pair[1],$wire);stream_socket_shutdown($pair[1],STREAM_SHUT_WR);
+		try{return $schedulerInternals->invoke('readSchedulerRequest',$pair[0]);}
+		finally{fclose($pair[0]);fclose($pair[1]);}
+	};
+	foreach([
+		"POST /dataphyre/runtime/scheduler/noop HTTP/1.1\r\nHost: 127.0.0.1:8081\r\nContent-Length: 4097\r\n\r\n",
+		"POST /dataphyre/runtime/scheduler/noop HTTP/1.1\r\nHost: 127.0.0.1:8081\r\nTransfer-Encoding: chunked\r\n\r\n10000000\r\n",
+	] as $boundedSchedulerWire){
+		$started=hrtime(true);$failure=null;
+		try{$readSchedulerWire($boundedSchedulerWire);}catch(Throwable $caught){$failure=$caught;}
+		$t->isTrue($failure instanceof DataphyreApplicationRuntimeGatewayInput);
+		$t->lessThan(101,(int)ceil((hrtime(true)-$started)/1_000_000));
+	}
+	$schedulerServe=static function(string $peer) use ($schedulerInternals,$router,$project,$managed): string {
 		$pair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
 		fwrite($pair[1],"GET /not-a-scheduler-claim HTTP/1.1\r\nHost: 127.0.0.1:8081\r\nConnection: close\r\n\r\n");
 		stream_socket_shutdown($pair[1],STREAM_SHUT_WR);
-		$internals->invoke(
-			'serve',$pair[0],$peer,'scheduler','127.0.0.1',8081,$router,$project,[], $managed,
+		$schedulerInternals->invoke(
+			'serve',$pair[0],$peer,'127.0.0.1',8081,$router,$project,[], $managed,
 		);
 		stream_socket_shutdown($pair[0],STREAM_SHUT_WR);$response=(string)stream_get_contents($pair[1]);
 		fclose($pair[0]);fclose($pair[1]);return $response;
@@ -1147,20 +1298,20 @@ test('CGI gateway helpers enforce signed scheduler claims framing budgets and tr
 		$body=json_encode($candidate,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 		$endpoint=$kind==='registration' ? 'register' : $kind;
 		$request=['method'=>'POST','target'=>'/dataphyre/runtime/scheduler/'.$endpoint,'protocol'=>'HTTP/1.1','headers'=>[]];
-		$t->same(null,$internals->invoke('claimSchedulerRequest',$request,$body,$publicEnvironment),$kind);
-		$timeout=$internals->invoke('childTimeoutMilliseconds','scheduler',$request,$body);
+		$t->same(null,$schedulerInternals->invoke('claimSchedulerRequest',$request,$body,$publicEnvironment),$kind);
+		$timeout=$schedulerInternals->invoke('childTimeoutMilliseconds',$request,$body);
 		$t->same(match($kind){'registration'=>12000,'noop'=>7000,default=>14345},$timeout,$kind);
 	}
-	$t->same(null,$internals->invoke(
+	$t->same(null,$schedulerInternals->invoke(
 		'claimSchedulerRequest',['method'=>'GET','target'=>'/'], '',$publicEnvironment,
 	));
-	$t->same(null,$internals->invoke(
+	$t->same(null,$schedulerInternals->invoke(
 		'claimSchedulerRequest',['method'=>'POST','target'=>'/unknown'], '{}',$publicEnvironment,
 	));
-	$t->same(null,$internals->invoke(
+	$t->same(null,$schedulerInternals->invoke(
 		'claimSchedulerRequest',['method'=>'POST','target'=>'/dataphyre/runtime/scheduler/noop'], '{',$publicEnvironment,
 	));
-	$t->same(null,$internals->invoke(
+	$t->same(null,$schedulerInternals->invoke(
 		'claimSchedulerRequest',['method'=>'POST','target'=>'/dataphyre/runtime/scheduler/noop'],
 		json_encode(DataphyreApplicationRuntimeSchedulerProtocol::issue(
 			'noop',$identity,'gen_'.str_repeat('b',32),4,$secret,timestamp:time(),nonce:str_repeat('1',32),
@@ -1168,11 +1319,16 @@ test('CGI gateway helpers enforce signed scheduler claims framing budgets and tr
 		['DATAPHYRE_RUNTIME_SCHEDULER_PUBLIC_KEY'=>'invalid'],
 	));
 	$startClaimServer=static function(): int {
-		$listener=stream_socket_server('tcp://127.0.0.1:8082',$errorNumber,$error);
-		if(!is_resource($listener)) throw new RuntimeException("Scheduler claim fixture could not listen: {$errorNumber} {$error}");
+		$control=dataphyre_runtime_bind_control_socket();$listener=$control['listener'];
 		$pid=pcntl_fork();
 		if($pid===-1){fclose($listener);throw new RuntimeException('Scheduler claim fixture could not fork.');}
 		if($pid===0){
+			register_shutdown_function(static function() use ($control): void {
+				dataphyre_runtime_cleanup_root_socket(
+					'/run/dataphyre/control','/run/dataphyre/control/runtime.sock',
+					$control['identity'],$control['directory_identity'],
+				);
+			});
 			$connection=stream_socket_accept($listener,5);
 			if(!is_resource($connection)){fclose($listener);exit(2);}
 			stream_set_timeout($connection,5,0);$wire='';
@@ -1196,7 +1352,7 @@ test('CGI gateway helpers enforce signed scheduler claims framing budgets and tr
 		'noop',$identity,'gen_'.str_repeat('b',32),6,$secret,timestamp:time(),nonce:str_repeat('3',32),
 	);
 	$acceptedBody=json_encode($acceptedCandidate,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-	$t->same('noop',$internals->invoke(
+	$t->same('noop',$schedulerInternals->invoke(
 		'claimSchedulerRequest',
 		['method'=>'POST','target'=>'/dataphyre/runtime/scheduler/noop','protocol'=>'HTTP/1.1','headers'=>[]],
 		$acceptedBody,$publicEnvironment,
@@ -1207,7 +1363,7 @@ test('CGI gateway helpers enforce signed scheduler claims framing budgets and tr
 		'noop',$identity,'gen_'.str_repeat('b',32),7,$secret,timestamp:time(),nonce:str_repeat('4',32),
 	);
 	$unavailableBody=json_encode($unavailableCandidate,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-	$t->same(null,$internals->invoke(
+	$t->same(null,$schedulerInternals->invoke(
 		'claimSchedulerRequest',
 		['method'=>'POST','target'=>'/dataphyre/runtime/scheduler/noop','protocol'=>'HTTP/1.1','headers'=>[]],
 		$unavailableBody,$publicEnvironment,
@@ -1216,7 +1372,9 @@ test('CGI gateway helpers enforce signed scheduler claims framing budgets and tr
 	// Spawning the capability-free CGI child is deliberately root-broker-only.
 	// The canonical root/Xdebug lane exercises the response bound; ordinary
 	// unprivileged framework runs retain the pure framing/claim coverage above.
-	if(dataphyre_process_entrypoints_exact_native_runtime(['/usr/bin/setpriv','/usr/local/bin/php-cgi'])){
+	$ownerIdentity=DataphyreApplicationRuntimeChildEnvironment::processIdentity(getmypid());
+	if(dataphyre_process_entrypoints_exact_native_runtime(['/usr/bin/setpriv','/usr/local/bin/php-cgi'])
+		&& ($ownerIdentity['cap_bounding'] ?? null)==='00000000000000e0'){
 		$oversizedCandidate=DataphyreApplicationRuntimeSchedulerProtocol::issue(
 			'noop',$identity,'gen_'.str_repeat('b',32),8,$secret,timestamp:time(),nonce:str_repeat('5',32),
 		);
@@ -1226,65 +1384,396 @@ test('CGI gateway helpers enforce signed scheduler claims framing budgets and tr
 			'Content-Length: '.strlen($oversizedBody)."\r\nConnection: close\r\n\r\n{$oversizedBody}";
 		fwrite($oversizedPair[1],$oversizedWire);stream_socket_shutdown($oversizedPair[1],STREAM_SHUT_WR);
 		$oversizedError=null;
-		try{$internals->invoke(
-			'serve',$oversizedPair[0],'127.0.0.1:41000','scheduler','127.0.0.1',8081,$router,$project,
+		try{$schedulerInternals->invoke(
+			'serve',$oversizedPair[0],'127.0.0.1:41000','127.0.0.1',8081,$router,$project,
 			$publicEnvironment+[
 				'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>$project,
 				'DATAPHYRE_RUNTIME_TEST_CGI_OUTPUT_BYTES'=>'70000',
 			],$managed,
 		);}catch(Throwable $failure){$oversizedError=$failure;}
 		fclose($oversizedPair[0]);fclose($oversizedPair[1]);pcntl_waitpid($oversizedClaimPid,$oversizedClaimStatus);
-		$t->contains('response exceeded its bound',$oversizedError?->getMessage() ?? '');
-		$t->same(0,pcntl_wexitstatus($oversizedClaimStatus));
-	}
-	$t->same(2000,$internals->invoke(
-		'childTimeoutMilliseconds','scheduler',['target'=>'/unknown'],'{',
+			$t->contains('response exceeded its bound',$oversizedError?->getMessage() ?? '');
+			$t->same(0,pcntl_wexitstatus($oversizedClaimStatus));
+
+			$registrationCandidate=DataphyreApplicationRuntimeSchedulerProtocol::issue(
+				'registration',$identity,'gen_'.str_repeat('b',32),9,$secret,timestamp:time(),nonce:str_repeat('6',32),
+			);
+			$registrationBody=json_encode($registrationCandidate,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+			$registrationClaimPid=$startClaimServer();$registrationPair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
+			$registrationWire="POST /dataphyre/runtime/scheduler/register HTTP/1.1\r\nHost: 127.0.0.1:8081\r\nContent-Type: application/json\r\n".
+				'Content-Length: '.strlen($registrationBody)."\r\nConnection: close\r\n\r\n{$registrationBody}";
+			fwrite($registrationPair[1],$registrationWire);stream_socket_shutdown($registrationPair[1],STREAM_SHUT_WR);
+			$registrationError=null;
+			try{$schedulerInternals->invoke(
+				'serve',$registrationPair[0],'127.0.0.1:41002','127.0.0.1',8081,$router,$project,
+				$publicEnvironment+[
+					'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>$project,
+					'DATAPHYRE_RUNTIME_TEST_CGI_OUTPUT_BYTES'=>(string)(DataphyreApplicationRuntimeSchedulerProtocol::MAX_TRANSPORT_BYTES+65537),
+				],$managed,
+			);}catch(Throwable $failure){$registrationError=$failure;}
+			fclose($registrationPair[0]);fclose($registrationPair[1]);pcntl_waitpid($registrationClaimPid,$registrationClaimStatus);
+			$t->contains('response exceeded its bound',$registrationError?->getMessage() ?? '');
+			$t->same(0,pcntl_wexitstatus($registrationClaimStatus));
+
+			$descendantState=$t->workspace('scheduler-cgi-descendant-cleanup');chmod($descendantState->root(),0777);
+			$descendantPath=$descendantState->path('descendant.json');$descendantClaimPid=$startClaimServer();
+			$descendantCandidate=DataphyreApplicationRuntimeSchedulerProtocol::issue(
+				'noop',$identity,'gen_'.str_repeat('b',32),10,$secret,timestamp:time(),nonce:str_repeat('7',32),
+			);
+			$descendantBody=json_encode($descendantCandidate,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+			$descendantPair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
+			$descendantWire="POST /dataphyre/runtime/scheduler/noop HTTP/1.1\r\nHost: 127.0.0.1:8081\r\nContent-Type: application/json\r\n".
+				'Content-Length: '.strlen($descendantBody)."\r\nConnection: close\r\n\r\n{$descendantBody}";
+			fwrite($descendantPair[1],$descendantWire);stream_socket_shutdown($descendantPair[1],STREAM_SHUT_WR);
+			$descendantEvidence=null;
+			try{
+				$schedulerInternals->invoke(
+					'serve',$descendantPair[0],'127.0.0.1:41001','127.0.0.1',8081,$router,$project,
+					$publicEnvironment+[
+						'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>$project,
+						'DATAPHYRE_RUNTIME_TEST_CGI_DESCENDANT_PID_PATH'=>$descendantPath,
+					],$managed,
+				);
+				$descendantEvidence=json_decode((string)file_get_contents($descendantPath),true,8,JSON_THROW_ON_ERROR);
+			}finally{
+				fclose($descendantPair[0]);fclose($descendantPair[1]);pcntl_waitpid($descendantClaimPid,$descendantClaimStatus);
+			}
+			$t->same(0,pcntl_wexitstatus($descendantClaimStatus));
+			$t->isTrue(is_array($descendantEvidence));
+			$t->same(true,$descendantEvidence['fork_denied'] ?? null);
+			$t->same(0,$descendantEvidence['rlimit_nproc_soft'] ?? null);
+			$t->same(0,$descendantEvidence['rlimit_nproc_hard'] ?? null);
+			$t->same(true,$descendantEvidence['proc_open_denied'] ?? null);
+			$t->same(false,$descendantEvidence['thread_creation_surface_available'] ?? null);
+			$t->same([],$descendantEvidence['signal_mask'] ?? null);
+			$t->same($descendantEvidence['process_group_id'],$descendantEvidence['session_id']);
+			$t->same($descendantEvidence['pid'],$descendantEvidence['process_group_id']);
+			$descendantDeadline=microtime(true)+1.0;
+			while(file_exists('/proc/'.$descendantEvidence['pid']) && microtime(true)<$descendantDeadline) usleep(10000);
+			$t->isFalse(file_exists('/proc/'.$descendantEvidence['pid']),'the scheduler CGI was reaped, not left as a zombie');
+		}
+	$t->same(2000,$schedulerInternals->invoke(
+		'childTimeoutMilliseconds',['target'=>'/unknown'],'{',
 	));
 	$unknownCandidate=DataphyreApplicationRuntimeSchedulerProtocol::issue(
 		'noop',$identity,'gen_'.str_repeat('b',32),5,$secret,timestamp:time()-100,nonce:str_repeat('2',32),
 	);
-	$t->same(2000,$internals->invoke(
-		'childTimeoutMilliseconds','scheduler',['target'=>'/unknown'],
+	$t->same(2000,$schedulerInternals->invoke(
+		'childTimeoutMilliseconds',['target'=>'/unknown'],
 		json_encode($unknownCandidate,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
 	));
-	$t->same(300000,$internals->invoke(
-		'childTimeoutMilliseconds','web',['target'=>'/'],'',
-	));
 
-	$completed=static function(?string $kind,string $output,bool $headOnly) use ($internals): string {
+	$completed=static function(string $kind,string $output,bool $headOnly) use ($schedulerInternals): string {
 		$pair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
-		$internals->invoke('writeCompletedResponse',$pair[0],$kind,$output,$headOnly);
+		$schedulerInternals->invoke('writeCompletedResponse',$pair[0],$kind,$output,$headOnly);
 		stream_socket_shutdown($pair[0],STREAM_SHUT_WR);$response=(string)stream_get_contents($pair[1]);
 		fclose($pair[0]);fclose($pair[1]);return $response;
 	};
 	$t->contains('dataphyre.scheduler_callback.v1',$completed('callback','tenant-forgery',false));
 	$noopHead=$completed('noop','tenant-forgery',true);
 	$t->contains('Content-Length: 0',$noopHead);$t->notContains('dataphyre.scheduler_noop.v1',$noopHead);
-	$cgi=$completed(null,"Status: 201 Created\r\nContent-Type: text/plain\r\nConnection: forged\r\n\r\ncreated",false);
-	$t->contains('HTTP/1.1 201 Created',$cgi);$t->contains('Content-Type: text/plain',$cgi);
-	$t->notContains('Connection: forged',$cgi);$t->contains("\r\n\r\ncreated",$cgi);
-	$headOnly=$completed(null,"Content-Type: text/plain\r\n\r\ncreated",true);
-	$t->contains('Content-Length: 0',$headOnly);$t->notContains("\r\n\r\ncreated",$headOnly);
+	$cgi=static function(string $output,bool $headOnly) use ($webInternals): string {
+		$pair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
+		$webInternals->invoke('writeCgiResponse',$pair[0],$output,$headOnly);
+		stream_socket_shutdown($pair[0],STREAM_SHUT_WR);$response=(string)stream_get_contents($pair[1]);
+		fclose($pair[0]);fclose($pair[1]);return $response;
+	};
+	$cgiResponse=$cgi(
+		"Status: 201 Created\r\nContent-Type: text/plain\r\nConnection: keep-alive, X-Hop\r\n".
+		"X-Hop: secret\r\nKeep-Alive: timeout=5\r\nProxy-Authenticate: Basic\r\nProxy-Authorization: secret\r\n".
+		"Proxy-Connection: keep-alive\r\nTE: trailers\r\nTrailer: X-Later\r\nTransfer-Encoding: chunked\r\nUpgrade: h2c\r\n".
+		"Content-Length: 999\r\nX-End-To-End: retained\r\n\r\ncreated",
+		false,
+	);
+	$t->contains('HTTP/1.1 201 Created',$cgiResponse);$t->contains('Content-Type: text/plain',$cgiResponse);
+	$t->contains('X-End-To-End: retained',$cgiResponse);$t->contains('Content-Length: 7',$cgiResponse);
+	$t->same(1,substr_count($cgiResponse,"X-End-To-End: retained\r\n"));
+	foreach(['X-Hop:','Keep-Alive:','Proxy-Authenticate:','Proxy-Authorization:','Proxy-Connection:','TE:','Trailer:','Transfer-Encoding:','Upgrade:'] as $hop){
+		$t->notContains($hop,$cgiResponse);
+	}
+	$t->contains("\r\n\r\ncreated",$cgiResponse);
+	$cookieResponse=$cgi(
+		"Content-Type: text/plain\r\nSet-Cookie: first=1; Path=/\r\nSet-Cookie: second=2; Path=/\r\n\r\ncookies",
+		false,
+	);
+	$t->same(1,substr_count($cookieResponse,"Content-Type: text/plain\r\n"));
+	$t->same(1,substr_count($cookieResponse,"Set-Cookie: first=1; Path=/\r\n"));
+	$t->same(1,substr_count($cookieResponse,"Set-Cookie: second=2; Path=/\r\n"));
+	$headOnly=$cgi("Content-Type: text/plain\r\n\r\ncreated",true);
+	$t->contains('Content-Length: 7',$headOnly);$t->notContains("\r\n\r\ncreated",$headOnly);
+	foreach([204,205,304] as $bodylessStatus){
+		$bodyless=$cgi("Status: {$bodylessStatus} Bodyless\r\nContent-Type: text/plain\r\n\r\nforbidden",false);
+		$t->contains("HTTP/1.1 {$bodylessStatus} Bodyless",$bodyless);
+		$t->notContains('forbidden',$bodyless);$t->notContains('Content-Length:',$bodyless);
+	}
 	foreach([
 		"missing-separator",
 		"Bad Header\r\n\r\nbody",
 		"Status: 999 Invalid\r\n\r\nbody",
+		"Status: 103 Interim\r\n\r\nbody",
+		"Status: 200 O\x01K\r\n\r\nbody",
+		"X-Control: safe\x01unsafe\r\n\r\nbody",
+		"Status: 200 OK\r\nStatus: 201 Duplicate\r\n\r\nbody",
+		"Connection: invalid token\r\n\r\nbody",
 	] as $invalidResponse){
-		$t->throws(static fn()=>$completed(null,$invalidResponse,false),RuntimeException::class);
+		$t->throws(static fn()=>$cgi($invalidResponse,false),RuntimeException::class);
 	}
+	$blockedPair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
+	$blockedSocket=socket_import_stream($blockedPair[0]);
+	if($blockedSocket instanceof Socket) socket_set_option($blockedSocket,SOL_SOCKET,SO_SNDBUF,4096);
+	$blockedStarted=hrtime(true);$blockedFailure=null;
+	try{
+		$schedulerInternals->invoke(
+			'writeCompletedResponse',$blockedPair[0],'registration',
+			"Content-Type: text/plain\r\n\r\n".str_repeat('x',DataphyreApplicationRuntimeSchedulerProtocol::MAX_TRANSPORT_BYTES+60000),false,
+		);
+	}catch(Throwable $failure){$blockedFailure=$failure;}
+	fclose($blockedPair[0]);fclose($blockedPair[1]);
+	$t->isTrue($blockedFailure instanceof DataphyreApplicationRuntimeGatewayTimeout);
+	$blockedElapsed=(hrtime(true)-$blockedStarted)/1_000_000_000;
+	$t->isTrue($blockedElapsed>=1.5 && $blockedElapsed<3.5,'scheduler response write deadline elapsed '.$blockedElapsed.' seconds');
 
-	$t->same(null,$internals->invoke('validateInvocation','web','127.0.0.1',8083,$router,$project));
-	$t->same(null,$internals->invoke('validateInvocation','scheduler','127.0.0.1',8081,$router,$project));
 	$t->throws(
-		static fn()=>$internals->invoke('validateInvocation','web','0.0.0.0',8083,$router,$project),
+		static fn()=>$webInternals->invoke(
+			'validateInvocation','0.0.0.0',8083,$router,$project,'/run/dataphyre/web/php-fpm.sock',
+		),
 		RuntimeException::class,
 	);
-	$t->same('peer-without-port',$internals->invoke('remoteAddress','peer-without-port'));
-	$t->same('0',$internals->invoke('remotePort','peer-without-port'));
-	$t->same(null,$internals->invoke('respond',null,503,'Unavailable'));
-	$t->throws(static fn()=>$internals->invoke('writeAll',null,'x'),TypeError::class);
-	dataphyre_application_runtime_fixed_port_unlock($fixedPortLock);
-})->tag('cgi','gateway','scheduler','framing','trusted-response','positive','negative');
+	$t->throws(
+		static fn()=>$schedulerInternals->invoke('validateInvocation','/invalid-scheduler.sock',$router,$project),
+		RuntimeException::class,
+	);
+	$t->same('peer-without-port',$webInternals->invoke('remoteAddress','peer-without-port'));
+	$t->same('0',$webInternals->invoke('remotePort','peer-without-port'));
+	$t->same(null,$webInternals->invoke('respond',null,503,'Unavailable'));
+	$t->throws(static fn()=>$webInternals->invoke('writeAll',null,'x'),TypeError::class);
+	}finally{
+		dataphyre_process_entrypoints_restore_runtime_parent($parentState);
+		dataphyre_application_runtime_fixed_port_unlock($fixedPortLock);
+	}
+})->tag('fpm','gateway','scheduler','framing','trusted-response','positive','negative');
+
+test('unexpected scheduler gateway death terminates the handler and no-spawn CGI for supervisor reaping',static function(Context $t): void {
+	$fixedPortLock=dataphyre_application_runtime_fixed_port_lock();$gateway=null;$client=null;$claimServer=null;$descendant=null;
+	$parentState=null;$schedulerDirectoryIdentity=null;$schedulerSocketIdentity=null;
+	$kernel=(string)realpath(dirname(__DIR__).'/kernel');require_once $kernel.'/application_runtime_supervisor.php';
+	$router=(string)realpath(__DIR__.'/fixtures/application_runtime_scheduler_cgi_probe.php');
+	$project=(string)realpath(dirname(__DIR__,4));$state=$t->workspace('scheduler-gateway-parent-death');chmod($state->root(),0777);
+	$descendantPath=$state->path('descendant.json');$signing=sodium_crypto_sign_keypair();
+	$secretKey=sodium_crypto_sign_secretkey($signing);$publicKey=sodium_crypto_sign_publickey($signing);$managedKey=random_bytes(32);
+	$managed=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('scheduler',$project,$managedKey);
+	$identity=['cloud_application'=>'serve','framework_application'=>'Serve','environment'=>'staging_blue','release_id'=>'dep_'.str_repeat('a',40)];
+	$body=json_encode(DataphyreApplicationRuntimeSchedulerProtocol::issue(
+		'noop',$identity,'gen_'.str_repeat('b',32),10,$secretKey,timestamp:time(),nonce:str_repeat('7',32),
+	),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+	$applicationEnvironment=[
+		'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>$project,
+		'DATAPHYRE_RUNTIME_SCHEDULER_PUBLIC_KEY'=>sodium_bin2base64($publicKey,SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING),
+		'DATAPHYRE_RUNTIME_TEST_CGI_DESCENDANT_PID_PATH'=>$descendantPath,
+		'DATAPHYRE_RUNTIME_TEST_CGI_BLOCK_MILLISECONDS'=>'30000',
+	];
+	$remainingRunnableProcesses=static function(array $pids,float $timeout=2.0): array {
+		$deadline=microtime(true)+$timeout;$live=[];
+		do{
+			$live=[];
+			foreach($pids as $pid){
+				$stat=@file_get_contents('/proc/'.$pid.'/stat');
+				if(!is_string($stat)) continue;
+				$separator=strrpos($stat,') ');$state=is_int($separator) ? ($stat[$separator+2] ?? '') : '';
+				if(!in_array($state,['Z','X'],true)) $live[]=$pid;
+			}
+			if($live===[]) break;usleep(10000);
+		}while(microtime(true)<$deadline);
+		return $live;
+	};
+	try{
+		$parentState=dataphyre_process_entrypoints_prepare_runtime_parent();
+		$schedulerDirectoryIdentity=dataphyre_runtime_prepare_root_socket(
+			'/run/dataphyre/scheduler',DataphyreApplicationRuntimeSchedulerGateway::SOCKET,
+		);
+		$gateway=dataphyre_runtime_spawn(
+			$router,$project,'scheduler','',0,$applicationEnvironment,$managed,
+		);
+		$schedulerSocketIdentity=dataphyre_runtime_wait_for_scheduler_socket($gateway['pid'],$schedulerSocketIdentity);
+		$t->same($gateway['pid'],$gateway['process_group_id']);$t->same($gateway['pid'],posix_getpgid($gateway['pid']));
+		$gatewayIdentity=DataphyreApplicationRuntimeChildEnvironment::processIdentity($gateway['pid']);
+		$t->same('00000000000000e0',$gatewayIdentity['cap_eff']);
+
+		$claimServer=dataphyre_process_entrypoints_start_claim_server();$connectDeadline=microtime(true)+5.0;
+		do{$client=@stream_socket_client('unix://'.DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$errorNumber,$error,0.1,STREAM_CLIENT_CONNECT);if(is_resource($client)) break;usleep(10000);}while(microtime(true)<$connectDeadline);
+		if(!is_resource($client)) throw new RuntimeException('Scheduler gateway did not become reachable.');
+		$request="POST /dataphyre/runtime/scheduler/noop HTTP/1.1\r\nHost: dataphyre-scheduler\r\nContent-Type: application/json\r\n".
+			'Content-Length: '.strlen($body)."\r\nConnection: close\r\n\r\n{$body}";
+		fwrite($client,$request);stream_socket_shutdown($client,STREAM_SHUT_WR);
+		$descendantDeadline=microtime(true)+5.0;while(!is_file($descendantPath) && microtime(true)<$descendantDeadline) usleep(10000);
+		$t->isTrue(is_file($descendantPath),'the real CGI descendant started before outer failure');
+		$descendant=json_decode((string)file_get_contents($descendantPath),true,8,JSON_THROW_ON_ERROR);
+		$t->same(true,$descendant['fork_denied'] ?? null,'the real scheduler CGI cannot create a process or thread');
+		$t->same(0,$descendant['rlimit_nproc_soft'] ?? null);$t->same(0,$descendant['rlimit_nproc_hard'] ?? null);
+		$t->same(true,$descendant['proc_open_denied'] ?? null);
+		$t->same(false,$descendant['thread_creation_surface_available'] ?? null);
+		$t->same('0000000000000000',$descendant['cap_inheritable'] ?? null);
+		$t->same('0000000000000000',$descendant['cap_permitted'] ?? null);
+		$t->same('0000000000000000',$descendant['cap_eff'] ?? null);
+		$t->same('00000000000000e0',$descendant['cap_bounding'] ?? null);
+		$t->same('0000000000000000',$descendant['cap_ambient'] ?? null);
+		$t->same([],$descendant['signal_mask'] ?? null,'pre-exec cleared the handler signal guard before tenant bootstrap');
+		$children=(string)file_get_contents('/proc/'.$gateway['pid'].'/task/'.$gateway['pid'].'/children');
+		$handlerPids=array_values(array_map('intval',preg_split('/\s+/',trim($children),-1,PREG_SPLIT_NO_EMPTY) ?: []));
+		$t->count(1,$handlerPids);$t->isFalse($descendant['process_group_id']===$gateway['process_group_id']);
+		$t->isTrue(posix_kill($gateway['pid'],SIGKILL));
+		$gatewayDeadline=microtime(true)+1.0;
+		do{$status=proc_get_status($gateway['resource']);if(($status['running'] ?? false)!==true) break;usleep(10000);}while(microtime(true)<$gatewayDeadline);
+		dataphyre_runtime_signal_child($gateway,SIGTERM);
+		$t->same([],$remainingRunnableProcesses([...$handlerPids,$descendant['pid']]),
+			'scheduler group cleanup terminated the handler and CGI before PID-one adoption/reaping');
+		pcntl_waitpid($claimServer['pid'],$claimStatus);$t->same(0,pcntl_wexitstatus($claimStatus));$claimServer=null;
+	}finally{
+		if(is_resource($client)) fclose($client);
+		if(is_array($gateway)){
+			@posix_kill(-$gateway['pid'],SIGKILL);@posix_kill($gateway['pid'],SIGKILL);@proc_close($gateway['resource']);
+		}
+		if(is_array($claimServer)){
+			@posix_kill($claimServer['pid'],SIGKILL);pcntl_waitpid($claimServer['pid'],$claimStatus);
+			dataphyre_runtime_cleanup_root_socket(
+				'/run/dataphyre/control','/run/dataphyre/control/runtime.sock',
+				$claimServer['identity'],$claimServer['directory_identity'],
+			);
+		}
+		dataphyre_runtime_cleanup_root_socket(
+			'/run/dataphyre/scheduler',DataphyreApplicationRuntimeSchedulerGateway::SOCKET,
+			$schedulerSocketIdentity,$schedulerDirectoryIdentity,
+		);
+		if(is_array($parentState)) dataphyre_process_entrypoints_restore_runtime_parent($parentState);
+		dataphyre_application_runtime_fixed_port_unlock($fixedPortLock);
+		sodium_memzero($secretKey);sodium_memzero($managedKey);sodium_memzero($managed['private_key']);
+	}
+})->tag('scheduler','gateway','process-group','parent-death','termination-before-pid1-reap','no-process-spawn','exact-image')->maxMillis(30000)
+	->skipUnless(
+		dataphyre_process_entrypoints_exact_native_runtime(['/usr/bin/setpriv','/usr/bin/prlimit','/usr/local/bin/php-cgi'])
+			&& function_exists('dataphyre_enable_scheduler_child_subreaper'),
+		'Requires the canonical root test image with exact scheduler CGI capabilities.',
+	);
+
+test('scheduler subreaper reaps repeated setsid escapes and a leader-exit process group by exact PID',static function(Context $t): void {
+	$t->same(false,dataphyre_enable_scheduler_child_subreaper(),'the broad-capability test owner cannot enable the e0-only subreaper');
+	$kernel=(string)realpath(dirname(__DIR__).'/kernel');
+	$fixture=(string)realpath(__DIR__.'/fixtures/application_runtime_scheduler_subreaper_probe.php');
+	$state=$t->workspace('scheduler-subreaper-exact');chmod($state->root(),0777);
+	$pipes=[];$process=proc_open([ // dataphyre-test-architecture: exempt[raw-process-control] reason="Exact e0 scheduler-subreaper boundary must be exercised before any tenant process exists."
+		'/usr/bin/setsid',
+		'/usr/bin/setpriv','--reuid=0','--regid=0','--groups=0','--no-new-privs',
+		'--inh-caps=-all','--ambient-caps=-all','--bounding-set=-all,+kill,+setuid,+setgid',
+		PHP_BINARY,$fixture,$kernel,$state->root(),
+	],[0=>['file','/dev/null','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes,dirname(__DIR__,4),[
+		'DATAPHYRE_RUNTIME_POOL'=>'scheduler-gateway','DATAPHYRE_RUNTIME_POOL_ROLE'=>'scheduler-gateway',
+	],[
+		'bypass_shell'=>true,'suppress_errors'=>true,
+	]);
+	if(!is_resource($process)) throw new RuntimeException('Scheduler subreaper exact probe could not start.');
+	$stdout=(string)stream_get_contents($pipes[1]);$stderr=(string)stream_get_contents($pipes[2]);
+	fclose($pipes[1]);fclose($pipes[2]);$exit=proc_close($process);
+	$t->same(0,$exit,$stderr);$evidence=json_decode(trim($stdout),true,8,JSON_THROW_ON_ERROR);
+	$t->same([
+		'contract'=>'dataphyre.scheduler_subreaper_probe.v1','ok'=>true,
+		'escaped_reaped_count'=>16,'post_leader_exit_group_reaped'=>true,'supervisor_orphan_reaped'=>true,
+	],$evidence);
+})->tag('scheduler','subreaper','setsid','process-group','ack-race','exact-image')->maxMillis(30000)
+	->skipUnless(
+		dataphyre_process_entrypoints_exact_native_runtime(['/usr/bin/setsid','/usr/bin/setpriv','/usr/bin/prlimit','/usr/local/bin/php-cgi'])
+			&& function_exists('dataphyre_enable_scheduler_child_subreaper'),
+		'Requires the canonical root test image with the e0-only native scheduler subreaper.',
+	);
+
+test('unprivileged scheduler and control UDS attempts allocate no handler while a root signed callback succeeds',static function(Context $t): void {
+	$fixedPortLock=dataphyre_application_runtime_fixed_port_lock();$gateway=null;$claimServer=null;$validClient=null;
+	$parentState=null;$schedulerDirectoryIdentity=null;$schedulerSocketIdentity=null;
+	$kernel=(string)realpath(dirname(__DIR__).'/kernel');require_once $kernel.'/application_runtime_supervisor.php';
+	$router=(string)realpath(__DIR__.'/fixtures/application_runtime_scheduler_cgi_probe.php');$project=(string)realpath(dirname(__DIR__,4));
+	$unprivilegedProbe=(string)realpath(__DIR__.'/fixtures/application_runtime_private_uds_unprivileged_probe.php');
+	$signing=sodium_crypto_sign_keypair();$secretKey=sodium_crypto_sign_secretkey($signing);
+	$publicKey=sodium_crypto_sign_publickey($signing);$managedKey=random_bytes(32);
+	$managed=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('scheduler',$project,$managedKey);
+	$identity=['cloud_application'=>'serve','framework_application'=>'Serve','environment'=>'staging_blue','release_id'=>'dep_'.str_repeat('a',40)];
+	$body=json_encode(DataphyreApplicationRuntimeSchedulerProtocol::issue(
+		'noop',$identity,'gen_'.str_repeat('b',32),31,$secretKey,timestamp:time(),nonce:str_repeat('8',32),
+	),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+	$applicationEnvironment=[
+		'DATAPHYRE_RUNTIME_PROJECT_ROOT'=>$project,
+		'DATAPHYRE_RUNTIME_SCHEDULER_PUBLIC_KEY'=>sodium_bin2base64($publicKey,SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING),
+	];
+	$directChildren=static function(int $pid): array {
+		$bytes=@file_get_contents('/proc/'.$pid.'/task/'.$pid.'/children');
+		$pids=is_string($bytes) ? array_values(array_map(
+			'intval',preg_split('/\s+/',trim($bytes),-1,PREG_SPLIT_NO_EMPTY) ?: [],
+		)) : [];
+		sort($pids,SORT_NUMERIC);return $pids;
+	};
+	try{
+		$parentState=dataphyre_process_entrypoints_prepare_runtime_parent();
+		$schedulerDirectoryIdentity=dataphyre_runtime_prepare_root_socket(
+			'/run/dataphyre/scheduler',DataphyreApplicationRuntimeSchedulerGateway::SOCKET,
+		);
+		$gateway=dataphyre_runtime_spawn($router,$project,'scheduler','',0,$applicationEnvironment,$managed);
+		$schedulerSocketIdentity=dataphyre_runtime_wait_for_scheduler_socket($gateway['pid'],$schedulerSocketIdentity);
+		$claimServer=dataphyre_process_entrypoints_start_claim_server();
+		$t->same([],$directChildren($gateway['pid']));
+
+		$pipes=[];$probe=proc_open([ // dataphyre-test-architecture: exempt[raw-process-control] reason="Exact unprivileged UDS-connect denial must run below the root-only directory boundary."
+			'/usr/bin/setpriv','--reuid=10001','--regid=10001','--groups=10001','--no-new-privs',
+			'--inh-caps=-all','--ambient-caps=-all','--bounding-set=-all',PHP_BINARY,$unprivilegedProbe,
+		],[0=>['file','/dev/null','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes,$project,[],['bypass_shell'=>true,'suppress_errors'=>true]);
+		if(!is_resource($probe)) throw new RuntimeException('Unprivileged UDS probe could not start.');
+		$probeOut=(string)stream_get_contents($pipes[1]);$probeError=(string)stream_get_contents($pipes[2]);
+		fclose($pipes[1]);fclose($pipes[2]);$t->same(0,proc_close($probe),$probeError);
+		$t->same([
+			'contract'=>'dataphyre.private_uds_unprivileged_probe.v1','scheduler_attempt_count'=>64,
+			'scheduler_accepted_count'=>0,'control_attempt_count'=>64,'control_accepted_count'=>0,
+		],json_decode(trim($probeOut),true,8,JSON_THROW_ON_ERROR));
+		$t->same([],$directChildren($gateway['pid']),'denied UID 10001 connects allocated zero scheduler handlers');
+
+		$started=hrtime(true);$validClient=stream_socket_client(
+			'unix://'.DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$errorNumber,$error,2,STREAM_CLIENT_CONNECT,
+		);
+		if(!is_resource($validClient)) throw new RuntimeException('Root scheduler callback could not connect.');
+		$request="POST /dataphyre/runtime/scheduler/noop HTTP/1.1\r\nHost: dataphyre-scheduler\r\nContent-Type: application/json\r\n".
+			'Content-Length: '.strlen($body)."\r\nConnection: close\r\n\r\n{$body}";
+		fwrite($validClient,$request);stream_socket_shutdown($validClient,STREAM_SHUT_WR);stream_set_timeout($validClient,6,0);
+		$response=(string)stream_get_contents($validClient);$metadata=stream_get_meta_data($validClient);
+		$elapsed=(hrtime(true)-$started)/1_000_000_000;
+		$t->same(false,$metadata['timed_out'] ?? null);$t->matches('/^HTTP\/1\.1 200\b/D',$response);
+		$t->contains('dataphyre.scheduler_noop.v1',$response);
+		$t->isTrue($elapsed<4.5,'root signed callback took '.$elapsed.' seconds');
+		pcntl_waitpid($claimServer['pid'],$claimStatus);$t->same(0,pcntl_wexitstatus($claimStatus));$claimServer=null;
+	}finally{
+		if(is_resource($validClient)) fclose($validClient);
+		if(is_array($gateway)){
+			dataphyre_runtime_signal_child($gateway,SIGTERM);$deadline=microtime(true)+5.0;
+			do{$status=proc_get_status($gateway['resource']);if(($status['running'] ?? false)!==true) break;usleep(10000);}while(microtime(true)<$deadline);
+			if(($status['running'] ?? false)===true) dataphyre_runtime_signal_child($gateway,SIGKILL);
+			@proc_close($gateway['resource']);
+		}
+		if(is_array($claimServer)){
+			@posix_kill($claimServer['pid'],SIGKILL);pcntl_waitpid($claimServer['pid'],$claimStatus);
+			dataphyre_runtime_cleanup_root_socket(
+				'/run/dataphyre/control','/run/dataphyre/control/runtime.sock',
+				$claimServer['identity'],$claimServer['directory_identity'],
+			);
+		}
+		dataphyre_runtime_cleanup_root_socket(
+			'/run/dataphyre/scheduler',DataphyreApplicationRuntimeSchedulerGateway::SOCKET,
+			$schedulerSocketIdentity,$schedulerDirectoryIdentity,
+		);
+		if(is_array($parentState)) dataphyre_process_entrypoints_restore_runtime_parent($parentState);
+		dataphyre_application_runtime_fixed_port_unlock($fixedPortLock);
+		sodium_memzero($secretKey);sodium_memzero($managedKey);sodium_memzero($managed['private_key']);
+	}
+})->tag('scheduler','unix-socket','unprivileged-denial','zero-handler-allocation','signed-callback','exact-image')->maxMillis(30000)
+	->skipUnless(
+		dataphyre_process_entrypoints_exact_native_runtime(['/usr/bin/setpriv','/usr/bin/prlimit','/usr/local/bin/php-cgi'])
+			&& function_exists('dataphyre_enable_scheduler_child_subreaper'),
+		'Requires the canonical root test image with exact scheduler CGI capabilities.',
+	);
 
 test('covered one-shot dispatcher consumes its bound channel and selects only the fixed database target',static function(Context $t): void {
 	$frameworkRoot=(string)realpath(dirname(__DIR__,4));
