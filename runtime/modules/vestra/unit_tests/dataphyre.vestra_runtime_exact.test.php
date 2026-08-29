@@ -146,6 +146,10 @@ test('propagation expiry options reach Control payloads and references while rem
 	$t->same(600, (int)$contract['ttl_payload']['object_expires_in_secs']);
 	$t->same(1700000600, $contract['ttl_stored_expiry']);
 	$t->same(0, $contract['ttl_hash_queries']);
+	$t->same('reserved_object_only', $contract['ttl_cleanup_scope']);
+	$t->same(0, $contract['ttl_cleanup_result']);
+	$t->same('https://objects.vestra.test/objects/41', $contract['ttl_cleanup_url']);
+	$t->same('cleanup-41', $contract['ttl_cleanup_token']);
 	$t->same(42, $contract['at_id']);
 	$t->same(1700000700, $contract['at_expiry']);
 	$t->same(1700000700, (int)$contract['at_payload']['object_expires_at']);

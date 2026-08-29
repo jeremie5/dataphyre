@@ -157,6 +157,10 @@ The kernel surface is centered around `\dataphyre\vestra`.
     response retains Control's normalized `object_expires_at` in the returned
     and persisted reference. Expiring writes also bypass permanent hash
     deduplication, and the expiry values participate in reservation idempotency.
+    When Control returns an exact `reserved_object_only` cleanup capability,
+    the reference retains only that object-bound DELETE guidance. Releasing the
+    reference consumes this reservation-provided authority directly; it does
+    not request a broader DELETE credential or mint a second write token.
 
 #### Storage References
 

@@ -435,6 +435,11 @@ final class DpVestraRuntimeScenario {
 				'object_id'=>41,
 				'object_expires_at'=>1700000600,
 				'upload'=>['url'=>'/uploads/41','method'=>'PUT'],
+				'cleanup'=>[
+					'url'=>'https://objects.vestra.test/objects/41','path'=>'/objects/41',
+					'method'=>'DELETE','scope'=>'reserved_object_only',
+					'headers'=>['X-Vestra-Write-Token'=>'cleanup-41'],
+				],
 			],
 		]);
 		$this->queueHttp('/uploads/41', ['status'=>201,'json'=>['asset_url'=>'https://persisted.test/41'],'body'=>'']);
@@ -448,6 +453,10 @@ final class DpVestraRuntimeScenario {
 		$ttlStoredFields=$ttlStored['arguments'][1] ?? [];
 		$ttlStoredReference=json_decode((string)($ttlStoredFields['reference'] ?? ''), true);
 		$ttlHashQueries=count(array_filter($this->sqlCalls, static fn(array $call): bool=>($call['operation'] ?? '')==='select' && str_contains((string)($call['arguments'][3] ?? ''), 'hash=?')));
+		$this->queueSelect(['use_count'=>1]);
+		$this->queueHttp('/objects/41', ['status'=>204,'body'=>'']);
+		$ttlReleased=\dataphyre\vestra::update_use_count($ttlReference,-1);
+		$ttlCleanup=array_values(array_filter($this->httpCalls, static fn(array $call): bool=>($call['method'] ?? '')==='DELETE'))[0] ?? [];
 
 		$this->reset()->withDialback('CALL_VESTRA_PROPAGATE', null);
 		$this->queueJson('/objects/reserve', [
@@ -484,6 +493,10 @@ final class DpVestraRuntimeScenario {
 			'ttl_idempotency'=>$ttlReserve['headers']['Idempotency-Key'] ?? null,
 			'ttl_stored_expiry'=>is_array($ttlStoredReference) ? ($ttlStoredReference['object_expires_at'] ?? null) : null,
 			'ttl_hash_queries'=>$ttlHashQueries,
+			'ttl_cleanup_scope'=>$ttlReference['cleanup']['scope'] ?? null,
+			'ttl_cleanup_result'=>$ttlReleased,
+			'ttl_cleanup_url'=>$ttlCleanup['url'] ?? null,
+			'ttl_cleanup_token'=>$ttlCleanup['headers']['X-Vestra-Write-Token'] ?? null,
 			'at_id'=>$atReference['object_id'] ?? null,
 			'at_expiry'=>$atReference['object_expires_at'] ?? null,
 			'at_payload'=>$atPayload,

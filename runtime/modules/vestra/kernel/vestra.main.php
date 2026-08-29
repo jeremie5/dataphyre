@@ -182,9 +182,22 @@ class vestra {
 		if($tenant===false){
 			return false;
 		}
-		$response=self::objectRequest('DELETE', '/objects/'.$objectId, [], $tenant, ['max_bytes'=>1]);
-		if(!is_array($response) || !(($response['ok'] ?? false)===true || ($response['status'] ?? '')==='success')){
-			return false;
+		$cleanup=self::referenceCleanupGuidance(is_array($reference) ? $reference : [], $objectId, $tenant);
+		if($cleanup!==false){
+			$response=self::send([
+				'purpose'=>'object',
+				'url'=>$cleanup['url'],
+				'method'=>'DELETE',
+				'headers'=>$cleanup['headers'],
+				'allowed_statuses'=>[404,410],
+				'ca_bundle'=>self::caBundle($tenant),
+			]);
+			if(!is_array($response)) return false;
+		}else{
+			$response=self::objectRequest('DELETE', '/objects/'.$objectId, [], $tenant, ['max_bytes'=>1]);
+			if(!is_array($response) || !(($response['ok'] ?? false)===true || ($response['status'] ?? '')==='success')){
+				return false;
+			}
 		}
 		self::sql('delete', 'dataphyre.vestra_objects', 'WHERE object_id=?', [$objectId], true);
 		return 0;
@@ -768,7 +781,10 @@ class vestra {
 		}
 		$status=(int)($response['status'] ?? 0);
 		self::$lastHttpStatus=$status;
-		if($status<200 || $status>=300){
+		$allowedStatuses=is_array($request['allowed_statuses'] ?? null)
+			? array_values(array_filter($request['allowed_statuses'], static fn(mixed $value): bool=>is_int($value) && $value>=100 && $value<=599))
+			: [];
+		if(($status<200 || $status>=300) && !in_array($status, $allowedStatuses, true)){
 			self::log('Vestra HTTP request failed with status '.$status.'.');
 			return false;
 		}
@@ -1377,7 +1393,59 @@ class vestra {
 		if($objectExpiresAt!==null){
 			$reference['object_expires_at']=$objectExpiresAt;
 		}
+		if($id!==false){
+			$cleanup=self::responseCleanupGuidance($response, $data, $source, $id, $identity);
+			if($cleanup!==false) $reference['cleanup']=$cleanup;
+		}
 		return $identity!=='' ? self::applyReferenceTenantIdentity($reference, $identity) : $reference;
+	}
+
+	/**
+	 * Retains only the exact reservation-provided cleanup capability. The
+	 * capability is bound to one object, one DELETE method and the configured
+	 * public Vestra origin; unrelated response fields never enter the reference.
+	 *
+	 * @return array{url:string,path:string,method:string,scope:string,headers:array<string,string>}|false
+	 */
+	private static function responseCleanupGuidance(array $response,array $data,array $source,int $objectId,string $tenant): array|false {
+		foreach([$data['cleanup'] ?? null,$source['cleanup'] ?? null,$response['cleanup'] ?? null] as $candidate){
+			if(!is_array($candidate)) continue;
+			$reference=['object_id'=>$objectId,'cleanup'=>$candidate];
+			$cleanup=self::referenceCleanupGuidance($reference,$objectId,$tenant);
+			if($cleanup!==false) return $cleanup;
+		}
+		return false;
+	}
+
+	/** @return array{url:string,path:string,method:string,scope:string,headers:array<string,string>}|false */
+	private static function referenceCleanupGuidance(array $reference,int $objectId,string $tenant): array|false {
+		$cleanup=is_array($reference['cleanup'] ?? null) ? $reference['cleanup'] : null;
+		if($cleanup===null || ($cleanup['method'] ?? '')!=='DELETE' || ($cleanup['scope'] ?? '')!=='reserved_object_only') return false;
+		$path=(string)($cleanup['path'] ?? '');
+		$expectedPath='/objects/'.$objectId;
+		if($path!==$expectedPath) return false;
+		$url=trim((string)($cleanup['url'] ?? ''));
+		$publicBase=self::publicBaseUrl($tenant);
+		if($url==='' || $publicBase==='') return false;
+		if(str_starts_with($url,'/')) $url=rtrim($publicBase,'/').$url;
+		$urlParts=parse_url($url);
+		$baseParts=parse_url($publicBase);
+		if(!is_array($urlParts) || !is_array($baseParts)
+			|| !in_array(strtolower((string)($urlParts['scheme'] ?? '')),['http','https'],true)
+			|| strtolower((string)($urlParts['scheme'] ?? ''))!==strtolower((string)($baseParts['scheme'] ?? ''))
+			|| strtolower((string)($urlParts['host'] ?? ''))!==strtolower((string)($baseParts['host'] ?? ''))
+			|| (int)($urlParts['port'] ?? (strtolower((string)($urlParts['scheme'] ?? ''))==='https' ? 443 : 80))
+				!==(int)($baseParts['port'] ?? (strtolower((string)($baseParts['scheme'] ?? ''))==='https' ? 443 : 80))
+			|| (string)($urlParts['path'] ?? '')!==$expectedPath
+			|| isset($urlParts['user']) || isset($urlParts['pass']) || isset($urlParts['query']) || isset($urlParts['fragment'])) return false;
+		$sourceHeaders=is_array($cleanup['headers'] ?? null) ? $cleanup['headers'] : [];
+		$token='';
+		foreach($sourceHeaders as $name=>$value){
+			if(strtolower(trim((string)$name))!=='x-vestra-write-token' || !is_scalar($value)) continue;
+			$token=trim((string)$value);
+		}
+		if($token==='' || strlen($token)>4096 || preg_match('/[\x00-\x20\x7f]/',$token)===1) return false;
+		return ['url'=>$url,'path'=>$expectedPath,'method'=>'DELETE','scope'=>'reserved_object_only','headers'=>['X-Vestra-Write-Token'=>$token]];
 	}
 
 	/** Extracts the object lifetime that Vestra Control returned with a write. */
