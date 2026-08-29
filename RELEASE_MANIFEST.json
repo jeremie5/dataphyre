@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-08-21T01:05:50Z",
-  "copied_source_files": 3686,
-  "skipped_source_files": 19143,
-  "export_file_count": 3686,
-  "export_tree_sha256": "be74a9fa4a39d0676235b9bb68d1abb5fc7627d72ac46807c44134cac52a6362",
+  "generated_at_utc": "2026-08-29T22:51:55Z",
+  "copied_source_files": 3689,
+  "skipped_source_files": 46,
+  "export_file_count": 3689,
+  "export_tree_sha256": "75d3b2ab969643f23284e1bac1439f769da95252e7ae3163c49ea54b886a9e45",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -366,6 +366,11 @@
       "path": ".editorconfig",
       "bytes": 256,
       "sha256": "ed11d4233a22b396aabdae5a5abb60f73249609842c010cf322995add8a1718d"
+    },
+    {
+      "path": ".git",
+      "bytes": 109,
+      "sha256": "b0acf36bf0e2f66a8b870c5555f1c1e3ba77ae6f68d011e4ec47fce438cb39a4"
     },
     {
       "path": ".gitattributes",
@@ -15014,8 +15019,8 @@
     },
     {
       "path": "runtime/modules/sql/documentation/Dataphyre_SQL.md",
-      "bytes": 119051,
-      "sha256": "3062bf92c5abfb41bd693eae14527366d84faf15ed1d88173f048a12e168e851"
+      "bytes": 119480,
+      "sha256": "cc9e075d389b95dbce4d6e1090d71d9b4cbfdbe8fdbc8fc4e55014511fdf4fa8"
     },
     {
       "path": "runtime/modules/sql/documentation/postgresql-migration-manifest-v3.schema.json",
@@ -15104,13 +15109,13 @@
     },
     {
       "path": "runtime/modules/sql/Framework/Migrations/PostgreSqlMigrationRunner.php",
-      "bytes": 55187,
-      "sha256": "21ccd5b0e2ae991e61bd704259ab6bffd20de3ab063f75bb3ddc8ccec07368c4"
+      "bytes": 57104,
+      "sha256": "744e21fdad4a69640c8bccb3f8773708578a031f83adfb5acf933dcc99acbfd1"
     },
     {
       "path": "runtime/modules/sql/Framework/Migrations/PostgreSqlSchemaInspector.php",
-      "bytes": 92204,
-      "sha256": "584ca8884c70507f8802e9b36c9c0774602501d1a211ef6d6bcb62390ee94c8b"
+      "bytes": 98642,
+      "sha256": "5b150b812e03295ef84b41e4921e7340ddc2c95fea92370d8af4e0ea5bb9084b"
     },
     {
       "path": "runtime/modules/sql/Framework/Migrations/SqliteMigrationCommand.php",
@@ -15309,8 +15314,8 @@
     },
     {
       "path": "runtime/modules/sql/kernel/sql.main.php",
-      "bytes": 143823,
-      "sha256": "2b0d897f63153b7e2a13b72be9df5d27eea180b3c86878e94fd9c4f44aef6532"
+      "bytes": 144123,
+      "sha256": "4e54af3e55a5d1cba43cdd9114c661bdd10a84be48076ab1bb0322b5436074f5"
     },
     {
       "path": "runtime/modules/sql/kernel/sqlite_migrate.php",
@@ -15394,13 +15399,13 @@
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.postgresql_migration_framework.test.php",
-      "bytes": 152635,
-      "sha256": "75c2046716688a799f51ec2c4ef7a071cc7afc46cf8b275eb7ccc244aa65016f"
+      "bytes": 156962,
+      "sha256": "25e140958c496ac48b483ec9562d19f90662f2cab4685c946062079383fbb839"
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.postgresql_schema_inspector_pg17.test.php",
-      "bytes": 9942,
-      "sha256": "e18cffba24cd624760c186e17ad0d99cb93a53fb70f2a7d1dd29e13f92b9f575"
+      "bytes": 12759,
+      "sha256": "4bcdca5c397fbfdbf593290cab09f70d631c9dec2dd5afee140171384bd4881f"
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.query_wrapper_parent_regression.test.php",
@@ -15526,6 +15531,11 @@
       "path": "runtime/modules/sql/unit_tests/dataphyre.sql_result_transform_residual_coverage.test.php",
       "bytes": 9766,
       "sha256": "5697627a68055e9046a764a00c29d49b6d6c40574b4b5c1956c99990645e495f"
+    },
+    {
+      "path": "runtime/modules/sql/unit_tests/dataphyre.sql_safe_delete_default.test.php",
+      "bytes": 1064,
+      "sha256": "2b5b097c2bec7c183ab682caa94672d4bccf3c9bebe1cbbbf851217c8b035e35"
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.sql_scaffold_artifacts_deep_coverage.test.php",
@@ -15681,6 +15691,11 @@
       "path": "runtime/modules/sql/unit_tests/fixtures/sql_migration_coverage_bootstrap.php",
       "bytes": 4207,
       "sha256": "b1f2f42796d9ab72dfdca739b8a71b92556212a23952ed2c41a6f40844e79786"
+    },
+    {
+      "path": "runtime/modules/sql/unit_tests/fixtures/sql_safe_delete_default_probe.php",
+      "bytes": 2372,
+      "sha256": "db803c4d469515b5162b79c50f5e233448de245138c909026a1a55f894788ab4"
     },
     {
       "path": "runtime/modules/sql/unit_tests/fixtures/sql_scaffold_native_probe.php",
@@ -18669,8 +18684,8 @@
     },
     {
       "path": "runtime/modules/vestra/documentation/Dataphyre_Vestra_Client.md",
-      "bytes": 10281,
-      "sha256": "ad8c147dfd6cd1ed0ed1fb03d796bdba18ca043557a2bdae8628d2e8340cf7c6"
+      "bytes": 12373,
+      "sha256": "4d3438c6220ed3397867a10eec54b52d9c6de00d83ce65f2fa96ae492ab7bb17"
     },
     {
       "path": "runtime/modules/vestra/Framework/Bootstrap.php",
@@ -18679,8 +18694,8 @@
     },
     {
       "path": "runtime/modules/vestra/Framework/Client.php",
-      "bytes": 4767,
-      "sha256": "448d1d0602e993db889f1bb59788685c9495ae03b2655f3f8a2011fc1a265e31"
+      "bytes": 5087,
+      "sha256": "42a13ec60638a0634af8654ca02ec6d64e1299e11de1c653e22b3b341630c19e"
     },
     {
       "path": "runtime/modules/vestra/Framework/IngestionResult.php",
@@ -18689,8 +18704,8 @@
     },
     {
       "path": "runtime/modules/vestra/Framework/VestraManager.php",
-      "bytes": 4882,
-      "sha256": "8477470444cf494d98c1c2b853011bcbce7b57fce900813290a0df2c67583e0b"
+      "bytes": 5223,
+      "sha256": "d98efc9c54dfbb55f5d3426cd776d6a254e5d4ffa0dbee4be3fede9d261caf50"
     },
     {
       "path": "runtime/modules/vestra/kernel/loader.php",
@@ -18699,8 +18714,8 @@
     },
     {
       "path": "runtime/modules/vestra/kernel/vestra.main.php",
-      "bytes": 66528,
-      "sha256": "54e9706446128a6c5f5476b59b88baec5e7fa45d3b3fa2c8b99b82215600e269"
+      "bytes": 78466,
+      "sha256": "dd850cdb2a2583b7d4a8949860c5a050f83dd29235bb756ab599715dc5d29e53"
     },
     {
       "path": "runtime/modules/vestra/kernel/vestra.tables.php",
@@ -18709,13 +18724,13 @@
     },
     {
       "path": "runtime/modules/vestra/unit_tests/dataphyre.vestra_framework_deep_coverage.test.php",
-      "bytes": 4705,
-      "sha256": "e7287901638c9a0ac1896882050c5dce488c1eed77bde0da872c2674444905b1"
+      "bytes": 4845,
+      "sha256": "55a714f74ebd4a87e7559fbcb6f748023d3d382ff6014978d30a2283a15b2f3b"
     },
     {
       "path": "runtime/modules/vestra/unit_tests/dataphyre.vestra_runtime_exact.test.php",
-      "bytes": 14624,
-      "sha256": "eb8c9b4e940f07c6f7c48888cc01f1ce0202993c87b06bb186d061e9a52220ac"
+      "bytes": 16784,
+      "sha256": "32223da65c288ccdef2945d9f90fc427b532f005874def48add20b6dde99b1cc"
     },
     {
       "path": "runtime/modules/vestra/unit_tests/dataphyre.vestra.ingestion_result.json",
@@ -18739,8 +18754,8 @@
     },
     {
       "path": "runtime/modules/vestra/unit_tests/vestra_runtime_test_helpers.php",
-      "bytes": 33196,
-      "sha256": "fb2c86061f3689a35b49ed6f26108c5b2ab0dd706a537a90a384645f4ccb58b1"
+      "bytes": 39055,
+      "sha256": "9182ef945105a557dfb611942208fce9fa01697ae80e285d283d88d2ee007981"
     },
     {
       "path": "runtime/modules/vestra/unit_tests/vestra_test_helpers.php",
