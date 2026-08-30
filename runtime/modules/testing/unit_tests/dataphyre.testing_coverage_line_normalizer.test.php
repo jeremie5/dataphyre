@@ -156,3 +156,28 @@ PHP);
 	$t->contains(14,$result['executable_lines'],'An unentered conditional call remains exact-coverage evidence.');
 	$t->notContains(14,$result['covered_lines']);
 });
+
+test('normalization removes only scalar data entries from multiline arrays',static function(Context $t): void {
+	$workspace=$t->workspace('coverage-line-normalizer-array-data');
+	$file=$workspace->file('ArrayDataFixture.php',<<<'PHP'
+<?php
+$allowed=in_array($needle,[
+	'alpha',
+	'beta', 'gamma', null, false, 4,
+],true);
+$argument=send(
+	'literal-argument',
+);
+$map=[
+	'key'=>'value',
+	resolve_value(),
+];
+PHP);
+	$result=CoverageLineNormalizer::phpdbg($file,range(2,12),[2,4,5,6,8,9,12]);
+
+	$t->same([3,10],$result['ignored_lines']);
+	$t->same([3,10],$result['ignored_by_reason']['simple-array-literal-data']);
+	$t->contains(7,$result['executable_lines'],'A scalar function argument remains executable evidence.');
+	$t->contains(11,$result['executable_lines'],'A call inside an array remains executable evidence.');
+	$t->contains(4,$result['covered_lines'],'An already-covered scalar row stays in the versioned numerator and denominator.');
+});

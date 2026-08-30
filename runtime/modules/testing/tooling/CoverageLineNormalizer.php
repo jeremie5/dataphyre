@@ -14,8 +14,9 @@ namespace Dataphyre\Test;
  *
  * phpdbg can expose brace-only lines and finally headers as executable op-array
  * locations, and PHP 8.4 can label declaration-only `never` interface methods
- * as executable. It can also leave a variable-only continuation line red after the
- * enclosing call was executed. Their bodies and branch-bearing expressions
+ * as executable. It can also leave a variable-only continuation line red after
+ * the enclosing call was executed, or assign an op-array location to a scalar
+ * data item in a multiline array. Their bodies and branch-bearing expressions
  * remain in the denominator; the structural artifact does not. Switch labels
  * deliberately remain executable because their comparison can represent an
  * untaken branch. Every ignored line is returned with a reason so an exact
@@ -43,13 +44,18 @@ final class CoverageLineNormalizer {
 		if(is_array($source)){
 			$coveredLookup=array_fill_keys($covered,true);
 			$argumentCandidates=[];
+			$literalCandidates=[];
 			foreach($raw as $line){
 				$text=$source[$line-1] ?? null;
 				if(!isset($coveredLookup[$line])&&is_string($text)&&self::isSimpleArgumentContinuation($text)){
 					$argumentCandidates[$line]=true;
 				}
+				if(!isset($coveredLookup[$line])&&is_string($text)&&self::isSimpleArrayLiteralContinuation($text)){
+					$literalCandidates[$line]=true;
+				}
 			}
 			$argumentGroups=self::smallestMultilineGroupsContaining($source,$argumentCandidates);
+			$literalGroups=self::smallestMultilineGroupsContaining($source,$literalCandidates);
 			foreach($raw as $line){
 				$text=$source[$line-1] ?? null;
 				if(!is_string($text)){continue;}
@@ -59,6 +65,9 @@ final class CoverageLineNormalizer {
 				}
 				if($reason===null && !isset($coveredLookup[$line])){
 					$reason=self::coveredSimpleArgumentContinuationReason($line,$coveredLookup,$argumentGroups);
+				}
+				if($reason===null && !isset($coveredLookup[$line])){
+					$reason=self::simpleArrayLiteralContinuationReason($line,$literalGroups);
 				}
 				if($reason===null){continue;}
 				$ignored[]=$line;
@@ -181,7 +190,7 @@ final class CoverageLineNormalizer {
 	 * reads, or literals: those can carry independently untested behavior.
 	 *
 	 * @param array<int,bool> $covered
-	 * @param array<int,array{start:int,end:int}> $groups
+	 * @param array<int,array{start:int,end:int,token:string}> $groups
 	 */
 	private static function coveredSimpleArgumentContinuationReason(int $line,array $covered,array $groups): ?string {
 		$group=$groups[$line] ?? null;
@@ -210,9 +219,45 @@ final class CoverageLineNormalizer {
 	}
 
 	/**
+	 * phpdbg can also attach an op-array location to the first scalar in a
+	 * multiline array even though the array-construction opcode is attributed to
+	 * another physical line. Only scalar list values or scalar key/value pairs
+	 * separated by commas are eligible. Operators, calls, interpolation, and
+	 * expressions remain executable evidence.
+	 *
+	 * @param array<int,array{start:int,end:int,token:string}> $groups
+	 */
+	private static function simpleArrayLiteralContinuationReason(int $line,array $groups): ?string {
+		$group=$groups[$line] ?? null;
+		return $group!==null&&$group['token']==='[' ? 'simple-array-literal-data' : null;
+	}
+
+	private static function isSimpleArrayLiteralContinuation(string $line): bool {
+		$tokens=token_get_all('<?php '.$line);
+		$literalCount=0;
+		foreach($tokens as $token){
+			if(is_array($token)){
+				if(in_array($token[0],[T_OPEN_TAG,T_WHITESPACE,T_COMMENT,T_DOC_COMMENT],true)){continue;}
+				if($token[0]===T_DOUBLE_ARROW){continue;}
+				if(in_array($token[0],[T_CONSTANT_ENCAPSED_STRING,T_LNUMBER,T_DNUMBER],true)){
+					$literalCount++;
+					continue;
+				}
+				if($token[0]===T_STRING&&in_array(strtolower($token[1]),['true','false','null'],true)){
+					$literalCount++;
+					continue;
+				}
+				return false;
+			}
+			if($token!==','){return false;}
+		}
+		return $literalCount>=1;
+	}
+
+	/**
 	 * @param list<string> $source
 	 * @param array<int,bool> $targetLines
-	 * @return array<int,array{start:int,end:int}>
+	 * @return array<int,array{start:int,end:int,token:string}>
 	 */
 	private static function smallestMultilineGroupsContaining(array $source,array $targetLines): array {
 		if($targetLines===[]){return [];}
@@ -235,7 +280,7 @@ final class CoverageLineNormalizer {
 						if($opening['line']>$targetLine||$targetLine>$tokenLine){continue;}
 						$current=$groups[$targetLine] ?? null;
 						if($current===null||$span<($current['end']-$current['start'])){
-							$groups[$targetLine]=['start'=>$opening['line'],'end'=>$tokenLine];
+							$groups[$targetLine]=['start'=>$opening['line'],'end'=>$tokenLine,'token'=>$opening['token']];
 						}
 					}
 				}

@@ -500,6 +500,15 @@ snapshots and rejects malformed filename metadata before it can become an
 allocation request; workers, covered subprocesses, and the orchestrator all use
 the same transport contract.
 
+`CoverageLineNormalizer` also removes an uncovered phpdbg-only location assigned
+to a scalar data row inside a multiline array. A row is eligible only when it
+contains scalar list values or scalar key/value pairs separated by commas and
+sits inside the smallest multiline bracket group. Calls, interpolation,
+operators, branch-bearing expressions, and already-covered rows remain in the
+versioned evidence set. The JSON artifact
+records every removed row under `simple-array-literal-data`, so the denominator
+stays exact and auditable instead of requiring source reformatting.
+
 The orchestrator consumes exact worker maps immediately instead of retaining
 them inside every test result. `CoverageAccumulator` serializes the detached
 payloads into a temporary spool that spills after 1 MiB, then decodes and unions
