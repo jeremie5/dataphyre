@@ -24,6 +24,18 @@ final class SchedulingRuntimeProbe {
 	public static string|false $curl_result='';
 	public static int $curl_status=204;
 	public static int $curl_delay_microseconds=0;
+	public static ?string $claim_publish_competing_claim=null;
+	public static bool $claim_publish_hard_failure=false;
+	public static bool $claim_publish_throws=false;
+	public static array $claim_publish_attempts=[];
+	public static bool $hard_link_available=true;
+	public static mixed $claim_publish_hook=null;
+	public static ?string $claim_finalize_public_path=null;
+	public static ?string $claim_finalize_pending_path=null;
+	public static int $claim_finalize_public_stats=0;
+	public static ?string $cadence_probe_state_path=null;
+	public static ?string $cadence_probe_lock_path=null;
+	public static bool $cadence_probe_lock_contended=false;
 	public static array $shutdown=[];
 	public static mixed $app_override='';
 	public static array $modules=[];
@@ -33,6 +45,14 @@ final class SchedulingRuntimeProbe {
 		self::$traces=[]; self::$writes=[]; self::$write_results=[]; self::$curl=[];
 		self::$curl_throws=false; self::$curl_result=''; self::$curl_status=204;
 		self::$curl_delay_microseconds=0;
+		self::$claim_publish_competing_claim=null; self::$claim_publish_hard_failure=false;
+		self::$claim_publish_throws=false;
+		self::$claim_publish_attempts=[];
+		self::$hard_link_available=true; self::$claim_publish_hook=null;
+		self::$claim_finalize_public_path=null; self::$claim_finalize_pending_path=null;
+		self::$claim_finalize_public_stats=0;
+		self::$cadence_probe_state_path=null; self::$cadence_probe_lock_path=null;
+		self::$cadence_probe_lock_contended=false;
 		self::$shutdown=[]; self::$app_override='';
 		self::$modules=[]; self::$pre_init=[]; self::$sql_config=[];
 	}
@@ -50,6 +70,61 @@ function curl_exec(object $handle): string|false {
 }
 function curl_getinfo(object $handle,int $option): int { SchedulingRuntimeProbe::$curl[]=['getinfo',$option]; return SchedulingRuntimeProbe::$curl_status; }
 function curl_close(object $handle): void { SchedulingRuntimeProbe::$curl[]=['close']; }
+function function_exists(string $function): bool {
+	if($function==='link' && SchedulingRuntimeProbe::$hard_link_available!==true) return false;
+	return \function_exists($function);
+}
+function lstat(string $path): array|false {
+	$stat=\lstat($path);
+	if($path===SchedulingRuntimeProbe::$cadence_probe_state_path){
+		SchedulingRuntimeProbe::$cadence_probe_state_path=null;
+		$lockPath=SchedulingRuntimeProbe::$cadence_probe_lock_path;
+		$probe=is_string($lockPath) ? @\fopen($lockPath,'r+') : false;
+		if(is_resource($probe)){
+			$acquired=@\flock($probe,LOCK_EX|LOCK_NB);
+			SchedulingRuntimeProbe::$cadence_probe_lock_contended=$acquired!==true;
+			if($acquired) @\flock($probe,LOCK_UN);
+			@\fclose($probe);
+		}
+	}
+	if($path===SchedulingRuntimeProbe::$claim_finalize_public_path && is_array($stat)){
+		SchedulingRuntimeProbe::$claim_finalize_public_stats++;
+		if(SchedulingRuntimeProbe::$claim_finalize_public_stats===2){
+			$pending=SchedulingRuntimeProbe::$claim_finalize_pending_path;
+			if(is_string($pending)) \unlink($pending);
+		}
+	}
+	return $stat;
+}
+function link(string $source,string $target): bool {
+	if(str_ends_with($target,'/running_lock')){
+		$hook=SchedulingRuntimeProbe::$claim_publish_hook;
+		SchedulingRuntimeProbe::$claim_publish_hook=null;
+		if(is_callable($hook)) $hook($source,$target);
+		$sourceStat=\lstat($source);
+		$sourceContents=\file_get_contents($source);
+		SchedulingRuntimeProbe::$claim_publish_attempts[]=[
+			'source_contents'=>$sourceContents,
+			'source_regular'=>is_array($sourceStat) && (($sourceStat['mode'] ?? 0)&0170000)===0100000,
+			'source_link_count'=>is_array($sourceStat) ? ($sourceStat['nlink'] ?? null) : null,
+			'target_existed_before'=>\file_exists($target) || \is_link($target),
+		];
+		if(SchedulingRuntimeProbe::$claim_publish_throws) throw new \RuntimeException('hard-link primitive unavailable');
+		if(SchedulingRuntimeProbe::$claim_publish_hard_failure) return false;
+		$competingClaim=SchedulingRuntimeProbe::$claim_publish_competing_claim;
+		if(is_string($competingClaim)){
+			SchedulingRuntimeProbe::$claim_publish_competing_claim=null;
+			$winner=\fopen($target,'x');
+			if(!is_resource($winner)) throw new \RuntimeException('Unable to create competing scheduler claim fixture.');
+			$written=\fwrite($winner,$competingClaim);
+			$flushed=$written===strlen($competingClaim) && \fflush($winner);
+			$closed=\fclose($winner);
+			if(!$flushed || !$closed) throw new \RuntimeException('Unable to write competing scheduler claim fixture.');
+			return false;
+		}
+	}
+	return \link($source,$target);
+}
 if(!class_exists(core::class,false)){
 	final class core {
 		public static int $server_load_level=0;
@@ -245,9 +320,16 @@ test('registration persists once and lock frequency timeout and load decisions a
 	$claimOne=str_repeat('1',64);
 	$claimTwo=str_repeat('2',64);
 	$workspace->directory('cache/scheduling/atomic-lock');
-	$t->isTrue($internals->invoke('acquire_running_lock','atomic-lock',$claimOne));
-	$t->isFalse($internals->invoke('acquire_running_lock','atomic-lock',$claimTwo));
+	$claimOneHandle=$internals->invoke('acquire_running_lock','atomic-lock',$claimOne);
+	$t->isTrue(is_resource($claimOneHandle));
+	if(is_resource($claimOneHandle)){
+		flock($claimOneHandle,LOCK_UN);
+		fclose($claimOneHandle);
+	}
+	$t->isNull($internals->invoke('acquire_running_lock','atomic-lock',$claimTwo));
 	$t->same($claimOne,trim((string)file_get_contents(\dataphyre\scheduling::running_lock_file('atomic-lock'))));
+	$workspace->file('cache/scheduling/corrupt-lock/running_lock','not-a-claim');
+	$t->isFalse($internals->invoke('acquire_running_lock','corrupt-lock',$claimTwo));
 	$unsafeState=$workspace->file('unsafe-state','123');
 	$workspace->directory('cache/scheduling/lock-failure');
 	symlink($unsafeState,$workspace->path('cache/scheduling/lock-failure/last_run'));
@@ -262,6 +344,341 @@ test('registration persists once and lock frequency timeout and load decisions a
 	$internals->invoke('persist_scheduler_definition',['name'=>'recursive','value'=>$recursive]);
 	\dataphyre\scheduling::use_state_root(null);
 });
+
+test('concurrent claim ownership defers accepted registration while hard lock failure stays explicit',static function(Context $t): void {
+	\dataphyre\SchedulingRuntimeProbe::reset();
+	$workspace=$t->workspace('scheduling-claim-contention');
+	\dataphyre\scheduling::use_state_root($workspace->root());
+	$task=$workspace->file('tasks/run.php','<?php return true;');
+	$registrations=[];
+	$registrar=static function(mixed $callback,mixed ...$arguments)use(&$registrations): void {
+		$registrations[]=[$callback,$arguments];
+	};
+
+	$competingClaim=str_repeat('a',64);
+	\dataphyre\SchedulingRuntimeProbe::$claim_publish_competing_claim=$competingClaim;
+	$t->isTrue(\dataphyre\scheduling::run(
+		'contended',$task,0,30,'128M',[],'shop',$registrar,
+	));
+	$t->count(0,$registrations);
+	$t->same($competingClaim,trim((string)file_get_contents(
+		\dataphyre\scheduling::running_lock_file('contended'),
+	)));
+	$t->isTrue(is_file(\dataphyre\scheduling::scheduler_properties_file('contended')));
+	$t->count(1,\dataphyre\SchedulingRuntimeProbe::$claim_publish_attempts);
+	$publication=\dataphyre\SchedulingRuntimeProbe::$claim_publish_attempts[0];
+	$t->matches('/^[a-f0-9]{64}$/D',(string)$publication['source_contents']);
+	$t->same(true,$publication['source_regular']);
+	$t->same(1,$publication['source_link_count']);
+	$t->same(false,$publication['target_existed_before']);
+	$t->same([],glob(dirname(\dataphyre\scheduling::running_lock_file('contended')).'/running_lock.pending-*') ?: []);
+
+	\dataphyre\SchedulingRuntimeProbe::$claim_publish_hard_failure=true;
+	$t->isFalse(\dataphyre\scheduling::run(
+		'hard-lock-failure',$task,0,30,'128M',[],'shop',$registrar,
+	));
+	$t->count(0,$registrations);
+	$t->isFalse(file_exists(\dataphyre\scheduling::running_lock_file('hard-lock-failure')));
+	$t->isTrue(is_file(\dataphyre\scheduling::scheduler_properties_file('hard-lock-failure')));
+	$t->same([],glob(dirname(\dataphyre\scheduling::running_lock_file('hard-lock-failure')).'/running_lock.pending-*') ?: []);
+	\dataphyre\SchedulingRuntimeProbe::$claim_publish_hard_failure=false;
+	\dataphyre\SchedulingRuntimeProbe::$claim_publish_throws=true;
+	$t->isFalse(\dataphyre\scheduling::run(
+		'throwing-hard-link',$task,0,30,'128M',[],'shop',$registrar,
+	));
+	$t->count(0,$registrations);
+	$t->isFalse(file_exists(\dataphyre\scheduling::running_lock_file('throwing-hard-link')));
+	$t->same([],glob(dirname(\dataphyre\scheduling::running_lock_file('throwing-hard-link')).'/running_lock.pending-*') ?: []);
+	\dataphyre\SchedulingRuntimeProbe::$claim_publish_throws=false;
+	\dataphyre\SchedulingRuntimeProbe::$hard_link_available=false;
+	$publicationAttempts=count(\dataphyre\SchedulingRuntimeProbe::$claim_publish_attempts);
+	$t->isFalse(\dataphyre\scheduling::run(
+		'no-hard-link',$task,0,30,'128M',[],'shop',$registrar,
+	));
+	$t->count(0,$registrations);
+	$t->same($publicationAttempts,count(\dataphyre\SchedulingRuntimeProbe::$claim_publish_attempts));
+	$t->isFalse(file_exists(\dataphyre\scheduling::running_lock_file('no-hard-link')));
+	$t->same([],glob(dirname(\dataphyre\scheduling::running_lock_file('no-hard-link')).'/running_lock.pending-*') ?: []);
+	\dataphyre\SchedulingRuntimeProbe::$hard_link_available=true;
+	\dataphyre\scheduling::use_state_root(null);
+})->tag('scheduler','registration','concurrency','lock-contention');
+
+test('claim ownership revalidates cadence before clearing a newer successful completion',static function(Context $t): void {
+	\dataphyre\SchedulingRuntimeProbe::reset();
+	\dataphyre\core::$server_load_level=0;
+	$workspace=$t->workspace('scheduling-claim-cadence-revalidation');
+	\dataphyre\scheduling::use_state_root($workspace->root());
+	$task=$workspace->file('tasks/run.php','<?php return true;');
+	$oldTimestamp=(string)(time()-7200);
+	$newTimestamp=(string)time();
+	$oldReceipt=str_repeat('1',64);
+	$newReceipt=str_repeat('2',64);
+	$lastRun=$workspace->file('cache/scheduling/cadence-race/last_run',$oldTimestamp);
+	$lastSuccess=$workspace->file('cache/scheduling/cadence-race/last_success',$oldReceipt);
+	\dataphyre\SchedulingRuntimeProbe::$claim_publish_hook=static function(string $source,string $target) use (
+		$lastRun,$lastSuccess,$newTimestamp,$newReceipt,
+	): void {
+		file_put_contents($lastRun,$newTimestamp,LOCK_EX);
+		file_put_contents($lastSuccess,$newReceipt,LOCK_EX);
+		\dataphyre\SchedulingRuntimeProbe::$cadence_probe_state_path=$lastRun;
+		\dataphyre\SchedulingRuntimeProbe::$cadence_probe_lock_path=$target;
+	};
+	$registrations=[];
+	$t->isTrue(\dataphyre\scheduling::run(
+		'cadence-race',$task,3600,30,'128M',[],'shop',
+		static function(mixed $callback,mixed ...$arguments) use (&$registrations): void {
+			$registrations[]=[$callback,$arguments];
+		},
+	));
+	$t->count(0,$registrations);
+	$t->same(true,\dataphyre\SchedulingRuntimeProbe::$cadence_probe_lock_contended);
+	$t->same($newTimestamp,(string)file_get_contents($lastRun));
+	$t->same($newReceipt,(string)file_get_contents($lastSuccess));
+	$t->isFalse(file_exists(\dataphyre\scheduling::running_lock_file('cadence-race')));
+	$t->same([],glob(dirname(\dataphyre\scheduling::running_lock_file('cadence-race')).'/running_lock.pending-*') ?: []);
+	\dataphyre\scheduling::use_state_root(null);
+})->tag('scheduler','claim','concurrency','cadence','duplicate-dispatch');
+
+test('claim validation is exact bounded and inode-safe',static function(Context $t): void {
+	\dataphyre\SchedulingRuntimeProbe::reset();
+	$workspace=$t->workspace('scheduling-claim-validation');
+	$internals=$t->nonPublic(\dataphyre\scheduling::class);
+	$claim=str_repeat('b',64);
+	$valid=$workspace->file('valid-claim',$claim);
+	$t->isTrue($internals->invoke('valid_competing_running_claim',$valid));
+	$t->isFalse($internals->invoke('valid_competing_running_claim',$workspace->file('newline-claim',$claim."\n")));
+	$t->isFalse($internals->invoke('valid_competing_running_claim',$workspace->file('oversized-claim',$claim.str_repeat('c',4096))));
+	$t->isFalse($internals->invoke('valid_competing_running_claim',$workspace->directory('claim-directory')));
+	if(function_exists('posix_mkfifo')){
+		$fifo=$workspace->path('claim-fifo');
+		$t->isTrue(posix_mkfifo($fifo,0600));
+		$t->isFalse($internals->invoke('valid_competing_running_claim',$fifo));
+		@unlink($fifo);
+	}
+
+	$published=$workspace->path('running_lock');
+	$pending=$workspace->file('running_lock.pending-'.$claim,$claim);
+	$t->isTrue(link($pending,$published));
+	$t->isTrue($internals->invoke('valid_competing_running_claim',$published));
+	@unlink($published);@unlink($pending);
+	$transitionPending=$workspace->file('transition/running_lock.pending-'.$claim,$claim);
+	$transitionPublic=$workspace->path('transition/running_lock');
+	$t->isTrue(link($transitionPending,$transitionPublic));
+	\dataphyre\SchedulingRuntimeProbe::$claim_finalize_public_path=$transitionPublic;
+	\dataphyre\SchedulingRuntimeProbe::$claim_finalize_pending_path=$transitionPending;
+	$t->isTrue($internals->invoke('valid_competing_running_claim',$transitionPublic));
+	$t->isFalse(file_exists($transitionPending));
+	$t->same(1,lstat($transitionPublic)['nlink'] ?? null);
+	\dataphyre\SchedulingRuntimeProbe::$claim_finalize_public_path=null;
+	\dataphyre\SchedulingRuntimeProbe::$claim_finalize_pending_path=null;
+	$unrelated=$workspace->file('unrelated-claim',$claim);
+	$t->isTrue(link($unrelated,$published));
+	$t->isFalse($internals->invoke('valid_competing_running_claim',$published));
+
+	$owned=$workspace->file('owned-inode','owned');
+	$ownedHandle=fopen($owned,'r+');
+	$t->isTrue(is_resource($ownedHandle));
+	@unlink($owned);
+	$workspace->file('owned-inode','replacement');
+	$t->isFalse($internals->invoke('unlink_open_inode_path',$owned,$ownedHandle,[1]));
+	$t->same('replacement',(string)file_get_contents($owned));
+	if(is_resource($ownedHandle)) fclose($ownedHandle);
+	$removable=$workspace->file('removable-inode','owned');
+	$removableHandle=fopen($removable,'r+');
+	$t->isTrue(is_resource($removableHandle));
+	$t->isTrue($internals->invoke('unlink_open_inode_path',$removable,$removableHandle,[1]));
+	$t->isFalse(file_exists($removable));
+	if(is_resource($removableHandle)) fclose($removableHandle);
+})->tag('scheduler','claim','filesystem','bounded-read','inode');
+
+test('interrupted claim publication defers while live and reclaims only its exact stale link pair',static function(Context $t): void {
+	\dataphyre\SchedulingRuntimeProbe::reset();
+	\dataphyre\core::$server_load_level=0;
+	$workspace=$t->workspace('scheduling-interrupted-publication');
+	\dataphyre\scheduling::use_state_root($workspace->root());
+	$internals=$t->nonPublic(\dataphyre\scheduling::class);
+	$claim=str_repeat('d',64);
+	$definition=['name'=>'interrupted','frequency'=>0.0,'timeout'=>30.0];
+	$public=\dataphyre\scheduling::running_lock_file('interrupted');
+	$pending=$workspace->file('cache/scheduling/interrupted/running_lock.pending-'.$claim,$claim);
+	$t->isTrue(link($pending,$public));
+	$t->same(2,lstat($public)['nlink'] ?? null);
+	$t->isNull($internals->invoke('can_run',$definition));
+	$t->isTrue(is_file($public));
+	$t->isTrue(is_file($pending));
+
+	$publisher=fopen($pending,'r+');
+	$t->isTrue(is_resource($publisher));
+	$t->isTrue(is_resource($publisher) && flock($publisher,LOCK_EX|LOCK_NB));
+	$t->isTrue(touch($pending,time()-60));
+	$t->isNull($internals->invoke('can_run',$definition));
+	$t->isTrue(is_file($public));
+	$t->isTrue(is_file($pending));
+	if(is_resource($publisher)){
+		flock($publisher,LOCK_UN);
+		fclose($publisher);
+	}
+	$t->isTrue($internals->invoke('can_run',$definition));
+	$t->isFalse(file_exists($public));
+	$t->isFalse(file_exists($pending));
+
+	$unrelatedDefinition=['name'=>'unrelated-links','frequency'=>0.0,'timeout'=>1.0];
+	$unrelatedPublic=\dataphyre\scheduling::running_lock_file('unrelated-links');
+	$unrelated=$workspace->file('cache/scheduling/unrelated-links/not-the-publication-path',$claim);
+	$t->isTrue(link($unrelated,$unrelatedPublic));
+	$t->isTrue(touch($unrelated,time()-60));
+	$t->isNull($internals->invoke('can_run',$unrelatedDefinition));
+	$t->isTrue(is_file($unrelatedPublic));
+	$t->isTrue(is_file($unrelated));
+	\dataphyre\scheduling::use_state_root(null);
+})->tag('scheduler','claim','filesystem','crash-recovery','hard-link');
+
+test('private pre-publication claim recovery is bounded exact and nonblocking',static function(Context $t): void {
+	\dataphyre\SchedulingRuntimeProbe::reset();
+	$workspace=$t->workspace('scheduling-private-claim-recovery');
+	\dataphyre\scheduling::use_state_root($workspace->root());
+	$internals=$t->nonPublic(\dataphyre\scheduling::class);
+	$directory='cache/scheduling/private-recovery/';
+	$stale=[];
+	for($index=0;$index<10;$index++){
+		$claim=hash('sha256','stale-private-'.$index);
+		$contents=$index===0 ? '' : ($index===1 ? substr($claim,0,17) : $claim);
+		$stale[]=$workspace->file($directory.'running_lock.pending-'.$claim,$contents);
+		$t->isTrue(touch($stale[$index],time()-60));
+	}
+	$oversizedClaim=hash('sha256','oversized-private');
+	$oversized=$workspace->file($directory.'running_lock.pending-'.$oversizedClaim,$oversizedClaim.str_repeat('x',4096));
+	$t->isTrue(touch($oversized,time()-60));
+	$wrongClaim=hash('sha256','wrong-private');
+	$wrong=$workspace->file($directory.'running_lock.pending-'.$wrongClaim,str_repeat('f',64));
+	$t->isTrue(touch($wrong,time()-60));
+	$freshClaim=hash('sha256','fresh-private');
+	$fresh=$workspace->file($directory.'running_lock.pending-'.$freshClaim,$freshClaim);
+	$liveClaim=hash('sha256','live-private');
+	$live=$workspace->file($directory.'running_lock.pending-'.$liveClaim,$liveClaim);
+	$liveHandle=fopen($live,'r+');
+	$t->isTrue(is_resource($liveHandle));
+	$t->isTrue(is_resource($liveHandle) && flock($liveHandle,LOCK_EX|LOCK_NB));
+	$t->isTrue(touch($live,time()-60));
+	$directoryClaim=hash('sha256','directory-private');
+	$claimDirectory=$workspace->directory($directory.'running_lock.pending-'.$directoryClaim);
+	$symlinkClaim=hash('sha256','symlink-private');
+	$symlinkTarget=$workspace->file('symlink-private-target','safe');
+	$symlink=$workspace->path($directory.'running_lock.pending-'.$symlinkClaim);
+	$t->isTrue(symlink($symlinkTarget,$symlink));
+	$fifo=null;
+	if(function_exists('posix_mkfifo')){
+		$fifoClaim=hash('sha256','fifo-private');
+		$fifo=$workspace->path($directory.'running_lock.pending-'.$fifoClaim);
+		$t->isTrue(posix_mkfifo($fifo,0600));
+		$t->isTrue(touch($fifo,time()-60));
+	}
+
+	$t->same(8,$internals->invoke('reclaim_stale_pending_claims','private-recovery',1.0));
+	$t->same(2,$internals->invoke('reclaim_stale_pending_claims','private-recovery',1.0));
+	foreach($stale as $path) $t->isFalse(file_exists($path));
+	$t->isTrue(is_file($oversized));
+	$t->isTrue(is_file($wrong));
+	$t->isTrue(is_file($fresh));
+	$t->isTrue(is_file($live));
+	$t->isTrue(is_dir($claimDirectory));
+	$t->isTrue(is_link($symlink));
+	if(is_string($fifo)) $t->isTrue(file_exists($fifo));
+	if(is_resource($liveHandle)){
+		flock($liveHandle,LOCK_UN);
+		fclose($liveHandle);
+	}
+	$t->same(1,$internals->invoke('reclaim_stale_pending_claims','private-recovery',1.0));
+	$t->isFalse(file_exists($live));
+	if(is_string($fifo)) @unlink($fifo);
+	@unlink($symlink);
+	@rmdir($claimDirectory);
+	$automaticClaim=hash('sha256','automatic-private-recovery');
+	$automatic=$workspace->file($directory.'running_lock.pending-'.$automaticClaim,$automaticClaim);
+	$t->isTrue(touch($automatic,time()-60));
+	$nextClaim=hash('sha256','next-private-claim');
+	$nextHandle=$internals->invoke('acquire_running_lock','private-recovery',$nextClaim,1.0);
+	$t->isTrue(is_resource($nextHandle));
+	$t->isFalse(file_exists($automatic));
+	$t->isTrue($internals->invoke('release_dispatch_claim','private-recovery',$nextClaim,$nextHandle));
+	\dataphyre\scheduling::use_state_root(null);
+})->tag('scheduler','claim','filesystem','crash-recovery','bounded-scan','nonblocking');
+
+test('task runner and claim release reject nonregular linked and oversized lock state before bounded reads',static function(Context $t): void {
+	\dataphyre\SchedulingRuntimeProbe::reset();
+	$workspace=$t->workspace('scheduling-lock-reader-validation');
+	\dataphyre\scheduling::use_state_root($workspace->root());
+	$schedulingInternals=$t->nonPublic(\dataphyre\scheduling::class);
+	$runnerInternals=$t->nonPublic(dataphyre_scheduling_task_runner::class);
+	$claim=str_repeat('9',64);
+	$oversized=$workspace->file('reader/oversized-lock',$claim.str_repeat('x',4096));
+	$newline=$workspace->file('reader/newline-lock',$claim."\n");
+	$directory=$workspace->directory('reader/directory-lock');
+	$symlink=$workspace->path('reader/symlink-lock');
+	$t->isTrue(symlink($oversized,$symlink));
+	$hardSource=$workspace->file('reader/hard-source',$claim);
+	$hardLinked=$workspace->path('reader/hard-linked-lock');
+	$t->isTrue(link($hardSource,$hardLinked));
+	$t->isFalse($runnerInternals->invoke('claimRunningLock',$oversized,$claim,[]));
+	$t->isFalse($runnerInternals->invoke('claimRunningLock',$newline,$claim,[]));
+	$t->isFalse($runnerInternals->invoke('claimRunningLock',$directory,$claim,[]));
+	$t->isFalse($runnerInternals->invoke('claimRunningLock',$symlink,$claim,[]));
+	$t->isFalse($runnerInternals->invoke('claimRunningLock',$hardLinked,$claim,[]));
+	$directoryHandle=fopen($directory,'r');
+	$t->isTrue(is_resource($directoryHandle));
+	$t->isFalse($runnerInternals->invoke('claimedPathMatches',$directory,$directoryHandle,$claim,[]));
+	if(is_resource($directoryHandle)) fclose($directoryHandle);
+	$oversizedHandle=fopen($oversized,'r+');
+	$t->isTrue(is_resource($oversizedHandle));
+	$t->isFalse($runnerInternals->invoke('claimedPathMatches',$oversized,$oversizedHandle,$claim,[]));
+	if(is_resource($oversizedHandle)) fclose($oversizedHandle);
+	$hardLinkedHandle=fopen($hardLinked,'r+');
+	$t->isTrue(is_resource($hardLinkedHandle));
+	$t->isFalse($runnerInternals->invoke('claimedPathMatches',$hardLinked,$hardLinkedHandle,$claim,[]));
+	if(is_resource($hardLinkedHandle)) fclose($hardLinkedHandle);
+	$readerFifo=null;
+	if(function_exists('posix_mkfifo')){
+		$fifo=$workspace->path('reader/fifo-lock');
+		$t->isTrue(posix_mkfifo($fifo,0600));
+		$t->isFalse($runnerInternals->invoke('claimRunningLock',$fifo,$claim,[]));
+		$readerFifo=$fifo;
+	}
+
+	$releaseOversized=$workspace->file('cache/scheduling/release-oversized/running_lock',$claim.str_repeat('x',4096));
+	$t->isFalse($schedulingInternals->invoke('release_dispatch_claim','release-oversized',$claim));
+	$t->isTrue(is_file($releaseOversized));
+	$releaseNewline=$workspace->file('cache/scheduling/release-newline/running_lock',$claim."\n");
+	$t->isFalse($schedulingInternals->invoke('release_dispatch_claim','release-newline',$claim));
+	$t->isTrue(is_file($releaseNewline));
+	$releaseHardSource=$workspace->file('cache/scheduling/release-linked/source',$claim);
+	$releaseHardLinked=$workspace->path('cache/scheduling/release-linked/running_lock');
+	$t->isTrue(link($releaseHardSource,$releaseHardLinked));
+	$t->isFalse($schedulingInternals->invoke('release_dispatch_claim','release-linked',$claim));
+	$t->isTrue(is_file($releaseHardLinked));
+	$releaseDirectory=$workspace->directory('cache/scheduling/release-directory/running_lock');
+	$t->isFalse($schedulingInternals->invoke('release_dispatch_claim','release-directory',$claim));
+	$t->isTrue(is_dir($releaseDirectory));
+	$releaseSymlinkTarget=$workspace->file('cache/scheduling/release-symlink/target',$claim);
+	$releaseSymlink=$workspace->path('cache/scheduling/release-symlink/running_lock');
+	$t->isTrue(symlink($releaseSymlinkTarget,$releaseSymlink));
+	$t->isFalse($schedulingInternals->invoke('release_dispatch_claim','release-symlink',$claim));
+	$t->isTrue(is_link($releaseSymlink));
+	$releaseFifo=null;
+	if(function_exists('posix_mkfifo')){
+		$releaseFifo=$workspace->path('cache/scheduling/release-fifo/running_lock');
+		$workspace->directory('cache/scheduling/release-fifo');
+		$t->isTrue(posix_mkfifo($releaseFifo,0600));
+		$t->isFalse($schedulingInternals->invoke('release_dispatch_claim','release-fifo',$claim));
+	}
+	$releaseExact=$workspace->file('cache/scheduling/release-exact/running_lock',$claim);
+	$t->isTrue($schedulingInternals->invoke('release_dispatch_claim','release-exact',$claim));
+	$t->isFalse(file_exists($releaseExact));
+	if(is_string($readerFifo)) @unlink($readerFifo);
+	if(is_string($releaseFifo)) @unlink($releaseFifo);
+	@unlink($releaseSymlink);
+	@rmdir($releaseDirectory);
+	\dataphyre\scheduling::use_state_root(null);
+})->tag('scheduler','task-runner','claim','filesystem','bounded-read','nonblocking');
 
 test('dispatch URLs and both internal HTTP transports stay local bounded and failure-safe',static function(Context $t): void {
 	\dataphyre\SchedulingRuntimeProbe::reset();
@@ -402,6 +819,25 @@ test('managed callback runs only in the fresh scheduler CGI with an outer signed
 	$t->contains("? \$candidate['budget_milliseconds']",$gateway);
 	$t->contains('SCHEDULER_TRANSPORT_MARGIN_MILLISECONDS',$gateway);
 })->tag('fresh-cgi','process-boundary','claim','signed-budget','security','deletion');
+
+test('managed callback failure reporter receives the exact framework phase and cannot change task outcome',static function(Context $t): void {
+	$reported=[];
+	$t->nonPublic(dataphyre_scheduling_task_runner::class)->invoke(
+		'reportManagedFailure',
+		static function(string $phase,Throwable $failure) use (&$reported): void {
+			$reported[]=[$phase,get_class($failure),$failure->getMessage()];
+		},
+		'task_execution',
+		new RuntimeException('safe_failure_code'),
+	);
+	$t->same([['task_execution',RuntimeException::class,'safe_failure_code']],$reported);
+	$t->nonPublic(dataphyre_scheduling_task_runner::class)->invoke(
+		'reportManagedFailure',
+		static function(): void {throw new RuntimeException('reporter_failure');},
+		'task_cleanup',
+		new RuntimeException('task_failure'),
+	);
+})->tag('managed-callback','throwable','failure-phase','diagnostic','fail-safe');
 
 test('task runner rejects unavailable invalid and missing scheduler requests before execution',static function(Context $t): void {
 	\dataphyre\SchedulingRuntimeProbe::reset();

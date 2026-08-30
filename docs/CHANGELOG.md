@@ -10,6 +10,18 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Added the application-neutral self-hosted scheduler receiver to the common
+  runtime boundary. Exact path-safe scheduler names, internal-traffic
+  provenance, bounded claim/budget/timestamp headers, and the
+  `scheduler_dispatch_v2` purpose/context are verified before the scheduling
+  module and task runner are invoked; managed scheduler callbacks remain on
+  their distinct signed CGI gateway.
+- Made self-hosted scheduler claim publication one-time and crash-aware. A
+  private same-directory inode is flushed and advisory-locked before a
+  no-overwrite hard link publishes `running_lock`; exact handle/path/link-count
+  checks protect release and task-runner consumption, while bounded recovery
+  handles interrupted private or two-link publication states without deleting
+  an unrelated successor claim.
 - Extended the application-neutral secret redactor to treat PIN and passcode
   fields as credential material, including normalized snake-case and camel-case
   variants, so structured diagnostics cannot disclose short access secrets.

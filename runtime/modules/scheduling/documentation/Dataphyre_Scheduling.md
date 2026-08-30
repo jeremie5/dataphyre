@@ -244,6 +244,15 @@ if(\dataphyre\scheduling::in_task_runner()){
    and completed claim; failure releases the claim and cannot starve later
    definitions.
 
+Failed callbacks write one private, bounded line through the existing root
+gateway stderr log. It contains only the signed request's validated task name,
+an allowlisted framework phase, exit/timeout kind, bounded exception short
+class, and either a conservative machine-code message or a fixed redaction.
+Claims, signatures, paths, environment values, SQL, headers, stack traces, and
+raw task stdout/stderr are never retained or returned. This is internal
+diagnostic evidence only; it adds no runtime status, release state, application
+setting, or customer-visible deployment concept.
+
 There is no second scheduler worker, runtime environment file, reusable
 dispatch secret, shell, or application-selectable process. Outside the managed
 Cloud pool, the request-driven scheduling API remains available for compatible
@@ -265,7 +274,14 @@ Files:
 - `last_run`: latest successful completion timestamp
 - `last_success`: exact claim completed by the latest successful task
 - `running_lock`: overlap-prevention lock
+- `running_lock.pending-<claim>`: private pre-publication claim inode; normally
+  removed immediately after its hard link becomes `running_lock`
 - `tracelog.html`: optional tracelog output from the runner
+
+The scheduler state root must reside on a filesystem that supports atomic
+same-directory hard links and must be writable only by the trusted Dataphyre
+runtime OS identity. The legacy self-hosted state-root override carries that
+same operator responsibility; request or tenant input must never select it.
 
 ---
 
@@ -273,12 +289,30 @@ Files:
 
 - Scheduler names are validated before they touch the filesystem.
 - Internal callback signatures are purpose-, scheduler-name-, and one-time-claim-bound, time limited, and transported in request headers rather than the URL.
-- Pending dispatch creation is atomic across PHP workers, and the task runner holds the claim lock through execution to reject concurrent replay.
+- Pending dispatch creation flushes a private inode before publishing it through
+  an atomic no-overwrite hard link across PHP workers, and the task runner holds
+  the claim lock through execution to reject concurrent replay. If PHP cannot
+  provide the hard-link primitive, registration fails explicitly without a callback.
+- After winning the public claim, a request retains the claim inode lock while it
+  rechecks completion cadence and before it clears prior success state. This prevents
+  a stale due decision from dispatching work that another request completed while
+  the winner was waiting to claim.
+- Recovery inspects and removes only a fixed number of expired, regular, single-link
+  private claim files per registration. Reads are bounded; empty or exact claim-prefix
+  bytes identify interrupted writes, while active, unrelated-content, or non-regular
+  candidates are preserved.
+- If a process exits between public-link creation and private-link cleanup, the
+  exact two-link claim remains a live lock until its timeout. Dataphyre then
+  reclaims both names only while holding and revalidating that same regular inode.
+- When concurrent requests both find a task due, the request that loses the valid
+  exclusive claim still reports successful registration and schedules no duplicate
+  callback. An atomic publication failure without a proven competing claim remains
+  an explicit failure.
 - Managed signed ticks fail closed unless every unique registration is due or suppressed, every due claim completes, each completion receipt matches its claim, and every accepted definition is lock-free at report time.
 - Framework-only and legacy applications share the same authenticated runtime route, so application routing cannot accidentally shadow scheduler execution.
 - Task definitions are rewritten when their configuration changes; the cache is not write-once.
 - The internal runner validates dependency and task-file paths before requiring them.
 - Stale locks are reclaimed only while the framework holds the exact expired
-  claim inode exclusively; a live, changed, linked, malformed, or contended lock
-  defers dispatch.
+  claim inode exclusively; a live, changed, malformed, unrelated-linked, or
+  contended lock defers dispatch.
 - The module is request-driven. It is meant for low-friction background maintenance, not a full external worker system.

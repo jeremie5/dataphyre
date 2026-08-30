@@ -38,9 +38,9 @@ test('managed scheduler accepts only the canonical signed and claim-bound CGI ro
 	$runtime=(string)file_get_contents(dirname(__DIR__).'/kernel/runtime.php');
 	$router=(string)file_get_contents(dirname(__DIR__).'/kernel/application_runtime_router.php');
 	$gateway=(string)file_get_contents(dirname(__DIR__).'/kernel/application_runtime_scheduler_gateway.php');
-	$t->isFalse(str_contains($runtime,'boot_internal_runtime_route'));
-	$t->isFalse(str_contains($runtime,'scheduler_route_name'));
-	$t->isFalse(str_contains($runtime,'/dataphyre/scheduler/'));
+	$t->contains('boot_internal_runtime_route',$runtime);
+	$t->contains('scheduler_route_name',$runtime);
+	$t->contains('/dataphyre/scheduler/',$runtime);
 	$t->contains("(\$_SERVER['REQUEST_METHOD'] ?? '')!=='POST'",$router);
 	$t->contains("'/dataphyre/runtime/scheduler/register'",$router);
 	$t->contains("'/dataphyre/runtime/scheduler/callback'",$router);

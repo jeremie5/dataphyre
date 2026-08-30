@@ -163,18 +163,18 @@ test('v6 status remains bounded with seventy-one private definitions',static fun
 	$t->isFalse(array_key_exists('definitions',$summary));
 })->tag('status','bounds','serve-71','registration');
 
-test('managed source executes only inside the fresh claimed scheduler CGI and contains no second worker',static function(Context $t): void {
+test('managed source stays CGI-only while the separate self-hosted route retains its purpose-bound verifier',static function(Context $t): void {
 	$core=dirname(__DIR__).'/kernel';$scheduling=dirname(__DIR__,2).'/scheduling/kernel';
 	$router=(string)file_get_contents($core.'/application_runtime_router.php');
 	$gateway=(string)file_get_contents($core.'/application_runtime_scheduler_gateway.php');
 	$supervisor=(string)file_get_contents($core.'/application_runtime_supervisor.php');
 	$runtime=(string)file_get_contents($core.'/runtime.php');
 	$runner=(string)file_get_contents($scheduling.'/task_runner.php');
-	foreach(['scheduler_dispatch_v2','DATAPHYRE_SCHEDULER_DISPATCH_SECRET_FILE','app_override_key'] as $obsolete){
-		$t->isFalse(str_contains($runtime,$obsolete));
-		$t->isFalse(str_contains($router,$obsolete));
-		$t->isFalse(str_contains($supervisor,$obsolete));
-		$t->isFalse(str_contains($runner,$obsolete));
+	foreach(['scheduler_dispatch_v2','DATAPHYRE_SCHEDULER_DISPATCH_SECRET_FILE','app_override_key'] as $selfHostedBoundary){
+		$t->contains($selfHostedBoundary,$runtime);
+		$t->isFalse(str_contains($router,$selfHostedBoundary));
+		$t->isFalse(str_contains($supervisor,$selfHostedBoundary));
+		$t->isFalse(str_contains($runner,$selfHostedBoundary));
 	}
 	$t->isFalse(file_exists($scheduling.'/managed_task_worker.php'));
 	$t->contains('execute_managed_registration()',$router);

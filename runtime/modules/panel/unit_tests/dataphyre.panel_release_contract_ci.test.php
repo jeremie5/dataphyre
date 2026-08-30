@@ -123,6 +123,8 @@ test('public export boundary excludes generated trees while retaining the cache 
 		$t->contains($directory, $installer['exclude'] ?? []);
 		$t->contains("'".$directory."/'", $publicCheck);
 	}
+	$t->contains("\$RelativePath.Equals('.git'", $prepare);
+	$t->contains("\$RelativePath.StartsWith('.git/'", $prepare);
 	$t->notContains('/runtime/modules/cache/', $dist);
 	$t->notContains('`runtime/modules/cache/`', $publicExportDocs);
 	$t->notContains("'runtime/modules/cache/'", $publicCheck);

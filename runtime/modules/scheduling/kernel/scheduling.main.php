@@ -37,6 +37,10 @@ class scheduling {
 	private static ?array $runtime_tick_state=null;
 	/** Fixed transport allowance for the legacy self-hosted callback route. */
 	private const RUNTIME_CALLBACK_MARGIN_MILLISECONDS=1000;
+	/** Maximum directory entries inspected while recovering private claim files. */
+	private const PENDING_CLAIM_SCAN_LIMIT=64;
+	/** Maximum stale private claims removed by one registration attempt. */
+	private const PENDING_CLAIM_RECLAIM_LIMIT=8;
 
 	/** Selects an alternate scheduler state root for embedded and isolated runtimes. */
 	public static function use_state_root(?string $root): void {
@@ -169,7 +173,9 @@ class scheduling {
 	 * The method validates the scheduler name, task file, and dependency files before writing properties.json. If the task
 	 * can run now, a running_lock file is created and a shutdown callback performs an internal HTTP request to the scheduler
 	 * route. The task runner updates last_run only after successful execution; the exclusive running lock prevents concurrent
-	 * requests from enqueueing the same task while its callback is pending.
+	 * requests from enqueueing the same task while its callback is pending. Losing the claim to another valid request defers
+	 * dispatch without changing the successful registration result. After winning, the request rechecks cadence while its
+	 * claim excludes other dispatchers, so a task completed during the initial due check is not dispatched twice.
      *
      * @param string $name Scheduler name used for cache paths and route dispatch.
      * @param string $file_path PHP task file that will be executed by the scheduler route.
@@ -236,17 +242,35 @@ class scheduling {
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Failed creating scheduler dispatch claim', $T='warning');
 				return false;
 			}
-			if(self::acquire_running_lock($name, $dispatch_claim)!==true){
+			$claim_handle=self::acquire_running_lock($name,$dispatch_claim,(float)$scheduler['timeout']);
+			if($claim_handle===null){
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Scheduler dispatch deferred because another request owns the claim');
+				return true;
+			}
+			if(!is_resource($claim_handle)){
 				self::record_runtime_tick_counter('dispatch_failure_count');
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Failed atomically locking scheduler', $T='warning');
 				return false;
 			}
+			if(self::cadence_due($scheduler)!==true){
+				$released=self::release_dispatch_claim($name,$dispatch_claim,$claim_handle);
+				if($released!==true){
+					self::record_runtime_tick_counter('dispatch_failure_count');
+					tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Failed releasing a scheduler claim after cadence revalidation', $T='warning');
+					return false;
+				}
+				self::record_runtime_tick_counter('suppressed_count');
+				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Scheduler dispatch suppressed by cadence revalidation after claiming');
+				return true;
+			}
 			if(self::clear_success_state($name)!==true){
-				self::release_dispatch_claim($name,$dispatch_claim);
+				self::release_dispatch_claim($name,$dispatch_claim,$claim_handle);
 				self::record_runtime_tick_counter('dispatch_failure_count');
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Failed clearing the previous scheduler success state', $T='warning');
 				return false;
 			}
+			@flock($claim_handle,LOCK_UN);
+			@fclose($claim_handle);
 			self::record_runtime_tick_counter('dispatch_claim_count');
 			if(self::activation_mode()==='supervisor'){
 				$dispatched=self::dispatch_registered_scheduler($name,$app_override,$dispatch_claim);
@@ -271,28 +295,193 @@ class scheduling {
 	/**
 	 * Creates one pending-dispatch lock without overwriting a concurrent claim.
 	 *
-	 * The exclusive-create filesystem primitive is the scheduler's process boundary:
-	 * only the request that creates the lock receives the claim and may register the
-	 * shutdown dispatch. The task runner later takes an advisory lock on the same
-	 * file, which prevents a valid signed callback from being replayed concurrently.
+	 * A claim is flushed to a private pending inode before a same-directory hard link
+	 * publishes it without overwrite. Only the request that creates the public link
+	 * may register the shutdown dispatch. The returned inode remains advisory-locked
+	 * through the caller's cadence recheck; the task runner later takes the same lock
+	 * on that inode, which prevents a valid signed callback from being replayed. A
+	 * bounded scan reclaims expired private inodes left by pre-publication process exits.
+	 *
+	 * @return resource|null|false Locked claim handle when acquired, null when
+	 * another valid claim won, or false for corrupt state or filesystem failure.
 	 */
-	private static function acquire_running_lock(string $name, string $dispatch_claim): bool {
+	private static function acquire_running_lock(string $name,string $dispatch_claim,float $timeout=1.0): mixed {
 		if(preg_match('/^[a-f0-9]{64}$/D', $dispatch_claim)!==1){
 			return false;
 		}
+		if(!function_exists('link')) return false;
+		self::reclaim_stale_pending_claims($name,$timeout);
 		$path=self::running_lock_file($name);
-		$handle=@fopen($path, 'x');
-		if(!is_resource($handle)){
+		$pending_path=$path.'.pending-'.$dispatch_claim;
+		$handle=@fopen($pending_path,'x+');
+		if(!is_resource($handle)) return false;
+		$published=false;
+		$accepted=false;
+		try{
+			if(@flock($handle,LOCK_EX|LOCK_NB)!==true) return false;
+			$written=@fwrite($handle,$dispatch_claim);
+			if($written!==strlen($dispatch_claim) || @fflush($handle)!==true
+				|| self::open_inode_matches_path($pending_path,$handle,[1])!==true){
+				return false;
+			}
+			for($attempt=0; $attempt<2; $attempt++){
+				try{$linked=@link($pending_path,$path);}
+				catch(\Throwable){$linked=false;}
+				if($linked){
+					$published=true;
+					break;
+				}
+				if(self::valid_competing_running_claim($path)) return null;
+				clearstatcache(true,$path);
+				if($attempt===0 && !file_exists($path) && !is_link($path)) continue;
+				return false;
+			}
+			if(!$published) return false;
+			$pending_removed=self::unlink_open_inode_path($pending_path,$handle,[2]);
+			if(!$pending_removed && self::open_inode_matches_path($path,$handle,[1])!==true){
+				return false;
+			}
+			if(self::open_inode_matches_path($path,$handle,[1])!==true){
+				return false;
+			}
+			$accepted=true;
+			return $handle;
+		}finally{
+			if(!$accepted && $published){
+				self::unlink_open_inode_path($path,$handle,[1,2]);
+			}
+			if(!$accepted){
+				self::unlink_open_inode_path($pending_path,$handle,[1,2]);
+				@fclose($handle);
+			}
+		}
+	}
+
+	/** Proves that the path still names the exact regular inode held by this process. */
+	private static function open_inode_matches_path(string $path,mixed $handle,array $allowed_link_counts): bool {
+		clearstatcache(true,$path);
+		if(!is_resource($handle) || is_link($path)) return false;
+		$handle_stat=@fstat($handle);
+		$path_stat=@lstat($path);
+		return is_array($handle_stat) && is_array($path_stat)
+			&& (($handle_stat['mode'] ?? 0)&0170000)===0100000
+			&& (($path_stat['mode'] ?? 0)&0170000)===0100000
+			&& in_array(($path_stat['nlink'] ?? 0),$allowed_link_counts,true)
+			&& ($handle_stat['nlink'] ?? null)===($path_stat['nlink'] ?? null)
+			&& ($handle_stat['dev'] ?? null)===($path_stat['dev'] ?? null)
+			&& ($handle_stat['ino'] ?? null)===($path_stat['ino'] ?? null);
+	}
+
+	/** Unlinks a path only while it still names the caller's exact open inode. */
+	private static function unlink_open_inode_path(string $path,mixed $handle,array $allowed_link_counts): bool {
+		return self::open_inode_matches_path($path,$handle,$allowed_link_counts) && @unlink($path);
+	}
+
+	/** Proves that an atomic publication failure was caused by another valid claim. */
+	private static function valid_competing_running_claim(string $path): bool {
+		clearstatcache(true,$path);
+		if(is_link($path)) return false;
+		$initial_stat=@lstat($path);
+		if(!is_array($initial_stat) || (($initial_stat['mode'] ?? 0)&0170000)!==0100000
+			|| !in_array(($initial_stat['nlink'] ?? 0),[1,2],true)) return false;
+		$handle=@fopen($path,'r');
+		if(!is_resource($handle)) return false;
+		$handle_stat=@fstat($handle);
+		if(!is_array($handle_stat) || (($handle_stat['mode'] ?? 0)&0170000)!==0100000
+			|| !in_array(($handle_stat['nlink'] ?? 0),[1,2],true)){
+			@fclose($handle);
 			return false;
 		}
-		$written=@fwrite($handle, $dispatch_claim);
-		$flushed=$written===strlen($dispatch_claim) && @fflush($handle);
+		$stored=(string)stream_get_contents($handle,65);
+		$handle_stat=@fstat($handle);
+		clearstatcache(true,$path);
+		$path_stat=@lstat($path);
+		$same=is_array($handle_stat) && is_array($path_stat)
+			&& (($handle_stat['mode'] ?? 0)&0170000)===0100000
+			&& (($path_stat['mode'] ?? 0)&0170000)===0100000
+			&& ($handle_stat['nlink'] ?? null)===($path_stat['nlink'] ?? null)
+			&& ($handle_stat['dev'] ?? null)===($path_stat['dev'] ?? null)
+			&& ($handle_stat['ino'] ?? null)===($path_stat['ino'] ?? null);
+		if(!$same || preg_match('/^[a-f0-9]{64}$/D',$stored)!==1){
+			@fclose($handle);
+			return false;
+		}
+		if(($path_stat['nlink'] ?? 0)===1){
+			@fclose($handle);
+			return true;
+		}
+		$pending_path=$path.'.pending-'.$stored;
+		clearstatcache(true,$pending_path);
+		if(is_link($pending_path)){
+			@fclose($handle);
+			return false;
+		}
+		$pending_stat=@lstat($pending_path);
+		$pending_matches=is_array($pending_stat)
+			&& (($pending_stat['mode'] ?? 0)&0170000)===0100000
+			&& ($pending_stat['nlink'] ?? 0)===2
+			&& ($pending_stat['dev'] ?? null)===($path_stat['dev'] ?? null)
+			&& ($pending_stat['ino'] ?? null)===($path_stat['ino'] ?? null);
+		if(!$pending_matches){
+			$pending_matches=self::open_inode_matches_path($path,$handle,[1]);
+		}
 		@fclose($handle);
-		if($flushed!==true){
-			@unlink($path);
+		return $pending_matches;
+	}
+
+	/** Performs bounded recovery of expired private claim inodes left before publication. */
+	private static function reclaim_stale_pending_claims(string $name,float $timeout): int {
+		if(self::valid_scheduler_name($name)!==true) return 0;
+		$directory=self::scheduler_directory($name);
+		clearstatcache(true,$directory);
+		if(is_link($directory) || !is_dir($directory)) return 0;
+		$directory_handle=@opendir($directory);
+		if(!is_resource($directory_handle)) return 0;
+		$inspected=0;
+		$reclaimed=0;
+		try{
+			while($inspected<self::PENDING_CLAIM_SCAN_LIMIT
+				&& $reclaimed<self::PENDING_CLAIM_RECLAIM_LIMIT
+				&& ($entry=readdir($directory_handle))!==false){
+				if($entry==='.' || $entry==='..') continue;
+				$inspected++;
+				if(preg_match('/^running_lock\.pending-([a-f0-9]{64})$/D',$entry,$matches)!==1) continue;
+				if(self::reclaim_stale_private_claim($directory.$entry,$matches[1],$timeout)) $reclaimed++;
+			}
+		}finally{
+			@closedir($directory_handle);
+		}
+		return $reclaimed;
+	}
+
+	/** Reclaims one expired single-link pending inode after exact bounded prefix validation. */
+	private static function reclaim_stale_private_claim(string $path,string $expected_claim,float $timeout): bool {
+		clearstatcache(true,$path);
+		if(preg_match('/^[a-f0-9]{64}$/D',$expected_claim)!==1 || is_link($path)) return false;
+		$initial_stat=@lstat($path);
+		if(!is_array($initial_stat) || (($initial_stat['mode'] ?? 0)&0170000)!==0100000
+			|| ($initial_stat['nlink'] ?? 0)!==1) return false;
+		$handle=@fopen($path,'r+');
+		if(!is_resource($handle)) return false;
+		$handle_stat=@fstat($handle);
+		if(!is_array($handle_stat) || (($handle_stat['mode'] ?? 0)&0170000)!==0100000
+			|| ($handle_stat['nlink'] ?? 0)!==1){
+			@fclose($handle);
 			return false;
 		}
-		return true;
+		if(@flock($handle,LOCK_EX|LOCK_NB)!==true){@fclose($handle);return false;}
+		@rewind($handle);
+		$stored=stream_get_contents($handle,65);
+		$handle_stat=@fstat($handle);
+		$mtime=is_array($handle_stat) ? ($handle_stat['mtime'] ?? null) : null;
+		$age=is_int($mtime) ? max(0,time()-$mtime) : 0;
+		$content_matches=is_string($stored) && strlen($stored)<=64
+			&& hash_equals(substr($expected_claim,0,strlen($stored)),$stored);
+		$removed=$content_matches && $age>=max(1.0,$timeout)
+			&& self::unlink_open_inode_path($path,$handle,[1]);
+		@flock($handle,LOCK_UN);
+		@fclose($handle);
+		return $removed;
 	}
 
 	/**
@@ -449,16 +638,25 @@ class scheduling {
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Server load too high for scheduler', "warning");
 			return null;
 		}
-		$last_run_file=self::last_run_file((string)$scheduler['name']);
 		$running_lock_file=self::running_lock_file((string)$scheduler['name']);
-		clearstatcache(true, $last_run_file);
 		clearstatcache(true, $running_lock_file);
 		if(file_exists($running_lock_file) || is_link($running_lock_file)){
-			if(self::reclaim_stale_running_lock($running_lock_file,(float)$scheduler['timeout'])!==true){
+			$lock_stat=is_link($running_lock_file) ? false : @lstat($running_lock_file);
+			$reclaimed=is_array($lock_stat) && ($lock_stat['nlink'] ?? 0)===2
+				? self::reclaim_stale_published_claim($running_lock_file,(float)$scheduler['timeout'])
+				: self::reclaim_stale_running_lock($running_lock_file,(float)$scheduler['timeout']);
+			if($reclaimed!==true){
 				tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Scheduler has a live, locked, or invalid running claim', $T='warning');
 				return null;
 			}
 		}
+		return self::cadence_due($scheduler);
+	}
+
+	/** Rechecks success cadence while the caller owns the exclusive dispatch path. */
+	private static function cadence_due(array $scheduler): bool {
+		$last_run_file=self::last_run_file((string)$scheduler['name']);
+		clearstatcache(true,$last_run_file);
 		$last_run=self::read_last_run_timestamp($last_run_file);
 		if($last_run===null || self::has_success_state((string)$scheduler['name'],$last_run)!==true){
 			tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $S='Scheduler has no complete successful state pair and must retry', $T='warning');
@@ -473,27 +671,78 @@ class scheduling {
 		return false;
 	}
 
-	/** Reclaims an expired claim only after acquiring and proving its exact inode. */
-	private static function reclaim_stale_running_lock(string $path,float $timeout): bool {
+	/** Reclaims an expired claim interrupted between atomic publication and pending-link cleanup. */
+	private static function reclaim_stale_published_claim(string $path,float $timeout): bool {
+		clearstatcache(true,$path);
 		if(is_link($path)) return false;
+		$initial_stat=@lstat($path);
+		if(!is_array($initial_stat) || (($initial_stat['mode'] ?? 0)&0170000)!==0100000
+			|| ($initial_stat['nlink'] ?? 0)!==2) return false;
 		$handle=@fopen($path,'r+');
 		if(!is_resource($handle)) return false;
+		$handle_stat=@fstat($handle);
+		if(!is_array($handle_stat) || (($handle_stat['mode'] ?? 0)&0170000)!==0100000
+			|| ($handle_stat['nlink'] ?? 0)!==2){
+			@fclose($handle);
+			return false;
+		}
 		if(@flock($handle,LOCK_EX|LOCK_NB)!==true){@fclose($handle);return false;}
 		@rewind($handle);
-		$stored=trim((string)stream_get_contents($handle));
+		$stored=(string)stream_get_contents($handle,65);
 		$handle_stat=@fstat($handle);
+		clearstatcache(true,$path);
 		$path_stat=@lstat($path);
-		$same=is_array($handle_stat) && is_array($path_stat)
-			&& (($path_stat['mode'] ?? 0)&0170000)===0100000
-			&& ($path_stat['nlink'] ?? 0)===1
-			&& ($handle_stat['dev'] ?? null)===($path_stat['dev'] ?? null)
-			&& ($handle_stat['ino'] ?? null)===($path_stat['ino'] ?? null);
+		$pending_path=preg_match('/^[a-f0-9]{64}$/D',$stored)===1
+			? $path.'.pending-'.$stored
+			: '';
+		if($pending_path!=='') clearstatcache(true,$pending_path);
+		$pending_stat=$pending_path!=='' && !is_link($pending_path) ? @lstat($pending_path) : false;
 		$mtime=is_array($handle_stat) ? ($handle_stat['mtime'] ?? null) : null;
 		$age=is_int($mtime) ? max(0,time()-$mtime) : 0;
-		$removed=$same
+		$same=is_array($handle_stat) && is_array($path_stat) && is_array($pending_stat)
+			&& (($handle_stat['mode'] ?? 0)&0170000)===0100000
+			&& (($path_stat['mode'] ?? 0)&0170000)===0100000
+			&& (($pending_stat['mode'] ?? 0)&0170000)===0100000
+			&& ($handle_stat['nlink'] ?? 0)===2
+			&& ($path_stat['nlink'] ?? 0)===2
+			&& ($pending_stat['nlink'] ?? 0)===2
+			&& ($handle_stat['dev'] ?? null)===($path_stat['dev'] ?? null)
+			&& ($handle_stat['ino'] ?? null)===($path_stat['ino'] ?? null)
+			&& ($pending_stat['dev'] ?? null)===($path_stat['dev'] ?? null)
+			&& ($pending_stat['ino'] ?? null)===($path_stat['ino'] ?? null);
+		$removed=$same && $age>=max(1.0,$timeout)
+			&& self::unlink_open_inode_path($path,$handle,[2])
+			&& self::unlink_open_inode_path($pending_path,$handle,[1]);
+		@flock($handle,LOCK_UN);
+		@fclose($handle);
+		return $removed;
+	}
+
+	/** Reclaims an expired claim only after acquiring and proving its exact inode. */
+	private static function reclaim_stale_running_lock(string $path,float $timeout): bool {
+		clearstatcache(true,$path);
+		if(is_link($path)) return false;
+		$initial_stat=@lstat($path);
+		if(!is_array($initial_stat) || (($initial_stat['mode'] ?? 0)&0170000)!==0100000
+			|| ($initial_stat['nlink'] ?? 0)!==1) return false;
+		$handle=@fopen($path,'r+');
+		if(!is_resource($handle)) return false;
+		$handle_stat=@fstat($handle);
+		if(!is_array($handle_stat) || (($handle_stat['mode'] ?? 0)&0170000)!==0100000
+			|| ($handle_stat['nlink'] ?? 0)!==1){
+			@fclose($handle);
+			return false;
+		}
+		if(@flock($handle,LOCK_EX|LOCK_NB)!==true){@fclose($handle);return false;}
+		@rewind($handle);
+		$stored=(string)stream_get_contents($handle,65);
+		$handle_stat=@fstat($handle);
+		$mtime=is_array($handle_stat) ? ($handle_stat['mtime'] ?? null) : null;
+		$age=is_int($mtime) ? max(0,time()-$mtime) : 0;
+		$removed=self::open_inode_matches_path($path,$handle,[1])
 			&& preg_match('/^[a-f0-9]{64}$/D',$stored)===1
 			&& $age>=max(1.0,$timeout)
-			&& @unlink($path);
+			&& self::unlink_open_inode_path($path,$handle,[1]);
 		@flock($handle,LOCK_UN);
 		@fclose($handle);
 		return $removed;
@@ -625,24 +874,45 @@ class scheduling {
 	}
 
 	/** Removes only the still-pending lock created for this exact failed dispatch. */
-	private static function release_dispatch_claim(string $name,string $dispatch_claim): bool {
-		if(self::valid_scheduler_name($name)!==true || preg_match('/^[a-f0-9]{64}$/D',$dispatch_claim)!==1) return false;
+	private static function release_dispatch_claim(string $name,string $dispatch_claim,mixed $owned_handle=null): bool {
+		$provided=is_resource($owned_handle);
+		$handle=$provided ? $owned_handle : null;
+		if(self::valid_scheduler_name($name)!==true || preg_match('/^[a-f0-9]{64}$/D',$dispatch_claim)!==1){
+			if($provided){@flock($handle,LOCK_UN);@fclose($handle);}
+			return false;
+		}
 		$path=self::running_lock_file($name);
-		if(is_link($path)) return false;
-		$handle=@fopen($path,'r+');
+		clearstatcache(true,$path);
+		if(is_link($path)){
+			if($provided){@flock($handle,LOCK_UN);@fclose($handle);}
+			return false;
+		}
+		$initial_stat=@lstat($path);
+		if(!is_array($initial_stat) || (($initial_stat['mode'] ?? 0)&0170000)!==0100000
+			|| ($initial_stat['nlink'] ?? 0)!==1){
+			if($provided){@flock($handle,LOCK_UN);@fclose($handle);}
+			return false;
+		}
+		if(!$provided) $handle=@fopen($path,'r+');
 		if(!is_resource($handle)) return false;
-		if(@flock($handle,LOCK_EX|LOCK_NB)!==true){@fclose($handle);return false;}
-		@rewind($handle);
-		$stored=trim((string)stream_get_contents($handle));
-		$handle_stat=@fstat($handle);$path_stat=@lstat($path);
-		$same=is_array($handle_stat) && is_array($path_stat)
-			&& (($path_stat['mode'] ?? 0)&0170000)===0100000 && ($path_stat['nlink'] ?? 0)===1
-			&& ($handle_stat['dev'] ?? null)===($path_stat['dev'] ?? null)
-			&& ($handle_stat['ino'] ?? null)===($path_stat['ino'] ?? null);
-		$removed=$same && preg_match('/^[a-f0-9]{64}$/D',$stored)===1
-			&& hash_equals($stored,$dispatch_claim) && @unlink($path);
-		@flock($handle,LOCK_UN);@fclose($handle);
-		return $removed;
+		$locked=$provided;
+		try{
+			$handle_stat=@fstat($handle);
+			if(!is_array($handle_stat) || (($handle_stat['mode'] ?? 0)&0170000)!==0100000
+				|| ($handle_stat['nlink'] ?? 0)!==1) return false;
+			if(!$locked){
+				if(@flock($handle,LOCK_EX|LOCK_NB)!==true) return false;
+				$locked=true;
+			}
+			@rewind($handle);
+			$stored=stream_get_contents($handle,65);
+			return is_string($stored) && preg_match('/^[a-f0-9]{64}$/D',$stored)===1
+				&& hash_equals($stored,$dispatch_claim)
+				&& self::unlink_open_inode_path($path,$handle,[1]);
+		}finally{
+			if($locked) @flock($handle,LOCK_UN);
+			@fclose($handle);
+		}
 	}
 
 	/**

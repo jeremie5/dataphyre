@@ -25,6 +25,7 @@ final class dataphyre_scheduling_task_runner {
 		string $scheduler_name,
 		string $definition_sha256,
 		int $budget_milliseconds,
+		?callable $failure_reporter=null,
 	): bool {
 		if(preg_match('/^[A-Za-z0-9._-]{1,128}$/D',$scheduler_name)!==1
 			|| in_array($scheduler_name,['.','..'],true)
@@ -32,10 +33,13 @@ final class dataphyre_scheduling_task_runner {
 			|| $budget_milliseconds<1 || $budget_milliseconds>300000){
 			return false;
 		}
+		$failure_phase='callback_boundary';
 		try{
 			self::assertManagedSchedulerCgi();
 			@set_time_limit(max(1,(int)ceil($budget_milliseconds/1000)));
+			$failure_phase='application_registration';
 			$report=self::managedRegistrationReport();
+			$failure_phase='definition_verification';
 			$definition=\dataphyre\scheduling::runtime_definition($scheduler_name);
 			$evidence=null;
 			foreach(($report['definitions'] ?? []) as $candidate){
@@ -49,16 +53,19 @@ final class dataphyre_scheduling_task_runner {
 					$definition_sha256,
 					'sha256:'.hash('sha256',json_encode($evidence,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR))
 				)){
-				return false;
+				throw new \RuntimeException('scheduler_definition_evidence_mismatch');
 			}
 			\dataphyre\scheduling::begin_task_runner($scheduler_name);
 			try{
+				$failure_phase='task_execution';
 				self::executeTask($definition,static fn(string $path): bool=>is_file($path),[]);
 				return true;
 			}finally{
-				\dataphyre\scheduling::end_task_runner();
+				try{\dataphyre\scheduling::end_task_runner();}
+				catch(\Throwable $failure){$failure_phase='task_cleanup';throw $failure;}
 			}
-		}catch(\Throwable){
+		}catch(\Throwable $failure){
+			self::reportManagedFailure($failure_reporter,$failure_phase,$failure);
 			return false;
 		}
 	}
@@ -358,35 +365,58 @@ final class dataphyre_scheduling_task_runner {
 
 	/** Confirms the pathname still names the exact claim held by this runner. */
 	private static function claimedPathMatches(string $path,mixed $claim_handle,string $dispatch_claim,array $runtime=[]): bool {
-		if(!is_resource($claim_handle) || preg_match('/^[a-f0-9]{64}$/D',$dispatch_claim)!==1 || is_link($path)) return false;
-		@rewind($claim_handle);
-		$stored=trim((string)stream_get_contents($claim_handle));
+		if(!is_resource($claim_handle) || preg_match('/^[a-f0-9]{64}$/D',$dispatch_claim)!==1) return false;
 		$handle_stat=@fstat($claim_handle);
+		if(!is_array($handle_stat) || (($handle_stat['mode'] ?? 0)&0170000)!==0100000
+			|| ($handle_stat['nlink'] ?? 0)!==1) return false;
+		@rewind($claim_handle);
+		$stored=stream_get_contents($claim_handle,65);
+		$handle_stat=@fstat($claim_handle);
+		$is_link=$runtime['is_link'] ?? static fn(string $candidate): bool=>is_link($candidate);
+		clearstatcache(true,$path);
+		if($is_link($path)) return false;
 		$path_stat=isset($runtime['lstat']) && is_callable($runtime['lstat']) ? $runtime['lstat']($path) : @lstat($path);
-		return preg_match('/^[a-f0-9]{64}$/D',$stored)===1
+		return is_string($stored) && preg_match('/^[a-f0-9]{64}$/D',$stored)===1
 			&& hash_equals($stored,$dispatch_claim)
 			&& is_array($handle_stat) && is_array($path_stat)
+			&& (($handle_stat['mode'] ?? 0)&0170000)===0100000
 			&& (($path_stat['mode'] ?? 0)&0170000)===0100000
-			&& ($path_stat['nlink'] ?? 0)===1
+			&& ($handle_stat['nlink'] ?? 0)===1 && ($path_stat['nlink'] ?? 0)===1
 			&& ($handle_stat['dev'] ?? null)===($path_stat['dev'] ?? null)
 			&& ($handle_stat['ino'] ?? null)===($path_stat['ino'] ?? null);
 	}
 
 	/** Claims the one pending dispatch and holds it through cleanup. */
 	private static function claimRunningLock(string $path,string $dispatch_claim,array $runtime=[]): mixed {
-		if(preg_match('/^[a-f0-9]{64}$/D',$dispatch_claim)!==1 || is_link($path)) return false;
+		if(preg_match('/^[a-f0-9]{64}$/D',$dispatch_claim)!==1) return false;
+		$is_link=$runtime['is_link'] ?? static fn(string $candidate): bool=>is_link($candidate);
+		$lstat=$runtime['lstat'] ?? static fn(string $candidate): array|false=>@lstat($candidate);
+		clearstatcache(true,$path);
+		if($is_link($path)) return false;
+		$initial_stat=$lstat($path);
+		if(!is_array($initial_stat) || (($initial_stat['mode'] ?? 0)&0170000)!==0100000
+			|| ($initial_stat['nlink'] ?? 0)!==1) return false;
 		$opener=$runtime['lock_opener'] ?? static fn(string $lock_path): mixed=>@fopen($lock_path,'r+');
 		$handle=is_callable($opener) ? $opener($path) : false;
 		if(!is_resource($handle)) return false;
+		$handle_stat=@fstat($handle);
+		if(!is_array($handle_stat) || (($handle_stat['mode'] ?? 0)&0170000)!==0100000
+			|| ($handle_stat['nlink'] ?? 0)!==1){
+			@fclose($handle);
+			return false;
+		}
 		$locker=$runtime['lock_acquirer'] ?? static fn(mixed $lock_handle): bool=>@flock($lock_handle,LOCK_EX|LOCK_NB);
 		if(!is_callable($locker) || $locker($handle)!==true){@fclose($handle);return false;}
 		@rewind($handle);
-		$stored=trim((string)stream_get_contents($handle));
+		$stored=stream_get_contents($handle,65);
 		$handle_stat=@fstat($handle);
-		$path_stat=@lstat($path);
-		if(preg_match('/^[a-f0-9]{64}$/D',$stored)!==1 || !hash_equals($stored,$dispatch_claim)
+		clearstatcache(true,$path);
+		$path_stat=$is_link($path) ? false : $lstat($path);
+		if(!is_string($stored) || preg_match('/^[a-f0-9]{64}$/D',$stored)!==1 || !hash_equals($stored,$dispatch_claim)
 			|| !is_array($handle_stat) || !is_array($path_stat)
-			|| (($path_stat['mode'] ?? 0)&0170000)!==0100000 || ($path_stat['nlink'] ?? 0)!==1
+			|| (($handle_stat['mode'] ?? 0)&0170000)!==0100000
+			|| (($path_stat['mode'] ?? 0)&0170000)!==0100000
+			|| ($handle_stat['nlink'] ?? 0)!==1 || ($path_stat['nlink'] ?? 0)!==1
 			|| ($handle_stat['dev'] ?? null)!==($path_stat['dev'] ?? null)
 			|| ($handle_stat['ino'] ?? null)!==($path_stat['ino'] ?? null)){
 			@flock($handle,LOCK_UN);@fclose($handle);return false;
@@ -436,6 +466,12 @@ final class dataphyre_scheduling_task_runner {
 	private static function pre_init_failure(string $message,?\Throwable $failure,array $runtime): void {
 		$handler=$runtime['pre_init_error'] ?? (function_exists('pre_init_error') ? 'pre_init_error' : null);
 		if(is_callable($handler)) $failure===null ? $handler($message) : $handler($message,$failure);
+	}
+
+	/** Reports only to the framework-owned router; diagnostics cannot alter task outcome. */
+	private static function reportManagedFailure(?callable $reporter,string $phase,\Throwable $failure): void {
+		if(!is_callable($reporter)) return;
+		try{$reporter($phase,$failure);}catch(\Throwable){}
 	}
 
 	private static function terminate(?callable $terminator): void {
