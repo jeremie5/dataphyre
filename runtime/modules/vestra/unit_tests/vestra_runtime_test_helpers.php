@@ -425,6 +425,55 @@ final class DpVestraRuntimeScenario {
 	}
 
 	/** @return array<string,mixed> */
+	public function objectKeyPrefixContract(): array {
+		$file='/tmp/fixture object.png';
+		$hash=str_repeat('a', 64);
+		$this->reset();
+		$default=$this->invoke('safeObjectKey', $file, $hash, 'tenant-one');
+		$this->reset()->withConfig(['object_key_prefix'=>'media/release/']);
+		$custom=$this->invoke('safeObjectKey', $file, $hash, 'tenant-one');
+		$this->reset()->withConfig([
+			'default_tenant'=>'media',
+			'tenant'=>'media',
+			'object_key_prefix'=>'flat/',
+			'tenants'=>[
+				'media'=>[
+					'tenant'=>'tenant-media',
+					'rate'=>'m.p',
+					'object_key_prefix'=>'tenant/media/',
+				],
+			],
+		]);
+		$tenant=$this->invoke('safeObjectKey', $file, $hash, 'media');
+
+		$invalid=[];
+		foreach(['','/absolute/','missing-slash','../escape/','media//nested/','media\\windows/'] as $prefix){
+			$this->reset()->withConfig(['object_key_prefix'=>$prefix]);
+			$invalid[]=$this->invoke('safeObjectKey', $file, $hash, 'tenant-one');
+		}
+
+		$this->reset()->withConfig([
+			'default_tenant'=>'alias-a',
+			'tenant'=>'alias-a',
+			'tenants'=>[
+				'alias-a'=>['tenant'=>'tenant-shared','rate'=>'s','object_key_prefix'=>'alias/a/'],
+				'alias-b'=>['tenant'=>'tenant-shared','rate'=>'s','object_key_prefix'=>'alias/b/'],
+			],
+		]);
+		$reference=['tenant'=>'tenant-shared','tenant_profile'=>'alias-a','object_key'=>'alias/a/2026/09/object.png'];
+		return [
+			'default'=>$default,
+			'custom'=>$custom,
+			'tenant'=>$tenant,
+			'invalid'=>$invalid,
+			'reusable_exact'=>$this->invoke('reusableHashedReference', $reference, 'alias-a', 'alias/a/'),
+			'reusable_wrong_profile'=>$this->invoke('reusableHashedReference', $reference, 'alias-b', 'alias/b/'),
+			'reusable_wrong_prefix'=>$this->invoke('reusableHashedReference', $reference, 'alias-a', 'alias/new/'),
+			'reusable_unknown_prefix'=>$this->invoke('reusableHashedReference', array_diff_key($reference, ['object_key'=>true]), 'alias-a', 'alias/a/'),
+		];
+	}
+
+	/** @return array<string,mixed> */
 	public function propagationExpiryContract(): array {
 		$file=$this->file('sources/expiring.png', 'expiring image');
 		$this->reset()->withDialback('CALL_VESTRA_PROPAGATE', null);
@@ -695,7 +744,7 @@ final class DpVestraRuntimeScenario {
 		$copy=\dataphyre\vestra::propagate($copyFile);
 
 		$dedupeFile=$this->file('failures/dedupe.png', 'dedupe');
-		$known=['object_id'=>88,'tenant'=>'tenant-one'];
+		$known=['object_id'=>88,'tenant'=>'tenant-one','object_key'=>'dataphyre/2023/11/known-dedupe.png'];
 		$this->reset()->withDialback('CALL_VESTRA_PROPAGATE', null)->queueSelect(
 			['reference'=>json_encode($known, JSON_THROW_ON_ERROR)],
 			['use_count'=>1],

@@ -10,6 +10,11 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Made Vestra local-file reservations honor an application-neutral,
+  tenant-overridable `object_key_prefix` while retaining `dataphyre/` as the
+  compatibility default. Prefixes are validated before staging or provider
+  I/O, returned references retain their object key, and permanent hash reuse is
+  limited to the same canonical tenant, local profile, and namespace.
 - Added the application-neutral self-hosted scheduler receiver to the common
   runtime boundary. Exact path-safe scheduler names, internal-traffic
   provenance, bounded claim/budget/timestamp headers, and the

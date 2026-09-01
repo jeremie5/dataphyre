@@ -139,6 +139,20 @@ test('direct upload follows reserve guidance streams once and materializes its r
 	], DpVestraRuntimeScenario::open($t)->directUploadContract());
 });
 
+test('object key prefixes preserve compatibility support tenant overrides and isolate permanent hash reuse', static function(Context $t): void {
+	$contract=DpVestraRuntimeScenario::open($t)->objectKeyPrefixContract();
+	$t->matches('#^dataphyre/[0-9]{4}/[0-9]{2}/[a-f0-9]{16}-fixture-object\.png$#D', (string)$contract['default']);
+	$t->matches('#^media/release/[0-9]{4}/[0-9]{2}/[a-f0-9]{16}-fixture-object\.png$#D', (string)$contract['custom']);
+	$t->matches('#^tenant/media/[0-9]{4}/[0-9]{2}/[a-f0-9]{16}-fixture-object\.png$#D', (string)$contract['tenant']);
+	foreach($contract['invalid'] as $invalid){
+		$t->isFalse($invalid);
+	}
+	$t->isTrue($contract['reusable_exact']);
+	$t->isFalse($contract['reusable_wrong_profile']);
+	$t->isFalse($contract['reusable_wrong_prefix']);
+	$t->isFalse($contract['reusable_unknown_prefix']);
+});
+
 test('propagation expiry options reach Control payloads and references while remote expiry fails closed', static function(Context $t): void {
 	$contract=DpVestraRuntimeScenario::open($t)->propagationExpiryContract();
 	$t->same(41, $contract['ttl_id']);

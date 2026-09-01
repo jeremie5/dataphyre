@@ -36,9 +36,16 @@ The owning kernel exposes the merged readonly config as `DP_VESTRA_CFG`.
 - `rate`
   - Optional default Fabric rate for the flat/default profile. Applications should prefer
     `CALL_VESTRA_RESOLVE_TENANT_CONTEXT` when the rate depends on billing state.
+- `object_key_prefix`
+  - Namespace prefix for object names reserved from local files. It defaults to
+    `dataphyre/`, must be a relative slash-terminated path of safe segments, and
+    may be overridden by a tenant profile. Invalid prefixes fail before staging
+    or provider I/O. Permanent hash reuse is limited to the same canonical
+    tenant, local profile, and object namespace.
 - `tenants`
   - Map of Fabric tenant ids or aliases to tenant-specific profile overrides.
     Each profile can set `tenant`, `base_url`, `object_url`, `rate`,
+    `object_key_prefix`,
     `api_token`, `write_api_token`, `tenant_read_token`, `write_token`,
     `node_token`, token defaults, and `allow_unsigned`.
 - `api_token`

@@ -48,6 +48,7 @@ class vestra {
 			'write_token'=>'',
 			'write_token_path'=>'',
 			'write_token_ttl'=>300,
+			'object_key_prefix'=>'dataphyre/',
 			'default_write_max_bytes'=>67108864,
 			'node_token'=>'',
 			'tenant_read_token'=>'',
@@ -278,11 +279,16 @@ class vestra {
 			}
 			return $dialback;
 		}
+		$tenant=self::tenant();
+		$objectKeyPrefix=$isRemote ? null : self::objectKeyPrefix($tenant);
+		if(!$isRemote && $objectKeyPrefix===false){
+			self::log('Vestra object key prefix is invalid.');
+			return false;
+		}
 		$hash='';
 		$stage='';
 		$metadata=[];
 		$bytes=self::defaultWriteMaxBytes('');
-		$tenant=self::tenant();
 		if(!$isRemote){
 			if(self::fs('exists', $file)!==true || self::fs('readable', $file)!==true){
 				self::log('Vestra propagation source does not exist or is unreadable.');
@@ -294,13 +300,25 @@ class vestra {
 				return false;
 			}
 			if(!$encryption && $expiryOptions===[]){
-				$known=self::sql('select', 'object_id,reference', 'dataphyre.vestra_objects', 'WHERE hash=?', [$hash], false, false);
+				$known=self::sql(
+					'select',
+					'object_id,reference',
+					'dataphyre.vestra_objects',
+					'WHERE hash=? AND tenant=?',
+					[$hash,self::canonicalTenant($tenant)],
+					false,
+					false,
+				);
 				$knownReference=is_array($known) ? ($known['reference'] ?? null) : null;
 				if(is_string($knownReference)){
 					$decoded=json_decode($knownReference, true);
 					$knownReference=is_array($decoded) ? $decoded : null;
 				}
-				if(is_array($knownReference)){
+				if(
+					is_array($knownReference)
+					&& is_string($objectKeyPrefix)
+					&& self::reusableHashedReference($knownReference, $tenant, $objectKeyPrefix)
+				){
 					self::update_use_count($knownReference, 1);
 					return $knownReference;
 				}
@@ -472,6 +490,23 @@ class vestra {
 		}
 		$profile=is_scalar($reference['tenant_profile']) ? trim((string)$reference['tenant_profile']) : '';
 		return $profile!=='' && $tenant!=='' && self::canonicalTenant($profile)===$tenant ? $profile : false;
+	}
+
+	/** A permanent hash hit is reusable only inside the exact local object namespace. */
+	private static function reusableHashedReference(array $reference, string $tenant, string $objectKeyPrefix): bool {
+		$profile=self::tenantProfileKey($tenant);
+		$canonical=self::canonicalTenant($profile);
+		$referenceTenant=is_scalar($reference['tenant'] ?? null) ? trim((string)$reference['tenant']) : '';
+		$referenceProfile=self::referenceTenantProfile($reference);
+		$metadata=is_array($reference['metadata'] ?? null) ? $reference['metadata'] : [];
+		$objectKey=$reference['object_key'] ?? $metadata['object_key'] ?? null;
+		return $profile!==''
+			&& $canonical!==''
+			&& $referenceTenant===$canonical
+			&& $referenceProfile===$profile
+			&& is_string($objectKey)
+			&& $objectKey!==''
+			&& str_starts_with($objectKey, $objectKeyPrefix);
 	}
 
 	/** Tracks explicit tenant-profile credential declarations, including null/empty denial. */
@@ -1552,7 +1587,10 @@ class vestra {
 		if($canonical==='' || self::controlApiToken($controlPath, $tenant)===''){
 			return false;
 		}
-		$key=self::safeObjectKey($file, $hash);
+		$key=self::safeObjectKey($file, $hash, $tenant);
+		if($key===false){
+			return false;
+		}
 		$idempotencyIdentity=[$canonical,$key,(string)$bytes,$hash];
 		foreach(['object_expires_in_secs','object_expires_at'] as $expiryKey){
 			if(array_key_exists($expiryKey, $options)){
@@ -1615,6 +1653,7 @@ class vestra {
 		$reference=self::referenceFromResponse($response, $hash);
 		if(is_array($reference)){
 			$reference=self::applyReferenceTenantIdentity($reference, $tenant);
+			$reference['object_key']=$key;
 			$reference['filename']=basename($file);
 			$reference['mime_type']=$contentType;
 			$reference['filesize']=$bytes;
@@ -1699,10 +1738,43 @@ class vestra {
 		return $scheme.'://'.$host.'/dataphyre/vestra/'.rawurlencode($filename);
 	}
 
-	private static function safeObjectKey(string $file, string $hash): string {
+	private static function objectKeyPrefix(string $tenant=''): string|false {
+		$value=self::profile($tenant)['object_key_prefix'] ?? null;
+		if(!is_scalar($value)){
+			return false;
+		}
+		$prefix=(string)$value;
+		if(
+			$prefix==='' || $prefix!==trim($prefix) || strlen($prefix)>192
+			|| str_starts_with($prefix, '/') || !str_ends_with($prefix, '/')
+			|| str_contains($prefix, '\\') || str_contains($prefix, "\0")
+		){
+			return false;
+		}
+		$segments=explode('/', substr($prefix, 0, -1));
+		if($segments===[] || count($segments)>16){
+			return false;
+		}
+		foreach($segments as $segment){
+			if(
+				$segment==='' || $segment==='.' || $segment==='..'
+				|| strlen($segment)>64
+				|| preg_match('/^[A-Za-z0-9_][A-Za-z0-9._-]*$/D', $segment)!==1
+			){
+				return false;
+			}
+		}
+		return $prefix;
+	}
+
+	private static function safeObjectKey(string $file, string $hash, string $tenant=''): string|false {
+		$prefix=self::objectKeyPrefix($tenant);
+		if($prefix===false){
+			return false;
+		}
 		$name=preg_replace('/[^a-zA-Z0-9._-]+/', '-', basename(str_replace('\\', '/', $file))) ?: 'object';
 		$name=trim($name, '.-') ?: 'object';
-		return 'dataphyre/'.date('Y/m', self::clock()).'/'.substr($hash, 0, 16).'-'.$name;
+		return $prefix.date('Y/m', self::clock()).'/'.substr($hash, 0, 16).'-'.$name;
 	}
 
 	private static function fileContentType(string $file): string {
