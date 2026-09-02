@@ -490,11 +490,18 @@ test('fixed rootless gateway and eight-worker FPM topology serves static and dyn
 				if(!is_string($chunk) || $chunk==='') throw new RuntimeException('Growing-static response ended before its first body chunk.');
 				$growingWire.=$chunk;$growingSeparator=strpos($growingWire,"\r\n\r\n");
 			}while($growingSeparator===false);
+			// Header receipt follows the gateway's validated open; the path mutation
+			// below must not affect the retained descriptor.
 			file_put_contents($growingPath,str_repeat('x',1048576),FILE_APPEND|LOCK_EX);
 			$growingWire.=(string)stream_get_contents($growingClient);fclose($growingClient);
 			[$growingHead,$growingBody]=array_pad(explode("\r\n\r\n",$growingWire,2),2,'');
-			$t->contains('Content-Length: 16777216',$growingHead,'static growth retains its attested representation length');
-			$t->same(16777216,strlen($growingBody));$t->same(hash('sha256',$growingBytes),hash('sha256',$growingBody));
+			$growingExpectedHash=hash('sha256',$growingBytes);$growingActualHash=hash('sha256',$growingBody);
+			$t->contains('Content-Length: 16777216',$growingHead,
+				'static growth headers retain the pre-open length: '.$growingHead);
+			$t->same(16777216,strlen($growingBody),
+				'static growth body length expected=16777216 actual='.strlen($growingBody));
+			$t->same($growingExpectedHash,$growingActualHash,
+				'static growth body sha256 expected='.$growingExpectedHash.' actual='.$growingActualHash);
 			unset($growingBytes,$growingBody,$growingWire);
 			foreach(['/leak.txt','/.hidden.txt','/probe.php','/%2e%2e/etc/passwd'] as $unsafeTarget){
 				$t->same(404,dataphyre_managed_web_http('GET',$unsafeTarget)['status'],$unsafeTarget);
@@ -533,7 +540,8 @@ test('fixed rootless gateway and eight-worker FPM topology serves static and dyn
 				stream_socket_shutdown($client,STREAM_SHUT_WR);$response=(string)stream_get_contents($client);fclose($client);
 				$slowStatuses[]=preg_match('/^HTTP\/1\.1 (\d{3})\b/D',$response,$match)===1 ? (int)$match[1] : 0;
 			}
-			$t->same(array_fill(0,8,504),$slowStatuses);
+			$t->same(array_fill(0,8,504),$slowStatuses,
+				'slow-header HTTP statuses='.json_encode($slowStatuses,JSON_THROW_ON_ERROR));
 			$t->isTrue(microtime(true)-$slowStarted>=5.0 && microtime(true)-$slowStarted<8.0,'header timeout is absolute, not idle');
 			$t->same(200,dataphyre_managed_web_http('GET','/health')['status']);
 
