@@ -346,11 +346,6 @@ final class DataphyreApplicationRuntimeWebGateway
 			default=>'application/octet-stream',
 		};
 		$immutable=preg_match('/(?:^|[._-])[a-f0-9]{8,64}(?:[._-]|$)/i',basename($resolved))===1;
-		$headers="HTTP/1.1 200 OK\r\nContent-Type: {$mime}\r\nContent-Length: {$size}\r\n".
-			'Cache-Control: '.($immutable ? 'public, max-age=31536000, immutable' : 'no-cache')."\r\n".
-			"X-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n";
-		self::writeAll($connection,$headers,$writeDeadline);
-		if($request['method']==='HEAD') return true;
 		$handle=@fopen($resolved,'rb');
 		if(!is_resource($handle)) throw new RuntimeException('Static response file is unavailable.');
 		try{
@@ -360,6 +355,11 @@ final class DataphyreApplicationRuntimeWebGateway
 				|| ($opened['size'] ?? null)!==$size){
 				throw new RuntimeException('Static response file identity changed.');
 			}
+			$headers="HTTP/1.1 200 OK\r\nContent-Type: {$mime}\r\nContent-Length: {$size}\r\n".
+				'Cache-Control: '.($immutable ? 'public, max-age=31536000, immutable' : 'no-cache')."\r\n".
+				"X-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n";
+			self::writeAll($connection,$headers,$writeDeadline);
+			if($request['method']==='HEAD') return true;
 			$remaining=$size;
 			while($remaining>0){
 				$chunk=fread($handle,min(65536,$remaining));

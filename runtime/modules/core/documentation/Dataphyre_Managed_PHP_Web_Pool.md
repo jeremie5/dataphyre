@@ -162,6 +162,9 @@ request-plus-dynamic-response spool ceiling is therefore 192 MiB, with at most
 
 For `GET` and `HEAD`, a non-PHP regular file whose canonical path is beneath
 `<project>/public/` is streamed directly under a 30-second client-write deadline.
+Before emitting `200`, the gateway opens the regular file and compares its
+descriptor `dev`/`ino`/`size` with the `lstat` snapshot, then retains that
+descriptor while streaming the attested length.
 The normalized decoded `/health` path is always dynamic: a public file, query,
 or percent-encoded alias cannot shadow application health. Symlinks, dot-path
 traversal, PHP extensions, non-regular files, ambiguous framing, duplicate
