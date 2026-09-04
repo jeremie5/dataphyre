@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-09-02T13:02:30Z",
+  "generated_at_utc": "2026-09-04T22:18:40Z",
   "copied_source_files": 3697,
   "skipped_source_files": 46,
   "export_file_count": 3697,
-  "export_tree_sha256": "864be1078fc0146267c139df1d1a22cdd97d3bbf2928d118c9b1af00b42e31e1",
+  "export_tree_sha256": "3af5f1b6b1707419d5d78d3d0ce7ca2559ecddc89dd535dec23d97c2d86f707d",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -1759,8 +1759,8 @@
     },
     {
       "path": "docs/CHANGELOG.md",
-      "bytes": 40329,
-      "sha256": "321a8ef9e94ec7a402c89dc95fa6d906d86276710c6a1e131471e2069aa53454"
+      "bytes": 40570,
+      "sha256": "8234cd8004352d83fd5aeff530b778332fbc60f9102e25c5442136229ca38449"
     },
     {
       "path": "docs/changelog/v2.0.md",
@@ -15039,8 +15039,8 @@
     },
     {
       "path": "runtime/modules/sql/documentation/Dataphyre_SQL.md",
-      "bytes": 126291,
-      "sha256": "740d218f281a7cd5f3aeaebac4c3e53bc009ee88ae9b894a26ebd3e842834852"
+      "bytes": 126663,
+      "sha256": "7afd0ec3774cacaf148fbd72baa77c366e49ee8effacf3bf972dda2a7043c820"
     },
     {
       "path": "runtime/modules/sql/documentation/postgresql-migration-manifest-v3.schema.json",
@@ -15319,8 +15319,8 @@
     },
     {
       "path": "runtime/modules/sql/kernel/postgresql_query.php",
-      "bytes": 44791,
-      "sha256": "35bffce47bd62753670f3f4785f0d4f580e0c29f97c92206a8bd448ac41873b0"
+      "bytes": 44908,
+      "sha256": "89b0b98957490a5276a2a4f5e5d2722318fb7d4f145d79e2cded95ba2e3f7492"
     },
     {
       "path": "runtime/modules/sql/kernel/scaffold_table_artifacts.php",
@@ -15539,8 +15539,8 @@
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.sql_kernel_query_builders_deep_coverage.test.php",
-      "bytes": 53913,
-      "sha256": "b5ec663bf133b21d1bb75a4762afcac30e7a05ffced51dfe9bcbdc2d2d95c546"
+      "bytes": 54972,
+      "sha256": "d909ebaa6629f594222abe1831a9b2328d05be15f043028aaf8e2e4f9fa3e792"
     },
     {
       "path": "runtime/modules/sql/unit_tests/dataphyre.sql_migration_deep_coverage.test.php",
@@ -15639,8 +15639,8 @@
     },
     {
       "path": "runtime/modules/sql/unit_tests/dynamic/dataphyre.sql_postgresql_environment_compatibility.test.php",
-      "bytes": 12945,
-      "sha256": "c55fb8416a943d5d069fa2fe93741760fb897c5849341a3a4463bdaf9508cb3d"
+      "bytes": 14003,
+      "sha256": "648997b7340b5f5cde951b0ceb68916dee73321d7ee274fe2640a75d444d0686"
     },
     {
       "path": "runtime/modules/sql/unit_tests/dynamic/dataphyre.sql_postgresql_transaction_compatibility.test.php",

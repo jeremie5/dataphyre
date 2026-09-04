@@ -667,6 +667,11 @@ single-row miss as `false`; strict framework reads consult
 `sql::last_query_error()` and normalize that sentinel to `null` only when no
 query error was recorded. A `false` result accompanied by an error still fails
 closed. This distinction also applies to `TableQuery` strict reads.
+PostgreSQL row normalization preserves SQL `NULL` as PHP `null` before scalar
+conversion. Nullable integer and boolean fields therefore remain distinct from
+`0` and `false`, including optional references and aggregates over empty sets.
+Non-null integer and boolean conversions are unchanged; numeric/decimal values
+retain the driver's string representation and precision.
 Repository strictness also propagates through eager row and record relations, so
 a failed child query cannot be presented as an empty relation. The equivalent
 static repository primitives are `allOrFailOnReadError(...)` and

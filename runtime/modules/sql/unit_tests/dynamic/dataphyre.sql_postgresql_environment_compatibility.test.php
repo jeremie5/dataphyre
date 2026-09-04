@@ -155,6 +155,26 @@ function dp_sql_postgresql_environment_reset_markers(string $table): void {
 	dp_sql_postgresql_environment_query('TRUNCATE TABLE '.$table);
 }
 
+test('PostgreSQL native reads preserve SQL NULL separately from zero and false', static function(Context $t): void {
+	dp_sql_postgresql_environment_enabled($t);
+	$query=<<<'SQL'
+SELECT 1 AS row_index, NULL::integer AS small, NULL::bigint AS large,
+       NULL::boolean AS enabled, NULL::numeric AS amount, NULL::text AS label
+UNION ALL
+SELECT 2, 0::integer, 4294967296::bigint, false::boolean, 123.4500::numeric, ''::text
+UNION ALL
+SELECT 3, 7::integer, 9::bigint, true::boolean, 0.0000::numeric, 'sample'::text
+ORDER BY row_index
+SQL;
+	$expected=[
+		['row_index'=>1,'small'=>null,'large'=>null,'enabled'=>null,'amount'=>null,'label'=>null],
+		['row_index'=>2,'small'=>0,'large'=>4294967296,'enabled'=>false,'amount'=>'123.4500','label'=>''],
+		['row_index'=>3,'small'=>7,'large'=>9,'enabled'=>true,'amount'=>'0.0000','label'=>'sample'],
+	];
+	$t->same($expected,dp_sql_postgresql_environment_query($query,null,true));
+	$t->same($expected[0],dp_sql_postgresql_environment_query($query));
+})->tag('sql','postgresql','null','compatibility')->maxMillis(15000);
+
 test('PostgreSQL ambient routing keeps explicit clusters authoritative', static function(Context $t) use (
 	$compatibilityLiveDatabase,
 	$compatibilitySandboxDatabase

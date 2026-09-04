@@ -16,6 +16,9 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Preserved PostgreSQL SQL `NULL` values before integer and boolean conversion.
+  Optional scalar fields and empty-set aggregates now remain PHP `null` instead
+  of becoming zero or false, while non-null conversion behavior stays unchanged.
 - Made the exact preflight and realtime process probes use a test-owned Core
   load cache, so unrelated host memory pressure cannot turn a release gate into
   a load-shedding response.
