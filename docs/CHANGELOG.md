@@ -10,6 +10,10 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Preserved PostgreSQL SQL `NULL` values before integer and boolean conversion.
+  Optional scalar fields and empty-set aggregates now remain PHP `null` instead
+  of becoming zero or false, while non-null conversion behavior stays unchanged.
+
 - Made Vestra local-file reservations honor an application-neutral,
   tenant-overridable `object_key_prefix` while retaining `dataphyre/` as the
   compatibility default. Prefixes are validated before staging or provider

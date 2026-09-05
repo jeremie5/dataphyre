@@ -165,6 +165,7 @@ class postgresql_query_builder {
 	
 	/**
 	 * Converts PostgreSQL scalar field values into PHP-friendly values in-place.
+	 * SQL NULL remains null regardless of the declared PostgreSQL field type.
 	 *
 	 * @param array<string, mixed> $query_result Fetched associative row to mutate.
 	 * @param object $result PostgreSQL result object used for field type lookup.
@@ -172,6 +173,9 @@ class postgresql_query_builder {
 	 */
 	private static function normalize_pg_value(array &$query_result, object $result) : void{
 		foreach($query_result as $key=>$value){
+			if($value===null){
+				continue;
+			}
 			$field_type=pg_field_type($result, pg_field_num($result, $key));
 			if($field_type==='bool'){
 				$query_result[$key]=$value==='t' ? true : false;

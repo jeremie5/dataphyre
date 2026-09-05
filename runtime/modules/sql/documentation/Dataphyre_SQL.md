@@ -640,6 +640,11 @@ single-row miss as `false`; strict framework reads consult
 `sql::last_query_error()` and normalize that sentinel to `null` only when no
 query error was recorded. A `false` result accompanied by an error still fails
 closed. This distinction also applies to `TableQuery` strict reads.
+PostgreSQL row normalization preserves SQL `NULL` as PHP `null` before scalar
+conversion. Nullable integer and boolean fields therefore remain distinct from
+`0` and `false`, including optional references and aggregates over empty sets.
+Non-null integer and boolean conversions are unchanged; numeric/decimal values
+retain the driver's string representation and precision.
 Repository strictness also propagates through eager row and record relations, so
 a failed child query cannot be presented as an empty relation. The equivalent
 static repository primitives are `allOrFailOnReadError(...)` and
@@ -1126,18 +1131,18 @@ lifecycle metadata:
 
 use Dataphyre\Database\Seeds\SeedContext;
 use Dataphyre\Database\Seeds\SeedDefinition;
-use Serve\Database\Seeders\DemoPortfolioSeeder;
+use App\Database\Seeders\DemoCatalogSeeder;
 
 return new SeedDefinition(
-	id: 'serve.demo-portfolio',
+	id: 'example.demo-catalog',
 	version: 1,
-	up: static fn(SeedContext $context)=>(new DemoPortfolioSeeder())->apply($context),
-	preflight: static fn(SeedContext $context)=>(new DemoPortfolioSeeder())->preflight($context),
-	description: 'Local multi-concept portfolio fixture',
+	up: static fn(SeedContext $context)=>(new DemoCatalogSeeder())->apply($context),
+	preflight: static fn(SeedContext $context)=>(new DemoCatalogSeeder())->preflight($context),
+	description: 'Local demonstration catalog fixture',
 	profiles: ['demo'],
 	content_sources: [
-		__DIR__.'/../../src/Database/Seeders/DemoPortfolioSeeder.php',
-		__DIR__.'/../../src/Support/DemoFranchisePortfolio.php',
+		__DIR__.'/../../src/Database/Seeders/DemoCatalogSeeder.php',
+		__DIR__.'/../../src/Support/DemoCatalog.php',
 	],
 );
 ```
@@ -1176,20 +1181,20 @@ provide an explicit content checksum when no seed file is available.
 The standalone command discovers `applications/<app>/database/seeds` with
 `--app`, accepts repeatable `--path` values, or reads
 `DP_SQL_CFG['seeds']['paths']`. Applications with custom SQL/autoload setup can
-provide a side-effect-free CLI bootstrap file. With `--app=serve`, Dataphyre
-automatically loads `applications/serve/database/seeds/bootstrap.php` when it
+provide a side-effect-free CLI bootstrap file. With `--app=example`, Dataphyre
+automatically loads `applications/example/database/seeds/bootstrap.php` when it
 exists; an explicit `--bootstrap` path overrides the convention:
 
 ```bash
-php runtime/modules/sql/kernel/seeds.php list --app=serve
-php runtime/modules/sql/kernel/seeds.php status --app=serve --json
-php runtime/modules/sql/kernel/seeds.php apply --app=serve --dry-run
-php runtime/modules/sql/kernel/seeds.php apply --app=serve
-php runtime/modules/sql/kernel/seeds.php apply --app=serve --profile=demo --allow-demo --id=serve.demo-portfolio
-php runtime/modules/sql/kernel/seeds.php status --app=serve --cluster=primary --ledger-table=dataphyre_seed_ledger
-php runtime/modules/sql/kernel/seeds.php rollback --app=serve --id=serve.reversible-reference@1 --dry-run
-php runtime/modules/sql/kernel/seeds.php rollback --app=serve --id=serve.reversible-reference@1 --confirm
-php runtime/modules/sql/kernel/seeds.php status --path=applications/serve/database/seeds --bootstrap=applications/serve/database/seeds/bootstrap.php
+php runtime/modules/sql/kernel/seeds.php list --app=example
+php runtime/modules/sql/kernel/seeds.php status --app=example --json
+php runtime/modules/sql/kernel/seeds.php apply --app=example --dry-run
+php runtime/modules/sql/kernel/seeds.php apply --app=example
+php runtime/modules/sql/kernel/seeds.php apply --app=example --profile=demo --allow-demo --id=example.demo-catalog
+php runtime/modules/sql/kernel/seeds.php status --app=example --cluster=primary --ledger-table=dataphyre_seed_ledger
+php runtime/modules/sql/kernel/seeds.php rollback --app=example --id=example.reversible-reference@1 --dry-run
+php runtime/modules/sql/kernel/seeds.php rollback --app=example --id=example.reversible-reference@1 --confirm
+php runtime/modules/sql/kernel/seeds.php status --path=applications/example/database/seeds --bootstrap=applications/example/database/seeds/bootstrap.php
 ```
 
 The default ledger is `dataphyre_seed_ledger` with the composite identity
@@ -1218,7 +1223,7 @@ use Dataphyre\Database\Seeds\SqlSeedLedger;
 $manager=new SeedManager(
 	SeedFileLoader::load(__DIR__.'/database/seeds'),
 	new SqlSeedLedger('dataphyre_seed_ledger', cluster: 'primary'),
-	new SeedContext(attributes: ['application'=>'serve'], cluster: 'primary'),
+	new SeedContext(attributes: ['application'=>'example'], cluster: 'primary'),
 );
 
 $pending=$manager->planApply();

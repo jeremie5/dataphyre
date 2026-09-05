@@ -578,4 +578,21 @@ SQL;
 		$state->put('pg_execute_results',[false]);$t->isFalse($class::postgresql_delete('primary','normal','WHERE id=?',[1]));
 		$state->put('pg_query_results',[false]);$t->isFalse($class::postgresql_delete('primary','normal','',null));
 	})->tag('sql','kernel','query-builders','deep-coverage')->group('framework-coverage');
+	test('PostgreSQL row normalization preserves nullable scalar fields and non-null values',static function(Context $t): void {
+		$state=dp_kq_scenario($t);
+		$class=\dataphyre\postgresql_query_builder::class;
+		$class::$conns['primary']=new DpKqPgConnection();
+		$types=['small'=>'int4','large'=>'int8','enabled'=>'bool','amount'=>'numeric','label'=>'text'];
+		$rows=[
+			['small'=>null,'large'=>null,'enabled'=>null,'amount'=>null,'label'=>null],
+			['small'=>'0','large'=>'4294967296','enabled'=>'f','amount'=>'123.4500','label'=>''],
+			['small'=>'7','large'=>'9','enabled'=>'t','amount'=>'0.0000','label'=>'sample'],
+		];
+		$state->put('pg_query_results',[new DpKqPgResult($rows,$types)]);
+		$t->same([
+			$rows[0],
+			['small'=>0,'large'=>4294967296,'enabled'=>false,'amount'=>'123.4500','label'=>''],
+			['small'=>7,'large'=>9,'enabled'=>true,'amount'=>'0.0000','label'=>'sample'],
+		],$class::postgresql_select('primary','*','nullable_scalars','',null,true));
+	})->tag('sql','kernel','query-builders','postgresql','null')->group('framework-coverage');
 }
