@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-09-05T21:26:40Z",
-  "copied_source_files": 3701,
+  "generated_at_utc": "2026-09-05T21:50:28Z",
+  "copied_source_files": 3703,
   "skipped_source_files": 46,
-  "export_file_count": 3701,
-  "export_tree_sha256": "df190260674542e2260752436dcea26ed3503d5953d25cf2c90830ce560e477b",
+  "export_file_count": 3703,
+  "export_tree_sha256": "2bbb68e9f76c423a81560f5bcb3a76aced97e5db21bd308f979df128bff50fd0",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -1994,8 +1994,8 @@
     },
     {
       "path": "runtime/modules/access/documentation/Dataphyre_Access.md",
-      "bytes": 13853,
-      "sha256": "5335ac7eb188151f7bc945e1ed00ced476ab395265133ea5bcf5264e8b454991"
+      "bytes": 14925,
+      "sha256": "a519b92309c233677c289ebebb2737b67bf7060c4741a334cacd70bdec2237f7"
     },
     {
       "path": "runtime/modules/access/Framework/AccessIdentity.php",
@@ -2009,8 +2009,8 @@
     },
     {
       "path": "runtime/modules/access/Framework/AccessTokenBroker.php",
-      "bytes": 5812,
-      "sha256": "e899dcf3daea3dd43801d3331920a961d4e1603aa05dd47cf5da6ad9fa3c0315"
+      "bytes": 6823,
+      "sha256": "7e2d86ab7ea1c1d01a31592cc7d273ce6a20175817ac6832ca8798f5ddd00f1d"
     },
     {
       "path": "runtime/modules/access/Framework/Auth.php",
@@ -2234,8 +2234,8 @@
     },
     {
       "path": "runtime/modules/access/unit_tests/dataphyre.access_runtime_residual_deep_coverage.test.php",
-      "bytes": 25844,
-      "sha256": "dd646b4f6df516875597ba6d35202cf7fc8528215407cbbb24f9d4ccec52003c"
+      "bytes": 26212,
+      "sha256": "21ca3415b0f9313c9f2a42ba9bf5d8522b7a73a48309acf2fe406a33cb748111"
     },
     {
       "path": "runtime/modules/access/unit_tests/dataphyre.access_session_cookie_security_source.test.php",
@@ -2251,6 +2251,11 @@
       "path": "runtime/modules/access/unit_tests/dataphyre.access_token_broker_absence_coverage.test.php",
       "bytes": 951,
       "sha256": "ef9083ef57e9b5f54e7b9f7a0204dc300ffeed541672ccbdb9c3ea7e891fa002"
+    },
+    {
+      "path": "runtime/modules/access/unit_tests/dataphyre.access_token_broker_continuity.test.php",
+      "bytes": 10617,
+      "sha256": "c0b22da336cedf614048c87fd8c83fc943637d6570dcb1c4d7cb967fd35a62c8"
     },
     {
       "path": "runtime/modules/access/unit_tests/dataphyre.access.access.json",
@@ -2316,6 +2321,11 @@
       "path": "runtime/modules/access/unit_tests/dataphyre.oauth_provider_deep_coverage.test.php",
       "bytes": 19597,
       "sha256": "d49260a30f0780a3fcc295ee07dd012c4d6067e049e51b8c6f9381b045d54fcd"
+    },
+    {
+      "path": "runtime/modules/access/unit_tests/fixtures/access_token_broker_database_worker.php",
+      "bytes": 3604,
+      "sha256": "125e284fda451b12e3a1020b55328ba27521427318ce8178f93910201e3a6f65"
     },
     {
       "path": "runtime/modules/access/unit_tests/fixtures/oauth_provider_scenario.php",
@@ -2739,8 +2749,8 @@
     },
     {
       "path": "runtime/modules/core/documentation/Dataphyre_Managed_PHP_Web_Pool.md",
-      "bytes": 21726,
-      "sha256": "1a4cf48bd01cf99e01ac1a64d539ccc22ac3343e2e712411a0222ebb04e9366b"
+      "bytes": 22113,
+      "sha256": "e770a9400571a9b50caeeead1283a7dc3f1f5332da045731d85f04ac53a6e829"
     },
     {
       "path": "runtime/modules/core/Framework/App.php",
@@ -2964,8 +2974,8 @@
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_child_environment.php",
-      "bytes": 34208,
-      "sha256": "3dd5e0f85239b1247df5080e1e19e8957b92ca54b5e5c1e724d96a2ee97f397c"
+      "bytes": 34225,
+      "sha256": "522cc42798274cae1ea758e5f01e1d8b9ec1e0829c09cbceb196cf551e645b69"
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_database_identity.php",
@@ -2974,8 +2984,8 @@
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_environment.php",
-      "bytes": 20905,
-      "sha256": "9a9902ca45be7078bb514bbdb08c46687ebbe5364db3db4aac30f2234deaeb81"
+      "bytes": 20922,
+      "sha256": "d77eee2836b34d1478a838a9928fffc6fa7e226629685046ef2cb64e5ba08b3f"
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_fpm_environment.php",
@@ -3159,8 +3169,8 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_environment.test.php",
-      "bytes": 34874,
-      "sha256": "b054074a02b6b86b430b091c252b6c91e42197a414872c89a774bb5ecacf2596"
+      "bytes": 36068,
+      "sha256": "b96231b38d190696d1205df156803594ce938171bf6c84550cffebacd3a9c234"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_probe_state_exact.test.php",
@@ -3184,8 +3194,8 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_secret_broker.test.php",
-      "bytes": 39467,
-      "sha256": "e094f61a1eac288b20336eb7a41a0127d2efa12fe2b1d32924d3b20de0d5ae23"
+      "bytes": 39476,
+      "sha256": "cbe07086d703f807ba25d437d3e86307b578eaf5a999deb84b2eaccb571c6448"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_application_runtime_supervisor.test.php",
@@ -3304,8 +3314,8 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_managed_php_web_pool.test.php",
-      "bytes": 51754,
-      "sha256": "300ee03ca9b7419199f68aa4c4bc1c508913122757971f653bc14858bcee8623"
+      "bytes": 51763,
+      "sha256": "bdbfc4bda54b27d60c6cb901f21b1e69566d75c62f41c0b8cbb67663aa7755a2"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_process_entrypoints_exact.test.php",
@@ -18834,8 +18844,8 @@
     },
     {
       "path": "runtime/native/environment_fd/dataphyre_environment_fd.c",
-      "bytes": 35967,
-      "sha256": "dc5cf1e910d9b1ddf0afbefc0376a21df5550af808eda0c5da4c242d259070ca"
+      "bytes": 36017,
+      "sha256": "700792bf52906b52431a65edb9f8928a90e1bde4fc35e14932c635eb92e70439"
     },
     {
       "path": "runtime/README.md",
