@@ -57,6 +57,7 @@ final class DataphyreApplicationRuntimeSchedulerGateway
 			throw new RuntimeException('Application scheduler gateway socket attestation failed.');
 		}
 		stream_set_blocking($listener,false);$stopping=false;$children=[];
+		$listenerOwnerPid=getmypid();
 		pcntl_async_signals(true);
 		$stop=static function() use (&$stopping): void {$stopping=true;};
 		pcntl_signal(SIGTERM,$stop);pcntl_signal(SIGINT,$stop);
@@ -87,14 +88,18 @@ final class DataphyreApplicationRuntimeSchedulerGateway
 				exit(0);
 			}
 		}finally{
-			fclose($listener);
-			foreach(array_keys($children) as $pid) @posix_kill($pid,SIGTERM);
-			$deadline=microtime(true)+5.0;
-			while($children!==[] && microtime(true)<$deadline){self::reap($children,false);usleep(10000);}
-			foreach(array_keys($children) as $pid) @posix_kill($pid,SIGKILL);
-			self::reap($children,true);
-			self::terminateAdoptedChildren([]);
-			self::cleanupSocket($socketPath,$socketIdentity);
+			// Forked handlers borrow the parent's inventory and socket identity.
+			// An error response failure must not grant them gateway cleanup.
+			if(getmypid()===$listenerOwnerPid){
+				fclose($listener);
+				foreach(array_keys($children) as $pid) @posix_kill($pid,SIGTERM);
+				$deadline=microtime(true)+5.0;
+				while($children!==[] && microtime(true)<$deadline){self::reap($children,false);usleep(10000);}
+				foreach(array_keys($children) as $pid) @posix_kill($pid,SIGKILL);
+				self::reap($children,true);
+				self::terminateAdoptedChildren([]);
+				self::cleanupSocket($socketPath,$socketIdentity);
+			}
 			if(is_string($managedBootstrap['private_key'] ?? null)) sodium_memzero($managedBootstrap['private_key']);
 		}
 		return 0;

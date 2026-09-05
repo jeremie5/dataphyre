@@ -99,8 +99,9 @@ if [ "${DATAPHYRE_TEST_WRITABLE_SOURCE:-0}" = 1 ]; then
 fi
 
 if [ "$container_root" -eq 1 ]; then
+	# The read-only source bind must contain the writable cache mountpoint.
+	mkdir -p "$root/cache"
 	if [ "$engine" = xdebug ]; then
-		mkdir -p "$root/cache"
 		root_cache_flag=--mount
 		root_cache_value="type=bind,source=$root/cache,target=/workspace/dataphyre/cache"
 	else

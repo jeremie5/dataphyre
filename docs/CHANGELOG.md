@@ -16,6 +16,13 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Created the ignored cache mountpoint before starting root-mode test
+  containers from a fresh checkout with read-only source.
+- Kept managed web and scheduler gateway shutdown cleanup in the process that
+  created the listener. A request handler whose error response fails can no
+  longer close an already released listener or clean up the parent's handler
+  inventory and scheduler socket. This process-ownership rule applies to every
+  managed application; request and CGI resources keep their existing cleanup.
 - Preserved PostgreSQL SQL `NULL` values before integer and boolean conversion.
   Optional scalar fields and empty-set aggregates now remain PHP `null` instead
   of becoming zero or false, while non-null conversion behavior stays unchanged.

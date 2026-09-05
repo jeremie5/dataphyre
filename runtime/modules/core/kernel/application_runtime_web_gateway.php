@@ -43,6 +43,7 @@ final class DataphyreApplicationRuntimeWebGateway
 		$listener=@stream_socket_server('tcp://'.$host.':'.$port,$errno,$error,STREAM_SERVER_BIND|STREAM_SERVER_LISTEN);
 		if(!is_resource($listener)) throw new RuntimeException('Application web gateway could not bind its listener.');
 		stream_set_blocking($listener,false);$stopping=false;$children=[];
+		$listenerOwnerPid=getmypid();
 		pcntl_async_signals(true);
 		$stop=static function() use (&$stopping): void {$stopping=true;};
 		pcntl_signal(SIGTERM,$stop);pcntl_signal(SIGINT,$stop);
@@ -64,12 +65,16 @@ final class DataphyreApplicationRuntimeWebGateway
 				fclose($connection);exit(0);
 			}
 		}finally{
-			fclose($listener);
-			foreach(array_keys($children) as $pid) @posix_kill($pid,SIGTERM);
-			$deadline=microtime(true)+5.0;
-			while($children!==[] && microtime(true)<$deadline){self::reap($children,false);usleep(10000);}
-			foreach(array_keys($children) as $pid) @posix_kill($pid,SIGKILL);
-			self::reap($children,true);
+			// A request child can unwind here if its error response also fails.
+			// Only the creating process owns the listener and handler inventory.
+			if(getmypid()===$listenerOwnerPid){
+				fclose($listener);
+				foreach(array_keys($children) as $pid) @posix_kill($pid,SIGTERM);
+				$deadline=microtime(true)+5.0;
+				while($children!==[] && microtime(true)<$deadline){self::reap($children,false);usleep(10000);}
+				foreach(array_keys($children) as $pid) @posix_kill($pid,SIGKILL);
+				self::reap($children,true);
+			}
 		}
 		return 0;
 	}

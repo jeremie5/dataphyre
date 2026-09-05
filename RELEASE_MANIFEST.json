@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-09-04T22:18:40Z",
+  "generated_at_utc": "2026-09-05T06:47:16Z",
   "copied_source_files": 3697,
   "skipped_source_files": 46,
   "export_file_count": 3697,
-  "export_tree_sha256": "3af5f1b6b1707419d5d78d3d0ce7ca2559ecddc89dd535dec23d97c2d86f707d",
+  "export_tree_sha256": "383ebadd1812a7626b7635f5f5fcc9e0e4a0042a59f631efcd2b5aa4d5e77def",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -389,8 +389,8 @@
     },
     {
       "path": "bin/dataphyre-test-docker",
-      "bytes": 6281,
-      "sha256": "bd4d8e81d20ff9cea063d3be240982d1cac08625733f36d66d29107bec0b61ea"
+      "bytes": 6353,
+      "sha256": "5222316121965ddb6e55b24decf5d8c3d4bdd19ff7ef77b22418fd01085ee961"
     },
     {
       "path": "composer.json",
@@ -1759,8 +1759,8 @@
     },
     {
       "path": "docs/CHANGELOG.md",
-      "bytes": 40570,
-      "sha256": "8234cd8004352d83fd5aeff530b778332fbc60f9102e25c5442136229ca38449"
+      "bytes": 41086,
+      "sha256": "c0adaecc7644234f646c5c6d40848c9df93ca8a0a26440d04e9ec5ff4f986bc5"
     },
     {
       "path": "docs/changelog/v2.0.md",
@@ -3034,8 +3034,8 @@
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_scheduler_gateway.php",
-      "bytes": 27624,
-      "sha256": "ac6ce32edf3c760f687bab22438480c44f8a21e098b158b2c9656db98995fad9"
+      "bytes": 27850,
+      "sha256": "aa76a7210144c4fcb82fec2955ae1ea90b1f5eed676856f923fd22b3d6bec22c"
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_scheduler_protocol.php",
@@ -3064,8 +3064,8 @@
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_web_gateway.php",
-      "bytes": 37413,
-      "sha256": "cde3210b30d6633408df15fe059a597aef0f63e6b239fc8fdfed3f58f1a865de"
+      "bytes": 37640,
+      "sha256": "af1c5b6bb066906f84da70efc2125a9c1681a973f4fcd2e7522b4b87fbefd5b2"
     },
     {
       "path": "runtime/modules/core/kernel/application_scheduler_definition_evidence.php",
