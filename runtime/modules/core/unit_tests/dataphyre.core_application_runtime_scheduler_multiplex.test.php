@@ -17,21 +17,26 @@ suite('Managed scheduler callback multiplexing')
 	->isolation('case')->tag('core','runtime','scheduler','cadence','release')
 	->group('framework-coverage');
 
-test('callback fan-out follows the immutable VM CPU boundary beneath the gateway ceiling',static function(Context $t): void {
+test('callback fan-out leaves soft web headroom within the immutable CPU boundary',static function(Context $t): void {
 	$kernel=dirname(__DIR__).'/kernel';
 	require_once $kernel.'/application_runtime_supervisor.php';
 	$gateway=(string)file_get_contents($kernel.'/application_runtime_scheduler_gateway.php');
 	$supervisor=(string)file_get_contents($kernel.'/application_runtime_supervisor.php');
 	$t->same(1,dataphyre_runtime_scheduler_callback_concurrency('0','max 100000'));
-	$t->same(12,dataphyre_runtime_scheduler_callback_concurrency('0-11','max 100000'));
-	$t->same(2,dataphyre_runtime_scheduler_callback_concurrency('0-11','250000 100000'));
-	$t->same(4,dataphyre_runtime_scheduler_callback_concurrency('0-2,2-3','max 100000'));
-	$t->same(32,dataphyre_runtime_scheduler_callback_concurrency('0-63','max 100000'));
+	$t->same(4,dataphyre_runtime_scheduler_callback_concurrency('0-11','max 100000'));
+	$t->same(1,dataphyre_runtime_scheduler_callback_concurrency('0-11','250000 100000'));
+	$t->same(2,dataphyre_runtime_scheduler_callback_concurrency('0-2,2-3','max 100000'));
+	$t->same(4,dataphyre_runtime_scheduler_callback_concurrency('0-63','max 100000'));
+	$t->same(1,dataphyre_runtime_scheduler_callback_concurrency('0-63','50000 100000'));
+	$t->same(1,dataphyre_runtime_scheduler_callback_concurrency('0-63','399999 100000'));
+	$t->same(2,dataphyre_runtime_scheduler_callback_concurrency('0-63','400000 100000'));
+	$t->same(4,dataphyre_runtime_scheduler_callback_concurrency('0-63','800000 100000'));
+	$t->same(1,dataphyre_runtime_scheduler_callback_concurrency('0-1','800000 100000'));
 	$t->throws(static fn()=>dataphyre_runtime_scheduler_callback_concurrency('3-1','max 100000'),RuntimeException::class);
 	$t->throws(static fn()=>dataphyre_runtime_scheduler_callback_concurrency('0-3','unlimited'),RuntimeException::class);
 	$detected=dataphyre_runtime_scheduler_callback_concurrency();
 	$t->greaterThanOrEqual(1,$detected);
-	$t->lessThanOrEqual(32,$detected);
+	$t->lessThanOrEqual(4,$detected);
 	$t->contains('MAX_CHILDREN=32',$gateway);
 	$t->contains('stream_select($read,$write,$except,0,20000)',$supervisor);
 	$t->contains('dataphyre_runtime_scheduler_select($read,$write,$except,$stopRequested,$activationRequested)',$supervisor);

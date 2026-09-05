@@ -56,6 +56,16 @@ PID 1 owns exactly four direct children:
 4. `realtime`: the existing UID/GID `10001`, no-usable-capability persistent
    realtime process.
 
+Scheduler dispatch leaves soft CPU headroom for web and realtime work. It uses
+half the whole CPUs indicated by process affinity and the current cgroup quota,
+rounded down, with a minimum of one callback and a maximum of four. Thus CPU
+allocations of 1, 2, 4, and 8 or more permit 1, 1, 2, and 4 concurrent callbacks.
+The existing due-time ordering, task frequencies, callback deadlines, claim
+cleanup, and fresh CGI secret boundary remain unchanged. A single-CPU allocation
+still runs one callback; this count limit is not an operating-system CPU
+reservation. Hosting platforms remain responsible for CPU allocation and
+admission across applications.
+
 For these fixed rootless roles, “no usable capabilities” means
 `CapInh=CapPrm=CapEff=CapAmb=0`, all real/effective/saved/filesystem UID and GID
 values equal `10001`, and `NoNewPrivs=1`. Because the exact `0xe0` supervisor

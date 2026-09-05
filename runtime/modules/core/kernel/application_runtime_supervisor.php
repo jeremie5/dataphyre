@@ -1133,7 +1133,7 @@ function dataphyre_runtime_scheduler_allowed_cpu_count(string $allowed): int
 	return count($cpus);
 }
 
-/** Resolves the internal callback fan-out from the VM/cgroup CPU boundary. */
+/** Bounds callback fan-out while leaving soft CPU headroom for web traffic. */
 function dataphyre_runtime_scheduler_callback_concurrency(
 	?string $allowedCpuList=null,
 	?string $cpuMax=null,
@@ -1161,7 +1161,9 @@ function dataphyre_runtime_scheduler_callback_concurrency(
 		$quota=(int)$matches[1];$period=(int)$matches[2];
 		$available=min($available,max(1,intdiv($quota,$period)));
 	}
-	$capacity=max(1,min(32,$available));
+	// Fresh CGI callbacks share their allocation with web and realtime work.
+	// Bound the burst without changing task periods, deadlines, or claim order.
+	$capacity=max(1,min(4,intdiv($available,2)));
 	if($detect) $detected=$capacity;
 	return $capacity;
 }
