@@ -121,7 +121,7 @@ static int dataphyre_value_valid(const char *value, size_t length)
     }
     for (index = 0; index < length; index++) {
         unsigned char byte = (unsigned char) value[index];
-        if (byte < 0x20 || byte == 0x7f) {
+        if ((byte < 0x20 && byte != 0x09 && byte != 0x0a && byte != 0x0d) || byte == 0x7f) {
             return 0;
         }
     }

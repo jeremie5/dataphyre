@@ -282,7 +282,7 @@ test('same worker restores sealed state then recycles and terminates without met
 		'php_admin_value[error_log] = '.$errorLog,'php_admin_value[user_ini.filename] =',
 		'php_admin_value[auto_prepend_file] = '.$prepend,'php_admin_value[auto_append_file] =','',
 	]));
-	$secret='managed-fpm-'.bin2hex(random_bytes(32));$secretSha=hash('sha256',$secret);$key=random_bytes(32);
+	$secret="managed-fpm-\t".bin2hex(random_bytes(32))."\r\n";$secretSha=hash('sha256',$secret);$key=random_bytes(32);
 	$managed=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('web',$project,$key);
 	$applicationEnvironment=DataphyreApplicationRuntimeEnvironment::childEnvironment(
 		['PROBE_SECRET'=>$secret],

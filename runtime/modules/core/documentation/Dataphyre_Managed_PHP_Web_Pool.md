@@ -392,3 +392,9 @@ The planner is runtime-owned and exposes no application or deployment control.
 
 No source-only assertion, skipped FPM test, different PHP image, or self-hosted
 sidecar is sufficient evidence for promotion.
+
+Application environment values may contain tab, LF and CR (for example a PEM
+key or an existing key with a final newline). Canonical JSON, the sealed broker
+and the native request context preserve these bytes exactly. NUL, other ASCII
+controls and DEL remain invalid, as do reserved names and over-limit values.
+This allowance does not apply to public process controls or HTTP headers.

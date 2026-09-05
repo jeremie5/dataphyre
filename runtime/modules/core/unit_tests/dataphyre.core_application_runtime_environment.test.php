@@ -312,6 +312,20 @@ test('canonical channel bytes preserve all valid utf8 including line separator c
 	$t->same("\n",substr($canonical,-1));
 })->tag('canonical','unicode','cross-language');
 
+test('canonical application values preserve multiline bytes and reject unsafe controls',static function(Context $t): void {
+	$internals=$t->nonPublic(DataphyreApplicationRuntimeEnvironment::class);
+	$release='dep_'.str_repeat('a',40);$fingerprint='hmac-sha256:'.str_repeat('b',64);
+	foreach([str_repeat('a',128)."\n", " first\tline\r\nsecond\n", str_repeat('x',65536)] as $raw){
+		$canonical=$internals->invoke('canonicalEnvelope','example-app','ExampleApp','production','Env:Opaque_42',$release,$fingerprint,['APP_KEY'=>$raw]);
+		$decoded=$internals->invoke('decodeEnvelope',$canonical,'example-app','ExampleApp','production','Env:Opaque_42',$release);
+		$t->same($raw,$decoded['values']['APP_KEY']);
+	}
+	foreach(["\0","\x01","\x08","\x0b","\x0c","\x0e","\x1f","\x7f",str_repeat('x',65537)] as $invalid){
+		$canonical=$internals->invoke('canonicalEnvelope','example-app','ExampleApp','production','Env:Opaque_42',$release,$fingerprint,['APP_KEY'=>$invalid]);
+		$t->throws(static fn()=>$internals->invoke('decodeEnvelope',$canonical,'example-app','ExampleApp','production','Env:Opaque_42',$release),RuntimeException::class);
+	}
+})->tag('multiline','canonical','byte-preservation','negative');
+
 test('canonical channel decoder rejects malformed contracts entries and alternate encodings',static function(Context $t): void {
 	$internals=$t->nonPublic(DataphyreApplicationRuntimeEnvironment::class);
 	$release='dep_'.str_repeat('a',40);$fingerprint='hmac-sha256:'.str_repeat('b',64);

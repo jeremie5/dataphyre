@@ -391,7 +391,7 @@ test('socket exhaustion and over-deep process ancestry fail closed with exact ev
 
 test('scheduler execution keeps one fresh capability-free php-cgi process per request',static function(Context $t): void {
 	$kernel=(string)realpath(dirname(__DIR__).'/kernel');$fixture=(string)realpath(__DIR__.'/fixtures/application_runtime_scheduler_cgi_probe.php');
-	$project=(string)realpath(dirname(__DIR__,4));$secret='scheduler-cgi-'.bin2hex(random_bytes(32));
+	$project=(string)realpath(dirname(__DIR__,4));$secret="scheduler-cgi-\t".bin2hex(random_bytes(32))."\r\n";
 	$key=random_bytes(32);$managed=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('scheduler',$project,$key);
 	$expected=hash('sha256',$secret);$keySha=hash('sha256',$key);$results=[];
 	try{

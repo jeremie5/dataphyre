@@ -322,7 +322,7 @@ final class DataphyreApplicationRuntimeEnvironment
 		$result=[];
 		foreach($decoded['values'] as $name=>$value){
 			if(!is_string($name) || preg_match('/^[A-Z][A-Z0-9_]{0,119}$/D',$name)!==1
-				|| !is_string($value) || strlen($value)>65536 || preg_match('/[\x00-\x1f\x7f]/D',$value)===1
+				|| !is_string($value) || strlen($value)>65536 || preg_match('/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/D',$value)===1
 				|| self::reserved($name)){
 				throw new RuntimeException('Application environment entry is invalid.');
 			}
