@@ -16,6 +16,19 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Let safe canonical public directories fall through to application routing
+  instead of masking document routes beneath static asset prefixes. Directories
+  are never listed or indexed; unsafe links, special files and path rejections
+  keep their existing boundaries.
+- Kept ordinary HTTP asset bursts from blocking the public ingress loop while
+  opening private web connections. A bounded queue feeds the existing eight
+  handlers within the existing client and ingress deadline limits; connection
+  attempts remain asynchronous and bounded to 250 ms. Liveness bypasses that
+  queue, and idle polling still services connection and header deadlines.
+  The fixed warm and concurrent release probes now cross public ingress using
+  ordinary `Connection: close` requests, with their counts, budgets and private
+  status transport unchanged. This supports ordinary multi-asset pages without
+  adding workers or relaxing request limits.
 - Treated scheduler polling interrupted by a pending normal activation or pause
   as a wake-up, preserving in-flight callbacks until their receipts settle.
   Pausing stops new dispatch before reporting quiescence. Shutdown signals still

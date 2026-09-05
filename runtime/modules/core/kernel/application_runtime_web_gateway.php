@@ -336,10 +336,12 @@ final class DataphyreApplicationRuntimeWebGateway
 			if(!file_exists($cursor)) return false;
 		}
 		$stat=@lstat($cursor);$resolved=@realpath($cursor);$prefix=$publicRoot.'/';
-		if(!is_array($stat) || (($stat['mode'] ?? 0)&0170000)!==0100000 || !is_string($resolved)
+		if(!is_array($stat) || !is_string($resolved)
 			|| !str_starts_with($resolved,$prefix) || !hash_equals($resolved,$cursor)){
 			self::respond($connection,404,'Not Found');return true;
 		}
+		if((($stat['mode'] ?? 0)&0170000)===0040000) return false;
+		if((($stat['mode'] ?? 0)&0170000)!==0100000){self::respond($connection,404,'Not Found');return true;}
 		$size=$stat['size'] ?? null;
 		if(!is_int($size) || $size<0 || $size>self::MAX_STATIC_RESPONSE_BYTES){self::respond($connection,404,'Not Found');return true;}
 		$extension=strtolower(pathinfo($resolved,PATHINFO_EXTENSION));

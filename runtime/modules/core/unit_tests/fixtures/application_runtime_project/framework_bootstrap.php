@@ -297,6 +297,9 @@ if((string)getenv('DATAPHYRE_RUNTIME_TEST_WEB_SLEEP')==='1'
 }
 
 $managedHealthPath=(string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'),PHP_URL_PATH) ?: '/'); // dataphyre-test-architecture: exempt[raw-superglobal] reason="Exact managed-gateway fixture counts only the reserved dynamic health route."
+if(preg_match('@^/application-assets/chunk-([0-9]+)\.js$@D',$managedHealthPath,$assetMatch)===1){
+	header('Content-Type: application/javascript');echo 'export const chunk='.(int)$assetMatch[1].";\n";return;
+}
 $managedHealthCounter=(string)getenv('DATAPHYRE_RUNTIME_TEST_WEB_HEALTH_COUNTER_PATH');
 if(rawurldecode($managedHealthPath)==='/health' && $managedHealthCounter!==''){
 	$counter=fopen($managedHealthCounter,'c+');

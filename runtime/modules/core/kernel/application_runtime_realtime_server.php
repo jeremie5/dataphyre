@@ -19,6 +19,8 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 	private const WEB_HOST='127.0.0.1';
 	private const WEB_PORT=8083;
 	private const MAX_CONNECTIONS=256;
+	private const MAX_WEB_CONNECTIONS=8;
+	private const CONNECT_TIMEOUT_SECONDS=0.25;
 	private const MAX_HEADER_BYTES=16384;
 	private const MAX_HEADER_LINE_BYTES=4096;
 	private const MAX_HEADERS=64;
@@ -146,6 +148,7 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 	}
 
 	private function cycle(): void {
+		$this->admitQueuedRequests(microtime(true));
 		$read=[];
 		$write=[];
 		$backendOwners=[];
@@ -168,6 +171,10 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 			if(is_resource($client['backend'] ?? null)){
 				$backendId=(int)$client['backend'];
 				$backendOwners[$backendId]=$id;
+				if($client['phase']==='connecting'){
+					$write[]=$client['backend'];
+					continue;
+				}
 				if(strlen($client['write_buffer'])<self::MAX_PROXY_BUFFER_BYTES){
 					$read[]=$client['backend'];
 				}
@@ -178,7 +185,7 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 		}
 		$except=[];
 		$selected=@stream_select($read, $write, $except, 0, 50000);
-		if($selected<1) return;
+		if($selected<1){$this->maintainClients(microtime(true));return;}
 		foreach($read as $stream){
 			if($stream===$this->listener){
 				$this->acceptClients();
@@ -194,7 +201,9 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 		foreach($write as $stream){
 			$streamId=(int)$stream;
 			if(isset($backendOwners[$streamId])){
-				$this->writeBackend($backendOwners[$streamId]);
+				$id=$backendOwners[$streamId];
+				if(($this->clients[$id]['phase'] ?? null)==='connecting') $this->completeProxyConnection($id);
+				if(($this->clients[$id]['phase'] ?? null)==='proxy') $this->writeBackend($id);
 			}elseif(isset($this->clients[$streamId])){
 				$this->writeClient($streamId);
 			}
@@ -217,6 +226,8 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 				'write_buffer'=>'',
 				'to_backend'=>'',
 				'backend'=>null,
+				'queue_deadline'=>null,
+				'connect_deadline'=>null,
 				'close_after_write'=>false,
 				'authorization'=>[],
 				'events'=>null,
@@ -369,24 +380,42 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 			$this->reject($id,400,'Bad Request');
 			return;
 		}
-		$errno=0;
-		$error='';
-		$backend=@stream_socket_client(
-			'tcp://'.self::WEB_HOST.':'.self::WEB_PORT,
-			$errno,
-			$error,
-			0.25,
-			STREAM_CLIENT_CONNECT
-		);
-		if(!is_resource($backend)){
-			$this->reject($id, 503, 'Service Unavailable');
-			return;
-		}
-		stream_set_blocking($backend, false);
-		$client['backend']=$backend;
-		$client['phase']='proxy';
+		$client['phase']='queued';
+		$client['queue_deadline']=$client['created_at']+self::HEADER_TIMEOUT_SECONDS;
 		$client['to_backend']=$proxyRequest;
 		$client['header_buffer']='';
+	}
+
+	/** One bounded FIFO feeds the fixed eight-handler web pool without blocking ingress. */
+	private function admitQueuedRequests(float $now): void {
+		$active=0;
+		foreach($this->clients as $client) if(is_resource($client['backend'] ?? null)) $active++;
+		foreach(array_keys($this->clients) as $id){
+			if($this->clients[$id]['phase']!=='queued') continue;
+			if($now>=$this->clients[$id]['queue_deadline']){
+				$this->reject($id,503,'Service Unavailable');continue;
+			}
+			if($active>=self::MAX_WEB_CONNECTIONS) break;
+			$backend=@stream_socket_client(
+				'tcp://'.self::WEB_HOST.':'.self::WEB_PORT,$errno,$error,self::CONNECT_TIMEOUT_SECONDS,
+				STREAM_CLIENT_CONNECT|STREAM_CLIENT_ASYNC_CONNECT,
+			);
+			if(!is_resource($backend)){$this->reject($id,503,'Service Unavailable');continue;}
+			stream_set_blocking($backend,false);
+			$this->clients[$id]['backend']=$backend;
+			$this->clients[$id]['phase']='connecting';
+			$this->clients[$id]['connect_deadline']=microtime(true)+self::CONNECT_TIMEOUT_SECONDS;
+			$active++;
+		}
+	}
+
+	private function completeProxyConnection(int $id): void {
+		$client=&$this->clients[$id];
+		if(microtime(true)>=$client['connect_deadline']
+			|| @stream_socket_get_name($client['backend'],true)!==self::WEB_HOST.':'.self::WEB_PORT){
+			$this->reject($id,503,'Service Unavailable');return;
+		}
+		$client['phase']='proxy';$client['connect_deadline']=null;$client['queue_deadline']=null;
 	}
 
 	private function readBackend(int $id): void {
@@ -434,6 +463,10 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 		foreach(array_keys($this->clients) as $id){
 			if(!isset($this->clients[$id])) continue;
 			$client=&$this->clients[$id];
+			if(($client['phase']==='queued' && $now>=$client['queue_deadline'])
+				|| ($client['phase']==='connecting' && $now>=$client['connect_deadline'])){
+				$this->reject($id,503,'Service Unavailable');continue;
+			}
 			if($client['phase']==='headers' && $now-$client['created_at']>self::HEADER_TIMEOUT_SECONDS){
 				$this->reject($id, 408, 'Request Timeout');
 				continue;
@@ -581,6 +614,8 @@ final class DataphyreApplicationRuntimeRealtimeServer {
 
 	private function reject(int $id, int $status, string $reason): void {
 		if(!isset($this->clients[$id])) return;
+		if(is_resource($this->clients[$id]['backend'] ?? null)) fclose($this->clients[$id]['backend']);
+		$this->clients[$id]['backend']=null;$this->clients[$id]['to_backend']='';
 		$this->clients[$id]['write_buffer']="HTTP/1.1 {$status} {$reason}\r\nContent-Length: 0\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n";
 		$this->clients[$id]['close_after_write']=true;
 		$this->clients[$id]['phase']='closing';

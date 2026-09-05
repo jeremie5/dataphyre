@@ -164,6 +164,66 @@ function dataphyre_managed_web_http(string $method,string $target): array
 	return ['status'=>(int)$match[1],'head'=>$head,'body'=>$body];
 }
 
+/** Ordinary HTTP burst: every client keeps its connection open through the response. */
+function dataphyre_managed_ingress_asset_burst(string $prefix): array
+{
+	$streams=[];$responses=[];$statuses=[];$bodyMatches=true;$started=microtime(true);
+	try{
+		for($index=0;$index<48;$index++){
+			$readyDeadline=microtime(true)+5.0;
+			do{
+				$stream=@stream_socket_client('tcp://127.0.0.1:8080',$errno,$error,0.1,STREAM_CLIENT_CONNECT);
+				if(is_resource($stream) || $index!==0) break;
+				usleep(10000);
+			}while(microtime(true)<$readyDeadline);
+			if(!is_resource($stream)) throw new RuntimeException('Ordinary ingress asset connection failed at '.$index.': '.$error);
+			stream_set_timeout($stream,2);$streams[$index]=$stream;$responses[$index]='';
+		}
+		foreach($streams as $index=>$stream){
+			$request="GET {$prefix}/chunk-{$index}.js?action=sleep HTTP/1.1\r\nHost: fixture.example\r\nConnection: close\r\n\r\n";
+			DataphyreApplicationRuntimeWebGateway::writeAll($stream,$request);stream_set_blocking($stream,false);
+		}
+		$livenessStarted=microtime(true);$livenessElapsed=null;
+		$liveness=@stream_socket_client('tcp://127.0.0.1:8080',$errno,$error,1,STREAM_CLIENT_CONNECT);
+		if(!is_resource($liveness)) throw new RuntimeException('Public liveness connection failed during asset burst.');
+		$streams[48]=$liveness;$responses[48]='';
+		DataphyreApplicationRuntimeWebGateway::writeAll($liveness,"GET /.dataphyre/live HTTP/1.1\r\nHost: fixture.example\r\nConnection: close\r\n\r\n");
+		stream_set_blocking($liveness,false);
+		$deadline=microtime(true)+20.0;
+		while($streams!==[] && microtime(true)<$deadline){
+			$read=array_values($streams);$write=[];$except=[];
+			if(stream_select($read,$write,$except,0,50000)===false) throw new RuntimeException('Ordinary ingress asset poll failed.');
+			foreach($read as $stream){
+				$index=array_search($stream,$streams,true);$chunk=fread($stream,65536);
+				if($chunk===false) throw new RuntimeException('Ordinary ingress asset read failed.');
+				$responses[$index].=$chunk;
+				if(strlen($responses[$index])>65536) throw new RuntimeException('Ordinary ingress asset exceeded fixture bound.');
+				if(feof($stream)){
+					if($index===48) $livenessElapsed=(int)ceil((microtime(true)-$livenessStarted)*1000);
+					fclose($stream);unset($streams[$index]);
+				}
+			}
+		}
+		if($streams!==[]) throw new RuntimeException('Ordinary ingress asset burst timed out.');
+		foreach($responses as $index=>$response){
+			[$head,$body]=array_pad(explode("\r\n\r\n",$response,2),2,'');
+			$status=preg_match('/^HTTP\/1\.1 (\d{3})\b/D',$head,$match)===1 ? (int)$match[1] : 0;
+			if($index===48){
+				$livenessStatus=$status;
+				if($body!=='') throw new RuntimeException('Public liveness returned an unexpected body.');
+				continue;
+			}
+			$statuses[]=$status;
+			if($status===200 && $body!=="export const chunk={$index};\n") $bodyMatches=false;
+		}
+		$counts=array_count_values($statuses);ksort($counts,SORT_NUMERIC);
+		return [
+			'statuses'=>$counts,'exact_asset_bytes'=>$bodyMatches,'elapsed_milliseconds'=>(int)ceil((microtime(true)-$started)*1000),
+			'liveness_status'=>$livenessStatus,'liveness_elapsed_milliseconds'=>$livenessElapsed,
+		];
+	}finally{foreach($streams as $stream) if(is_resource($stream)) fclose($stream);}
+}
+
 /** @return list<int> */
 function dataphyre_managed_fpm_workers(int $masterPid,float $timeoutSeconds=5.0): array
 {
@@ -363,7 +423,7 @@ test('fixed rootless gateway and eight-worker FPM topology serves static and dyn
 	$applicationEnvironment['DATAPHYRE_RUNTIME_TEST_WEB_HEALTH_COUNTER_PATH']=$healthCounter;
 	$applicationEnvironment['DATAPHYRE_SCHEDULER_ACTIVATION_MODE']='record_only';
 	$parentCreated=false;$parentMode=null;$webDirectory='/run/dataphyre/web';$socketPath=$webDirectory.'/php-fpm.sock';
-	$fpm=null;$web=null;$statusServer=null;$failure=null;$diagnostics='';$initialWorkers=[];$replacementWorkers=[];
+	$fpm=null;$web=null;$realtime=null;$statusServer=null;$failure=null;$diagnostics='';$initialWorkers=[];$replacementWorkers=[];
 	$socketIdentity=null;$webDirectoryIdentity=null;$webParentIdentity=null;
 	$testParentBounding=DataphyreApplicationRuntimeChildEnvironment::processIdentity(getmypid())['cap_bounding'];
 	try{
@@ -614,6 +674,36 @@ test('fixed rootless gateway and eight-worker FPM topology serves static and dyn
 		$t->isFalse(in_array($killedWorker,$replacementWorkers,true));
 		$t->same(200,dataphyre_managed_web_http('GET','/health')['status']);
 
+			$realtimeEnvironment=$applicationEnvironment+[
+				'DATAPHYRE_RUNTIME_REALTIME_HOST'=>'0.0.0.0','DATAPHYRE_RUNTIME_REALTIME_PORT'=>'8080',
+				'DATAPHYRE_RUNTIME_WEB_HOST'=>'127.0.0.1','DATAPHYRE_RUNTIME_WEB_PORT'=>'8083',
+				'DATAPHYRE_RUNTIME_TEST_REALTIME_TOKEN'=>'ordinary-asset-burst',
+			];
+			$realtimeManaged=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapContext('realtime',$project,$key);
+			$realtime=DataphyreApplicationRuntimeProcessBroker::spawn([
+				'/usr/bin/setpriv','--reuid=10001','--regid=10001','--groups=10001','--no-new-privs',
+				'--inh-caps=-all','--ambient-caps=-all','--bounding-set=-all','--pdeathsig=SIGKILL',
+				PHP_BINARY,$kernel.'/application_runtime_realtime_server.php','realtime','0.0.0.0','8080',$project,
+			],[0=>['file','/dev/null','r'],1=>['pipe','w'],2=>['pipe','w']],$project,[],'realtime',
+				$realtimeEnvironment,10000,$realtimeManaged);
+			sodium_memzero($realtimeManaged['private_key']);
+			$assetDirectory=$project.'/public/assets';mkdir($assetDirectory,0755);chmod($assetDirectory,0755);
+			for($index=0;$index<48;$index++){
+				$asset=$assetDirectory.'/chunk-'.$index.'.js';file_put_contents($asset,"export const chunk={$index};\n");chmod($asset,0644);
+			}
+			$staticBurst=dataphyre_managed_ingress_asset_burst('/assets');
+			$dynamicBurst=dataphyre_managed_ingress_asset_burst('/application-assets');
+			$t->same([200=>48],$staticBurst['statuses'],'static ingress burst '.json_encode($staticBurst));
+			$t->same([200=>48],$dynamicBurst['statuses'],'dynamic ingress burst '.json_encode($dynamicBurst));
+			$t->same(true,$staticBurst['exact_asset_bytes']);$t->same(true,$dynamicBurst['exact_asset_bytes']);
+			foreach([$staticBurst,$dynamicBurst] as $burst){
+				$t->same(200,$burst['liveness_status']);
+				$t->lessThan(500,$burst['liveness_elapsed_milliseconds'],'liveness bypasses the occupied web pool');
+			}
+			$directoryRoute=dataphyre_managed_web_http('GET','/assets');
+			$t->same(200,$directoryRoute['status'],'a canonical public directory falls through to the application router');
+			$t->same('{"status":"healthy","missing_environment_keys":[]}',$directoryRoute['body'],
+				'the native PHP fixture responds; the gateway never indexes or lists the directory');
 			$healthCountBeforeReleaseProbe=(int)file_get_contents($healthCounter);
 			$ready=$workspace->path('release-probe-status.ready');
 		$statusServer=$t->startPhpProcess([
@@ -666,7 +756,7 @@ test('fixed rootless gateway and eight-worker FPM topology serves static and dyn
 			$socketIdentity=null;$webDirectoryIdentity=null;
 	}catch(Throwable $caught){$failure=$caught;
 	}finally{
-		foreach(['web'=>$web,'fpm'=>$fpm] as $process){
+		foreach(['realtime'=>$realtime,'web'=>$web,'fpm'=>$fpm] as $process){
 			if(!is_array($process)) continue;
 			$status=proc_get_status($process['resource']);
 			if(($status['running'] ?? false)===true && $process['pid']>1){

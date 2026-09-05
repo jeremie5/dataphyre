@@ -953,8 +953,12 @@ test('realtime server drains proxy streams and enforces maintenance bounds on li
 	$internals->invoke('startProxy',$id,[
 		'method'=>'GET','target'=>'/health','protocol'=>'HTTP/1.1','headers'=>['host'=>'example.test','connection'=>'close'],
 	]);
+	$t->same('queued',$internals->readProperty('clients')[$id]['phase']);
+	$internals->invoke('admitQueuedRequests',microtime(true));
 	$accepted=stream_socket_accept($webListener,1);
 	if(!is_resource($accepted)) throw new RuntimeException('Fixed web backend did not accept the proxy connection.');
+	$t->same('connecting',$internals->readProperty('clients')[$id]['phase']);
+	$internals->invoke('completeProxyConnection',$id);
 	$proxied=$internals->readProperty('clients')[$id];
 	$t->same('proxy',$proxied['phase']);$t->isTrue(is_resource($proxied['backend']));
 	$t->contains("GET /health HTTP/1.1\r\n",$proxied['to_backend']);$t->same('',$proxied['header_buffer']);
@@ -974,6 +978,40 @@ test('realtime server drains proxy streams and enforces maintenance bounds on li
 	$t->same([],$internals->readProperty('clients'));
 	fclose($listener);fclose($listenerPeer);
 })->tag('realtime','proxy','socketpair','maintenance','bounds','positive','negative');
+
+test('ingress deadlines expire queued and connecting work even when polling is idle',static function(Context $t): void {
+	require_once dirname(__DIR__).'/kernel/application_runtime_realtime_server.php';
+	$server=new DataphyreApplicationRuntimeRealtimeServer([]);$internals=$t->nonPublic($server);
+	$resources=[];
+	try{
+		foreach(['listener','client','backend'] as $name){
+			$pair=stream_socket_pair(STREAM_PF_UNIX,STREAM_SOCK_STREAM,0);
+			if(!is_array($pair)) throw new RuntimeException('Ingress deadline fixture is unavailable.');
+			foreach($pair as $stream){stream_set_blocking($stream,false);$resources[]=$stream;}
+			${$name}=$pair[0];
+		}
+		$internals->writeProperty('listener',$listener);$id=(int)$client;$now=microtime(true);
+		$base=['stream'=>$client,'phase'=>'headers','created_at'=>$now-6,'backend'=>null,
+			'write_buffer'=>'','to_backend'=>'','header_buffer'=>'','close_after_write'=>false,
+			'queue_deadline'=>null,'connect_deadline'=>null];
+		$internals->writeProperty('clients',[$id=>$base]);
+		$internals->invoke('cycle');
+		$t->contains('408 Request Timeout',$internals->readProperty('clients')[$id]['write_buffer'],
+			'no readable or writable stream is needed to enforce the header deadline');
+		foreach(['queued','connecting'] as $phase){
+			$state=$base;$state['phase']=$phase;$state['created_at']=$now;
+			$state['queue_deadline']=$now+5;$state['connect_deadline']=$now+0.25;
+			$state['to_backend']='pending request';$state['backend']=$phase==='connecting' ? $backend : null;
+			$internals->writeProperty('clients',[$id=>$state]);
+			$internals->invoke('maintainClients',$now+($phase==='queued' ? 5 : 0.25));
+			$expired=$internals->readProperty('clients')[$id];
+			$t->same('closing',$expired['phase']);$t->contains('503 Service Unavailable',$expired['write_buffer']);
+			$t->same(null,$expired['backend']);$t->same('',$expired['to_backend']);
+		}
+		$t->isFalse(is_resource($backend),'expired connection resources are released');
+		$t->isTrue(is_resource($client),'bounded failure remains available for the ordinary client to read');
+	}finally{foreach($resources as $stream) if(is_resource($stream)) fclose($stream);}
+})->tag('realtime','proxy','admission','deadline','idle','bounded');
 
 test('process broker seals standard input before acknowledgement and reaps early or stalled children',static function(Context $t): void {
 	$frameworkRoot=(string)realpath(dirname(__DIR__,4));

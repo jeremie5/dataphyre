@@ -20,7 +20,7 @@ final class DataphyreApplicationRuntimeReleaseProbe
 	public const CONCURRENT_BUDGET_MILLISECONDS=3000;
 	private const TOTAL_PROBE_BUDGET_MILLISECONDS=25000;
 	private const RESPONSE_MAX_BYTES=1048576;
-	private const WEB_ADDRESS='tcp://127.0.0.1:8083';
+	private const WEB_ADDRESS='tcp://127.0.0.1:8080';
 	private const STATUS_ADDRESS='unix:///run/dataphyre/control/runtime.sock';
 	private const HEALTH_PATH='/health';
 
@@ -118,7 +118,7 @@ final class DataphyreApplicationRuntimeReleaseProbe
 				$stream=@stream_socket_client(self::WEB_ADDRESS,$errno,$error,$remaining,STREAM_CLIENT_CONNECT);
 				if(!is_resource($stream)) throw new RuntimeException('Concurrent application connection failed.');
 				stream_set_blocking($stream,true);stream_set_timeout($stream,0,500000);
-				self::writeAll($stream,$request);stream_socket_shutdown($stream,STREAM_SHUT_WR);
+				self::writeAll($stream,$request);
 				stream_set_blocking($stream,false);$id=(int)$stream;
 				$streams[$id]=$stream;$responses[$id]='';
 			}
@@ -160,7 +160,8 @@ final class DataphyreApplicationRuntimeReleaseProbe
 		if(!is_resource($stream)) throw new RuntimeException('Application probe connection failed.');
 		try{
 			$seconds=max(1,(int)ceil($timeout));stream_set_timeout($stream,$seconds,0);
-			self::writeAll($stream,self::requestBytes($path));stream_socket_shutdown($stream,STREAM_SHUT_WR);
+			self::writeAll($stream,self::requestBytes($path));
+			if($address===self::STATUS_ADDRESS) stream_socket_shutdown($stream,STREAM_SHUT_WR);
 			$response='';
 			while(!feof($stream)){
 				if(hrtime(true)>=$absoluteDeadline) throw new RuntimeException('Application probe deadline expired.');
