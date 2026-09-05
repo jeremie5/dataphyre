@@ -1239,6 +1239,7 @@ function dataphyre_runtime_scheduler_select(
 	array &$write,
 	array &$except,
 	?bool &$stopRequested,
+	?bool &$activationRequested,
 	?callable $selector=null,
 ): int {
 	$selector ??= static function(array &$read,array &$write,array &$except): int|false {
@@ -1248,6 +1249,12 @@ function dataphyre_runtime_scheduler_select(
 	// An async TERM/INT may interrupt select or arrive as it returns ready.
 	// Stop authority must win before any socket settlement or cadence mutation.
 	dataphyre_runtime_require_not_stopping($stopRequested);
+	if($selected===false && $activationRequested!==null){
+		// Normal activation signals wake the loop without abandoning callbacks.
+		// Clear readiness left over from the interrupted call, then apply the
+		// pending transition and drain every already-dispatched receipt.
+		$read=[];$write=[];$except=[];return 0;
+	}
 	if($selected===false || !is_int($selected) || $selected<0){
 		throw new RuntimeException('Scheduler callback multiplex select failed.');
 	}
@@ -1455,7 +1462,7 @@ function dataphyre_runtime_run_scheduler_multiplexed_callbacks(
 			if(is_resource($statusListener)){
 				dataphyre_runtime_serve_status($statusListener,$runtime,$pendingRequests,$publicKey);
 			}
-			$selected=dataphyre_runtime_scheduler_select($read,$write,$except,$stopRequested);
+			$selected=dataphyre_runtime_scheduler_select($read,$write,$except,$stopRequested,$activationRequested);
 			foreach($write as $socket){
 				$key=$socketKeys[(int)get_resource_id($socket)] ?? null;
 				if(!is_string($key) || !isset($active[$key])) continue;
@@ -1679,10 +1686,11 @@ function dataphyre_runtime_require_scheduler_replay_rejection(
  * real synchronous scheduler-gateway path around every callback and allows one
  * fixed scheduler tick plus one second because durable success timestamps
  * currently have second precision.
- * A first execution may establish its phase anywhere in its first cadence window;
- * later executions must start when due. Every callback must complete before the
- * next declared period, and work completed early in a serial cycle must not be due
- * again before that same cycle ends.
+ * Dispatch start lateness remains diagnostic: queueing within the completion
+ * window does not make successfully completed work unhealthy. Every callback
+ * must complete before the next declared period plus the fixed grace, and work
+ * completed early in a serial cycle must not miss its next recurrence before
+ * that same cycle ends. Callback execution timeouts remain independently enforced.
  *
  * @param list<array{name:string,frequency_milliseconds:int,due_at_milliseconds:int,first_execution:bool,started_at_milliseconds:int,completed_at_milliseconds:int}> $observations
  * @return array{ok:bool,observation_count:int,late_start_count:int,late_completion_count:int,overdue_again_count:int,max_start_lateness_milliseconds:int,max_completion_lateness_milliseconds:int,max_recurrence_lateness_milliseconds:int}
@@ -1735,7 +1743,7 @@ function dataphyre_runtime_scheduler_cadence_assessment(
 		$maxRecurrenceLateness=max($maxRecurrenceLateness,$recurrenceLateness);
 	}
 	return [
-		'ok'=>$lateStarts===0 && $lateCompletions===0 && $overdueAgain===0,
+		'ok'=>$lateCompletions===0 && $overdueAgain===0,
 		'observation_count'=>count($observations),
 		'late_start_count'=>$lateStarts,
 		'late_completion_count'=>$lateCompletions,

@@ -34,7 +34,7 @@ test('callback fan-out follows the immutable VM CPU boundary beneath the gateway
 	$t->lessThanOrEqual(32,$detected);
 	$t->contains('MAX_CHILDREN=32',$gateway);
 	$t->contains('stream_select($read,$write,$except,0,20000)',$supervisor);
-	$t->contains('dataphyre_runtime_scheduler_select($read,$write,$except,$stopRequested)',$supervisor);
+	$t->contains('dataphyre_runtime_scheduler_select($read,$write,$except,$stopRequested,$activationRequested)',$supervisor);
 	$t->contains("'scheduler_active_since_milliseconds'=>\$initialSchedulerActiveSince",$supervisor);
 	$t->contains('usort($due,static function',$supervisor);
 	$t->contains("strcmp(\$leftDefinition['name'],\$rightDefinition['name'])",$supervisor);
@@ -42,12 +42,12 @@ test('callback fan-out follows the immutable VM CPU boundary beneath the gateway
 
 test('multiplex select gives graceful stop authority precedence over EINTR and ready sockets',static function(Context $t): void {
 	require_once dirname(__DIR__).'/kernel/application_runtime_supervisor.php';
-	$invoke=static function(bool $stop,int|false $result): int {
+	$invoke=static function(bool $stop,int|false $result,?bool $activation=null): int {
 		$read=[];$write=[];$except=[];$stopRequested=$stop;
 		$selector=static function(array &$read,array &$write,array &$except) use ($result): int|false {
 			return $result;
 		};
-		return dataphyre_runtime_scheduler_select($read,$write,$except,$stopRequested,$selector);
+		return dataphyre_runtime_scheduler_select($read,$write,$except,$stopRequested,$activation,$selector);
 	};
 	foreach([false,0,1] as $selected){
 		$t->throws(
@@ -55,6 +55,9 @@ test('multiplex select gives graceful stop authority precedence over EINTR and r
 			DataphyreManagedRuntimeGracefulShutdown::class,
 			'TERM wins whether select reports EINTR, timeout, or readiness',
 		);
+		foreach([false,true] as $activation){
+			$t->throws(static fn()=> $invoke(true,$selected,$activation),DataphyreManagedRuntimeGracefulShutdown::class);
+		}
 	}
 	$t->throws(
 		static fn()=> $invoke(false,false),
@@ -63,7 +66,26 @@ test('multiplex select gives graceful stop authority precedence over EINTR and r
 	);
 	$t->same(0,$invoke(false,0));
 	$t->same(1,$invoke(false,1));
+	$t->throws(static fn()=> $invoke(false,-1,true),RuntimeException::class);
 })->tag('term','eintr','select','claim-retention','deterministic');
+
+test('normal activation interrupts clear readiness without closing pending callback streams',static function(Context $t): void {
+	require_once dirname(__DIR__).'/kernel/application_runtime_supervisor.php';
+	foreach([false,true] as $requested){
+		$stream=fopen('php://temp','w+b');
+		if(!is_resource($stream)) throw new RuntimeException('Select fixture stream is unavailable.');
+		try{
+			$read=[$stream];$write=[$stream];$except=[$stream];$stop=false;$activation=null;
+			$selector=static function() use (&$activation,$requested): false {$activation=$requested;return false;};
+			$t->same(0,dataphyre_runtime_scheduler_select($read,$write,$except,$stop,$activation,$selector));
+			$t->same([[],[],[]],[$read,$write,$except]);
+			$t->same($requested,$activation,'the outer loop retains ownership of the transition');
+			$t->isTrue(is_resource($stream),'an activation interrupt does not close an in-flight stream');
+			$t->same(7,fwrite($stream,'receipt'));rewind($stream);
+			$t->same('receipt',stream_get_contents($stream));
+		}finally{if(is_resource($stream)) fclose($stream);}
+	}
+})->tag('activation','deactivation','eintr','select','drain','deterministic');
 
 test('activation phases balance mixed cadences without making eligible work disappear',static function(Context $t): void {
 	$kernel=dirname(__DIR__).'/kernel';

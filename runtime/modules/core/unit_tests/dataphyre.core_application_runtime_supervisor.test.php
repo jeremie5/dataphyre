@@ -956,9 +956,12 @@ test('deactivation requested during a tick remains inactive and cannot trigger a
 	$persist=static function(bool $active) use (&$persisted,&$runtime): void {
 		$persisted[]=['active'=>$active,'in_progress'=>$runtime['scheduler_cycle_in_progress']];
 	};
-	$request=static function() use (&$requests,&$runtime,&$activationRequested): array {
+	$request=static function() use ($t,&$requests,&$runtime,&$activationRequested): array {
 		$requests[]=['active'=>$runtime['active'],'in_progress'=>$runtime['scheduler_cycle_in_progress']];
-		$activationRequested=false;
+		$read=[];$write=[];$except=[];$stop=false;
+		$selector=static function() use (&$activationRequested): false {$activationRequested=false;return false;};
+		$t->same(0,dataphyre_runtime_scheduler_select($read,$write,$except,$stop,$activationRequested,$selector));
+		$t->same(true,$runtime['scheduler_cycle_in_progress'],'an interrupted pause cannot report quiescence before receipt completion');
 		return ['contract'=>'dataphyre.scheduler_callback.v1','ok'=>true];
 	};
 	dataphyre_runtime_run_scheduler_cycle(
@@ -972,6 +975,10 @@ test('deactivation requested during a tick remains inactive and cannot trigger a
 	$t->same(false,$runtime['scheduler_cycle_in_progress']);
 	$t->same(1,$runtime['count']);
 	$t->same('never',$runtime['last_result'],'a resumed cycle must not certify a partial drain');
+	$completedState=json_decode((string)file_get_contents($stateFile),true,32,JSON_THROW_ON_ERROR);
+	$t->isTrue(is_int($completedState['entries']['fixture.first']['last_success_at']));
+	$t->same(null,$completedState['entries']['fixture.first']['claim_nonce'],'the in-flight callback completed and released its claim');
+	$t->isFalse(isset($completedState['entries']['fixture.second']),'pause did not dispatch the next callback');
 	$t->greaterThan(0.5,$remaining);
 
 	$registrationFor=static function(array $cycleDefinitions): array {

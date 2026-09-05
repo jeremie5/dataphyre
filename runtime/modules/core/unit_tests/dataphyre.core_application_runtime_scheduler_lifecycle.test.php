@@ -423,13 +423,13 @@ test('durable scheduler state executes its complete claim success reconciliation
 	$t->same(json_encode($empty,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n",$internals->invoke('canonical',$empty));
 })->tag('durable-state','claim','success','release','reconcile','corruption','exact-coverage');
 
-test('cadence assessment includes one fixed scheduler wake interval',static function(Context $t): void {
+test('cadence retains dispatch diagnostics and enforces completion and recurrence deadlines',static function(Context $t): void {
 	require_once dirname(__DIR__).'/kernel/application_runtime_supervisor.php';
 	$dueAt=1776073000000;
-	$observation=static fn(int $startedAt): array=>[
+	$observation=static fn(int $startedAt,?int $completedAt=null): array=>[
 		'name'=>'fixture.wake-boundary','frequency_milliseconds'=>10000,
 		'due_at_milliseconds'=>$dueAt,'first_execution'=>false,
-		'started_at_milliseconds'=>$startedAt,'completed_at_milliseconds'=>$startedAt,
+		'started_at_milliseconds'=>$startedAt,'completed_at_milliseconds'=>$completedAt ?? $startedAt,
 	];
 	$t->same([
 		'ok'=>true,'observation_count'=>1,'late_start_count'=>0,'late_completion_count'=>0,
@@ -437,10 +437,26 @@ test('cadence assessment includes one fixed scheduler wake interval',static func
 		'max_completion_lateness_milliseconds'=>0,'max_recurrence_lateness_milliseconds'=>0,
 	],dataphyre_runtime_scheduler_cadence_assessment([$observation($dueAt+2000)],$dueAt+2000,1000));
 	$t->same([
-		'ok'=>false,'observation_count'=>1,'late_start_count'=>1,'late_completion_count'=>0,
+		'ok'=>true,'observation_count'=>1,'late_start_count'=>1,'late_completion_count'=>0,
 		'overdue_again_count'=>0,'max_start_lateness_milliseconds'=>1,
 		'max_completion_lateness_milliseconds'=>0,'max_recurrence_lateness_milliseconds'=>0,
 	],dataphyre_runtime_scheduler_cadence_assessment([$observation($dueAt+2001)],$dueAt+2001,1000));
+	$timely=$observation($dueAt+3000,$dueAt+12000);
+	$t->same([
+		'ok'=>true,'observation_count'=>1,'late_start_count'=>1,'late_completion_count'=>0,
+		'overdue_again_count'=>0,'max_start_lateness_milliseconds'=>1000,
+		'max_completion_lateness_milliseconds'=>0,'max_recurrence_lateness_milliseconds'=>0,
+	],dataphyre_runtime_scheduler_cadence_assessment([$timely],$dueAt+24000,1000));
+	$t->same([
+		'ok'=>false,'observation_count'=>1,'late_start_count'=>1,'late_completion_count'=>1,
+		'overdue_again_count'=>0,'max_start_lateness_milliseconds'=>1000,
+		'max_completion_lateness_milliseconds'=>1,'max_recurrence_lateness_milliseconds'=>0,
+	],dataphyre_runtime_scheduler_cadence_assessment([$observation($dueAt+3000,$dueAt+12001)],$dueAt+12001,1000));
+	$t->same([
+		'ok'=>false,'observation_count'=>1,'late_start_count'=>1,'late_completion_count'=>0,
+		'overdue_again_count'=>1,'max_start_lateness_milliseconds'=>1000,
+		'max_completion_lateness_milliseconds'=>0,'max_recurrence_lateness_milliseconds'=>1,
+	],dataphyre_runtime_scheduler_cadence_assessment([$timely],$dueAt+24001,1000));
 })->tag('scheduler','cadence','wake-interval','precision','boundary','regression');
 
 test('serial cold callbacks fail cadence even when every worker receipt succeeds',static function(Context $t): void {
@@ -529,6 +545,43 @@ test('serial cold callbacks fail cadence even when every worker receipt succeeds
 	);
 	$t->same(3,$requests,'recovery measures a complete nonempty cycle');
 	$t->same('ok',$recoveredRuntime['last_result'],'a later nonempty fully green cycle clears the failed result');
+
+	$queuedDefinition=$definition('fixture.queued-05-seconds',5000);
+	$queuedRuntime=$runtime($registration([$queuedDefinition]));$queuedRuntime['last_result']='failed';
+	$seedCompletedAt=1776074500;$seedClaim=str_repeat('f',64);$generation='gen_'.str_repeat('c',32);
+	$t->isTrue(DataphyreApplicationRuntimeSchedulerState::claim(
+		$identity,$queuedDefinition,$identity['release_id'],$generation,$seedClaim,$seedCompletedAt,
+	));
+	DataphyreApplicationRuntimeSchedulerState::recordSuccess(
+		$identity,$queuedDefinition,$identity['release_id'],$generation,$seedCompletedAt,$seedClaim,
+	);
+	$nowMilliseconds=($seedCompletedAt+8)*1000;$requests=0;$reports=[];
+	$queuedInventory=DataphyreApplicationRuntimeSchedulerState::dueScheduleInventory(
+		$identity,[$queuedDefinition],$nowMilliseconds,
+	);
+	$t->same(($seedCompletedAt+5)*1000,$queuedInventory['schedule'][0]['due_at_milliseconds']);
+	$t->same(false,$queuedInventory['schedule'][0]['first_execution']);
+	dataphyre_runtime_run_scheduler_cycle(
+		DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,$generation,'secret','public',null,
+		$queuedRuntime,$pending,1,$activation,$nextTick,static function() use (&$nowMilliseconds,&$requests): array {
+			$requests++;$nowMilliseconds+=500;
+			return ['contract'=>'dataphyre.scheduler_callback.v1','ok'=>true];
+		},null,$clock,$reporter,
+	);
+	$t->same(1,$requests);
+	$t->same('ok',$queuedRuntime['last_result'],'late dispatch with timely completion proves a successful recurring cycle');
+	$t->same(1,$queuedRuntime['count']);
+	$t->same([],$reports,'dispatch jitter alone does not emit a missed-deadline report');
+	$nowMilliseconds+=5000;
+	dataphyre_runtime_run_scheduler_cycle(
+		DataphyreApplicationRuntimeSchedulerGateway::SOCKET,$identity,$generation,'secret','public',null,
+		$queuedRuntime,$pending,1,$activation,$nextTick,static function() use (&$requests): never {
+			$requests++;throw new RuntimeException('fixture callback failed');
+		},null,$clock,$reporter,
+	);
+	$t->same(2,$requests);
+	$t->same('failed',$queuedRuntime['last_result'],'actual callback failure remains unhealthy within the cadence window');
+	$t->same(2,$queuedRuntime['count']);
 
 	$emptyInitial=$runtime($registration([]));$activation=null;$nextTick=0.0;$reports=[];
 	dataphyre_runtime_run_scheduler_cycle(

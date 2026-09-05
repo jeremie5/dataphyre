@@ -16,6 +16,16 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Treated scheduler polling interrupted by a pending normal activation or pause
+  as a wake-up, preserving in-flight callbacks until their receipts settle.
+  Pausing stops new dispatch before reporting quiescence. Shutdown signals still
+  take precedence, and unexplained polling failures retain their error path;
+  callback deadlines and durable claim ownership are unchanged.
+- Kept managed scheduler dispatch lateness as diagnostic evidence without
+  failing work that completes within its declared cadence. Completion and
+  recurrence deadlines, execution timeouts, and callback failures still govern
+  health. This framework rule permits ordinary queueing within the completion
+  window; the existing timing metrics and wire contracts remain unchanged.
 - Created the ignored cache mountpoint before starting root-mode test
   containers from a fresh checkout with read-only source.
 - Kept managed web and scheduler gateway shutdown cleanup in the process that
