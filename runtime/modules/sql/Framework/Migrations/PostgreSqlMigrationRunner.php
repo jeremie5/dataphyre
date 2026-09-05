@@ -1263,6 +1263,10 @@ final class PostgreSqlMigrationRunner {
 				'Framework migration prerequisites require the active migration transaction.'
 			);
 		}
+		$this->executeSql(
+			"SELECT pg_advisory_xact_lock(hashtext('dataphyre.postgresql_migration_prerequisites.v1'))",
+			'Dataphyre could not acquire the shared migration prerequisite lock.'
+		);
 		$definitionFile=realpath(
 			dirname(__DIR__,3).'/permission/kernel/permission.tables.php'
 		);

@@ -302,6 +302,12 @@ stage, or partially committed fresh prefix. This is not the registered-table
 materializer: all other current framework and application table definitions are
 still materialized only after migration convergence.
 
+Shared prerequisite DDL takes a fixed, transaction-scoped advisory lock in the
+current database. Different application profiles therefore cannot race while
+creating the shared schema or tables. The lock follows the existing transaction
+boundary and releases automatically on commit, rollback, or connection loss;
+it introduces no additional persistent state or operator setting.
+
 The same fixed prerequisite proof runs before any nonempty established
 bootstrap, rolling, or maintenance selection. Rolling and maintenance keep its
 DDL in their existing lock-bound deployment transaction, so a missing or partial
