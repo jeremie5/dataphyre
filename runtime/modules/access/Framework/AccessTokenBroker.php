@@ -81,8 +81,8 @@ final class AccessTokenBroker {
 	 * Consumes a valid one-time token.
 	 *
 	 * A token can be consumed only if find() locates an unexpired unused row and
-	 * the storage layer can mark it used. The returned row is the pre-update token
-	 * payload so callers can continue using its metadata after consumption.
+	 * an atomic unused/unexpired update affects exactly one row. Expiry is checked
+	 * again after any database wait. The returned pre-update payload retains metadata.
 	 *
 	 * @param string $type Token purpose to match.
 	 * @param string $token Raw token presented by a caller.
@@ -93,16 +93,18 @@ final class AccessTokenBroker {
 		if($row===null || function_exists('sql_update')===false){
 			return null;
 		}
-		if(sql_update($this->table(), ['used_at'=>date('Y-m-d H:i:s')], 'WHERE id=?', [(string)$row['id']], true)===false){
+		$now=date('Y-m-d H:i:s');
+		if(sql_update($this->table(), ['used_at'=>$now], 'WHERE id=? AND used_at IS NULL AND expires_at>=?', [(string)$row['id'], $now], true)!==1){
 			return null;
 		}
-		return $row;
+		return strtotime((string)($row['expires_at'] ?? ''))<time() ? null : $row;
 	}
 
 	/**
 	 * Finds an unexpired unused token row without consuming it.
 	 *
-	 * The lookup hashes the raw token, matches the normalized type, requires
+	 * The lookup tries retained application keys and the historical hash,
+	 * matches the normalized type, requires
 	 * `used_at IS NULL`, rejects expired rows, and decodes `metadata_json` into a
 	 * `metadata` array on the returned row.
 	 *
@@ -119,16 +121,16 @@ final class AccessTokenBroker {
 		if($type==='' || $token===''){
 			return null;
 		}
-		$row=sql_select('*', $this->table(), 'WHERE token_hash=? AND type=? AND used_at IS NULL', [$this->hash($token), $type], false, false);
-		if(!is_array($row)){
-			return null;
+		foreach($this->verificationHashes($token) as $hash){
+			$row=sql_select('*', $this->table(), 'WHERE token_hash=? AND type=? AND used_at IS NULL', [$hash, $type], false, false);
+			if(!is_array($row) || strtotime((string)($row['expires_at'] ?? ''))<time()){
+				continue;
+			}
+			$metadata=json_decode((string)($row['metadata_json'] ?? '{}'), true);
+			$row['metadata']=is_array($metadata) ? $metadata : [];
+			return $row;
 		}
-		if(strtotime((string)($row['expires_at'] ?? ''))<time()){
-			return null;
-		}
-		$metadata=json_decode((string)($row['metadata_json'] ?? '{}'), true);
-		$row['metadata']=is_array($metadata) ? $metadata : [];
-		return $row;
+		return null;
 	}
 
 	/**
@@ -138,8 +140,23 @@ final class AccessTokenBroker {
 	 * @return string Hex-encoded HMAC token hash.
 	 */
 	private function hash(string $token): string {
-		$key=function_exists('\dataphyre\dpvk') ? \dataphyre\dpvk() : 'dataphyre-access-token';
-		return hash_hmac('sha256', $token, (string)$key);
+		if(!function_exists('\dpvk')){
+			throw new \RuntimeException('The application signing key provider is unavailable.');
+		}
+		return hash_hmac('sha256', $token, \dpvk());
+	}
+
+	/** @return list<string> Current and retained key hashes, then one read-only legacy candidate. */
+	private function verificationHashes(string $token): array {
+		if(!function_exists('\dpvks')){
+			throw new \RuntimeException('The application signing keyring provider is unavailable.');
+		}
+		$keys=\dpvks(); // Validate the stable keyring before considering historical compatibility.
+		$hashes=array_map(static fn(string $key): string=>hash_hmac('sha256', $token, $key), array_reverse($keys));
+		// Older framework versions selected this fixed key through an incorrect namespace.
+		// Keep it for existing database-backed tokens only; create() never uses it.
+		$hashes[]=hash_hmac('sha256', $token, 'dataphyre-access-token');
+		return array_values(array_unique($hashes));
 	}
 
 	/**

@@ -241,6 +241,24 @@ requiring column names to match:
 and password reset. The SQL module hydrates this table from Access table
 definitions when it is missing.
 
+New token hashes use the active application key from global dpvk(). Retain
+older keys in the application's dpvks() keyring while their tokens remain
+valid. Missing or invalid application keys stop both issuance and lookup;
+there is no fallback signing key for new tokens.
+
+Existing database-backed tokens from versions that used the historical fixed
+hashing key remain readable after the configured keyring has been validated.
+Token strings, row IDs, purposes, and stored row formats are unchanged.
+Consumption uses one guarded database update and succeeds only when exactly
+one unused, unexpired row is claimed.
+
+Token lifetimes have a minimum of 60 seconds and no universal maximum, so the
+historical verification path has no automatic removal date. It may be removed
+only after an installation has established that no outstanding historical
+tokens remain. Coordinate issuer/verifier upgrades: older framework versions
+cannot verify newly issued application-key hashes. Never duplicate a token
+into separate legacy and current rows, which would permit separate claims.
+
 ### Panel Auth
 
 Dataphyre Panel can register native auth pages through Access:

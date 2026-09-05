@@ -41,6 +41,12 @@ namespace {
 	function dp_access_residual_sql_state(): \Dataphyre\Test\TestState {
 		return \Dataphyre\Test\TestState::channel('access.residual.sql');
 	}
+	if(!function_exists('dpvks')){
+		function dpvks(): array { return ['access-residual-signing-key']; }
+	}
+	if(!function_exists('dpvk')){
+		function dpvk(): string { return dpvks()[0]; }
+	}
 
 	if(!function_exists('sql_select')){
 		function sql_select(mixed ...$arguments): mixed {
@@ -204,13 +210,16 @@ namespace {
 		$sql->put('select',[
 			'id'=>$created['id'],'expires_at'=>date('Y-m-d H:i:s',time()+300),'metadata_json'=>'{}',
 		]);
-		$sql->put('update',false);
-		$t->same(null,$broker->consume('reset-link',$created['token']));
+		foreach([false,0,true,null,'1',2] as $notOneAffectedRow){
+			$sql->put('update',$notOneAffectedRow);
+			$t->same(null,$broker->consume('reset-link',$created['token']));
+		}
 		$sql->put('update',1);
 		$t->same($created['id'],$broker->consume('reset-link',$created['token'])['id']);
 		$updateCalls=$sql->get('calls');
 		$updateCall=end($updateCalls);
-		$t->same('WHERE id=?',$updateCall[1][2]);
+		$t->same('WHERE id=? AND used_at IS NULL AND expires_at>=?',$updateCall[1][2]);
+		$t->same($updateCall[1][1]['used_at'],$updateCall[1][3][1]);
 	})->tag('access','access-residual-exact','deep-coverage')->group('framework-coverage');
 
 	test('oauth manager residual coverage resolves defaults overrides factories classes and clone isolation',static function(Context $t): void {
