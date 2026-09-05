@@ -10,6 +10,11 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Fixed PostgreSQL placeholder numbering beside `||` concatenation, including
+  compact and spaced prepared `LIKE`/`ILIKE` patterns. JSON operators and
+  question marks inside literals, identifiers, comments, and dollar-quoted
+  bodies retain their existing behavior.
+
 - Preserved PostgreSQL SQL `NULL` values before integer and boolean conversion.
   Optional scalar fields and empty-set aggregates now remain PHP `null` instead
   of becoming zero or false, while non-null conversion behavior stays unchanged.

@@ -185,6 +185,14 @@ through the same compatibility layer while preserving ordinary prepared-query
 binding. The rule belongs in the framework because JSONB operator syntax is a
 PostgreSQL language contract, not an application-specific migration exception.
 
+A placeholder next to string concatenation stays a bound value: both
+`name ILIKE '%'||?||'%'` and `name LIKE ? || '%'` are numbered normally.
+The lexer distinguishes the two pipes in `||` from the single pipe in JSON's
+`?|` operator, so parameter numbering remains correct when both appear in one
+query. No whitespace workaround or interpolated search text is needed. This
+belongs in the shared driver because prepared pattern matching and JSONB
+queries are ordinary database features used by any framework consumer.
+
 ## Optional Framework Layer
 
 Load it explicitly:

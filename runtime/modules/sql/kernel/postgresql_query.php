@@ -112,7 +112,7 @@ class postgresql_query_builder {
 				continue;
 			}
 			if($character==='?'){
-				if(($query[$offset+1]??null)==='|' || ($query[$offset+1]??null)==='&' || self::is_postgresql_json_operator($query,$offset)){
+				if(self::is_postgresql_json_operator($query,$offset)){
 					$translated.='?';
 					$offset++;
 					continue;
@@ -151,7 +151,10 @@ class postgresql_query_builder {
 		$next=$offset+1;
 		while($next<$length && ctype_space($query[$next]))$next++;
 		$next_character=$query[$next]??'';
-		if($next_character==='|' || $next_character==='&')return true;
+		// A bind followed by concatenation (`?||` or `? ||`) is not the
+		// JSON any-key operator `?|`. Leave both pipes for the SQL scanner.
+		if($next_character==='|' && ($query[$next+1]??null)!=='|')return true;
+		if($next_character==='&')return true;
 		$placeholder_rhs=$next_character==='?'
 			|| ($next_character==='$' && preg_match('/\A\$[0-9]+\b/',substr($query,$next))===1);
 		$quoted_rhs=$next_character==="'" || $next_character==='"'

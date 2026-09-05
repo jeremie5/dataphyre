@@ -17,10 +17,10 @@ use function Dataphyre\Test\define_test_symbols;
 use function Dataphyre\Test\framework;
 use function Dataphyre\Test\test;
 
-$compatibilityHost=trim((string)(getenv('DATAPHYRE_SQL_COMPAT_HOST') ?: getenv('SERVE_DB_HOST') ?: 'postgres'));
-$compatibilityPort=(int)(getenv('DATAPHYRE_SQL_COMPAT_PORT') ?: getenv('SERVE_DB_PORT') ?: 5432);
-$compatibilityUser=trim((string)(getenv('DATAPHYRE_SQL_COMPAT_USERNAME') ?: getenv('SERVE_DB_USERNAME') ?: 'application_user'));
-$compatibilityPassword=(string)(getenv('DATAPHYRE_SQL_COMPAT_PASSWORD') ?: getenv('SERVE_DB_PASSWORD') ?: '');
+$compatibilityHost=trim((string)(getenv('DATAPHYRE_SQL_COMPAT_HOST') ?: 'postgres'));
+$compatibilityPort=(int)(getenv('DATAPHYRE_SQL_COMPAT_PORT') ?: 5432);
+$compatibilityUser=trim((string)(getenv('DATAPHYRE_SQL_COMPAT_USERNAME') ?: 'application_user'));
+$compatibilityPassword=(string)(getenv('DATAPHYRE_SQL_COMPAT_PASSWORD') ?: '');
 $compatibilityLiveDatabase=trim((string)(getenv('DATAPHYRE_SQL_COMPAT_LIVE_DATABASE') ?: 'dataphyre_sql_compat_missing_live'));
 $compatibilitySandboxDatabase=trim((string)(getenv('DATAPHYRE_SQL_COMPAT_SANDBOX_DATABASE') ?: 'dataphyre_sql_compat_missing_sandbox'));
 

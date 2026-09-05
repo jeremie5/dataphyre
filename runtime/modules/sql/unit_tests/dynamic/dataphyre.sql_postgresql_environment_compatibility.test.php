@@ -155,6 +155,48 @@ function dp_sql_postgresql_environment_reset_markers(string $table): void {
 	dp_sql_postgresql_environment_query('TRUNCATE TABLE '.$table);
 }
 
+test('PostgreSQL native prepared reads distinguish concatenation binds from JSON operators', static function(Context $t): void {
+	dp_sql_postgresql_environment_enabled($t);
+	$cases=[];
+	foreach(['', ' ', "\t", "\n"] as $space){
+		$cases[]=[
+			"SELECT 'Abc' ILIKE '%'||?{$space}||'%' AS contains, 'abc' LIKE ?{$space}||'%' AS prefix, ?::integer AS marker",
+			['b','ab',17],
+			['contains'=>true,'prefix'=>true,'marker'=>17],
+		];
+	}
+	$cases[]=["SELECT 'abc' LIKE '%'||?||'%' AS matched",["' OR true --"],['matched'=>false]];
+	$cases[]=['SELECT ?||?||? AS joined',['left','-','right'],['joined'=>'left-right']];
+	$cases[]=["SELECT 'abc' LIKE ?||'%' AS matched",[null],['matched'=>null]];
+	$cases[]=[
+		<<<'SQL'
+SELECT payload ? ? AS one_key, payload ?| ARRAY[?] AS any_key,
+       payload ?& ARRAY[?] AS all_keys, payload @? ? AS path,
+       payload ?| ?::text[] AS bound_any, payload ?& ?::text[] AS bound_all,
+       ?||? AS joined
+FROM (VALUES ('{"alpha":1,"beta":2}'::jsonb)) AS fixture(payload)
+SQL,
+		['alpha','missing','alpha','$.alpha','{missing,beta}','{alpha,missing}','a','b'],
+		['one_key'=>true,'any_key'=>false,'all_keys'=>true,'path'=>true,'bound_any'=>true,'bound_all'=>false,'joined'=>'ab'],
+	];
+	$cases[]=[
+		<<<'SQL'
+SELECT '?' AS "?||", '?''||' AS doubled, E'\'?||' AS escaped,
+       $$?||$$ AS untagged, $body$?||$body$ AS tagged,
+       ?/* ?|| /* ?| */ ?& */||? AS joined -- ?|| @?
+SQL,
+		['a','b'],
+		['?||'=>'?','doubled'=>"?'||",'escaped'=>"'?||",'untagged'=>'?||','tagged'=>'?||','joined'=>'ab'],
+	];
+	foreach(['live','sandbox'] as $environment){
+		DataEnvironment::run($environment,static function() use ($t,$cases): void {
+			foreach($cases as [$query,$bindings,$expected]){
+				$t->same([$expected],DB::query($query,$bindings,true,true,false,false));
+			}
+		});
+	}
+})->tag('sql','postgresql','jsonb','placeholders','compatibility')->maxMillis(15000);
+
 test('PostgreSQL native reads preserve SQL NULL separately from zero and false', static function(Context $t): void {
 	dp_sql_postgresql_environment_enabled($t);
 	$query=<<<'SQL'

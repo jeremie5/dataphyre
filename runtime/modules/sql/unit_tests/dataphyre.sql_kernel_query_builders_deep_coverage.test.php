@@ -540,6 +540,31 @@ SQL;
 		$t->same(["DELETE FROM normal WHERE capabilities ? 'change_control' AND id=$1"],$state->get('pg_queries'));
 	})->tag('sql','postgresql','jsonb','operators','placeholders','regression')->group('framework-coverage');
 
+	test('PostgreSQL placeholders beside concatenation remain bindings alongside JSON operators',static function(Context $t): void {
+		dp_kq_scenario($t);
+		$builder=$t->nonPublic(\dataphyre\postgresql_query_builder::class);
+		foreach(['', ' ', "\t", "\n"] as $space){
+			foreach(['LIKE', 'ILIKE'] as $operator){
+				$query="SELECT label $operator '%'||?{$space}||'%', label $operator ?{$space}||'%', marker=?";
+				$expected="SELECT label $operator '%'||\$1{$space}||'%', label $operator \$2{$space}||'%', marker=\$3";
+				$t->same($expected,$builder->invokeWithArguments('mysql_compatibility_layer',[$query]));
+			}
+		}
+		$query=<<<'SQL'
+SELECT ?||?||?, payload ? ?, payload ?| ARRAY[?], payload ?& ARRAY[?], payload @? ?,
+       payload ?| ?, payload ?& ?,
+       '?' AS "?||", '?''||', E'\'?||', $$?||$$, $body$?||$body$,
+       ?/* ?|| /* ?| */ ?& */||? -- ?|| @?
+SQL;
+		$expected=<<<'SQL'
+SELECT $1||$2||$3, payload ? $4, payload ?| ARRAY[$5], payload ?& ARRAY[$6], payload @? $7,
+       payload ?| $8, payload ?& $9,
+       '?' AS "?||", '?''||', E'\'?||', $$?||$$, $body$?||$body$,
+       $10/* ?|| /* ?| */ ?& */||$11 -- ?|| @?
+SQL;
+		$t->same($expected,$builder->invokeWithArguments('mysql_compatibility_layer',[$query]));
+	})->tag('sql','postgresql','jsonb','operators','placeholders','regression')->group('framework-coverage');
+
 	test('sql kernel query builders deep coverage covers PostgreSQL executor and direct failure contracts',static function(Context $t): void {
 		$state=dp_kq_scenario($t);$class=\dataphyre\postgresql_query_builder::class;$conn=new DpKqPgConnection();$class::$conns['primary']=$conn;
 		$builder=$t->nonPublic($class);
