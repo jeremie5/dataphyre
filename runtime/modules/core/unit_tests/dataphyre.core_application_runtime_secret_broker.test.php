@@ -431,7 +431,9 @@ test('scheduler execution keeps one fresh capability-free php-cgi process per re
 				$t->same($result['pid'],$result['process_group_id']);$t->same($result['pid'],$result['session_id']);
 			$t->same(true,$result['no_new_privileges']);$t->same(true,$result['broker_descriptor_closed']);
 			$t->same(true,$result['secret_absent_from_proc']);$t->same(true,$result['managed_bootstrap']);
-			$t->same(true,$result['managed_private_key_matches']);
+			$t->same(true,$result['application_private_key_matches'],'configured application key');
+			$t->same(true,$result['application_key_distinct_from_bootstrap'],'distinct bootstrap identity');
+			$t->same(true,$result['managed_private_key_absent_from_environment'],'bootstrap seed stays private');
 		}
 	}finally{
 		sodium_memzero($secret);sodium_memzero($key);sodium_memzero($managed['private_key']);
@@ -544,7 +546,8 @@ test('source contract contains no reusable child secret file or persistent php d
 	$t->contains('$applicationReleasePreflight!==null || $managedRuntimeBootstrap!==null || $applicationBootstrapOnly!==null',$core);
 	$t->contains('$applicationReleasePreflight===null && $managedRuntimeBootstrap===null',$core);
 	$t->contains('function dp_source_local_runtime_writes_allowed()',$helpers);
-	$t->contains('managedBootstrapPrivateKeyForCore',$helpers);
+	$t->isFalse(str_contains($helpers,'managedBootstrapPrivateKeyForCore'));
+	$t->contains('managedBootstrapPrivateKeyForCore',$core);
 	$functions=(string)file_get_contents($kernel.'/core_functions.php');
 	$t->contains("if(!function_exists('dp_source_local_runtime_writes_allowed') || dp_source_local_runtime_writes_allowed())",$functions);
 	foreach([$child,$webGateway,$schedulerGateway,$supervisor,$bootstrap,$core,$helpers] as $source){

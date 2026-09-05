@@ -435,32 +435,20 @@ function dp_define_module_config(string $module, ?string $constant=null, array $
 }
 
 /**
- * Loads Dataphyre private keys used for signing and token validation.
+ * Loads the stable application keyring used for signing and encryption.
  *
  * Static key files take precedence over core configuration. Config may provide a
- * single string key or an array of keys to support rotation. Failure delegates to
- * `pre_init_error()` because these keys are required for secure runtime boot.
+ * single string key or an ordered list for rotation. Internal bootstrap identity
+ * never substitutes for an application key, including in managed runtimes.
  *
- * @return array<int, string> Private keys in rotation order.
+ * @return list<string> Private keys in rotation order, with the last key active.
  */
 function dpvks(): array {
-	$application_release_preflight=dp_application_release_preflight_context();
-	if($application_release_preflight!==null){
-		return [$application_release_preflight['private_key']];
-	}
-	if(dp_application_bootstrap_only_context()!==null){
-		return [\Dataphyre\InternalApplicationBootstrapOnly::privateKey()];
-	}
-	if(dp_managed_runtime_bootstrap_context()!==null){
-		if(!class_exists('DataphyreApplicationRuntimeChildEnvironment', false)){
-			throw new RuntimeException('Managed runtime private key provider is unavailable.');
-		}
-		$key=\DataphyreApplicationRuntimeChildEnvironment::managedBootstrapPrivateKeyForCore();
-		if(!is_string($key) || strlen($key)!==32){
-			throw new RuntimeException('Managed runtime private key is unavailable.');
-		}
-		return [$key];
-	}
+	// Preserve the active context's lifecycle checks without exposing its seed as
+	// an application key. Bootstrap can run without enabling application crypto.
+	dp_application_release_preflight_context();
+	dp_application_bootstrap_only_context();
+	dp_managed_runtime_bootstrap_context();
 	$rootpath=dp_helper_rootpath();
 	if(!defined('DP_CORE_CFG') && $rootpath!==null){
 		dp_define_core_config();
@@ -468,18 +456,24 @@ function dpvks(): array {
 	$key_file=$rootpath!==null && !empty($rootpath['dataphyre'])
 		? rtrim((string)$rootpath['dataphyre'], '/\\').'/config/static/dpvk'
 		: null;
-	if($key_file!==null && false!==($keys=@file_get_contents($key_file))){
-		return explode(",", $keys);
-	}
 	$core_config=defined('DP_CORE_CFG') && is_array(DP_CORE_CFG) ? DP_CORE_CFG : [];
 	$private_keys=$core_config['private_key'] ?? [];
-	if(is_string($private_keys) && $private_keys!==''){
-		return [$private_keys];
+	if($key_file!==null && false!==($keys=@file_get_contents($key_file))){
+		$private_keys=explode(",", $keys);
+	}elseif(is_string($private_keys)){
+		$private_keys=[$private_keys];
 	}
-	if(is_array($private_keys) && $private_keys!==[]){
-		return $private_keys;
+	if(is_array($private_keys) && $private_keys!==[] && array_is_list($private_keys)){
+		$valid=true;
+		foreach($private_keys as $key){
+			if(!is_string($key) || $key===''){
+				$valid=false;
+				break;
+			}
+		}
+		if($valid) return $private_keys;
 	}
-	pre_init_error("Failed getting private keys");
+	if(function_exists('pre_init_error')) pre_init_error("Failed getting private keys");
 	throw new RuntimeException("Failed getting private keys");
 }
 

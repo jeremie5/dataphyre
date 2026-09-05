@@ -47,7 +47,7 @@ final class DataphyreApplicationRuntimeEnvironment
 			|| !\Dataphyre\PublicApplicationIdentifier::valid($environmentId)){
 			throw new RuntimeException('Application environment identity is invalid.');
 		}
-		self::exactDirectory(dirname(self::CHANNEL),0700);
+		self::relockChannelDirectory();
 		if(is_link(self::CHANNEL)) throw new RuntimeException('Application environment channel cannot be a symbolic link.');
 		self::assertFixedMount(self::CHANNEL,'ro');
 		$handle=@fopen(self::CHANNEL,'rb') ?: throw new RuntimeException('Application environment channel is unavailable.');
@@ -401,6 +401,33 @@ final class DataphyreApplicationRuntimeEnvironment
 		$matches=self::mountModes($path,'Application environment',$runtime);
 		if(count($matches)!==1 || !in_array($requiredMode,explode(',',$matches[0]),true)){
 			throw new RuntimeException('Application environment channel mount identity is invalid.');
+		}
+	}
+
+	/** Restore the root-only startup boundary after the supervisor's socket traversal mode. */
+	private static function relockChannelDirectory(array $runtime=[]): void
+	{
+		$path=dirname(self::CHANNEL);
+		$lstat=$runtime['lstat'] ?? static fn(string $candidate): array|false=>@lstat($candidate);
+		$chmod=$runtime['chmod'] ?? static fn(string $candidate,int $mode): bool=>@chmod($candidate,$mode);
+		if(!is_callable($lstat) || !is_callable($chmod)){
+			throw new RuntimeException('Application environment directory inspection seam is invalid.');
+		}
+		clearstatcache(true,$path);
+		$stat=$lstat($path);
+		$mode=is_array($stat) ? (($stat['mode'] ?? 0)&07777) : -1;
+		if(!in_array($mode,[0700,0711],true)){
+			throw new RuntimeException('Application environment directory identity is invalid.');
+		}
+		$before=self::exactDirectory($path,$mode,$runtime);
+		if($mode===0711 && !$chmod($path,0700)){
+			throw new RuntimeException('Application environment directory could not be relocked.');
+		}
+		clearstatcache(true,$path);
+		$after=self::exactDirectory($path,0700,$runtime);
+		if(($before['dev'] ?? null)!==($after['dev'] ?? null)
+			|| ($before['ino'] ?? null)!==($after['ino'] ?? null)){
+			throw new RuntimeException('Application environment directory identity changed.');
 		}
 	}
 

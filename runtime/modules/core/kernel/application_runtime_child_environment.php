@@ -458,7 +458,7 @@ final class DataphyreApplicationRuntimeChildEnvironment
 	}
 
 	/**
-	 * Supplies the process-held key only to the existing dpvks() core surface.
+	 * Supplies the process-held bootstrap identity only to core.main.php.
 	 * This adds no new key-reading surface for application code.
 	 */
 	public static function managedBootstrapPrivateKeyForCore(): ?string
@@ -466,8 +466,8 @@ final class DataphyreApplicationRuntimeChildEnvironment
 		if(self::$managedBootstrap===null) return null;
 		$trace=debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS,1)[0] ?? [];
 		$caller=realpath((string)($trace['file'] ?? ''));
-		$helper=realpath(__DIR__.'/helper_functions.php');
-		if(!is_string($caller) || !is_string($helper) || !hash_equals($helper,$caller)){
+		$core=realpath(__DIR__.'/core.main.php');
+		if(!is_string($caller) || !is_string($core) || !hash_equals($core,$caller)){
 			throw new RuntimeException('Managed runtime private key caller is invalid.');
 		}
 		self::assertActiveManagedBootstrap();

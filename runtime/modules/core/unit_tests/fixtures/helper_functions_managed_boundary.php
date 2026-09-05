@@ -18,13 +18,7 @@ function dataphyre_internal_managed_runtime_bootstrap_context(): array {
 	];
 }
 
-if($mode==='invalid-provider'){
-	final class DataphyreApplicationRuntimeChildEnvironment {
-		public static function managedBootstrapPrivateKeyForCore(): string {
-			return 'invalid';
-		}
-	}
-}
+define('DP_CORE_CFG',['private_key'=>$mode==='malformed-keyring' ? ['valid',''] : []]);
 
 require_once (string)($argv[2] ?? '');
 
@@ -32,7 +26,7 @@ $result=false;
 if($mode==='write-suppression'){
 	dp_modcache_save_if_changed(['core'=>false]);
 	$result=dp_write_module_config_defaults('managed', ['value'=>true])===false;
-}elseif($mode==='missing-provider' || $mode==='invalid-provider'){
+}elseif($mode==='missing-keyring' || $mode==='malformed-keyring'){
 	try{
 		dpvks();
 	}catch(RuntimeException){

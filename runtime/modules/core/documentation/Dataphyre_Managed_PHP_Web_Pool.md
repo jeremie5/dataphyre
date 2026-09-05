@@ -261,9 +261,12 @@ current inherited-envelope branch.
 
 `runtime/bootstrap.php` must prefer the native non-secret attestation when it is
 present and otherwise preserve the current one-shot/realtime PHP attestation.
-`helper_functions.php::dpvks()` must prefer the native managed-pool key provider
-only for a validated native web attestation. Source-local writes remain
-suppressed for both paths.
+`core.main.php` alone uses the managed bootstrap seed for internal startup
+validation. `helper_functions.php::dpvks()` always resolves the stable application
+keyring, after validating the active context; a fresh managed seed must never
+replace stored-data encryption or signing keys. Source-local writes remain
+suppressed for both paths. See [Application keyrings](../../../../docs/APPLICATION_KEYRINGS.md)
+for protected static-file precedence and rotation continuity.
 
 Every managed child receives the v3 envelope's validated environment incarnation as
 `DATAPHYRE_APPLICATION_ENVIRONMENT_ID`. This opaque platform-owned identity is

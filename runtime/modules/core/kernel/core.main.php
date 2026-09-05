@@ -88,7 +88,14 @@ tracelog(__FILE__, __LINE__, __CLASS__, __FUNCTION__, $T='Run mode is '.$runMode
 	'define',
 	$bootstrapFail
 );
-\Dataphyre\CoreKernelBootstrap::validatePrivateKey(dpvk(), $bootstrapFail);
+// Internal bootstrap identities attest this invocation; business cryptography
+// still requires the stable application keyring exposed by dpvks()/dpvk().
+\Dataphyre\CoreKernelBootstrap::validatePrivateKey(match(true){
+	$applicationReleasePreflight!==null=>dp_application_release_preflight_context()['private_key'] ?? null,
+	$applicationBootstrapOnly!==null=>\Dataphyre\InternalApplicationBootstrapOnly::privateKey(),
+	$managedRuntimeBootstrap!==null=>\DataphyreApplicationRuntimeChildEnvironment::managedBootstrapPrivateKeyForCore(),
+	default=>dpvk(),
+}, $bootstrapFail);
 
 \Dataphyre\CoreKernelBootstrap::prepareRequest(
 	$runMode,

@@ -92,7 +92,7 @@ final class InternalApplicationBootstrapOnly
 	}
 
 	public static function privateKey(): string {
-		self::assertCaller(self::fixed(\dirname(__DIR__).'/kernel/helper_functions.php'));
+		self::assertCaller(self::fixed(\dirname(__DIR__).'/kernel/core.main.php'));
 		if(self::context()===null || !\is_string(self::$privateKey) || \strlen(self::$privateKey)!==32){
 			throw new RuntimeException('Bootstrap-only private key is unavailable.');
 		}

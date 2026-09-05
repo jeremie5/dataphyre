@@ -83,11 +83,12 @@ try{
 	$environ=(string)@file_get_contents('/proc/self/environ');
 	$cmdline=(string)@file_get_contents('/proc/self/cmdline');
 	$managed=DataphyreApplicationRuntimeChildEnvironment::managedBootstrapAttestation();
-	$managedPrivateKey=dpvk();$managedExpected=$_SERVER['HTTP_X_PROBE_MANAGED_KEY_SHA256'] ?? null; // dataphyre-test-architecture: exempt[raw-superglobal] reason="CGI protocol proof must inspect the managed-key request header."
+	if(!defined('DP_CORE_CFG')) define('DP_CORE_CFG',['private_key'=>$values['PROBE_SECRET'] ?? '']);
+	$applicationPrivateKey=dpvk();$managedExpected=$_SERVER['HTTP_X_PROBE_MANAGED_KEY_SHA256'] ?? null; // dataphyre-test-architecture: exempt[raw-superglobal] reason="CGI protocol proof must inspect the managed-key request header."
 	$managedProjected=false;
 	foreach([getenv(),$_ENV,$_SERVER] as $environment){ // dataphyre-test-architecture: exempt[raw-superglobal] reason="Secret projection proof must enumerate both native CGI environment maps."
 		foreach(is_array($environment) ? $environment : [] as $value){
-			if(is_string($value) && hash_equals($managedPrivateKey,$value)){$managedProjected=true;break 2;}
+			if(is_string($value) && is_string($managedExpected) && hash_equals($managedExpected,hash('sha256',$value))){$managedProjected=true;break 2;}
 		}
 	}
 	$writeProbe=sys_get_temp_dir().'/dataphyre-managed-bootstrap-'.getmypid(); // dataphyre-test-architecture: exempt[unmanaged-system-temporary-directory] reason="Capability-free CGI UID needs a writable native directory outside read-only source."
@@ -117,14 +118,14 @@ try{
 			&& !str_contains($environ,$secret) && !str_contains($cmdline,$secret),
 		'managed_bootstrap'=>is_array($managed) && ($managed['role'] ?? null)===$expectedManagedRole
 			&& ($managed['sapi'] ?? null)==='cgi-fcgi',
-		'managed_private_key_matches'=>is_string($managedExpected)
-			&& hash_equals($managedExpected,hash('sha256',$managedPrivateKey)),
-		'managed_private_key_absent_from_proc_and_environment'=>!$managedProjected
-			&& !str_contains($environ,$managedPrivateKey) && !str_contains($cmdline,$managedPrivateKey),
+		'application_private_key_matches'=>is_string($secret) && hash_equals($secret,$applicationPrivateKey),
+		'application_key_distinct_from_bootstrap'=>!is_string($managedExpected)
+			|| !hash_equals($managedExpected,hash('sha256',$applicationPrivateKey)),
+		'managed_private_key_absent_from_environment'=>!$managedProjected,
 		'legacy_source_writes_suppressed'=>$legacyWritesSuppressed,
 		'pre_exec_closer_rejected'=>dataphyre_close_unlisted_inherited_fds()===false,
 	];
-	if(is_string($secret)) sodium_memzero($secret);sodium_memzero($managedPrivateKey);
+	if(is_string($secret)) sodium_memzero($secret);sodium_memzero($applicationPrivateKey);
 	header('Content-Type: application/json');header('Cache-Control: no-store');
 	echo json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
 }catch(Throwable){http_response_code(500);echo '{"ok":false}';}

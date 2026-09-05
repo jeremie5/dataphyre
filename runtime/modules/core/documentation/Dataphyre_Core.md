@@ -446,6 +446,15 @@ persisted at the fixed framework path
 changes. A restart of the same container therefore preserves activation;
 recreating a container starts inactive because the image has no latch file.
 
+The supervisor opens `/run/dataphyre` from `0700` to `0711` only for traversal
+to its protected web socket. That container-local mode survives a restart.
+Before reading the application environment again, root PID 1 verifies the exact
+root-owned, nonsymlink directory in either of those two modes and relocks the
+same inode to `0700`. Other modes, ownership, substituted paths, or failed
+permission changes stop startup. The environment file still requires its exact
+root-owned `0400` identity and read-only bind mount; restart does not relax the
+sealed channel or grant a replacement container activation authority.
+
 ## Kernel Config Topology
 
 Dataphyre now treats kernel module config as readonly module-local arrays instead of one shared mutable `dataphyre` config bag.

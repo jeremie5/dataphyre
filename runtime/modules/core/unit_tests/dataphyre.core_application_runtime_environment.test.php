@@ -484,6 +484,53 @@ test('fixed root directory accepts overlay nlink one but rejects an impossible z
 	$t->isFalse(str_contains($method,"($" . "stat['nlink'] ?? 0)<2"));
 })->tag('root-environment','overlay','bind-mount','nlink','boundary');
 
+test('restart relocks only the exact root-owned supervisor traversal directory',static function(Context $t): void {
+	$internals=$t->nonPublic(DataphyreApplicationRuntimeEnvironment::class);
+	foreach([0700,0711] as $initialMode){
+		$stat=['mode'=>0040000|$initialMode,'uid'=>0,'gid'=>0,'nlink'=>1,'dev'=>1,'ino'=>7];$changes=[];
+		$runtime=[
+			'lstat'=>static function(string $path) use (&$stat): array {return $stat;},
+			'realpath'=>static fn(string $path): string=>$path,
+			'is_link'=>static fn(string $path): bool=>false,
+			'chmod'=>static function(string $path,int $mode) use (&$stat,&$changes): bool {$changes[]=[$path,$mode];$stat['mode']=0040000|$mode;return true;},
+		];
+		$internals->invoke('relockChannelDirectory',$runtime);
+		$t->same(0040700,$stat['mode']);
+		$t->same($initialMode===0711 ? [['/run/dataphyre',0700]] : [],$changes);
+	}
+	$base=['mode'=>0040711,'uid'=>0,'gid'=>0,'nlink'=>1,'dev'=>1,'ino'=>7];
+	foreach([
+		['mode'=>0040755],['mode'=>0040777],['mode'=>0042711],['mode'=>0100711],
+		['uid'=>10001],['gid'=>10001],['nlink'=>0],['link'=>true],['resolved'=>'/tmp/replaced'],
+	] as $override){
+		$stat=array_replace($base,$override);$changed=false;
+		$runtime=[
+			'lstat'=>static fn(string $path): array=>$stat,
+			'realpath'=>static fn(string $path): string=>$stat['resolved'] ?? $path,
+			'is_link'=>static fn(string $path): bool=>$stat['link'] ?? false,
+			'chmod'=>static function() use (&$changed): bool {$changed=true;return true;},
+		];
+		$t->throws(static fn()=>$internals->invoke('relockChannelDirectory',$runtime),RuntimeException::class);
+		$t->same(false,$changed);
+	}
+	foreach(['failure','inode','device','ineffective'] as $fault){
+		$stat=$base;
+		$runtime=[
+			'lstat'=>static function(string $path) use (&$stat): array {return $stat;},
+			'realpath'=>static fn(string $path): string=>$path,
+			'is_link'=>static fn(string $path): bool=>false,
+			'chmod'=>static function(string $path,int $mode) use (&$stat,$fault): bool {
+				if($fault==='failure') return false;
+				if($fault!=='ineffective') $stat['mode']=0040700;
+				if($fault==='inode') $stat['ino']++;
+				if($fault==='device') $stat['dev']++;
+				return true;
+			},
+		];
+		$t->throws(static fn()=>$internals->invoke('relockChannelDirectory',$runtime),RuntimeException::class);
+	}
+})->tag('root-environment','restart','permissions','ownership','symlink','regression');
+
 test('source freezes the root-only canonical channel and fixed one-shot allowlist',static function(Context $t): void {
 	$kernel=dirname(__DIR__).'/kernel';
 	$environment=(string)file_get_contents($kernel.'/application_runtime_environment.php');
@@ -497,7 +544,7 @@ test('source freezes the root-only canonical channel and fixed one-shot allowlis
 	$t->contains("CHANNEL='/run/dataphyre/application-environment.json'",$environment);
 	$t->contains("MAX_BYTES=262144",$environment);
 	$t->contains("MAX_ENTRIES=512",$environment);
-	$t->contains("exactDirectory(dirname(self::CHANNEL),0700)",$environment);
+	$t->contains('self::relockChannelDirectory()',$environment);
 	$t->contains("assertFixedMount(self::CHANNEL,'ro')",$environment);
 	$t->contains("===0400",$environment);
 	$t->contains("($"."stat['nlink'] ?? 0)===1",$environment);
