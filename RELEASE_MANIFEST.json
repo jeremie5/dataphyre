@@ -2,11 +2,11 @@
   "schema": "dataphyre.public_export_manifest.v1",
   "package": "dataphyre/dataphyre",
   "generated_by": "dataphyre_public_export_builder",
-  "generated_at_utc": "2026-09-06T00:46:17Z",
+  "generated_at_utc": "2026-09-06T01:46:03Z",
   "copied_source_files": 3703,
   "skipped_source_files": 46,
   "export_file_count": 3708,
-  "export_tree_sha256": "731426009057813dc8dba957b39caefb3e9970757b74d27787b5b9d571e5e677",
+  "export_tree_sha256": "cc1674de2bab315450a05579de1df83d3a41c2cb9ac5c750088ceda6840c6fb8",
   "release_boundary": {
     "default_audience": "application_agents_building_apps",
     "intended_use": "runtime_docs_examples_and_release_attestation",
@@ -2754,8 +2754,8 @@
     },
     {
       "path": "runtime/modules/core/documentation/Dataphyre_Managed_PHP_Web_Pool.md",
-      "bytes": 22113,
-      "sha256": "e770a9400571a9b50caeeead1283a7dc3f1f5332da045731d85f04ac53a6e829"
+      "bytes": 23047,
+      "sha256": "53ca2a3a7c09a0f806c9ce28f4de49e80c51430fb3884abc26000bf7707b04fb"
     },
     {
       "path": "runtime/modules/core/Framework/App.php",
@@ -3084,8 +3084,8 @@
     },
     {
       "path": "runtime/modules/core/kernel/application_runtime_web_gateway.php",
-      "bytes": 37761,
-      "sha256": "2541a122b20a7f75d2424d33a416102f8bf724ad2c7e31197aeeb58001deddb0"
+      "bytes": 40228,
+      "sha256": "cf98055de4c39e79f8fae84cded375f843724cb19989eea4df90ef28db0e59f9"
     },
     {
       "path": "runtime/modules/core/kernel/application_scheduler_definition_evidence.php",
@@ -3319,8 +3319,8 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_managed_php_web_pool.test.php",
-      "bytes": 51763,
-      "sha256": "bdbfc4bda54b27d60c6cb901f21b1e69566d75c62f41c0b8cbb67663aa7755a2"
+      "bytes": 56689,
+      "sha256": "1a671c129191d5a419774c8ea4da02ff8da95c7db55d91c72728164261c653ea"
     },
     {
       "path": "runtime/modules/core/unit_tests/dataphyre.core_process_entrypoints_exact.test.php",
@@ -3719,8 +3719,8 @@
     },
     {
       "path": "runtime/modules/core/unit_tests/fixtures/application_runtime_project/framework_bootstrap.php",
-      "bytes": 18575,
-      "sha256": "1b3879ff0039f22ba1975313f04dfddee5fbf962b1d5a94ae54b57fb329d6717"
+      "bytes": 18974,
+      "sha256": "7febb413becb92c6d201b587c5d042002d831cf0d192280b803dc98776543c13"
     },
     {
       "path": "runtime/modules/core/unit_tests/fixtures/application_runtime_project/public/runtime.txt",
