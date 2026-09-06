@@ -170,6 +170,23 @@ framing, invalid delimiters, and decoded overflow fail closed. The eight-handler
 request-plus-dynamic-response spool ceiling is therefore 192 MiB, with at most
 4 MiB resident in gateway body spools.
 
+An application that serves larger authenticated downloads can declare one public
+bound in its existing immutable `dataphyre.app.json` manifest:
+
+```json
+{"name":"example","runtime":{"max_response_bytes":67108864}}
+```
+
+The value must be an integer from 8 MiB through 64 MiB. Absent configuration
+keeps the 8 MiB default; malformed manifests, invalid values and symlinks fail
+startup before the HTTP listener binds. The gateway reads no application PHP or
+private environment to resolve it. It reduces admitted handlers to the smaller
+of eight and `floor(192 MiB / (16 MiB + response limit))`, so 64 MiB permits two
+handlers without increasing the aggregate spool ceiling. Responses retain the
+256 KiB memory spool and 64 KiB output chunks; the configured limit also applies
+to framework stream responses. Over-limit responses still fail before any
+application response headers or body are sent.
+
 For `GET` and `HEAD`, a non-PHP regular file whose canonical path is beneath
 `<project>/public/` is streamed directly under a 30-second client-write deadline.
 Before emitting `200`, the gateway opens the regular file and compares its
@@ -190,7 +207,7 @@ Every other request is translated to FastCGI records and sent only to
 `/run/dataphyre/web/php-fpm.sock`. The gateway fixes `SCRIPT_FILENAME` to the
 framework-owned `application_runtime_router.php`; caller headers cannot replace
 FastCGI parameters. FastCGI execution has one 300-second absolute deadline,
-64 KiB response-header and stderr bounds, and an 8 MiB dynamic response spool.
+64 KiB response-header and stderr bounds, and the application’s bounded dynamic response spool (8 MiB by default).
 The response normalizer removes every fixed and `Connection`-nominated
 hop-by-hop field, rejects control characters, emits representation length for
 `HEAD`, and emits no payload or synthesized length for `1xx`, `204`, and `304`.

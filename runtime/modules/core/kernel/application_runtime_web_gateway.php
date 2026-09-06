@@ -28,6 +28,8 @@ final class DataphyreApplicationRuntimeWebGateway
 	private const MAX_BODY_BYTES=16777216;
 	private const MAX_CHUNK_OVERHEAD_BYTES=65536;
 	private const MAX_DYNAMIC_RESPONSE_BODY_BYTES=8388608;
+	private const MAX_CONFIGURED_RESPONSE_BODY_BYTES=67108864;
+	private static int $responseBodyLimit=self::MAX_DYNAMIC_RESPONSE_BODY_BYTES;
 	private const MAX_STATIC_RESPONSE_BYTES=268435456;
 	private const SPOOL_MEMORY_BYTES=262144;
 	private const MAX_AGGREGATE_SPOOL_BYTES=self::MAX_CHILDREN
@@ -40,6 +42,8 @@ final class DataphyreApplicationRuntimeWebGateway
 	public static function run(string $host,int $port,string $router,string $projectRoot,string $socketPath=self::SOCKET): int
 	{
 		self::validateInvocation($host,$port,$router,$projectRoot,$socketPath);
+		self::$responseBodyLimit=self::applicationResponseLimit($projectRoot);
+		$maximumChildren=self::responseHandlerLimit(self::$responseBodyLimit);
 		$listener=@stream_socket_server('tcp://'.$host.':'.$port,$errno,$error,STREAM_SERVER_BIND|STREAM_SERVER_LISTEN);
 		if(!is_resource($listener)) throw new RuntimeException('Application web gateway could not bind its listener.');
 		stream_set_blocking($listener,false);$stopping=false;$children=[];
@@ -50,7 +54,7 @@ final class DataphyreApplicationRuntimeWebGateway
 		try{
 			while(!$stopping){
 				self::reap($children,false);
-				if(count($children)>=self::MAX_CHILDREN){usleep(10000);continue;}
+				if(count($children)>=$maximumChildren){usleep(10000);continue;}
 				$connection=@stream_socket_accept($listener,0.05,$peer);
 				if(!is_resource($connection)) continue;
 				$pid=pcntl_fork();
@@ -77,6 +81,47 @@ final class DataphyreApplicationRuntimeWebGateway
 			}
 		}
 		return 0;
+	}
+
+	/** Read one public bound from the existing immutable application manifest. */
+	private static function applicationResponseLimit(string $projectRoot): int
+	{
+		$path=$projectRoot.'/dataphyre.app.json';
+		if(!file_exists($path) && !is_link($path)) return self::MAX_DYNAMIC_RESPONSE_BODY_BYTES;
+		$before=@lstat($path);
+		if(!is_array($before) || is_link($path) || !is_file($path)
+			|| $before['size']<1 || $before['size']>65536){
+			throw new RuntimeException('Application runtime manifest is invalid.');
+		}
+		$stream=@fopen($path,'rb');
+		if(!is_resource($stream)) throw new RuntimeException('Application runtime manifest is unavailable.');
+		try{
+			$opened=fstat($stream);
+			if(!is_array($opened) || $opened['dev']!==$before['dev'] || $opened['ino']!==$before['ino']
+				|| $opened['size']!==$before['size'] || ($opened['mode'] & 0170000)!==0100000){
+				throw new RuntimeException('Application runtime manifest identity changed.');
+			}
+			$bytes=stream_get_contents($stream,65537);
+		}finally{fclose($stream);}
+		if(!is_string($bytes) || strlen($bytes)!==$before['size']){
+			throw new RuntimeException('Application runtime manifest is invalid.');
+		}
+		try{$manifest=json_decode($bytes,false,32,JSON_THROW_ON_ERROR);}
+		catch(Throwable){throw new RuntimeException('Application runtime manifest is invalid.');}
+		if(!$manifest instanceof stdClass) throw new RuntimeException('Application runtime manifest is invalid.');
+		if(!property_exists($manifest,'runtime')) return self::MAX_DYNAMIC_RESPONSE_BODY_BYTES;
+		if(!$manifest->runtime instanceof stdClass) throw new RuntimeException('Application runtime configuration is invalid.');
+		if(!property_exists($manifest->runtime,'max_response_bytes')) return self::MAX_DYNAMIC_RESPONSE_BODY_BYTES;
+		$limit=$manifest->runtime->max_response_bytes;
+		if(!is_int($limit) || $limit<self::MAX_DYNAMIC_RESPONSE_BODY_BYTES || $limit>self::MAX_CONFIGURED_RESPONSE_BODY_BYTES){
+			throw new RuntimeException('Application response bound must be an integer between 8 and 64 MiB.');
+		}
+		return $limit;
+	}
+
+	private static function responseHandlerLimit(int $responseBytes): int
+	{
+		return min(self::MAX_CHILDREN,intdiv(self::MAX_AGGREGATE_SPOOL_BYTES,self::MAX_BODY_BYTES+$responseBytes));
 	}
 
 	private static function serve(
@@ -461,7 +506,7 @@ final class DataphyreApplicationRuntimeWebGateway
 							$responseHead=substr($headBuffer,0,$end);
 							$initialBody=substr($headBuffer,$end+strlen($separator));$headBuffer='';
 							$responseLength=strlen($initialBody);
-							if($responseLength>self::MAX_DYNAMIC_RESPONSE_BODY_BYTES){
+							if($responseLength>self::$responseBodyLimit){
 								throw new RuntimeException('FastCGI response exceeded its bound.');
 							}
 							self::spoolWrite($responseBody,$initialBody);
@@ -470,7 +515,7 @@ final class DataphyreApplicationRuntimeWebGateway
 						}
 					}else{
 						$responseLength+=strlen($content);
-						if($responseLength>self::MAX_DYNAMIC_RESPONSE_BODY_BYTES){
+						if($responseLength>self::$responseBodyLimit){
 							throw new RuntimeException('FastCGI response exceeded its bound.');
 						}
 						self::spoolWrite($responseBody,$content);
@@ -574,7 +619,7 @@ final class DataphyreApplicationRuntimeWebGateway
 		[$separator,$end]=self::cgiHeaderSeparator($output);
 		if($end===null || $end>self::MAX_HEADER_BYTES) throw new RuntimeException('Application response headers are invalid.');
 		$head=substr($output,0,$end);$body=substr($output,$end+strlen($separator));
-		if(strlen($body)>self::MAX_DYNAMIC_RESPONSE_BODY_BYTES){
+		if(strlen($body)>self::$responseBodyLimit){
 			throw new RuntimeException('FastCGI response exceeded its bound.');
 		}
 		$spool=self::spool();
@@ -642,7 +687,7 @@ final class DataphyreApplicationRuntimeWebGateway
 	private static function writeCgiStreamResponse(
 		mixed $connection,string $head,mixed $body,int $bodyLength,bool $headOnly,?int $writeDeadline,
 	): void {
-		if(!is_resource($body) || $bodyLength<0 || $bodyLength>self::MAX_DYNAMIC_RESPONSE_BODY_BYTES){
+		if(!is_resource($body) || $bodyLength<0 || $bodyLength>self::$responseBodyLimit){
 			throw new RuntimeException('Application response body is invalid.');
 		}
 		$normalized=self::normalizedCgiHeaders($head);$sendBody=!$headOnly && !$normalized['forbids_payload'];

@@ -126,7 +126,7 @@ function dataphyre_managed_fpm_request(int $port,string $script,string $query): 
 }
 
 /** @return array{status:int,head:string,body:string} */
-function dataphyre_managed_web_http(string $method,string $target): array
+function dataphyre_managed_web_http(string $method,string $target,int $maximumBytes=1048576): array
 {
 	$socket=null;$errno=0;$error='';$deadline=microtime(true)+5.0;
 	do{
@@ -154,7 +154,7 @@ function dataphyre_managed_web_http(string $method,string $target): array
 				continue;
 			}
 			$response.=$chunk;
-			if(strlen($response)>1048576) throw new RuntimeException('Managed web response exceeded its test bound.');
+			if(strlen($response)>$maximumBytes) throw new RuntimeException('Managed web response exceeded its test bound.');
 		}
 	}finally{fclose($socket);}
 	[$head,$body]=array_pad(explode("\r\n\r\n",$response,2),2,'');
@@ -261,6 +261,31 @@ function dataphyre_managed_fpm_copy_project(string $source,string $target): void
 		}
 	}
 }
+
+test('application response bounds are typed, bounded and preserve aggregate admission',static function(Context $t): void {
+	require_once dirname(__DIR__).'/kernel/application_runtime_web_gateway.php';
+	$workspace=$t->workspace('application-response-bound');$project=$workspace->directory('project');
+	$manifest=$project.'/dataphyre.app.json';
+	$read=new ReflectionMethod(DataphyreApplicationRuntimeWebGateway::class,'applicationResponseLimit');
+	$handlers=new ReflectionMethod(DataphyreApplicationRuntimeWebGateway::class,'responseHandlerLimit');
+	$t->same(8388608,$read->invoke(null,$project));
+	foreach([8,9,16,32,52,64] as $mib){
+		file_put_contents($manifest,json_encode(['name'=>'fixture','runtime'=>['max_response_bytes'=>$mib*1048576]],JSON_THROW_ON_ERROR));
+		$limit=$read->invoke(null,$project);$count=$handlers->invoke(null,$limit);
+		$t->same($mib*1048576,$limit);$t->isTrue($count>=2 && $count<=8);
+		$t->isTrue($count*(16777216+$limit)<=201326592);
+	}
+	$t->same(8,$handlers->invoke(null,8388608));$t->same(2,$handlers->invoke(null,67108864));
+	foreach([null,false,0,8388607,67108865,'67108864',67108864.5,[],new stdClass()] as $invalid){
+		file_put_contents($manifest,json_encode(['name'=>'fixture','runtime'=>['max_response_bytes'=>$invalid]],JSON_THROW_ON_ERROR));
+		$t->throws(static fn()=>$read->invoke(null,$project),RuntimeException::class);
+	}
+	foreach(['[]','{','null','{"runtime":[]}','{"runtime":null}',str_repeat(' ',65537)] as $invalid){
+		file_put_contents($manifest,$invalid);$t->throws(static fn()=>$read->invoke(null,$project),RuntimeException::class);
+	}
+	unlink($manifest);symlink($workspace->file('other.json','{}'),$manifest);
+	$t->throws(static fn()=>$read->invoke(null,$project),RuntimeException::class);
+});
 
 test('same worker restores sealed state then recycles and terminates without metadata leaks',static function(Context $t): void {
 	$t->isFalse(dataphyre_managed_pool_request_context());
@@ -737,6 +762,50 @@ test('fixed rootless gateway and eight-worker FPM topology serves static and dyn
 		$deadGateway=@stream_socket_client('tcp://127.0.0.1:8083',$errno,$error,0.1,STREAM_CLIENT_CONNECT);
 		$t->isFalse(is_resource($deadGateway));if(is_resource($deadGateway)) fclose($deadGateway);
 
+		foreach($web['pipes'] as $pipe) if(is_resource($pipe)) fclose($pipe);
+		proc_close($web['resource']);$web=null;
+		$manifest=json_decode((string)file_get_contents($project.'/dataphyre.app.json'),true,32,JSON_THROW_ON_ERROR);
+		$manifest['runtime']=['max_response_bytes'=>67108864];
+		file_put_contents($project.'/dataphyre.app.json',json_encode($manifest,JSON_THROW_ON_ERROR));
+		$spawnGateway=static fn(): array=>DataphyreApplicationRuntimeProcessBroker::spawn([
+			'/usr/bin/setpriv','--reuid=10001','--regid=10001','--groups=10001','--no-new-privs',
+			'--inh-caps=-all','--ambient-caps=-all','--bounding-set=-all','--pdeathsig=SIGKILL',
+			PHP_BINARY,$gateway,'127.0.0.1','8083',$router,$project,
+		],[0=>['file','/dev/null','r'],1=>['pipe','w'],2=>['pipe','w']],$project,[],'web-http-gateway',[],10000,null,null,true);
+		$web=$spawnGateway();
+		$large=dataphyre_managed_web_http('GET','/configured-large-response',64*1048576+65536);
+		$t->same(200,$large['status']);$t->same(52*1048576,strlen($large['body']));
+		$t->same(hash('sha256',str_repeat('x',52*1048576)),hash('sha256',$large['body']));unset($large);
+		$overflow=dataphyre_managed_web_http('GET','/configured-response-overflow');
+		$t->same(502,$overflow['status']);$t->same('{"ok":false}',$overflow['body']);
+		$held=[];
+		try{
+			for($i=0;$i<3;$i++){
+				$held[$i]=stream_socket_client('tcp://127.0.0.1:8083',$errno,$error,2);
+				$t->isTrue(is_resource($held[$i]));fwrite($held[$i],"GET /health HTTP/1.1\r\n");
+			}
+			$deadline=microtime(true)+2;$children=[];
+			do{
+				$raw=(string)@file_get_contents('/proc/'.$web['pid'].'/task/'.$web['pid'].'/children');
+				$children=preg_split('/\s+/',trim($raw),-1,PREG_SPLIT_NO_EMPTY) ?: [];
+				if(count($children)===2) break;usleep(10000);
+			}while(microtime(true)<$deadline);
+			$t->same(2,count($children),'64 MiB responses admit only two handlers within the unchanged aggregate budget');
+			usleep(100000);
+			$raw=(string)file_get_contents('/proc/'.$web['pid'].'/task/'.$web['pid'].'/children');
+			$t->same(2,count(preg_split('/\s+/',trim($raw),-1,PREG_SPLIT_NO_EMPTY) ?: []));
+		}finally{foreach($held as $connection)if(is_resource($connection))fclose($connection);}
+		$t->same(200,dataphyre_managed_web_http('GET','/health')['status']);
+		posix_kill(-$web['pid'],SIGTERM);proc_close($web['resource']);
+		foreach($web['pipes'] as $pipe)if(is_resource($pipe))fclose($pipe);$web=null;
+		$manifest['runtime']['max_response_bytes']='67108864';
+		file_put_contents($project.'/dataphyre.app.json',json_encode($manifest,JSON_THROW_ON_ERROR));
+		$web=$spawnGateway();$invalidDeadline=microtime(true)+5;
+		do{$invalidStatus=proc_get_status($web['resource']);if(!$invalidStatus['running'])break;usleep(10000);}while(microtime(true)<$invalidDeadline);
+		$t->same(false,$invalidStatus['running']);$t->same(70,$invalidStatus['exitcode']);
+		$invalidListener=@stream_socket_client('tcp://127.0.0.1:8083',$errno,$error,0.1);
+		$t->isFalse(is_resource($invalidListener));if(is_resource($invalidListener))fclose($invalidListener);
+
 		$t->isTrue(posix_kill(-$fpm['pid'],SIGTERM));
 		$fpmDeadline=microtime(true)+5.0;
 		do{$fpmStatus=proc_get_status($fpm['resource']);if(($fpmStatus['running'] ?? false)!==true) break;usleep(10000);}
@@ -776,7 +845,9 @@ test('fixed rootless gateway and eight-worker FPM topology serves static and dyn
 		sodium_memzero($key);sodium_memzero($managed['private_key']);
 	}
 	if($failure!==null) throw new RuntimeException(
-		'Managed FPM fixed-topology proof failed: '.$failure->getMessage().' diagnostics='.$diagnostics,0,$failure,
+		'Managed FPM fixed-topology proof failed: '.$failure->getMessage()
+			.' assertion='.json_encode($failure instanceof \Dataphyre\Test\AssertionFailed ? $failure->details() : [])
+			.' diagnostics='.$diagnostics,0,$failure,
 	);
 })->tag('gateway','static','fastcgi','eight-workers','worker-replacement','process-group','performance','cadence')
 	->maxMillis(90000)

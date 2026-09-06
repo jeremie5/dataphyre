@@ -310,6 +310,14 @@ if(rawurldecode($managedHealthPath)==='/health' && $managedHealthCounter!==''){
 	flock($counter,LOCK_UN);fclose($counter);
 }
 
+if(in_array($managedHealthPath,['/configured-large-response','/configured-response-overflow'],true)){
+	$remaining=$managedHealthPath==='/configured-large-response' ? 52*1048576 : 64*1048576+1;
+	header('Content-Type: application/octet-stream');
+	$chunk=str_repeat('x',65536);
+	while($remaining>0){$length=min($remaining,strlen($chunk));echo substr($chunk,0,$length);$remaining-=$length;}
+	return;
+}
+
 if((string)($_GET['action'] ?? '')==='oversized-response'){ // dataphyre-test-architecture: exempt[raw-superglobal] reason="Exact gateway resource proof generates one byte beyond the fixed dynamic-response bound."
 	header('Content-Type: text/plain');echo str_repeat('x',8388609);return;
 }
