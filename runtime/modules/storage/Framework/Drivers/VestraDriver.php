@@ -8,6 +8,7 @@
 namespace Dataphyre\Storage\Drivers;
 
 use Dataphyre\Storage\Contracts\StorageDriver;
+use Dataphyre\Storage\Contracts\VestraAliasStore;
 use Dataphyre\Storage\FileMetadata;
 use Dataphyre\Storage\Support\Path;
 use Dataphyre\Storage\Support\Stream;
@@ -16,8 +17,8 @@ use Dataphyre\Storage\Support\Stream;
  * Storage driver backed by Dataphyre Vestra object references and an alias manifest.
  *
  * The driver maps logical storage paths to structured Vestra reference objects
- * stored in a JSON manifest. Writes propagate bytes to Vestra, then record a
- * stable reference locally; reads resolve the full reference into a generated URL.
+ * stored in a configured alias store or the default JSON manifest. Writes propagate bytes to Vestra, then record a
+ * stable reference; reads resolve the full reference into a generated URL.
  * Use the generic S3-compatible driver for Vestra bucket/key storage. This driver
  * exists only to bridge Storage's logical-path API to the Vestra Fabric module.
  */
@@ -27,9 +28,13 @@ final class VestraDriver implements StorageDriver {
 	 * Stores Vestra driver configuration.
 	 *
 	 * @param array<string, mixed> $config Driver configuration, including optional `manifest` path for alias persistence
+	 * an optional `alias_store` implementing VestraAliasStore for shared persistence,
 	 * and an optional `client_handler` adapter for propagation, URL, download, and usage operations.
 	 */
 	public function __construct(private array $config) {
+		if(isset($config['alias_store']) && !$config['alias_store'] instanceof VestraAliasStore){
+			throw new \InvalidArgumentException('Vestra alias_store must implement VestraAliasStore.');
+		}
 	}
 
 	/**
@@ -156,8 +161,8 @@ final class VestraDriver implements StorageDriver {
 	 * @return array<int, FileMetadata> Manifest aliases represented as metadata with `vestra` extras.
 	 */
 	public function list(string $prefix='', array $options=[]): array {
-		$aliases=$this->aliases();
 		$prefix=Path::normalize($prefix);
+		$aliases=$this->aliases($prefix);
 		$results=[];
 		foreach($aliases as $path=>$reference){
 			if($prefix==='' || str_starts_with($path, $prefix)){
@@ -212,7 +217,10 @@ final class VestraDriver implements StorageDriver {
 	 *
 	 * @return array<string, array<string,mixed>> Alias manifest contents, or an empty map when absent or invalid.
 	 */
-	private function aliases(): array {
+	private function aliases(string $prefix=''): array {
+		if(isset($this->config['alias_store'])){
+			return $this->config['alias_store']->list($prefix);
+		}
 		$file=(string)($this->config['manifest'] ?? '');
 		if($file==='' || !is_file($file)){
 			return [];
@@ -257,6 +265,9 @@ final class VestraDriver implements StorageDriver {
 	 */
 	private function lookup(string $path): ?array {
 		$path=Path::normalize($path);
+		if(isset($this->config['alias_store'])){
+			return $this->config['alias_store']->lookup($path);
+		}
 		$aliases=$this->aliases();
 		return isset($aliases[$path]) && is_array($aliases[$path]) ? $aliases[$path] : null;
 	}
@@ -430,6 +441,9 @@ final class VestraDriver implements StorageDriver {
 	 * @return bool `true` when the manifest is saved.
 	 */
 	private function recordAlias(string $path, array $reference): bool {
+		if(isset($this->config['alias_store'])){
+			return $this->config['alias_store']->put(Path::normalize($path), $reference);
+		}
 		$aliases=$this->aliases();
 		$aliases[Path::normalize($path)]=$reference;
 		return $this->saveAliases($aliases);
@@ -442,6 +456,9 @@ final class VestraDriver implements StorageDriver {
 	 * @return bool `true` when the manifest is saved.
 	 */
 	private function forgetAlias(string $path): bool {
+		if(isset($this->config['alias_store'])){
+			return $this->config['alias_store']->delete(Path::normalize($path));
+		}
 		$aliases=$this->aliases();
 		unset($aliases[Path::normalize($path)]);
 		return $this->saveAliases($aliases);
