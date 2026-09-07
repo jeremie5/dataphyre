@@ -1480,7 +1480,7 @@ class core {
 	 *
 	 * @param string|null $string The encrypted string to decrypt. If the string is empty or null, an empty string will be returned.
 	 * @param array|null $salting_data An array of salting data that was used during the encryption. It can be null.
-	 * @param callable|null $deprecation_callback A callback function invoked when the encrypted string uses an older version of encryption. This allows for automatic updating of encryption methods.
+	 * @param callable|string|null $deprecation_callback A callback invoked when the encrypted string uses a different version of encryption. Pass `return` to force re-encryption and return the replacement ciphertext.
 	 * @return string Returns the decrypted string. If decryption fails, it returns "[DecryptFail]".
 	 * 
 	 * @example
@@ -1501,7 +1501,7 @@ class core {
 	public static function decrypt_data(#[\SensitiveParameter] ?string $string, #[\SensitiveParameter] ?array $salting_data=[], callable|string|null $deprecation_callback=null) : string{
 		tracelog(__FILE__,__LINE__,__CLASS__,__FUNCTION__, $T=null, $S="function_call", $A=null); // Log the function call;
 		if(null!==$early_return=core::dialback("CALL_CORE_DECRYPT_DATA",...func_get_args())) return $early_return;
-		$latest_version=DP_CORE_CFG['encryption_version'] ?? 0;
+		$latest_version=(string)(DP_CORE_CFG['encryption_version'] ?? 0);
 		if($string==='')return'';
 		if(empty($salting_data))$salting_data=['arbitrary_value'];
 		if(str_contains($string, ":")){
@@ -1521,8 +1521,8 @@ class core {
 				$result=DP_CORE_CFG['recryption_fallback'] ?? '[RecryptFail]';
 			}
 		}
+		if($deprecation_callback==='return')return core::encrypt_data($result, $salting_data);
 		if($latest_version!==$version){
-			if($deprecation_callback==='return')return core::encrypt_data($result, $salting_data);
 			if($deprecation_callback!==null)$deprecation_callback(core::encrypt_data($result, $salting_data));
 		}
 		if($result!==null && $result!==false){

@@ -28,6 +28,17 @@ Important kernel entrypoints include:
 - `\dataphyre\runtime::resolve_application_definition(...)`
 - `\dataphyre\runtime::current_application_definition()`
 
+### Versioned Encryption Helpers
+
+`\dataphyre\core::decrypt_data()` compares the serialized version marker in a
+ciphertext with the configured encryption version after normalizing both to
+the same scalar representation. A callable deprecation callback runs only for
+a different encryption format, so retained private-key slots can be used for
+ordinary reads without scheduling needless rewrites. Passing `'return'` is an
+explicit re-encryption request: it returns replacement ciphertext even when
+the format is current, which supports controlled rewrite paths. Key-slot
+rotation and encryption-format versioning remain separate decisions.
+
 ## Application Release Preflight
 
 Dataphyre exposes one application-neutral executable preflight:

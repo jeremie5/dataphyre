@@ -207,10 +207,18 @@ namespace {
 		$t->same('', \dataphyre\core::encrypt_data(''));
 		$encrypted=\dataphyre\core::encrypt_data('payload', []);
 		$t->same('payload', \dataphyre\core::decrypt_data($encrypted, []));
+		$currentVersionCallbackCalls=0;
+		$t->same('payload', \dataphyre\core::decrypt_data($encrypted, [], static function(string $value) use (&$currentVersionCallbackCalls): void { $currentVersionCallbackCalls++; }));
+		$t->same(0, $currentVersionCallbackCalls);
+		$currentVersionReplacement=\dataphyre\core::decrypt_data($encrypted, [], 'return');
+		$t->startsWith('0:', $currentVersionReplacement);
+		$t->same('payload', \dataphyre\core::decrypt_data($currentVersionReplacement, []));
 		$t->same('[RecryptFallback]', \dataphyre\core::decrypt_data('9:anything', []));
 		$t->contains('0:', \dataphyre\core::decrypt_data('9:anything', [], 'return'));
 		$recrypted=null;
-		\dataphyre\core::decrypt_data('9:anything', [], static function(string $value) use (&$recrypted): void { $recrypted=$value; });
+		$oldVersionCallbackCalls=0;
+		$t->same('[RecryptFallback]', \dataphyre\core::decrypt_data('9:anything', [], static function(string $value) use (&$recrypted, &$oldVersionCallbackCalls): void { $oldVersionCallbackCalls++; $recrypted=$value; }));
+		$t->same(1, $oldVersionCallbackCalls);
 		$t->contains('0:', (string)$recrypted);
 		$t->same('[DecryptFallback]', \dataphyre\core::decrypt_data('not-versioned', []));
 

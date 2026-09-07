@@ -16,6 +16,12 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Normalized the configured encryption version before comparing it with the
+  serialized ciphertext marker. Current-version reads, including ciphertexts
+  opened through retained key slots during key rotation, no longer invoke the
+  deprecation callback; the explicit `return` mode still returns replacement
+  ciphertext for controlled re-encryption, and older formats still use the
+  callback path.
 - Let safe canonical public directories fall through to application routing
   instead of masking document routes beneath static asset prefixes. Directories
   are never listed or indexed; unsafe links, special files and path rejections
