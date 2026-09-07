@@ -471,6 +471,16 @@ class routing{
 
 /** Loads configured legacy route files and delegates the terminal 404 boundary. */
 function routing_bootstrap(?bool $dispatch=null, array $runtime=[]): array {
+	// Registration-only bootstraps may load legacy routing to expose shared
+	// classes, but they must never execute a request route or terminal 404.
+	// `class_exists(..., false)` keeps this guard inert before the trusted
+	// bootstrap-only context has been installed and prevents autoload side effects.
+	$bootstrapOnly=
+		\class_exists('\\Dataphyre\\InternalApplicationBootstrapOnly', false)
+		&& \Dataphyre\InternalApplicationBootstrapOnly::context()!==null;
+	if($bootstrapOnly){
+		$dispatch=false;
+	}
 	$dispatch ??=!defined('DATAPHYRE_ROUTING_NO_DISPATCH');
 	if(!$dispatch){
 		return ['loaded'=>false, 'paths'=>[], 'not_found'=>null];

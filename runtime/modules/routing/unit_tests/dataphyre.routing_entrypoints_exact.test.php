@@ -59,6 +59,124 @@ test('routing bootstrap loads each configured layer before delegating terminal h
 	$t->same(['loaded'=>false,'paths'=>[],'not_found'=>null], \dataphyre\routing_bootstrap(false));
 });
 
+test('bootstrap-only materializer suppresses legacy route dispatch and reaches hydration', static function(Context $t): void {
+	$frameworkRoot=dirname(__DIR__,4);$runtimeRoot=$frameworkRoot.'/runtime';
+	$workspace=$t->workspace('routing-bootstrap-only-materializer');
+	$project=$workspace->directory('project');
+	$hydrated=$workspace->path('hydrated');
+	$routed=$workspace->path('routed');
+	$terminal=$workspace->path('terminal');
+	$explicitEvidence=$workspace->path('explicit-routing.json');
+
+	$workspace->file('project/dataphyre.app.json',json_encode(['name'=>'_Routing$Probe'],JSON_THROW_ON_ERROR));
+	$workspace->file('project/app.php',<<<'PHP'
+<?php
+return [
+	'id'=>'_Routing$Probe',
+	'root_directory'=>__DIR__,
+	'rootpath_file'=>__DIR__.'/rootpaths.php',
+	'framework_bootstrap_file'=>__DIR__.'/framework_bootstrap.php',
+	'options'=>['fallback_to_legacy_bootstrap'=>false],
+];
+PHP);
+	$workspace->file('project/flight_sheet.php',<<<'PHP'
+<?php
+return ['bootstrap'=>[
+	'app'=>'_Routing$Probe',
+	'prevent_keyless_direct_access'=>false,
+	'allow_app_override'=>false,
+	'is_production'=>false,
+	'max_execution_time'=>30,
+	'application_roots'=>[],
+	'modules'=>['enabled'=>['routing'],'disabled'=>[]],
+	'flightdeck'=>['enabled'=>false,'debugbar'=>['enabled'=>false]],
+]];
+PHP);
+	$workspace->file('project/rootpaths.php',<<<'PHP'
+<?php
+$projectRoot=__DIR__;
+$runtimeRoot=rtrim((string)getenv('DATAPHYRE_RUNTIME_TEST_FRAMEWORK_ROOT'),'/\\');
+if($runtimeRoot==='' || !is_file($runtimeRoot.'/bootstrap.php')) throw new RuntimeException('Routing fixture runtime root is unavailable.');
+$paths=[
+	'root'=>$projectRoot.'/',
+	'views'=>$projectRoot.'/views/',
+	'backend'=>$projectRoot.'/',
+	'dataphyre'=>$projectRoot.'/',
+	'src'=>$projectRoot.'/',
+	'database'=>$projectRoot.'/database/',
+	'config'=>$projectRoot.'/config/',
+	'tmp'=>$projectRoot.'/tmp/',
+	'core_cache'=>$projectRoot.'/cache/',
+	'common_root'=>$projectRoot.'/',
+	'app_override_key'=>$projectRoot.'/app_override_key',
+	'common_dataphyre'=>$projectRoot.'/',
+	'common_dataphyre_runtime'=>$runtimeRoot.'/',
+	'app'=>defined('APP') ? APP : '_Routing$Probe',
+	'applications'=>$projectRoot.'/applications/',
+	'application_roots'=>defined('DATAPHYRE_APPLICATION_ROOTS') ? DATAPHYRE_APPLICATION_ROOTS : [],
+];
+if(!defined('ROOTPATH')) define('ROOTPATH',$paths);
+PHP);
+	$workspace->file('project/config/routing.php',<<<'PHP'
+<?php
+$routefile=\dataphyre\routing::check_route('/',__DIR__.'/route_handler.php');
+if($routefile!==false){
+	require $routefile;
+	return;
+}
+PHP);
+	$workspace->file('project/config/route_handler.php',<<<'PHP'
+<?php
+$marker=(string)getenv('DATAPHYRE_ROUTING_TEST_ROUTE');
+if($marker!=='') file_put_contents($marker,'route-handler',LOCK_EX);
+PHP);
+	$workspace->file('project/framework_bootstrap.php',<<<'PHP'
+<?php
+declare(strict_types=1);
+namespace {
+	require_once ROOTPATH['common_dataphyre_runtime'].'modules/routing/kernel/routing.main.php';
+}
+namespace dataphyre {
+	final class sql {
+		public static function materializable_table_definitions(): array { return ['fixture.bootstrap']; }
+		public static function hydrate_table_definition(string $table): bool {
+			if($table!=='fixture.bootstrap') return false;
+			$path=(string)getenv('DATAPHYRE_ROUTING_TEST_HYDRATION');
+			return $path!=='' && file_put_contents($path,'hydrated',LOCK_EX)!==false;
+		}
+	}
+}
+namespace {
+	$explicit=\dataphyre\routing_bootstrap(true,[
+		'roots'=>['dataphyre'=>ROOTPATH['dataphyre']],
+		'not_found'=>static function(array $runtime): string {
+			$path=(string)getenv('DATAPHYRE_ROUTING_TEST_TERMINAL');
+			if($path!=='') file_put_contents($path,'terminal',LOCK_EX);
+			return 'terminal';
+		},
+	]);
+	$path=(string)getenv('DATAPHYRE_ROUTING_TEST_EXPLICIT');
+	if($path!=='') file_put_contents($path,json_encode($explicit,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),LOCK_EX);
+}
+PHP);
+	$result=$t->phpProcess([
+		'runtime/modules/sql/kernel/materialize_registered_tables.php',
+		'--project-root='.$project,'--application=_Routing$Probe','--environment=staging',
+	],working_directory:$frameworkRoot,environment:[
+		'DATAPHYRE_RUNTIME_TEST_FRAMEWORK_ROOT'=>$runtimeRoot,
+		'DATAPHYRE_ROUTING_TEST_HYDRATION'=>$hydrated,
+		'DATAPHYRE_ROUTING_TEST_ROUTE'=>$routed,
+		'DATAPHYRE_ROUTING_TEST_TERMINAL'=>$terminal,
+		'DATAPHYRE_ROUTING_TEST_EXPLICIT'=>$explicitEvidence,
+	]);
+	$t->processSucceeded($result,$result->stderr());$t->same('',trim($result->stderr()));
+	$t->hasPathValues(['ok'=>true,'registered_count'=>1,'materialized_count'=>1],$result->json());
+	$t->same('hydrated',(string)file_get_contents($hydrated));
+	$t->isFalse(file_exists($routed));
+	$t->isFalse(file_exists($terminal));
+	$t->same(['loaded'=>false,'paths'=>[],'not_found'=>null],json_decode((string)file_get_contents($explicitEvidence),true,8,JSON_THROW_ON_ERROR));
+})->tag('routing','materializer','bootstrap-only','dispatch-boundary','security')->group('framework-coverage');
+
 test('exact route matching normalizes roots files request sources and diagnostic snapshots', static function(Context $t): void {
 	$scenario=DpLegacyRoutingScenario::open($t);
 	$t->isTrue($scenario->route('/', '/'));

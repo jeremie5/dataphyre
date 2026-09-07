@@ -16,6 +16,11 @@ All notable Dataphyre changes are tracked here.
 
 ### Fixed
 
+- Kept routing registration-only while the trusted bootstrap-only context is
+  active. Maintenance bootstraps may load legacy route modules to register
+  shared classes, but route handlers and terminal not-found responses cannot
+  execute or terminate the materializer; ordinary request and explicit
+  dispatch behavior is unchanged.
 - Normalized the configured encryption version before comparing it with the
   serialized ciphertext marker. Current-version reads, including ciphertexts
   opened through retained key slots during key rotation, no longer invoke the
