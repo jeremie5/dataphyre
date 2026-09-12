@@ -193,6 +193,13 @@ query. No whitespace workaround or interpolated search text is needed. This
 belongs in the shared driver because prepared pattern matching and JSONB
 queries are ordinary database features used by any framework consumer.
 
+Prepared PostgreSQL parameters also normalize PHP booleans at the kernel
+boundary: `true` is sent as the literal `true` and `false` as `false`. This is
+applied consistently to immediate helpers and queued prepared statements.
+Without that normalization ext-pgsql stringifies PHP `false` as an empty
+string, which PostgreSQL correctly rejects for a boolean parameter. Other
+bound values, positional order, and `null` are preserved unchanged.
+
 ## Optional Framework Layer
 
 Load it explicitly:

@@ -188,6 +188,31 @@ class postgresql_query_builder {
 			}
 		}
 	}
+
+	/**
+	 * Executes one prepared statement with libpq-safe scalar bindings.
+	 *
+	 * ext-pgsql accepts scalar values for prepared parameters, but PHP `false`
+	 * is otherwise stringified as an empty string. PostgreSQL cannot coerce that
+	 * value to `boolean`, so normalize both boolean values at this single boundary
+	 * while preserving every other value and its positional key unchanged.
+	 *
+	 * @param object $conn Active PostgreSQL connection.
+	 * @param string $statement_name Previously prepared statement name.
+	 * @param array<int|string, mixed> $vars Bound values.
+	 * @return object|false PostgreSQL result, or `false` on execution failure.
+	 */
+	private static function execute_prepared(object $conn,string $statement_name,array $vars): object|false {
+		return pg_execute($conn,$statement_name,self::normalize_pg_bound_values($vars));
+	}
+
+	/** @param array<int|string, mixed> $vars @return array<int|string, mixed> */
+	private static function normalize_pg_bound_values(array $vars): array {
+		return array_map(
+			static fn(mixed $value): mixed=>is_bool($value) ? ($value ? 'true' : 'false') : $value,
+			$vars,
+		);
+	}
 	
 	/**
 	 * Opens or reuses the configured PostgreSQL connection for a cluster.
@@ -297,7 +322,7 @@ class postgresql_query_builder {
 				if(!pg_prepare($conn, $statement_name, $query)){
 					throw new \Exception("Preparation of statement failed: ".pg_last_error($conn));
 				}
-				if(!$result=pg_execute($conn, $statement_name, $statement['vars'])){
+				if(!$result=self::execute_prepared($conn,$statement_name,$statement['vars'])){
 					throw new \Exception("Execution of prepared statement failed: ".pg_last_error($conn));
 				}
 				if(is_object($result)){
@@ -745,7 +770,7 @@ class postgresql_query_builder {
 					if(!$stmt=pg_prepare($conn, $statement_name, $query)){
 						throw new \Exception("Failed to prepare statement: ".pg_last_error($conn));
 					}
-					if(!$result=pg_execute($conn, $statement_name, $vars)){
+					if(!$result=self::execute_prepared($conn,$statement_name,$vars)){
 						throw new \Exception("Failed to execute statement: ".pg_last_error($conn));
 					}
 				}
@@ -829,7 +854,7 @@ class postgresql_query_builder {
 				if(!$stmt=pg_prepare($conn, $statement_name, $query)){
 					throw new \Exception("Failed to prepare statement: ($query) ".pg_last_error($conn));
 				}
-				if(!$result=pg_execute($conn, $statement_name, $vars)){
+				if(!$result=self::execute_prepared($conn,$statement_name,$vars)){
 					throw new \Exception("Failed to execute statement: ($query) ".pg_last_error($conn));
 				}
 			}
@@ -885,7 +910,7 @@ class postgresql_query_builder {
 				if(!$stmt=pg_prepare($conn, $statement_name, $query)){
 					throw new \Exception("Failed to prepare statement: ".pg_last_error($conn));
 				}
-				if(!$result=pg_execute($conn, $statement_name, $vars)){
+				if(!$result=self::execute_prepared($conn,$statement_name,$vars)){
 					throw new \Exception("Failed to execute statement: ".pg_last_error($conn));
 				}
 			}
@@ -940,7 +965,7 @@ class postgresql_query_builder {
 				if(!$stmt=pg_prepare($conn, $statement_name, $query)){
 					throw new \Exception("Failed to prepare statement: ".pg_last_error($conn));
 				}
-				if(!$result=pg_execute($conn, $statement_name, $vars)){
+				if(!$result=self::execute_prepared($conn,$statement_name,$vars)){
 					throw new \Exception("Failed to execute statement: ".pg_last_error($conn));
 				}
 				$affected_rows[]=pg_affected_rows($result);
@@ -986,7 +1011,7 @@ class postgresql_query_builder {
 				if(!$stmt=pg_prepare($conn, $statement_name, $query)){
 					throw new \Exception("Failed to prepare statement: ".pg_last_error($conn));
 				}
-				if(!$result=pg_execute($conn, $statement_name, $vars)){
+				if(!$result=self::execute_prepared($conn,$statement_name,$vars)){
 					throw new \Exception("Failed to execute statement: ".pg_last_error($conn));
 				}
 				if(is_object($result)){
@@ -1037,7 +1062,7 @@ class postgresql_query_builder {
 					if(!$stmt=pg_prepare($conn, $statement_name, $query)){
 						throw new \Exception("Failed to prepare statement: ".pg_last_error($conn));
 					}
-					if(!$result=pg_execute($conn, $statement_name, $vars)){
+					if(!$result=self::execute_prepared($conn,$statement_name,$vars)){
 						throw new \Exception("Failed to execute statement: ".pg_last_error($conn));
 					}
 					$affected_rows[]=pg_affected_rows($result);

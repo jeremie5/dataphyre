@@ -153,7 +153,7 @@ namespace dataphyre {
 	function pg_connect(string $connection): object|false { return dp_kq_state()->get('pg_connect_ok', true) ? new DpKqPgConnection() : false; }
 	function pg_query(object $conn,string $query): object|false { dp_kq_state()->append('pg_queries', $query); $value=dp_kq_state()->shift('pg_query_results'); return $value===null ? new DpKqPgResult() : $value; }
 	function pg_prepare(object $conn,string $name,string $query): bool { dp_kq_state()->append('pg_queries', $query); $value=dp_kq_state()->shift('pg_prepare_results'); return $value===null ? true : (bool)$value; }
-	function pg_execute(object $conn,string $name,array $vars): object|false { $value=dp_kq_state()->shift('pg_execute_results'); return $value===null ? new DpKqPgResult() : $value; }
+	function pg_execute(object $conn,string $name,array $vars): object|false { dp_kq_state()->append('pg_execute_vars',$vars); $value=dp_kq_state()->shift('pg_execute_results'); return $value===null ? new DpKqPgResult() : $value; }
 	function pg_last_error(object $conn): string { return (string)dp_kq_state()->get('pg_last_error', 'fake pg error'); }
 	function pg_num_fields(object $result): int { return (int)dp_kq_state()->get('pg_num_fields', count($result->types)); }
 	function pg_affected_rows(object $result): int { return $result->affected; }
@@ -238,6 +238,7 @@ namespace {
 			'pg_query_results'=>[],
 			'pg_prepare_results'=>[],
 			'pg_execute_results'=>[],
+			'pg_execute_vars'=>[],
 			'pg_send_results'=>[],
 			'pg_get_results'=>[],
 			'pg_free_results'=>[],
@@ -479,6 +480,28 @@ namespace {
 		$state->put('pg_execute_results',[new DpKqPgResult([],[],3)]);$t->same(3,$class::postgresql_delete('primary','normal','WHERE id=?',[1]));
 		$state->put('pg_query_results',[new DpKqPgResult([],[],2)]);$t->same(2,$class::postgresql_delete('primary','normal','',null));
 	})->tag('sql','kernel','query-builders','deep-coverage')->group('framework-coverage');
+
+	test('PostgreSQL prepared parameters preserve false as an explicit boolean in direct and queued execution',static function(Context $t): void {
+		$state=dp_kq_scenario($t);$class=\dataphyre\postgresql_query_builder::class;$conn=new DpKqPgConnection();$class::$conns['primary']=$conn;
+		$state->put('pg_execute_results',[new DpKqPgResult([['enabled'=>'f']],['enabled'=>'bool'])]);
+		$t->isFalse($class::postgresql_query('primary','SELECT ?::boolean AS enabled',[false],false,false)['enabled']);
+		$t->same([['false']],$state->get('pg_execute_vars'));
+
+		$state->put('pg_execute_vars',[]);
+		$state->put('pg_execute_results',[new DpKqPgResult([['enabled'=>'t']],['enabled'=>'bool'])]);
+		$execution=$t->nonPublic($class)->capture('execute_prepared_statements',
+			conn:$conn,
+			prepared_statements:[['query'=>'SELECT ?::boolean AS enabled, ?::text AS marker','vars'=>[true,'kept']]],
+			results:[],
+			dbms_cluster:'primary',
+		);
+		$t->isTrue($execution->result());
+		$t->same([['true','kept']],$state->get('pg_execute_vars'));
+		$t->same([['enabled'=>true]],$execution->argument('results')[0]);
+
+		$normalized=$t->nonPublic($class)->invokeWithArguments('normalize_pg_bound_values',[[false,true,null,0,1,'false']]);
+		$t->same(['false','true',null,0,1,'false'],$normalized);
+	})->tag('sql','postgresql','parameters','boolean','queued','regression')->group('framework-coverage');
 
 	test('PostgreSQL compatibility preserves JSON operators and SQL literals while numbering bound placeholders',static function(Context $t): void {
 		$state=dp_kq_scenario($t);$class=\dataphyre\postgresql_query_builder::class;$builder=$t->nonPublic($class);
