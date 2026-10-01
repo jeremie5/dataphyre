@@ -186,15 +186,22 @@ final class dataphyre_flightdeck_tracelog_surface {
 		}
 		if(preg_match('/^([a-f0-9]{40})\.[a-f0-9]{64}$/', $handoff_token, $matches)){
 			$file=$directory.'/'.$matches[1].'.dat';
-			if(is_file($file)){
-				return (string)@file_get_contents($file);
+			if(!is_link($file) && is_file($file)){
+				return (string)@file_get_contents($file, false, null, 0, 2097152);
 			}
 		}
-		$files=glob($directory.'/*.dat') ?: [];
+		$files=[];
+		$scanned=0;
+		foreach(new \DirectoryIterator($directory) as $entry){
+			if(++$scanned>1024) break;
+			if(!$entry->isLink() && $entry->isFile() && $entry->getExtension()==='dat'){
+				$files[]=$entry->getPathname();
+			}
+		}
 		usort($files, static fn($a, $b)=>(int)@filemtime($b) <=> (int)@filemtime($a));
 		foreach($files as $file){
-			if(is_file($file)){
-				return (string)@file_get_contents($file);
+			if(!is_link($file) && is_file($file)){
+				return (string)@file_get_contents($file, false, null, 0, 2097152);
 			}
 		}
 		return '';

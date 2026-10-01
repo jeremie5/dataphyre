@@ -148,3 +148,21 @@ itself.
 This module is integral for debugging and performance optimization in Dataphyre applications, offering both real-time and persistent logging solutions.
 
 ![Dataphyre Tracelog Plotting Example](Tracelog_Plotting_Example.png "Dataphyre Tracelog Plotting Example")
+
+## Handoff retention
+
+Flightdeck handoffs are a bounded diagnostic cache, not an audit archive. The
+writer retains at most 128 trace files and 64 MiB per application, with a one-hour
+lifetime and a 2 MiB per-file limit. Oldest captures are evicted first. Session
+identities may change on every request, so a lifetime alone is insufficient to
+protect disk space under sustained traffic. These application-neutral limits
+belong to the framework writer and require no application cleanup scheduler.
+
+Writers serialize retention and publication with a nonblocking directory lock;
+lock contention skips optional disk capture while session capture continues. A
+cleanup pass examines at most 1,024 directory entries. Legacy oversized caches
+are drained in batches and receive no new handoffs until their inventory fits.
+Only SHA-1-named `.dat` trace files are eligible; unrelated files and symlinks are
+left alone. Reads are bounded to 2 MiB. Existing signed tokens retain their format
+but may no longer resolve after expiry or eviction. `file_lifespan` does not
+control these handoff limits.

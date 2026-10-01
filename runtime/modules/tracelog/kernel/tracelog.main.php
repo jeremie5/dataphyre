@@ -223,15 +223,15 @@ class tracelog {
 	public static function last_handoff_trace(?string $handoff_token=null): string {
 		if($handoff_token!==null && $handoff_token!==''){
 			$file=self::handoff_file_from_token($handoff_token);
-			if($file!==null && is_file($file)){
-				return (string)@file_get_contents($file);
+			if($file!==null && !is_link($file) && is_file($file) && (int)@filemtime($file)>=time()-self::HANDOFF_TTL_SECONDS){
+				return (string)@file_get_contents($file, false, null, 0, self::TRACE_BUFFER_LIMIT_BYTES);
 			}
 		}
 		$files=self::handoff_files();
 		$newest_file='';
 		$newest_time=0;
 		foreach($files as $file){
-			if(!is_file($file)){
+			if(is_link($file) || !is_file($file) || (int)@filemtime($file)<time()-self::HANDOFF_TTL_SECONDS){
 				continue;
 			}
 			$mtime=(int)@filemtime($file);
@@ -241,10 +241,10 @@ class tracelog {
 			}
 		}
 		if($newest_file!==''){
-			return (string)@file_get_contents($newest_file);
+			return (string)@file_get_contents($newest_file, false, null, 0, self::TRACE_BUFFER_LIMIT_BYTES);
 		}
 		foreach(self::recent_handoff_files() as $file){
-			return (string)@file_get_contents($file);
+			return (string)@file_get_contents($file, false, null, 0, self::TRACE_BUFFER_LIMIT_BYTES);
 		}
 		return '';
 	}
@@ -259,18 +259,74 @@ class tracelog {
 	 * @param string $trace Current HTML trace buffer.
 	 * @return ?string Signed token for the primary handoff file, or null for an empty trace or missing directory.
 	 */
+	private const HANDOFF_MAX_FILES=128;
+	private const HANDOFF_MAX_BYTES=67108864;
+	private const HANDOFF_TTL_SECONDS=3600;
+	private const HANDOFF_SCAN_LIMIT=1024;
+
 	private static function write_handoff_trace(string $trace): ?string {
-		if($trace===''){
+		$files=self::handoff_files();
+		if($trace==='' || $files===[]){
 			return null;
 		}
-		$first_token=null;
-		foreach(self::handoff_files() as $file){
-			$id=pathinfo($file, PATHINFO_FILENAME);
-			$first_token??=self::sign_handoff_id($id);
-			self::writeFile($file, $trace, false);
+		$directory=dirname($files[0]);
+		if(!is_dir($directory) && !@mkdir($directory, 0775, true) && !is_dir($directory)){
+			return null;
 		}
-		self::$last_handoff_token=$first_token;
-		return $first_token;
+		if(is_link($directory) || is_link($directory.'/.retention.lock')){
+			return null;
+		}
+		$lock=@fopen($directory.'/.retention.lock', 'c');
+		if($lock===false){
+			return null;
+		}
+		try{
+			if(!flock($lock, LOCK_EX|LOCK_NB)){
+				return null;
+			}
+			$trace=substr($trace, -self::TRACE_BUFFER_LIMIT_BYTES);
+			$entries=[];
+			$scanned=0;
+			$complete=true;
+			foreach(new \DirectoryIterator($directory) as $entry){
+				if($entry->isDot()) continue;
+				if(++$scanned>self::HANDOFF_SCAN_LIMIT){$complete=false;break;}
+				if(!preg_match('/^[a-f0-9]{40}\.dat$/D', $entry->getFilename())) continue;
+				$path=$entry->getPathname();
+				if($entry->isLink() || !$entry->isFile()) continue;
+				$mtime=$entry->getMTime();
+				$size=$entry->getSize();
+				if($mtime<time()-self::HANDOFF_TTL_SECONDS || $size>self::TRACE_BUFFER_LIMIT_BYTES){
+					if(@unlink($path)) continue;
+				}
+				$entries[$path]=['mtime'=>$mtime, 'size'=>$size];
+			}
+			// A legacy oversized directory is drained in bounded batches. Do not
+			// add files until its complete inventory fits within the scan budget.
+			$bytes=array_sum(array_column($entries, 'size'));
+			$count=count($entries);
+			$reserveBytes=count($files)*strlen($trace);
+			$reserveFiles=count($files);
+			uasort($entries, static fn($a,$b)=>$a['mtime']<=>$b['mtime']);
+			foreach($entries as $path=>$entry){
+				if($complete && $count+$reserveFiles<=self::HANDOFF_MAX_FILES && $bytes+$reserveBytes<=self::HANDOFF_MAX_BYTES) break;
+				if(@unlink($path)){$count--;$bytes-=$entry['size'];}
+			}
+			if(!$complete || $count+$reserveFiles>self::HANDOFF_MAX_FILES || $bytes+$reserveBytes>self::HANDOFF_MAX_BYTES) return null;
+			$firstToken=null;
+			foreach($files as $file){
+				if(is_link($file) || (file_exists($file) && !is_file($file))) continue;
+				self::writeFile($file, $trace, false);
+				$firstToken??=self::sign_handoff_id(pathinfo($file, PATHINFO_FILENAME));
+			}
+			self::$last_handoff_token=$firstToken;
+			return $firstToken;
+		}catch(\UnexpectedValueException){
+			return null;
+		}finally{
+			flock($lock, LOCK_UN);
+			fclose($lock);
+		}
 	}
 
 	/**
@@ -338,7 +394,14 @@ class tracelog {
 		if($directory==='' || !is_dir($directory)){
 			return [];
 		}
-		$files=glob($directory.'/*.dat') ?: [];
+		$files=[];
+		$scanned=0;
+		foreach(new \DirectoryIterator($directory) as $entry){
+			if(++$scanned>self::HANDOFF_SCAN_LIMIT) break;
+			if(!$entry->isLink() && $entry->isFile() && $entry->getExtension()==='dat' && $entry->getMTime()>=time()-self::HANDOFF_TTL_SECONDS){
+				$files[]=$entry->getPathname();
+			}
+		}
 		usort($files, static fn($a, $b)=>(int)@filemtime($b) <=> (int)@filemtime($a));
 		return array_slice($files, 0, 3);
 	}
